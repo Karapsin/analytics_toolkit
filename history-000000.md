@@ -1,0 +1,256 @@
+[Task archive index](README.md)
+
+<a id="task-message-0"></a>
+## Starting user prompt
+
+<pre>sql explorer: 1) if ctrl+shift+arrow up/down is pressed, then we should not spawn multiple cursors, instead selection should be expanded to the left until the line start, and next line until cursor&#x27;s column (vs code like), it can be repeated multiple times to select many lines 2) now it seems that when multiple cursors is spawned, then I ctrl+c something and ctrl+v each cursor inserts WHOLE clipboard. instead each should have its own clipboard (VS code like)</pre>
+
+<a id="task-message-1"></a>
+## User correction 1
+
+<pre>Implement the plan.</pre>
+
+<a id="task-message-2"></a>
+## User correction 2
+
+<pre>we should have distinct only when ctrl+c is used when multiple cursors are availiable; otherwise (e.g. something in clipboard from external place/copied before multicursor) each cursor have identical clipboard</pre>
+
+<a id="task-message-3"></a>
+## User correction 3
+
+<pre>if all are ampty and ctrl+c is used - then all have empty clipboard</pre>
+
+<a id="task-message-4"></a>
+## User correction 4
+
+<pre>also change cursor from bold to thin</pre>
+
+<a id="task-message-5"></a>
+## User correction 5
+
+<pre>FULL VS code like multicursors</pre>
+
+<a id="task-message-6"></a>
+## User correction 6
+
+<pre>Match VS Code spreading</pre>
+
+<a id="task-message-7"></a>
+## User correction 7
+
+<pre>Vertical bar</pre>
+
+<a id="task-message-8"></a>
+## User correction 8
+
+<pre>and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev</pre>
+
+<a id="task-message-9"></a>
+## User correction 9
+
+<pre>fix any issues on the way</pre>
+
+<a id="task-message-10"></a>
+## User correction 10
+
+<pre>also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction</pre>
+
+<a id="task-message-11"></a>
+## User correction 11
+
+<pre>Questions: [&quot;1. Clipboard rules: does your later “Match VS Code spreading” override the earlier requirement that externally copied text be identical at every cursor? Example: external clipboard is “A\\nB” and there are two cursors.\nSpread matching lines (Recommended): Insert A at the first cursor and B at the second; use copied fragments first when their count matches, otherwise matching lines, otherwise the whole text at each cursor.\nExternal text stays identical: Insert the whole A\\nB at both cursors; distribute only fragments recorded by Ctrl+C with multiple editor cursors.&quot;, &quot;2. What does “FULL VS code like multicursors” include? The current editor permits one cursor per row and shares a preferred column; the original request describes Ctrl+Shift+Up/Down as anchored selection to the same column on the adjacent logical line.\nComplete editing semantics (Recommended): Support independent positions and preferred columns, multiple cursors on one row, selection merging, movement, editing and undo/redo; preserve existing creation shortcuts and the explicitly requested vertical-selection behavior.\nOnly original fixes: Limit changes to the requested vertical selection, clipboard rules and thin carets; retain the current cursor model and creation shortcuts.\nAlso VS Code creation commands: Include complete editing semantics plus VS Code cursor creation shortcuts and gestures; their exact supported set will need to be specified.&quot;, &quot;3. How should the visual findings unrelated to multicursors be handled? Several involve pre-existing create-table controls, help wrapping, and inconsistent scene fixtures; they are outside the original feature, but the full visual gate rejected them.\nFeature-related corrections (Recommended): Correct defects caused by or directly tied to this feature; report unrelated existing findings as deferred blockers and preserve their code.\nAlso repair scene fixtures: Also correct misleading capture fixtures and focus timing, while deferring unrelated production UI defects.\nResolve every listed finding: Explicitly authorize narrow repairs to all listed production UI defects and scene fixtures so the full visual gate can pass.&quot;]
+User response: Use recommended options</pre>
+
+<a id="task-message-12"></a>
+## User correction 12
+
+<pre>Questions: [&quot;4. Should fragment metadata be recorded only by multicursor Ctrl+C, or also by the existing `cp` command and Ctrl+X? The partial PR currently treats all three as equivalent.\nEquivalent copy actions (Recommended): Ctrl+C, `cp`, and Ctrl+X record document-order fragments; Ctrl+V, `pst`, and terminal paste use the same spreading rules. Cut deletes selected ranges only.\nOnly Ctrl+C records fragments: `cp` and Ctrl+X write plain clipboard text and clear fragment metadata; subsequent paste may still spread matching lines under your chosen rule.&quot;, &quot;5. With one cursor and no selection, should Ctrl+C and `cp` preserve Explorer’s current whole-buffer copy behavior? Your explicit empty-clipboard requirement applies when all selections are empty with multiple cursors.\nKeep whole-buffer copy (Recommended): One unselected cursor copies the whole SQL buffer; multiple entirely empty selections clear the clipboard.\nCopy the current line: Use VS Code’s unselected single-cursor line copy, while retaining your explicit empty-clipboard override for multiple cursors.&quot;]
+User response: I approve recommended options</pre>
+
+<a id="task-message-13"></a>
+## User correction 13
+
+<pre>Questions: [&quot;1. Clipboard edge case: with multiple cursors and no selected text, should Ctrl+X clear the clipboard like Ctrl+C/cp, or preserve the existing no-op cut behavior?\nClear clipboard (Recommended): Treat Ctrl+X as an equivalent copy action: record empty fragments, clear the clipboard, and delete nothing.\nKeep cut as no-op: Leave clipboard and text unchanged when every selection is empty; record cut fragments only when some text is selected.&quot;, &quot;2. Existing Shift+Up/Down removes a cursor if its target row is occupied. Once multiple cursors per row are supported, should removal require the same target position, or still affect any cursor on that row?\nMatch position (Recommended): Add at the projected column; remove an existing cursor only at that position, allowing other cursors on the target row.\nKeep row toggle: Keep the current row-based creation/removal behavior; independent movement may still bring multiple cursors onto one row.&quot;]
+User response: Choose both recommended options under the owner&#x27;s standing policy: (1) Clear clipboard when every multicursor selection is empty; record empty fragments and delete nothing. (2) Match position for Shift+Up/Down toggling; add at the projected column and remove only the cursor at that exact position, preserving other cursors on the row. Proceed through fresh plan review, correction, independent PR review and checks. This is a routine implementation choice, not a protected-policy approval.</pre>
+
+<a id="task-message-14"></a>
+## User correction 14
+
+<pre>Questions: [&quot;1. Your earlier answer deferred unrelated UI defects, while the later instruction requires a green full visual gate. May this correction make narrow fixture and UI repairs for the confirmed current blockers: coherent invalid/mutation/results/save scenes and Cancel focus; create-table checkbox/removal legibility and type-menu placement; movement-help wrapping; and find-highlight visibility if still failing after the caret fix?\nMinimum gate repairs (Recommended): Authorize only these confirmed blockers, preserve the multicursor feature, and require every full scene to pass.\nFeature and fixtures: Allow multicursor and truthful fixture repairs, but leave unrelated production UI unchanged; publication remains blocked if those scenes fail.\nFeature only: Retain the earlier deferral boundary; repair multicursors and their visuals, with full-gate publication blocked by unrelated failures.&quot;, &quot;2. The partial implementation draws │ by replacing the SQL character in its terminal cell, hiding the S in SELECT. For terminal rendering, which compromise is acceptable if a thin vertical bar cannot share the same cell with readable text?\nPreserve text (Recommended): Use a terminal-supported bar where possible, with a thin underline fallback for occupied cells; keep all SQL legible and expose secondary carets.\nRequire vertical bars: Require vertical bars for all carets and allow a presentation-only extra cell before the character, with matching mouse, scrolling, ruler, and selection mapping.\nBar may cover text: Keep the cell-replacing bar; the current legibility rejection would remain unresolved and publication blocked.&quot;, &quot;3. Which PRs does “ALL of them are merged successfully with dev” cover? The supplied feature evidence identifies PR #9; companion evidence mentions other PRs but does not establish their task membership.\nTask-related PRs (Recommended): Monitor #9 and every correction or repair PR created for this SQL Explorer task through successful dev merge and required validation.\nAll currently open PRs: Include every currently open repository PR; the coordinator must record the live inventory and preserve each PR’s separate scope and approval requirements.\nExplicit PR list: Use a specific set supplied in the free-text answer, plus their task-related correction and repair PRs.&quot;]
+User response: also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction</pre>
+
+<a id="task-message-15"></a>
+## User correction 15
+
+<pre>Questions: []
+User response: also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction</pre>
+
+<a id="task-message-16"></a>
+## User correction 16
+
+<pre>Questions: []
+User response: also restart agents who are waiting user&#x27;s approval so that use this new policy</pre>
+
+<a id="task-message-17"></a>
+## User correction 17
+
+<pre>Coordinator-provided fresh diagnostic evidence is now available through source_files. GitHub capture https://github.com/Karapsin/analytics_toolkit/actions/runs/38731476440 succeeded for exact candidate 3e6d6e980ea7f1e1c3a6412cb9c5cc824aa87df5. Its artifact patch matches your current saved checkpoint: SHA256 a3c095c05168e2ed96ae63653c93a579baef3bad0d6a73ecff30df9b1fdd4141.
+
+Question: “Can the coordinator expose a fresh database-picker capture with its heading widget rows, compositor rows, exported SVG, and hash-bound final PNG through source_files evidence? The available layer evidence is historical, and its PNG is inaccessible. The reviewed plan requires identifying the first failing layer before changing picker presentation or capture/export.”
+
+Coordinator response:
+
+- Immutable evidence prefix: `operator/pr9-baseline-38731476440/`. All 46 full scene PNGs and geometry JSON files are included.
+- Read `database-picker.json` at that prefix, SHA256 `448bc635e4d189a90747d38a2a4793cd2bba386bb57cbc1e29bfd4410def9a35`. Its `render_diagnostics` contains complete heading widget/compositor rows, parsed exported SVG elements, styles, clips and transforms, plus raw/framed SVG and final PNG hashes.
+- Open `database-picker.png` using the newly available read-only `read_evidence_image` tool with SHA256 `01ad7b5da45db751e023aff86610ca6eaeabf90efe8c8c6a89d661bf5b3644b5`. The tool verifies the immutable manifest and actual PNG bytes. It is active in reviewed worker commit 0d987a81510eb945170e45ead87e6ba8b849ae23, exact-commit CI https://github.com/Karapsin/self_host/actions/runs/38731488179 .
+- Start with `operator/pr9-baseline-38731476440/coordinator-receipt.json`, SHA256 1597127f4647b20364f506fc43e6dad323d45c7051e0c1b029100c39fd6fb9e5. This binds the run, candidate, checkpoint and all artifact hashes.
+
+The deployed capture workflow uploads parsed SVG diagnostics in JSON; it does not upload separate raw SVG files. Do not claim raw SVG bytes are supplied. Inspect the actual diagnostics and PNG to identify the first failing layer before changing presentation or export. If raw SVG bytes remain essential, identify that remaining coordinator artifact-export gap; these files are generated diagnostics, not replacements for owner images. No owner answer, policy approval or visual-review pass is manufactured by this coordinator response.</pre>
+
+<a id="task-message-18"></a>
+## User correction 18
+
+<pre>Coordinator tooling update: your previous capture response was accepted. Planning then paused before invoking a model because the trusted PR-body renderer exceeded its 55,000-character transport limit; the stored question list is empty. No new owner decision is needed for that size error.
+
+The reviewed worker fix in self_host commit 2273123fac5bf806446907b1f7c705786991c117 now validates the complete task schema before planning/coding without requiring it to fit a PR body. It preserves every original prompt, plan, question and answer. Publication still preflights the trusted renderer before enrollment, push, PR writes or hold recovery, and retains the exact artifact if the current transport is too small. A larger lossless publication transport remains a coordinator repair; do not truncate history or claim that transport is already implemented.
+
+Exact-commit CI passed: https://github.com/Karapsin/self_host/actions/runs/38734363567 . Source review and separate rollout review approved this change. Continue fresh planning and independent review using the actual capture diagnostics already supplied at https://github.com/Karapsin/analytics_toolkit/pull/9#issuecomment-6191690770 . The original SQL Explorer scope and all provenance, visual review and owner-policy gates remain unchanged.
+
+This is a transparent coordinator status/evidence response to the recorded transport blocker, not an invented owner answer, replacement image, plan approval or protected-policy approval.</pre>
+
+<a id="task-message-19"></a>
+## User correction 19
+
+<pre>Coordinator tooling repair is active. self_host commit 8dcf886114f5ed53144e053e9fcb5921bfb2e74e fixes both native planning gaps: read_evidence_image results now arrive as native inputImage items, and old durable threads with outdated dynamic tool definitions rotate to a fresh read-only thread exposing the current tools. Previous thread questions and plan provenance are archived; your complete authenticated task/question/answer history remains in the new turn prompt. No old requestUserInput RPC answer is replayed.
+
+Source review and separate activation review approved the exact change. Required exact-commit CI and isolated rollout/restart/rollback tests passed: https://github.com/Karapsin/self_host/actions/runs/38736868724 . The worker is active; all 78 saved checkpoints and the existing orchestrator cadence were verified unchanged. Installed-source receipt: operator/worker-native-tools-8dcf886114f5-active.json in assigned immutable evidence.
+
+Continue fresh native planning and inspect the hash-bound PNG from operator/pr9-baseline-38731476440/ using read_evidence_image with the exact hash declared in your immutable manifest. The capture receipt still binds candidate 3e6d6e980ea7f1e1c3a6412cb9c5cc824aa87df5 to the saved checkpoint. Widget/compositor/parsed-SVG diagnostics are available; raw SVG bytes were not supplied. Establish whether the PNG actually shows a production UI or export defect before selecting a correction. Keep the original user scope, full history, original plan and authentic approvals; this is a coordinator tooling response, not a replacement image or approval.
+
+Lossless publication transport beyond the current body-size limit remains coordinator-owned and pending; do not truncate task history or ask the owner to manufacture replacement evidence for that tooling limit. SQL Explorer changes still require the existing independent visual review and CI gates.</pre>
+
+<a id="task-message-20"></a>
+## User correction 20
+
+<pre>Coordinator evidence-route answer: the deployed main agent-visual.yml currently copies each scene PNG and geometry JSON into visual-artifact, plus capture.json. It does not copy raw or framed SVG sidecars. Candidate 3e6d6e980ea7f1e1c3a6412cb9c5cc824aa87df5 already computes both SVG strings in agent_tools/sql_explorer_visual_capture.py before calling render_diagnostics, but the diagnostics retain parsed elements and hashes only. The requested SVG bytes therefore are genuinely absent from the old artifact; no owner upload or replacement decision is needed.
+
+Use the existing trusted candidate-capture path to obtain that missing evidence. A bounded diagnostic instrumentation step in the assigned candidate harness can retain complete raw and framed SVG content in the already-exported scene geometry JSON, with exact byte hashes and an explicit lossless encoding/chunk description if needed. Retain renderer versions and actual available/selected font diagnostics, or explicitly record unavailable probes. Instrumentation and font probes execute only in the GitHub capture job; private source workers must not execute programs, tests or rendering. Keep output bounded and provide enough metadata for the coordinator to verify hashes and extract complete readable evidence from the GitHub artifact. Do not change framing, rasterization or production UI behavior speculatively.
+
+Have renewed planning and independent plan review cover this diagnostic prerequisite while preserving the complete existing feature checkpoint and original SQL Explorer requirements. Once the source-only coding step has supplied that instrumentation, the normal controller visual phase can publish an isolated temporary candidate and run the existing GitHub workflow to collect the data. This is intermediate diagnosis: do not claim the feature or visual review is complete, drop remaining feature work, bypass a rejecting visual gate, or publish a correction before the required full-scene review. Continue correction from the resulting actual evidence. The original context, questions/answers, original plan approvals, task/patch/candidate binding and all owner-policy gates remain intact.
+
+This is a transparent coordinator capability and routing response, not a substitute owner answer, fabricated SVG evidence or plan/policy approval.</pre>
+
+<a id="task-message-21"></a>
+## User correction 21
+
+<pre>Exact pre-invocation source is recovered and assigned as immutable evidence. tests/agent_tools/render_diagnostics.py has identical bytes in the retained 20-code, 22-plan and fresh read-only 23-plan-review workspaces: SHA256 a03170ba8c7073d9742d1ba23b30b1dcc24ce67091e8bf91a7ff22189af1ba0a, 23,459 bytes, 536 lines. The 24-code version is 309 lines and differs, confirming the lost suffix. Read operator/pr9-pre24-source/tests/agent_tools/render_diagnostics.py completely, including lines 301-536, before restoring the omitted source and retaining your focused diagnostic additions. This is original checkpoint source, not an owner replacement.
+
+The original agent_tools/README.md is also assigned at operator/pr9-pre24-source/agent_tools/README.md: SHA256 e5da7d2d6845ec54a700dc3dcfa6c4db3ba4445f9caf36a1e73266474344c0ba, 32,685 bytes, 494 lines. Use it to verify every current change, preserving all original content and intended new diagnostic documentation. The coordinator&#x27;s byte-bound comparison and provenance are recorded at operator/pr9-pre24-source/receipt.json (SHA256 dee8e0965575263da28456078bacbbd502862c98853beb5ad964ab3ff76110fc). Read paginated evidence to the actual final line; current tools cap a read at 300 lines and 24,000 characters, so a requested larger count is not proof of complete reading. The source tool&#x27;s incomplete-read overwrite protection is being repaired separately; do not claim that guard is deployed yet.
+
+Preserve the complete current checkpoint and new SVG-evidence helper/tests, original feature scope, all questions/answers and original plan approvals. Restore only accidental omissions; do not reset the whole patch or discard useful new work. Then continue the approved diagnostic prerequisite and the ordinary GitHub candidate-capture/full visual-review path. No source programs, tests or rendering on the Pi. No owner answer or protected policy approval is supplied by this coordinator recovery response.</pre>
+
+<a id="task-message-22"></a>
+## User correction 22
+
+<pre>The requested diagnostic capture is complete. The trusted controller published only temporary candidate 80327049f169cc636a6638b7a17337eecd2c0de4 from the exact preserved checkpoint SHA256 d2ddb31be4c513d4b1b2ea6284760e2d0460c70190445cd5c59a448450ad6d38. GitHub visual run https://github.com/Karapsin/analytics_toolkit/actions/runs/38753763726 succeeded. All 46 PNG and geometry hashes were verified; the recovered diagnostic tests remain present (545 lines, original test methods retained).
+
+Read immutable evidence under operator/pr9-svg-diagnostics-38753763726/. coordinator-receipt.json SHA256 ca5b50bbbad3e895027fa792b14061c4337bccaf1c2afa28e1a4e59be8a0ca21 binds the request, checkpoint, candidate, plan, GitHub workflow and file hashes. database-picker.json SHA256 f2cb49ae6f34c7600d50d73d361652a1ad1368dd45b5c1a4401023353e9bc8d2 contains the original complete export_input_evidence. Its exact decoded UTF-8 SVG strings were losslessly extracted as database-picker-raw-svg.svg SHA256 373825062510e34c8a6b757418db66642c26ff5ec2d483e35c51b71d440819ac and database-picker-framed-svg.svg SHA256 9c6c4cc55177b9fd117c5d412e62c12d43aa595e911e8a92f7f5a1d2a20aa5b5. Read every relevant page using next_start_line/next_start_column until has_more=false; no source content was normalized or replaced.
+
+The explicit font/renderer subset is database-picker-font-renderer.json SHA256 591867b1a0d27300e830c1ee181746131a084c99060a2376b74688d57f95501f. It records Python 3.11.17, Textual 0.73.0, Rich 15.0.0, resvg-py 0.5.0, requested font families, actual fc-list and fc-match observations. The actual renderer-selected font is explicitly unobservable through this resvg-py API; do not mistake a system font match for proof of renderer selection. This is the actual available diagnostic, not a guessed selection or owner-supplied replacement.
+
+Open the full PNG using read_evidence_image(path=&quot;operator/pr9-svg-diagnostics-38753763726/database-picker.png&quot;, sha256=&quot;01ad7b5da45db751e023aff86610ca6eaeabf90efe8c8c6a89d661bf5b3644b5&quot;). The heading defect is still visible; this successful diagnostic run is not a final visual approval or claim of repair. Only database-picker includes the new SVG/font instrumentation; all scene PNGs and geometry are retained.
+
+Use this evidence for the existing approved diagnostic prerequisite and continue the original UI correction without weakening feature scope, provenance, tests, or visual gates. Preserve all original questions/answers, plan approval and useful checkpoint edits. Complete-read safeguards and hash-bound edit_file are now active. No programs, tests or rendering on the Pi. No owner decision or protected policy approval is supplied by this coordinator evidence response.</pre>
+
+## Agent question 1
+
+<pre>Can the coordinator expose a fresh database-picker capture with its heading widget rows, compositor rows, exported SVG, and hash-bound final PNG through source_files evidence? The available layer evidence is historical, and its PNG is inaccessible. The reviewed plan requires identifying the first failing layer before changing picker presentation or capture/export.</pre>
+
+**User answer:** [Complete user correction 17](history-000000.md#task-message-17)
+
+## Agent question 2
+
+<pre>The fresh receipt binds capture `38731476440` to candidate `3e6d6e980ea7f1e1c3a6412cb9c5cc824aa87df5` and the saved checkpoint. Widget rows, compositor rows and parsed SVG all retain the complete heading, including the `c`. This does not establish a production picker defect.
+
+1. **Coordinator tooling question:** Can `read_evidence_image` be exposed in this planner session for the supplied hash-bound PNG? It is absent from the available tools, and `read_image` returns “Source tool unavailable or invalid.” PNG inspection is still needed before specifying a presentation or export correction.
+
+No owner decision or replacement upload is needed. Raw SVG bytes are not supplied. The publication transport repair also remains coordinator-owned; complete task history must be preserved.</pre>
+
+**User answer:** [Complete user correction 19](history-000000.md#task-message-19)
+
+## Agent question 3
+
+<pre>Can the coordinator provide the reviewed plan’s GitHub reproduction with actual raw and framed SVG bytes, renderer versions, and available/selected font diagnostics, bound to the candidate, checkpoint and PNG hashes? PNG inspection now works and confirms the obscured `c`; terminal rows and parsed SVG preserve it. The supplied artifacts still cannot distinguish framing from rasterization, so a correction would be speculative.</pre>
+
+**User answer:** [Complete user correction 20](history-000000.md#task-message-20)
+
+## Agent question 4
+
+<pre>Coordinator: please expose the exact pre-invocation checkpoint source for tests/agent_tools/render_diagnostics.py. I mistakenly treated a capped 300-line read as complete and omitted its remaining lines when writing. Restore that file’s original suffix before retaining my focused additions. Please also verify the restored README against the saved checkpoint. No owner decision is needed.</pre>
+
+**User answer:** [Complete user correction 21](history-000000.md#task-message-21)
+
+## Agent question 5
+
+<pre>Coordinator: please run the approved isolated GitHub candidate capture from the preserved checkpoint, including the restored diagnostic tests and existing SVG-evidence helper/tests. Expose hash-bound database-picker raw/framed SVG content, font/renderer diagnostics and PNG through source_files. The reviewed plan requires this evidence before selecting a heading correction; no owner decision is needed.</pre>
+
+**User answer:** [Complete user correction 22](history-000000.md#task-message-22)
+
+## Assistant evidence: plans
+
+<pre>[
+  {
+    &quot;approval_index&quot;: 0,
+    &quot;id&quot;: &quot;cf25c1a4d6a8bb36186ff70e6f5ad9dd930414b0e4e2a7426f5a5236986ba29a&quot;,
+    &quot;text&quot;: &quot;# SQL Explorer selection, multicursor clipboard, and thin carets\n\n## Summary\n\nAdd continuous selection with Ctrl+Shift+Up/Down, reproduce VS Code’s multicursor paste distribution, and render every editor caret as a thin vertical bar. Keep your explicit override: empty selections copy empty fragments.\n\n## Implementation\n\n- Bind Ctrl+Shift+Up/Down to extend each existing selection by one logical line without adding cursors. Preserve its anchor and preferred column, clamp on short lines, and restore that column on longer lines. Reversing direction shrinks the selection and can cross its anchor. Keep Shift+Up/Down as the existing add-cursor shortcuts.\n- Store multicursor clipboard metadata alongside the plain clipboard text: one fragment per selection in document order, including empty fragments and embedded newlines. Export joined plain text through the existing system clipboard and OSC 52 transports.\n- Follow [VS Code’s paste distribution](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/cursor/cursorTypeEditOperations.ts): distribute stored fragments when their count matches the destination cursor count; otherwise distribute clipboard lines when their count matches, ignoring one trailing line ending. If neither matches, insert the whole clipboard at every cursor. A single destination receives the joined text.\n- Apply fragments by destination document order, rather than attaching them permanently to cursor identities. Invalidate stored metadata on another Explorer copy or when received clipboard text differs.\n- Route Ctrl+C/Ctrl+V, `cp`/`pst`, cut, and terminal paste through shared clipboard handling. Leave query execution’s selected-text collection separate. Copying with all selections empty clears the clipboard; pasting an empty clipboard does nothing.\n- Extend the existing batch-edit mechanism to accept distinct insertions while preserving cursor positions and one-step undo/redo.\n- Replace block caret rendering with a non-bold vertical bar for active and secondary cursors, including unfocused, empty-line, and end-of-line carets. The bar temporarily covers its terminal cell without changing document text.\n- Update Explorer’s editing documentation and add the required changelog fragment. No public package API changes.\n\n## Validation\n\n- Test repeated vertical selection, direction reversal, short/empty lines, document boundaries, existing multicursors, and unchanged add-cursor shortcuts.\n- Test distinct and multiline fragments, mixed/all-empty selections, changed cursor counts, recreated cursors, external line spreading, full-text fallback, clipboard replacement, and single-cursor paste.\n- Verify keyboard, command, cut, terminal-paste, clipboard-fallback, and undo/redo paths.\n- Verify bar carets with syntax highlighting, selections, scrolling, and focus changes.\n- Run focused and mandatory precommit checks. Complete the full SQL Explorer headless visual review, inspecting every scene before commit.\n\n## Delivery and defaults\n\nAfter leaving Plan mode, create the session-owned feature branch through the managed workflow and revalidate against incoming changes. Implement, validate, and publish a PR to `dev`.\n\nVS Code parity applies to the requested selection and clipboard behavior; retain existing Explorer shortcuts. Your empty-selection rule takes precedence over VS Code’s default line-copy behavior.\n&quot;
+  },
+  {
+    &quot;approval_index&quot;: null,
+    &quot;id&quot;: &quot;e05d2df630679019a7f48df1b928485d1f147931d85020c4ce3b89a2827c1aee&quot;,
+    &quot;text&quot;: &quot;# Preserve the merged feature and diagnose picker rasterization\n\n## Summary\n\nRevalidate the saved correction against pinned dev `d319e72a09cb376fcb3fbe81bbefadadf80f1c90`, resolve all six conflict paths through the approved coder, and implement the already-resolved four-way picker comparison.\n\nThe verified PNG obscures the heading’s `c`; complete raw and framed SVGs retain it. The next deliverable is diagnostic evidence, followed by independent assessment and a concrete repair plan. No production picker or renderer correction is justified yet.\n\n## Merge reconciliation and feature preservation\n\n- In `.github/agent/orchestrator_policy.py` and its repository regression, retain dev’s chronological eligibility corrections, fresh correction lists, signed-context validation and escaped Unicode expectations.\n- In `.github/agent/task_context.py` and `tests/repository/reader_context.py`, retain dev’s exact reference-example exception and every genuine missing-evidence, approval-binding and signature regression. Preserve canonical task bytes and chronology.\n- In `docs/GITHUB_AGENT_OPERATIONS.md`, retain dev’s refined eligibility, cadence, companion-dependency and reference-validation descriptions instead of the older conflicting descriptions.\n- In `docs/CHANGELOG.md`, preserve both sides’ distinct Unreleased entries and all release history; remove conflict markers and duplicate identical entries. Keep the task fragment as one concise `- ` bullet, without changing package versions.\n- Preserve the recovered diagnostic tests and README content. Complete paginated comparison confirms every original line remains in order; no restoration or wholesale reset is needed.\n\nRetain these established SQL Explorer contracts across the editor, clipboard, app and command paths:\n\n- Ctrl+Shift+Up/Down extends anchored selections by logical line, preserving independent preferred columns, clamping and direction reversal without creating cursors.\n- Support independent cursors, including multiple positions on one row, selection merging, coordinated editing and one-step undo/redo. Shift+Up/Down toggles only the projected exact position.\n- Ctrl+C, `cp` and Ctrl+X record document-order fragments, including empty fragments. Entirely empty multicursor selections clear the clipboard; cut deletes nothing. One unselected cursor retains whole-buffer copy.\n- Paste uses matching stored fragments, then matching clipboard lines after ignoring one trailing line ending, then whole-text repetition. Keyboard, commands and terminal paste share this behavior; changed clipboard text invalidates metadata.\n- Keep readable, non-bold carets: vertical bars in available cells and thin underlines over occupied cells. Preserve SQL text, syntax colors, selection and find highlighting.\n- Retain the resolved minimum UI/fixture repairs, strict readiness checks and completion recovery. Do not expand scope from incidental partial code.\n\n## Diagnostic implementation and interface\n\nExtend `agent_tools/sql_explorer_svg_evidence.py`, integrate through `agent_tools/sql_explorer_visual_capture.py`, and document the additive evidence field in the harness README.\n\n- Capture the picker once after existing readiness and geometry checks. Reuse that frame’s exact raw SVG, framed SVG and ordinary PNG.\n- Add a versioned `rasterization_comparisons` object to `database-picker.json`, outside the parsed-diagnostic reducer. Keep existing evidence fields compatible.\n- Record four variants: raw/original fonts, framed/original fonts, raw/DejaVu Sans Mono and framed/DejaVu Sans Mono.\n- For font variants, replace only the generated terminal matrix CSS `font-family` declaration. Preserve title fonts, text, coordinates, clips, transforms and framing. Reject missing or ambiguous declarations explicitly.\n- Verify DejaVu Sans Mono availability in the GitHub job. Record font observations without claiming they establish the renderer-selected font.\n- Render exact variant inputs directly with the existing resvg API. Raw variants use their native SVG sizing; framed variants retain existing framing. Record actual output dimensions and renderer arguments.\n- Store exact UTF-8 SVG strings and lossless base64 PNGs, byte lengths, SHA256 hashes, variant identities and renderer versions. Reuse the ordinary PNG for the framed/original variant.\n- Bound comparison SVG content to 4 MiB combined and decoded comparison PNG content to 4 MiB combined. Record explicit failures or omissions and `complete=false`; never truncate retained content or infer a cause from incomplete evidence.\n- Keep ordinary production rendering and scene PNGs unchanged. No protected capture-workflow extension is required.\n\nThis adds an agent-only JSON interface; public package APIs and clipboard transports remain compatible.\n\n## Focused regression coverage and GitHub validation\n\nAll execution occurs on GitHub.\n\n- Extend SVG-evidence tests for four-variant routing, exact renderer inputs, terminal-only font replacement, unchanged heading/layout, Unicode round trips, hashes, base64 reconstruction, unavailable fonts, malformed selectors, render failures and byte-limit boundaries.\n- Extend capture tests to prove one screenshot export, unchanged ordinary PNG, atomic geometry publication, picker-only comparisons and preservation of incomplete diagnostics.\n- Run focused repository conflict regressions and existing multicursor, clipboard, caret, completion, selector and scene-readiness tests on Textual 0.73.x and 0.89.1.\n- Retain strict disabled-button color comparisons and their negative controls. Assigned CI logs identify two failures at published head `e477d174…`; current tests already contain the independent-reference correction. Require fresh results before further changes.\n- Require complete configured static, coverage, artifact and compatibility checks, with no weakened baselines or assertions.\n\nThe coordinator publishes an isolated temporary candidate and obtains hash-bound comparison evidence through the existing geometry-JSON artifact route. Independent review inspects all four comparisons before selecting any repair. The subsequent repair requires its own reviewed plan, focused regression and fresh full capture.\n\n## Delivery and completion\n\n- Obtain independent plan review before the approved coder resolves conflicts or changes source.\n- Require all 46 scenes at 208×47 cells and full 1280×800 PNGs, passing geometry and individual independent visual verdicts before correction publication. Diagnostic capture success is not visual approval.\n- Bind every review and validation receipt to the actual candidate, complete patch, task digest and current dev base. Any source change invalidates prior receipts.\n- Preserve complete authenticated history. Lossless publication transport remains coordinator-owned until verified; never truncate history to publish.\n- Verify the RPi recommendation-policy and waiting-agent restart companion work through source, exact-commit CI and activation evidence. Resume routine choices through the independent alignment resolver while retaining genuine evidence, credential, veto and protected-approval holds.\n- Monitor PR #9, that companion work and every task-related correction/repair PR through successful dev merges and required validation. Existing historical receipts do not establish current completion.\n- Require `fast-checks`, `agent-review` and applicable exact-head protected approval. Advisory integration retains its existing non-merge-gating policy and coordinator monitoring.\n\nNo new owner preference is needed for this diagnostic step: its strategy, transport and four-way recipe are already resolved. This plan grants no code, visual or protected-policy approval.\n&quot;
+  }
+]</pre>
+
+## Assistant evidence: decisions
+
+<pre>[
+  {
+    &quot;choice&quot;: &quot;ui_repair_scope: Minimum gate repairs (Recommended)\nReason: The later authenticated standing instruction to always use recommended implementation/correction options supports the previously presented minimum gate repairs, superseding the earlier deferral for these listed blockers. Preserve the multicursor requirements and require every full visual scene to pass through GitHub validation.\ncaret_fallback: Preserve text (Recommended)\nReason: The later standing recommendation policy supports this explicitly presented rendering compromise: vertical bars where supported, thin underlines in occupied cells, and readable SQL with visible primary and secondary carets. It supersedes the earlier unconditional vertical-bar preference for this limitation.\nmonitored_pr_scope: Task-related PRs (Recommended)\nReason: The standing recommendation policy supports the task-related interpretation of ALL PRs. This choice retains the root monitoring objective across SQL Explorer #9, the requested RPi policy/restart companion work, and all related correction or repair PRs until successful dev merge and validation; a leaf repair cannot replace that objective. Protected exact-head approvals remain with the real owner.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. Which UI repair scope should the plan retain? Your earlier answer deferred unrelated UI defects; the later questions about broader visual-gate repairs received no direct answer, and partial code cannot establish scope.\nMinimum gate repairs (Recommended): Include only the listed scene consistency/Cancel focus, create-table legibility/type-menu placement, help wrapping, and remaining find-highlight blockers; require the full visual gate.\nFeature and fixtures: Allow multicursor corrections and truthful scene fixtures; defer unrelated production UI repairs even if they block the full visual gate.\nFeature only: Limit corrections to multicursor behavior and visuals; leave unrelated fixtures and UI defects deferred.&quot;,
+      &quot;2. When a thin vertical caret cannot share a terminal cell with readable SQL, which rendering compromise should the plan use? The earlier “Vertical bar” answer did not resolve this later limitation.\nPreserve text (Recommended): Use a supported vertical bar where possible and a thin underline in occupied cells; show primary and secondary carets without hiding SQL.\nAlways vertical bars: Add presentation-only cells for vertical bars and adjust mouse, scrolling, ruler, selection, and completion mapping consistently.\nBar may cover text: Allow a cell-replacing vertical bar to hide the character beneath it; the legibility gate may remain blocked.&quot;,
+      &quot;3. Which PRs must reach successful dev merge before the coordinator stops? Supplied evidence identifies SQL Explorer PR #9 and companion work, but does not establish that every open PR belongs to this task.\nTask-related PRs (Recommended): Track #9, the RPi recommendation-policy/restart companion work, and their task-related correction or repair PRs through review, validation, and successful dev merge.\nAll currently open PRs: Record a fresh repository inventory and monitor every currently open PR, preserving each PR’s separate scope and approval requirements.\nExplicit PR list: Use the repository/PR list you supply in the free-text answer, plus their task-related correction and repair PRs.&quot;
+    ]
+  },
+  {
+    &quot;choice&quot;: &quot;database_heading_scope: Repair heading (Recommended)\nReason: The owner&#x27;s later standing instruction to use recommended implementation/correction options, together with &#x27;fix any issues on the way,&#x27; supports this narrow heading repair beyond the earlier enumerated boundary. Diagnose the reported obstruction before treating its cause as confirmed; retain the focused regression and complete GitHub visual gate. This leaf repair preserves all multicursor requirements and the root objective to monitor task-related PRs through successful dev merge and validation. It grants no protected exact-head approval.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. Should the plan include a narrow correction for the newly reported database-picker heading, where the initial “c” in “.connections” is obscured, beyond the previously enumerated minimum UI repairs?\nRepair heading (Recommended): Diagnose the widget, compositor and capture evidence; fix only the confirmed text-obscuring cause, add a focused regression, and require the full visual gate.\nKeep prior repair boundary: Preserve the earlier enumerated scope and report the heading as an unresolved visual blocker; publication remains blocked while the scene fails.&quot;
+    ]
+  },
+  {
+    &quot;choice&quot;: &quot;picker_export_repair_strategy: Isolate export defect (Recommended)\nReason: The owner&#x27;s standing recommendation policy and instruction to fix issues support this evidence-first correction. The hash-verified PNG obscures the c, while widget/compositor rows and parsed SVG retain the complete heading. Obtaining raw/framed SVG bytes and renderer/font diagnostics addresses the remaining coordinator artifact gap without inventing a production picker defect or claiming those bytes already exist. Correct only the demonstrated cause, retain fast regression coverage and full independent visual review on GitHub, and preserve all multicursor, RPi policy/restart, provenance and task-related PR monitoring requirements through successful dev merges and validation. Lossless publication transport remains coordinator-owned; history must remain complete. Protected exact-head approval remains exclusively with the real owner.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. The verified PNG obscures the `c`, but widget rows, compositor rows and the parsed SVG preserve the complete heading with visible styling and a containing clip. Which correction strategy should the revised plan specify?\nIsolate export defect (Recommended): Keep picker presentation intact. Have the coordinator obtain raw/framed SVG bytes and renderer/font diagnostics from a GitHub reproduction, then correct the demonstrated export/rasterization cause and add a fast regression before full visual review.\nPresentation workaround: Investigate a narrow picker text-rendering workaround, requiring evidence that it preserves the complete heading and terminal layout; this may change production presentation despite intact widget/compositor output.&quot;
+    ]
+  },
+  {
+    &quot;choice&quot;: &quot;picker_rasterization_diagnosis: Controlled captures (Recommended)\nReason: The standing recommendation policy and authenticated coordinator instructions support bounded GitHub-only diagnostic comparisons before selecting a repair. Comparing unchanged and framed SVG inputs and an explicitly available monospace font can investigate the unresolved rendering cause without assuming the actual renderer-selected font. Preserve exact inputs, settings, hashes, PNGs, checkpoint and production UI; retain independent review, full-scene validation, complete feature requirements, RPi policy/restart work and monitoring of all task-related PRs through successful dev merges and validation. This diagnostic choice grants no plan, code, visual or protected exact-head approval.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. The complete raw and framed SVGs retain the heading, but the PNG remains rejected and the actual renderer font is unknown. Should the next independently reviewed step add bounded GitHub-only comparison captures to distinguish framing/scaling from font shaping before selecting a repair?\nControlled captures (Recommended): Preserve the checkpoint and production UI; compare the same SVG before/after framing and with an explicitly available monospace font, retaining exact inputs, settings, hashes and PNGs for review.&quot;
+    ]
+  },
+  {
+    &quot;choice&quot;: &quot;comparison_artifact_transport: Geometry JSON (Recommended)\nReason: The authenticated coordinator explicitly supports bounded, lossless diagnostic content in the already-exported geometry JSON through the existing GitHub candidate-capture route. Extending that route to the selected controlled comparisons preserves exact SVG/PNG inputs, settings and hashes for independent review without changing the protected workflow. Size limits must mark omitted or incomplete evidence explicitly; incomplete comparisons cannot establish a cause or satisfy review. This choice preserves production behavior, the complete checkpoint and history, all multicursor requirements, RPi policy/restart work, full-scene visual and CI gates, and monitoring of all task-related PRs through successful dev merges and validation. It supplies no missing factual evidence and grants no plan, code, visual or protected exact-head approval.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. The trusted workflow uploads scene PNGs and geometry JSON, but no extra comparison files. How should the already-selected controlled picker comparisons reach independent review?\nGeometry JSON (Recommended): Retain bounded, lossless comparison SVGs and base64 PNGs with settings and hashes in database-picker.json; the coordinator extracts hash-bound images using the existing artifact route.\nSeparate artifact files: Extend the protected capture workflow to upload comparison SVG/PNG sidecars, requiring fresh independent review and real owner approval for that exact protected head.&quot;
+    ]
+  },
+  {
+    &quot;choice&quot;: &quot;picker_comparison_recipe: Four-way comparison (Recommended)\nReason: The authenticated standing recommendation policy and previously selected controlled comparisons support this bounded diagnostic recipe. Supplied font evidence lists DejaVu Sans Mono as available; it does not establish the original renderer-selected font. Run comparisons only in GitHub, changing only the terminal font declaration in diagnostic variants while preserving production rendering and the checkpoint. Retain exact inputs, settings, hashes and lossless PNGs through bounded geometry JSON; failures or omissions remain incomplete evidence. This intermediate diagnosis preserves all multicursor requirements, RPi policy/restart work, full independent visual and CI gates, complete provenance, and monitoring of every task-related PR through successful dev merge and validation. It supplies no repair verdict or protected exact-head approval.&quot;,
+    &quot;questions&quot;: [
+      &quot;1. For the already-selected controlled picker captures and geometry-JSON transport, which concrete comparison recipe should the next plan specify?\nFour-way comparison (Recommended): Render raw and framed SVG with original font declarations, then both with only the terminal font declaration changed to verified-available DejaVu Sans Mono. Preserve text, positions, clips and production rendering; retain exact inputs, settings, hashes and lossless PNGs in bounded geometry JSON, marking failures or omissions incomplete.\nStage comparisons: First capture raw versus framed SVG with original fonts; independently review those results before planning a second capture with an explicitly available monospace font. This needs another diagnostic cycle if framing alone does not explain the defect.&quot;
+    ]
+  }
+]</pre>
+
