@@ -1,0 +1,472 @@
+[Task archive index](README.md) | [Next part](history-000001.md)
+
+<a id="task-message-0"></a>
+## Starting user prompt
+
+<pre>spawn as much separate reviewers as you can and try to find any issues in sql module. Each reviewer checks its own area. I&#x27;m especcially concerned about ch. they may run short queries to test hypotheses on real ch using /Users/karapsin_de/Nextcloud/projects/.connections + ch alias + $analytics-toolkit sql.read. Do not edit anything in this repo for now. Just list any potential issues.</pre>
+
+<a id="task-message-1"></a>
+## User correction 1
+
+<pre>once reviewers are done, spawn new reviewers for the same areas + explain them issues already discovered. keep repeating that until no new issues discovered</pre>
+
+<a id="task-message-2"></a>
+## User correction 2
+
+<pre>cluster routing might be problematic, as well as healthy shard setting</pre>
+
+<a id="task-message-3"></a>
+## User correction 3
+
+<pre>use super quick artificial dummy examples to verify that everything is nice</pre>
+
+<a id="task-message-4"></a>
+## User correction 4
+
+<pre>also do not forget sql explorer, especially its metadata retrieval, especiially in ch</pre>
+
+<a id="task-message-5"></a>
+## User correction 5
+
+<pre>in the end print all found issues, then we&#x27;ll plan how to deal with them</pre>
+
+<a id="task-message-6"></a>
+## User correction 6
+
+<pre>provide detailed plan to fix all issues so that behaviour is expected (if expected behaviour is unclear - ask me), plan will be passed to a fresh agent, so keep it detailed</pre>
+
+<a id="task-message-7"></a>
+## User correction 7
+
+<pre>{&quot;answers&quot;:{&quot;explorer_unqualified_scope&quot;:{&quot;answers&quot;:[&quot;None of the above&quot;,&quot;user_note: explain in simple words&quot;]},&quot;upsert_missing_columns&quot;:{&quot;answers&quot;:[&quot;Require complete rows&quot;]},&quot;upsert_partition_keys&quot;:{&quot;answers&quot;:[&quot;Partition-scoped keys&quot;]}}}</pre>
+
+<a id="task-message-8"></a>
+## User correction 8
+
+<pre>{&quot;answers&quot;:{&quot;explorer_simple_scope&quot;:{&quot;answers&quot;:[&quot;Only current database (Recommended)&quot;]},&quot;lossless_policy&quot;:{&quot;answers&quot;:[&quot;Use text when necessary&quot;,&quot;user_note: but before casting to text, check if it is really the issue, I mean data type might be big int, but table itself contains 0 and 1 only. Also before text, try other int options&quot;]},&quot;ambiguous_write_retry&quot;:{&quot;answers&quot;:[&quot;Keep automatic replay&quot;]}}}</pre>
+
+<a id="task-message-9"></a>
+## User correction 9
+
+<pre>{&quot;answers&quot;:{&quot;routed_table_stats&quot;:{&quot;answers&quot;:[&quot;Logical cluster totals (Recommended)&quot;]},&quot;fix_delivery&quot;:{&quot;answers&quot;:[&quot;One complete PR (Recommended)&quot;]},&quot;ch_retry_exception&quot;:{&quot;answers&quot;:[&quot;None of the above&quot;,&quot;user_note: provide examples&quot;]}}}</pre>
+
+<a id="task-message-10"></a>
+## User correction 10
+
+<pre>{&quot;answers&quot;:{&quot;ch_retry_example&quot;:{&quot;answers&quot;:[&quot;Repeat the data write (Recommended)&quot;,&quot;user_note: in&quot;]}}}</pre>
+
+<a id="task-message-11"></a>
+## User correction 11
+
+<pre>A previous agent produced the plan below to accomplish the user&#x27;s task. Implement the plan in a fresh context. Treat the plan as the source of user intent, re-read files as needed, and carry the work through implementation and verification.
+
+# SQL and SQL Explorer correctness repair — fresh-agent handoff
+
+## 1. Objective, decisions, and compatibility
+
+Deliver one complete feature PR to dev covering the 66 audit findings. Treat the audit as a reproduction inventory, not proof that every reported behavior should be reversed. Reproduce each case against refreshed dev, implement the behavior below, and close every finding with a regression test and a disposition.
+
+The user has selected these contracts:
+
+- **Upserts require complete rows.** Existing-target upserts require all writable columns, including writable columns with defaults. Generated/noninsertable columns are excluded. Reordered columns are accepted; missing or extra columns fail before target mutation.
+- **Upsert keys are partition-scoped.** When upsert_partition_column is provided, the effective key is the ordered, deduplicated combination of that column and key_columns. Without a partition column, retain key_columns semantics. The same ID in January and February represents two records.
+- **Explorer searches the current database by default.** An explicit database prefix searches that database. Metadata names retain their exact identity and are quoted correctly on insertion.
+- **Routed table statistics describe logical cluster totals.** Count replicated data once per shard and independent replica data once per host. Metadata counts remain estimates. Preserve the existing flag controlling whether Distributed-facade statistics are resolved from underlying shards.
+- **Use native types before text.** A declared wide type is not sufficient reason to stringify a column. Inspect complete actual selected data when needed, try other exact integer and decimal options, then use text only if no supported native representation preserves the values.
+- **Keep automatic data-write replay, including ClickHouse.** Transient failures may repeat writes whose acknowledgement was lost; duplicate effects are accepted. Deterministic SQL/configuration/topology failures remain non-retryable. Toolkit-managed ambiguous structural cutovers remain protected and retain recovery artifacts.
+- **Deliver one complete PR.** Parallel workstreams may edit disjoint helpers, but integrate and validate the whole result before publication.
+
+Important audit dispositions:
+- Finding 28 becomes an explicit partition-scoped-key contract, not a feature for moving globally unique keys between partitions.
+- Finding 65 is accepted at-least-once retry behavior. Document and test it rather than claiming duplicates have been eliminated.
+- Finding 66 becomes consistent, deliberate ClickHouse data-write replay. Update the contradictory CH-specific stop-after-submission documentation and implementation.
+- Finding 64 remains a bug: connection-close failure must never cause successful work to replay.
+
+Preserve public names, argument defaults, aliases, bare return shapes, exported internal compatibility imports, and explicit target-schema semantics. Precise timestamp results may use pandas.Timestamp where Python datetime cannot retain precision. Do not introduce automatic schema changes to an existing destination.
+
+## 2. Internal foundations and implementation sequence
+
+Implement foundations first, then integrate the workstreams below. Keep backend SQL/type behavior in adapters or backend-local helpers. Several current modules are already near the 900-line limit; extract cohesive helpers instead of expanding those facades.
+
+### A. Type resolution and exact transport values
+
+Introduce shared internal representations for parsed native types, exact temporal values, complete value profiles, resolved column conversions, and frozen input identity. Keep result columns positional so duplicate labels remain supported where currently allowed.
+
+**Resolution precedence**
+1. Explicit table_schema.
+2. Existing target schema.
+3. Inferred destination schema.
+
+Explicit and existing schemas remain authoritative: never widen them or replace numeric columns with text automatically. Preserve documented intentional explicit conversions, such as an explicitly requested lower timestamp precision. Reject incompatible/out-of-range values before live target mutation.
+
+For inference:
+- Preserve the source&#x27;s declared type when its domain fits a supported destination type exactly.
+- Otherwise inspect every selected value, not a sample. Merge profiles over every keyed slice before choosing one destination schema.
+- Try exact native integers, exact decimal/numeric types, supported timestamps and nested types before text. Never use binary float merely to accommodate exact integers or Decimal.
+- Preserve source signedness/family where the backend supports it. For observed narrow values from an unsupported wide integer domain, prefer the backend&#x27;s ordinary integer type, such as BIGINT, before decimal or text. Do not infer Boolean from 0/1.
+- Profiles include nullability, integer bounds, decimal integral/fractional digits, timestamp precision alignment/range/awareness, and recursive structural compatibility.
+- Correct decimal inference using coefficient and exponent. Required examples: 0.0001 needs scale 4; 1E+5 needs six integral digits; mixed 1.2 and 0.0034 need sufficient integral digits plus scale 4. Never clamp required precision or scale.
+- Empty/all-null columns retain suitable family defaults and existing empty-input contracts.
+
+**Freeze only when required**
+- Preserve the current streaming fast path when metadata proves the selected destination representation covers the full source domain.
+- For adaptive inference or potentially incompatible authoritative schemas, resolve/validate against frozen input before live destination writes.
+- Reuse an owned native-typed source snapshot when configured. Otherwise stream the selected input once into a bounded-memory, run-owned local replay spool while profiling. Replay those same rows; do not rerun a mutable query to load them.
+- Use a versioned, length-framed tagged encoding, not pickle or universally assumed Arrow support. Preserve arbitrary integers, Decimal, raw temporal ticks, UUID, bytes, arrays, tuples, maps and NULL.
+- For keyed sources, merge all profiles before destination schema creation. This adaptive path intentionally introduces an all-key barrier; normal declared-fit transfers retain existing lazy streaming and concurrency behavior.
+- Retain certified spool/snapshot checkpoints through target validation and retries. Release source stages only after their replacement checkpoint is certified and recoverable.
+- Existing healthy-shard partial-source rules remain: configured materialized source staging and row-count validation are still required; a local spool is not a waiver.
+- Freeze alias/configuration identity, namespace defaults and selected availability scope. Invalidate an incomplete generation on source/scope failure; never certify a partial scan as the full selected input.
+
+**Text fallback**
+- Use destination TEXT/String/VARCHAR only after native alternatives fail.
+- SQL NULL stays NULL. Integer text is exact base 10; Decimal is exact fixed-point text; dates use ISO format; timestamps preserve their full fractional scale and awareness, with aware instants normalized to UTC; UUID uses canonical lowercase form.
+- Preserve bytes natively whenever supported, including GP bytea to CH String. Only otherwise use a documented base64-prefixed text representation.
+- Structured fallback uses compact, versioned typed JSON containing source backend/type and recursively encoded values. Maps use ordered key/value pairs rather than JSON object coercion.
+- Preserve raw ordered map pairs in internal CH decoding/encoding where needed; normal driver dict conversion cannot recover duplicate keys. Keep ordinary public unique-key map results compatible.
+- Mixed naive/aware datetimes have no invented timezone: inferred columns use typed text if no explicit timezone policy resolves them; authoritative timestamp schemas reject ambiguity.
+- Record source/destination types, reason, encoding version and certified input count in optional operation metadata. Logs must not include actual private values.
+
+**Dry runs**
+- dry_run and return_sql must not materialize snapshots or perform adaptive full-data scans/spooling.
+- Dataframe inputs can resolve in memory. Query inputs with unresolved adaptive types return a SqlPlan whose options clearly mark pending profiling and native candidates; do not present guessed final DDL as certified.
+- A SQL-only generation API that cannot represent an unresolved adaptive step raises an actionable validation error requiring explicit table_schema or execution-time resolution. Preserve its existing return type.
+
+### B. ClickHouse reads, insertion, inference, and Parquet
+
+Covers findings 16–26, 46–48, 53–55, and related exact-value paths.
+
+- Remove unconditional Decimal-to-float normalization. Convert Decimal to float only for an explicitly floating destination.
+- Replace dataframe map/applymap intermediate inference with per-column construction from original values, using object dtype immediately where required. Handle nulls without ambiguous array truth tests.
+- Infer unsigned dataframe dtypes correctly. Detect datetime before date; preserve aware instants and mixed-offset datetimes.
+- Replace substring type mapping with structural parsing. CH-to-CH preserves Int/UInt widths through 256, Date32, DateTime64 scale/timezone, Decimal, UUID and supported nested types with legal nullability.
+- Cross-backend integer candidates: UInt8 fits signed SMALLINT, UInt16 INTEGER, UInt32 BIGINT, UInt64 decimal/numeric when BIGINT is insufficient. GP may use sufficiently wide NUMERIC for 128/256-bit values. Trino uses BIGINT or DECIMAL up to precision 38, then observed-value adaptation/text.
+- Trino inference emits explicit timestamp precision, normally precision 6 for the supported Iceberg contract. Use greater precision only when the configured connector/table format supports it; do not automatically migrate Iceberg format versions. Prove lower precision is exact from actual tick alignment before narrowing inferred data.
+- Native streaming uses the real header-first driver contract: request execute_iter with column types and chunk_size=1, consume the header once, and batch subsequent rows locally. Eliminate row-shape metadata guessing and DataFrame.from_records.
+- HTTP eager/streaming reads use non-NumPy column blocks and raw DateTime64 ticks. Support scales 0–9 and all public output forms without first converting through lossy Python datetime.
+- Native exact temporal decoding uses a connection-local stream/column factory, including reconnects and compression, delegating ordinary types and retaining exact DateTime64 ticks. Recurse through nullable/nested containers. No global monkeypatches or silent lossy fallback on incompatible driver interfaces.
+- Use the shared positional dataframe constructor for both transports, preserving duplicate labels, empty results, nested values and nullable large integers.
+- Thread logical column types into every Parquet writer: keyed/unkeyed transfer and dataframe load. Apply the same schema-driven conversions, including UUID to string and aware timestamps to ISO text when the Hive stage declares VARCHAR.
+- Derive physical Arrow types from the resolved stage schema for every column/file, not only all-null columns. Fix fallback Decimal inference with the shared formula.
+
+### C. ClickHouse routing, outage coverage, and statistics
+
+Covers findings 1, 4–12.
+
+- Represent effective coverage intent explicitly: logical shards for ordinary replicated reads/writes, physical hosts for independent data or an unrouted explicit all-replica request, and full execution scope for destructive operations.
+- Compute host coverage and logical cov</pre>
+
+## User correction 11 (continued)
+
+<pre>erage separately. data_complete and warnings follow the effective intent; observed partialness cannot disappear after later provisioning.
+- Preserve documented automatic-routing normalization of exact cluster/clusterAllReplicas wrappers. Without automatic routing, preserve the user&#x27;s explicit all-replica semantics.
+- Apply the healthy-mode rand requirement only when logical write coverage is actually degraded. A surviving replica in every shard permits the normal deterministic key.
+- Canonicalize supported two-argument static cluster functions through structured identifier parsing. Retain supported extra arguments; reject dynamic/unverifiable identifiers.
+- Rewrite table sources using SQL scope/binding. Preserve explicit aliases; create stable aliases for implicit sources and remap bound table.column, database.table.column and qualified-star references. Handle CTE shadowing, joins and correlated/nested scopes.
+- Pass database and table as separate structured values through replica queries; never concatenate and split on dots.
+- Share a CH dialect/parser that preserves actual rand() versus randCanonical() across routing, engine expressions and column defaults.
+- Compare canonical DDL structurally, excluding only permitted UUID/replica-name differences. Preserve literal bytes and whitespace inside strings.
+- Deduplicate metadata by exact database/table identity. Gather host/shard/engine identity for logical statistics; choose a deterministic usable representative for each replicated shard and sum independent hosts separately.
+- Internal statistics collection must carry an explicit aggregation intent that ordinary system-table routing cannot rewrite into duplicate replica counts. Do not globally change explicit-wrapper routing semantics.
+- Propagate incomplete statistics coverage instead of presenting partial totals as complete.
+- Apply count-derived limits using the existing AST/row-limit machinery, preserving UNION branch/full-query semantics, CTEs, ordering, offsets and comments.
+- Recovery retains native endpoint identity as host plus port. Native connections use discovered TCP ports; HTTP retains its configured HTTP port. If one HTTP endpoint cannot distinguish multiple instances on the same hostname, report incomplete cleanup and retained artifacts rather than claiming success.
+
+### D. ClickHouse creation policy, ownership, and cutover recovery
+
+Covers findings 30–39.
+
+- Centralize a verified existing-layout snapshot and a separate desired layout from resolved ClickHouseCreationPolicy. Carry logical/physical identifiers, optional facade, engine relationship, DDL scopes and routing endpoint coverage.
+- Never infer ownership from the _shard suffix. Existing local tables touch only themselves; a verified managed pair may own its referenced companion.
+- Append/upsert use actual existing layout. Replacement/recreation builds the desired layout and removes/cuts over only verified old resources.
+- Pass policy/layout through dataframe/schema/query creation, CTAS fast paths, SQL generation, drop/recreate, upsert and guarded replacement. Remove placeholder-cluster/legacy fallback reconstruction after resolution.
+- Default query creation fails on an existing target before inserting. if_not_exists skips population too. Pass ch_replace_table through the query path and match documented schema-path behavior. Planning and execution use the same resolved mode.
+- Validate migration endpoint coverage before DDL. Physical placement, facade placement and Distributed routing remain independent settings.
+- Reject a destination whose copy routing reaches original source storage or cannot reach verified replacement storage. Do not silently copy one cluster setting into another. Compare resolved endpoints, including macros/aliases, rather than cluster-name strings.
+- Local-to-pair conversion rejects pre-existing deterministic destination companions on any relevant host. Plain CREATE and creation acknowledgements establish ownership; IF NOT EXISTS does not.
+- Build Distributed facades from appropriate column/default/common properties, excluding MergeTree-specific partition/order/primary/sampling keys, TTLs, indexes, projections and storage settings. Preserve permitted existing facade properties.
+- Reuse the configured Distributed engine-template renderer for replacement, including trailing arguments.
+- Journal each rename/exchange submission and acknowledgement with its inverse. Roll back only acknowledged completed steps in reverse order.
+- If submission or rollback is uncertain, stop structural replay, retain backups/replacements, and report names/scopes and the original failure. Never clean recovery data as disposable stages.
+
+### E. Upserts, append columns, stage ownership, and transfer SQL
+
+Covers findings 27–29, 40–45.
+
+- Separate incoming columns, complete writable target columns, and ordered target types/default/generated metadata.
+- Derive effective upsert keys once and use them everywhere: dataframe/stage uniqueness, preservation anti-joins, GP deletes, multi-stage finalization and dry-run descriptions. Do not change ordinary append key validation.
+- CH/Trino rebuild only incoming partitions. Preserve every writable column of untouched rows, using null-safe comparison of partition plus keys.
+- GP retains transactional key delete/insert; supplying a partition column augments its key, without requiring partition replacement.
+- Reject incomplete existing-target upserts before stage/final target mutation. Reorder complete inputs to canonical target order.
+- Key-validated append names incoming columns explicitly in both INSERT and SELECT. Reordered/subset input must match ordinary append behavior; eliminate positional SELECT-star finalization.
+- Track resource candidates separately from acknowledged ownership. Register visibility before CREATE, mark each physical/facade resource owned immediately after successful creation, before readiness waits.
+- Confirmed collisions are not owned and must never be dropped. Ambiguous creations are retained/reported unless operation identity independently establishes ownership.
+- Cover load overlap stages, final upsert stages, keyed/worker transfer stages and partial CH pairs. Cleanup is idempotent and preserves the primary exception.
+- Enclose source acquisition and target initialization in one protected resource scope; target-open/state failures close already-open sources exactly once.
+- Render keyed predicates through source-backend literal helpers. CH escaping preserves backslashes/apostrophes; datetime keys use precise DateTime64 expressions with explicit awareness semantics, not ANSI TIMESTAMP.
+- Replace raw sequential placeholder substitution with a parser/tokenizer-based pass over original executable spans. Ignore strings, identifiers, comments and dollar-quoted bodies. Repeated executable placeholders remain allowed; comment-only placeholders fail validation. Inserted values are never rescanned.
+- Unify stage suffix generation/recognition. Recognize current four-hex collision suffixes and supported legacy formats while retaining destination identity and 63-byte safety checks.
+
+### F. Replay, cleanup, orchestration, counts, and cancellation
+
+Covers findings 61–66.
+
+- Retain ordinary whole-operation transient retries and fresh connections, including CH data writes/native INSERT FORMAT after possible submission. Preserve retry counts/delays and non-retryable deterministic/topology failures.
+- Do not advertise exactly-once delivery. Document partial-chunk/acknowledgement replay and retry_cnt=1 for callers who cannot accept it.
+- Record submission/acknowledgement/replay state for diagnostics without using live submission alone as a universal data-retry prohibition.
+- Preserve a prepared complete partition-rebuild payload across retries after mutation; never recompute preservation from an already partially replaced target. Structural rename/exchange uncertainty follows the protected cutover journal.
+- Close failures must neither convert success into retry nor mask the primary exception. Reuse the existing close-warning pattern. Do not blanket-suppress semantic finalization errors.
+- Share the existing thread-safe capacity-lease pattern from parallel execution with async_sql. Keep per-batch event-loop semaphores local, acquire shared permits in workers, and suspend/reacquire a parent&#x27;s held lease while it waits for nested work. Preserve caps and cancellation accounting.
+- Add an internal execution outcome with affected count int-or-unknown. Capture GP/Trino final cursor counts before close and CH command summaries where reliable.
+- Public execute retains its return shape. insert/execute_insert return backend count or historical integer 0 when unavailable; optional metadata keeps unknown distinguishable from genuine zero. Exclude setup counts.
+- Always apply query-label processing in execute_read, even with no explicit label, so every setup/final statement receives the active cancellation marker.
+
+### G. SQL Explorer metadata and connection/configuration fixes
+
+Covers findings 2–3, 13–15, 49–52, 56–60.
+
+- Replace CH SHOW DATABASES discovery with adapter-owned SELECT from system.databases. Keep generic command safety restrictions intact.
+- Introduce an internal listing result containing exact names, completeness and cluster status. Request SQL operation metadata and carry it through providers, journal wrappers, interactive completion and background discovery.
+- Deduplicate exact names only. Casefold is for search/sort, not identity; never strip name whitespace.
+- Separate raw names from SQL insertion. Quote metadata identifiers, including reserved columns, and replace the complete fragment including unfinished quotes. Preserve namespace dots and existing spacing behavior.
+- Resolve the current CH database per coordinator/configuration identity. Both live and persisted unqualified completion use only that database.
+- Partial listings never replace/prune authoritative snapshots or mark scans successful. Keep last complete names with an incomplete/stale notice; transient partial suggestions are allowed only when no complete snapshot exists.
+- Release incomplete scan leases through bounded retry/backoff, independent of the 24-hour successful-refresh interval. Recovery can refresh without another usage event. Clear the notice only on complete refresh.
+- Version metadata cache identity/format to rebuild potentially corrupted snapshots/scan state without deleting query history.
+- Preserve password strings exactly, including empty/whitespace strings after direct/secret/Airflow resolution. Keep ordinary name trimming. Trino empty-password auth uses presence, not truthiness.
+- CH verify accepts booleans or true/false strings only; reject arbitrary paths/typos and direct users to ca_certs. Preserve Trino&#x27;s supported CA-path semantics.
+- Generate immutable CA bundles from a hash of full bundle contents and write atomically through unique temporary files in the same directory.
+- validate_connections(connect=True) must execute and consume one backend-owned SELECT 1, with no retries and a validation-only five-second connect/read budget, respecting tighter configured limits. connect=False remains network-free. Keep its public signature and result ordering; close on all outcomes and sanitize errors.
+- Construct Trino typed placeholders directly rather than replacing question marks in completed SQL.
+- Escape percent characters in GP execute_values identifier fragments before adding the one real VALUES marker.
+- Render Trino metadata catalog/relation components with structured quoting. Build GP partition identifiers directly from metadata components; never concatenate and reparse.
+
+## 3. Public documentation, metadata, and dependencies
+
+- No new required public arguments or backend-name inputs.
+- Add optional metadata for type resolution/conversions and possible data-write replay, defaulting to unknown/empty. Include pending resolution in SqlPlan options; preserve existing</pre>
+
+## User correction 11 (continued)
+
+<pre> bare returns.
+- Document full-row/partition-scoped upserts, adaptive full-input inference, text encoding, current-database completion, logical statistics, actual connectivity probing and accepted retry duplication.
+- Clearly distinguish inferred exact conversions from explicit caller-requested conversions, and data-write replay from protected structural recovery.
+- Add native driver compression extras, including CityHash and the driver&#x27;s zstd package, to clickhouse-native and all extras with existing Python/version markers. Existing zstandard is not a substitute.
+- Update README Depends/Imports/Suggests when dependency declarations change. Keep package/README versions unchanged; create the required unique changelog fragment.
+- Update existing module/function guides and signatures; follow documentation navigation rules if any document is added.
+
+## 4. Regression and acceptance plan
+
+Create fast public-facade tests with fake clients and real adapter logic. Use actual binary/Arrow fixtures for codecs, not mocks that bypass the defective conversion. Keep a small audit closure table mapping IDs 1–66 to tests and fixed/accepted/superseded disposition.
+
+Required cases:
+
+1. **Exact values:** Decimal 12345678901234567890.123456789; nullable 2**53+1; UInt64 maximum; signed/unsigned 128/256 bounds; null first/middle/last; nested values. Compare exact values, not just success.
+2. **Native results:** header-only, one row, multi-chunk, tuple cells resembling metadata, duplicate labels, early close and decode failure. Verify header-first layout for supported driver versions.
+3. **Temporal:** eager/streamed outputs for CH scales 0–9, UTC/named zones, negative epochs, nanoseconds and Date32 1900-01-01; object datetime versus date; mixed offsets and mixed awareness.
+4. **Adaptive inference:** declared Int256 containing only 0/1 selects an integer; values beyond BIGINT but within decimal precision remain numeric; a last-row extreme triggers whole-column text before publication; all keyed slices contribute; no sampling/re-query race; explicit/existing schema is never silently altered.
+5. **Fallback/checkpoints:** exact typed-text round trips, bytes remaining native where possible, ordered-map pairs, partial-spool failure, cancellation/disk cleanup, snapshot retention and retry using certified input. Dry runs create no snapshots/spools or live tables.
+6. **Parquet:** inspect physical schema and values for UUID, timezone timestamps, Decimal, null-heavy integers and empty data in dataframe/keyed/unkeyed paths.
+7. **Routing/coverage:** qualified columns/stars, aliases, CTEs, joins/correlation; two-argument cluster functions; replicated versus independent hosts; one missing replica versus a missing shard; explicit all-replica completeness; deterministic healthy writes.
+8. **Metadata:** unique identities, logical totals across shards/replicas, incomplete status, literal-sensitive schema comparison, dotted database identifiers, UNION/CTE limits and native port recovery.
+9. **Policies/DDL:** local-only versus managed pair through schema/dataframe/query/SQL-only/actual CTAS/upsert/drop/replacement; default existing-target error, full skip with if_not_exists, replacement flag and trailing engine arguments.
+10. **Reconfiguration faults:** every acknowledged cutover prefix, uncertain submission, rollback failure, pre-existing 100-row companion survival, misrouted migration rejected before DDL, correct separate scopes, valid facade properties and rand preservation.
+11. **Upserts/appends:** same ID across partitions accepted; same effective key duplicated rejected; rebuilding two partitions preserves other-partition IDs; missing writable/default-bearing fields rejected; generated columns excluded; reordered/subset append matches ordinary append.
+12. **Resources/SQL:** readiness/collision/ambiguous CREATE ownership; target initialization closes source; current/legacy collision names; literals with backslashes/quotes/braces, precise datetimes; placeholders in comments/strings/identifiers/dollar quotes.
+13. **Execution:** close failure never replays success; operation plus close failure preserves primary error; accepted Trino chunk replay and CH lost-ack replay are explicit; structural cutovers do not blindly restart.
+14. **Concurrency/counts:** cap-one and fully saturated nested async batches, multiple levels, stricter child caps, cancellation/failure permit restoration; real-adapter count 42/zero/unknown; cancellation labels without explicit query labels.
+15. **Explorer:** Events/events/space-bearing names survive SQLite round-trip; quoted/reserved identifiers insert valid SQL; remote-only tables absent from unqualified completion; routed/healthy database bootstrap; full cache survives outage; retry refreshes after recovery; stale/cancelled results cannot publish.
+16. **Configuration/install:** exact credentials including empty values; CH verify rejection versus valid Trino CA paths; concurrent content-addressed bundle writes; lazy driver not connected until fetch; finite probe failure; compressor construction in fresh artifact environments.
+
+Add disposable integration scenarios and manifest entries for real DDL/routing/type behavior, paired with fast regressions. Do not use shared databases or the user&#x27;s .connections for automated tests. Do not run local SQL integration unless separately requested; ordinary completion uses managed focused/precommit checks.
+
+## 5. Fresh-agent workflow and completion criteria
+
+1. Start with repository prepare_start using the exact implementation request and this plan. Read routed development, SQL and documentation instructions. After leaving Plan mode, use git_workflow start; revalidate this plan against incoming dev changes before editing.
+2. Maintain the audit closure table. Reproduce before patching; if refreshed code already resolves a finding, retain a regression and record supersession rather than duplicating fixes.
+3. Implement shared foundations first. Parallelize disjoint transport/types, CH policy/routing, load/transfer, Explorer and connection/execution work; one coordinator owns shared interfaces and integration.
+4. Use focused managed checks during development. Respect SQL module line limits, test organization, public compatibility imports and existing quality/coverage ratchets.
+5. Run the complete SQL Explorer visual workflow because Explorer production files change: every manifest scene, 208x47 grid, full 1280x800 PNGs, individual opened-image verdicts, geometry checks and current completed receipt.
+6. Update docs, dependency metadata and changelog fragment. Run mandatory managed precommit through every stage, with no uncaptured warning summary, then workflow status.
+7. Obtain the repository&#x27;s fresh independent exact-head review. Publish one signed feature PR using git_workflow commit with explicit paths. Finish with the PR link; do not wait for advisory integration or edit the handed-off branch.
+
+Completion means every audit ID has a regression-backed disposition, selected semantics are consistent across backends and planning/execution paths, exact values are preserved or deliberately represented as text, no unrelated resources can be deleted, accepted replay risks are documented accurately, and all required checks plus Explorer visual review pass.
+</pre>
+
+<a id="task-message-12"></a>
+## User correction 12
+
+<pre>WTF</pre>
+
+<a id="task-message-13"></a>
+## User correction 13
+
+<pre>are you stupid?</pre>
+
+<a id="task-message-14"></a>
+## User correction 14
+
+<pre>WTF</pre>
+
+<a id="task-message-15"></a>
+## User correction 15
+
+<pre>do visual checks only after final review approval</pre>
+
+<a id="task-message-16"></a>
+## User correction 16
+
+<pre>actually, let&#x27;s change the review procedure. Once review is done, 2nd review iteration is started, with the instruction to find issues which were not found in 1st review. Repeat until no new issues found</pre>
+
+<a id="task-message-17"></a>
+## User correction 17
+
+<pre>ok, it seems that we are doing review, then fix ONLY ONE ISSUE adn then do review again. Can we do reviews untill all issues are discovered? i.e. review 1 starts, it lists found issues, then review 2 tries to find any issues EXCEPT ISSUES FOUND IN REVIEW 1, then we repeat that review cycle until no additional issues found. AND ONLY AFTER THAT we do fixes, tests and repeat described review procedure. Do it now and write that in the docs so that later we ALWAYS do it that way</pre>
+
+<a id="task-message-18"></a>
+## User correction 18
+
+<pre>that is stupid, you should not infrom reviewer about already fixed issues. List issues about whihc I&#x27;ve asked, then fix the policy.</pre>
+
+<a id="task-message-19"></a>
+## User correction 19
+
+<pre>could you change the procedure so that implementator agent assigns swallable chunks to reviewers? and then we can do that in parallel</pre>
+
+<a id="task-message-20"></a>
+## User correction 20
+
+<pre>that is stupid, we should not revisit those chunks for which no new issues been found. fix that plz</pre>
+
+<a id="task-message-21"></a>
+## User correction 21
+
+<pre>ok, proceed; also I want you to implement the following change for ch: currently we require all clusters availiablity by default. Now I want only shard clusters availiablity required, if some other clusters are not availiable we proceed, but with a warning. If clustrer for shard table is not specified - all cluster are required as now.</pre>
+
+<a id="task-message-22"></a>
+## User correction 22
+
+<pre>once you do that and finish with test - create PR and make sure it is merged; only then proceed with the review cycly, once it is finished - create and merge another PR</pre>
+
+<a id="task-message-23"></a>
+## User correction 23
+
+<pre>ALL CHANGES</pre>
+
+<a id="task-message-24"></a>
+## User correction 24
+
+<pre>ok, I allow to punlish PR now, then proceed with the rest</pre>
+
+<a id="task-message-25"></a>
+## User correction 25
+
+<pre>disable gate TEMPORARILY</pre>
+
+<a id="task-message-26"></a>
+## User correction 26
+
+<pre>and merge ASAP</pre>
+
+<a id="task-message-27"></a>
+## User correction 27
+
+<pre>do not forget to restore</pre>
+
+## Agent question 1
+
+<pre>For upsert dataframes that omit existing target columns, what should happen?
+1. Patch existing rows (Recommended): update supplied columns, preserve omitted values; new rows use target defaults.
+2. Require complete rows: reject missing target columns before any mutation.
+3. Replace matched rows: omitted columns use defaults; untouched rows retain every column.
+
+How should upsert keys behave across partitions?
+1. Global keys, allow moves (Recommended): remove the old occurrence and rebuild both affected partitions.
+2. Global keys, reject moves: fail before mutation when an existing key changes partition.
+3. Partition-scoped keys: the same key may exist independently in multiple partitions.
+
+What should SQL Explorer suggest for an unqualified ClickHouse table reference?
+1. Current database only (Recommended): search other databases after an explicit database prefix.
+2. All databases: insert fully qualified, correctly quoted names.</pre>
+
+**User answer:** [Complete user correction 7](history-000000.md#task-message-7)
+
+## Agent question 2
+
+<pre>When you type a table name without a database name in Explorer, which tables should it suggest?
+1. Only the current database (Recommended): if connected to sales, suggest sales tables; type archive. to see archive tables.
+2. Tables from every database: show all matches and insert a full name such as archive.orders.
+
+If a database or driver cannot preserve a value exactly, what should the SQL helper do?
+1. Keep exact values or fail (Recommended): never silently round; precise timestamps may use pandas.Timestamp, and unsupported conversions require an explicit schema.
+2. Use text when necessary: automatically store unsupported numbers or nested values as text.
+3. Allow rounding with a warning: complete the operation at the available precision.
+
+After a write may have reached the database but its acknowledgement is lost, should the helper automatically repeat it?
+1. Stop and report uncertainty (Recommended): retry only failures known safe; avoid automatically duplicating live writes.
+2. Keep automatic replay: preserve the documented generic execute retry behavior, accepting possible duplicate effects.</pre>
+
+**User answer:** [Complete user correction 8](history-000000.md#task-message-8)
+
+## Agent question 3
+
+<pre>You chose automatic replay. What should happen to ClickHouse&#x27;s existing protection that stops some writes after an uncertain result?
+1. Keep CH safeguards (Recommended): generic execute keeps documented replay; protected CH operations still stop, and native passthrough gets the same protection.
+2. Replay ClickHouse writes too: make uncertain CH data writes retry as well, accepting duplicates; structural cutover safety remains protected.
+
+With cluster routing enabled, what should show_tables row counts and sizes describe?
+1. Logical cluster totals (Recommended): add shards together, count replicated data once, and count independent replica data separately.
+2. One representative host: retain a host-local count and size for each table.
+
+How should the implementation be delivered?
+1. One complete feature PR (Recommended): fix and validate all areas on one branch before publication; workstreams can run in parallel.
+2. A sequence of focused PRs: publish foundations first, then dependent fixes in later sessions after those changes reach dev.</pre>
+
+**User answer:** [Complete user correction 9](history-000000.md#task-message-9)
+
+## Agent question 4
+
+<pre>In the ClickHouse example where the row may already be saved, what should the helper do?
+1. Repeat the data write (Recommended): send INSERT again using a fresh connection; duplicates are accepted, matching your automatic-replay choice.
+2. Stop uncertain CH writes: report that INSERT may have succeeded; keep automatic replay for generic operations outside this CH safeguard.
+Structural table cutovers remain protected in either choice.</pre>
+
+**User answer:** [Complete user correction 10](history-000000.md#task-message-10)
+
+## Agent question 5
+
+<pre>Please run `claude auth login` on this machine and reply once sign-in is complete. The code and all validation are ready; publication needs the mandatory independent review, which the installed Claude reviewer cannot start while unauthenticated.</pre>
+
+**User answer:** [Complete user correction 14](history-000000.md#task-message-14)
+
+## Agent question 6
+
+<pre>Should the first PR contain all current SQL/Explorer implementation changes plus the new ClickHouse change, or only the new ClickHouse availability change? The second PR would contain fixes from the broader review.</pre>
+
+**User answer:** [Complete user correction 23](history-000000.md#task-message-23)
+
+## Assistant evidence: plans
+
+<pre>[
+  {
+    &quot;approval_index&quot;: null,
+    &quot;id&quot;: &quot;603f3848f596ee9db82f96b7308b6a86a5b6300f861e4da0c8d57da29531eb4f&quot;,
+    &quot;text&quot;: &quot;&lt;proposed_plan&gt;\n# SQL and SQL Explorer correctness repair — fresh-agent handoff\n\n## 1. Objective, decisions, and compatibility\n\nDeliver one complete feature PR to dev covering the 66 audit findings. Treat the audit as a reproduction inventory, not proof that every reported behavior should be reversed. Reproduce each case against refreshed dev, implement the behavior below, and close every finding with a regression test and a disposition.\n\nThe user has selected these contracts:\n\n- **Upserts require complete rows.** Existing-target upserts require all writable columns, including writable columns with defaults. Generated/noninsertable columns are excluded. Reordered columns are accepted; missing or extra columns fail before target mutation.\n- **Upsert keys are partition-scoped.** When upsert_partition_column is provided, the effective key is the ordered, deduplicated combination of that column and key_columns. Without a partition column, retain key_columns semantics. The same ID in January and February represents two records.\n- **Explorer searches the current database by default.** An explicit database prefix searches that database. Metadata names retain their exact identity and are quoted correctly on insertion.\n- **Routed table statistics describe logical cluster totals.** Count replicated data once per shard and independent replica data once per host. Metadata counts remain estimates. Preserve the existing flag controlling whether Distributed-facade statistics are resolved from underlying shards.\n- **Use native types before text.** A declared wide type is not sufficient reason to stringify a column. Inspect complete actual selected data when needed, try other exact integer and decimal options, then use text only if no supported native representation preserves the values.\n- **Keep automatic data-write replay, including ClickHouse.** Transient failures may repeat writes whose acknowledgement was lost; duplicate effects are accepted. Deterministic SQL/configuration/topology failures remain non-retryable. Toolkit-managed ambiguous structural cutovers remain protected and retain recovery artifacts.\n- **Deliver one complete PR.** Parallel workstreams may edit disjoint helpers, but integrate and validate the whole result before publication.\n\nImportant audit dispositions:\n- Finding 28 becomes an explicit partition-scoped-key contract, not a feature for moving globally unique keys between partitions.\n- Finding 65 is accepted at-least-once retry behavior. Document and test it rather than claiming duplicates have been eliminated.\n- Finding 66 becomes consistent, deliberate ClickHouse data-write replay. Update the contradictory CH-specific stop-after-submission documentation and implementation.\n- Finding 64 remains a bug: connection-close failure must never cause successful work to replay.\n\nPreserve public names, argument defaults, aliases, bare return shapes, exported internal compatibility imports, and explicit target-schema semantics. Precise timestamp results may use pandas.Timestamp where Python datetime cannot retain precision. Do not introduce automatic schema changes to an existing destination.\n\n## 2. Internal foundations and implementation sequence\n\nImplement foundations first, then integrate the workstreams below. Keep backend SQL/type behavior in adapters or backend-local helpers. Several current modules are already near the 900-line limit; extract cohesive helpers instead of expanding those facades.\n\n### A. Type resolution and exact transport values\n\nIntroduce shared internal representations for parsed native types, exact temporal values, complete value profiles, resolved column conversions, and frozen input identity. Keep result columns positional so duplicate labels remain supported where currently allowed.\n\n**Resolution precedence**\n1. Explicit table_schema.\n2. Existing target schema.\n3. Inferred destination schema.\n\nExplicit and existing schemas remain authoritative: never widen them or replace numeric columns with text automatically. Preserve documented intentional explicit conversions, such as an explicitly requested lower timestamp precision. Reject incompatible/out-of-range values before live target mutation.\n\nFor inference:\n- Preserve the source&#x27;s declared type when its domain fits a supported destination type exactly.\n- Otherwise inspect every selected value, not a sample. Merge profiles over every keyed slice before choosing one destination schema.\n- Try exact native integers, exact decimal/numeric types, supported timestamps and nested types before text. Never use binary float merely to accommodate exact integers or Decimal.\n- Preserve source signedness/family where the backend supports it. For observed narrow values from an unsupported wide integer domain, prefer the backend&#x27;s ordinary integer type, such as BIGINT, before decimal or text. Do not infer Boolean from 0/1.\n- Profiles include nullability, integer bounds, decimal integral/fractional digits, timestamp precision alignment/range/awareness, and recursive structural compatibility.\n- Correct decimal inference using coefficient and exponent. Required examples: 0.0001 needs scale 4; 1E+5 needs six integral digits; mixed 1.2 and 0.0034 need sufficient integral digits plus scale 4. Never clamp required precision or scale.\n- Empty/all-null columns retain suitable family defaults and existing empty-input contracts.\n\n**Freeze only when required**\n- Preserve the current streaming fast path when metadata proves the selected destination representation covers the full source domain.\n- For adaptive inference or potentially incompatible authoritative schemas, resolve/validate against frozen input before live destination writes.\n- Reuse an owned native-typed source snapshot when configured. Otherwise stream the selected input once into a bounded-memory, run-owned local replay spool while profiling. Replay those same rows; do not rerun a mutable query to load them.\n- Use a versioned, length-framed tagged encoding, not pickle or universally assumed Arrow support. Preserve arbitrary integers, Decimal, raw temporal ticks, UUID, bytes, arrays, tuples, maps and NULL.\n- For keyed sources, merge all profiles before destination schema creation. This adaptive path intentionally introduces an all-key barrier; normal declared-fit transfers retain existing lazy streaming and concurrency behavior.\n- Retain certified spool/snapshot checkpoints through target validation and retries. Release source stages only after their replacement checkpoint is certified and recoverable.\n- Existing healthy-shard partial-source rules remain: configured materialized source staging and row-count validation are still required; a local spool is not a waiver.\n- Freeze alias/configuration identity, namespace defaults and selected availability scope. Invalidate an incomplete generation on source/scope failure; never certify a partial scan as the full selected input.\n\n**Text fallback**\n- Use destination TEXT/String/VARCHAR only after native alternatives fail.\n- SQL NULL stays NULL. Integer text is exact base 10; Decimal is exact fixed-point text; dates use ISO format; timestamps preserve their full fractional scale and awareness, with aware instants normalized to UTC; UUID uses canonical lowercase form.\n- Preserve bytes natively whenever supported, including GP bytea to CH String. Only otherwise use a documented base64-prefixed text representation.\n- Structured fallback uses compact, versioned typed JSON containing source backend/type and recursively encoded values. Maps use ordered key/value pairs rather than JSON object coercion.\n- Preserve raw ordered map pairs in internal CH decoding/encoding where needed; normal driver dict conversion cannot recover duplicate keys. Keep ordinary public unique-key map results compatible.\n- Mixed naive/aware datetimes have no invented timezone: inferred columns use typed text if no explicit timezone policy resolves them; authoritative timestamp schemas reject ambiguity.\n- Record source/destination types, reason, encoding version and certified input count in optional operation metadata. Logs must not include actual private values.\n\n**Dry runs**\n- dry_run and return_sql must not materialize snapshots or perform adaptive full-data scans/spooling.\n- Dataframe inputs can resolve in memory. Query inputs with unresolved adaptive types return a SqlPlan whose options clearly mark pending profiling and native candidates; do not present guessed final DDL as certified.\n- A SQL-only generation API that cannot represent an unresolved adaptive step raises an actionable validation error requiring explicit table_schema or execution-time resolution. Preserve its existing return type.\n\n### B. ClickHouse reads, insertion, inference, and Parquet\n\nCovers findings 16–26, 46–48, 53–55, and related exact-value paths.\n\n- Remove unconditional Decimal-to-float normalization. Convert Decimal to float only for an explicitly floating destination.\n- Replace dataframe map/applymap intermediate inference with per-column construction from original values, using object dtype immediately where required. Handle nulls without ambiguous array truth tests.\n- Infer unsigned dataframe dtypes correctly. Detect datetime before date; preserve aware instants and mixed-offset datetimes.\n- Replace substring type mapping with structural parsing. CH-to-CH preserves Int/UInt widths through 256, Date32, DateTime64 scale/timezone, Decimal, UUID and supported nested types with legal nullability.\n- Cross-backend integer candidates: UInt8 fits signed SMALLINT, UInt16 INTEGER, UInt32 BIGINT, UInt64 decimal/numeric when BIGINT is insufficient. GP may use sufficiently wide NUMERIC for 128/256-bit values. Trino uses BIGINT or DECIMAL up to precision 38, then observed-value adaptation/text.\n- Trino inference emits explicit timestamp precision, normally precision 6 for the supported Iceberg contract. Use greater precision only when the configured connector/table format supports it; do not automatically migrate Iceberg format versions. Prove lower precision is exact from actual tick alignment before narrowing inferred data.\n- Native streaming uses the real header-first driver contract: request execute_iter with column types and chunk_size=1, consume the header once, and batch subsequent rows locally. Eliminate row-shape metadata guessing and DataFrame.from_records.\n- HTTP eager/streaming reads use non-NumPy column blocks and raw DateTime64 ticks. Support scales 0–9 and all public output forms without first converting through lossy Python datetime.\n- Native exact temporal decoding uses a connection-local stream/column factory, including reconnects and compression, delegating ordinary types and retaining exact DateTime64 ticks. Recurse through nullable/nested containers. No global monkeypatches or silent lossy fallback on incompatible driver interfaces.\n- Use the shared positional dataframe constructor for both transports, preserving duplicate labels, empty results, nested values and nullable large integers.\n- Thread logical column types into every Parquet writer: keyed/unkeyed transfer and dataframe load. Apply the same schema-driven conversions, including UUID to string and aware timestamps to ISO text when the Hive stage declares VARCHAR.\n- Derive physical Arrow types from the resolved stage schema for every column/file, not only all-null columns. Fix fallback Decimal inference with the shared formula.\n\n### C. ClickHouse routing, outage coverage, and statistics\n\nCovers findings 1, 4–12.\n\n- Represent effective coverage intent explicitly: logical shards for ordinary replicated reads/writes, physical hosts for independent data or an unrouted explicit all-replica request, and full execution scope for destructive operations.\n- Compute host coverage and logical coverage </pre>
+
+## Assistant evidence: plans (continued)
+
+<pre>separately. data_complete and warnings follow the effective intent; observed partialness cannot disappear after later provisioning.\n- Preserve documented automatic-routing normalization of exact cluster/clusterAllReplicas wrappers. Without automatic routing, preserve the user&#x27;s explicit all-replica semantics.\n- Apply the healthy-mode rand requirement only when logical write coverage is actually degraded. A surviving replica in every shard permits the normal deterministic key.\n- Canonicalize supported two-argument static cluster functions through structured identifier parsing. Retain supported extra arguments; reject dynamic/unverifiable identifiers.\n- Rewrite table sources using SQL scope/binding. Preserve explicit aliases; create stable aliases for implicit sources and remap bound table.column, database.table.column and qualified-star references. Handle CTE shadowing, joins and correlated/nested scopes.\n- Pass database and table as separate structured values through replica queries; never concatenate and split on dots.\n- Share a CH dialect/parser that preserves actual rand() versus randCanonical() across routing, engine expressions and column defaults.\n- Compare canonical DDL structurally, excluding only permitted UUID/replica-name differences. Preserve literal bytes and whitespace inside strings.\n- Deduplicate metadata by exact database/table identity. Gather host/shard/engine identity for logical statistics; choose a deterministic usable representative for each replicated shard and sum independent hosts separately.\n- Internal statistics collection must carry an explicit aggregation intent that ordinary system-table routing cannot rewrite into duplicate replica counts. Do not globally change explicit-wrapper routing semantics.\n- Propagate incomplete statistics coverage instead of presenting partial totals as complete.\n- Apply count-derived limits using the existing AST/row-limit machinery, preserving UNION branch/full-query semantics, CTEs, ordering, offsets and comments.\n- Recovery retains native endpoint identity as host plus port. Native connections use discovered TCP ports; HTTP retains its configured HTTP port. If one HTTP endpoint cannot distinguish multiple instances on the same hostname, report incomplete cleanup and retained artifacts rather than claiming success.\n\n### D. ClickHouse creation policy, ownership, and cutover recovery\n\nCovers findings 30–39.\n\n- Centralize a verified existing-layout snapshot and a separate desired layout from resolved ClickHouseCreationPolicy. Carry logical/physical identifiers, optional facade, engine relationship, DDL scopes and routing endpoint coverage.\n- Never infer ownership from the _shard suffix. Existing local tables touch only themselves; a verified managed pair may own its referenced companion.\n- Append/upsert use actual existing layout. Replacement/recreation builds the desired layout and removes/cuts over only verified old resources.\n- Pass policy/layout through dataframe/schema/query creation, CTAS fast paths, SQL generation, drop/recreate, upsert and guarded replacement. Remove placeholder-cluster/legacy fallback reconstruction after resolution.\n- Default query creation fails on an existing target before inserting. if_not_exists skips population too. Pass ch_replace_table through the query path and match documented schema-path behavior. Planning and execution use the same resolved mode.\n- Validate migration endpoint coverage before DDL. Physical placement, facade placement and Distributed routing remain independent settings.\n- Reject a destination whose copy routing reaches original source storage or cannot reach verified replacement storage. Do not silently copy one cluster setting into another. Compare resolved endpoints, including macros/aliases, rather than cluster-name strings.\n- Local-to-pair conversion rejects pre-existing deterministic destination companions on any relevant host. Plain CREATE and creation acknowledgements establish ownership; IF NOT EXISTS does not.\n- Build Distributed facades from appropriate column/default/common properties, excluding MergeTree-specific partition/order/primary/sampling keys, TTLs, indexes, projections and storage settings. Preserve permitted existing facade properties.\n- Reuse the configured Distributed engine-template renderer for replacement, including trailing arguments.\n- Journal each rename/exchange submission and acknowledgement with its inverse. Roll back only acknowledged completed steps in reverse order.\n- If submission or rollback is uncertain, stop structural replay, retain backups/replacements, and report names/scopes and the original failure. Never clean recovery data as disposable stages.\n\n### E. Upserts, append columns, stage ownership, and transfer SQL\n\nCovers findings 27–29, 40–45.\n\n- Separate incoming columns, complete writable target columns, and ordered target types/default/generated metadata.\n- Derive effective upsert keys once and use them everywhere: dataframe/stage uniqueness, preservation anti-joins, GP deletes, multi-stage finalization and dry-run descriptions. Do not change ordinary append key validation.\n- CH/Trino rebuild only incoming partitions. Preserve every writable column of untouched rows, using null-safe comparison of partition plus keys.\n- GP retains transactional key delete/insert; supplying a partition column augments its key, without requiring partition replacement.\n- Reject incomplete existing-target upserts before stage/final target mutation. Reorder complete inputs to canonical target order.\n- Key-validated append names incoming columns explicitly in both INSERT and SELECT. Reordered/subset input must match ordinary append behavior; eliminate positional SELECT-star finalization.\n- Track resource candidates separately from acknowledged ownership. Register visibility before CREATE, mark each physical/facade resource owned immediately after successful creation, before readiness waits.\n- Confirmed collisions are not owned and must never be dropped. Ambiguous creations are retained/reported unless operation identity independently establishes ownership.\n- Cover load overlap stages, final upsert stages, keyed/worker transfer stages and partial CH pairs. Cleanup is idempotent and preserves the primary exception.\n- Enclose source acquisition and target initialization in one protected resource scope; target-open/state failures close already-open sources exactly once.\n- Render keyed predicates through source-backend literal helpers. CH escaping preserves backslashes/apostrophes; datetime keys use precise DateTime64 expressions with explicit awareness semantics, not ANSI TIMESTAMP.\n- Replace raw sequential placeholder substitution with a parser/tokenizer-based pass over original executable spans. Ignore strings, identifiers, comments and dollar-quoted bodies. Repeated executable placeholders remain allowed; comment-only placeholders fail validation. Inserted values are never rescanned.\n- Unify stage suffix generation/recognition. Recognize current four-hex collision suffixes and supported legacy formats while retaining destination identity and 63-byte safety checks.\n\n### F. Replay, cleanup, orchestration, counts, and cancellation\n\nCovers findings 61–66.\n\n- Retain ordinary whole-operation transient retries and fresh connections, including CH data writes/native INSERT FORMAT after possible submission. Preserve retry counts/delays and non-retryable deterministic/topology failures.\n- Do not advertise exactly-once delivery. Document partial-chunk/acknowledgement replay and retry_cnt=1 for callers who cannot accept it.\n- Record submission/acknowledgement/replay state for diagnostics without using live submission alone as a universal data-retry prohibition.\n- Preserve a prepared complete partition-rebuild payload across retries after mutation; never recompute preservation from an already partially replaced target. Structural rename/exchange uncertainty follows the protected cutover journal.\n- Close failures must neither convert success into retry nor mask the primary exception. Reuse the existing close-warning pattern. Do not blanket-suppress semantic finalization errors.\n- Share the existing thread-safe capacity-lease pattern from parallel execution with async_sql. Keep per-batch event-loop semaphores local, acquire shared permits in workers, and suspend/reacquire a parent&#x27;s held lease while it waits for nested work. Preserve caps and cancellation accounting.\n- Add an internal execution outcome with affected count int-or-unknown. Capture GP/Trino final cursor counts before close and CH command summaries where reliable.\n- Public execute retains its return shape. insert/execute_insert return backend count or historical integer 0 when unavailable; optional metadata keeps unknown distinguishable from genuine zero. Exclude setup counts.\n- Always apply query-label processing in execute_read, even with no explicit label, so every setup/final statement receives the active cancellation marker.\n\n### G. SQL Explorer metadata and connection/configuration fixes\n\nCovers findings 2–3, 13–15, 49–52, 56–60.\n\n- Replace CH SHOW DATABASES discovery with adapter-owned SELECT from system.databases. Keep generic command safety restrictions intact.\n- Introduce an internal listing result containing exact names, completeness and cluster status. Request SQL operation metadata and carry it through providers, journal wrappers, interactive completion and background discovery.\n- Deduplicate exact names only. Casefold is for search/sort, not identity; never strip name whitespace.\n- Separate raw names from SQL insertion. Quote metadata identifiers, including reserved columns, and replace the complete fragment including unfinished quotes. Preserve namespace dots and existing spacing behavior.\n- Resolve the current CH database per coordinator/configuration identity. Both live and persisted unqualified completion use only that database.\n- Partial listings never replace/prune authoritative snapshots or mark scans successful. Keep last complete names with an incomplete/stale notice; transient partial suggestions are allowed only when no complete snapshot exists.\n- Release incomplete scan leases through bounded retry/backoff, independent of the 24-hour successful-refresh interval. Recovery can refresh without another usage event. Clear the notice only on complete refresh.\n- Version metadata cache identity/format to rebuild potentially corrupted snapshots/scan state without deleting query history.\n- Preserve password strings exactly, including empty/whitespace strings after direct/secret/Airflow resolution. Keep ordinary name trimming. Trino empty-password auth uses presence, not truthiness.\n- CH verify accepts booleans or true/false strings only; reject arbitrary paths/typos and direct users to ca_certs. Preserve Trino&#x27;s supported CA-path semantics.\n- Generate immutable CA bundles from a hash of full bundle contents and write atomically through unique temporary files in the same directory.\n- validate_connections(connect=True) must execute and consume one backend-owned SELECT 1, with no retries and a validation-only five-second connect/read budget, respecting tighter configured limits. connect=False remains network-free. Keep its public signature and result ordering; close on all outcomes and sanitize errors.\n- Construct Trino typed placeholders directly rather than replacing question marks in completed SQL.\n- Escape percent characters in GP execute_values identifier fragments before adding the one real VALUES marker.\n- Render Trino metadata catalog/relation components with structured quoting. Build GP partition identifiers directly from metadata components; never concatenate and reparse.\n\n## 3. Public documentation, metadata, and dependencies\n\n- No new required public arguments or backend-name inputs.\n- Add optional metadata for type resolution/conversions and possible data-write replay, defaulting to</pre>
+
+## Assistant evidence: plans (continued)
+
+<pre> unknown/empty. Include pending resolution in SqlPlan options; preserve existing bare returns.\n- Document full-row/partition-scoped upserts, adaptive full-input inference, text encoding, current-database completion, logical statistics, actual connectivity probing and accepted retry duplication.\n- Clearly distinguish inferred exact conversions from explicit caller-requested conversions, and data-write replay from protected structural recovery.\n- Add native driver compression extras, including CityHash and the driver&#x27;s zstd package, to clickhouse-native and all extras with existing Python/version markers. Existing zstandard is not a substitute.\n- Update README Depends/Imports/Suggests when dependency declarations change. Keep package/README versions unchanged; create the required unique changelog fragment.\n- Update existing module/function guides and signatures; follow documentation navigation rules if any document is added.\n\n## 4. Regression and acceptance plan\n\nCreate fast public-facade tests with fake clients and real adapter logic. Use actual binary/Arrow fixtures for codecs, not mocks that bypass the defective conversion. Keep a small audit closure table mapping IDs 1–66 to tests and fixed/accepted/superseded disposition.\n\nRequired cases:\n\n1. **Exact values:** Decimal 12345678901234567890.123456789; nullable 2**53+1; UInt64 maximum; signed/unsigned 128/256 bounds; null first/middle/last; nested values. Compare exact values, not just success.\n2. **Native results:** header-only, one row, multi-chunk, tuple cells resembling metadata, duplicate labels, early close and decode failure. Verify header-first layout for supported driver versions.\n3. **Temporal:** eager/streamed outputs for CH scales 0–9, UTC/named zones, negative epochs, nanoseconds and Date32 1900-01-01; object datetime versus date; mixed offsets and mixed awareness.\n4. **Adaptive inference:** declared Int256 containing only 0/1 selects an integer; values beyond BIGINT but within decimal precision remain numeric; a last-row extreme triggers whole-column text before publication; all keyed slices contribute; no sampling/re-query race; explicit/existing schema is never silently altered.\n5. **Fallback/checkpoints:** exact typed-text round trips, bytes remaining native where possible, ordered-map pairs, partial-spool failure, cancellation/disk cleanup, snapshot retention and retry using certified input. Dry runs create no snapshots/spools or live tables.\n6. **Parquet:** inspect physical schema and values for UUID, timezone timestamps, Decimal, null-heavy integers and empty data in dataframe/keyed/unkeyed paths.\n7. **Routing/coverage:** qualified columns/stars, aliases, CTEs, joins/correlation; two-argument cluster functions; replicated versus independent hosts; one missing replica versus a missing shard; explicit all-replica completeness; deterministic healthy writes.\n8. **Metadata:** unique identities, logical totals across shards/replicas, incomplete status, literal-sensitive schema comparison, dotted database identifiers, UNION/CTE limits and native port recovery.\n9. **Policies/DDL:** local-only versus managed pair through schema/dataframe/query/SQL-only/actual CTAS/upsert/drop/replacement; default existing-target error, full skip with if_not_exists, replacement flag and trailing engine arguments.\n10. **Reconfiguration faults:** every acknowledged cutover prefix, uncertain submission, rollback failure, pre-existing 100-row companion survival, misrouted migration rejected before DDL, correct separate scopes, valid facade properties and rand preservation.\n11. **Upserts/appends:** same ID across partitions accepted; same effective key duplicated rejected; rebuilding two partitions preserves other-partition IDs; missing writable/default-bearing fields rejected; generated columns excluded; reordered/subset append matches ordinary append.\n12. **Resources/SQL:** readiness/collision/ambiguous CREATE ownership; target initialization closes source; current/legacy collision names; literals with backslashes/quotes/braces, precise datetimes; placeholders in comments/strings/identifiers/dollar quotes.\n13. **Execution:** close failure never replays success; operation plus close failure preserves primary error; accepted Trino chunk replay and CH lost-ack replay are explicit; structural cutovers do not blindly restart.\n14. **Concurrency/counts:** cap-one and fully saturated nested async batches, multiple levels, stricter child caps, cancellation/failure permit restoration; real-adapter count 42/zero/unknown; cancellation labels without explicit query labels.\n15. **Explorer:** Events/events/space-bearing names survive SQLite round-trip; quoted/reserved identifiers insert valid SQL; remote-only tables absent from unqualified completion; routed/healthy database bootstrap; full cache survives outage; retry refreshes after recovery; stale/cancelled results cannot publish.\n16. **Configuration/install:** exact credentials including empty values; CH verify rejection versus valid Trino CA paths; concurrent content-addressed bundle writes; lazy driver not connected until fetch; finite probe failure; compressor construction in fresh artifact environments.\n\nAdd disposable integration scenarios and manifest entries for real DDL/routing/type behavior, paired with fast regressions. Do not use shared databases or the user&#x27;s .connections for automated tests. Do not run local SQL integration unless separately requested; ordinary completion uses managed focused/precommit checks.\n\n## 5. Fresh-agent workflow and completion criteria\n\n1. Start with repository prepare_start using the exact implementation request and this plan. Read routed development, SQL and documentation instructions. After leaving Plan mode, use git_workflow start; revalidate this plan against incoming dev changes before editing.\n2. Maintain the audit closure table. Reproduce before patching; if refreshed code already resolves a finding, retain a regression and record supersession rather than duplicating fixes.\n3. Implement shared foundations first. Parallelize disjoint transport/types, CH policy/routing, load/transfer, Explorer and connection/execution work; one coordinator owns shared interfaces and integration.\n4. Use focused managed checks during development. Respect SQL module line limits, test organization, public compatibility imports and existing quality/coverage ratchets.\n5. Run the complete SQL Explorer visual workflow because Explorer production files change: every manifest scene, 208x47 grid, full 1280x800 PNGs, individual opened-image verdicts, geometry checks and current completed receipt.\n6. Update docs, dependency metadata and changelog fragment. Run mandatory managed precommit through every stage, with no uncaptured warning summary, then workflow status.\n7. Obtain the repository&#x27;s fresh independent exact-head review. Publish one signed feature PR using git_workflow commit with explicit paths. Finish with the PR link; do not wait for advisory integration or edit the handed-off branch.\n\nCompletion means every audit ID has a regression-backed disposition, selected semantics are consistent across backends and planning/execution paths, exact values are preserved or deliberately represented as text, no unrelated resources can be deleted, accepted replay risks are documented accurately, and all required checks plus Explorer visual review pass.\n&lt;/proposed_plan&gt;&quot;
+  },
+  {
+    &quot;approval_index&quot;: 10,
+    &quot;id&quot;: &quot;474d346a90074995c9f5c2bb9d23b1d513981793a93bcc79aa1b960dd237ae39&quot;,
+    &quot;text&quot;: &quot;# SQL and SQL Explorer correctness repair — fresh-agent handoff\n\n## 1. Objective, decisions, and compatibility\n\nDeliver one complete feature PR to dev covering the 66 audit findings. Treat the audit as a reproduction inventory, not proof that every reported behavior should be reversed. Reproduce each case against refreshed dev, implement the behavior below, and close every finding with a regression test and a disposition.\n\nThe user has selected these contracts:\n\n- **Upserts require complete rows.** Existing-target upserts require all writable columns, including writable columns with defaults. Generated/noninsertable columns are excluded. Reordered columns are accepted; missing or extra columns fail before target mutation.\n- **Upsert keys are partition-scoped.** When upsert_partition_column is provided, the effective key is the ordered, deduplicated combination of that column and key_columns. Without a partition column, retain key_columns semantics. The same ID in January and February represents two records.\n- **Explorer searches the current database by default.** An explicit database prefix searches that database. Metadata names retain their exact identity and are quoted correctly on insertion.\n- **Routed table statistics describe logical cluster totals.** Count replicated data once per shard and independent replica data once per host. Metadata counts remain estimates. Preserve the existing flag controlling whether Distributed-facade statistics are resolved from underlying shards.\n- **Use native types before text.** A declared wide type is not sufficient reason to stringify a column. Inspect complete actual selected data when needed, try other exact integer and decimal options, then use text only if no supported native representation preserves the values.\n- **Keep automatic data-write replay, including ClickHouse.** Transient failures may repeat writes whose acknowledgement was lost; duplicate effects are accepted. Deterministic SQL/configuration/topology failures remain non-retryable. Toolkit-managed ambiguous structural cutovers remain protected and retain recovery artifacts.\n- **Deliver one complete PR.** Parallel workstreams may edit disjoint helpers, but integrate and validate the whole result before publication.\n\nImportant audit dispositions:\n- Finding 28 becomes an explicit partition-scoped-key contract, not a feature for moving globally unique keys between partitions.\n- Finding 65 is accepted at-least-once retry behavior. Document and test it rather than claiming duplicates have been eliminated.\n- Finding 66 becomes consistent, deliberate ClickHouse data-write replay. Update the contradictory CH-specific stop-after-submission documentation and implementation.\n- Finding 64 remains a bug: connection-close failure must never cause successful work to replay.\n\nPreserve public names, argument defaults, aliases, bare return shapes, exported internal compatibility imports, and explicit target-schema semantics. Precise timestamp results may use pandas.Timestamp where Python datetime cannot retain precision. Do not introduce automatic schema changes to an existing destination.\n\n## 2. Internal foundations and implementation sequence\n\nImplement foundations first, then integrate the workstreams below. Keep backend SQL/type behavior in adapters or backend-local helpers. Several current modules are already near the 900-line limit; extract cohesive helpers instead of expanding those facades.\n\n### A. Type resolution and exact transport values\n\nIntroduce shared internal representations for parsed native types, exact temporal values, complete value profiles, resolved column conversions, and frozen input identity. Keep result columns positional so duplicate labels remain supported where currently allowed.\n\n**Resolution precedence**\n1. Explicit table_schema.\n2. Existing target schema.\n3. Inferred destination schema.\n\nExplicit and existing schemas remain authoritative: never widen them or replace numeric columns with text automatically. Preserve documented intentional explicit conversions, such as an explicitly requested lower timestamp precision. Reject incompatible/out-of-range values before live target mutation.\n\nFor inference:\n- Preserve the source&#x27;s declared type when its domain fits a supported destination type exactly.\n- Otherwise inspect every selected value, not a sample. Merge profiles over every keyed slice befo</pre>
+
+## Assistant evidence: plans (continued)
+
+<pre>re choosing one destination schema.\n- Try exact native integers, exact decimal/numeric types, supported timestamps and nested types before text. Never use binary float merely to accommodate exact integers or Decimal.\n- Preserve source signedness/family where the backend supports it. For observed narrow values from an unsupported wide integer domain, prefer the backend&#x27;s ordinary integer type, such as BIGINT, before decimal or text. Do not infer Boolean from 0/1.\n- Profiles include nullability, integer bounds, decimal integral/fractional digits, timestamp precision alignment/range/awareness, and recursive structural compatibility.\n- Correct decimal inference using coefficient and exponent. Required examples: 0.0001 needs scale 4; 1E+5 needs six integral digits; mixed 1.2 and 0.0034 need sufficient integral digits plus scale 4. Never clamp required precision or scale.\n- Empty/all-null columns retain suitable family defaults and existing empty-input contracts.\n\n**Freeze only when required**\n- Preserve the current streaming fast path when metadata proves the selected destination representation covers the full source domain.\n- For adaptive inference or potentially incompatible authoritative schemas, resolve/validate against frozen input before live destination writes.\n- Reuse an owned native-typed source snapshot when configured. Otherwise stream the selected input once into a bounded-memory, run-owned local replay spool while profiling. Replay those same rows; do not rerun a mutable query to load them.\n- Use a versioned, length-framed tagged encoding, not pickle or universally assumed Arrow support. Preserve arbitrary integers, Decimal, raw temporal ticks, UUID, bytes, arrays, tuples, maps and NULL.\n- For keyed sources, merge all profiles before destination schema creation. This adaptive path intentionally introduces an all-key barrier; normal declared-fit transfers retain existing lazy streaming and concurrency behavior.\n- Retain certified spool/snapshot checkpoints through target validation and retries. Release source stages only after their replacement checkpoint is certified and recoverable.\n- Existing healthy-shard partial-source rules remain: configured materialized source staging and row-count validation are still required; a local spool is not a waiver.\n- Freeze alias/configuration identity, namespace defaults and selected availability scope. Invalidate an incomplete generation on source/scope failure; never certify a partial scan as the full selected input.\n\n**Text fallback**\n- Use destination TEXT/String/VARCHAR only after native alternatives fail.\n- SQL NULL stays NULL. Integer text is exact base 10; Decimal is exact fixed-point text; dates use ISO format; timestamps preserve their full fractional scale and awareness, with aware instants normalized to UTC; UUID uses canonical lowercase form.\n- Preserve bytes natively whenever supported, including GP bytea to CH String. Only otherwise use a documented base64-prefixed text representation.\n- Structured fallback uses compact, versioned typed JSON containing source backend/type and recursively encoded values. Maps use ordered key/value pairs rather than JSON object coercion.\n- Preserve raw ordered map pairs in internal CH decoding/encoding where needed; normal driver dict conversion cannot recover duplicate keys. Keep ordinary public unique-key map results compatible.\n- Mixed naive/aware datetimes have no invented timezone: inferred columns use typed text if no explicit timezone policy resolves them; authoritative timestamp schemas reject ambiguity.\n- Record source/destination types, reason, encoding version and certified input count in optional operation metadata. Logs must not include actual private values.\n\n**Dry runs**\n- dry_run and return_sql must not materialize snapshots or perform adaptive full-data scans/spooling.\n- Dataframe inputs can resolve in memory. Query inputs with unresolved adaptive types return a SqlPlan whose options clearly mark pending profiling and native candidates; do not present guessed final DDL as certified.\n- A SQL-only generation API that cannot represent an unresolved adaptive step raises an actionable validation error requiring explicit table_schema or execution-time resolution. Preserve its existing return type.\n\n### B. ClickHouse reads, insertion, inference, and Parquet\n\nCovers findings 16–26, 46–48, 53–55, and related exact-value paths.\n\n- Remove unconditional Decimal-to-float normalization. Convert Decimal to float only for an explicitly floating destination.\n- Replace dataframe map/applymap intermediate inference with per-column construction from original values, using object dtype immediately where required. Handle nulls without ambiguous array truth tests.\n- Infer unsigned dataframe dtypes correctly. Detect datetime before date; preserve aware instants and mixed-offset datetimes.\n- Replace substring type mapping with structural parsing. CH-to-CH preserves Int/UInt widths through 256, Date32, DateTime64 scale/timezone, Decimal, UUID and supported nested types with legal nullability.\n- Cross-backend integer candidates: UInt8 fits signed SMALLINT, UInt16 INTEGER, UInt32 BIGINT, UInt64 decimal/numeric when BIGINT is insufficient. GP may use sufficiently wide NUMERIC for 128/256-bit values. Trino uses BIGINT or DECIMAL up to precision 38, then observed-value adaptation/text.\n- Trino inference emits explicit timestamp precision, normally precision 6 for the supported Iceberg contract. Use greater precision only when the configured connector/table format supports it; do not automatically migrate Iceberg format versions. Prove lower precision is exact from actual tick alignment before narrowing inferred data.\n- Native streaming uses the real header-first driver contract: request execute_iter with column types and chunk_size=1, consume the header once, and batch subsequent rows locally. Eliminate row-shape metadata guessing and DataFrame.from_records.\n- HTTP eager/streaming reads use non-NumPy column blocks and raw DateTime64 ticks. Support scales 0–9 and all public output forms without first converting through lossy Python datetime.\n- Native exact temporal decoding uses a connection-local stream/column factory, including reconnects and compression, delegating ordinary types and retaining exact DateTime64 ticks. Recurse through nullable/nested containers. No global monkeypatches or silent lossy fallback on incompatible driver interfaces.\n- Use the shared positional dataframe constructor for both transports, preserving duplicate labels, empty results, nested values and nullable large integers.\n- Thread logical column types into every Parquet writer: keyed/unkeyed transfer and dataframe load. Apply the same schema-driven conversions, including UUID to string and aware timestamps to ISO text when the Hive stage declares VARCHAR.\n- Derive physical Arrow types from the resolved stage schema for every column/file, not only all-null columns. Fix fallback Decimal inference with the shared formula.\n\n### C. ClickHouse routing, outage coverage, and statistics\n\nCovers findings 1, 4–12.\n\n- Represent effective coverage intent explicitly: logical shards for ordinary replicated reads/writes, physical hosts for independent data or an unrouted explicit all-replica request, and full execution scope for destructive operations.\n- Compute host coverage and logical coverage separately. data_complete and warnings follow the effective intent; observed partialness cannot disappear after later provisioning.\n- Preserve documented automatic-routing normalization of exact cluster/clusterAllReplicas wrappers. Without automatic routing, preserve the user&#x27;s explicit all-replica semantics.\n- Apply the healthy-mode rand requirement only when logical write coverage is actually degraded. A surviving replica in every shard permits the normal deterministic key.\n- Canonicalize supported two-argument static cluster functions through structured identifier parsing. Retain supported extra arguments; reject dynamic/unverifiable identifiers.\n- Rewrite table sources using SQL scope/binding. Preserve explicit aliases; create stable aliases for implicit sources and remap bound table.column, database.table.column and qualified-star references. Handle CTE shadowing, joins and correlated/nested scopes.\n- Pass database and table as separate structured values through replica queries; never concatenate and split on dots.\n- Share a CH dialect/parser that preserves actual rand() versus randCanonical() across routing, engine expressions and column defaults.\n- Compare canonical DDL structurally, excluding only permitted UUID/replica-name differences. Preserve literal bytes and whitespace inside strings.\n- Deduplicate metadata by exact database/table identity. Gather host/shard/engine identity for logical statistics; choose a deterministic usable representative for each replicated shard and sum independent hosts separately.\n- Internal statistics collection must carry an explicit aggregation intent that ordinary system-table routing cannot rewrite into duplicate replica counts. Do not globally change explicit-wrapper routing semantics.\n- Propagate incomplete statistics coverage instead of presenting partial totals as complete.\n- Apply count-derived limits using the existing AST/row-limit machinery, preserving UNION branch/full-query semantics, CTEs, ordering, offsets and comments.\n- Recovery retains native endpoint identity as host plus port. Native connections use discovered TCP ports; HTTP retains its configured HTTP port. If one HTTP endpoint cannot distinguish multiple instances on the same hostname, report incomplete cleanup and retained artifacts rather than claiming success.\n\n### D. ClickHouse creation policy, ownership, and cutover recovery\n\nCovers findings 30–39.\n\n- Centralize a verified existing-layout snapshot and a separate desired layout from resolved ClickHouseCreationPolicy. Carry logical/physical identifiers, optional facade, engine relationship, DDL scopes and routing endpoint coverage.\n- Never infer ownership from the _shard suffix. Existing local tables touch only themselves; a verified managed pair may own its referenced companion.\n- Append/upsert use actual existing layout. Replacement/recreation builds the desired layout and removes/cuts over only verified old resources.\n- Pass policy/layout through dataframe/schema/query creation, CTAS fast paths, SQL generation, drop/recreate, upsert and guarded replacement. Remove placeholder-cluster/legacy fallback reconstruction after resolution.\n- Default query creation fails on an existing target before inserting. if_not_exists skips population too. Pass ch_replace_table through the query path and match documented schema-path behavior. Planning and execution use the same resolved mode.\n- Validate migration endpoint coverage before DDL. Physical placement, facade placement and Distributed routing remain independent settings.\n- Reject a destination whose copy routing reaches original source storage or cannot reach verified replacement storage. Do not silently copy one cluster setting into another. Compare resolved endpoints, including macros/aliases, rather than cluster-name strings.\n- Local-to-pair conversion rejects pre-existing deterministic destination companions on any relevant host. Plain CREATE and creation acknowledgements establish ownership; IF NOT EXISTS does not.\n- Build Distributed facades from appropriate column/default/common properties, excluding MergeTree-specific partition/order/primary/sampling keys, TTLs, indexes, projections and storage settings. Preserve permitted existing facade properties.\n- Reuse the configured Distributed engine-template renderer for replacement, including trailing arguments.\n- Journal each rename/exchange submission and acknowledgement with its inverse. Roll back only acknowledged completed steps in reverse order.\n- If submission or rollback is uncertain, stop str</pre>
+
