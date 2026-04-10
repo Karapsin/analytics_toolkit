@@ -11,7 +11,7 @@
 From the repository root:
 
 ```bash
-pip install .
+pip install git+https://github.com/Karapsin/magnit_utils.git
 ```
 
 ## Quick Start
