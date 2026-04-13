@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from datetime import date, datetime, time, timedelta
 from typing import Literal
 from warnings import warn
@@ -92,6 +93,26 @@ def add_months(
     output_string: bool = True,
 ) -> str | datetime:
     result = _period_start(_to_date(dt), "month") + relativedelta(months=n)
+    return _format_output(result, output_string)
+
+
+def get_today(output_string: bool = True) -> str | datetime:
+    return _format_output(date.today(), output_string)
+
+
+def get_random_day(
+    start_dt: DateInput,
+    end_dt: DateInput,
+    output_string: bool = True,
+) -> str | datetime:
+    start_date = _to_date(start_dt)
+    end_date = _to_date(end_dt)
+
+    if end_date < start_date:
+        raise ValueError("end_dt must be greater than or equal to start_dt.")
+
+    random_days = random.randint(0, (end_date - start_date).days)
+    result = start_date + timedelta(days=random_days)
     return _format_output(result, output_string)
 
 

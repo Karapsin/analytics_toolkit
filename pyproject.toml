@@ -13,6 +13,7 @@ dependencies = [
   "charset-normalizer==3.4.7",
   "clickhouse-connect==0.15.1",
   "et_xmlfile==2.0.0",
+  "gdown==5.2.0",
   "idna==3.11",
   "lz4==4.4.5",
   "openpyxl==3.1.5",

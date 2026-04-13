@@ -11,9 +11,10 @@ from ...general.logging import time_print
 
 
 @with_sql_connection("trino")
-def _read_trino(conn: Any, query: str) -> pd.DataFrame:
+def _read_trino(conn: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from trino")
     try:
+        _maybe_print_query(query, print_queries)
         return _read_dbapi_query(conn, query)
     except Exception:
         time_print(f"SQL failed on trino:\n{query}")
@@ -21,9 +22,10 @@ def _read_trino(conn: Any, query: str) -> pd.DataFrame:
 
 
 @with_sql_connection("gp")
-def _read_gp(conn: Any, query: str) -> pd.DataFrame:
+def _read_gp(conn: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from gp")
     try:
+        _maybe_print_query(query, print_queries)
         return _read_dbapi_query(conn, query)
     except Exception:
         time_print(f"SQL failed on gp:\n{query}")
@@ -31,9 +33,10 @@ def _read_gp(conn: Any, query: str) -> pd.DataFrame:
 
 
 @with_sql_connection("ch")
-def _read_ch(client: Any, query: str) -> pd.DataFrame:
+def _read_ch(client: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from ch")
     try:
+        _maybe_print_query(query, print_queries)
         return client.query_df(query)
     except Exception:
         time_print(f"SQL failed on ch:\n{query}")
@@ -51,7 +54,11 @@ def _read_dbapi_query(conn: Any, query: str) -> pd.DataFrame:
         cursor.close()
 
 
-def read_sql(connection_type: str, query: str) -> pd.DataFrame:
+def read_sql(
+    connection_type: str,
+    query: str,
+    print_queries: bool = True,
+) -> pd.DataFrame:
     normalized_type = connection_type.strip().lower()
     sql = query.strip()
 
@@ -64,12 +71,19 @@ def read_sql(connection_type: str, query: str) -> pd.DataFrame:
     sql = statements[0].rstrip(";").rstrip()
 
     if normalized_type == "trino":
-        return _read_trino(sql)
+        return _read_trino(sql, print_queries=print_queries)
     if normalized_type == "gp":
-        return _read_gp(sql)
+        return _read_gp(sql, print_queries=print_queries)
     if normalized_type == "ch":
-        return _read_ch(sql)
+        return _read_ch(sql, print_queries=print_queries)
 
     raise UnsupportedConnectionTypeError(
         "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
     )
+
+
+def _maybe_print_query(query: str, print_queries: bool) -> None:
+    if print_queries:
+        statements = [statement.strip() for statement in sqlparse.split(query) if statement.strip()]
+        statement_to_print = statements[0] if statements else query.strip()
+        time_print(f"Executing query:\n{statement_to_print}")
