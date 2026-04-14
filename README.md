@@ -2,6 +2,7 @@
 
 `magnit_utils` is a small utility package for:
 
+- AB-test related helpers
 - SQL I/O and table-loading helpers for Trino, Greenplum, and ClickHouse
 - date helpers for common period calculations
 - Excel helpers for writing pivoted tables from long-format data
@@ -17,6 +18,7 @@ pip install git+https://github.com/Karapsin/magnit_utils.git
 ## Quick Start
 
 ```python
+from magnit_utils.ab_utils import compute_test_metrics
 from magnit_utils import sql
 from magnit_utils.dates.dates import first_day
 from magnit_utils.excel import break_into_tables
@@ -38,6 +40,7 @@ directory with `MAGNIT_UTILS_HOME`.
 
 ## Package Layout
 
+- `magnit_utils/ab_utils`: AB-test metric comparison helpers, including `compute_test_metrics`
 - `magnit_utils/dates`: date and period helpers
 - `magnit_utils/excel`: Excel formatting helpers
 - `magnit_utils/sql`: SQL execution, loading, and transfer helpers
