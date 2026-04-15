@@ -408,20 +408,13 @@ def _write_tables(
     with pd.ExcelWriter(output, **writer_kwargs) as writer:
         for sheet_value in sheet_values:
             sheet_name = sheet_name_map[sheet_value]
-            startcol = 0
-            for sheet_tables in sheet_table_groups:
-                tables = sheet_tables.get(sheet_value, [])
-                if not tables:
-                    continue
-
-                block_width = _write_table_block(
-                    writer=writer,
-                    sheet_name=sheet_name,
-                    tables=tables,
-                    break_by=break_by,
-                    startcol=startcol,
-                )
-                startcol += block_width + 1
+            _write_sheet_blocks(
+                writer=writer,
+                sheet_name=sheet_name,
+                sheet_table_groups=sheet_table_groups,
+                sheet_value=sheet_value,
+                break_by=break_by,
+            )
 
 
 def _collect_sheet_values(
@@ -445,37 +438,90 @@ def _sheet_value_equals(left: object | None, right: object | None) -> bool:
 def _write_table_block(
     writer: pd.ExcelWriter,
     sheet_name: str,
-    tables: list[tuple[object | None, pd.DataFrame]],
+    table: pd.DataFrame,
+    break_value: object | None,
     break_by: str | None,
+    startrow: int,
     startcol: int,
-) -> int:
-    startrow = 0
-    block_width = 0
-    for break_value, table in tables:
-        table_width = len(table.columns)
-        if break_by is not None:
-            title = pd.DataFrame({break_by: [break_value]})
-            title.to_excel(
-                writer,
-                sheet_name=sheet_name,
-                index=False,
-                header=False,
-                startrow=startrow,
-                startcol=startcol,
-            )
-            startrow += 1
-            table_width = max(table_width, 1)
-
-        table.to_excel(
+) -> None:
+    if break_by is not None:
+        title = pd.DataFrame({break_by: [break_value]})
+        title.to_excel(
             writer,
             sheet_name=sheet_name,
             index=False,
+            header=False,
             startrow=startrow,
             startcol=startcol,
         )
-        startrow += len(table.index) + 3
-        block_width = max(block_width, table_width)
-    return block_width
+        startrow += 1
+
+    table.to_excel(
+        writer,
+        sheet_name=sheet_name,
+        index=False,
+        startrow=startrow,
+        startcol=startcol,
+    )
+
+
+def _write_sheet_blocks(
+    writer: pd.ExcelWriter,
+    sheet_name: str,
+    sheet_table_groups: list[dict[object | None, list[tuple[object | None, pd.DataFrame]]]],
+    sheet_value: object | None,
+    break_by: str | None,
+) -> None:
+    tables_per_group = [sheet_tables.get(sheet_value, []) for sheet_tables in sheet_table_groups]
+    startcols: list[int] = []
+    current_startcol = 0
+    for tables in tables_per_group:
+        startcols.append(current_startcol)
+        if tables:
+            current_startcol += _table_group_width(tables=tables, break_by=break_by) + 1
+
+    startrow = 0
+    max_table_count = max((len(tables) for tables in tables_per_group), default=0)
+    for table_index in range(max_table_count):
+        row_height = 0
+        for group_index, tables in enumerate(tables_per_group):
+            if table_index >= len(tables):
+                continue
+
+            break_value, table = tables[table_index]
+            _write_table_block(
+                writer=writer,
+                sheet_name=sheet_name,
+                table=table,
+                break_value=break_value,
+                break_by=break_by,
+                startrow=startrow,
+                startcol=startcols[group_index],
+            )
+            row_height = max(row_height, _table_block_height(table=table, break_by=break_by))
+
+        startrow += row_height
+
+
+def _table_group_width(
+    tables: list[tuple[object | None, pd.DataFrame]],
+    break_by: str | None,
+) -> int:
+    return max((_table_block_width(table=table, break_by=break_by) for _, table in tables), default=0)
+
+
+def _table_block_width(
+    table: pd.DataFrame,
+    break_by: str | None,
+) -> int:
+    return max(len(table.columns), 1 if break_by is not None else 0)
+
+
+def _table_block_height(
+    table: pd.DataFrame,
+    break_by: str | None,
+) -> int:
+    return len(table.index) + 4 if break_by is not None else len(table.index) + 3
 
 
 def _build_sheet_name_map(

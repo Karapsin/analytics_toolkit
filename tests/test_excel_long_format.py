@@ -317,6 +317,45 @@ def test_break_table_accepts_multiple_dataframes_side_by_side(tmp_path: Path) ->
         workbook.close()
 
 
+def test_break_table_aligns_headers_by_table_index_across_multiple_dataframes(tmp_path: Path) -> None:
+    first_df = pd.DataFrame(
+        {
+            "metric": ["users", "orders", "users"],
+            "ab_group": ["control", "control", "test_1"],
+            "qr_group": ["ALL", "ALL", "B"],
+            "start_dt": ["2026-03-30", "2026-03-30", "2026-03-30"],
+            "value": [100, 50, 110],
+        }
+    )
+    second_df = pd.DataFrame(
+        {
+            "metric": ["arpu", "margin", "arpu", "margin"],
+            "ab_group": ["control", "control", "test_1", "test_1"],
+            "qr_group": ["ALL", "ALL", "B", "B"],
+            "start_dt": ["2026-03-30"] * 4,
+            "value": [2.5, 0.2, 2.7, 0.25],
+        }
+    )
+
+    output = tmp_path / "aligned_multi_df_raw.xlsx"
+    break_table(
+        df=[first_df, second_df],
+        output=output,
+        break_by="qr_group",
+        sheet_by="start_dt",
+    )
+
+    workbook = load_workbook(output, read_only=True, data_only=True)
+    try:
+        rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
+        assert rows[0] == ("ALL", None, None, None, "ALL", None, None)
+        assert rows[1] == ("metric", "ab_group", "value", None, "metric", "ab_group", "value")
+        assert rows[6] == ("B", None, None, None, "B", None, None)
+        assert rows[7] == ("metric", "ab_group", "value", None, "metric", "ab_group", "value")
+    finally:
+        workbook.close()
+
+
 def test_pivot_and_break_table_replaces_existing_workbook_by_default(tmp_path: Path) -> None:
     output = tmp_path / "replace.xlsx"
 
