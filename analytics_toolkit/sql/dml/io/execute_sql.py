@@ -45,20 +45,27 @@ def _execute_gp(
     query: str,
     random_sleep_seconds: float | None = 5,
     print_queries: bool = True,
+    gp_break_query: bool = False,
 ) -> Any:
     statement: str | None = None
     try:
         with conn.cursor() as cursor:
-            statements = _split_sql_statements(query)
-            time_print(f"Executing {len(statements)} statement(s) on gp")
-            total = len(statements)
-            for index, statement in enumerate(
-                _iterate_statements_with_progress(statements, "gp"),
-                start=1,
-            ):
+            if not gp_break_query:
+                time_print("Executing 1 statement set on gp")
+                statement = query
                 _maybe_print_query(statement, print_queries)
                 cursor.execute(statement)
-                _maybe_sleep_between_queries(index, total, random_sleep_seconds)
+            else:
+                statements = _split_sql_statements(query)
+                time_print(f"Executing {len(statements)} statement(s) on gp")
+                total = len(statements)
+                for index, statement in enumerate(
+                    _iterate_statements_with_progress(statements, "gp"),
+                    start=1,
+                ):
+                    _maybe_print_query(statement, print_queries)
+                    cursor.execute(statement)
+                    _maybe_sleep_between_queries(index, total, random_sleep_seconds)
             conn.commit()
             return None
     except Exception:
@@ -99,6 +106,7 @@ def execute_sql(
     query: str,
     random_sleep_seconds: float | None = 5,
     print_queries: bool = True,
+    gp_break_query: bool = False,
 ) -> Any:
     normalized_type = connection_type.strip().lower()
     sql = query.strip()
@@ -117,6 +125,7 @@ def execute_sql(
             sql,
             random_sleep_seconds=random_sleep_seconds,
             print_queries=print_queries,
+            gp_break_query=gp_break_query,
         )
     if normalized_type == "ch":
         return _execute_ch(
