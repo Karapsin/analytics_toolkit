@@ -30,7 +30,9 @@ def _resolve_base_dir() -> Path | None:
     main_module = sys.modules.get("__main__")
     main_file = getattr(main_module, "__file__", None)
     if main_file and not str(main_file).startswith("<"):
-        return Path(main_file).expanduser().resolve().parent
+        main_path = Path(main_file).expanduser().resolve()
+        if not _is_runtime_path(main_path):
+            return main_path.parent
 
     module_path = Path(__file__).expanduser().resolve()
     for frame_info in inspect.stack()[1:]:
@@ -39,11 +41,25 @@ def _resolve_base_dir() -> Path | None:
             continue
 
         frame_path = Path(frame_name).expanduser().resolve()
-        if frame_path == module_path:
+        if frame_path == module_path or _is_runtime_path(frame_path):
             continue
         return frame_path.parent
 
     return None
+
+
+def _is_runtime_path(path: Path) -> bool:
+    normalized = path.as_posix()
+    runtime_fragments = (
+        "/IPython/",
+        "/ipykernel_",
+        "/site-packages/",
+        "/dist-packages/",
+        "/Contents/Resources/app/extensions/",
+        "/tmp/",
+        "/var/folders/",
+    )
+    return any(fragment in normalized for fragment in runtime_fragments)
 
 
 def read_file(file_path: str, params_dict: dict[str, Any] | None = None) -> str:
