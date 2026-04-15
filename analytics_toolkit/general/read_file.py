@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -9,17 +10,9 @@ from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 def here(filename: str) -> str:
     normalized_name = filename.replace("\\", "/")
-
-    for frame_info in inspect.stack()[1:]:
-        frame_path = Path(frame_info.filename).expanduser()
-        frame_name = frame_info.filename.replace("\\", "/")
-        if frame_name.startswith("<"):
-            continue
-        if "/ipykernel_" in frame_name or "/tmp/" in frame_name or "/var/folders/" in frame_name:
-            continue
-
-        candidate = frame_path.resolve().parent / normalized_name
-        return str(candidate)
+    caller_candidate = _resolve_caller_path(normalized_name)
+    if caller_candidate is not None:
+        return str(caller_candidate)
 
     cwd_candidate = Path.cwd() / normalized_name
     if cwd_candidate.exists():
@@ -30,6 +23,45 @@ def here(filename: str) -> str:
         return str(matches[0])
 
     return str(cwd_candidate)
+
+
+def _resolve_caller_path(filename: str) -> Path | None:
+    for frame_info in inspect.stack()[1:]:
+        frame_name = frame_info.filename.replace("\\", "/")
+        if not _is_user_frame(frame_name):
+            continue
+
+        frame_path = Path(frame_info.filename).expanduser()
+        return frame_path.resolve().parent / filename
+
+    return None
+
+
+def _is_user_frame(frame_name: str) -> bool:
+    if frame_name.startswith("<"):
+        return False
+
+    if frame_name.endswith("/analytics_toolkit/general/read_file.py"):
+        return False
+
+    excluded_fragments = (
+        "/IPython/",
+        "/ipykernel_",
+        "/site-packages/",
+        "/dist-packages/",
+        "/Contents/Resources/app/extensions/",
+        "/tmp/",
+        "/var/folders/",
+    )
+    if any(fragment in frame_name for fragment in excluded_fragments):
+        return False
+
+    normalized_prefixes = {
+        Path(prefix).expanduser().resolve().as_posix()
+        for prefix in (sys.prefix, sys.base_prefix, sys.exec_prefix)
+        if prefix
+    }
+    return not any(frame_name.startswith(prefix + "/") or frame_name == prefix for prefix in normalized_prefixes)
 
 
 def read_file(file_path: str, params_dict: dict[str, Any] | None = None) -> str:
