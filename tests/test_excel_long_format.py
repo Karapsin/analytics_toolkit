@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -565,5 +566,67 @@ def test_pivot_and_break_table_appends_new_sheets_when_requested(tmp_path: Path)
     workbook = load_workbook(output, read_only=True, data_only=True)
     try:
         assert workbook.sheetnames == ["2026-03-30", "2026-04-01"]
+    finally:
+        workbook.close()
+
+
+def test_break_table_writes_decimal_values_as_numeric_excel_cells(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        {
+            "metric": ["arpu"],
+            "ab_group": ["control"],
+            "qr_group": ["ALL"],
+            "start_dt": ["2026-03-30"],
+            "value": [Decimal("72.4867078207333238")],
+        }
+    )
+
+    output = tmp_path / "decimal_raw.xlsx"
+    break_table(
+        df=df,
+        output=output,
+        break_by="qr_group",
+        sheet_by="start_dt",
+    )
+
+    workbook = load_workbook(output, read_only=False, data_only=True)
+    try:
+        cell = workbook["2026-03-30"]["C3"]
+        assert cell.data_type == "n"
+        assert cell.value == pytest.approx(72.4867078207333238)
+    finally:
+        workbook.close()
+
+
+def test_pivot_and_break_table_writes_decimal_values_as_numeric_excel_cells(
+    tmp_path: Path,
+) -> None:
+    df = pd.DataFrame(
+        {
+            "metric": ["arpu", "arpu"],
+            "ab_group": ["control", "test_1"],
+            "start_dt": ["2026-03-30", "2026-03-30"],
+            "value": [Decimal("72.4867078207333238"), Decimal("70.6603563524410553")],
+        }
+    )
+
+    output = tmp_path / "decimal_pivot.xlsx"
+    pivot_and_break_table(
+        df=df,
+        rows="metric",
+        value="value",
+        output=output,
+        columns="ab_group",
+        sheet_by="start_dt",
+    )
+
+    workbook = load_workbook(output, read_only=False, data_only=True)
+    try:
+        control_cell = workbook["2026-03-30"]["B2"]
+        test_cell = workbook["2026-03-30"]["C2"]
+        assert control_cell.data_type == "n"
+        assert test_cell.data_type == "n"
+        assert control_cell.value == pytest.approx(72.4867078207333238)
+        assert test_cell.value == pytest.approx(70.6603563524410553)
     finally:
         workbook.close()

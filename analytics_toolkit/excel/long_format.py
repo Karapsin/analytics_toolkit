@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import re
 from pathlib import Path
 from typing import Sequence
@@ -518,7 +519,7 @@ def _write_table_block(
     startcol: int,
 ) -> None:
     if break_by is not None:
-        title = pd.DataFrame({break_by: [break_value]})
+        title = pd.DataFrame({break_by: [_coerce_excel_scalar(break_value)]})
         title.to_excel(
             writer,
             sheet_name=sheet_name,
@@ -529,7 +530,7 @@ def _write_table_block(
         )
         startrow += 1
 
-    table.to_excel(
+    _coerce_excel_dataframe(table).to_excel(
         writer,
         sheet_name=sheet_name,
         index=False,
@@ -595,6 +596,23 @@ def _table_block_height(
     break_by: str | None,
 ) -> int:
     return len(table.index) + 4 if break_by is not None else len(table.index) + 3
+
+
+def _coerce_excel_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    object_columns = df.select_dtypes(include=["object"]).columns
+    if object_columns.empty:
+        return df
+
+    normalized_df = df.copy()
+    for column in object_columns:
+        normalized_df[column] = normalized_df[column].map(_coerce_excel_scalar)
+    return normalized_df
+
+
+def _coerce_excel_scalar(value: object) -> object:
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _build_sheet_name_map(
