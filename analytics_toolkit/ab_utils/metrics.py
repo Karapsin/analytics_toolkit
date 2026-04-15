@@ -27,7 +27,7 @@ def compute_test_metrics(
     multiple_comparisons_adjustment_resamples: int = 2000,
     bootstrap_random_state: int | None = 0,
     bootstrap_n_jobs: int = 1,
-    bootstrap_progress: bool = False,
+    bootstrap_progress: bool = True,
 ) -> pd.DataFrame:
     """Compute per-metric experiment comparison statistics.
 
@@ -105,6 +105,8 @@ def compute_test_metrics(
         "metric_name",
         "n0",
         "n1",
+        "metric_control",
+        "metric_test",
         "delta_abs",
         "uplift",
         "mde_abs",
@@ -220,7 +222,7 @@ def _normalize_ratio_metrics(
         numerator = _require_ratio_spec_value(raw_spec, "numerator", index)
         denominator = _require_ratio_spec_value(raw_spec, "denominator", index)
 
-        level = str(raw_spec.get("level", "user")).strip().lower()
+        level = str(raw_spec.get("level", "agg")).strip().lower()
         invalid_denominator = str(raw_spec.get("invalid_denominator", "ignore")).strip().lower()
 
         if level not in {"agg", "user"}:
@@ -334,6 +336,8 @@ def _build_mean_metric_row(
         "metric_name": metric_name,
         "n0": int(baseline_values.shape[0]),
         "n1": int(test_values.shape[0]),
+        "metric_control": baseline_mean,
+        "metric_test": test_mean,
         "delta_abs": delta_abs,
         "uplift": _safe_percentage(delta_abs, baseline_mean),
         "mde_abs": _compute_mde_abs(
@@ -416,6 +420,8 @@ def _build_ratio_metric_row(
         "metric_name": metric_name,
         "n0": int(baseline_stats["n"]),
         "n1": int(test_stats["n"]),
+        "metric_control": baseline_stats["ratio"],
+        "metric_test": test_stats["ratio"],
         "delta_abs": delta_abs,
         "uplift": _safe_percentage(delta_abs, baseline_stats["ratio"]),
         "mde_abs": mde_abs,

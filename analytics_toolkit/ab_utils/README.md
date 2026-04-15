@@ -25,13 +25,13 @@ Ratio metrics can be passed via `ratio_metrics`, for example:
 ```python
 ratio_metrics = [
     {"name": "ctr", "numerator": "clicks", "denominator": "impressions"},
-    {"name": "ctr_agg", "numerator": "clicks", "denominator": "impressions", "level": "agg"},
+    {"name": "ctr_user", "numerator": "clicks", "denominator": "impressions", "level": "user"},
 ]
 ```
 
 Supported ratio options:
 
-- `level`: `"user"` (default) or `"agg"`
+- `level`: `"agg"` (default) or `"user"`
 - `invalid_denominator`: `"ignore"` (default)
 
 Ratio row filtering:
@@ -54,6 +54,7 @@ Output notes:
 
 - ratio metric names are prefixed as `"[ratio] metric_name"`
 - `groups` is included when there are more than two experiment groups
+- `metric_control` and `metric_test` contain the metric value in the baseline and test groups
 
 `bootstrap_adj_p` is computed per metric using a bootstrap max-statistic procedure:
 

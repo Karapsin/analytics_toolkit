@@ -205,6 +205,44 @@ def test_compute_test_metrics_matches_legacy_bootstrap_adjustment_single_thread(
     np.testing.assert_allclose(result["bootstrap_adj_p"], legacy["bootstrap_adj_p"], equal_nan=True)
 
 
+def test_compute_test_metrics_adds_metric_control_and_metric_test_columns() -> None:
+    df = _build_sample_metrics_df()
+
+    result = compute_test_metrics(df, test_vs_test=False)
+
+    assert result.columns.tolist()[:7] == [
+        "groups",
+        "metric_name",
+        "n0",
+        "n1",
+        "metric_control",
+        "metric_test",
+        "delta_abs",
+    ]
+
+    orders_row = result[
+        (result["groups"] == "test_a vs control") & (result["metric_name"] == "orders")
+    ].iloc[0]
+    assert orders_row["metric_control"] == pytest.approx((10 + 12 + 9) / 3)
+    assert orders_row["metric_test"] == pytest.approx((13 + 15 + 11 + 14) / 4)
+
+
+def test_ratio_metrics_default_to_agg_level() -> None:
+    df = _build_sample_metrics_df()
+
+    result = compute_test_metrics(
+        df,
+        ratio_metrics=[{"name": "ctr", "numerator": "clicks", "denominator": "impressions"}],
+        test_vs_test=False,
+    )
+
+    ratio_row = result[
+        (result["groups"] == "test_a vs control") & (result["metric_name"] == "[ratio] ctr")
+    ].iloc[0]
+    assert ratio_row["metric_control"] == pytest.approx((5 + 3 + 4 + 2) / (10 + 8 + 0 + 4))
+    assert ratio_row["metric_test"] == pytest.approx((7 + 5 + 6 + 8) / (14 + 10 + 12 + 16))
+
+
 def test_compute_test_metrics_parallel_bootstrap_is_reproducible() -> None:
     df = _build_sample_metrics_df()
 
