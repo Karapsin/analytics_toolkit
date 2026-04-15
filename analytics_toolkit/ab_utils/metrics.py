@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from itertools import combinations
 import math
 import warnings
@@ -23,6 +24,8 @@ def compute_test_metrics(
     test_vs_test: bool = True,
     multiple_comparisons_adjustment: bool = False,
     multiple_comparisons_adjustment_resamples: int = 2000,
+    bootstrap_random_state: int | None = 0,
+    bootstrap_n_jobs: int = 1,
 ) -> pd.DataFrame:
     """Compute per-metric experiment comparison statistics.
 
@@ -41,6 +44,8 @@ def compute_test_metrics(
     _validate_multiple_comparisons_parameters(
         multiple_comparisons_adjustment=multiple_comparisons_adjustment,
         multiple_comparisons_adjustment_resamples=multiple_comparisons_adjustment_resamples,
+        bootstrap_random_state=bootstrap_random_state,
+        bootstrap_n_jobs=bootstrap_n_jobs,
     )
 
     if df[user_id].isna().any():
@@ -88,6 +93,8 @@ def compute_test_metrics(
             metric_definitions=metric_definitions,
             comparisons=comparisons,
             resamples=multiple_comparisons_adjustment_resamples,
+            random_state=bootstrap_random_state,
+            n_jobs=bootstrap_n_jobs,
         )
 
     columns = [
@@ -129,7 +136,16 @@ def _validate_mde_parameters(mde_alpha: float, mde_power: float) -> None:
 def _validate_multiple_comparisons_parameters(
     multiple_comparisons_adjustment: bool,
     multiple_comparisons_adjustment_resamples: int,
+    bootstrap_random_state: int | None,
+    bootstrap_n_jobs: int,
 ) -> None:
+    if bootstrap_random_state is not None:
+        if isinstance(bootstrap_random_state, bool) or not isinstance(bootstrap_random_state, int):
+            raise TypeError("bootstrap_random_state must be an integer or None.")
+    if isinstance(bootstrap_n_jobs, bool) or not isinstance(bootstrap_n_jobs, int):
+        raise TypeError("bootstrap_n_jobs must be an integer.")
+    if bootstrap_n_jobs <= 0:
+        raise ValueError("bootstrap_n_jobs must be positive.")
     if not multiple_comparisons_adjustment:
         return
     if isinstance(multiple_comparisons_adjustment_resamples, bool) or not isinstance(
@@ -198,9 +214,7 @@ def _normalize_ratio_metrics(
         denominator = _require_ratio_spec_value(raw_spec, "denominator", index)
 
         level = str(raw_spec.get("level", "user")).strip().lower()
-        invalid_denominator = str(
-            raw_spec.get("invalid_denominator", raw_spec.get("invalid_denominator", "ignore"))
-        ).strip().lower()
+        invalid_denominator = str(raw_spec.get("invalid_denominator", "ignore")).strip().lower()
 
         if level not in {"agg", "user"}:
             raise ValueError(
@@ -515,29 +529,24 @@ def _apply_multiple_comparisons_adjustment(
     metric_definitions: list[dict[str, object]],
     comparisons: list[tuple[str, str]],
     resamples: int,
+    random_state: int | None,
+    n_jobs: int,
 ) -> None:
     if not rows:
         return
 
-    rng = np.random.default_rng(0)
-    family_max_statistics: dict[str, list[float]] = {
-        str(metric_definition["metric_key"]): []
-        for metric_definition in metric_definitions
-    }
-
-    for _ in range(resamples):
-        bootstrap_df = _build_bootstrap_sample(
-            df=df,
-            rng=rng,
-        )
-        iteration_max_stats = _compute_metric_family_max_statistics(
-            df=bootstrap_df,
-            group_column=group_column,
-            metric_definitions=metric_definitions,
-            comparisons=comparisons,
-        )
-        for metric_key, max_stat in iteration_max_stats.items():
-            family_max_statistics[metric_key].append(max_stat)
+    bootstrap_context = _prepare_bootstrap_context(
+        df=df,
+        group_column=group_column,
+        metric_definitions=metric_definitions,
+        comparisons=comparisons,
+    )
+    family_max_statistics = _compute_bootstrap_family_max_statistics(
+        bootstrap_context=bootstrap_context,
+        resamples=resamples,
+        random_state=random_state,
+        n_jobs=n_jobs,
+    )
 
     for row in rows:
         observed_stat = row.get("_test_stat")
@@ -560,31 +569,201 @@ def _apply_multiple_comparisons_adjustment(
         row["bootstrap_adj_p"] = exceedances / len(bootstrap_stats)
 
 
-def _build_bootstrap_sample(
-    df: pd.DataFrame,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    sample_indices = rng.integers(0, len(df), size=len(df))
-    return df.iloc[sample_indices].reset_index(drop=True).copy()
-
-
-def _compute_metric_family_max_statistics(
+def _prepare_bootstrap_context(
     df: pd.DataFrame,
     group_column: str,
     metric_definitions: list[dict[str, object]],
     comparisons: list[tuple[str, str]],
-) -> dict[str, float]:
-    max_statistics: dict[str, float] = {}
+) -> dict[str, object]:
+    group_values = df[group_column].to_numpy()
+    group_names = list(dict.fromkeys(group_values.tolist()))
+    group_code_by_name = {name: code for code, name in enumerate(group_names)}
+    group_codes = np.array([group_code_by_name[value] for value in group_values], dtype=np.int16)
+
+    metric_contexts: list[dict[str, object]] = []
     for metric_definition in metric_definitions:
         metric_key = str(metric_definition["metric_key"])
+        if metric_definition["kind"] == "mean":
+            metric_contexts.append(
+                {
+                    "kind": "mean",
+                    "metric_key": metric_key,
+                    "values": _get_numeric_metric_series(
+                        df, str(metric_definition["column"])
+                    ).to_numpy(dtype=float),
+                }
+            )
+            continue
+
+        ratio_spec = dict(metric_definition["ratio_spec"])
+        numerator = _get_numeric_metric_series(df, ratio_spec["numerator"]).to_numpy(dtype=float)
+        denominator = _get_numeric_metric_series(df, ratio_spec["denominator"]).to_numpy(
+            dtype=float
+        )
+        valid_mask = _build_ratio_valid_mask_from_arrays(
+            numerator=numerator,
+            denominator=denominator,
+            level=ratio_spec["level"],
+        )
+
+        ratio_context: dict[str, object] = {
+            "kind": "ratio",
+            "metric_key": metric_key,
+            "level": ratio_spec["level"],
+            "numerator": numerator,
+            "denominator": denominator,
+            "valid_mask": valid_mask,
+        }
+        if ratio_spec["level"] == "user":
+            ratio_values = np.full(numerator.shape[0], np.nan, dtype=float)
+            ratio_values[valid_mask] = numerator[valid_mask] / denominator[valid_mask]
+            ratio_context["values"] = ratio_values
+        metric_contexts.append(ratio_context)
+
+    return {
+        "group_codes": group_codes,
+        "metric_contexts": metric_contexts,
+        "comparisons": [
+            (group_code_by_name[test_group], group_code_by_name[baseline_group])
+            for test_group, baseline_group in comparisons
+        ],
+    }
+
+
+def _compute_bootstrap_family_max_statistics(
+    bootstrap_context: dict[str, object],
+    resamples: int,
+    random_state: int | None,
+    n_jobs: int,
+) -> dict[str, list[float]]:
+    metric_keys = [
+        str(metric_context["metric_key"])
+        for metric_context in list(bootstrap_context["metric_contexts"])
+    ]
+    family_max_statistics: dict[str, list[float]] = {metric_key: [] for metric_key in metric_keys}
+
+    batch_sizes = _split_resamples_into_batches(resamples, n_jobs=n_jobs)
+    if not batch_sizes:
+        return family_max_statistics
+
+    if n_jobs == 1 or len(batch_sizes) == 1:
+        rng = np.random.default_rng(random_state)
+        batch_result = _compute_bootstrap_family_max_statistics_batch(
+            bootstrap_context=bootstrap_context,
+            resamples=batch_sizes[0],
+            rng_or_seed=rng,
+        )
+        for metric_key, values in batch_result.items():
+            family_max_statistics[metric_key].extend(values)
+        return family_max_statistics
+
+    seed_sequence = np.random.SeedSequence(random_state)
+    child_sequences = seed_sequence.spawn(len(batch_sizes))
+    try:
+        batch_results = _compute_bootstrap_family_max_statistics_in_executor(
+            executor_cls=ProcessPoolExecutor,
+            bootstrap_context=bootstrap_context,
+            batch_sizes=batch_sizes,
+            child_sequences=child_sequences,
+            n_jobs=n_jobs,
+        )
+    except (NotImplementedError, PermissionError, OSError):
+        batch_results = _compute_bootstrap_family_max_statistics_in_executor(
+            executor_cls=ThreadPoolExecutor,
+            bootstrap_context=bootstrap_context,
+            batch_sizes=batch_sizes,
+            child_sequences=child_sequences,
+            n_jobs=n_jobs,
+        )
+
+    for batch_result in batch_results:
+        for metric_key, values in batch_result.items():
+            family_max_statistics[metric_key].extend(values)
+
+    return family_max_statistics
+
+
+def _compute_bootstrap_family_max_statistics_in_executor(
+    executor_cls: type[ProcessPoolExecutor] | type[ThreadPoolExecutor],
+    bootstrap_context: dict[str, object],
+    batch_sizes: list[int],
+    child_sequences: list[np.random.SeedSequence],
+    n_jobs: int,
+) -> list[dict[str, list[float]]]:
+    with executor_cls(max_workers=n_jobs) as executor:
+        futures = [
+            executor.submit(
+                _compute_bootstrap_family_max_statistics_batch,
+                bootstrap_context,
+                batch_size,
+                child_sequence,
+            )
+            for batch_size, child_sequence in zip(batch_sizes, child_sequences, strict=True)
+        ]
+        return [future.result() for future in futures]
+
+
+def _split_resamples_into_batches(resamples: int, n_jobs: int) -> list[int]:
+    batch_count = min(resamples, max(1, n_jobs))
+    base_batch_size, remainder = divmod(resamples, batch_count)
+    return [
+        base_batch_size + (1 if batch_index < remainder else 0)
+        for batch_index in range(batch_count)
+        if base_batch_size + (1 if batch_index < remainder else 0) > 0
+    ]
+
+
+def _compute_bootstrap_family_max_statistics_batch(
+    bootstrap_context: dict[str, object],
+    resamples: int,
+    rng_or_seed: np.random.Generator | np.random.SeedSequence,
+) -> dict[str, list[float]]:
+    rng = (
+        rng_or_seed
+        if isinstance(rng_or_seed, np.random.Generator)
+        else np.random.default_rng(rng_or_seed)
+    )
+    group_codes = np.asarray(bootstrap_context["group_codes"], dtype=np.int16)
+    comparisons = list(bootstrap_context["comparisons"])
+    metric_contexts = list(bootstrap_context["metric_contexts"])
+
+    family_max_statistics: dict[str, list[float]] = {
+        str(metric_context["metric_key"]): [] for metric_context in metric_contexts
+    }
+    sample_size = group_codes.shape[0]
+
+    for _ in range(resamples):
+        sample_indices = rng.integers(0, sample_size, size=sample_size)
+        sampled_group_codes = group_codes[sample_indices]
+        iteration_max_stats = _compute_metric_family_max_statistics_from_indices(
+            metric_contexts=metric_contexts,
+            sampled_group_codes=sampled_group_codes,
+            sample_indices=sample_indices,
+            comparisons=comparisons,
+        )
+        for metric_key, max_stat in iteration_max_stats.items():
+            family_max_statistics[metric_key].append(max_stat)
+
+    return family_max_statistics
+
+
+def _compute_metric_family_max_statistics_from_indices(
+    metric_contexts: list[dict[str, object]],
+    sampled_group_codes: np.ndarray,
+    sample_indices: np.ndarray,
+    comparisons: list[tuple[int, int]],
+) -> dict[str, float]:
+    max_statistics: dict[str, float] = {}
+    for metric_context in metric_contexts:
+        metric_key = str(metric_context["metric_key"])
         comparison_statistics: list[float] = []
-        for test_group, baseline_group in comparisons:
-            statistic = _compute_metric_test_statistic(
-                df=df,
-                group_column=group_column,
-                baseline_group=baseline_group,
-                test_group=test_group,
-                metric_definition=metric_definition,
+        for test_group_code, baseline_group_code in comparisons:
+            statistic = _compute_metric_test_statistic_from_indices(
+                metric_context=metric_context,
+                sampled_group_codes=sampled_group_codes,
+                sample_indices=sample_indices,
+                baseline_group_code=baseline_group_code,
+                test_group_code=test_group_code,
             )
             if not math.isnan(statistic):
                 comparison_statistics.append(abs(statistic))
@@ -595,55 +774,103 @@ def _compute_metric_family_max_statistics(
     return max_statistics
 
 
-def _compute_metric_test_statistic(
-    df: pd.DataFrame,
-    group_column: str,
-    baseline_group: str,
-    test_group: str,
-    metric_definition: dict[str, object],
+def _compute_metric_test_statistic_from_indices(
+    metric_context: dict[str, object],
+    sampled_group_codes: np.ndarray,
+    sample_indices: np.ndarray,
+    baseline_group_code: int,
+    test_group_code: int,
 ) -> float:
-    if metric_definition["kind"] == "mean":
-        metric_values = _get_numeric_metric_series(df, str(metric_definition["column"]))
-        baseline_values = metric_values[df[group_column] == baseline_group].dropna()
-        test_values = metric_values[df[group_column] == test_group].dropna()
-        statistic, _ = _compute_ttest_stat_and_p_value(baseline_values, test_values)
+    baseline_mask = sampled_group_codes == baseline_group_code
+    test_mask = sampled_group_codes == test_group_code
+
+    if metric_context["kind"] == "mean":
+        sampled_values = np.asarray(metric_context["values"], dtype=float)[sample_indices]
+        baseline_values = sampled_values[baseline_mask & ~np.isnan(sampled_values)]
+        test_values = sampled_values[test_mask & ~np.isnan(sampled_values)]
+        statistic, _ = _compute_ttest_stat_and_p_value_arrays(baseline_values, test_values)
         return statistic
 
-    ratio_spec = dict(metric_definition["ratio_spec"])
-    numerator = _get_numeric_metric_series(df, ratio_spec["numerator"])
-    denominator = _get_numeric_metric_series(df, ratio_spec["denominator"])
-    valid_mask = _build_ratio_valid_mask(
-        numerator=numerator,
-        denominator=denominator,
-        level=ratio_spec["level"],
-    )
-    baseline_mask = (df[group_column] == baseline_group) & valid_mask
-    test_mask = (df[group_column] == test_group) & valid_mask
-
-    if ratio_spec["level"] == "user":
-        baseline_values = (numerator[baseline_mask] / denominator[baseline_mask]).dropna()
-        test_values = (numerator[test_mask] / denominator[test_mask]).dropna()
-        statistic, _ = _compute_ttest_stat_and_p_value(baseline_values, test_values)
+    if metric_context["level"] == "user":
+        sampled_values = np.asarray(metric_context["values"], dtype=float)[sample_indices]
+        baseline_values = sampled_values[baseline_mask & ~np.isnan(sampled_values)]
+        test_values = sampled_values[test_mask & ~np.isnan(sampled_values)]
+        statistic, _ = _compute_ttest_stat_and_p_value_arrays(baseline_values, test_values)
         return statistic
 
-    baseline_frame = pd.DataFrame(
-        {"numerator": numerator[baseline_mask], "denominator": denominator[baseline_mask]}
+    sampled_numerator = np.asarray(metric_context["numerator"], dtype=float)[sample_indices]
+    sampled_denominator = np.asarray(metric_context["denominator"], dtype=float)[sample_indices]
+    sampled_valid_mask = np.asarray(metric_context["valid_mask"], dtype=bool)[sample_indices]
+
+    baseline_valid_mask = baseline_mask & sampled_valid_mask
+    test_valid_mask = test_mask & sampled_valid_mask
+
+    baseline_stats = _compute_agg_ratio_group_stats_arrays(
+        sampled_numerator[baseline_valid_mask],
+        sampled_denominator[baseline_valid_mask],
     )
-    test_frame = pd.DataFrame(
-        {"numerator": numerator[test_mask], "denominator": denominator[test_mask]}
+    test_stats = _compute_agg_ratio_group_stats_arrays(
+        sampled_numerator[test_valid_mask],
+        sampled_denominator[test_valid_mask],
     )
-    baseline_stats = _compute_agg_ratio_group_stats(baseline_frame)
-    test_stats = _compute_agg_ratio_group_stats(test_frame)
     if not _both_present(test_stats["ratio"], baseline_stats["ratio"]):
         return math.nan
     delta_abs = test_stats["ratio"] - baseline_stats["ratio"]
     se_diff = _compute_agg_ratio_diff_standard_error(
-        baseline_frame=baseline_frame,
+        baseline_frame=_build_ratio_frame_from_arrays(
+            sampled_numerator[baseline_valid_mask], sampled_denominator[baseline_valid_mask]
+        ),
         baseline_ratio=baseline_stats["ratio"],
-        test_frame=test_frame,
+        test_frame=_build_ratio_frame_from_arrays(
+            sampled_numerator[test_valid_mask], sampled_denominator[test_valid_mask]
+        ),
         test_ratio=test_stats["ratio"],
     )
     return _compute_studentized_statistic(delta_abs, se_diff)
+
+
+def _compute_ttest_stat_and_p_value_arrays(
+    baseline_values: np.ndarray,
+    test_values: np.ndarray,
+) -> tuple[float, float]:
+    return _compute_ttest_stat_and_p_value(
+        pd.Series(baseline_values),
+        pd.Series(test_values),
+    )
+
+
+def _compute_agg_ratio_group_stats_arrays(
+    numerator: np.ndarray,
+    denominator: np.ndarray,
+) -> dict[str, float]:
+    n = int(numerator.shape[0])
+    if n == 0:
+        return {"n": 0, "ratio": math.nan}
+
+    denominator_sum = float(denominator.sum())
+    if denominator_sum <= 0:
+        return {"n": n, "ratio": math.nan}
+
+    numerator_sum = float(numerator.sum())
+    return {"n": n, "ratio": numerator_sum / denominator_sum}
+
+
+def _build_ratio_frame_from_arrays(
+    numerator: np.ndarray,
+    denominator: np.ndarray,
+) -> pd.DataFrame:
+    return pd.DataFrame({"numerator": numerator, "denominator": denominator})
+
+
+def _build_ratio_valid_mask_from_arrays(
+    numerator: np.ndarray,
+    denominator: np.ndarray,
+    level: str,
+) -> np.ndarray:
+    nonmissing_mask = ~np.isnan(numerator) & ~np.isnan(denominator)
+    if level == "user":
+        return nonmissing_mask & (denominator > 0)
+    return nonmissing_mask
 
 
 def _build_ratio_valid_mask(

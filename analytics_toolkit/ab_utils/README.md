@@ -46,6 +46,8 @@ Other function options:
 - `test_vs_test=True`: when `False`, only compare each test group against control
 - `multiple_comparisons_adjustment=False`: when `True`, add `bootstrap_adj_p`
 - `multiple_comparisons_adjustment_resamples=2000`: number of bootstrap resamples for `bootstrap_adj_p`
+- `bootstrap_random_state=0`: bootstrap RNG seed; set `None` for non-deterministic resampling
+- `bootstrap_n_jobs=1`: number of worker executors for bootstrap batches
 
 Output notes:
 
