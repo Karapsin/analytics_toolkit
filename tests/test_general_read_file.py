@@ -45,6 +45,7 @@ def test_resolve_base_dir_uses_first_real_caller_file(monkeypatch) -> None:
     fake_stack = [
         FrameInfo(filename="/Users/test/project/utils_dev/analytics_toolkit/general/read_file.py"),
         FrameInfo(filename="/private/var/folders/vq/zns5cfbd6zd64jw8hfgzzczr0000gq/T/ipykernel_99706/123.py"),
+        FrameInfo(filename="/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/asyncio/events.py"),
         FrameInfo(filename="/Users/test/project/tickets/april_2026/MAL-3657/compute_metrics.py"),
     ]
     monkeypatch.delattr(__main__, "__file__", raising=False)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+import sysconfig
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,20 @@ def _is_runtime_path(path: Path) -> bool:
         "/tmp/",
         "/var/folders/",
     )
-    return any(fragment in normalized for fragment in runtime_fragments)
+    if any(fragment in normalized for fragment in runtime_fragments):
+        return True
+
+    runtime_prefixes = {
+        Path(prefix).expanduser().resolve()
+        for prefix in (
+            sys.prefix,
+            sys.base_prefix,
+            sys.exec_prefix,
+            sysconfig.get_paths().get("stdlib"),
+        )
+        if prefix
+    }
+    return any(path == prefix or prefix in path.parents for prefix in runtime_prefixes)
 
 
 def read_file(file_path: str, params_dict: dict[str, Any] | None = None) -> str:
