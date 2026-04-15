@@ -29,7 +29,7 @@ def _execute_trino(
             _iterate_statements_with_progress(statements, "trino"),
             start=1,
         ):
-            _maybe_print_query(statement, print_queries)
+            _maybe_print_query(statement, print_queries, split_preview=True)
             _execute_trino_statement(cursor, statement)
             _maybe_sleep_between_queries(index, total, random_sleep_seconds)
     except Exception:
@@ -53,7 +53,7 @@ def _execute_gp(
             if not gp_break_query:
                 time_print("Executing 1 statement set on gp")
                 statement = query
-                _maybe_print_query(statement, print_queries)
+                _maybe_print_query(statement, print_queries, split_preview=False)
                 cursor.execute(statement)
             else:
                 statements = _split_sql_statements(query)
@@ -63,7 +63,7 @@ def _execute_gp(
                     _iterate_statements_with_progress(statements, "gp"),
                     start=1,
                 ):
-                    _maybe_print_query(statement, print_queries)
+                    _maybe_print_query(statement, print_queries, split_preview=True)
                     cursor.execute(statement)
                     _maybe_sleep_between_queries(index, total, random_sleep_seconds)
             conn.commit()
@@ -91,7 +91,7 @@ def _execute_ch(
             _iterate_statements_with_progress(statements, "ch"),
             start=1,
         ):
-            _maybe_print_query(statement, print_queries)
+            _maybe_print_query(statement, print_queries, split_preview=True)
             _execute_ch_statement(client, statement)
             _maybe_sleep_between_queries(index, total, random_sleep_seconds)
     except Exception:
@@ -170,10 +170,13 @@ def _iterate_statements_with_progress(
     )
 
 
-def _maybe_print_query(query: str, print_queries: bool) -> None:
+def _maybe_print_query(query: str, print_queries: bool, split_preview: bool) -> None:
     if print_queries:
-        statements = _split_sql_statements(query)
-        statement_to_print = statements[0] if statements else query.strip()
+        if split_preview:
+            statements = _split_sql_statements(query)
+            statement_to_print = statements[0] if statements else query.strip()
+        else:
+            statement_to_print = query.strip()
         time_print(f"Executing query:\n{statement_to_print}")
 
 
