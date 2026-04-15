@@ -43,6 +43,7 @@ Other function options:
 
 - `mde_alpha=0.05`
 - `mde_power=0.80`
+- `pre_exp_metrics_df=None`: optional pre-experiment dataframe used to compute CUPED-adjusted p-values
 - `test_vs_test=True`: when `False`, only compare each test group against control
 - `multiple_comparisons_adjustment=False`: when `True`, add `bootstrap_adj_p`
 - `multiple_comparisons_adjustment_resamples=2000`: number of bootstrap resamples for `bootstrap_adj_p`
@@ -57,6 +58,14 @@ Output notes:
 - `group_1` and `group_2` are included when there are more than two experiment groups
 - `metric_control` and `metric_test` contain the metric value in the baseline and test groups
 - `delta_relative` and `mde_relative` are raw relative changes, e.g. `0.05` for 5%
+- when `pre_exp_metrics_df` is provided, `p-value CUPED` is added after `p-value`
+
+`pre_exp_metrics_df` requirements:
+
+- it must contain the same `group` and `user_id` columns used for the main call
+- it must contain the control label in the same group column
+- overlapping `user_id` values must map to the same experiment group in both dataframes
+- if a metric cannot be built from the pre-experiment dataframe, `p-value CUPED` is set to `NaN` and a warning is emitted
 
 `bootstrap_adj_p` is computed per metric using a bootstrap max-statistic procedure:
 

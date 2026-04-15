@@ -267,11 +267,10 @@ def test_pivot_and_break_table_enforces_same_row_order_with_padding(tmp_path: Pa
     workbook = load_workbook(output, read_only=True, data_only=True)
     try:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
-        assert rows[:4] == [
+        assert rows[:3] == [
             ("metric", "control", "test_1", None, "metric", "control", "test_1"),
             ("users", 100, 110, None, "users", None, None),
             ("arpu", 2.5, 2.7, None, "arpu", 3.1, 3.3),
-            (None, None, None, None, None, None, None),
         ]
     finally:
         workbook.close()

@@ -327,3 +327,122 @@ def test_compute_test_metrics_validates_bootstrap_parameters(
 
     with pytest.raises(error_type, match=message):
         compute_test_metrics(df, **kwargs)
+
+
+def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [10, 11, 9, 12, 14, 15, 13, 16],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [8, 10, 6, 11, 12, 12, 10, 15],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        test_vs_test=False,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    assert result.columns[result.columns.get_loc("p-value") + 1] == "p-value CUPED"
+    orders_row = result[result["metric_name"] == "orders"].iloc[0]
+    assert not math.isnan(float(orders_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_adds_cuped_p_value_for_ratio_metrics() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [5, 6, 4, 5, 8, 9, 7, 8],
+            "impressions": [10, 12, 8, 10, 12, 14, 10, 12],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [4, 5, 3, 4, 6, 7, 5, 6],
+            "impressions": [9, 11, 8, 10, 11, 15, 9, 13],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        ratio_metrics=[
+            {
+                "name": "ctr_user",
+                "numerator": "clicks",
+                "denominator": "impressions",
+                "level": "user",
+            }
+        ],
+        test_vs_test=False,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    ratio_row = result[result["metric_name"] == "ctr_user"].iloc[0]
+    assert ratio_row["metric_type"] == "ratio"
+    assert not math.isnan(float(ratio_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_warns_and_sets_nan_when_pre_metric_is_missing() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [10, 11, 9, 12, 14, 15, 13, 16],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "gmv": [100, 110, 90, 120, 140, 150, 130, 160],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="Could not compute CUPED p-value for metric 'orders'"):
+        result = compute_test_metrics(
+            df,
+            control="control",
+            test_vs_test=False,
+            pre_exp_metrics_df=pre_df,
+        )
+
+    orders_row = result[result["metric_name"] == "orders"].iloc[0]
+    assert math.isnan(float(orders_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_validates_pre_experiment_group_assignments() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 5)),
+            "group_name": ["control", "control", "test", "test"],
+            "orders": [10, 11, 14, 15],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 5)),
+            "group_name": ["control", "test", "test", "test"],
+            "orders": [8, 9, 12, 13],
+        }
+    )
+
+    with pytest.raises(ValueError, match="must match between df and pre_exp_metrics_df"):
+        compute_test_metrics(
+            df,
+            control="control",
+            test_vs_test=False,
+            pre_exp_metrics_df=pre_df,
+        )
