@@ -66,7 +66,7 @@ def compute_test_metrics(
     if control not in group_names:
         raise ValueError(f"Control label '{control}' was not found in column '{group}'.")
 
-    include_groups = len(group_names) > 2
+    include_groups = True
     ratio_specs = _normalize_ratio_metrics(df, ratio_metrics, reserved_columns={group, user_id})
     comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
     metric_definitions = _build_metric_definitions(metric_columns, ratio_specs)
