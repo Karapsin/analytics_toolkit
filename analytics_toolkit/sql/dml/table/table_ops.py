@@ -5,8 +5,10 @@ from typing import Any
 import pandas as pd
 
 from ...connection.config import TrinoConfig, get_connection_config
+from ...connection.get_sql_connection import with_sql_connection
 from ...ddl.create_sql_table import create_sql_table
-from ...connection.errors import UnsupportedConnectionTypeError
+from ...ddl.create_sql_table import quote_identifier
+from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from analytics_toolkit.general import time_print
 
 
@@ -117,6 +119,37 @@ def analyze_table(
     raise UnsupportedConnectionTypeError(
         "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
     )
+
+
+@with_sql_connection("gp")
+def gp_vacuum(
+    conn: Any,
+    table_name: str,
+    analyze: bool = False,
+    full: bool = False,
+    verbose: bool = True,
+) -> None:
+    qualified_table_name = quote_qualified_table_name(table_name, "gp")
+    options: list[str] = []
+    if full:
+        options.append("FULL")
+    if verbose:
+        options.append("VERBOSE")
+    if analyze:
+        options.append("ANALYZE")
+
+    options_sql = f" ({', '.join(options)})" if options else ""
+    sql = f"VACUUM{options_sql} {qualified_table_name}"
+
+    time_print(f"Vacuuming table {qualified_table_name} on gp")
+    previous_autocommit = conn.autocommit
+    cursor = conn.cursor()
+    try:
+        conn.autocommit = True
+        cursor.execute(sql)
+    finally:
+        cursor.close()
+        conn.autocommit = previous_autocommit
 
 
 def drop_table_with_retry(
@@ -261,6 +294,17 @@ def split_trino_table_name(table_name: str) -> tuple[str, str, str]:
             )
         return config.catalog, config.schema, parts[0]
     raise ValueError(f"Invalid table name: {table_name}")
+
+
+def quote_qualified_table_name(table_name: str, connection_type: str) -> str:
+    parts = [part.strip() for part in table_name.split(".")]
+    if not parts or any(not part for part in parts):
+        raise InvalidSqlInputError("Table name must be a non-empty identifier.")
+    if len(parts) > 3:
+        raise InvalidSqlInputError(
+            "Table name must be unqualified or dot-qualified up to three parts."
+        )
+    return ".".join(quote_identifier(part, connection_type) for part in parts)
 
 
 def _gp_table_exists(connection: Any, table_name: str) -> bool:

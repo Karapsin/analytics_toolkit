@@ -7,6 +7,7 @@ from .table_ops import (
     drop_table_with_retry,
     finalize_stage_table,
     get_trino_table_column_types,
+    gp_vacuum,
     insert_from_table,
     table_exists,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "drop_table_with_retry",
     "finalize_stage_table",
     "get_trino_table_column_types",
+    "gp_vacuum",
     "insert_from_table",
     "normalize_key_columns",
     "table_exists",

@@ -3,6 +3,7 @@ from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.get_sql_connection import get_sql_connection, with_sql_connection
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql, read_sql as read
+from .dml.table import gp_vacuum
 from analytics_toolkit.general import time_print
 from .dml.transfer.flow.api import transfer_table, transfer_table as transfer
 
@@ -12,6 +13,7 @@ __all__ = [
     "build_create_table_sql",
     "create_sql_table",
     "get_sql_connection",
+    "gp_vacuum",
     "load_df",
     "read",
     "read_sql",

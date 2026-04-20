@@ -13,6 +13,7 @@ from analytics_toolkit import sql
 
 sql.read(...)
 sql.execute(...)
+sql.gp_vacuum(...)
 sql.create_sql_table(...)
 sql.load_df(...)
 sql.transfer(...)
@@ -23,11 +24,25 @@ sql.get_sql_connection(...)
 
 - `read_sql` / `read`: run a query and return a dataframe
 - `execute_sql` / `execute`: run SQL statements without returning a dataframe
+- `gp_vacuum`: run Greenplum `VACUUM` outside a transaction block
 - `create_sql_table`: build and execute `CREATE TABLE` statements
 - `load_df`: load a pandas dataframe into a SQL table
 - `transfer_table` / `transfer`: move data between supported backends
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
+
+## Greenplum Maintenance
+
+Use `gp_vacuum` for Greenplum vacuum operations that must run outside a transaction
+block.
+
+```python
+from analytics_toolkit import sql
+
+sql.gp_vacuum("cvm_sbx.some_table")
+sql.gp_vacuum("cvm_sbx.some_table", analyze=True)
+sql.gp_vacuum("cvm_sbx.some_table", full=True, verbose=True)
+```
 
 ## Configuration
 
