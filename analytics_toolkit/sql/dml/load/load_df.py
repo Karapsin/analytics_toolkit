@@ -7,6 +7,7 @@ import pandas as pd
 from ...ddl.create_sql_table import create_sql_table
 from ...connection.errors import UnsupportedConnectionTypeError
 from ...connection.get_sql_connection import get_sql_connection
+from ..transfer.runtime.retry import rollback_quietly, run_with_retry
 from analytics_toolkit.general import time_print
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
@@ -32,9 +33,15 @@ def load_df(
     append: bool = False,
     gp_distributed_by_key: list[str] | None = None,
     key_columns: list[str] | None = None,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
 ) -> int:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
+    if retry_cnt < 1:
+        raise ValueError("retry_cnt must be at least 1.")
+    if timeout_increment < 0:
+        raise ValueError("timeout_increment must be non-negative.")
 
     options = _build_load_options(
         connection_type=connection_type,
@@ -43,75 +50,89 @@ def load_df(
         gp_distributed_by_key=gp_distributed_by_key,
         key_columns=key_columns,
     )
-    connection_ref = {"connection": get_sql_connection(options.connection_type)}
-    state: LoadState | None = None
-    try:
-        state = LoadState(
-            target_exists=table_exists(
-                options.connection_type,
-                connection_ref["connection"],
-                options.destination_table,
-            )
-        )
-
-        if df.empty:
-            if options.append and state.target_exists:
-                time_print(
-                    f"Skipping empty DataFrame append into {options.connection_type}.{options.destination_table}"
+    def operation(attempt: int) -> int:
+        connection_ref = {"connection": get_sql_connection(options.connection_type)}
+        state: LoadState | None = None
+        try:
+            state = LoadState(
+                target_exists=table_exists(
+                    options.connection_type,
+                    connection_ref["connection"],
+                    options.destination_table,
                 )
-                return 0
-            raise ValueError("Cannot create or replace a table from an empty DataFrame.")
+            )
 
-        if options.gp_distributed_by_key:
-            validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
+            if df.empty:
+                if options.append and state.target_exists:
+                    time_print(
+                        f"Skipping empty DataFrame append into {options.connection_type}.{options.destination_table}"
+                    )
+                    return 0
+                raise ValueError("Cannot create or replace a table from an empty DataFrame.")
 
-        validate_key_columns_in_columns(options.key_columns, df.columns)
-        _validate_dataframe_key_uniqueness(df, options.key_columns)
+            if options.gp_distributed_by_key:
+                validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
 
-        if not options.append and state.target_exists:
+            validate_key_columns_in_columns(options.key_columns, df.columns)
+            _validate_dataframe_key_uniqueness(df, options.key_columns)
+
+            if not options.append and state.target_exists:
+                time_print(
+                    f"Dropping existing table {options.destination_table} on {options.connection_type}"
+                )
+                drop_table(
+                    options.connection_type,
+                    connection_ref["connection"],
+                    options.destination_table,
+                )
+                state.target_exists = False
+
+            if not state.target_exists:
+                create_sql_table(
+                    options.connection_type,
+                    connection_ref["connection"],
+                    options.destination_table,
+                    df,
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                )
+
+            if options.connection_type == "trino":
+                state.target_column_types = get_trino_table_column_types(
+                    connection_ref["connection"],
+                    options.destination_table,
+                )
+
+            inserted_rows = _load_dataframe(
+                options=options,
+                state=state,
+                connection_ref=connection_ref,
+                df=df,
+            )
+
+            analyze_table(
+                connection_type=options.connection_type,
+                connection=connection_ref["connection"],
+                table_name=options.destination_table,
+            )
             time_print(
-                f"Dropping existing table {options.destination_table} on {options.connection_type}"
+                f"Finished loading DataFrame into {options.connection_type}.{options.destination_table}: {inserted_rows} row(s)"
             )
-            drop_table(
-                options.connection_type,
-                connection_ref["connection"],
-                options.destination_table,
-            )
-            state.target_exists = False
+            return inserted_rows
+        except Exception:
+            if options.connection_type == "gp":
+                rollback_quietly(connection_ref["connection"])
+            raise
+        finally:
+            _cleanup_load(connection_ref, options, state)
 
-        if not state.target_exists:
-            create_sql_table(
-                options.connection_type,
-                connection_ref["connection"],
-                options.destination_table,
-                df,
-                gp_distributed_by_key=options.gp_distributed_by_key,
-            )
-
-        if options.connection_type == "trino":
-            state.target_column_types = get_trino_table_column_types(
-                connection_ref["connection"],
-                options.destination_table,
-            )
-
-        inserted_rows = _load_dataframe(
-            options=options,
-            state=state,
-            connection_ref=connection_ref,
-            df=df,
-        )
-
-        analyze_table(
-            connection_type=options.connection_type,
-            connection=connection_ref["connection"],
-            table_name=options.destination_table,
-        )
-        time_print(
-            f"Finished loading DataFrame into {options.connection_type}.{options.destination_table}: {inserted_rows} row(s)"
-        )
-        return inserted_rows
-    finally:
-        _cleanup_load(connection_ref, options, state)
+    return run_with_retry(
+        operation_name=(
+            f"loading DataFrame into {options.connection_type}.{options.destination_table}"
+        ),
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        operation=operation,
+    )
 
 def _build_load_options(
     connection_type: str,
@@ -158,7 +179,7 @@ def _load_dataframe(
             connection_ref,
             state.overlap_stage_table,
             df,
-            retry_fn=_run_without_retry,
+            retry_fn=run_with_retry,
             retry_cnt=1,
             timeout_increment=0,
             target_column_types=state.target_column_types,
@@ -185,7 +206,7 @@ def _load_dataframe(
         connection_ref,
         options.destination_table,
         df,
-        retry_fn=_run_without_retry,
+        retry_fn=run_with_retry,
         retry_cnt=1,
         timeout_increment=0,
         target_column_types=state.target_column_types,
@@ -210,15 +231,6 @@ def _cleanup_load(
             )
     time_print(f"Closing {options.connection_type} connection")
     connection_ref["connection"].close()
-
-
-def _run_without_retry(
-    operation_name: str,
-    retry_cnt: int,
-    timeout_increment: int | float,
-    operation: Any,
-) -> Any:
-    return operation(1)
 
 
 def _normalize_gp_distributed_by_key(

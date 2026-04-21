@@ -8,11 +8,11 @@ import sqlparse
 from tqdm import tqdm
 
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
-from ...connection.get_sql_connection import with_sql_connection
+from ...connection.get_sql_connection import get_sql_connection
+from ..transfer.runtime.retry import rollback_quietly, run_with_retry
 from analytics_toolkit.general import time_print
 
 
-@with_sql_connection("trino")
 def _execute_trino(
     conn: Any,
     query: str,
@@ -39,7 +39,6 @@ def _execute_trino(
     return None
 
 
-@with_sql_connection("gp")
 def _execute_gp(
     conn: Any,
     query: str,
@@ -77,11 +76,10 @@ def _execute_gp(
     except Exception:
         failed_query = statement if statement is not None else query
         time_print(f"SQL failed on gp:\n{failed_query}")
-        conn.rollback()
+        rollback_quietly(conn)
         raise
 
 
-@with_sql_connection("ch")
 def _execute_ch(
     client: Any,
     query: str,
@@ -114,36 +112,61 @@ def execute_sql(
     print_queries: bool = True,
     gp_break_query: bool = False,
     gp_commit_each_statement: bool = False,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
 ) -> Any:
     normalized_type = connection_type.strip().lower()
     sql = query.strip()
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
+    if retry_cnt < 1:
+        raise ValueError("retry_cnt must be at least 1.")
+    if timeout_increment < 0:
+        raise ValueError("timeout_increment must be non-negative.")
 
-    if normalized_type == "trino":
-        return _execute_trino(
-            sql,
-            random_sleep_seconds=random_sleep_seconds,
-            print_queries=print_queries,
-        )
-    if normalized_type == "gp":
-        return _execute_gp(
-            sql,
-            random_sleep_seconds=random_sleep_seconds,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-        )
-    if normalized_type == "ch":
-        return _execute_ch(
-            sql,
-            random_sleep_seconds=random_sleep_seconds,
-            print_queries=print_queries,
-        )
+    def operation(attempt: int) -> Any:
+        connection = get_sql_connection(normalized_type)
+        try:
+            if normalized_type == "trino":
+                return _execute_trino(
+                    connection,
+                    sql,
+                    random_sleep_seconds=random_sleep_seconds,
+                    print_queries=print_queries,
+                )
+            if normalized_type == "gp":
+                return _execute_gp(
+                    connection,
+                    sql,
+                    random_sleep_seconds=random_sleep_seconds,
+                    print_queries=print_queries,
+                    gp_break_query=gp_break_query,
+                    gp_commit_each_statement=gp_commit_each_statement,
+                )
+            if normalized_type == "ch":
+                return _execute_ch(
+                    connection,
+                    sql,
+                    random_sleep_seconds=random_sleep_seconds,
+                    print_queries=print_queries,
+                )
+            raise UnsupportedConnectionTypeError(
+                "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
+            )
+        except Exception:
+            if normalized_type == "gp":
+                rollback_quietly(connection)
+            raise
+        finally:
+            time_print(f"Closing {normalized_type} connection")
+            connection.close()
 
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
+    return run_with_retry(
+        operation_name=f"executing SQL on {normalized_type}",
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        operation=operation,
     )
 
 

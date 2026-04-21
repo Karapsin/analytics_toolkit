@@ -11,11 +11,11 @@ SQL utilities for reading, executing, loading, and transferring data across:
 ```python
 from analytics_toolkit import sql
 
-sql.read(...)
-sql.execute(...)
+sql.read(..., retry_cnt=5, timeout_increment=5)
+sql.execute(..., retry_cnt=5, timeout_increment=5)
 sql.gp_vacuum(...)
 sql.create_sql_table(...)
-sql.load_df(...)
+sql.load_df(..., retry_cnt=5, timeout_increment=5)
 sql.transfer(...)
 sql.get_sql_connection(...)
 ```
@@ -30,6 +30,10 @@ sql.get_sql_connection(...)
 - `transfer_table` / `transfer`: move data between supported backends
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
+
+`read_sql`, `execute_sql`, `load_df`, and `transfer_table` all support
+`retry_cnt` and `timeout_increment`. Retries restart the whole public operation
+from the beginning with a fresh connection.
 
 ## Greenplum Maintenance
 

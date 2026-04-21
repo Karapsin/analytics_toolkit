@@ -6,11 +6,11 @@ import pandas as pd
 import sqlparse
 
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
-from ...connection.get_sql_connection import with_sql_connection
+from ...connection.get_sql_connection import get_sql_connection
+from ..transfer.runtime.retry import rollback_quietly, run_with_retry
 from analytics_toolkit.general import time_print
 
 
-@with_sql_connection("trino")
 def _read_trino(conn: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from trino")
     try:
@@ -21,7 +21,6 @@ def _read_trino(conn: Any, query: str, print_queries: bool = True) -> pd.DataFra
         raise
 
 
-@with_sql_connection("gp")
 def _read_gp(conn: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from gp")
     try:
@@ -32,7 +31,6 @@ def _read_gp(conn: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
         raise
 
 
-@with_sql_connection("ch")
 def _read_ch(client: Any, query: str, print_queries: bool = True) -> pd.DataFrame:
     time_print("Reading DataFrame from ch")
     try:
@@ -58,27 +56,49 @@ def read_sql(
     connection_type: str,
     query: str,
     print_queries: bool = True,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
 ) -> pd.DataFrame:
     normalized_type = connection_type.strip().lower()
     sql = query.strip()
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
+    if retry_cnt < 1:
+        raise ValueError("retry_cnt must be at least 1.")
+    if timeout_increment < 0:
+        raise ValueError("timeout_increment must be non-negative.")
 
     statements = [statement.strip() for statement in sqlparse.split(sql) if statement.strip()]
     if len(statements) != 1:
         raise InvalidSqlInputError("read_sql expects exactly one SQL statement.")
     sql = statements[0].rstrip(";").rstrip()
 
-    if normalized_type == "trino":
-        return _read_trino(sql, print_queries=print_queries)
-    if normalized_type == "gp":
-        return _read_gp(sql, print_queries=print_queries)
-    if normalized_type == "ch":
-        return _read_ch(sql, print_queries=print_queries)
+    def operation(attempt: int) -> pd.DataFrame:
+        connection = get_sql_connection(normalized_type)
+        try:
+            if normalized_type == "trino":
+                return _read_trino(connection, sql, print_queries=print_queries)
+            if normalized_type == "gp":
+                return _read_gp(connection, sql, print_queries=print_queries)
+            if normalized_type == "ch":
+                return _read_ch(connection, sql, print_queries=print_queries)
+            raise UnsupportedConnectionTypeError(
+                "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
+            )
+        except Exception:
+            if normalized_type == "gp":
+                rollback_quietly(connection)
+            raise
+        finally:
+            time_print(f"Closing {normalized_type} connection")
+            connection.close()
 
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
+    return run_with_retry(
+        operation_name=f"reading query on {normalized_type}",
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        operation=operation,
     )
 
 
