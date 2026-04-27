@@ -60,6 +60,9 @@ def insert_table_batch(
                     f"Stage insert on {connection_type} failed for {table_name}; "
                     "the current stage table will be discarded and reloaded from scratch."
                 )
+                time_print(
+                    f"Original {connection_type} insert error for {table_name}: {type(exc).__name__}: {exc!r}"
+                )
                 raise AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
                 ) from exc
