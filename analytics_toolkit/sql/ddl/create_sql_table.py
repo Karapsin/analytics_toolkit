@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -146,7 +147,9 @@ def _infer_ch_type(series: pd.Series) -> str:
         base_type = "DateTime64(6)"
     else:
         non_null = series.dropna()
-        if not non_null.empty and all(
+        if not non_null.empty and all(isinstance(value, Decimal) for value in non_null):
+            base_type = "Float64"
+        elif not non_null.empty and all(
             hasattr(value, "year")
             and hasattr(value, "month")
             and hasattr(value, "day")

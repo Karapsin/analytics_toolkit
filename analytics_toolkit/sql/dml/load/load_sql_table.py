@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Sequence
+from decimal import Decimal
 from itertools import islice
 from typing import Any
 
@@ -129,7 +130,35 @@ def _insert_trino_batch(
 
 
 def _insert_ch_batch(client: Any, table_name: str, batch: pd.DataFrame) -> None:
-    client.insert_df(table=table_name, df=batch, column_names=list(batch.columns))
+    normalized_batch = normalize_ch_batch(batch)
+    client.insert_df(
+        table=table_name,
+        df=normalized_batch,
+        column_names=list(batch.columns),
+    )
+
+
+def normalize_ch_batch(batch: pd.DataFrame) -> pd.DataFrame:
+    normalized = batch.map(_normalize_ch_scalar)
+    for column_name in normalized.columns:
+        series = normalized[column_name]
+        normalized[column_name] = series.astype(object).where(series.notna(), None)
+    return normalized
+
+
+def _normalize_ch_scalar(value: object) -> object:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, list):
+        return [_normalize_ch_scalar(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_ch_scalar(item) for item in value)
+    if isinstance(value, dict):
+        return {
+            _normalize_ch_scalar(key): _normalize_ch_scalar(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _iter_trino_rows(
