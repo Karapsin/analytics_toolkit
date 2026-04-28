@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ...table.table_ops import (
     analyze_table,
+    clear_ch_distributed_table_data,
     clear_target_table,
     drop_table_with_retry,
     finalize_stage_table,
@@ -53,6 +54,11 @@ def finalize_loaded_stage(
         target_exists=stage_state.target_exists,
         sample_batch=stage_state.first_non_empty_batch,
         gp_distributed_by_key=options.gp_distributed_by_key,
+        ch_partition_by=options.ch_partition_by,
+        ch_order_by=options.ch_order_by,
+        ch_engine=options.ch_engine,
+        ch_cluster=options.ch_cluster,
+        ch_sharding_key=options.ch_sharding_key,
     )
     analyze_table(
         connection_type=options.to_db,
@@ -69,6 +75,13 @@ def finalize_empty_transfer(
     if options.replace_target_table:
         if not stage_state.target_exists:
             raise ValueError("Cannot create target table from an empty result set.")
+        if options.to_db == "ch":
+            clear_ch_distributed_table_data(
+                connection_refs.target["connection"],
+                options.target_table,
+                ch_cluster=options.ch_cluster,
+            )
+            return
         clear_target_table(
             options.to_db,
             connection_refs.target["connection"],

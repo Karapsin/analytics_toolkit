@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import pandas as pd
 
 from ...load.stage import create_stage_table
@@ -34,6 +36,16 @@ def initialize_stage_for_first_batch(
         options.gp_distributed_by_key,
         stage_state.first_non_empty_batch.columns,
     )
+    validate_ch_columns_in_columns(
+        options.ch_partition_by,
+        stage_state.first_non_empty_batch.columns,
+        "ch_partition_by",
+    )
+    validate_ch_columns_in_columns(
+        options.ch_order_by,
+        stage_state.first_non_empty_batch.columns,
+        "ch_order_by",
+    )
     stage_state.stage_table = create_stage_table(
         connection_type=options.to_db,
         connection=connection_refs.target["connection"],
@@ -46,4 +58,21 @@ def initialize_stage_for_first_batch(
         stage_state.stage_column_types = get_trino_table_column_types(
             connection_refs.target["connection"],
             stage_state.stage_table,
+        )
+
+
+def validate_ch_columns_in_columns(
+    value: list[str] | str | None,
+    columns: Sequence[str],
+    option_name: str,
+) -> None:
+    if value is None or isinstance(value, str):
+        return
+
+    available_columns = {str(column) for column in columns}
+    missing_columns = [column for column in value if column not in available_columns]
+    if missing_columns:
+        raise ValueError(
+            f"{option_name} columns were not found in the staged data: "
+            + ", ".join(missing_columns)
         )

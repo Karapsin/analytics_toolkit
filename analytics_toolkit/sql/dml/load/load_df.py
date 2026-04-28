@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -14,6 +15,7 @@ from .models import LoadOptions, LoadState
 from .stage import create_stage_table
 from ..table.table_ops import (
     analyze_table,
+    drop_ch_distributed_table_pair,
     drop_table,
     insert_from_table,
     get_trino_table_column_types,
@@ -36,6 +38,11 @@ def load_df(
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     trino_insert_chunk_size: int | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    sharding_key: str = "rand()",
 ) -> int:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
@@ -51,7 +58,13 @@ def load_df(
         gp_distributed_by_key=gp_distributed_by_key,
         key_columns=key_columns,
         trino_insert_chunk_size=trino_insert_chunk_size,
+        ch_partition_by=ch_partition_by,
+        ch_order_by=ch_order_by,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=sharding_key,
     )
+
     def operation(attempt: int) -> int:
         connection_ref = {"connection": get_sql_connection(options.connection_type)}
         state: LoadState | None = None
@@ -76,20 +89,56 @@ def load_df(
                 validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
 
             validate_key_columns_in_columns(options.key_columns, df.columns)
+            _validate_ch_columns_in_dataframe(
+                options.ch_partition_by,
+                df.columns,
+                "ch_partition_by",
+            )
+            _validate_ch_columns_in_dataframe(
+                options.ch_order_by,
+                df.columns,
+                "ch_order_by",
+            )
             _validate_dataframe_key_uniqueness(df, options.key_columns)
 
-            if not options.append and state.target_exists:
-                time_print(
-                    f"Dropping existing table {options.destination_table} on {options.connection_type}"
-                )
-                drop_table(
+            if not options.append:
+                if options.connection_type == "ch":
+                    time_print(
+                        f"Dropping existing ClickHouse distributed table pair {options.destination_table}"
+                    )
+                    drop_ch_distributed_table_pair(
+                        connection_ref["connection"],
+                        options.destination_table,
+                        ch_cluster=options.ch_cluster,
+                    )
+                    state.target_exists = False
+                elif state.target_exists:
+                    time_print(
+                        f"Dropping existing table {options.destination_table} on {options.connection_type}"
+                    )
+                    drop_table(
+                        options.connection_type,
+                        connection_ref["connection"],
+                        options.destination_table,
+                    )
+                    state.target_exists = False
+
+            if options.connection_type == "ch":
+                create_sql_table(
                     options.connection_type,
                     connection_ref["connection"],
                     options.destination_table,
+                    df,
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                    ch_partition_by=options.ch_partition_by,
+                    ch_order_by=options.ch_order_by,
+                    ch_engine=options.ch_engine,
+                    ch_cluster=options.ch_cluster,
+                    ch_sharding_key=options.ch_sharding_key,
+                    ch_distributed_table=True,
                 )
-                state.target_exists = False
-
-            if not state.target_exists:
+                state.target_exists = True
+            elif not state.target_exists:
                 create_sql_table(
                     options.connection_type,
                     connection_ref["connection"],
@@ -136,6 +185,7 @@ def load_df(
         operation=operation,
     )
 
+
 def _build_load_options(
     connection_type: str,
     destination_table: str,
@@ -143,6 +193,11 @@ def _build_load_options(
     gp_distributed_by_key: list[str] | None,
     key_columns: list[str] | None,
     trino_insert_chunk_size: int | None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
 ) -> LoadOptions:
     options = LoadOptions(
         connection_type=connection_type.strip().lower(),
@@ -151,6 +206,14 @@ def _build_load_options(
         gp_distributed_by_key=_normalize_gp_distributed_by_key(gp_distributed_by_key),
         key_columns=normalize_key_columns(key_columns),
         trino_insert_chunk_size=trino_insert_chunk_size,
+        ch_partition_by=_normalize_ch_columns_or_expression(
+            ch_partition_by,
+            "ch_partition_by",
+        ),
+        ch_order_by=_normalize_ch_columns_or_expression(ch_order_by, "ch_order_by"),
+        ch_engine=_normalize_ch_string(ch_engine, "ch_engine"),
+        ch_cluster=_normalize_ch_string(ch_cluster, "ch_cluster"),
+        ch_sharding_key=_normalize_ch_string(ch_sharding_key, "sharding_key"),
     )
 
     if options.connection_type not in {"trino", "gp", "ch"}:
@@ -163,6 +226,8 @@ def _build_load_options(
         raise ValueError("gp_distributed_by_key can only be used when connection_type='gp'.")
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
+    if options.connection_type != "ch":
+        _validate_ch_options_not_used(options)
     return options
 
 
@@ -255,6 +320,60 @@ def _normalize_gp_distributed_by_key(
     if len(set(normalized)) != len(normalized):
         raise ValueError("gp_distributed_by_key must not contain duplicate column names.")
     return normalized
+
+
+def _normalize_ch_columns_or_expression(
+    value: Sequence[str] | str | None,
+    option_name: str,
+) -> list[str] | str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _normalize_ch_string(value, option_name)
+
+    normalized = [_normalize_ch_string(column, option_name) for column in value]
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{option_name} must not contain duplicate column names.")
+    return normalized
+
+
+def _normalize_ch_string(value: str, option_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty.")
+    return normalized
+
+
+def _validate_ch_options_not_used(options: LoadOptions) -> None:
+    if options.ch_partition_by is not None:
+        raise ValueError("ch_partition_by can only be used when connection_type='ch'.")
+    if options.ch_order_by is not None:
+        raise ValueError("ch_order_by can only be used when connection_type='ch'.")
+    if options.ch_engine != "ReplicatedMergeTree":
+        raise ValueError("ch_engine can only be used when connection_type='ch'.")
+    if options.ch_cluster != "core":
+        raise ValueError("ch_cluster can only be used when connection_type='ch'.")
+    if options.ch_sharding_key != "rand()":
+        raise ValueError("sharding_key can only be used when connection_type='ch'.")
+
+
+def _validate_ch_columns_in_dataframe(
+    value: list[str] | str | None,
+    columns: Sequence[str],
+    option_name: str,
+) -> None:
+    if value is None or isinstance(value, str):
+        return
+
+    available_columns = {str(column) for column in columns}
+    missing_columns = [column for column in value if column not in available_columns]
+    if missing_columns:
+        raise ValueError(
+            f"{option_name} columns were not found in the staged data: "
+            + ", ".join(missing_columns)
+        )
 
 
 def _validate_dataframe_key_uniqueness(

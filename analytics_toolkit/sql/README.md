@@ -40,6 +40,12 @@ For Trino targets, `load_df` and `transfer_table` also accept
 parameterized multi-row insert statement. If omitted, the package falls back to
 `TRINO_INSERT_CHUNK_SIZE` from the environment, then to the internal default.
 
+For ClickHouse targets, `load_df` and `transfer_table` create a local
+`<target>_shard` table first and then create the requested target as a
+`Distributed` table. Use `ch_partition_by`, `ch_order_by`, `ch_engine`,
+`ch_cluster`, and `sharding_key` to control the shard DDL and distributed
+sharding expression.
+
 ## Greenplum Maintenance
 
 Use `gp_vacuum` for Greenplum vacuum operations that must run outside a transaction

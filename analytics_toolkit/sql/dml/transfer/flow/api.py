@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ....connection.errors import UnsupportedConnectionTypeError
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
@@ -26,6 +28,11 @@ def transfer_table(
     key_columns: list[str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
     trino_insert_chunk_size: int | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    sharding_key: str = "rand()",
 ) -> int:
     options = build_transfer_options(
         from_db=from_db,
@@ -41,6 +48,11 @@ def transfer_table(
         key_columns=key_columns,
         gp_distributed_by_key=gp_distributed_by_key,
         trino_insert_chunk_size=trino_insert_chunk_size,
+        ch_partition_by=ch_partition_by,
+        ch_order_by=ch_order_by,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=sharding_key,
     )
 
     time_print(
@@ -103,15 +115,20 @@ def build_transfer_options(
     to_db: str,
     from_sql: str,
     to_table: str,
-    replace_target_table: bool,
-    batch_size: int,
-    retry_cnt: int,
-    timeout_increment: int | float,
-    full_retry_cnt: int,
-    full_timeout_increment: int | float,
-    key_columns: list[str] | None,
-    gp_distributed_by_key: list[str] | None,
-    trino_insert_chunk_size: int | None,
+    replace_target_table: bool = True,
+    batch_size: int = 100_000,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
+    full_retry_cnt: int = 5,
+    full_timeout_increment: int | float = 60 * 10,
+    key_columns: list[str] | None = None,
+    gp_distributed_by_key: list[str] | None = None,
+    trino_insert_chunk_size: int | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
 ) -> TransferOptions:
     options = TransferOptions(
         from_db=normalize_connection_type(from_db),
@@ -127,6 +144,14 @@ def build_transfer_options(
         key_columns=normalize_key_columns(key_columns),
         gp_distributed_by_key=normalize_key_columns(gp_distributed_by_key),
         trino_insert_chunk_size=trino_insert_chunk_size,
+        ch_partition_by=_normalize_ch_columns_or_expression(
+            ch_partition_by,
+            "ch_partition_by",
+        ),
+        ch_order_by=_normalize_ch_columns_or_expression(ch_order_by, "ch_order_by"),
+        ch_engine=_normalize_ch_string(ch_engine, "ch_engine"),
+        ch_cluster=_normalize_ch_string(ch_cluster, "ch_cluster"),
+        ch_sharding_key=_normalize_ch_string(ch_sharding_key, "sharding_key"),
     )
 
     if options.from_db == options.to_db:
@@ -149,6 +174,8 @@ def build_transfer_options(
         raise ValueError("gp_distributed_by_key can only be used when to_db is 'gp'.")
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
+    if options.to_db != "ch":
+        _validate_ch_options_not_used(options)
     return options
 
 
@@ -159,3 +186,40 @@ def normalize_connection_type(connection_type: str) -> str:
             "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
         )
     return normalized
+
+
+def _normalize_ch_columns_or_expression(
+    value: Sequence[str] | str | None,
+    option_name: str,
+) -> list[str] | str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _normalize_ch_string(value, option_name)
+
+    normalized = [_normalize_ch_string(column, option_name) for column in value]
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{option_name} must not contain duplicate column names.")
+    return normalized
+
+
+def _normalize_ch_string(value: str, option_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty.")
+    return normalized
+
+
+def _validate_ch_options_not_used(options: TransferOptions) -> None:
+    if options.ch_partition_by is not None:
+        raise ValueError("ch_partition_by can only be used when to_db is 'ch'.")
+    if options.ch_order_by is not None:
+        raise ValueError("ch_order_by can only be used when to_db is 'ch'.")
+    if options.ch_engine != "ReplicatedMergeTree":
+        raise ValueError("ch_engine can only be used when to_db is 'ch'.")
+    if options.ch_cluster != "core":
+        raise ValueError("ch_cluster can only be used when to_db is 'ch'.")
+    if options.ch_sharding_key != "rand()":
+        raise ValueError("sharding_key can only be used when to_db is 'ch'.")

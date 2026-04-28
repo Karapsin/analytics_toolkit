@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 import pandas as pd
+from sqlglot import exp, parse_one
 
 from ..connection.errors import UnsupportedConnectionTypeError
 from analytics_toolkit.general import time_print
@@ -16,19 +17,32 @@ def create_sql_table(
     table_name: str,
     batch: pd.DataFrame,
     gp_distributed_by_key: list[str] | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
+    ch_distributed_table: bool = False,
 ) -> None:
     time_print(f"Creating target table {table_name} on {connection_type}")
-    create_sql = build_create_table_sql(
+    create_sqls = build_create_table_sqls(
         connection_type,
         table_name,
         batch,
         gp_distributed_by_key=gp_distributed_by_key,
+        ch_partition_by=ch_partition_by,
+        ch_order_by=ch_order_by,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
     )
 
     if connection_type == "gp":
         cursor = connection.cursor()
         try:
-            cursor.execute(create_sql)
+            for create_sql in create_sqls:
+                cursor.execute(create_sql)
             connection.commit()
             return
         except Exception:
@@ -40,13 +54,15 @@ def create_sql_table(
     if connection_type == "trino":
         cursor = connection.cursor()
         try:
-            cursor.execute(create_sql)
+            for create_sql in create_sqls:
+                cursor.execute(create_sql)
             return
         finally:
             cursor.close()
 
     if connection_type == "ch":
-        connection.command(create_sql)
+        for create_sql in create_sqls:
+            connection.command(create_sql)
         return
 
     raise UnsupportedConnectionTypeError(
@@ -59,7 +75,41 @@ def build_create_table_sql(
     table_name: str,
     batch: pd.DataFrame,
     gp_distributed_by_key: list[str] | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
+    ch_distributed_table: bool = False,
 ) -> str:
+    return ";\n".join(
+        build_create_table_sqls(
+            connection_type,
+            table_name,
+            batch,
+            gp_distributed_by_key=gp_distributed_by_key,
+            ch_partition_by=ch_partition_by,
+            ch_order_by=ch_order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_distributed_table=ch_distributed_table,
+        )
+    )
+
+
+def build_create_table_sqls(
+    connection_type: str,
+    table_name: str,
+    batch: pd.DataFrame,
+    gp_distributed_by_key: list[str] | None = None,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
+    ch_distributed_table: bool = False,
+) -> list[str]:
     column_defs = []
     for column_name in batch.columns:
         series = batch[column_name]
@@ -85,15 +135,25 @@ def build_create_table_sql(
 
     joined_columns = ", ".join(column_defs)
     if connection_type == "ch":
-        return (
+        if ch_distributed_table:
+            return build_ch_distributed_create_table_sqls(
+                table_name=table_name,
+                joined_columns=joined_columns,
+                ch_partition_by=ch_partition_by,
+                ch_order_by=ch_order_by,
+                ch_engine=ch_engine,
+                ch_cluster=ch_cluster,
+                ch_sharding_key=ch_sharding_key,
+            )
+        return [
             f"CREATE TABLE {table_name} ({joined_columns}) "
             "ENGINE = MergeTree ORDER BY tuple()"
-        )
+        ]
     if connection_type == "trino":
-        return (
+        return [
             f"CREATE TABLE {table_name} ({joined_columns}) "
             "WITH (format = 'PARQUET', object_store_layout_enabled = true)"
-        )
+        ]
     if connection_type == "gp":
         storage_sql = (
             "WITH (appendoptimized = TRUE, compresstype = zstd, compresslevel = 2)"
@@ -104,8 +164,64 @@ def build_create_table_sql(
             )
         else:
             distribution_sql = "DISTRIBUTED RANDOMLY"
-        return f"CREATE TABLE {table_name} ({joined_columns}) {storage_sql} {distribution_sql}"
-    return f"CREATE TABLE {table_name} ({joined_columns})"
+        return [
+            f"CREATE TABLE {table_name} ({joined_columns}) {storage_sql} {distribution_sql}"
+        ]
+    return [f"CREATE TABLE {table_name} ({joined_columns})"]
+
+
+def build_ch_distributed_create_table_sqls(
+    table_name: str,
+    joined_columns: str,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
+) -> list[str]:
+    shard_table = build_ch_shard_table_name(table_name)
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    engine = _normalize_non_empty_string(ch_engine, "ch_engine")
+    sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
+    partition_sql = _build_ch_partition_by_sql(ch_partition_by)
+    order_by_sql = _build_ch_order_by_sql(ch_order_by)
+    database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(
+        shard_table
+    )
+
+    shard_sql = (
+        f"CREATE TABLE IF NOT EXISTS {shard_table}\n"
+        f"ON CLUSTER {cluster_name}\n"
+        f"({joined_columns})\n"
+        f"ENGINE = {engine}\n"
+        f"{partition_sql}"
+        f"{order_by_sql}"
+    )
+    distributed_sql = (
+        f"CREATE TABLE IF NOT EXISTS {table_name}\n"
+        f"ON CLUSTER {cluster_name}\n"
+        f"AS {shard_table}\n"
+        "ENGINE = Distributed(\n"
+        f"    {_sql_string_literal(cluster_name)},\n"
+        f"    {database_name},\n"
+        f"    {_sql_string_literal(shard_relation_name)},\n"
+        f"    {sharding_key}\n"
+        ")"
+    )
+    return [shard_sql, distributed_sql]
+
+
+def build_ch_shard_table_name(table_name: str) -> str:
+    return _add_table_identifier_suffix(table_name, "_shard", "clickhouse")
+
+
+def split_ch_table_name_for_distributed_engine(table_name: str) -> tuple[str, str]:
+    table = _parse_table_name(table_name, "clickhouse")
+    relation_name = _identifier_name(table.this)
+    database = table.args.get("db")
+    if database is None:
+        return "currentDatabase()", relation_name
+    return _sql_string_literal(_identifier_name(database)), relation_name
 
 
 def column_list_sql(columns: Sequence[str], connection_type: str) -> str:
@@ -121,6 +237,75 @@ def quote_identifier(identifier: str, connection_type: str) -> str:
 
     escaped = identifier.replace('"', '""')
     return f'"{escaped}"'
+
+
+def _add_table_identifier_suffix(table_name: str, suffix: str, dialect: str) -> str:
+    table = _parse_table_name(table_name, dialect)
+    table_identifier = table.this
+    suffixed_identifier = exp.to_identifier(
+        f"{_identifier_name(table_identifier)}{suffix}",
+        quoted=bool(table_identifier.args.get("quoted")),
+    )
+    suffixed_table = table.copy()
+    suffixed_table.set("this", suffixed_identifier)
+    return suffixed_table.sql(dialect=dialect)
+
+
+def _parse_table_name(table_name: str, dialect: str) -> exp.Table:
+    table = parse_one(table_name, read=dialect, into=exp.Table)
+    if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
+        raise ValueError(f"Invalid table name: {table_name}")
+    return table
+
+
+def _identifier_name(identifier: exp.Expression) -> str:
+    if not isinstance(identifier, exp.Identifier):
+        raise ValueError(f"Invalid table identifier: {identifier}")
+    return str(identifier.this)
+
+
+def _build_ch_partition_by_sql(
+    ch_partition_by: Sequence[str] | str | None,
+) -> str:
+    if ch_partition_by is None:
+        return ""
+    expression = _normalize_ch_expression(ch_partition_by, "ch_partition_by")
+    return f"PARTITION BY {expression}\n"
+
+
+def _build_ch_order_by_sql(ch_order_by: Sequence[str] | str | None) -> str:
+    expression = (
+        "tuple()"
+        if ch_order_by is None
+        else _normalize_ch_expression(ch_order_by, "ch_order_by")
+    )
+    return f"ORDER BY {expression}"
+
+
+def _normalize_ch_expression(value: Sequence[str] | str, option_name: str) -> str:
+    if isinstance(value, str):
+        return _normalize_non_empty_string(value, option_name)
+
+    columns = [_normalize_non_empty_string(column, option_name) for column in value]
+    if not columns:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if len(set(columns)) != len(columns):
+        raise ValueError(f"{option_name} must not contain duplicate column names.")
+    quoted_columns = [quote_identifier(column, "ch") for column in columns]
+    if len(quoted_columns) == 1:
+        return quoted_columns[0]
+    return f"({', '.join(quoted_columns)})"
+
+
+def _normalize_non_empty_string(value: str, option_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty.")
+    return normalized
+
+
+def _sql_string_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _infer_gp_type(series: pd.Series) -> str:

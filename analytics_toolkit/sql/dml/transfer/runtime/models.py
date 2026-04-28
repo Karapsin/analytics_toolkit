@@ -21,6 +21,11 @@ class TransferOptions:
     key_columns: list[str] | None = None
     gp_distributed_by_key: list[str] | None = None
     trino_insert_chunk_size: int | None = None
+    ch_partition_by: list[str] | str | None = None
+    ch_order_by: list[str] | str | None = None
+    ch_engine: str = "ReplicatedMergeTree"
+    ch_cluster: str = "core"
+    ch_sharding_key: str = "rand()"
 
 
 @dataclass

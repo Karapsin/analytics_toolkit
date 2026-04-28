@@ -6,7 +6,7 @@ import pandas as pd
 
 from ...connection.config import TrinoConfig, get_connection_config
 from ...connection.get_sql_connection import with_sql_connection
-from ...ddl.create_sql_table import create_sql_table
+from ...ddl.create_sql_table import build_ch_shard_table_name, create_sql_table
 from ...ddl.create_sql_table import quote_identifier
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from analytics_toolkit.general import time_print
@@ -49,7 +49,7 @@ def clear_target_table(connection_type: str, connection: Any, table_name: str) -
             cursor.close()
 
     if connection_type == "ch":
-        connection.command(f"TRUNCATE TABLE {table_name}")
+        _truncate_ch_table(connection, table_name)
         return
 
     raise UnsupportedConnectionTypeError(
@@ -66,10 +66,40 @@ def finalize_stage_table(
     target_exists: bool,
     sample_batch: pd.DataFrame,
     gp_distributed_by_key: list[str] | None = None,
+    ch_partition_by: list[str] | str | None = None,
+    ch_order_by: list[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_cluster: str = "core",
+    ch_sharding_key: str = "rand()",
 ) -> None:
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
     )
+
+    if connection_type == "ch":
+        if replace_target_table:
+            drop_ch_distributed_table_pair(
+                connection,
+                target_table,
+                ch_cluster=ch_cluster,
+            )
+            target_exists = False
+        if not target_exists:
+            create_sql_table(
+                connection_type,
+                connection,
+                target_table,
+                sample_batch,
+                gp_distributed_by_key=gp_distributed_by_key,
+                ch_partition_by=ch_partition_by,
+                ch_order_by=ch_order_by,
+                ch_engine=ch_engine,
+                ch_cluster=ch_cluster,
+                ch_sharding_key=ch_sharding_key,
+                ch_distributed_table=True,
+            )
+        insert_from_table(connection_type, connection, target_table, stage_table)
+        return
 
     if not target_exists:
         create_sql_table(
@@ -181,10 +211,14 @@ def drop_table_with_retry(
     )
 
 
-def drop_table(connection_type: str, connection: Any, table_name: str) -> None:
-    sql = f"DROP TABLE IF EXISTS {table_name}"
-
+def drop_table(
+    connection_type: str,
+    connection: Any,
+    table_name: str,
+    ch_cluster: str | None = None,
+) -> None:
     if connection_type == "gp":
+        sql = f"DROP TABLE IF EXISTS {table_name}"
         cursor = connection.cursor()
         try:
             cursor.execute(sql)
@@ -197,6 +231,7 @@ def drop_table(connection_type: str, connection: Any, table_name: str) -> None:
             cursor.close()
 
     if connection_type == "trino":
+        sql = f"DROP TABLE IF EXISTS {table_name}"
         cursor = connection.cursor()
         try:
             cursor.execute(sql)
@@ -205,12 +240,39 @@ def drop_table(connection_type: str, connection: Any, table_name: str) -> None:
             cursor.close()
 
     if connection_type == "ch":
+        sql = f"DROP TABLE IF EXISTS {table_name}{_ch_cluster_clause(ch_cluster)}"
         connection.command(sql)
         return
 
     raise UnsupportedConnectionTypeError(
         "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
     )
+
+
+def drop_ch_distributed_table_pair(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str = "core",
+) -> None:
+    drop_table("ch", connection, table_name, ch_cluster=ch_cluster)
+    drop_table(
+        "ch",
+        connection,
+        build_ch_shard_table_name(table_name),
+        ch_cluster=ch_cluster,
+    )
+
+
+def clear_ch_distributed_table_data(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str = "core",
+) -> None:
+    shard_table = build_ch_shard_table_name(table_name)
+    if table_exists("ch", connection, shard_table):
+        _truncate_ch_table(connection, shard_table, ch_cluster=ch_cluster)
+        return
+    _truncate_ch_table(connection, table_name, ch_cluster=ch_cluster)
 
 
 def get_trino_table_column_types(connection: Any, table_name: str) -> dict[str, str]:
@@ -305,6 +367,23 @@ def quote_qualified_table_name(table_name: str, connection_type: str) -> str:
             "Table name must be unqualified or dot-qualified up to three parts."
         )
     return ".".join(quote_identifier(part, connection_type) for part in parts)
+
+
+def _truncate_ch_table(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str | None = None,
+) -> None:
+    connection.command(f"TRUNCATE TABLE {table_name}{_ch_cluster_clause(ch_cluster)}")
+
+
+def _ch_cluster_clause(ch_cluster: str | None) -> str:
+    if ch_cluster is None:
+        return ""
+    normalized = ch_cluster.strip()
+    if not normalized:
+        raise ValueError("ch_cluster must not be empty.")
+    return f" ON CLUSTER {normalized}"
 
 
 def _gp_table_exists(connection: Any, table_name: str) -> bool:

@@ -1,4 +1,8 @@
-from .ddl.create_sql_table import build_create_table_sql, create_sql_table
+from .ddl.create_sql_table import (
+    build_create_table_sql,
+    build_create_table_sqls,
+    create_sql_table,
+)
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.get_sql_connection import get_sql_connection, with_sql_connection
 from .dml.load.load_df import load_df
@@ -11,6 +15,7 @@ __all__ = [
     "execute",
     "execute_sql",
     "build_create_table_sql",
+    "build_create_table_sqls",
     "create_sql_table",
     "get_sql_connection",
     "gp_vacuum",

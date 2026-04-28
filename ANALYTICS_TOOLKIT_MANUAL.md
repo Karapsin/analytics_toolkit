@@ -87,7 +87,7 @@ sql.execute("gp", read_file(here("create_table.sql")), gp_break_query=True, rand
 sql.execute("trino", read_file(here("final_agg.sql")))
 ```
 
-### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None)`
+### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, ch_partition_by=None, ch_order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
 
 Transfers query results from one database to another.
 
@@ -105,6 +105,12 @@ Inputs:
 - `full_timeout_increment`: wait time multiplier for full transfer restarts
 - `key_columns`: optional key columns used for duplicate protection
 - `gp_distributed_by_key`: optional Greenplum distribution key list
+- `trino_insert_chunk_size`: optional Trino insert chunk size
+- `ch_partition_by`: optional ClickHouse shard partition column list or expression
+- `ch_order_by`: optional ClickHouse shard order column list or expression
+- `ch_engine`: ClickHouse shard engine, defaults to `ReplicatedMergeTree`
+- `ch_cluster`: ClickHouse cluster name, defaults to `core`
+- `sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
 
 Returns:
 
@@ -138,7 +144,7 @@ sql.transfer(
 )
 ```
 
-### `sql.load_df(connection_type, destination_table, df, append=False, gp_distributed_by_key=None, key_columns=None, retry_cnt=5, timeout_increment=5)`
+### `sql.load_df(connection_type, destination_table, df, append=False, gp_distributed_by_key=None, key_columns=None, retry_cnt=5, timeout_increment=5, trino_insert_chunk_size=None, ch_partition_by=None, ch_order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
 
 Loads a pandas dataframe into a database table.
 
@@ -152,6 +158,12 @@ Inputs:
 - `key_columns`: optional key columns used to protect against duplicates during append
 - `retry_cnt`: retry count
 - `timeout_increment`: wait time multiplier between retries
+- `trino_insert_chunk_size`: optional Trino insert chunk size
+- `ch_partition_by`: optional ClickHouse shard partition column list or expression
+- `ch_order_by`: optional ClickHouse shard order column list or expression
+- `ch_engine`: ClickHouse shard engine, defaults to `ReplicatedMergeTree`
+- `ch_cluster`: ClickHouse cluster name, defaults to `core`
+- `sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
 
 Returns:
 

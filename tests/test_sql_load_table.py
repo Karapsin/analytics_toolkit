@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,17 +10,30 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+CURRENT_DT = date.today().strftime("%Y%m%d")
+TEST_CH_TABLE = f"test_table_{CURRENT_DT}"
+TEST_CH_SHARD_TABLE = f"test_table_{CURRENT_DT}_shard"
+TEST_CH_STAGE_TABLE = f"test_table_{CURRENT_DT}__stage__abcd1234"
+TEST_CH_SHARD_RELATION = f"test_table_{CURRENT_DT}_shard"
+
 create_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.create_sql_table"
 )
 load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
 )
+load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
+table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
 
 
 class FakeClickHouseClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.commands: list[str] = []
+        self.close_calls = 0
+
+    def command(self, sql: str) -> None:
+        self.commands.append(sql)
 
     def insert_df(
         self,
@@ -34,6 +48,9 @@ class FakeClickHouseClient:
                 "column_names": list(column_names),
             }
         )
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def test_insert_table_batch_normalizes_decimal_for_clickhouse() -> None:
@@ -83,3 +100,130 @@ def test_build_create_table_sql_uses_float64_for_decimal_clickhouse_columns() ->
 
     assert "`amount` Nullable(Float64)" in sql
     assert "`label` Nullable(String)" in sql
+
+
+def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
+    batch = pd.DataFrame(
+        {
+            "min_month_use": [date(2024, 1, 1)],
+            "month_date": [date(2024, 2, 1)],
+            "users": [10],
+        }
+    )
+
+    sqls = create_sql_table_module.build_create_table_sqls(
+        connection_type="ch",
+        table_name=TEST_CH_TABLE,
+        batch=batch,
+        ch_distributed_table=True,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date", "min_month_use"],
+        ch_sharding_key="cityHash64(month_date, min_month_use)",
+    )
+
+    assert len(sqls) == 2
+    shard_sql, distributed_sql = sqls
+    assert "SETTINGS index_granularity" not in "\n".join(sqls)
+    assert shard_sql.startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
+    )
+    assert "ON CLUSTER core" in shard_sql
+    assert "ENGINE = ReplicatedMergeTree" in shard_sql
+    assert "PARTITION BY `month_date`" in shard_sql
+    assert "ORDER BY (`month_date`, `min_month_use`)" in shard_sql
+    assert distributed_sql.startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
+    )
+    assert f"AS {TEST_CH_SHARD_TABLE}" in distributed_sql
+    assert "ENGINE = Distributed(" in distributed_sql
+    assert "    'core'," in distributed_sql
+    assert "    currentDatabase()," in distributed_sql
+    assert f"    '{TEST_CH_SHARD_RELATION}'," in distributed_sql
+    assert "    cityHash64(month_date, min_month_use)" in distributed_sql
+
+
+def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch) -> None:
+    client = FakeClickHouseClient()
+    batch = pd.DataFrame(
+        {
+            "month_date": [date(2024, 2, 1)],
+            "min_month_use": [date(2024, 1, 1)],
+            "users": [10],
+        }
+    )
+
+    monkeypatch.setattr(
+        load_df_module,
+        "get_sql_connection",
+        lambda connection_type: client,
+    )
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
+
+    inserted_rows = load_df_module.load_df(
+        "ch",
+        TEST_CH_TABLE,
+        batch,
+        retry_cnt=1,
+        timeout_increment=0,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date", "min_month_use"],
+        sharding_key="cityHash64(month_date, min_month_use)",
+    )
+
+    assert inserted_rows == 1
+    assert client.commands[0] == (
+        f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER core"
+    )
+    assert client.commands[1] == (
+        f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER core"
+    )
+    assert client.commands[2].startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
+    )
+    assert "SETTINGS index_granularity" not in "\n".join(client.commands)
+    assert client.commands[3].startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
+    )
+    assert client.calls[0]["table"] == TEST_CH_TABLE
+    assert client.close_calls == 1
+
+
+def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> None:
+    client = FakeClickHouseClient()
+    batch = pd.DataFrame(
+        {
+            "month_date": [date(2024, 2, 1)],
+            "min_month_use": [date(2024, 1, 1)],
+            "users": [10],
+        }
+    )
+
+    table_ops_module.finalize_stage_table(
+        connection_type="ch",
+        connection=client,
+        stage_table=TEST_CH_STAGE_TABLE,
+        target_table=TEST_CH_TABLE,
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date", "min_month_use"],
+        ch_sharding_key="cityHash64(month_date, min_month_use)",
+    )
+
+    assert client.commands[0] == (
+        f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER core"
+    )
+    assert client.commands[1] == (
+        f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER core"
+    )
+    assert client.commands[2].startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
+    )
+    assert client.commands[3].startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
+    )
+    assert client.commands[4] == (
+        f"INSERT INTO {TEST_CH_TABLE} "
+        f"SELECT * FROM {TEST_CH_STAGE_TABLE}"
+    )
