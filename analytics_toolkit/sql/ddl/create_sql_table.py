@@ -200,7 +200,7 @@ def build_ch_distributed_create_table_sqls(
     distributed_sql = (
         f"CREATE TABLE IF NOT EXISTS {table_name}\n"
         f"ON CLUSTER {cluster_name}\n"
-        f"AS {shard_table}\n"
+        f"({joined_columns})\n"
         "ENGINE = Distributed(\n"
         f"    {_sql_string_literal(cluster_name)},\n"
         f"    {database_name},\n"

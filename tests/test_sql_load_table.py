@@ -134,7 +134,9 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert distributed_sql.startswith(
         f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
     )
-    assert f"AS {TEST_CH_SHARD_TABLE}" in distributed_sql
+    assert f"AS {TEST_CH_SHARD_TABLE}" not in distributed_sql
+    assert "`min_month_use` Date" in distributed_sql
+    assert "`month_date` Date" in distributed_sql
     assert "ENGINE = Distributed(" in distributed_sql
     assert "    'core'," in distributed_sql
     assert "    currentDatabase()," in distributed_sql
