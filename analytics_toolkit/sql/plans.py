@@ -124,3 +124,100 @@ class SqlOperationResult:
     @property
     def affected_rows(self) -> int | None:
         return self.metadata.affected_rows
+
+
+def format_plan(
+    plan: SqlPlan,
+    *,
+    include_sql: bool = True,
+    max_sql_chars: int = 160,
+) -> str:
+    if not isinstance(plan, SqlPlan):
+        raise TypeError("plan must be a SqlPlan.")
+    if max_sql_chars <= 0:
+        raise ValueError("max_sql_chars must be positive.")
+
+    lines = [
+        f"SqlPlan: {plan.operation}",
+        (
+            "Source: "
+            f"alias={_format_empty(plan.source_alias)} "
+            f"backend={_format_empty(plan.source_backend)} "
+            f"table={_format_empty(plan.source_table)}"
+        ),
+        (
+            "Target: "
+            f"alias={_format_empty(plan.target_alias)} "
+            f"backend={_format_empty(plan.target_backend)} "
+            f"table={_format_empty(plan.target_table)}"
+        ),
+        f"Metadata: {_format_metadata(plan)}",
+        f"Options: {_format_options(plan.options)}",
+        "Statements:",
+    ]
+
+    if not plan.statements:
+        lines.append("  <none>")
+        return "\n".join(lines)
+
+    for index, statement in enumerate(plan.statements, start=1):
+        row = (
+            f"  {index}. "
+            f"phase={_format_empty(statement.phase)} "
+            f"alias={_format_empty(statement.alias)} "
+            f"backend={_format_empty(statement.backend)} "
+            f"source={_format_empty(statement.source_table)} "
+            f"target={_format_empty(statement.target_table)}"
+        )
+        if include_sql:
+            row = (
+                f"{row} "
+                f"sql={_short_sql_preview(statement.sql, max_sql_chars)}"
+            )
+        lines.append(row)
+    return "\n".join(lines)
+
+
+def _format_metadata(plan: SqlPlan) -> str:
+    metadata = plan.metadata.as_dict()
+    if metadata["statement_count"] is None:
+        metadata["statement_count"] = len(plan.statements)
+    populated = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None or key == "statement_count"
+    }
+    return _format_mapping(populated)
+
+
+def _format_options(options: dict[str, Any]) -> str:
+    if not options:
+        return "<none>"
+    return _format_mapping(options)
+
+
+def _format_mapping(values: dict[str, Any]) -> str:
+    if not values:
+        return "<none>"
+    return ", ".join(
+        f"{key}={_format_value(values[key])}" for key in sorted(values)
+    )
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, str):
+        return repr(value)
+    return repr(value)
+
+
+def _format_empty(value: str | None) -> str:
+    return "-" if value is None else str(value)
+
+
+def _short_sql_preview(sql: str, max_sql_chars: int) -> str:
+    preview = " ".join(str(sql).split())
+    if len(preview) <= max_sql_chars:
+        return preview
+    if max_sql_chars <= 3:
+        return preview[:max_sql_chars]
+    return preview[: max_sql_chars - 3].rstrip() + "..."

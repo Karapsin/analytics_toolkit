@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
-from tests.sql_fakes import FakeClickHouseClient, FakeDbapiConnection
+from tests.sql_fakes import (
+    FakeClickHouseClient,
+    FakeClickHouseResult,
+    FakeDbapiConnection,
+)
 
 
 capabilities_module = importlib.import_module("analytics_toolkit.sql.capabilities")
@@ -36,8 +41,80 @@ ch_move_module = importlib.import_module(
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.operation_runner"
 )
+plans_module = importlib.import_module("analytics_toolkit.sql.plans")
+table_info_module = importlib.import_module("analytics_toolkit.sql.table_info")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 cli_module = importlib.import_module("analytics_toolkit.cli")
+
+
+class RoutingCursor:
+    def __init__(self, connection: "RoutingDbapiConnection") -> None:
+        self.connection = connection
+        self.rows: list[tuple[Any, ...]] = []
+        self.close_calls = 0
+
+    def execute(self, sql: str, params: tuple[Any, ...] | None = None) -> None:
+        self.connection.executed.append(sql)
+        self.connection.executed_params.append(params)
+        self.rows = self.connection.resolve(sql, params)
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return list(self.rows)
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class RoutingDbapiConnection:
+    def __init__(
+        self,
+        resolver,
+    ) -> None:
+        self.resolver = resolver
+        self.executed: list[str] = []
+        self.executed_params: list[tuple[Any, ...] | None] = []
+        self.close_calls = 0
+
+    def cursor(self) -> RoutingCursor:
+        return RoutingCursor(self)
+
+    def resolve(
+        self,
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        return self.resolver(sql, params)
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class InspectableClickHouseClient:
+    def __init__(self, exists: bool = True) -> None:
+        self.exists = exists
+        self.queries: list[str] = []
+        self.close_calls = 0
+
+    def query(self, sql: str) -> FakeClickHouseResult:
+        self.queries.append(sql)
+        if sql.startswith("EXISTS TABLE "):
+            return FakeClickHouseResult([(1 if self.exists else 0,)])
+        if sql.startswith("DESCRIBE TABLE "):
+            return FakeClickHouseResult(
+                [
+                    ("id", "UInt64"),
+                    ("name", "String"),
+                ]
+            )
+        if sql.startswith("SELECT count()"):
+            return FakeClickHouseResult([(17,)])
+        return FakeClickHouseResult([])
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def test_backend_support_matrix_includes_write_modes() -> None:
@@ -92,6 +169,247 @@ def test_public_sql_function_logs_total_elapsed_for_dry_run(capsys) -> None:
     output = capsys.readouterr().out
     assert plan.operation == "load_df"
     assert "SQL function load_df execution took " in output
+
+
+def test_table_info_gp_reads_columns_and_skips_row_count_by_default(
+    monkeypatch,
+) -> None:
+    def resolver(
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        if sql == "SELECT to_regclass(%s)":
+            assert params == ("sandbox.events",)
+            return [("sandbox.events",)]
+        if "information_schema.columns" in sql:
+            assert params == ("sandbox", "events")
+            return [
+                ("id", "bigint", "int8", None, None),
+                ("amount", "numeric", "numeric", 12, 2),
+            ]
+        if "COUNT" in sql:
+            pytest.fail("count SQL should not run by default")
+        return []
+
+    connection = RoutingDbapiConnection(resolver)
+    monkeypatch.setattr(
+        table_info_module,
+        "get_sql_connection",
+        lambda key: connection,
+    )
+
+    info = table_info_module.table_info("gp", "sandbox.events")
+
+    assert info.connection_key == "gp"
+    assert info.backend == "gp"
+    assert info.table == "sandbox.events"
+    assert info.exists is True
+    assert info.columns == {"id": "BIGINT", "amount": "NUMERIC(12, 2)"}
+    assert info.row_count is None
+    assert info.as_dict()["columns"] == info.columns
+    frame = info.to_frame()
+    assert frame["column_name"].tolist() == ["id", "amount"]
+    assert frame["column_type"].tolist() == ["BIGINT", "NUMERIC(12, 2)"]
+    assert connection.close_calls == 1
+
+
+def test_table_info_row_count_when_requested(monkeypatch) -> None:
+    def resolver(
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        if sql == "SELECT to_regclass(%s)":
+            return [("sandbox.events",)]
+        if "information_schema.columns" in sql:
+            return [("id", "bigint", "int8", None, None)]
+        if sql == "SELECT COUNT(*) FROM sandbox.events":
+            return [(42,)]
+        return []
+
+    connection = RoutingDbapiConnection(resolver)
+    monkeypatch.setattr(
+        table_info_module,
+        "get_sql_connection",
+        lambda key: connection,
+    )
+
+    info = table_info_module.table_info(
+        "gp",
+        "sandbox.events",
+        include_row_count=True,
+    )
+
+    assert info.row_count == 42
+    assert "SELECT COUNT(*) FROM sandbox.events" in connection.executed
+
+
+def test_table_info_missing_table_skips_columns_and_row_count(monkeypatch) -> None:
+    def resolver(
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        if sql == "SELECT to_regclass(%s)":
+            return []
+        pytest.fail(f"unexpected SQL for missing table: {sql}")
+
+    connection = RoutingDbapiConnection(resolver)
+    monkeypatch.setattr(
+        table_info_module,
+        "get_sql_connection",
+        lambda key: connection,
+    )
+
+    info = table_info_module.table_info(
+        "gp",
+        "sandbox.missing",
+        include_row_count=True,
+    )
+
+    assert info.exists is False
+    assert info.columns == {}
+    assert info.row_count is None
+    assert info.to_frame().iloc[0]["column_name"] is None
+
+
+def test_table_info_trino_resolves_unqualified_and_schema_qualified_names(
+    monkeypatch,
+) -> None:
+    def resolver(
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        if "information_schema.tables" in sql:
+            return [(1,)]
+        if "information_schema.columns" in sql:
+            return [("id", "bigint"), ("score", "double")]
+        if sql == "SELECT COUNT(*) FROM iceberg.sandbox.events":
+            return [(9,)]
+        return []
+
+    first_connection = RoutingDbapiConnection(resolver)
+    second_connection = RoutingDbapiConnection(resolver)
+    connections = iter([first_connection, second_connection])
+    monkeypatch.setattr(
+        table_info_module,
+        "get_sql_connection",
+        lambda key: next(connections),
+    )
+
+    unqualified = table_info_module.table_info(
+        "trino",
+        "events",
+        include_row_count=True,
+    )
+    schema_qualified = table_info_module.table_info("trino", "mart.events")
+
+    assert unqualified.resolved_table == "iceberg.sandbox.events"
+    assert unqualified.row_count == 9
+    assert first_connection.executed_params[:2] == [
+        ("sandbox", "events"),
+        ("sandbox", "events"),
+    ]
+    assert schema_qualified.resolved_table == "iceberg.mart.events"
+    assert second_connection.executed_params[:2] == [
+        ("mart", "events"),
+        ("mart", "events"),
+    ]
+
+
+def test_table_info_clickhouse_includes_shard_table(monkeypatch) -> None:
+    client = InspectableClickHouseClient()
+    monkeypatch.setattr(table_info_module, "get_sql_connection", lambda key: client)
+
+    info = table_info_module.table_info(
+        "ch",
+        "analytics.events",
+        include_row_count=True,
+    )
+
+    assert info.exists is True
+    assert info.columns == {"id": "UInt64", "name": "String"}
+    assert info.row_count == 17
+    assert info.shard_table == "analytics.events_shard"
+    assert info.resolved_table is None
+    assert client.queries == [
+        "EXISTS TABLE analytics.events",
+        "DESCRIBE TABLE analytics.events",
+        "SELECT count() FROM analytics.events",
+    ]
+    assert client.close_calls == 1
+
+
+def test_format_plan_returns_stable_multistatement_text() -> None:
+    plan = plans_module.SqlPlan(
+        operation="copy",
+        source_alias="gp",
+        target_alias="trino",
+        source_backend="gp",
+        target_backend="trino",
+        source_table="sandbox.source",
+        target_table="sandbox.target",
+        options={"write_mode": "append", "batch_size": 500},
+        metadata=plans_module.SqlOperationMetadata(
+            statement_count=2,
+            stage_table="sandbox.stage",
+        ),
+    )
+    plan.add(
+        "select   id,\nname from sandbox.source",
+        alias="gp",
+        backend="gp",
+        phase="read_source",
+        source_table="sandbox.source",
+    )
+    plan.add(
+        "insert into sandbox.target select * from sandbox.stage "
+        "where long_column = 'abcdef'",
+        alias="trino",
+        backend="trino",
+        phase="insert_target",
+        source_table="sandbox.stage",
+        target_table="sandbox.target",
+    )
+
+    text = plans_module.format_plan(plan, max_sql_chars=57)
+
+    assert text == "\n".join(
+        [
+            "SqlPlan: copy",
+            "Source: alias=gp backend=gp table=sandbox.source",
+            "Target: alias=trino backend=trino table=sandbox.target",
+            "Metadata: stage_table='sandbox.stage', statement_count=2",
+            "Options: batch_size=500, write_mode='append'",
+            "Statements:",
+            (
+                "  1. phase=read_source alias=gp backend=gp "
+                "source=sandbox.source target=- "
+                "sql=select id, name from sandbox.source"
+            ),
+            (
+                "  2. phase=insert_target alias=trino backend=trino "
+                "source=sandbox.stage target=sandbox.target "
+                "sql=insert into sandbox.target select * from sandbox.stage..."
+            ),
+        ]
+    )
+
+
+def test_format_plan_can_omit_sql_previews() -> None:
+    plan = plans_module.SqlPlan(operation="execute_sql")
+    plan.add("select 1", alias="gp", backend="gp", phase="execute")
+
+    text = sql_module.format_plan(plan, include_sql=False)
+
+    assert "sql=" not in text
+    assert "phase=execute alias=gp backend=gp" in text
+
+
+def test_format_plan_rejects_invalid_max_sql_chars() -> None:
+    with pytest.raises(ValueError, match="max_sql_chars"):
+        plans_module.format_plan(
+            plans_module.SqlPlan(operation="noop"),
+            max_sql_chars=0,
+        )
 
 
 def test_load_df_dry_run_returns_ordered_labeled_plan() -> None:

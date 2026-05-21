@@ -5,7 +5,14 @@ from .ddl.create_sql_table import (
 )
 from .async_api import async_sql
 from .capabilities import BACKEND_CAPABILITIES, format_support_matrix, support_matrix_rows
-from .plans import SqlOperationMetadata, SqlOperationResult, SqlPlan, SqlStatement
+from .plans import (
+    SqlOperationMetadata,
+    SqlOperationResult,
+    SqlPlan,
+    SqlStatement,
+    format_plan,
+)
+from .table_info import SqlTableInfo, table_info
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.config import ConnectionValidationResult, validate_connections
@@ -39,6 +46,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "load_df",
     "read_sql",
     "support_matrix_rows",
+    "table_info",
     "transfer_table",
     "validate_connections",
     "with_sql_connection",
@@ -57,6 +65,7 @@ __all__ = [
     "execute",
     "execute_read",
     "execute_sql",
+    "format_plan",
     "format_support_matrix",
     "build_create_table_sql",
     "build_create_table_sqls",
@@ -75,6 +84,8 @@ __all__ = [
     "SqlOperationError",
     "SqlPlan",
     "SqlStatement",
+    "SqlTableInfo",
+    "table_info",
     "time_print",
     "transfer",
     "transfer_table",

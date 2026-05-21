@@ -28,9 +28,11 @@ sql.create_sql_table(...)
 sql.ch_create_table_as(...)
 sql.create_table_from_sql(...)
 sql.drop_many_partitions(...)
+sql.table_info(...)
 sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=True)
 sql.transfer(..., batch_size=100_000, adaptive_batch_size=True, progress=True)
 sql.ch_full_table_move(...)
+sql.format_plan(...)
 sql.get_sql_connection(...)
 ```
 
@@ -52,10 +54,13 @@ sql.get_sql_connection(...)
   metadata, optionally inserting the query result
 - `drop_many_partitions`: remove multiple table partitions with backend-specific
   SQL
+- `table_info`: inspect live table existence, columns, optional row count, and
+  resolved backend table names
 - `load_df`: load a pandas dataframe into a SQL table
 - `transfer_table` / `transfer`: move data between supported backends
 - `ch_full_table_move`: recreate a ClickHouse distributed/shard table pair
   from source DDL, copy all rows, and drop the source pair
+- `format_plan`: render a compact multi-line summary for a `SqlPlan`
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
 
@@ -312,6 +317,21 @@ live inspection for exact SQL, such as `ch_full_table_move`, use deterministic
 placeholder steps and mark the inspection dependency in `SqlPlan.options`
 instead of opening a connection.
 
+Use `format_plan` when you want a readable string for a dry-run plan:
+
+```python
+plan = sql.transfer(
+    from_db="trino",
+    to_db="gp_sandbox",
+    from_sql="select * from iceberg.events.daily",
+    to_table="sandbox.events_daily",
+    dry_run=True,
+)
+
+print(sql.format_plan(plan, max_sql_chars=120))
+print(sql.format_plan(plan, include_sql=False))
+```
+
 `read_sql`, `execute_sql`, `execute_read`, `load_df`, `transfer_table`,
 `create_table_from_sql`, `create_sql_table`, `drop_many_partitions`,
 `ch_create_table_as`, and `ch_full_table_move` also accept
@@ -356,6 +376,21 @@ read_result = sql.read(
 )
 scores_df = read_result.data
 read_result.metadata.elapsed_seconds
+```
+
+Use `table_info` for lightweight live inspection. Row counting is opt-in
+because it executes a `COUNT(*)`/`count()` scan on the target table.
+
+```python
+info = sql.table_info("trino", "events")
+info.exists
+info.resolved_table
+info.columns
+
+counted = sql.table_info("gp", "sandbox.scores", include_row_count=True)
+counted.row_count
+
+columns_df = counted.to_frame()
 ```
 
 ## Partition Deletes
@@ -418,6 +453,21 @@ options as `load_df`: `ch_partition_by`, `ch_order_by`, `ch_engine`,
 `ch_cluster`, and `sharding_key`. Its default `ch_cluster` is the ClickHouse
 `{cluster}` macro so the created tables are visible across the full cluster on
 Yandex Managed ClickHouse.
+
+If `ch_create_table_as` fails with `UNKNOWN_TABLE` for a small CTE joined by the
+query, ClickHouse may be resolving that CTE name on a remote shard as a physical
+table, for example `default.trigger_map`. Use `GLOBAL LEFT JOIN` syntax for the
+CTE right side:
+
+```sql
+WITH trigger_map AS (
+    SELECT 1 AS id
+)
+SELECT events.id
+FROM default.events_source AS events
+GLOBAL LEFT JOIN trigger_map AS trigger_map
+    ON events.id = trigger_map.id
+```
 
 `ch_full_table_move` is ClickHouse-only. It reads `SHOW CREATE TABLE` for
 `move_table`, extracts the source shard table from its `Distributed` engine, and

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any
 
 import sqlparse
+from sqlglot import exp, parse_one
 
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
@@ -137,7 +139,15 @@ def ch_create_table_as(
             )
 
             time_print(f"Inferring ClickHouse schema for {options.target_table}")
-            joined_columns = _infer_ch_query_columns(connection, options.query_sql)
+            try:
+                joined_columns = _infer_ch_query_columns(connection, options.query_sql)
+            except Exception as exc:
+                _annotate_ch_cte_join_exception(
+                    exc,
+                    options.query_sql,
+                    backend=options.backend,
+                )
+                raise
             shard_sql, distributed_sql, local_distributed_sql = (
                 build_ch_create_table_as_sqls(
                     table_name=options.target_table,
@@ -162,12 +172,23 @@ def ch_create_table_as(
             time_print(f"Waiting for target table {options.target_table}")
             _wait_for_ch_table(connection, options.target_table)
             time_print(f"Inserting query results into {options.target_table}")
-            connection.command(
-                apply_query_label(
-                    _build_insert_select_sql(options.target_table, options.query_sql),
-                    options.query_label,
+            try:
+                connection.command(
+                    apply_query_label(
+                        _build_insert_select_sql(
+                            options.target_table,
+                            options.query_sql,
+                        ),
+                        options.query_label,
+                    )
                 )
-            )
+            except Exception as exc:
+                _annotate_ch_cte_join_exception(
+                    exc,
+                    options.query_sql,
+                    backend=options.backend,
+                )
+                raise
             time_print(f"Finished creating ClickHouse table {options.target_table}")
     finally:
         time_print(f"Closing {config.connection_key} connection")
@@ -255,3 +276,88 @@ def _ch_type_name(column_type: Any) -> str:
 
 def _build_insert_select_sql(table_name: str, query: str) -> str:
     return f"INSERT INTO {table_name}\n{query}"
+
+
+_CLICKHOUSE_MISSING_TABLE_RE = re.compile(
+    r"\bTable\s+"
+    r"(?P<table>(?:[`\"]?[A-Za-z_][\w$-]*[`\"]?\.)*[`\"]?[A-Za-z_][\w$-]*[`\"]?)"
+    r"\s+does\s+not\s+exist\b",
+    re.IGNORECASE,
+)
+
+
+def _annotate_ch_cte_join_exception(
+    exc: Exception,
+    query: str,
+    *,
+    backend: str,
+) -> None:
+    if backend != "ch":
+        return
+
+    cte_names = _extract_query_cte_names(query)
+    if not cte_names:
+        return
+
+    for missing_table in _clickhouse_missing_table_names(exc):
+        cte_name = cte_names.get(_normalize_clickhouse_identifier(missing_table))
+        if cte_name is None:
+            continue
+        _add_exception_note_once(exc, _ch_cte_join_note(cte_name))
+        return
+
+
+def _extract_query_cte_names(query: str) -> dict[str, str]:
+    try:
+        tree = parse_one(query, read="clickhouse")
+    except Exception:
+        return {}
+
+    cte_names: dict[str, str] = {}
+    for cte in tree.find_all(exp.CTE):
+        if cte.args.get("scalar"):
+            continue
+        cte_name = str(cte.alias).strip()
+        if not cte_name:
+            continue
+        cte_names.setdefault(_normalize_clickhouse_identifier(cte_name), cte_name)
+    return cte_names
+
+
+def _clickhouse_missing_table_names(exc: Exception) -> list[str]:
+    message = str(exc)
+    if "UNKNOWN_TABLE" not in message.upper() and not _CLICKHOUSE_MISSING_TABLE_RE.search(
+        message
+    ):
+        return []
+
+    missing_names: list[str] = []
+    for match in _CLICKHOUSE_MISSING_TABLE_RE.finditer(message):
+        table_name = match.group("table")
+        relation_name = table_name.rsplit(".", maxsplit=1)[-1]
+        normalized_name = relation_name.strip("`\"")
+        if normalized_name:
+            missing_names.append(normalized_name)
+    return missing_names
+
+
+def _normalize_clickhouse_identifier(identifier: str) -> str:
+    return identifier.strip().strip("`\"").lower()
+
+
+def _ch_cte_join_note(cte_name: str) -> str:
+    return (
+        f"ClickHouse could not resolve CTE '{cte_name}' on a remote shard. "
+        "For distributed queries that join a small CTE, use GLOBAL "
+        "LEFT/INNER/RIGHT JOIN syntax, for example GLOBAL LEFT JOIN "
+        f"{cte_name} AS alias, or inline the CTE right side."
+    )
+
+
+def _add_exception_note_once(exc: Exception, note: str) -> None:
+    if note in getattr(exc, "__notes__", ()):
+        return
+    try:
+        exc.add_note(note)
+    except AttributeError:
+        return

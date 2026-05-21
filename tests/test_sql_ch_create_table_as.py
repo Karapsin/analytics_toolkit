@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from clickhouse_connect.driver.exceptions import DatabaseError
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,6 +25,17 @@ SELECT
     amount
 FROM default.events_source
 WHERE amount > 0
+""".strip()
+CTE_JOIN_QUERY = """
+WITH trigger_map AS (
+    SELECT 1 AS id
+)
+SELECT
+    events.id,
+    trigger_map.kind
+FROM default.events_source AS events
+LEFT JOIN trigger_map AS trigger_map
+    ON events.id = trigger_map.id
 """.strip()
 
 
@@ -45,6 +57,8 @@ class FakeClickHouseClient:
         self.command_settings: list[dict[str, object] | None] = []
         self.queries: list[str] = []
         self.close_calls = 0
+        self.insert_error: Exception | None = None
+        self.schema_query_error: Exception | None = None
 
     def command(
         self,
@@ -53,10 +67,14 @@ class FakeClickHouseClient:
     ) -> None:
         self.commands.append(sql)
         self.command_settings.append(settings)
+        if self.insert_error is not None and sql.startswith("INSERT INTO"):
+            raise self.insert_error
 
     def query(self, sql: str) -> FakeClickHouseResult:
         self.queries.append(sql)
         if sql.startswith("SELECT *\nFROM (\n"):
+            if self.schema_query_error is not None:
+                raise self.schema_query_error
             return FakeClickHouseResult(
                 [],
                 column_names=("dt", "id", "amount"),
@@ -200,3 +218,56 @@ def test_ch_create_table_as_rejects_non_clickhouse_alias(
         match="requires a ch",
     ):
         ch_ctas_module.ch_create_table_as("gp", TARGET_TABLE, QUERY)
+
+
+def test_ch_create_table_as_final_insert_cte_unknown_table_keeps_exception_type(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    error = DatabaseError(
+        "Code: 60. DB::Exception: Table default.trigger_map does not exist. "
+        "(UNKNOWN_TABLE)"
+    )
+    fake_client.insert_error = error
+
+    with pytest.raises(DatabaseError) as exc_info:
+        ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
+
+    assert exc_info.value is error
+    notes = "\n".join(getattr(exc_info.value, "__notes__", ()))
+    assert "ClickHouse could not resolve CTE 'trigger_map'" in notes
+    assert "GLOBAL LEFT JOIN trigger_map AS alias" in notes
+
+
+def test_ch_create_table_as_final_insert_unknown_table_without_cte_has_no_hint(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    error = DatabaseError(
+        "Code: 60. DB::Exception: Table default.missing_map does not exist. "
+        "(UNKNOWN_TABLE)"
+    )
+    fake_client.insert_error = error
+
+    with pytest.raises(DatabaseError) as exc_info:
+        ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
+
+    assert exc_info.value is error
+    notes = "\n".join(getattr(exc_info.value, "__notes__", ()))
+    assert "GLOBAL LEFT JOIN" not in notes
+
+
+def test_ch_create_table_as_schema_inference_cte_unknown_table_adds_hint(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    error = DatabaseError(
+        "Code: 60. DB::Exception: Table default.trigger_map does not exist. "
+        "(UNKNOWN_TABLE)"
+    )
+    fake_client.schema_query_error = error
+
+    with pytest.raises(DatabaseError) as exc_info:
+        ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
+
+    assert exc_info.value is error
+    notes = "\n".join(getattr(exc_info.value, "__notes__", ()))
+    assert "ClickHouse could not resolve CTE 'trigger_map'" in notes
+    assert "GLOBAL LEFT JOIN trigger_map AS alias" in notes

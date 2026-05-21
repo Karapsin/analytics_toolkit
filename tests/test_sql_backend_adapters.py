@@ -50,6 +50,7 @@ def test_sql_public_api_exports_are_stable() -> None:
         "get_sql_connection",
         "load_df",
         "read_sql",
+        "table_info",
         "transfer_table",
     }
 
@@ -68,6 +69,8 @@ def test_sql_public_api_exports_are_stable() -> None:
         "from_sql",
         "to_table",
     ]
+    assert "format_plan" in sql_module.__all__
+    assert "SqlTableInfo" in sql_module.__all__
 
 
 def test_sql_public_api_functions_are_timed() -> None:
