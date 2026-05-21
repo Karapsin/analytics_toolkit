@@ -27,6 +27,7 @@ sql.gp_vacuum(...)
 sql.create_sql_table(...)
 sql.ch_create_table_as(...)
 sql.create_table_from_sql(...)
+sql.drop_many_partitions(...)
 sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=True)
 sql.transfer(..., batch_size=100_000, adaptive_batch_size=True, progress=True)
 sql.ch_full_table_move(...)
@@ -49,6 +50,8 @@ sql.get_sql_connection(...)
   from a query result
 - `create_table_from_sql`: create a table from a source query's native column
   metadata, optionally inserting the query result
+- `drop_many_partitions`: remove multiple table partitions with backend-specific
+  SQL
 - `load_df`: load a pandas dataframe into a SQL table
 - `transfer_table` / `transfer`: move data between supported backends
 - `ch_full_table_move`: recreate a ClickHouse distributed/shard table pair
@@ -56,11 +59,12 @@ sql.get_sql_connection(...)
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
 
-`read_sql`, `execute_sql`, `execute_read`, `load_df`, and `transfer_table` all
-support `retry_cnt` and `timeout_increment`. Retries restart the whole public
-operation from the beginning with a fresh connection. Deterministic SQL errors
-such as syntax errors, invalid grouping, missing tables/columns/functions/schemas,
-and PostgreSQL/Greenplum undefined objects are not retried.
+`read_sql`, `execute_sql`, `execute_read`, `drop_many_partitions`, `load_df`,
+and `transfer_table` all support `retry_cnt` and `timeout_increment`. Retries
+restart the whole public operation from the beginning with a fresh connection.
+Deterministic SQL errors such as syntax errors, invalid grouping, missing
+tables/columns/functions/schemas, and PostgreSQL/Greenplum undefined objects
+are not retried.
 
 `load_df` and `transfer_table` show `tqdm` row progress bars by default during
 data loading. Pass `progress=False` to silence those bars. `dry_run=True` and
@@ -300,20 +304,21 @@ use `write_mode` for explicit behavior:
 - `upsert`: reserved and currently rejected for all backends.
 
 `execute_sql`, `load_df`, `transfer_table`, `create_table_from_sql`,
-`create_sql_table`, `ch_create_table_as`, and `ch_full_table_move` accept
-`dry_run=True` or `return_sql=True` to return a `SqlPlan` without mutating a
-database. Plans contain ordered SQL statements, aliases/backends, target
-metadata, and notable options. Operations that require live inspection for
-exact SQL, such as `ch_full_table_move`, use deterministic placeholder steps
-and mark the inspection dependency in `SqlPlan.options` instead of opening a
-connection.
+`create_sql_table`, `drop_many_partitions`, `ch_create_table_as`, and
+`ch_full_table_move` accept `dry_run=True` or `return_sql=True` to return a
+`SqlPlan` without mutating a database. Plans contain ordered SQL statements,
+aliases/backends, target metadata, and notable options. Operations that require
+live inspection for exact SQL, such as `ch_full_table_move`, use deterministic
+placeholder steps and mark the inspection dependency in `SqlPlan.options`
+instead of opening a connection.
 
 `read_sql`, `execute_sql`, `execute_read`, `load_df`, `transfer_table`,
-`create_table_from_sql`, `create_sql_table`, `ch_create_table_as`, and
-`ch_full_table_move` also accept `return_metadata=True`; the returned
-`SqlOperationResult` includes row counts when available plus metadata such as
-elapsed seconds, retry attempts, statement count, operation status, and query
-label. Historical default return values are unchanged.
+`create_table_from_sql`, `create_sql_table`, `drop_many_partitions`,
+`ch_create_table_as`, and `ch_full_table_move` also accept
+`return_metadata=True`; the returned `SqlOperationResult` includes row counts
+when available plus metadata such as elapsed seconds, retry attempts, statement
+count, operation status, and query label. Historical default return values are
+unchanged.
 
 Use `query_label` to add a safe SQL comment to generated statements and logs:
 
@@ -351,6 +356,31 @@ read_result = sql.read(
 )
 scores_df = read_result.data
 read_result.metadata.elapsed_seconds
+```
+
+## Partition Deletes
+
+Use `drop_many_partitions` to remove several partition values from one target
+table in input order. Greenplum emits one native `ALTER TABLE ... DROP PARTITION`
+statement per value, or `TRUNCATE PARTITION` when `gp_truncate=True`. Trino uses
+a single Iceberg-style `DELETE FROM ... WHERE <partition_column> IN (...)`, so
+`partition_column` is required there. ClickHouse drops partitions from the
+managed shard table, for example `<target>_shard`, on the default `{cluster}`
+macro.
+
+```python
+sql.drop_many_partitions(
+    "gp",
+    "sandbox.events",
+    ["2025-05-01", "2025-05-02"],
+)
+
+sql.drop_many_partitions(
+    "trino",
+    "sandbox.events",
+    ["2025-05-01", "2025-05-02"],
+    partition_column="dt",
+)
 ```
 
 `transfer_table` reads native source query column types before loading data.

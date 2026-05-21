@@ -28,6 +28,23 @@ class CreateTableFromSqlOptions:
 
 
 @dataclass(frozen=True)
+class DropManyPartitionsOptions:
+    connection_key: str
+    backend: str
+    target_table: str
+    partition_keys: list[str]
+    partition_column: str | None = None
+    gp_truncate: bool = False
+    ch_cluster: str = "{cluster}"
+    retry_cnt: int = 5
+    timeout_increment: int | float = 5
+    dry_run: bool = False
+    return_sql: bool = False
+    return_metadata: bool = False
+    query_label: str | None = None
+
+
+@dataclass(frozen=True)
 class ChCreateTableAsOptions:
     connection_key: str
     backend: str
@@ -59,4 +76,3 @@ class ChFullTableMoveOptions:
     return_sql: bool = False
     return_metadata: bool = False
     query_label: str | None = None
-

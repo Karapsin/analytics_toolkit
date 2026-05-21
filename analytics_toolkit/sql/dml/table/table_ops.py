@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pandas as pd
@@ -26,12 +26,22 @@ from ...connection.config import (
 )
 from ...connection.get_sql_connection import get_sql_connection
 from ...ddl.create_sql_table import create_sql_table
-from ...ddl.create_sql_table import quote_identifier
-from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
+from ...ddl.create_sql_table import build_ch_shard_table_name, quote_identifier
+from ...connection.errors import (
+    InvalidSqlInputError,
+    SqlOperationContext,
+    UnsupportedConnectionTypeError,
+    sql_preview,
+)
 from ...labels import apply_query_label
-from ...operation_runner import timed_public_sql_function
-from ...plans import SqlOperationMetadata, SqlPlan
+from ...operation_runner import (
+    run_connection_operation,
+    timed_public_sql_function,
+    tracked_sql_operation,
+)
+from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
+from .models import DropManyPartitionsOptions
 
 
 def table_exists(
@@ -82,6 +92,37 @@ def build_drop_ch_distributed_table_pair_sqls(
         ch_cluster=ch_cluster,
         query_label=query_label,
     )
+
+
+def build_drop_many_partitions_sqls(
+    connection_type: str,
+    table: str,
+    partition_keys_list: Sequence[str],
+    partition_column: str | None = None,
+    gp_truncate: bool = False,
+    ch_cluster: str = "{cluster}",
+    query_label: str | None = None,
+) -> list[str]:
+    backend = resolve_connection_backend(connection_type)
+    target_table = _validate_non_empty_table_name(table)
+    partition_keys = _validate_partition_keys(partition_keys_list)
+    normalized_partition_column = _normalize_partition_column(partition_column)
+    _validate_drop_many_partitions_options(
+        backend,
+        partition_column=normalized_partition_column,
+        gp_truncate=gp_truncate,
+    )
+    return [
+        apply_query_label(sql, query_label)
+        for sql in _build_drop_many_partitions_sqls_for_backend(
+            backend,
+            target_table,
+            partition_keys,
+            partition_column=normalized_partition_column,
+            gp_truncate=gp_truncate,
+            ch_cluster=ch_cluster,
+        )
+    ]
 
 
 def build_analyze_table_sql(
@@ -344,6 +385,171 @@ def analyze_table(
         query_label=query_label,
     )
     return None
+
+
+@timed_public_sql_function
+def drop_many_partitions(
+    db_key: str,
+    table: str,
+    partition_keys_list: list[str],
+    partition_column: str | None = None,
+    gp_truncate: bool = False,
+    *,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
+    query_label: str | None = None,
+    dry_run: bool = False,
+    return_sql: bool = False,
+    return_metadata: bool = False,
+) -> SqlPlan | SqlOperationResult | None:
+    options = _build_drop_many_partitions_options(
+        db_key=db_key,
+        table=table,
+        partition_keys_list=partition_keys_list,
+        partition_column=partition_column,
+        gp_truncate=gp_truncate,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+        dry_run=dry_run,
+        return_sql=return_sql,
+        return_metadata=return_metadata,
+    )
+    plan = build_drop_many_partitions_plan(options)
+    if options.dry_run or options.return_sql:
+        return plan
+
+    metadata = plan.metadata
+    time_print(
+        f"Dropping {len(options.partition_keys)} partition(s) "
+        f"from {options.target_table} on {options.connection_key}"
+    )
+
+    def operation(connection_ref: dict[str, Any], attempt: int) -> None:
+        with tracked_sql_operation(
+            metadata=metadata,
+            operation_name="drop_many_partitions",
+            alias=options.connection_key,
+            backend=options.backend,
+            phase="drop_partitions",
+            retry_attempt=attempt,
+            query_label=options.query_label,
+            preview_sql=plan.sqls[0] if plan.sqls else None,
+        ):
+            get_backend_adapter(options.backend).execute_commands(
+                connection_ref["connection"],
+                plan.sqls,
+            )
+            metadata.affected_rows = None
+
+    def context(attempt: int) -> SqlOperationContext:
+        return SqlOperationContext(
+            operation="drop_many_partitions",
+            alias=options.connection_key,
+            backend=options.backend,
+            phase="drop_partitions",
+            target_table=options.target_table,
+            retry_attempt=attempt,
+            sql_preview=sql_preview(plan.sqls[0] if plan.sqls else None),
+        )
+
+    run_connection_operation(
+        operation_name=(
+            f"dropping partitions from {options.connection_key}.{options.target_table}"
+        ),
+        connection_key=options.connection_key,
+        backend=options.backend,
+        retry_cnt=options.retry_cnt,
+        timeout_increment=options.timeout_increment,
+        open_connection=get_sql_connection,
+        operation=operation,
+        context_factory=context,
+    )
+    if options.return_metadata:
+        return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
+    return None
+
+
+def build_drop_many_partitions_plan(
+    options: DropManyPartitionsOptions,
+) -> SqlPlan:
+    sqls = build_drop_many_partitions_sqls(
+        options.backend,
+        options.target_table,
+        options.partition_keys,
+        partition_column=options.partition_column,
+        gp_truncate=options.gp_truncate,
+        ch_cluster=options.ch_cluster,
+        query_label=options.query_label,
+    )
+    plan = SqlPlan(
+        operation="drop_many_partitions",
+        target_alias=options.connection_key,
+        target_backend=options.backend,
+        target_table=options.target_table,
+        options={
+            "partition_keys": options.partition_keys,
+            "partition_column": options.partition_column,
+            "gp_truncate": options.gp_truncate,
+            "ch_cluster": options.ch_cluster,
+        },
+        metadata=SqlOperationMetadata(
+            statement_count=len(sqls),
+            query_label=options.query_label,
+        ),
+    )
+    plan.extend(
+        sqls,
+        alias=options.connection_key,
+        backend=options.backend,
+        phase="drop_partitions",
+        target_table=options.target_table,
+    )
+    return plan
+
+
+def _build_drop_many_partitions_options(
+    *,
+    db_key: str,
+    table: str,
+    partition_keys_list: Sequence[str],
+    partition_column: str | None,
+    gp_truncate: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+    dry_run: bool,
+    return_sql: bool,
+    return_metadata: bool,
+) -> DropManyPartitionsOptions:
+    config = get_connection_config(db_key)
+    if retry_cnt < 1:
+        raise ValueError("retry_cnt must be at least 1.")
+    if timeout_increment < 0:
+        raise ValueError("timeout_increment must be non-negative.")
+
+    target_table = _validate_non_empty_table_name(table)
+    partition_keys = _validate_partition_keys(partition_keys_list)
+    normalized_partition_column = _normalize_partition_column(partition_column)
+    _validate_drop_many_partitions_options(
+        config.backend,
+        partition_column=normalized_partition_column,
+        gp_truncate=gp_truncate,
+    )
+    return DropManyPartitionsOptions(
+        connection_key=config.connection_key,
+        backend=config.backend,
+        target_table=target_table,
+        partition_keys=partition_keys,
+        partition_column=normalized_partition_column,
+        gp_truncate=gp_truncate,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        dry_run=dry_run,
+        return_sql=return_sql,
+        return_metadata=return_metadata,
+        query_label=query_label,
+    )
 
 
 @timed_public_sql_function
@@ -716,6 +922,96 @@ def _coerce_row_count(value: Any) -> int | None:
     if row_count < 0:
         return None
     return row_count
+
+
+def _build_drop_many_partitions_sqls_for_backend(
+    backend: str,
+    table: str,
+    partition_keys: list[str],
+    *,
+    partition_column: str | None,
+    gp_truncate: bool,
+    ch_cluster: str,
+) -> list[str]:
+    if backend == "gp":
+        action = "TRUNCATE" if gp_truncate else "DROP"
+        return [
+            f"ALTER TABLE {table} {action} PARTITION FOR ({_sql_string_literal(key)})"
+            for key in partition_keys
+        ]
+    if backend == "trino":
+        if partition_column is None:
+            raise InvalidSqlInputError(
+                "partition_column is required for Trino partition deletes."
+            )
+        partition_values = ", ".join(
+            f"DATE {_sql_string_literal(key)}" for key in partition_keys
+        )
+        return [
+            f"DELETE FROM {table}\nWHERE {partition_column} IN ({partition_values})"
+        ]
+    if backend == "ch":
+        shard_table = build_ch_shard_table_name(table)
+        cluster_clause = ch_cluster_clause(ch_cluster)
+        return [
+            f"ALTER TABLE {shard_table}{cluster_clause} "
+            f"DROP PARTITION {_sql_string_literal(key)}"
+            for key in partition_keys
+        ]
+    raise UnsupportedConnectionTypeError(
+        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
+    )
+
+
+def _validate_non_empty_table_name(table: str) -> str:
+    normalized = str(table).strip()
+    if not normalized:
+        raise InvalidSqlInputError("Table name must not be empty.")
+    return normalized
+
+
+def _validate_partition_keys(partition_keys_list: Sequence[str]) -> list[str]:
+    if isinstance(partition_keys_list, (str, bytes)) or not partition_keys_list:
+        raise InvalidSqlInputError(
+            "partition_keys_list must be a non-empty sequence of strings."
+        )
+
+    partition_keys: list[str] = []
+    for partition_key in partition_keys_list:
+        if not isinstance(partition_key, str):
+            raise InvalidSqlInputError("Partition values must be strings.")
+        normalized = partition_key.strip()
+        if not normalized:
+            raise InvalidSqlInputError("Partition values must not be empty.")
+        partition_keys.append(normalized)
+    return partition_keys
+
+
+def _normalize_partition_column(partition_column: str | None) -> str | None:
+    if partition_column is None:
+        return None
+    normalized = str(partition_column).strip()
+    return normalized or None
+
+
+def _validate_drop_many_partitions_options(
+    backend: str,
+    *,
+    partition_column: str | None,
+    gp_truncate: bool,
+) -> None:
+    if gp_truncate and backend != "gp":
+        raise UnsupportedConnectionTypeError(
+            "gp_truncate=True is only supported for Greenplum connections."
+        )
+    if backend == "trino" and partition_column is None:
+        raise InvalidSqlInputError(
+            "partition_column is required for Trino partition deletes."
+        )
+
+
+def _sql_string_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def split_trino_table_name(
