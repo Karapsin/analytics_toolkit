@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from clickhouse_connect.driver.exceptions import DatabaseError
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -49,6 +48,10 @@ class FakeClickHouseResult:
         self.result_rows = result_rows
         self.column_names = column_names
         self.column_types = column_types
+
+
+class FakeDatabaseError(Exception):
+    pass
 
 
 class FakeClickHouseClient:
@@ -223,13 +226,13 @@ def test_ch_create_table_as_rejects_non_clickhouse_alias(
 def test_ch_create_table_as_final_insert_cte_unknown_table_keeps_exception_type(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    error = DatabaseError(
+    error = FakeDatabaseError(
         "Code: 60. DB::Exception: Table default.trigger_map does not exist. "
         "(UNKNOWN_TABLE)"
     )
     fake_client.insert_error = error
 
-    with pytest.raises(DatabaseError) as exc_info:
+    with pytest.raises(FakeDatabaseError) as exc_info:
         ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
 
     assert exc_info.value is error
@@ -241,13 +244,13 @@ def test_ch_create_table_as_final_insert_cte_unknown_table_keeps_exception_type(
 def test_ch_create_table_as_final_insert_unknown_table_without_cte_has_no_hint(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    error = DatabaseError(
+    error = FakeDatabaseError(
         "Code: 60. DB::Exception: Table default.missing_map does not exist. "
         "(UNKNOWN_TABLE)"
     )
     fake_client.insert_error = error
 
-    with pytest.raises(DatabaseError) as exc_info:
+    with pytest.raises(FakeDatabaseError) as exc_info:
         ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
 
     assert exc_info.value is error
@@ -258,13 +261,13 @@ def test_ch_create_table_as_final_insert_unknown_table_without_cte_has_no_hint(
 def test_ch_create_table_as_schema_inference_cte_unknown_table_adds_hint(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    error = DatabaseError(
+    error = FakeDatabaseError(
         "Code: 60. DB::Exception: Table default.trigger_map does not exist. "
         "(UNKNOWN_TABLE)"
     )
     fake_client.schema_query_error = error
 
-    with pytest.raises(DatabaseError) as exc_info:
+    with pytest.raises(FakeDatabaseError) as exc_info:
         ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, CTE_JOIN_QUERY)
 
     assert exc_info.value is error
