@@ -436,7 +436,11 @@ key's `type`.
     "port": 5432,
     "user": "user",
     "password": "password",
-    "database": "db"
+    "database": "db",
+    "connect_timeout": 30,
+    "keepalives_idle": 60,
+    "keepalives_interval": 10,
+    "keepalives_count": 3
   },
   "gp_sandbox": {
     "type": "gp",
@@ -465,6 +469,10 @@ key's `type`.
   }
 }
 ```
+
+Greenplum supports optional `connect_timeout`, `keepalives`,
+`keepalives_idle`, `keepalives_interval`, and `keepalives_count` fields. They
+default to a 30-second connection timeout with TCP keepalives enabled.
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`,
 `use_keychain_certs`, `keychain_cert_names`, and `insert_chunk_size` fields.

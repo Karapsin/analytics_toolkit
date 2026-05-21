@@ -100,13 +100,25 @@ def _get_gp_connection(config: GpConfig) -> Any:
             "The 'psycopg2' package is required for Greenplum connections."
         ) from exc
 
-    return psycopg2.connect(
-        host=config.host,
-        port=config.port,
-        user=config.user,
-        password=config.password,
-        dbname=config.database,
-    )
+    connect_kwargs: dict[str, Any] = {
+        "host": config.host,
+        "port": config.port,
+        "user": config.user,
+        "password": config.password,
+        "dbname": config.database,
+        "connect_timeout": config.connect_timeout,
+        "keepalives": int(config.keepalives),
+    }
+    if config.keepalives:
+        connect_kwargs.update(
+            {
+                "keepalives_idle": config.keepalives_idle,
+                "keepalives_interval": config.keepalives_interval,
+                "keepalives_count": config.keepalives_count,
+            }
+        )
+
+    return psycopg2.connect(**connect_kwargs)
 
 
 def _get_ch_connection(config: ChConfig) -> Any:

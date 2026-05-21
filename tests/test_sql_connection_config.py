@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import types
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,6 +12,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
+connection_module = importlib.import_module(
+    "analytics_toolkit.sql.connection.get_sql_connection"
+)
 api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
 create_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.create_sql_table"
@@ -26,6 +30,84 @@ def test_connection_alias_resolves_backend() -> None:
     assert config.connection_key == "gp_sandbox"
     assert config.backend == "gp"
     assert config.database == "sandbox"
+    assert config.connect_timeout == 30
+    assert config.keepalives is True
+    assert config.keepalives_idle == 60
+    assert config.keepalives_interval == 10
+    assert config.keepalives_count == 3
+
+
+def test_gp_connection_uses_liveness_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    connection_module.get_sql_connection("gp")
+
+    assert connect_calls == [
+        {
+            "host": "gp.example",
+            "port": 5432,
+            "user": "user",
+            "password": "password",
+            "dbname": "db",
+            "connect_timeout": 30,
+            "keepalives": 1,
+            "keepalives_idle": 60,
+            "keepalives_interval": 10,
+            "keepalives_count": 3,
+        }
+    ]
+
+
+def test_gp_connection_liveness_options_can_be_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "gp_custom": {
+                "type": "gp",
+                "host": "gp.example",
+                "port": 5432,
+                "user": "user",
+                "password": "password",
+                "database": "db",
+                "connect_timeout": "7",
+                "keepalives": "false",
+                "keepalives_idle": "8",
+                "keepalives_interval": 9,
+                "keepalives_count": 4,
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    config = config_module.get_connection_config("gp_custom")
+    connection_module.get_sql_connection("gp_custom")
+
+    assert config.connect_timeout == 7
+    assert config.keepalives is False
+    assert config.keepalives_idle == 8
+    assert config.keepalives_interval == 9
+    assert config.keepalives_count == 4
+    assert connect_calls == [
+        {
+            "host": "gp.example",
+            "port": 5432,
+            "user": "user",
+            "password": "password",
+            "dbname": "db",
+            "connect_timeout": 7,
+            "keepalives": 0,
+        }
+    ]
 
 
 def test_unknown_connection_key_raises_config_error() -> None:

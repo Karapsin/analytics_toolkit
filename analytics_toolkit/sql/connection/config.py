@@ -13,6 +13,11 @@ from ..operation_runner import timed_public_sql_function
 BackendName = Literal["trino", "gp", "ch"]
 SUPPORTED_BACKENDS: set[str] = {"trino", "gp", "ch"}
 CONNECTIONS_FILE_NAME = ".connections"
+DEFAULT_GP_CONNECT_TIMEOUT_SECONDS = 30
+DEFAULT_GP_KEEPALIVES = True
+DEFAULT_GP_KEEPALIVES_IDLE_SECONDS = 60
+DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS = 10
+DEFAULT_GP_KEEPALIVES_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,11 @@ class GpConfig:
     user: str
     password: str
     database: str
+    connect_timeout: int
+    keepalives: bool
+    keepalives_idle: int
+    keepalives_interval: int
+    keepalives_count: int
 
 
 @dataclass(frozen=True)
@@ -122,6 +132,36 @@ def get_connection_config(connection_key: str) -> ConnectionConfig:
             user=_require_string(raw_config, normalized_key, "user"),
             password=_require_string(raw_config, normalized_key, "password"),
             database=_require_string(raw_config, normalized_key, "database"),
+            connect_timeout=_optional_int(
+                raw_config,
+                normalized_key,
+                "connect_timeout",
+                DEFAULT_GP_CONNECT_TIMEOUT_SECONDS,
+            ),
+            keepalives=_optional_bool(
+                raw_config,
+                normalized_key,
+                "keepalives",
+                DEFAULT_GP_KEEPALIVES,
+            ),
+            keepalives_idle=_optional_int(
+                raw_config,
+                normalized_key,
+                "keepalives_idle",
+                DEFAULT_GP_KEEPALIVES_IDLE_SECONDS,
+            ),
+            keepalives_interval=_optional_int(
+                raw_config,
+                normalized_key,
+                "keepalives_interval",
+                DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS,
+            ),
+            keepalives_count=_optional_int(
+                raw_config,
+                normalized_key,
+                "keepalives_count",
+                DEFAULT_GP_KEEPALIVES_COUNT,
+            ),
         )
     if backend == "ch":
         return ChConfig(
