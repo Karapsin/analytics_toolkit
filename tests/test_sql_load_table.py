@@ -791,7 +791,7 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE OR REPLACE TABLE {TEST_CH_TABLE}")
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
         and "ON CLUSTER '{cluster}'" in command
         for command in client.commands
     )

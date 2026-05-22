@@ -26,5 +26,6 @@ class LoadOptions:
 @dataclass
 class LoadState:
     target_exists: bool
+    original_target_exists: bool
     overlap_stage_table: str | None = None
     target_column_types: dict[str, str] | None = None

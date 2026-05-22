@@ -332,6 +332,7 @@ def finalize_stage_table(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
     )
     backend = resolve_connection_backend(connection_type)
+    original_target_exists = target_exists
 
     if replace_target_table:
         target_exists = apply_target_write_mode(
@@ -361,7 +362,11 @@ def finalize_stage_table(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             query_label=query_label,
-            ch_replace_table=replace_target_table and write_mode == "replace",
+            ch_replace_table=(
+                original_target_exists
+                and replace_target_table
+                and write_mode == "replace"
+            ),
         )
         insert_from_table(
             backend,

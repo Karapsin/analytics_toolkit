@@ -41,6 +41,7 @@ from .table_ops import (
     drop_ch_distributed_table_pair,
     drop_table,
     insert_from_query,
+    table_exists,
 )
 from .models import CreateTableFromSqlOptions
 from .table_validation import normalize_key_columns, validate_key_columns_in_columns
@@ -205,6 +206,16 @@ def create_table_from_sql(
                     source_columns,
                 )
             schema_batch = pd.DataFrame(columns=source_columns)
+            target_exists_before_drop = (
+                table_exists(
+                    target_config.backend,
+                    target_connection,
+                    target_table,
+                    connection_key=target_config.connection_key,
+                )
+                if target_config.backend == "ch" and drop_target_if_exists
+                else False
+            )
 
             if drop_target_if_exists:
                 if target_config.backend == "ch":
@@ -243,7 +254,11 @@ def create_table_from_sql(
                 ch_cluster=ch_cluster_name,
                 ch_sharding_key=ch_sharding_key,
                 ch_distributed_table=target_config.backend == "ch",
-                ch_replace_table=target_config.backend == "ch" and drop_target_if_exists,
+                ch_replace_table=(
+                    target_config.backend == "ch"
+                    and drop_target_if_exists
+                    and target_exists_before_drop
+                ),
                 query_label=query_label,
             )
 

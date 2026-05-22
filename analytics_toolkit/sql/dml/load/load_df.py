@@ -315,13 +315,15 @@ def _resolve_load_write_mode(
 
 
 def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
+    target_exists = table_exists(
+        options.connection_backend,
+        connection,
+        options.destination_table,
+        connection_key=options.connection_key,
+    )
     return LoadState(
-        target_exists=table_exists(
-            options.connection_backend,
-            connection,
-            options.destination_table,
-            connection_key=options.connection_key,
-        )
+        target_exists=target_exists,
+        original_target_exists=target_exists,
     )
 
 
@@ -412,16 +414,17 @@ def _ensure_load_target_table(
     df: pd.DataFrame,
 ) -> None:
     if options.connection_backend == "ch":
-        _create_load_target_table(options, connection, df, distributed=True)
+        _create_load_target_table(options, state, connection, df, distributed=True)
         state.target_exists = True
         return
 
     if not state.target_exists:
-        _create_load_target_table(options, connection, df, distributed=False)
+        _create_load_target_table(options, state, connection, df, distributed=False)
 
 
 def _create_load_target_table(
     options: LoadOptions,
+    state: LoadState,
     connection: Any,
     df: pd.DataFrame,
     *,
@@ -446,7 +449,9 @@ def _create_load_target_table(
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
             ch_distributed_table=True,
-            ch_replace_table=options.write_mode == "replace",
+            ch_replace_table=(
+                options.write_mode == "replace" and state.original_target_exists
+            ),
             **create_kwargs,
         )
         return
