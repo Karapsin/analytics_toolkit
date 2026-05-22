@@ -663,7 +663,11 @@ key's `type`.
     "port": 8123,
     "user": "user",
     "password": "password",
-    "database": "default"
+    "database": "default",
+    "secure": true,
+    "ca_cert": "/path/to/ca.pem",
+    "send_receive_timeout": 6000,
+    "settings": {"connect_timeout": "500"}
   }
 }
 ```
@@ -675,6 +679,13 @@ default to a 30-second connection timeout with TCP keepalives enabled.
 Trino supports optional `auth_mode`, `http_scheme`, `verify`,
 `use_keychain_certs`, `keychain_cert_names`, `insert_chunk_size`,
 `request_timeout`, and `source` fields.
+
+ClickHouse supports optional `secure`, `verify`, `ca_cert` / `ca_certs`,
+`ca_cert_variable` / `ca_certs_variable`, `connect_timeout`,
+`send_receive_timeout`, `settings`, `interface`, `query_limit`,
+`query_retries`, and `client_name` fields. `ca_cert_variable` resolves an
+Airflow Variable lazily when the connection is opened, which keeps the
+certificate path in Airflow instead of the file.
 
 In Airflow DAGs, keep credentials in Airflow Connections and use an
 Airflow-source `.connections` file with routing metadata only:
@@ -703,6 +714,11 @@ The connection key is used as the Airflow connection ID by default. Use
       "insert_chunk_size": 1000,
       "request_timeout": 600,
       "source": "analytics_toolkit"
+    },
+    "clickhouse": {
+      "connection_id": "clickhouse_pa_core",
+      "type": "ch",
+      "ca_certs_variable": "ca_certificate"
     }
   }
 }
@@ -729,6 +745,9 @@ omitted, the package infers it from Airflow `conn_type` or extra `type` /
 `backend`. Greenplum and ClickHouse use the Airflow `schema` field as the
 database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
 `insert_chunk_size`, `request_timeout`, and `source` from connection extras.
+ClickHouse uses the fields listed above from connection extras and defaults
+Airflow-source connections to `send_receive_timeout=6000` and
+`settings={"connect_timeout": "500"}` when those fields are not provided.
 
 Validate connection files from Python or the CLI:
 

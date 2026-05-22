@@ -161,8 +161,58 @@ def _get_ch_connection(config: ChConfig) -> Any:
     }
     if config.database:
         client_kwargs["database"] = config.database
+    if config.verify_value is not None:
+        client_kwargs["verify"] = _parse_verify_value(config.verify_value)
+    ca_cert = _resolve_ch_ca_cert(config)
+    if ca_cert is not None:
+        client_kwargs["ca_cert"] = ca_cert
+    if config.connect_timeout is not None:
+        client_kwargs["connect_timeout"] = config.connect_timeout
+    if config.send_receive_timeout is not None:
+        client_kwargs["send_receive_timeout"] = config.send_receive_timeout
+    if config.settings is not None:
+        client_kwargs["settings"] = config.settings
+    if config.interface is not None:
+        client_kwargs["interface"] = config.interface
+    if config.query_limit is not None:
+        client_kwargs["query_limit"] = config.query_limit
+    if config.query_retries is not None:
+        client_kwargs["query_retries"] = config.query_retries
+    if config.client_name is not None:
+        client_kwargs["client_name"] = config.client_name
 
     return clickhouse_connect.get_client(**client_kwargs)
+
+
+def _resolve_ch_ca_cert(config: ChConfig) -> str | None:
+    if config.ca_cert:
+        return config.ca_cert
+    if config.ca_cert_variable is None:
+        return None
+
+    try:
+        from airflow.models.variable import Variable
+    except ImportError as exc:
+        raise SqlConfigError(
+            f"SQL connection '{config.connection_key}' uses ca_cert_variable "
+            "but Airflow Variable support is unavailable."
+        ) from exc
+
+    try:
+        ca_cert = Variable.get(config.ca_cert_variable)
+    except Exception as exc:
+        raise SqlConfigError(
+            f"Could not resolve Airflow Variable '{config.ca_cert_variable}' "
+            f"for SQL connection '{config.connection_key}'. "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    if not isinstance(ca_cert, str) or not ca_cert.strip():
+        raise SqlConfigError(
+            f"Airflow Variable '{config.ca_cert_variable}' for SQL connection "
+            f"'{config.connection_key}' must be a non-empty string."
+        )
+    return ca_cert.strip()
 
 
 def _parse_verify_value(value: str) -> bool | str:

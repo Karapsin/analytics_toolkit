@@ -87,6 +87,16 @@ class ChConfig:
     password: str
     database: str | None
     secure: bool
+    verify_value: str | None
+    ca_cert: str | None
+    ca_cert_variable: str | None
+    connect_timeout: int | None
+    send_receive_timeout: int | None
+    settings: dict[str, Any] | None
+    interface: str | None
+    query_limit: int | None
+    query_retries: int | None
+    client_name: str | None
 
 
 ConnectionConfig = TrinoConfig | GpConfig | ChConfig
@@ -248,6 +258,22 @@ def _build_connection_config(
             ),
         )
     if backend == "ch":
+        ca_cert = _optional_string(raw_config, connection_key, "ca_cert")
+        if ca_cert is None:
+            ca_cert = _optional_string(raw_config, connection_key, "ca_certs")
+        ca_cert_variable = _optional_string(
+            raw_config,
+            connection_key,
+            "ca_cert_variable",
+        )
+        if ca_cert_variable is None:
+            ca_cert_variable = _optional_string(
+                raw_config,
+                connection_key,
+                "ca_certs_variable",
+            )
+        if ca_cert is not None:
+            ca_cert_variable = None
         return ChConfig(
             connection_key=connection_key,
             backend=backend,
@@ -257,6 +283,36 @@ def _build_connection_config(
             password=_require_string(raw_config, connection_key, "password"),
             database=_optional_string(raw_config, connection_key, "database"),
             secure=_optional_bool(raw_config, connection_key, "secure", False),
+            verify_value=_optional_bool_or_string_as_string(
+                raw_config,
+                connection_key,
+                "verify",
+            ),
+            ca_cert=ca_cert,
+            ca_cert_variable=ca_cert_variable,
+            connect_timeout=_optional_positive_int(
+                raw_config,
+                connection_key,
+                "connect_timeout",
+            ),
+            send_receive_timeout=_optional_positive_int(
+                raw_config,
+                connection_key,
+                "send_receive_timeout",
+            ),
+            settings=_optional_mapping(raw_config, connection_key, "settings"),
+            interface=_optional_string(raw_config, connection_key, "interface"),
+            query_limit=_optional_non_negative_int(
+                raw_config,
+                connection_key,
+                "query_limit",
+            ),
+            query_retries=_optional_non_negative_int(
+                raw_config,
+                connection_key,
+                "query_retries",
+            ),
+            client_name=_optional_string(raw_config, connection_key, "client_name"),
         )
 
     raise UnsupportedConnectionTypeError(
@@ -646,7 +702,27 @@ def _get_airflow_raw_connection_config(
             raw_config["verify"] = str(raw_config["verify"]).lower()
     elif resolved_backend == "ch":
         _set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
-        _copy_extra_fields(raw_config, extras, ["secure"])
+        raw_config["send_receive_timeout"] = 6000
+        raw_config["settings"] = {"connect_timeout": "500"}
+        _copy_extra_fields(
+            raw_config,
+            extras,
+            [
+                "secure",
+                "verify",
+                "ca_cert",
+                "ca_certs",
+                "ca_cert_variable",
+                "ca_certs_variable",
+                "connect_timeout",
+                "send_receive_timeout",
+                "settings",
+                "interface",
+                "query_limit",
+                "query_retries",
+                "client_name",
+            ],
+        )
     else:
         raise UnsupportedConnectionTypeError(
             f"Unsupported Airflow backend for SQL connection '{connection_id}': "
@@ -873,6 +949,41 @@ def _optional_positive_int(
     return _optional_int(config, connection_key, field_name, 1)
 
 
+def _optional_non_negative_int(
+    config: dict[str, Any],
+    connection_key: str,
+    field_name: str,
+) -> int | None:
+    if field_name not in config or config[field_name] is None:
+        return None
+
+    value = config[field_name]
+    if isinstance(value, bool):
+        raise SqlConfigError(
+            f"SQL connection '{connection_key}' field '{field_name}' must be an integer."
+        )
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError as exc:
+            raise SqlConfigError(
+                f"SQL connection '{connection_key}' field '{field_name}' must be an integer."
+            ) from exc
+    else:
+        raise SqlConfigError(
+            f"SQL connection '{connection_key}' field '{field_name}' must be an integer."
+        )
+
+    if parsed < 0:
+        raise SqlConfigError(
+            f"SQL connection '{connection_key}' field '{field_name}' "
+            "must be non-negative."
+        )
+    return parsed
+
+
 def _optional_bool(
     config: dict[str, Any],
     connection_key: str,
@@ -895,6 +1006,50 @@ def _optional_bool(
     raise SqlConfigError(
         f"SQL connection '{connection_key}' field '{field_name}' must be a boolean."
     )
+
+
+def _optional_bool_or_string_as_string(
+    config: dict[str, Any],
+    connection_key: str,
+    field_name: str,
+) -> str | None:
+    if field_name not in config or config[field_name] is None:
+        return None
+
+    value = config[field_name]
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized if normalized else None
+
+    raise SqlConfigError(
+        f"SQL connection '{connection_key}' field '{field_name}' "
+        "must be a boolean or string."
+    )
+
+
+def _optional_mapping(
+    config: dict[str, Any],
+    connection_key: str,
+    field_name: str,
+) -> dict[str, Any] | None:
+    value = config.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise SqlConfigError(
+            f"SQL connection '{connection_key}' field '{field_name}' "
+            "must be a JSON object."
+        )
+
+    for key in value:
+        if not isinstance(key, str):
+            raise SqlConfigError(
+                f"SQL connection '{connection_key}' field '{field_name}' "
+                "must contain only string keys."
+            )
+    return dict(value)
 
 
 def _optional_string_list(

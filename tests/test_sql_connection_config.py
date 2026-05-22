@@ -54,7 +54,10 @@ class FakeAirflowConnection:
 def install_fake_airflow(
     monkeypatch: pytest.MonkeyPatch,
     connections: dict[str, FakeAirflowConnection],
+    variables: dict[str, str] | None = None,
 ) -> None:
+    airflow_variables = variables or {}
+
     class FakeBaseHook:
         @staticmethod
         def get_connection(connection_id: str) -> FakeAirflowConnection:
@@ -63,15 +66,31 @@ def install_fake_airflow(
             except KeyError as exc:
                 raise KeyError(connection_id) from exc
 
+    class FakeVariable:
+        @staticmethod
+        def get(name: str) -> str:
+            try:
+                return airflow_variables[name]
+            except KeyError as exc:
+                raise KeyError(name) from exc
+
     airflow_module = types.ModuleType("airflow")
     hooks_module = types.ModuleType("airflow.hooks")
     base_module = types.ModuleType("airflow.hooks.base")
+    models_module = types.ModuleType("airflow.models")
+    variable_module = types.ModuleType("airflow.models.variable")
     base_module.BaseHook = FakeBaseHook
+    variable_module.Variable = FakeVariable
+    models_module.Variable = FakeVariable
+    models_module.variable = variable_module
     airflow_module.hooks = hooks_module
+    airflow_module.models = models_module
     hooks_module.base = base_module
     monkeypatch.setitem(sys.modules, "airflow", airflow_module)
     monkeypatch.setitem(sys.modules, "airflow.hooks", hooks_module)
     monkeypatch.setitem(sys.modules, "airflow.hooks.base", base_module)
+    monkeypatch.setitem(sys.modules, "airflow.models", models_module)
+    monkeypatch.setitem(sys.modules, "airflow.models.variable", variable_module)
 
 
 def test_connection_alias_resolves_backend() -> None:
@@ -328,7 +347,18 @@ def test_airflow_clickhouse_connection_maps_airflow_fields(
                 login="ch-user",
                 password="ch-password",
                 schema="default",
-                extra_dejson={"secure": "true"},
+                extra_dejson={
+                    "secure": "true",
+                    "verify": False,
+                    "ca_certs_variable": "ca_certificate",
+                    "connect_timeout": "11",
+                    "send_receive_timeout": "6001",
+                    "settings": {"use_numpy": True},
+                    "interface": "https",
+                    "query_limit": "100",
+                    "query_retries": "4",
+                    "client_name": "analytics-toolkit",
+                },
             )
         },
     )
@@ -344,6 +374,204 @@ def test_airflow_clickhouse_connection_maps_airflow_fields(
     assert config.password == "ch-password"
     assert config.database == "default"
     assert config.secure is True
+    assert config.verify_value == "false"
+    assert config.ca_cert is None
+    assert config.ca_cert_variable == "ca_certificate"
+    assert config.connect_timeout == 11
+    assert config.send_receive_timeout == 6001
+    assert config.settings == {"use_numpy": True}
+    assert config.interface == "https"
+    assert config.query_limit == 100
+    assert config.query_retries == 4
+    assert config.client_name == "analytics-toolkit"
+
+
+def test_airflow_clickhouse_connection_uses_dag_compatible_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirCh": FakeAirflowConnection(
+                conn_type="clickhouse",
+                host="air-ch.example",
+                login="ch-user",
+                password="ch-password",
+                schema="default",
+            )
+        },
+    )
+
+    config = config_module.airflow_connection_config("AirCh")
+
+    assert isinstance(config, config_module.ChConfig)
+    assert config.send_receive_timeout == 6000
+    assert config.settings == {"connect_timeout": "500"}
+
+
+def test_airflow_clickhouse_file_overrides_airflow_extras(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "AirCh": {
+                    "type": "ch",
+                    "send_receive_timeout": 12,
+                    "settings": {"max_threads": 4},
+                    "ca_cert": "/local/ca.pem",
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirCh": FakeAirflowConnection(
+                conn_type="clickhouse",
+                host="air-ch.example",
+                login="ch-user",
+                password="ch-password",
+                schema="default",
+                extra_dejson={
+                    "send_receive_timeout": 6000,
+                    "settings": {"connect_timeout": "500"},
+                    "ca_certs_variable": "ca_certificate",
+                },
+            )
+        },
+    )
+
+    config = config_module.get_connection_config("AirCh")
+
+    assert isinstance(config, config_module.ChConfig)
+    assert config.send_receive_timeout == 12
+    assert config.settings == {"max_threads": 4}
+    assert config.ca_cert == "/local/ca.pem"
+    assert config.ca_cert_variable is None
+
+
+def test_clickhouse_connection_passes_optional_connector_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "ch_custom": {
+                "type": "ch",
+                "host": "ch.example",
+                "port": 8123,
+                "user": "user",
+                "password": "password",
+                "database": "default",
+                "secure": True,
+                "verify": "false",
+                "ca_certs_variable": "ca_certificate",
+                "connect_timeout": "11",
+                "send_receive_timeout": "6001",
+                "settings": {"connect_timeout": "500", "use_numpy": True},
+                "interface": "https",
+                "query_limit": "100",
+                "query_retries": "4",
+                "client_name": "analytics-toolkit",
+            }
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {},
+        variables={"ca_certificate": "/airflow/ca.pem"},
+    )
+    client = object()
+    client_calls: list[dict[str, object]] = []
+    fake_clickhouse_connect = types.SimpleNamespace(
+        common=types.SimpleNamespace(set_setting=lambda name, value: None),
+        get_client=lambda **kwargs: client_calls.append(kwargs) or client,
+    )
+    monkeypatch.setitem(sys.modules, "clickhouse_connect", fake_clickhouse_connect)
+    monkeypatch.setitem(
+        sys.modules,
+        "clickhouse_connect.common",
+        fake_clickhouse_connect.common,
+    )
+
+    result = connection_module.get_sql_connection("ch_custom")
+
+    assert result is client
+    assert client_calls == [
+        {
+            "host": "ch.example",
+            "port": 8123,
+            "username": "user",
+            "password": "password",
+            "secure": True,
+            "database": "default",
+            "verify": False,
+            "ca_cert": "/airflow/ca.pem",
+            "connect_timeout": 11,
+            "send_receive_timeout": 6001,
+            "settings": {"connect_timeout": "500", "use_numpy": True},
+            "interface": "https",
+            "query_limit": 100,
+            "query_retries": 4,
+            "client_name": "analytics-toolkit",
+        }
+    ]
+
+
+def test_clickhouse_settings_must_be_mapping(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "ch_bad": {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "settings": ["use_numpy"],
+            }
+        }
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="settings"):
+        config_module.get_connection_config("ch_bad")
+
+
+def test_clickhouse_missing_ca_cert_variable_is_clear_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "ch_custom": {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "ca_certs_variable": "missing_certificate",
+            }
+        }
+    )
+    install_fake_airflow(monkeypatch, {}, variables={})
+    fake_clickhouse_connect = types.SimpleNamespace(
+        common=types.SimpleNamespace(set_setting=lambda name, value: None),
+        get_client=lambda **kwargs: object(),
+    )
+    monkeypatch.setitem(sys.modules, "clickhouse_connect", fake_clickhouse_connect)
+    monkeypatch.setitem(
+        sys.modules,
+        "clickhouse_connect.common",
+        fake_clickhouse_connect.common,
+    )
+
+    with pytest.raises(
+        config_module.SqlConfigError,
+        match="Could not resolve Airflow Variable 'missing_certificate'",
+    ):
+        connection_module.get_sql_connection("ch_custom")
 
 
 def test_airflow_connections_are_opt_in(
