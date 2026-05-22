@@ -462,6 +462,11 @@ types instead of pandas-inferred batch types. Final stage-to-target inserts use
 explicit column lists and cast staged columns to the target types. When
 `replace_target_table=False` and the target already exists, the existing target
 column types are used for those final casts.
+For ClickHouse transfer targets, metadata-derived types are refined from the
+first non-empty batch before creating the stage and target tables: columns
+observed with nulls stay `Nullable(...)`, while columns with no observed nulls
+use plain ClickHouse types. This keeps partition/order keys such as `Date`
+non-nullable when the transferred data does not contain nulls.
 
 `create_table_from_sql` uses the same native metadata mapping to create an
 empty target table by default. Pass `insert_data=True` to insert the source

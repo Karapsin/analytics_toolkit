@@ -182,8 +182,8 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert target.inserts[0]["data"] == [(date(2024, 2, 1), 10)]
     assert target.inserts[0]["column_names"] == ["month_date", "users"]
     assert target.inserts[0]["column_type_names"] == [
-        "Nullable(Date)",
-        "Nullable(Int64)",
+        "Date",
+        "Int64",
     ]
     assert "df" not in target.inserts[0]
 
@@ -195,15 +195,15 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     ]
     assert len(cluster_distributed_creates) == 1
     assert "ENGINE = Distributed(" in cluster_distributed_creates[0]
-    assert "`month_date` Nullable(Date)" in cluster_distributed_creates[0]
-    assert "`users` Nullable(Int64)" in cluster_distributed_creates[0]
+    assert "`month_date` Date" in cluster_distributed_creates[0]
+    assert "`users` Int64" in cluster_distributed_creates[0]
     assert "    '{cluster}'," in cluster_distributed_creates[0]
     assert f"    '{TARGET_SHARD_TABLE}'," in cluster_distributed_creates[0]
     assert any(
         command.startswith(
             f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) "
-            "SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
-            "CAST(`users` AS Nullable(Int64)) AS `users` "
+            "SELECT CAST(`month_date` AS Date) AS `month_date`, "
+            "CAST(`users` AS Int64) AS `users` "
             "FROM test_transfer_target__stage__"
         )
         for command in target.commands

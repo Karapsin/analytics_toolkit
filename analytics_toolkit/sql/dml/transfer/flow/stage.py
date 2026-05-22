@@ -8,6 +8,7 @@ from ..runtime.models import (
     TransferOptions,
     TransferStageState,
 )
+from ..schema import refine_ch_column_types_nullability_from_rows
 
 
 def create_stage_state(
@@ -30,6 +31,12 @@ def initialize_stage_for_first_batch(
     stage_state: TransferStageState,
     batch: RowBatch,
 ) -> None:
+    if options.to_db_backend == "ch":
+        stage_state.stage_column_types = refine_ch_column_types_nullability_from_rows(
+            stage_state.stage_column_types,
+            batch.columns,
+            batch.rows,
+        )
     sample_batch = batch.to_dataframe(
         include_rows=stage_state.stage_column_types is None,
     )

@@ -99,6 +99,27 @@ def test_map_source_schema_to_target_falls_back_for_invalid_decimal_bounds() -> 
     }
 
 
+def test_refine_clickhouse_nullability_from_rows() -> None:
+    result = schema_module.refine_ch_column_types_nullability_from_rows(
+        {
+            "dt": "Nullable(Date)",
+            "amount": "Nullable(Decimal(12, 2))",
+            "label": "String",
+        },
+        ["dt", "amount", "label"],
+        [
+            ("2024-01-01", None, "a"),
+            ("2024-01-02", "1.20", "b"),
+        ],
+    )
+
+    assert result == {
+        "dt": "Date",
+        "amount": "Nullable(Decimal(12, 2))",
+        "label": "String",
+    }
+
+
 def test_existing_target_insert_types_use_target_metadata() -> None:
     client = FakeClickHouseClient()
 

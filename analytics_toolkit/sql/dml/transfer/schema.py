@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+import pandas as pd
+
 from ..table.table_ops import get_table_column_types
 
 
@@ -89,6 +91,32 @@ def get_existing_target_insert_types(
         column_name: target_column_types[column_name]
         for column_name in stage_column_types
     }
+
+
+def refine_ch_column_types_nullability_from_rows(
+    column_types: dict[str, str] | None,
+    columns: list[str],
+    rows: list[tuple[Any, ...]],
+) -> dict[str, str] | None:
+    if column_types is None or not rows:
+        return column_types
+
+    has_null = {column_name: False for column_name in columns}
+    for row in rows:
+        for column_name, value in zip(columns, row):
+            if _is_null_value(value):
+                has_null[column_name] = True
+
+    refined = dict(column_types)
+    for column_name, type_name in column_types.items():
+        if column_name not in has_null:
+            continue
+        refined[column_name] = (
+            _nullable_ch_type(type_name)
+            if has_null[column_name]
+            else _unwrap_nullable_ch_type(type_name)
+        )
+    return refined
 
 
 def map_source_type_to_target(column: SourceColumn, target_backend: str) -> str:
@@ -396,6 +424,22 @@ def _nullable_ch_type(base_type: str) -> str:
     if base_type.startswith("Nullable("):
         return base_type
     return f"Nullable({base_type})"
+
+
+def _unwrap_nullable_ch_type(type_name: str) -> str:
+    normalized = type_name.strip()
+    if normalized.startswith("Nullable(") and normalized.endswith(")"):
+        return normalized[len("Nullable(") : -1].strip()
+    return type_name
+
+
+def _is_null_value(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _optional_int(value: Any) -> int | None:
