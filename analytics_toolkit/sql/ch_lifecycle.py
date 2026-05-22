@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
 from .backend_adapters import ch_cluster_clause, get_backend_adapter
+from .ch_options import resolve_ch_retry_per_host_drops_concurrency
 from .ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
@@ -75,6 +77,7 @@ def drop_ch_distributed_table_pair(
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
     pair = ch_distributed_table_pair(table_name, shard_table)
@@ -111,11 +114,18 @@ def drop_ch_distributed_table_pair(
                     "ClickHouse connection factory."
                 ) from exc
 
+        retry_drop_concurrency = resolve_ch_retry_per_host_drops_concurrency(
+            ch_retry_per_host_drops=ch_retry_per_host_drops,
+            ch_retry_per_host_drops_concurrency=(
+                ch_retry_per_host_drops_concurrency
+            ),
+        )
         _drop_ch_distributed_table_pair_on_cluster_hosts(
             connection,
             pair,
             ch_cluster=ch_cluster,
             query_label=query_label,
+            ch_retry_per_host_drops_concurrency=retry_drop_concurrency or 1,
             per_host_connection_factory=per_host_connection_factory,
         )
         _wait_for_ch_distributed_table_pair_absence(
@@ -266,6 +276,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
     *,
     ch_cluster: str,
     query_label: str | None,
+    ch_retry_per_host_drops_concurrency: int,
     per_host_connection_factory: Callable[[str], Any],
 ) -> None:
     configured_hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
@@ -281,38 +292,68 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             f"ClickHouse hosts for cluster {ch_cluster!r}."
         )
 
-    errors: list[str] = []
-    for host in hosts:
-        host_connection = None
-        try:
-            host_connection = per_host_connection_factory(host)
-            _execute_ch_sqls(
-                host_connection,
-                [
-                    _build_drop_ch_table_sql(
-                        pair.distributed_table,
-                        query_label=query_label,
-                    ),
-                    _build_drop_ch_table_sql(
-                        pair.shard_table,
-                        query_label=query_label,
-                    ),
-                ],
-            )
-        except Exception as exc:
-            errors.append(f"{host}: {exc!r}")
-        finally:
-            if host_connection is not None:
-                close = getattr(host_connection, "close", None)
-                if callable(close):
-                    close()
+    max_workers = min(ch_retry_per_host_drops_concurrency, len(hosts))
+    error_by_host: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_host = {
+            executor.submit(
+                _drop_ch_distributed_table_pair_on_host,
+                host,
+                pair=pair,
+                query_label=query_label,
+                per_host_connection_factory=per_host_connection_factory,
+            ): host
+            for host in hosts
+        }
+        for future in as_completed(future_to_host):
+            host = future_to_host[future]
+            try:
+                error = future.result()
+            except Exception as exc:
+                error = f"{host}: {exc!r}"
+            if error is not None:
+                error_by_host[host] = error
 
+    errors = [error_by_host[host] for host in hosts if host in error_by_host]
     if errors:
         raise TimeoutError(
             "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
             f"table pair {pair.distributed_table} / {pair.shard_table} on "
             "some host(s): " + "; ".join(errors)
         )
+
+
+def _drop_ch_distributed_table_pair_on_host(
+    host: str,
+    *,
+    pair: ChDistributedTablePair,
+    query_label: str | None,
+    per_host_connection_factory: Callable[[str], Any],
+) -> str | None:
+    host_connection = None
+    try:
+        host_connection = per_host_connection_factory(host)
+        _execute_ch_sqls(
+            host_connection,
+            [
+                _build_drop_ch_table_sql(
+                    pair.distributed_table,
+                    query_label=query_label,
+                ),
+                _build_drop_ch_table_sql(
+                    pair.shard_table,
+                    query_label=query_label,
+                ),
+            ],
+        )
+    except Exception as exc:
+        return f"{host}: {exc!r}"
+    finally:
+        if host_connection is not None:
+            close = getattr(host_connection, "close", None)
+            if callable(close):
+                close()
+    return None
 
 
 def _query_ch_configured_cluster_hosts(

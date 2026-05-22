@@ -201,6 +201,7 @@ def test_transfer_options_enable_clickhouse_host_drop_retry_by_default() -> None
         to_table="schema.target",
     )
     assert options.ch_retry_per_host_drops is True
+    assert options.ch_retry_per_host_drops_concurrency == 5
 
     disabled = api_module.build_transfer_options(
         from_db="trino",
@@ -210,6 +211,16 @@ def test_transfer_options_enable_clickhouse_host_drop_retry_by_default() -> None
         ch_retry_per_host_drops=False,
     )
     assert disabled.ch_retry_per_host_drops is False
+    assert disabled.ch_retry_per_host_drops_concurrency is None
+
+    custom = api_module.build_transfer_options(
+        from_db="trino",
+        to_db="ch",
+        from_sql="select 1",
+        to_table="schema.target",
+        ch_retry_per_host_drops_concurrency=2,
+    )
+    assert custom.ch_retry_per_host_drops_concurrency == 2
 
     non_ch = api_module.build_transfer_options(
         from_db="trino",
@@ -218,6 +229,16 @@ def test_transfer_options_enable_clickhouse_host_drop_retry_by_default() -> None
         to_table="schema.target",
     )
     assert non_ch.ch_retry_per_host_drops is False
+    assert non_ch.ch_retry_per_host_drops_concurrency is None
+
+    with pytest.raises(ValueError, match="ch_retry_per_host_drops_concurrency"):
+        api_module.build_transfer_options(
+            from_db="trino",
+            to_db="ch",
+            from_sql="select 1",
+            to_table="schema.target",
+            ch_retry_per_host_drops_concurrency=0,
+        )
 
 
 def test_backend_specific_validation_uses_alias_backend(

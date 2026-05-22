@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import threading
 
 import pytest
 
@@ -389,6 +390,80 @@ def test_clickhouse_lifecycle_retries_all_hosts_when_leftover_host_unmapped() ->
             ("DROP TABLE IF EXISTS db.target_shard", None),
         ]
     assert root_client.table_queries == 3
+
+
+def test_clickhouse_lifecycle_retries_per_host_drops_concurrently() -> None:
+    class RootClient(RecordingClickHouseClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.table_queries = 0
+
+        def query(self, sql: str) -> FakeClickHouseResult:
+            self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                return FakeClickHouseResult([("core",)])
+            if "clusterAllReplicas" in sql and "system, one" in sql:
+                return FakeClickHouseResult([(2,)])
+            if sql.startswith("SELECT count()") and "FROM system.clusters" in sql:
+                return FakeClickHouseResult([(2,)])
+            if sql.startswith("SELECT DISTINCT host_name"):
+                return FakeClickHouseResult([("host-a",), ("host-b",)])
+            if "clusterAllReplicas" in sql and "system, tables" in sql:
+                self.table_queries += 1
+                if self.table_queries <= 2:
+                    return FakeClickHouseResult(
+                        [
+                            ("host-a", "db", "target_shard", "ReplicatedMergeTree"),
+                            ("host-b", "db", "target_shard", "ReplicatedMergeTree"),
+                        ]
+                    )
+                return FakeClickHouseResult([])
+            return FakeClickHouseResult([])
+
+    active = 0
+    max_active = 0
+    active_lock = threading.Lock()
+    barrier = threading.Barrier(2, timeout=5)
+
+    class HostClient(RecordingClickHouseClient):
+        def command(
+            self,
+            sql: str,
+            settings: dict[str, object] | None = None,
+        ) -> dict[str, int] | None:
+            nonlocal active, max_active
+            if sql == "DROP TABLE IF EXISTS db.target":
+                with active_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                try:
+                    barrier.wait()
+                finally:
+                    with active_lock:
+                        active -= 1
+            return super().command(sql, settings=settings)
+
+    host_clients: dict[str, HostClient] = {}
+
+    def host_factory(host: str) -> HostClient:
+        host_client = HostClient()
+        host_clients[host] = host_client
+        return host_client
+
+    ch_lifecycle_module.drop_ch_distributed_table_pair(
+        RootClient(),
+        "db.target",
+        ch_cluster="{cluster}",
+        wait_for_absence=True,
+        wait_timeout_seconds=0,
+        wait_poll_interval_seconds=0,
+        ch_retry_per_host_drops=True,
+        ch_retry_per_host_drops_concurrency=2,
+        per_host_connection_factory=host_factory,
+    )
+
+    assert set(host_clients) == {"host-a", "host-b"}
+    assert max_active == 2
 
 
 def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry() -> None:

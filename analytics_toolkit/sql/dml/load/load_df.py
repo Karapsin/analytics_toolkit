@@ -10,6 +10,7 @@ from ...capabilities import validate_write_mode
 from ...ch_options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
+    resolve_ch_retry_per_host_drops_concurrency,
     validate_ch_columns_in_columns,
     validate_ch_options_not_used,
 )
@@ -81,6 +82,7 @@ def load_df(
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -111,6 +113,7 @@ def load_df(
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
         table_schema=table_schema,
@@ -236,6 +239,7 @@ def _build_load_options(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     query_label: str | None = None,
     gp_insert_chunk_size: int | None = None,
     table_schema: dict[str, str] | None = None,
@@ -249,6 +253,7 @@ def _build_load_options(
         append=append,
         write_mode=write_mode,
     )
+    retry_per_host_drops = config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = LoadOptions(
         connection_key=config.connection_key,
         connection_backend=config.backend,
@@ -271,8 +276,14 @@ def _build_load_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
-        ch_retry_per_host_drops=(
-            config.backend == "ch" and bool(ch_retry_per_host_drops)
+        ch_retry_per_host_drops=retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=(
+            resolve_ch_retry_per_host_drops_concurrency(
+                ch_retry_per_host_drops=retry_per_host_drops,
+                ch_retry_per_host_drops_concurrency=(
+                    ch_retry_per_host_drops_concurrency
+                ),
+            )
         ),
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
@@ -412,6 +423,9 @@ def _apply_load_target_write_mode(
         query_label=options.query_label,
         connection_key=options.connection_key,
         ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=(
+            options.ch_retry_per_host_drops_concurrency
+        ),
     )
 
 

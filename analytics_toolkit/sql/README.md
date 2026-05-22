@@ -530,7 +530,9 @@ table, and engine, and states that `ch_retry_per_host_drops=True` may be used
 for a direct local-drop cleanup attempt. Public ClickHouse replace helpers enable
 that retry by default; when leftover `hostName()` values match configured
 `system.clusters.host_name` values, cleanup connects only to those affected
-hosts, otherwise it falls back to all configured cluster hosts. Before inserting,
+hosts, otherwise it falls back to all configured cluster hosts. Local host cleanup
+runs concurrently with `ch_retry_per_host_drops_concurrency`, which defaults to
+`5` when host retry is enabled and `None` when it is disabled. Before inserting,
 the helper checks the configured cluster host count and polls
 `clusterAllReplicas(..., system, tables)` until the shard table is visible on
 every cluster host, then polls `clusterAllReplicas(..., system, columns)` until

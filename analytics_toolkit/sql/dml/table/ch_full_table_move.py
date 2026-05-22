@@ -3,12 +3,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ...connection.config import get_connection_config
-from ...connection.errors import UnsupportedConnectionTypeError
-from ...connection.get_sql_connection import get_sql_connection
+from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
 from ...ch_lifecycle import (
     build_drop_ch_distributed_table_pair_sqls,
     drop_ch_distributed_table_pair,
+)
+from ...connection.config import get_connection_config
+from ...connection.errors import UnsupportedConnectionTypeError
+from ...connection.get_sql_connection import (
+    get_ch_connection_for_host,
+    get_sql_connection,
 )
 from ...ddl.create_sql_table import (
     add_explicit_ch_uuid_to_local_replicated_create,
@@ -62,6 +66,8 @@ def ch_full_table_move(
     ch_engine: str | None = None,
     ch_cluster: str | None = "{cluster}",
     sharding_key: str | None = None,
+    ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -113,6 +119,15 @@ def ch_full_table_move(
         ch_engine=engine_override,
         ch_cluster=cluster_override,
         sharding_key=sharding_key_override,
+        ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
+        ch_retry_per_host_drops_concurrency=(
+            resolve_ch_retry_per_host_drops_concurrency(
+                ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
+                ch_retry_per_host_drops_concurrency=(
+                    ch_retry_per_host_drops_concurrency
+                ),
+            )
+        ),
         dry_run=dry_run,
         return_sql=return_sql,
         return_metadata=return_metadata,
@@ -186,6 +201,11 @@ def ch_full_table_move(
                 target_cluster,
                 query_label=options.query_label,
                 wait_for_absence=True,
+                connection_key=options.connection_key,
+                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                ch_retry_per_host_drops_concurrency=(
+                    options.ch_retry_per_host_drops_concurrency
+                ),
             )
             time_print(f"Creating target shard table {target_shard_table}")
             _execute_ch_command(
@@ -241,6 +261,11 @@ def ch_full_table_move(
                 shard_table=source_shard_table,
                 query_label=options.query_label,
                 wait_for_absence=True,
+                connection_key=options.connection_key,
+                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                ch_retry_per_host_drops_concurrency=(
+                    options.ch_retry_per_host_drops_concurrency
+                ),
             )
             metadata.statement_count = 12
             time_print(
@@ -467,6 +492,9 @@ def _drop_ch_distributed_table_pair(
     shard_table: str | None = None,
     query_label: str | None = None,
     wait_for_absence: bool = False,
+    connection_key: str | None = None,
+    ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
 ) -> None:
     drop_ch_distributed_table_pair(
         connection,
@@ -475,6 +503,13 @@ def _drop_ch_distributed_table_pair(
         shard_table=shard_table,
         query_label=query_label,
         wait_for_absence=wait_for_absence,
+        ch_retry_per_host_drops=ch_retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
+        per_host_connection_factory=(
+            (lambda host: get_ch_connection_for_host(connection_key, host))
+            if connection_key is not None
+            else None
+        ),
     )
 
 

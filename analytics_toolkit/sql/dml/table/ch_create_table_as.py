@@ -7,6 +7,7 @@ from typing import Any
 import sqlparse
 from sqlglot import exp, parse_one
 
+from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from ...connection.get_sql_connection import (
@@ -46,6 +47,7 @@ def ch_create_table_as(
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
     query_label: str | None = None,
@@ -73,6 +75,14 @@ def ch_create_table_as(
         ch_cluster=cluster_name,
         ch_sharding_key=sharding_key,
         ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
+        ch_retry_per_host_drops_concurrency=(
+            resolve_ch_retry_per_host_drops_concurrency(
+                ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
+                ch_retry_per_host_drops_concurrency=(
+                    ch_retry_per_host_drops_concurrency
+                ),
+            )
+        ),
         dry_run=dry_run,
         return_sql=return_sql,
         return_metadata=return_metadata,
@@ -147,6 +157,9 @@ def ch_create_table_as(
                 query_label=options.query_label,
                 wait_for_absence=True,
                 ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                ch_retry_per_host_drops_concurrency=(
+                    options.ch_retry_per_host_drops_concurrency
+                ),
                 per_host_connection_factory=(
                     lambda host: get_ch_connection_for_host(
                         options.connection_key,

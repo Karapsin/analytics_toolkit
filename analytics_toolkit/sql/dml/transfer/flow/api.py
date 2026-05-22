@@ -8,6 +8,7 @@ from ....capabilities import validate_write_mode
 from ....ch_options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
+    resolve_ch_retry_per_host_drops_concurrency,
     validate_ch_options_not_used,
 )
 from ....connection.config import TrinoConfig, get_connection_config
@@ -71,6 +72,7 @@ def transfer_table(
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -104,6 +106,7 @@ def transfer_table(
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -234,6 +237,7 @@ def build_transfer_options(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
     query_label: str | None = None,
     progress: bool = True,
     estimate_total_rows: bool = False,
@@ -260,6 +264,7 @@ def build_transfer_options(
         target_batch_seconds=target_batch_seconds,
         adaptive_batch_size=adaptive_batch_size,
     )
+    retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = TransferOptions(
         from_db_key=from_config.connection_key,
         from_db_backend=from_config.backend,
@@ -294,8 +299,14 @@ def build_transfer_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
-        ch_retry_per_host_drops=(
-            to_config.backend == "ch" and bool(ch_retry_per_host_drops)
+        ch_retry_per_host_drops=retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=(
+            resolve_ch_retry_per_host_drops_concurrency(
+                ch_retry_per_host_drops=retry_per_host_drops,
+                ch_retry_per_host_drops_concurrency=(
+                    ch_retry_per_host_drops_concurrency
+                ),
+            )
         ),
         query_label=query_label,
         progress=progress,

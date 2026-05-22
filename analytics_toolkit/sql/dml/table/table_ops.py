@@ -259,6 +259,7 @@ def apply_target_write_mode(
     query_label: str | None = None,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
@@ -289,6 +290,7 @@ def apply_target_write_mode(
             wait_for_absence=True,
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
+            ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         )
         return False
 
@@ -337,6 +339,7 @@ def finalize_stage_table(
     query_label: str | None = None,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
 ) -> None:
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
@@ -356,6 +359,7 @@ def finalize_stage_table(
             query_label=query_label,
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
+            ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         )
 
     if backend == "ch":
@@ -1018,6 +1022,7 @@ def drop_ch_distributed_table_pair(
     wait_poll_interval_seconds: float = 1,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
+    ch_retry_per_host_drops_concurrency: int | None = None,
 ) -> None:
     per_host_connection_factory = (
         (lambda host: get_ch_connection_for_host(connection_key, host))
@@ -1033,6 +1038,7 @@ def drop_ch_distributed_table_pair(
         wait_timeout_seconds=wait_timeout_seconds,
         wait_poll_interval_seconds=wait_poll_interval_seconds,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
+        ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         per_host_connection_factory=per_host_connection_factory,
     )
 

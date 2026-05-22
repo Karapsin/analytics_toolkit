@@ -6,6 +6,7 @@ from collections.abc import Sequence
 DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
 DEFAULT_CH_CLUSTER = "{cluster}"
 DEFAULT_CH_SHARDING_KEY = "rand()"
+DEFAULT_CH_RETRY_PER_HOST_DROPS_CONCURRENCY = 5
 
 
 def normalize_ch_columns_or_expression(
@@ -65,6 +66,29 @@ def validate_ch_options_not_used(
         raise ValueError(
             f"sharding_key can only be used when {option_owner} has type 'ch'."
         )
+
+
+def resolve_ch_retry_per_host_drops_concurrency(
+    *,
+    ch_retry_per_host_drops: bool,
+    ch_retry_per_host_drops_concurrency: int | None,
+) -> int | None:
+    if ch_retry_per_host_drops_concurrency is not None and (
+        not isinstance(ch_retry_per_host_drops_concurrency, int)
+        or isinstance(ch_retry_per_host_drops_concurrency, bool)
+        or ch_retry_per_host_drops_concurrency < 1
+    ):
+        raise ValueError(
+            "ch_retry_per_host_drops_concurrency must be an integer >= 1."
+        )
+
+    if not ch_retry_per_host_drops:
+        return None
+    return (
+        DEFAULT_CH_RETRY_PER_HOST_DROPS_CONCURRENCY
+        if ch_retry_per_host_drops_concurrency is None
+        else ch_retry_per_host_drops_concurrency
+    )
 
 
 def validate_ch_columns_in_columns(
