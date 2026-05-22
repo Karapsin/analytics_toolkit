@@ -217,7 +217,6 @@ def create_table_from_sql(
                         target_table,
                         ch_cluster=ch_cluster_name,
                         query_label=query_label,
-                        wait_for_absence=True,
                     )
                 else:
                     time_print(
@@ -244,6 +243,7 @@ def create_table_from_sql(
                 ch_cluster=ch_cluster_name,
                 ch_sharding_key=ch_sharding_key,
                 ch_distributed_table=target_config.backend == "ch",
+                ch_replace_table=target_config.backend == "ch" and drop_target_if_exists,
                 query_label=query_label,
             )
 

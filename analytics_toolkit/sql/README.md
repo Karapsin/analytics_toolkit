@@ -527,9 +527,10 @@ open. Before inserting, the helper checks the configured cluster host count and
 polls `clusterAllReplicas(..., system, tables)` until the shard table is visible
 on every cluster host, then polls `clusterAllReplicas(..., system, columns)`
 until the shard exposes the expected column types everywhere.
-When replacing a distributed table pair, recreate paths first poll the cluster
-until the old distributed and shard tables are absent everywhere. This prevents
-`CREATE TABLE IF NOT EXISTS` from reusing stale shard metadata on a lagging host.
+When replacing a distributed table pair, recreate paths use
+`CREATE OR REPLACE TABLE` for cluster DDL. This prevents
+`CREATE TABLE IF NOT EXISTS` from reusing stale shard or distributed metadata on
+a lagging host.
 
 `ch_create_table_as` is ClickHouse-only. It drops any existing target
 distributed/shard table pair, creates a new `<target>_shard` table from the

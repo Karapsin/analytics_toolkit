@@ -446,6 +446,7 @@ def _create_load_target_table(
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
             ch_distributed_table=True,
+            ch_replace_table=options.write_mode == "replace",
             **create_kwargs,
         )
         return
@@ -583,6 +584,10 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
                 ch_distributed_table=options.connection_backend == "ch",
+                ch_replace_table=(
+                    options.connection_backend == "ch"
+                    and options.write_mode == "replace"
+                ),
                 query_label=options.query_label,
             ),
             alias=options.connection_key,

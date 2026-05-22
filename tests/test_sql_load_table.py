@@ -547,7 +547,10 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
     class ClusterVisibilityClient:
         def __init__(self) -> None:
             self.queries: list[str] = []
-            self.visible_counts = [1, 2, 3]
+            self.visible_counts = {
+                "events": [1, 2, 3],
+                "events_shard": [3],
+            }
 
         def query(self, sql: str) -> object:
             self.queries.append(sql)
@@ -558,10 +561,11 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
             if "system, one" in sql:
                 return type("FakeResult", (), {"result_rows": [(3,)]})()
             if "system, tables" in sql:
+                table_name = sql.split("AND name = '", 1)[1].split("'", 1)[0]
                 return type(
                     "FakeResult",
                     (),
-                    {"result_rows": [(self.visible_counts.pop(0),)]},
+                    {"result_rows": [(self.visible_counts[table_name].pop(0),)]},
                 )()
             if "system, columns" in sql:
                 return type(
@@ -586,17 +590,21 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
     cluster_table_queries = [
         query for query in client.queries if "system, tables" in query
     ]
-    assert len(cluster_table_queries) == 3
+    assert len(cluster_table_queries) == 4
     assert "clusterAllReplicas('core', system, tables)" in cluster_table_queries[0]
     assert "WHERE database = 'analytics'" in cluster_table_queries[0]
-    assert "AND name = 'events_shard'" in cluster_table_queries[0]
+    assert "AND name = 'events'" in cluster_table_queries[0]
+    assert "AND name = 'events_shard'" in cluster_table_queries[3]
 
 
 def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
     class ClusterSchemaClient:
         def __init__(self) -> None:
             self.queries: list[str] = []
-            self.matching_counts = [1, 4]
+            self.matching_counts = {
+                "events": [1, 4],
+                "events_shard": [4],
+            }
 
         def query(self, sql: str) -> object:
             self.queries.append(sql)
@@ -611,10 +619,11 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
             if "system, tables" in sql:
                 return type("FakeResult", (), {"result_rows": [(2,)]})()
             if "system, columns" in sql:
+                table_name = sql.split("AND table = '", 1)[1].split("'", 1)[0]
                 return type(
                     "FakeResult",
                     (),
-                    {"result_rows": [(self.matching_counts.pop(0),)]},
+                    {"result_rows": [(self.matching_counts[table_name].pop(0),)]},
                 )()
             raise AssertionError(f"Unexpected query: {sql}")
 
@@ -635,15 +644,16 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
     cluster_column_queries = [
         query for query in client.queries if "system, columns" in query
     ]
-    assert len(cluster_column_queries) == 2
+    assert len(cluster_column_queries) == 3
     assert "clusterAllReplicas('core', system, columns)" in cluster_column_queries[0]
     assert "WHERE database = 'analytics'" in cluster_column_queries[0]
-    assert "AND table = 'events_shard'" in cluster_column_queries[0]
+    assert "AND table = 'events'" in cluster_column_queries[0]
     assert "name = 'month_date' AND type = 'Date'" in cluster_column_queries[0]
     assert (
         "name = 'cheque_cnt_total' AND type = 'Decimal(38, 5)'"
         in cluster_column_queries[0]
     )
+    assert "AND table = 'events_shard'" in cluster_column_queries[2]
 
 
 def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> None:
@@ -781,7 +791,7 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
+        command.startswith(f"CREATE OR REPLACE TABLE {TEST_CH_TABLE}")
         and "ON CLUSTER '{cluster}'" in command
         for command in client.commands
     )
@@ -832,7 +842,7 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
+        command.startswith(f"CREATE OR REPLACE TABLE {TEST_CH_TABLE}")
         and "ON CLUSTER '{cluster}'" in command
         for command in client.commands
     )

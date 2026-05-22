@@ -523,6 +523,9 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
                 ch_distributed_table=options.to_db_backend == "ch",
+                ch_replace_table=(
+                    options.to_db_backend == "ch" and options.write_mode == "replace"
+                ),
                 query_label=options.query_label,
             ),
             alias=options.to_db_key,

@@ -185,7 +185,6 @@ def ch_full_table_move(
                 target_table,
                 target_cluster,
                 query_label=options.query_label,
-                wait_for_absence=True,
             )
             time_print(f"Creating target shard table {target_shard_table}")
             _execute_ch_command(

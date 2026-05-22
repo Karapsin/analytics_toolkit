@@ -217,7 +217,7 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     cluster_distributed_creates = [
         command
         for command in target.commands
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}\n")
+        if command.startswith(f"CREATE OR REPLACE TABLE {TARGET_TABLE}\n")
         and "ON CLUSTER '{cluster}'" in command
     ]
     assert len(cluster_distributed_creates) == 1

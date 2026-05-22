@@ -23,6 +23,7 @@ class CreateSqlTableOptions:
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
     ch_distributed_table: bool = False
+    ch_replace_table: bool = False
     dry_run: bool = False
     return_sql: bool = False
     query_label: str | None = None

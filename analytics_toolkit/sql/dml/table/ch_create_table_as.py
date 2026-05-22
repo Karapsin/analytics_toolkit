@@ -140,7 +140,6 @@ def ch_create_table_as(
                 options.target_table,
                 ch_cluster=options.ch_cluster,
                 query_label=options.query_label,
-                wait_for_absence=True,
             )
 
             if options.table_schema is None:
@@ -186,6 +185,7 @@ def ch_create_table_as(
                     ch_engine=options.ch_engine,
                     ch_cluster=options.ch_cluster,
                     ch_sharding_key=options.ch_sharding_key,
+                    ch_replace_table=True,
                     query_label=options.query_label,
                 )
             )
@@ -242,6 +242,7 @@ def build_ch_create_table_as_sqls(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    ch_replace_table: bool = True,
     query_label: str | None = None,
 ) -> list[str]:
     target_table = _normalize_non_empty_string(table_name, "table_name")
@@ -258,6 +259,7 @@ def build_ch_create_table_as_sqls(
         ch_engine=engine,
         ch_cluster=cluster_name,
         ch_sharding_key=sharding_key,
+        ch_replace_table=ch_replace_table,
         query_label=query_label,
     )
 
@@ -284,6 +286,7 @@ def _build_ch_create_table_as_dry_run_create_sqls(
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
+        ch_replace_table=True,
     )
 
 

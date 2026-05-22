@@ -139,6 +139,7 @@ def build_create_ch_distributed_table_pair_sqls(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    ch_replace_table: bool = False,
     query_label: str | None = None,
 ) -> list[str]:
     return [
@@ -151,6 +152,7 @@ def build_create_ch_distributed_table_pair_sqls(
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
+            ch_replace_table=ch_replace_table,
         )
     ]
 
@@ -165,6 +167,7 @@ def create_ch_distributed_table_pair(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    ch_replace_table: bool = False,
     query_label: str | None = None,
     wait_for_table: bool = False,
 ) -> None:
@@ -178,6 +181,7 @@ def create_ch_distributed_table_pair(
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
+            ch_replace_table=ch_replace_table,
             query_label=query_label,
         ),
     )

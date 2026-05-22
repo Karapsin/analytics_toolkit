@@ -281,7 +281,6 @@ def apply_target_write_mode(
             table_name,
             ch_cluster=ch_cluster,
             query_label=query_label,
-            wait_for_absence=True,
         )
         return False
 
@@ -362,6 +361,7 @@ def finalize_stage_table(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             query_label=query_label,
+            ch_replace_table=replace_target_table and write_mode == "replace",
         )
         insert_from_table(
             backend,
@@ -410,6 +410,7 @@ def _ensure_ch_distributed_target_pair(
     ch_cluster: str,
     ch_sharding_key: str,
     query_label: str | None,
+    ch_replace_table: bool = False,
 ) -> None:
     create_batch = sample_batch
     create_column_types = target_column_types or insert_column_types
@@ -436,6 +437,7 @@ def _ensure_ch_distributed_target_pair(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=True,
+        ch_replace_table=ch_replace_table,
         query_label=query_label,
     )
 

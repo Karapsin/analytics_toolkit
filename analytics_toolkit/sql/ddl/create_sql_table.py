@@ -35,6 +35,7 @@ def create_sql_table(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    ch_replace_table: bool = False,
     dry_run: bool = False,
     return_sql: bool = False,
     query_label: str | None = None,
@@ -65,6 +66,7 @@ def create_sql_table(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=ch_distributed_table,
+        ch_replace_table=ch_replace_table,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -84,6 +86,7 @@ def create_sql_table(
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
         ch_distributed_table=options.ch_distributed_table,
+        ch_replace_table=options.ch_replace_table,
         query_label=options.query_label,
     )
     expected_ch_column_types = (
@@ -156,6 +159,7 @@ def build_create_table_sql(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    ch_replace_table: bool = False,
     query_label: str | None = None,
     table_schema: Mapping[str, str] | None = None,
 ) -> str:
@@ -173,6 +177,7 @@ def build_create_table_sql(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_distributed_table=ch_distributed_table,
+            ch_replace_table=ch_replace_table,
             query_label=query_label,
         )
     )
@@ -191,6 +196,7 @@ def build_create_table_sqls(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    ch_replace_table: bool = False,
     query_label: str | None = None,
     table_schema: Mapping[str, str] | None = None,
 ) -> list[str]:
@@ -217,6 +223,7 @@ def build_create_table_sqls(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_distributed_table=ch_distributed_table,
+            ch_replace_table=ch_replace_table,
         ),
         query_label,
     )
@@ -390,6 +397,7 @@ def _build_backend_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
+    ch_replace_table: bool,
 ) -> list[str]:
     try:
         build_sqls = _CREATE_TABLE_SQL_BUILDERS[backend]
@@ -407,6 +415,7 @@ def _build_backend_create_table_sqls(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=ch_distributed_table,
+        ch_replace_table=ch_replace_table,
     )
 
 
@@ -458,6 +467,7 @@ def _build_ch_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
+    ch_replace_table: bool,
     **_: object,
 ) -> list[str]:
     if ch_distributed_table:
@@ -469,6 +479,7 @@ def _build_ch_create_table_sqls(
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
+            ch_replace_table=ch_replace_table,
         )
     return [
         f"CREATE TABLE {table_name} ({joined_columns}) "
@@ -502,6 +513,7 @@ def build_ch_distributed_create_table_sqls(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    ch_replace_table: bool = False,
 ) -> list[str]:
     shard_table = build_ch_shard_table_name(table_name)
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
@@ -513,8 +525,12 @@ def build_ch_distributed_create_table_sqls(
         shard_table
     )
 
+    cluster_create_statement = (
+        "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
+    )
+
     shard_sql = (
-        f"CREATE TABLE IF NOT EXISTS {shard_table}\n"
+        f"{cluster_create_statement} {shard_table}\n"
         f"ON CLUSTER {_format_ch_cluster_name(cluster_name)}\n"
         f"({joined_columns})\n"
         f"ENGINE = {engine}\n"
@@ -532,7 +548,7 @@ def build_ch_distributed_create_table_sqls(
         local_shard_sql
     )
     distributed_sql = (
-        f"CREATE TABLE IF NOT EXISTS {table_name}\n"
+        f"{cluster_create_statement} {table_name}\n"
         f"ON CLUSTER {_format_ch_cluster_name(cluster_name)}\n"
         f"({joined_columns})\n"
         "ENGINE = Distributed(\n"
@@ -716,12 +732,27 @@ def _wait_for_ch_distributed_table_pair(
     )
     _wait_for_ch_table_on_cluster(
         connection,
+        table_name,
+        ch_cluster=ch_cluster,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    _wait_for_ch_table_on_cluster(
+        connection,
         shard_table,
         ch_cluster=ch_cluster,
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
     )
     if expected_column_types is not None:
+        _wait_for_ch_table_schema_on_cluster(
+            connection,
+            table_name,
+            expected_column_types=expected_column_types,
+            ch_cluster=ch_cluster,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
         _wait_for_ch_table_schema_on_cluster(
             connection,
             shard_table,

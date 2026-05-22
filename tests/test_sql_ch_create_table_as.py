@@ -176,7 +176,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
         fake_client.commands[4:8]
     )
-    assert shard_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}")
+    assert shard_sql.startswith(f"CREATE OR REPLACE TABLE {TARGET_SHARD_TABLE}")
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ENGINE = ReplicatedMergeTree" in shard_sql
     assert "PARTITION BY `dt`" in shard_sql
@@ -191,7 +191,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert "ON CLUSTER" not in local_shard_sql
     assert "UUID '" in local_shard_sql
     assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
-    assert distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
+    assert distributed_sql.startswith(f"CREATE OR REPLACE TABLE {TARGET_TABLE}")
     assert "ON CLUSTER '{cluster}'" in distributed_sql
     assert "ENGINE = Distributed(" in distributed_sql
     assert "    '{cluster}'," in distributed_sql
