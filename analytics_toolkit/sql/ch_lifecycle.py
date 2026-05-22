@@ -8,7 +8,7 @@ from .backend_adapters import ch_cluster_clause, get_backend_adapter
 from .ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
-    _wait_for_ch_table,
+    _wait_for_ch_distributed_table_pair,
 )
 from .labels import apply_query_label
 
@@ -170,7 +170,11 @@ def create_ch_distributed_table_pair(
         ),
     )
     if wait_for_table:
-        _wait_for_ch_table(connection, table_name)
+        _wait_for_ch_distributed_table_pair(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+        )
 
 
 def _build_drop_ch_table_sql(

@@ -96,6 +96,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
+        if "clusterAllReplicas" in sql:
+            return FakeResult([(len(self.created_tables),)])
         if sql.startswith("EXISTS TABLE "):
             table_name = sql.removeprefix("EXISTS TABLE ").strip()
             return FakeResult([(int(table_name in self.created_tables),)])
@@ -254,7 +256,9 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
     assert "    'events_shard'," in distributed_sql
     assert "    cityHash64(id)" in distributed_sql
     assert "ON CLUSTER" not in local_distributed_sql
-    assert target.queries[-1] == "EXISTS TABLE analytics.events"
+    assert "EXISTS TABLE analytics.events" in target.queries
+    assert "EXISTS TABLE analytics.events_shard" in target.queries
+    assert any("clusterAllReplicas" in query for query in target.queries)
     assert source.close_calls == 1
     assert target.close_calls == 1
 

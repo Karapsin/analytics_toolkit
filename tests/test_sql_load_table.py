@@ -486,6 +486,47 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert "ENGINE = Distributed(" in local_distributed_sql
 
 
+def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
+    class ClusterVisibilityClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+            self.visible_counts = [1, 2, 3]
+
+        def query(self, sql: str) -> object:
+            self.queries.append(sql)
+            if sql.startswith("EXISTS TABLE "):
+                return type("FakeResult", (), {"result_rows": [(1,)]})()
+            if "system, one" in sql:
+                return type("FakeResult", (), {"result_rows": [(3,)]})()
+            if "system, tables" in sql:
+                return type(
+                    "FakeResult",
+                    (),
+                    {"result_rows": [(self.visible_counts.pop(0),)]},
+                )()
+            raise AssertionError(f"Unexpected query: {sql}")
+
+    client = ClusterVisibilityClient()
+
+    create_sql_table_module._wait_for_ch_distributed_table_pair(
+        client,
+        "analytics.events",
+        ch_cluster="{cluster}",
+        timeout_seconds=1,
+        poll_interval_seconds=0,
+    )
+
+    assert "EXISTS TABLE analytics.events" in client.queries
+    assert "EXISTS TABLE analytics.events_shard" in client.queries
+    cluster_table_queries = [
+        query for query in client.queries if "system, tables" in query
+    ]
+    assert len(cluster_table_queries) == 3
+    assert "clusterAllReplicas('{cluster}', system, tables)" in cluster_table_queries[0]
+    assert "WHERE database = 'analytics'" in cluster_table_queries[0]
+    assert "AND name = 'events_shard'" in cluster_table_queries[0]
+
+
 def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch) -> None:
     client = FakeClickHouseClient()
     batch = pd.DataFrame(

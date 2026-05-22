@@ -138,6 +138,10 @@ class FakeClickHouseClient:
             return FakeClickHouseResult([(self.source_shard_ddl,)])
         if sql == f"EXISTS TABLE {TARGET_TABLE}":
             return FakeClickHouseResult([(1,)])
+        if sql.startswith(f"EXISTS TABLE {TARGET_TABLE}_shard"):
+            return FakeClickHouseResult([(1,)])
+        if "clusterAllReplicas" in sql:
+            return FakeClickHouseResult([(1,)])
         raise AssertionError(f"Unexpected query: {sql}")
 
     def close(self) -> None:

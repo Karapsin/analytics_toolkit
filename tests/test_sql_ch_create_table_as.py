@@ -89,6 +89,10 @@ class FakeClickHouseClient:
             )
         if sql == f"EXISTS TABLE {TARGET_TABLE}":
             return FakeClickHouseResult([(1,)])
+        if sql.startswith(f"EXISTS TABLE {TARGET_SHARD_TABLE}"):
+            return FakeClickHouseResult([(1,)])
+        if "clusterAllReplicas" in sql:
+            return FakeClickHouseResult([(1,)])
         raise AssertionError(f"Unexpected query: {sql}")
 
     def close(self) -> None:
@@ -160,7 +164,6 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
-    assert len(fake_client.queries) == 2
     assert fake_client.queries[0] == (
         "SELECT *\n"
         "FROM (\n"
@@ -168,7 +171,9 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         ") AS _ch_create_table_as_source\n"
         "LIMIT 0"
     )
-    assert fake_client.queries[1] == f"EXISTS TABLE {TARGET_TABLE}"
+    assert f"EXISTS TABLE {TARGET_TABLE}" in fake_client.queries
+    assert f"EXISTS TABLE {TARGET_SHARD_TABLE}" in fake_client.queries
+    assert any("clusterAllReplicas" in query for query in fake_client.queries)
     assert fake_client.close_calls == 1
 
 

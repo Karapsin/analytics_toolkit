@@ -84,6 +84,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
+        if "clusterAllReplicas" in sql:
+            return FakeResult([(len(self.created_tables),)])
         if sql.startswith("EXISTS TABLE "):
             table_name = sql.removeprefix("EXISTS TABLE ").strip()
             return FakeResult([(int(table_name in self.created_tables),)])

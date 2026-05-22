@@ -483,9 +483,9 @@ shard DDL and distributed sharding expression. The default `ch_cluster` is the
 ClickHouse `{cluster}` macro so created distributed/shard table pairs are
 visible across the full cluster on Yandex Managed ClickHouse.
 Cluster DDL is submitted with `distributed_ddl_task_timeout=0`, so ClickHouse
-queues the `ON CLUSTER` operation without making Python wait for every cluster
-host to acknowledge it. The local `Distributed` table is still created
-synchronously before the stage data is inserted.
+queues the `ON CLUSTER` operation without making Python hold the DDL request
+open. Before inserting, the helper polls `clusterAllReplicas(..., system,
+tables)` until the shard table is visible on every cluster host.
 
 `ch_create_table_as` is ClickHouse-only. It drops any existing target
 distributed/shard table pair, creates a new `<target>_shard` table from the

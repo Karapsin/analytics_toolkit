@@ -20,7 +20,7 @@ from ...ch_lifecycle import (
 )
 from ...ddl.create_sql_table import (
     _normalize_non_empty_string,
-    _wait_for_ch_table,
+    _wait_for_ch_distributed_table_pair,
     build_ch_shard_table_name,
     quote_identifier,
 )
@@ -169,8 +169,12 @@ def ch_create_table_as(
             _execute_ch_command(connection, distributed_sql)
             time_print(f"Creating local distributed table {options.target_table}")
             _execute_ch_command(connection, local_distributed_sql)
-            time_print(f"Waiting for target table {options.target_table}")
-            _wait_for_ch_table(connection, options.target_table)
+            time_print(f"Waiting for target table pair {options.target_table}")
+            _wait_for_ch_distributed_table_pair(
+                connection,
+                options.target_table,
+                ch_cluster=options.ch_cluster,
+            )
             time_print(f"Inserting query results into {options.target_table}")
             try:
                 connection.command(

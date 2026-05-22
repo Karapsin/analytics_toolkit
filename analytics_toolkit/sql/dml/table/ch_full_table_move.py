@@ -15,7 +15,7 @@ from ...ddl.create_sql_table import (
     quote_identifier,
     split_ch_table_name_for_distributed_engine,
 )
-from ...ddl.create_sql_table import _wait_for_ch_table
+from ...ddl.create_sql_table import _wait_for_ch_distributed_table_pair
 from ...labels import apply_query_label
 from ...operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
@@ -202,8 +202,12 @@ def ch_full_table_move(
                     connection,
                     apply_query_label(local_distributed_ddl, options.query_label),
                 )
-            time_print(f"Waiting for target table {target_table}")
-            _wait_for_ch_table(connection, target_table)
+            time_print(f"Waiting for target table pair {target_table}")
+            _wait_for_ch_distributed_table_pair(
+                connection,
+                target_table,
+                ch_cluster=target_cluster,
+            )
             time_print(f"Inserting data from {source_table} into {target_table}")
             insert_from_table(
                 "ch",

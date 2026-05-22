@@ -107,7 +107,11 @@ def create_sql_table(
         get_backend_adapter(options.backend).execute_commands(options.connection, create_sqls)
         if options.backend == "ch":
             if options.ch_distributed_table:
-                _wait_for_ch_table(options.connection, options.table_name)
+                _wait_for_ch_distributed_table_pair(
+                    options.connection,
+                    options.table_name,
+                    ch_cluster=options.ch_cluster,
+                )
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
     return None
@@ -509,6 +513,89 @@ def _wait_for_ch_table(
                 f"{timeout_seconds} second(s)."
             )
         time.sleep(poll_interval_seconds)
+
+
+def _wait_for_ch_distributed_table_pair(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str = "{cluster}",
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    shard_table = build_ch_shard_table_name(table_name)
+    _wait_for_ch_table(
+        connection,
+        table_name,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    _wait_for_ch_table(
+        connection,
+        shard_table,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    _wait_for_ch_table_on_cluster(
+        connection,
+        shard_table,
+        ch_cluster=ch_cluster,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+def _wait_for_ch_table_on_cluster(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
+        table_name
+    )
+    cluster_literal = _sql_string_literal(cluster_name)
+    expected_hosts_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
+    )
+    visible_tables_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND name = {_sql_string_literal(relation_name)}"
+    )
+
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+    while True:
+        try:
+            expected_hosts = _query_ch_count(connection, expected_hosts_sql)
+            visible_tables = _query_ch_count(connection, visible_tables_sql)
+            if expected_hosts > 0 and visible_tables >= expected_hosts:
+                return
+        except Exception as exc:
+            last_error = exc
+
+        if time.monotonic() >= deadline:
+            message = (
+                f"ClickHouse table {table_name} was not visible on every "
+                f"host in cluster {cluster_name!r} after {timeout_seconds} "
+                "second(s)."
+            )
+            if last_error is not None:
+                raise TimeoutError(message) from last_error
+            raise TimeoutError(message)
+        time.sleep(poll_interval_seconds)
+
+
+def _query_ch_count(connection: Any, sql: str) -> int:
+    result = connection.query(sql)
+    rows = getattr(result, "result_rows", None) or []
+    if not rows:
+        return 0
+    return int(rows[0][0])
 
 
 def _infer_gp_type(series: pd.Series) -> str:
