@@ -458,8 +458,8 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
-    assert len(sqls) == 3
-    shard_sql, distributed_sql, local_distributed_sql = sqls
+    assert len(sqls) == 4
+    shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = sqls
     assert "SETTINGS index_granularity" not in "\n".join(sqls)
     assert shard_sql.startswith(
         f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
@@ -468,6 +468,11 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert "ENGINE = ReplicatedMergeTree" in shard_sql
     assert "PARTITION BY `month_date`" in shard_sql
     assert "ORDER BY (`month_date`, `min_month_use`)" in shard_sql
+    assert local_shard_sql.startswith(
+        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
+    )
+    assert "ON CLUSTER" not in local_shard_sql
+    assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
     assert distributed_sql.startswith(
         f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
     )

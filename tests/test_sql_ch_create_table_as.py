@@ -138,7 +138,9 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
-    shard_sql, distributed_sql, local_distributed_sql = fake_client.commands[4:7]
+    shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
+        fake_client.commands[4:8]
+    )
     assert shard_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}")
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ENGINE = ReplicatedMergeTree" in shard_sql
@@ -148,6 +150,11 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert "`id` UInt64" in shard_sql
     assert "`amount` Decimal(18, 4)" in shard_sql
     assert QUERY not in shard_sql
+    assert local_shard_sql.startswith(
+        f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}"
+    )
+    assert "ON CLUSTER" not in local_shard_sql
+    assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
     assert distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
     assert "ON CLUSTER '{cluster}'" in distributed_sql
     assert "ENGINE = Distributed(" in distributed_sql
@@ -161,7 +168,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}"
     )
     assert "ON CLUSTER" not in local_distributed_sql
-    assert fake_client.commands[7] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
+    assert fake_client.commands[8] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
     assert fake_client.command_settings[4] == {
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
@@ -191,7 +198,7 @@ def test_ch_create_table_as_quotes_cluster_macro(
     assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" in (
         fake_client.commands
     )
-    shard_sql, distributed_sql, _ = fake_client.commands[4:7]
+    shard_sql, _, distributed_sql, _ = fake_client.commands[4:8]
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ON CLUSTER '{cluster}'" in distributed_sql
     assert "    '{cluster}'," in distributed_sql

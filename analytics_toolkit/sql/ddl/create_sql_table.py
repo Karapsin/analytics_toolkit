@@ -354,6 +354,13 @@ def build_ch_distributed_create_table_sqls(
         f"{partition_sql}"
         f"{order_by_sql}"
     )
+    local_shard_sql = (
+        f"CREATE TABLE IF NOT EXISTS {shard_table}\n"
+        f"({joined_columns})\n"
+        f"ENGINE = {engine}\n"
+        f"{partition_sql}"
+        f"{order_by_sql}"
+    )
     distributed_sql = (
         f"CREATE TABLE IF NOT EXISTS {table_name}\n"
         f"ON CLUSTER {_format_ch_cluster_name(cluster_name)}\n"
@@ -375,7 +382,7 @@ def build_ch_distributed_create_table_sqls(
         f"    {sharding_key}\n"
         ")"
     )
-    return [shard_sql, distributed_sql, local_distributed_sql]
+    return [shard_sql, local_shard_sql, distributed_sql, local_distributed_sql]
 
 
 def build_ch_shard_table_name(table_name: str) -> str:

@@ -171,7 +171,7 @@ def _run_move(
         TARGET_TABLE,
         **kwargs,
     )
-    return fake_client.commands[4], fake_client.commands[5], fake_client.commands[6]
+    return fake_client.commands[4], fake_client.commands[6], fake_client.commands[7]
 
 
 def test_ch_full_table_move_is_exported() -> None:
@@ -193,10 +193,10 @@ def test_ch_full_table_move_preserves_source_ddl_and_lifecycle(
         f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'",
         f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'",
     ]
-    assert fake_client.commands[7] == (
+    assert fake_client.commands[8] == (
         f"INSERT INTO {TARGET_TABLE} SELECT * FROM {SOURCE_TABLE}"
     )
-    assert fake_client.commands[8:12] == [
+    assert fake_client.commands[9:13] == [
         f"DROP TABLE IF EXISTS {SOURCE_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_SHARD_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_TABLE} ON CLUSTER core",
@@ -212,6 +212,8 @@ def test_ch_full_table_move_preserves_source_ddl_and_lifecycle(
     assert "ON CLUSTER '{cluster}'" in shard_create
     assert "ON CLUSTER '{cluster}'" in distributed_create
     assert "ON CLUSTER" not in local_distributed_create
+    assert "ON CLUSTER" not in fake_client.commands[5]
+    assert f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}" in fake_client.commands[5]
     assert "UUID" not in shard_create
     assert "UUID" not in distributed_create
     assert "`amount` Decimal(18, 4)" in shard_create
@@ -308,7 +310,7 @@ def test_ch_full_table_move_cluster_override_updates_target_only(
     assert "ON CLUSTER analytics" in fake_client.commands[4]
     assert "ON CLUSTER analytics" in distributed_create
     assert "'analytics'" in distributed_create
-    assert fake_client.commands[8:12] == [
+    assert fake_client.commands[9:13] == [
         f"DROP TABLE IF EXISTS {SOURCE_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_SHARD_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_TABLE} ON CLUSTER core",
@@ -373,7 +375,7 @@ def test_ch_full_table_move_uses_shard_name_from_distributed_engine(
         f"SHOW CREATE TABLE {SOURCE_TABLE}",
         f"SHOW CREATE TABLE {SOURCE_CUSTOM_SHARD_TABLE}",
     ]
-    assert fake_client.commands[8:12] == [
+    assert fake_client.commands[9:13] == [
         f"DROP TABLE IF EXISTS {SOURCE_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_CUSTOM_SHARD_TABLE}",
         f"DROP TABLE IF EXISTS {SOURCE_TABLE} ON CLUSTER core",

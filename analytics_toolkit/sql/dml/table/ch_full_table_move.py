@@ -190,6 +190,13 @@ def ch_full_table_move(
                 connection,
                 apply_query_label(target_shard_ddl, options.query_label),
             )
+            local_target_shard_ddl = _remove_on_cluster_clause(target_shard_ddl)
+            if local_target_shard_ddl != target_shard_ddl:
+                time_print(f"Creating local shard table {target_shard_table}")
+                _execute_ch_command(
+                    connection,
+                    apply_query_label(local_target_shard_ddl, options.query_label),
+                )
             time_print(f"Creating target distributed table {target_table}")
             _execute_ch_command(
                 connection,

@@ -231,12 +231,15 @@ def test_clickhouse_lifecycle_builds_distributed_pair_sql_in_order() -> None:
         ch_cluster="{cluster}",
         ch_sharding_key="cityHash64(id)",
     )
-    assert len(create_sqls) == 3
+    assert len(create_sqls) == 4
     assert create_sqls[0].startswith("CREATE TABLE IF NOT EXISTS db.target_shard")
-    assert create_sqls[1].startswith("CREATE TABLE IF NOT EXISTS db.target")
-    assert "ON CLUSTER '{cluster}'" in create_sqls[1]
+    assert "ON CLUSTER '{cluster}'" in create_sqls[0]
+    assert create_sqls[1].startswith("CREATE TABLE IF NOT EXISTS db.target_shard")
+    assert "ON CLUSTER" not in create_sqls[1]
     assert create_sqls[2].startswith("CREATE TABLE IF NOT EXISTS db.target")
-    assert "ON CLUSTER" not in create_sqls[2]
+    assert "ON CLUSTER '{cluster}'" in create_sqls[2]
+    assert create_sqls[3].startswith("CREATE TABLE IF NOT EXISTS db.target")
+    assert "ON CLUSTER" not in create_sqls[3]
 
 
 def test_clickhouse_lifecycle_executes_on_cluster_settings() -> None:

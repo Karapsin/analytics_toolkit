@@ -78,6 +78,8 @@ def ch_create_table_as(
                 ch_cluster=options.ch_cluster,
             ),
             f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
+            f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
+            f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
             f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
             _build_insert_select_sql(options.target_table, options.query_sql),
         ]
@@ -98,7 +100,7 @@ def ch_create_table_as(
                 query_label=options.query_label,
             ),
         )
-        phases = ["drop_target"] * 4 + ["create_target", "create_target", "insert_target"]
+        phases = ["drop_target"] * 4 + ["create_target"] * 4 + ["insert_target"]
         for sql, phase in zip(sqls, phases):
             plan.add(
                 sql,
@@ -148,7 +150,7 @@ def ch_create_table_as(
                     backend=options.backend,
                 )
                 raise
-            shard_sql, distributed_sql, local_distributed_sql = (
+            shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
                 build_ch_create_table_as_sqls(
                     table_name=options.target_table,
                     joined_columns=joined_columns,
@@ -161,10 +163,12 @@ def ch_create_table_as(
                     query_label=options.query_label,
                 )
             )
-            metadata.statement_count = 7
+            metadata.statement_count = 8
 
             time_print(f"Creating target shard table {target_shard_table}")
             _execute_ch_command(connection, shard_sql)
+            time_print(f"Creating local shard table {target_shard_table}")
+            _execute_ch_command(connection, local_shard_sql)
             time_print(f"Creating target distributed table {options.target_table}")
             _execute_ch_command(connection, distributed_sql)
             time_print(f"Creating local distributed table {options.target_table}")
