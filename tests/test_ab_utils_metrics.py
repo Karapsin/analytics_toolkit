@@ -542,6 +542,9 @@ def test_compute_test_metrics_agg_ratio_outliers_drop_and_truncate() -> None:
     assert drop_row["n1"] == 1
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Precision loss occurred in moment calculation:RuntimeWarning"
+)
 def test_compute_test_metrics_parallel_bootstrap_is_reproducible() -> None:
     df = _build_sample_metrics_df()
 

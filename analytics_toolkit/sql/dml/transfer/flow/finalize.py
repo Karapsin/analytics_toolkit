@@ -81,7 +81,7 @@ def finalize_loaded_stage(
         ch_sharding_key=options.ch_sharding_key,
         query_label=options.query_label,
         connection_key=options.to_db_key,
-        retry_per_host_drops=options.retry_per_host_drops,
+        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
     )
     analyze_table(
         connection_type=options.to_db_backend,

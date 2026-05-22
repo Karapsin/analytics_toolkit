@@ -739,7 +739,7 @@ def test_wait_for_clickhouse_distributed_pair_absence_reports_leftover_hosts() -
 
     message = str(exc_info.value)
     assert "host-b: analytics.events_shard (ReplicatedMergeTree)" in message
-    assert "retry_per_host_drops=True" in message
+    assert "ch_retry_per_host_drops=True" in message
 
 
 def test_wait_for_clickhouse_distributed_pair_reports_schema_mismatch() -> None:

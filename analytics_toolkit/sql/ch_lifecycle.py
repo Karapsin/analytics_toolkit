@@ -73,7 +73,7 @@ def drop_ch_distributed_table_pair(
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
-    retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = False,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
     pair = ch_distributed_table_pair(table_name, shard_table)
@@ -86,7 +86,7 @@ def drop_ch_distributed_table_pair(
             query_label=query_label,
         ),
     )
-    if wait_for_absence or retry_per_host_drops:
+    if wait_for_absence or ch_retry_per_host_drops:
         try:
             _wait_for_ch_distributed_table_pair_absence(
                 connection,
@@ -97,16 +97,16 @@ def drop_ch_distributed_table_pair(
             )
             return
         except TimeoutError as exc:
-            if not retry_per_host_drops:
+            if not ch_retry_per_host_drops:
                 raise
             if ch_cluster is None:
                 raise TimeoutError(
-                    f"{exc} retry_per_host_drops=True requires a non-null "
+                    f"{exc} ch_retry_per_host_drops=True requires a non-null "
                     "ch_cluster."
                 ) from exc
             if per_host_connection_factory is None:
                 raise TimeoutError(
-                    f"{exc} retry_per_host_drops=True requires a per-host "
+                    f"{exc} ch_retry_per_host_drops=True requires a per-host "
                     "ClickHouse connection factory."
                 ) from exc
 
@@ -270,7 +270,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
     hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
     if not hosts:
         raise TimeoutError(
-            "retry_per_host_drops=True could not find any configured "
+            "ch_retry_per_host_drops=True could not find any configured "
             f"ClickHouse hosts for cluster {ch_cluster!r}."
         )
 
@@ -302,7 +302,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
 
     if errors:
         raise TimeoutError(
-            "retry_per_host_drops=True failed to locally drop ClickHouse "
+            "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
             f"table pair {pair.distributed_table} / {pair.shard_table} on "
             "some host(s): " + "; ".join(errors)
         )

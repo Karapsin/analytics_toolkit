@@ -21,7 +21,7 @@ class CreateTableFromSqlOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
-    retry_per_host_drops: bool = False
+    ch_retry_per_host_drops: bool = False
     trino_insert_chunk_size: int | None = None
     dry_run: bool = False
     return_sql: bool = False
@@ -58,7 +58,7 @@ class ChCreateTableAsOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
-    retry_per_host_drops: bool = False
+    ch_retry_per_host_drops: bool = False
     dry_run: bool = False
     return_sql: bool = False
     return_metadata: bool = False

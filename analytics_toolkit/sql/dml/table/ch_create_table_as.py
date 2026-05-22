@@ -45,7 +45,7 @@ def ch_create_table_as(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
-    retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = False,
     dry_run: bool = False,
     return_sql: bool = False,
     query_label: str | None = None,
@@ -72,7 +72,7 @@ def ch_create_table_as(
         ch_engine=ch_engine,
         ch_cluster=cluster_name,
         ch_sharding_key=sharding_key,
-        retry_per_host_drops=bool(retry_per_host_drops),
+        ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
         dry_run=dry_run,
         return_sql=return_sql,
         return_metadata=return_metadata,
@@ -146,7 +146,7 @@ def ch_create_table_as(
                 ch_cluster=options.ch_cluster,
                 query_label=options.query_label,
                 wait_for_absence=True,
-                retry_per_host_drops=options.retry_per_host_drops,
+                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
                 per_host_connection_factory=(
                     lambda host: get_ch_connection_for_host(
                         options.connection_key,

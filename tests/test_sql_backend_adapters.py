@@ -312,7 +312,7 @@ def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
         wait_for_absence=True,
         wait_timeout_seconds=0,
         wait_poll_interval_seconds=0,
-        retry_per_host_drops=True,
+        ch_retry_per_host_drops=True,
         per_host_connection_factory=host_factory,
     )
 
@@ -353,7 +353,7 @@ def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry() -> None:
 
     message = str(exc_info.value)
     assert "host-a: db.target_shard (ReplicatedMergeTree)" in message
-    assert "retry_per_host_drops=True" in message
+    assert "ch_retry_per_host_drops=True" in message
 
 
 def test_target_lifecycle_helper_preserves_non_ch_replace_modes() -> None:

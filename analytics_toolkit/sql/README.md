@@ -526,7 +526,7 @@ queues the `ON CLUSTER` operation without making Python hold the DDL request
 open. Replacing an existing ClickHouse distributed table pair verifies the drop
 with `clusterAllReplicas(..., system, tables)` before recreate; if a target or
 shard remains on any host, the error lists the leftover `hostName()`, database,
-table, and engine, and states that `retry_per_host_drops=True` can be used for
+table, and engine, and states that `ch_retry_per_host_drops=True` can be used for
 an opt-in direct local-drop cleanup attempt on configured cluster hosts. Before
 inserting, the helper checks the configured cluster host count and polls
 `clusterAllReplicas(..., system, tables)` until the shard table is visible on
