@@ -1,10 +1,12 @@
 """Shared table operations and validation helpers used by load and transfer flows."""
 
 from .ch_create_table_as import ch_create_table_as
+from .ch_drop_table import build_ch_drop_table_plan, ch_drop_table
 from .ch_full_table_move import ch_full_table_move
 from .create_table_from_sql import create_table_from_sql
 from .models import (
     ChCreateTableAsOptions,
+    ChDropTableOptions,
     ChFullTableMoveOptions,
     CreateTableFromSqlOptions,
     DropManyPartitionsOptions,
@@ -52,6 +54,9 @@ __all__ = [
     "build_gp_create_many_partitions_sqls",
     "ch_create_table_as",
     "ChCreateTableAsOptions",
+    "ch_drop_table",
+    "build_ch_drop_table_plan",
+    "ChDropTableOptions",
     "ch_full_table_move",
     "ChFullTableMoveOptions",
     "clear_target_table",

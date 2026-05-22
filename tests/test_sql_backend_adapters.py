@@ -45,6 +45,7 @@ def test_sql_public_api_exports_are_stable() -> None:
     public_names = {
         "async_sql",
         "ch_create_table_as",
+        "ch_drop_table",
         "ch_full_table_move",
         "create_sql_table",
         "create_table_from_sql",

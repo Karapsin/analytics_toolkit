@@ -34,6 +34,7 @@ sql.gp_cancel_all_running_queries(...)
 sql.gp_vacuum(...)
 sql.create_sql_table(...)
 sql.ch_create_table_as(...)
+sql.ch_drop_table(...)
 sql.create_table_from_sql(...)
 sql.gp_create_many_partitions(...)
 sql.drop_many_partitions(...)
@@ -61,6 +62,8 @@ sql.get_sql_connection(...)
 - `create_sql_table`: build and execute `CREATE TABLE` statements
 - `ch_create_table_as`: recreate a ClickHouse distributed/shard table pair
   from a query result
+- `ch_drop_table`: drop a ClickHouse distributed table and its managed shard
+  table
 - `create_table_from_sql`: create a table from a source query's native column
   metadata, optionally inserting the query result
 - `gp_create_many_partitions`: create Greenplum range or list partitions from
@@ -324,13 +327,13 @@ use `write_mode` for explicit behavior:
 - `upsert`: reserved and currently rejected for all backends.
 
 `execute_sql`, `load_df`, `transfer_table`, `create_table_from_sql`,
-`create_sql_table`, `drop_many_partitions`, `ch_create_table_as`, and
-`ch_full_table_move` accept `dry_run=True` or `return_sql=True` to return a
-`SqlPlan` without mutating a database. Plans contain ordered SQL statements,
-aliases/backends, target metadata, and notable options. Operations that require
-live inspection for exact SQL, such as `ch_full_table_move`, use deterministic
-placeholder steps and mark the inspection dependency in `SqlPlan.options`
-instead of opening a connection.
+`create_sql_table`, `drop_many_partitions`, `ch_create_table_as`,
+`ch_drop_table`, and `ch_full_table_move` accept `dry_run=True` or
+`return_sql=True` to return a `SqlPlan` without mutating a database. Plans
+contain ordered SQL statements, aliases/backends, target metadata, and notable
+options. Operations that require live inspection for exact SQL, such as
+`ch_full_table_move`, use deterministic placeholder steps and mark the
+inspection dependency in `SqlPlan.options` instead of opening a connection.
 
 Use `format_plan` when you want a readable string for a dry-run plan:
 
@@ -349,7 +352,7 @@ print(sql.format_plan(plan, include_sql=False))
 
 `read_sql`, `execute_sql`, `execute_read`, `load_df`, `transfer_table`,
 `create_table_from_sql`, `create_sql_table`, `drop_many_partitions`,
-`ch_create_table_as`, and `ch_full_table_move` also accept
+`ch_create_table_as`, `ch_drop_table`, and `ch_full_table_move` also accept
 `return_metadata=True`; the returned `SqlOperationResult` includes row counts
 when available plus metadata such as elapsed seconds, retry attempts, statement
 count, operation status, and query label. Historical default return values are
@@ -578,6 +581,11 @@ FROM default.events_source AS events
 GLOBAL LEFT JOIN trigger_map AS trigger_map
     ON events.id = trigger_map.id
 ```
+
+`ch_drop_table` is ClickHouse-only. It drops the requested distributed table and
+its managed shard table, using `<table>_shard` by default. Pass `shard_table`
+when the shard table has a custom name, and pass `ch_cluster=None` to skip
+`ON CLUSTER` drop statements.
 
 `ch_full_table_move` is ClickHouse-only. It reads `SHOW CREATE TABLE` for
 `move_table`, extracts the source shard table from its `Distributed` engine, and

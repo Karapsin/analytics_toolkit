@@ -68,6 +68,24 @@ class ChCreateTableAsOptions:
 
 
 @dataclass(frozen=True)
+class ChDropTableOptions:
+    connection_key: str
+    backend: str
+    target_table: str
+    shard_table: str
+    ch_cluster: str | None = "{cluster}"
+    wait_for_absence: bool = False
+    wait_timeout_seconds: int = 300
+    wait_poll_interval_seconds: float = 1
+    ch_retry_per_host_drops: bool = True
+    ch_retry_per_host_drops_concurrency: int | None = 5
+    dry_run: bool = False
+    return_sql: bool = False
+    return_metadata: bool = False
+    query_label: str | None = None
+
+
+@dataclass(frozen=True)
 class ChFullTableMoveOptions:
     connection_key: str
     backend: str
