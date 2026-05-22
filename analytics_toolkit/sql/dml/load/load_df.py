@@ -80,7 +80,7 @@ def load_df(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -235,7 +235,7 @@ def _build_load_options(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
     query_label: str | None = None,
     gp_insert_chunk_size: int | None = None,
     table_schema: dict[str, str] | None = None,
@@ -271,7 +271,9 @@ def _build_load_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
-        ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
+        ch_retry_per_host_drops=(
+            config.backend == "ch" and bool(ch_retry_per_host_drops)
+        ),
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
     )
@@ -291,10 +293,6 @@ def _build_load_options(
             raise ValueError("gp_insert_chunk_size must be a positive integer.")
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
-    if options.ch_retry_per_host_drops and options.connection_backend != "ch":
-        raise ValueError(
-            "ch_retry_per_host_drops can only be used when connection_type has type 'ch'."
-        )
     validate_ch_options_not_used(
         target_backend=options.connection_backend,
         option_owner="connection_type",

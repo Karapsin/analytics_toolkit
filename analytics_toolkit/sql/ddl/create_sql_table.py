@@ -891,8 +891,8 @@ def _wait_for_ch_tables_absence_on_cluster(
             if leftovers:
                 message = f"{message} Leftover table(s): {leftovers}."
             message = (
-                f"{message} To attempt direct local drops on affected cluster "
-                "hosts, rerun with ch_retry_per_host_drops=True."
+                f"{message} Direct local drops on affected cluster hosts may "
+                "be attempted with ch_retry_per_host_drops=True."
             )
             if last_error is not None:
                 raise TimeoutError(message) from last_error

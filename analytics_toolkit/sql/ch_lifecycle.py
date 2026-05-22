@@ -9,6 +9,7 @@ from .ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
     _normalize_non_empty_string,
+    _query_ch_cluster_table_rows,
     _resolve_ch_cluster_name_for_wait,
     _sql_string_literal,
     _wait_for_ch_distributed_table_pair,
@@ -73,7 +74,7 @@ def drop_ch_distributed_table_pair(
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
     pair = ch_distributed_table_pair(table_name, shard_table)
@@ -86,7 +87,7 @@ def drop_ch_distributed_table_pair(
             query_label=query_label,
         ),
     )
-    if wait_for_absence or ch_retry_per_host_drops:
+    if wait_for_absence:
         try:
             _wait_for_ch_distributed_table_pair_absence(
                 connection,
@@ -267,7 +268,13 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
     query_label: str | None,
     per_host_connection_factory: Callable[[str], Any],
 ) -> None:
-    hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
+    configured_hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
+    hosts = _select_ch_hosts_for_local_drop(
+        connection,
+        pair,
+        ch_cluster=ch_cluster,
+        configured_hosts=configured_hosts,
+    )
     if not hosts:
         raise TimeoutError(
             "ch_retry_per_host_drops=True could not find any configured "
@@ -330,3 +337,39 @@ def _query_ch_configured_cluster_hosts(
         if host:
             hosts.append(host)
     return hosts
+
+
+def _select_ch_hosts_for_local_drop(
+    connection: Any,
+    pair: ChDistributedTablePair,
+    *,
+    ch_cluster: str,
+    configured_hosts: Sequence[str],
+) -> list[str]:
+    if not configured_hosts:
+        return []
+
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
+    try:
+        leftover_rows = _query_ch_cluster_table_rows(
+            connection,
+            table_names=[pair.distributed_table, pair.shard_table],
+            ch_cluster=cluster_name,
+        )
+    except Exception:
+        return list(configured_hosts)
+
+    leftover_hosts = {
+        str(row[0]).strip()
+        for row in leftover_rows
+        if row and str(row[0]).strip()
+    }
+    if not leftover_hosts:
+        return list(configured_hosts)
+
+    configured_host_set = set(configured_hosts)
+    if not leftover_hosts <= configured_host_set:
+        return list(configured_hosts)
+
+    return [host for host in configured_hosts if host in leftover_hosts]

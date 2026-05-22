@@ -258,7 +258,7 @@ def apply_target_write_mode(
     drop_missing_ch_truncate_target: bool = True,
     query_label: str | None = None,
     connection_key: str | None = None,
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
@@ -336,7 +336,7 @@ def finalize_stage_table(
     ch_sharding_key: str = "rand()",
     query_label: str | None = None,
     connection_key: str | None = None,
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
 ) -> None:
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
@@ -1017,7 +1017,7 @@ def drop_ch_distributed_table_pair(
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
     connection_key: str | None = None,
-    ch_retry_per_host_drops: bool = False,
+    ch_retry_per_host_drops: bool = True,
 ) -> None:
     per_host_connection_factory = (
         (lambda host: get_ch_connection_for_host(connection_key, host))

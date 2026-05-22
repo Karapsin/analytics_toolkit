@@ -261,6 +261,7 @@ def test_clickhouse_lifecycle_executes_on_cluster_settings() -> None:
             "distributed_ddl_output_mode": "none",
         },
     )
+    assert client.queries == []
 
 
 def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
@@ -281,7 +282,7 @@ def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
                 return FakeClickHouseResult([("host-a",), ("host-b",)])
             if "clusterAllReplicas" in sql and "system, tables" in sql:
                 self.table_queries += 1
-                if self.table_queries == 1:
+                if self.table_queries <= 2:
                     return FakeClickHouseResult(
                         [("host-b", "db", "target_shard", "ReplicatedMergeTree")]
                     )
@@ -316,13 +317,78 @@ def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
         per_host_connection_factory=host_factory,
     )
 
-    assert set(host_clients) == {"host-a", "host-b"}
-    assert host_clients["host-a"].commands == [
+    assert set(host_clients) == {"host-b"}
+    assert host_clients["host-b"].commands == [
         ("DROP TABLE IF EXISTS db.target", None),
         ("DROP TABLE IF EXISTS db.target_shard", None),
     ]
-    assert host_clients["host-a"].close_calls == 1
-    assert root_client.table_queries == 2
+    assert host_clients["host-b"].close_calls == 1
+    assert root_client.table_queries == 3
+
+
+def test_clickhouse_lifecycle_retries_all_hosts_when_leftover_host_unmapped() -> None:
+    class RootClient(RecordingClickHouseClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.table_queries = 0
+
+        def query(self, sql: str) -> FakeClickHouseResult:
+            self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                return FakeClickHouseResult([("core",)])
+            if "clusterAllReplicas" in sql and "system, one" in sql:
+                return FakeClickHouseResult([(2,)])
+            if sql.startswith("SELECT count()") and "FROM system.clusters" in sql:
+                return FakeClickHouseResult([(2,)])
+            if sql.startswith("SELECT DISTINCT host_name"):
+                return FakeClickHouseResult([("host-a",), ("host-b",)])
+            if "clusterAllReplicas" in sql and "system, tables" in sql:
+                self.table_queries += 1
+                if self.table_queries <= 2:
+                    return FakeClickHouseResult(
+                        [
+                            (
+                                "clickhouse-01",
+                                "db",
+                                "target_shard",
+                                "ReplicatedMergeTree",
+                            )
+                        ]
+                    )
+                return FakeClickHouseResult([])
+            return FakeClickHouseResult([])
+
+    class HostClient(RecordingClickHouseClient):
+        def __init__(self, host: str) -> None:
+            super().__init__()
+            self.host = host
+
+    root_client = RootClient()
+    host_clients: dict[str, HostClient] = {}
+
+    def host_factory(host: str) -> HostClient:
+        host_client = HostClient(host)
+        host_clients[host] = host_client
+        return host_client
+
+    ch_lifecycle_module.drop_ch_distributed_table_pair(
+        root_client,
+        "db.target",
+        ch_cluster="{cluster}",
+        wait_for_absence=True,
+        wait_timeout_seconds=0,
+        wait_poll_interval_seconds=0,
+        ch_retry_per_host_drops=True,
+        per_host_connection_factory=host_factory,
+    )
+
+    assert set(host_clients) == {"host-a", "host-b"}
+    for host_client in host_clients.values():
+        assert host_client.commands == [
+            ("DROP TABLE IF EXISTS db.target", None),
+            ("DROP TABLE IF EXISTS db.target_shard", None),
+        ]
+    assert root_client.table_queries == 3
 
 
 def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry() -> None:

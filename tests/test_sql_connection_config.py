@@ -193,6 +193,33 @@ def test_transfer_options_allow_two_aliases_with_same_backend() -> None:
     assert options.to_db_backend == "gp"
 
 
+def test_transfer_options_enable_clickhouse_host_drop_retry_by_default() -> None:
+    options = api_module.build_transfer_options(
+        from_db="trino",
+        to_db="ch",
+        from_sql="select 1",
+        to_table="schema.target",
+    )
+    assert options.ch_retry_per_host_drops is True
+
+    disabled = api_module.build_transfer_options(
+        from_db="trino",
+        to_db="ch",
+        from_sql="select 1",
+        to_table="schema.target",
+        ch_retry_per_host_drops=False,
+    )
+    assert disabled.ch_retry_per_host_drops is False
+
+    non_ch = api_module.build_transfer_options(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select 1",
+        to_table="schema.target",
+    )
+    assert non_ch.ch_retry_per_host_drops is False
+
+
 def test_backend_specific_validation_uses_alias_backend(
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:

@@ -75,7 +75,7 @@ class TransferOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
-    ch_retry_per_host_drops: bool = False
+    ch_retry_per_host_drops: bool = True
     query_label: str | None = None
     progress: bool = True
     estimate_total_rows: bool = False
