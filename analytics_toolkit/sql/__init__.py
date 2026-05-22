@@ -15,7 +15,12 @@ from .plans import (
 from .table_info import SqlTableInfo, table_info
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
-from .connection.config import ConnectionValidationResult, validate_connections
+from .connection.config import (
+    ConnectionValidationResult,
+    airflow_connection_config,
+    use_airflow_connections,
+    validate_connections,
+)
 from .connection.errors import SqlOperationContext, SqlOperationError
 from .connection.get_sql_connection import get_sql_connection, with_sql_connection
 from .dml.load.load_df import load_df
@@ -71,6 +76,7 @@ __all__ = [
     "parallel_sql",
     "BACKEND_CAPABILITIES",
     "ConnectionValidationResult",
+    "airflow_connection_config",
     "ch_create_table_as",
     "ch_drop_table",
     "ch_full_table_move",
@@ -104,6 +110,7 @@ __all__ = [
     "transfer",
     "transfer_table",
     "support_matrix_rows",
+    "use_airflow_connections",
     "validate_connections",
     "with_sql_connection",
 ]

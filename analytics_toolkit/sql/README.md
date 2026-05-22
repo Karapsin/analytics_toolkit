@@ -675,6 +675,25 @@ default to a 30-second connection timeout with TCP keepalives enabled.
 Trino supports optional `auth_mode`, `http_scheme`, `verify`,
 `use_keychain_certs`, `keychain_cert_names`, and `insert_chunk_size` fields.
 
+In Airflow DAGs, keep credentials in Airflow Connections and opt in for the
+SQL calls that should resolve connection IDs through `BaseHook`:
+
+```python
+from analytics_toolkit import sql
+
+with sql.use_airflow_connections(
+    {"gp_prod": "gp", "trino_prod": "trino", "clickhouse_prod": "ch"}
+):
+    sql.execute("trino_prod", "select 1", query_label="healthcheck")
+```
+
+`sql.airflow_connection_config(connection_id, backend)` maps one Airflow
+Connection to the same config objects used by `.connections`. If `backend` is
+omitted, the package infers it from Airflow `conn_type` or extra `type` /
+`backend`. Greenplum and ClickHouse use the Airflow `schema` field as the
+database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
+and `insert_chunk_size` from connection extras.
+
 Validate connection files from Python or the CLI:
 
 ```python

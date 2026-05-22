@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "analytics_toolkit"
-version = "1.0.8.0"
+version = "1.0.9.0"
 description = "Shared Python utilities for SQL, Excel, and date helpers."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "apache-airflow",
   "certifi==2026.2.25",
   "charset-normalizer==3.4.7",
   "clickhouse-connect==0.15.1",

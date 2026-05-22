@@ -3,11 +3,13 @@ from .config import (
     ConnectionValidationResult,
     GpConfig,
     TrinoConfig,
+    airflow_connection_config,
     get_connection_backend,
     get_connection_config,
     get_connections_file_path,
     load_sql_connections,
     resolve_connection_backend,
+    use_airflow_connections,
     validate_connections,
 )
 from .errors import (
@@ -32,6 +34,7 @@ __all__ = [
     "SqlUtilsError",
     "TrinoConfig",
     "UnsupportedConnectionTypeError",
+    "airflow_connection_config",
     "get_connection_backend",
     "get_connection_config",
     "get_connections_file_path",
@@ -39,6 +42,7 @@ __all__ = [
     "load_sql_connections",
     "resolve_connection_backend",
     "time_print",
+    "use_airflow_connections",
     "validate_connections",
     "with_sql_connection",
 ]

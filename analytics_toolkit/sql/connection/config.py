@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -18,6 +20,18 @@ DEFAULT_GP_KEEPALIVES = True
 DEFAULT_GP_KEEPALIVES_IDLE_SECONDS = 60
 DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS = 10
 DEFAULT_GP_KEEPALIVES_COUNT = 3
+
+
+@dataclass(frozen=True)
+class _AirflowConnectionSource:
+    connection_backends: dict[str, BackendName]
+    normalized_connection_backends: dict[str, BackendName]
+    default_backend: BackendName | None
+
+
+_AIRFLOW_CONNECTION_SOURCE: ContextVar[_AirflowConnectionSource | None] = (
+    ContextVar("analytics_toolkit_sql_airflow_connection_source", default=None)
+)
 
 
 @dataclass(frozen=True)
@@ -79,104 +93,155 @@ class ConnectionValidationResult:
 
 
 def get_connection_config(connection_key: str) -> ConnectionConfig:
-    normalized_key = normalize_connection_key(connection_key)
-    raw_config = _get_raw_connection_config(normalized_key)
-    backend = _require_backend(normalized_key, raw_config)
+    source = _AIRFLOW_CONNECTION_SOURCE.get()
+    resolved_key = (
+        _normalize_airflow_connection_id(connection_key)
+        if source is not None
+        else normalize_connection_key(connection_key)
+    )
+    raw_config = _get_raw_connection_config(resolved_key)
+    return _build_connection_config(resolved_key, raw_config)
+
+
+def airflow_connection_config(
+    connection_id: str,
+    backend: BackendName | str | None = None,
+) -> ConnectionConfig:
+    resolved_id = _normalize_airflow_connection_id(connection_id)
+    raw_config = _get_airflow_raw_connection_config(
+        resolved_id,
+        _normalize_optional_backend_name(backend),
+    )
+    return _build_connection_config(resolved_id, raw_config)
+
+
+@contextmanager
+def use_airflow_connections(
+    connection_backends: Mapping[str, BackendName | str] | None = None,
+    *,
+    default_backend: BackendName | str | None = None,
+) -> Iterator[None]:
+    normalized_backends: dict[str, BackendName] = {}
+    normalized_lookup: dict[str, BackendName] = {}
+    if connection_backends is not None:
+        for connection_id, backend in connection_backends.items():
+            resolved_id = _normalize_airflow_connection_id(connection_id)
+            resolved_backend = _normalize_backend_name(backend)
+            normalized_backends[resolved_id] = resolved_backend
+            normalized_lookup[normalize_connection_key(resolved_id)] = resolved_backend
+
+    source = _AirflowConnectionSource(
+        connection_backends=normalized_backends,
+        normalized_connection_backends=normalized_lookup,
+        default_backend=_normalize_optional_backend_name(default_backend),
+    )
+    token = _AIRFLOW_CONNECTION_SOURCE.set(source)
+    try:
+        yield
+    finally:
+        _AIRFLOW_CONNECTION_SOURCE.reset(token)
+
+
+def _build_connection_config(
+    connection_key: str,
+    raw_config: dict[str, Any],
+) -> ConnectionConfig:
+    backend = _require_backend(connection_key, raw_config)
 
     if backend == "trino":
         return TrinoConfig(
-            connection_key=normalized_key,
+            connection_key=connection_key,
             backend=backend,
-            host=_require_string(raw_config, normalized_key, "host"),
-            port=_optional_int(raw_config, normalized_key, "port", 8080),
-            user=_require_string(raw_config, normalized_key, "user"),
-            password=_optional_string(raw_config, normalized_key, "password"),
-            catalog=_optional_string(raw_config, normalized_key, "catalog"),
-            schema=_optional_string(raw_config, normalized_key, "schema"),
+            host=_require_string(raw_config, connection_key, "host"),
+            port=_optional_int(raw_config, connection_key, "port", 8080),
+            user=_require_string(raw_config, connection_key, "user"),
+            password=_optional_string(raw_config, connection_key, "password"),
+            catalog=_optional_string(raw_config, connection_key, "catalog"),
+            schema=_optional_string(raw_config, connection_key, "schema"),
             auth_mode=_optional_string(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "auth_mode",
                 "basic",
             ).lower(),
             http_scheme=_optional_string(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "http_scheme",
                 "http",
             ),
-            verify_value=_optional_string(raw_config, normalized_key, "verify", "true"),
+            verify_value=_optional_string(raw_config, connection_key, "verify", "true"),
             use_keychain_certs=_optional_bool(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "use_keychain_certs",
                 False,
             ),
             keychain_cert_names=_optional_string_list(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "keychain_cert_names",
             ),
             insert_chunk_size=_optional_positive_int(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "insert_chunk_size",
             ),
         )
     if backend == "gp":
         return GpConfig(
-            connection_key=normalized_key,
+            connection_key=connection_key,
             backend=backend,
-            host=_require_string(raw_config, normalized_key, "host"),
-            port=_optional_int(raw_config, normalized_key, "port", 5432),
-            user=_require_string(raw_config, normalized_key, "user"),
-            password=_require_string(raw_config, normalized_key, "password"),
-            database=_require_string(raw_config, normalized_key, "database"),
+            host=_require_string(raw_config, connection_key, "host"),
+            port=_optional_int(raw_config, connection_key, "port", 5432),
+            user=_require_string(raw_config, connection_key, "user"),
+            password=_require_string(raw_config, connection_key, "password"),
+            database=_require_string(raw_config, connection_key, "database"),
             connect_timeout=_optional_int(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "connect_timeout",
                 DEFAULT_GP_CONNECT_TIMEOUT_SECONDS,
             ),
             keepalives=_optional_bool(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "keepalives",
                 DEFAULT_GP_KEEPALIVES,
             ),
             keepalives_idle=_optional_int(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "keepalives_idle",
                 DEFAULT_GP_KEEPALIVES_IDLE_SECONDS,
             ),
             keepalives_interval=_optional_int(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "keepalives_interval",
                 DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS,
             ),
             keepalives_count=_optional_int(
                 raw_config,
-                normalized_key,
+                connection_key,
                 "keepalives_count",
                 DEFAULT_GP_KEEPALIVES_COUNT,
             ),
         )
     if backend == "ch":
         return ChConfig(
-            connection_key=normalized_key,
+            connection_key=connection_key,
             backend=backend,
-            host=_require_string(raw_config, normalized_key, "host"),
-            port=_optional_int(raw_config, normalized_key, "port", 8123),
-            user=_require_string(raw_config, normalized_key, "user"),
-            password=_require_string(raw_config, normalized_key, "password"),
-            database=_optional_string(raw_config, normalized_key, "database"),
-            secure=_optional_bool(raw_config, normalized_key, "secure", False),
+            host=_require_string(raw_config, connection_key, "host"),
+            port=_optional_int(raw_config, connection_key, "port", 8123),
+            user=_require_string(raw_config, connection_key, "user"),
+            password=_require_string(raw_config, connection_key, "password"),
+            database=_optional_string(raw_config, connection_key, "database"),
+            secure=_optional_bool(raw_config, connection_key, "secure", False),
         )
 
     raise UnsupportedConnectionTypeError(
-        f"Unsupported backend for SQL connection '{normalized_key}': {backend!r}."
+        f"Unsupported backend for SQL connection '{connection_key}': {backend!r}."
     )
 
 
@@ -193,6 +258,8 @@ def validate_connections(
 ) -> list[ConnectionValidationResult]:
     if keys is None:
         normalized_keys = sorted(load_sql_connections())
+    elif _AIRFLOW_CONNECTION_SOURCE.get() is not None:
+        normalized_keys = [_normalize_airflow_connection_id(key) for key in keys]
     else:
         normalized_keys = [normalize_connection_key(key) for key in keys]
 
@@ -238,6 +305,8 @@ def resolve_connection_backend(connection_type_or_key: str) -> BackendName:
     normalized = normalize_connection_key(connection_type_or_key)
     if normalized in SUPPORTED_BACKENDS:
         return cast(BackendName, normalized)
+    if _AIRFLOW_CONNECTION_SOURCE.get() is not None:
+        return get_connection_backend(connection_type_or_key)
     return get_connection_backend(normalized)
 
 
@@ -249,6 +318,26 @@ def normalize_connection_key(connection_key: str) -> str:
 
 
 def load_sql_connections() -> dict[str, dict[str, Any]]:
+    source = _AIRFLOW_CONNECTION_SOURCE.get()
+    if source is not None:
+        if not source.connection_backends:
+            raise SqlConfigError(
+                "Airflow connection mode cannot list all SQL connections. "
+                "Pass keys to validate_connections or provide connection_backends "
+                "to use_airflow_connections."
+            )
+        return {
+            connection_id: _get_airflow_raw_connection_config(
+                connection_id,
+                backend,
+            )
+            for connection_id, backend in source.connection_backends.items()
+        }
+
+    return _load_file_sql_connections()
+
+
+def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
     connections_path = get_connections_file_path()
 
     try:
@@ -299,7 +388,14 @@ def _find_connections_file_path() -> Path | None:
 
 
 def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:
-    connections = load_sql_connections()
+    source = _AIRFLOW_CONNECTION_SOURCE.get()
+    if source is not None:
+        return _get_airflow_raw_connection_config(
+            connection_key,
+            _get_airflow_source_backend(source, connection_key),
+        )
+
+    connections = _load_file_sql_connections()
     try:
         return connections[connection_key]
     except KeyError as exc:
@@ -308,6 +404,205 @@ def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:
             f"Unknown SQL connection key: {connection_key}. "
             f"Available keys: {available}"
         ) from exc
+
+
+def _get_airflow_raw_connection_config(
+    connection_id: str,
+    backend: BackendName | None,
+) -> dict[str, Any]:
+    connection = _get_airflow_connection(connection_id)
+    extras = _get_airflow_connection_extras(connection, connection_id)
+    resolved_backend = backend or _resolve_airflow_connection_backend(
+        connection,
+        extras,
+        connection_id,
+    )
+
+    raw_config: dict[str, Any] = {"type": resolved_backend}
+    _set_if_not_none(raw_config, "host", getattr(connection, "host", None))
+    _set_if_not_none(raw_config, "port", getattr(connection, "port", None))
+    _set_if_not_none(raw_config, "user", getattr(connection, "login", None))
+    _set_if_not_none(raw_config, "password", getattr(connection, "password", None))
+
+    if resolved_backend == "gp":
+        _set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
+        _copy_extra_fields(
+            raw_config,
+            extras,
+            [
+                "connect_timeout",
+                "keepalives",
+                "keepalives_idle",
+                "keepalives_interval",
+                "keepalives_count",
+            ],
+        )
+    elif resolved_backend == "trino":
+        _copy_extra_fields(
+            raw_config,
+            extras,
+            [
+                "catalog",
+                "schema",
+                "auth_mode",
+                "http_scheme",
+                "verify",
+                "use_keychain_certs",
+                "keychain_cert_names",
+                "insert_chunk_size",
+            ],
+        )
+        if isinstance(raw_config.get("verify"), bool):
+            raw_config["verify"] = str(raw_config["verify"]).lower()
+    elif resolved_backend == "ch":
+        _set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
+        _copy_extra_fields(raw_config, extras, ["secure"])
+    else:
+        raise UnsupportedConnectionTypeError(
+            f"Unsupported Airflow backend for SQL connection '{connection_id}': "
+            f"{resolved_backend!r}."
+        )
+
+    return raw_config
+
+
+def _get_airflow_connection(connection_id: str) -> Any:
+    try:
+        from airflow.hooks.base import BaseHook
+    except ImportError as exc:
+        raise SqlConfigError(
+            "Airflow connection resolution requires the 'apache-airflow' package."
+        ) from exc
+
+    try:
+        return BaseHook.get_connection(connection_id)
+    except Exception as exc:
+        raise UnsupportedConnectionTypeError(
+            f"Unknown Airflow connection ID: {connection_id}. "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def _get_airflow_connection_extras(
+    connection: Any,
+    connection_id: str,
+) -> dict[str, Any]:
+    extra_dejson = getattr(connection, "extra_dejson", None)
+    if extra_dejson is not None:
+        if not isinstance(extra_dejson, dict):
+            raise SqlConfigError(
+                f"Airflow connection '{connection_id}' extra_dejson must be a dict."
+            )
+        return dict(extra_dejson)
+
+    raw_extra = getattr(connection, "extra", None)
+    if raw_extra is None or raw_extra == "":
+        return {}
+    if isinstance(raw_extra, dict):
+        return dict(raw_extra)
+    if isinstance(raw_extra, str):
+        try:
+            parsed = json.loads(raw_extra)
+        except json.JSONDecodeError as exc:
+            raise SqlConfigError(
+                f"Airflow connection '{connection_id}' extra must contain valid JSON."
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise SqlConfigError(
+                f"Airflow connection '{connection_id}' extra must contain a JSON object."
+            )
+        return parsed
+
+    raise SqlConfigError(
+        f"Airflow connection '{connection_id}' extra must be a JSON object."
+    )
+
+
+def _resolve_airflow_connection_backend(
+    connection: Any,
+    extras: dict[str, Any],
+    connection_id: str,
+) -> BackendName:
+    raw_backend = (
+        extras.get("type")
+        or extras.get("backend")
+        or getattr(connection, "conn_type", None)
+    )
+    if raw_backend is None:
+        raise SqlConfigError(
+            f"Airflow connection '{connection_id}' does not define a backend. "
+            "Pass connection_backends/default_backend to use_airflow_connections "
+            "or set connection type/extra 'type'."
+        )
+    return _normalize_backend_name(raw_backend)
+
+
+def _normalize_backend_name(raw_backend: BackendName | str) -> BackendName:
+    backend = str(raw_backend).strip().lower()
+    aliases = {
+        "greenplum": "gp",
+        "postgres": "gp",
+        "postgresql": "gp",
+        "presto": "trino",
+        "clickhouse": "ch",
+        "clickhouse-connect": "ch",
+        "clickhouse_connect": "ch",
+    }
+    normalized = aliases.get(backend, backend)
+    if normalized not in SUPPORTED_BACKENDS:
+        expected = ", ".join(sorted(SUPPORTED_BACKENDS))
+        raise UnsupportedConnectionTypeError(
+            f"Unsupported SQL connection backend {raw_backend!r}. "
+            f"Expected one of: {expected}."
+        )
+    return cast(BackendName, normalized)
+
+
+def _normalize_optional_backend_name(
+    raw_backend: BackendName | str | None,
+) -> BackendName | None:
+    if raw_backend is None:
+        return None
+    return _normalize_backend_name(raw_backend)
+
+
+def _normalize_airflow_connection_id(connection_id: str) -> str:
+    resolved_id = connection_id.strip()
+    if not resolved_id:
+        raise SqlConfigError("Airflow connection ID must not be empty.")
+    return resolved_id
+
+
+def _get_airflow_source_backend(
+    source: _AirflowConnectionSource,
+    connection_id: str,
+) -> BackendName | None:
+    backend = source.connection_backends.get(connection_id)
+    if backend is not None:
+        return backend
+    return (
+        source.normalized_connection_backends.get(normalize_connection_key(connection_id))
+        or source.default_backend
+    )
+
+
+def _copy_extra_fields(
+    raw_config: dict[str, Any],
+    extras: dict[str, Any],
+    field_names: Sequence[str],
+) -> None:
+    for field_name in field_names:
+        if field_name in extras:
+            raw_config[field_name] = extras[field_name]
+
+
+def _set_if_not_none(
+    raw_config: dict[str, Any],
+    field_name: str,
+    value: Any,
+) -> None:
+    if value is not None:
+        raw_config[field_name] = value
 
 
 def _require_backend(connection_key: str, config: dict[str, Any]) -> BackendName:
