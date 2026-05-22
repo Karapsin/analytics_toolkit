@@ -748,6 +748,8 @@ database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
 ClickHouse uses the fields listed above from connection extras and defaults
 Airflow-source connections to `send_receive_timeout=6000` and
 `settings={"connect_timeout": "500"}` when those fields are not provided.
+See [AIRFLOW_MANUAL.md](AIRFLOW_MANUAL.md) for old-vs-new DAG migration
+examples.
 
 Validate connection files from Python or the CLI:
 
