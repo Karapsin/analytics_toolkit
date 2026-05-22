@@ -75,6 +75,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeClickHouseResult:
         self.queries.append(sql)
+        if sql.startswith("SELECT getMacro("):
+            return FakeClickHouseResult([("core",)])
         if sql.startswith("SELECT *\nFROM (\n"):
             if self.schema_query_error is not None:
                 raise self.schema_query_error

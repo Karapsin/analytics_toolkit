@@ -494,6 +494,8 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
 
         def query(self, sql: str) -> object:
             self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                return type("FakeResult", (), {"result_rows": [("core",)]})()
             if sql.startswith("EXISTS TABLE "):
                 return type("FakeResult", (), {"result_rows": [(1,)]})()
             if "system, one" in sql:
@@ -522,7 +524,7 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
         query for query in client.queries if "system, tables" in query
     ]
     assert len(cluster_table_queries) == 3
-    assert "clusterAllReplicas('{cluster}', system, tables)" in cluster_table_queries[0]
+    assert "clusterAllReplicas('core', system, tables)" in cluster_table_queries[0]
     assert "WHERE database = 'analytics'" in cluster_table_queries[0]
     assert "AND name = 'events_shard'" in cluster_table_queries[0]
 

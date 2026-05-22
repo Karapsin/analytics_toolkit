@@ -84,6 +84,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
+        if sql.startswith("SELECT getMacro("):
+            return FakeResult([("core",)])
         if "clusterAllReplicas" in sql:
             return FakeResult([(len(self.created_tables),)])
         if sql.startswith("EXISTS TABLE "):

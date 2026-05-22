@@ -129,6 +129,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeClickHouseResult:
         self.queries.append(sql)
+        if sql.startswith("SELECT getMacro("):
+            return FakeClickHouseResult([("core",)])
         if sql == f"SHOW CREATE TABLE {SOURCE_TABLE}":
             return FakeClickHouseResult([(self.source_distributed_ddl,)])
         if sql in {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
@@ -552,6 +553,7 @@ def _wait_for_ch_table_on_cluster(
     poll_interval_seconds: float = 1,
 ) -> None:
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
     database_expr, relation_name = split_ch_table_name_for_distributed_engine(
         table_name
     )
@@ -588,6 +590,50 @@ def _wait_for_ch_table_on_cluster(
                 raise TimeoutError(message) from last_error
             raise TimeoutError(message)
         time.sleep(poll_interval_seconds)
+
+
+def _resolve_ch_cluster_name_for_wait(connection: Any, cluster_name: str) -> str:
+    unquoted = _strip_sql_wrapping_quotes(cluster_name)
+    macro_name = _extract_ch_macro_name(unquoted)
+    if macro_name is None:
+        return unquoted
+
+    try:
+        result = connection.query(f"SELECT getMacro({_sql_string_literal(macro_name)})")
+    except Exception as exc:
+        raise ValueError(
+            f"Could not resolve ClickHouse cluster macro {unquoted!r}. "
+            "Pass ch_cluster with the concrete cluster name, for example "
+            "ch_cluster='core'."
+        ) from exc
+
+    rows = getattr(result, "result_rows", None) or []
+    if rows and rows[0] and rows[0][0] is not None:
+        resolved = str(rows[0][0]).strip()
+        if resolved:
+            return resolved
+
+    raise ValueError(
+        f"Could not resolve ClickHouse cluster macro {unquoted!r}. "
+        "Pass ch_cluster with the concrete cluster name, for example "
+        "ch_cluster='core'."
+    )
+
+
+def _strip_sql_wrapping_quotes(value: str) -> str:
+    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"', "`"}:
+        return value
+    inner = value[1:-1]
+    if value[0] == "'":
+        return inner.replace("''", "'")
+    return inner
+
+
+def _extract_ch_macro_name(value: str) -> str | None:
+    match = re.fullmatch(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", value)
+    if match is None:
+        return None
+    return match.group(1)
 
 
 def _query_ch_count(connection: Any, sql: str) -> int:
