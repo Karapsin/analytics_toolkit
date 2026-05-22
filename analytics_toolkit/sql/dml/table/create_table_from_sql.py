@@ -20,10 +20,16 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...ddl.create_sql_table import create_sql_table
+from ...ddl.create_sql_table import (
+    build_create_table_sqls,
+    create_sql_table,
+    normalize_table_schema,
+    validate_table_schema_columns,
+)
 from ...labels import apply_query_label
 from ...operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...plan_steps import (
+    add_create_table_steps,
     add_create_table_placeholder_step,
     add_drop_target_steps,
     add_inspect_schema_step,
@@ -67,6 +73,7 @@ def create_table_from_sql(
     return_sql: bool = False,
     return_metadata: bool = False,
     query_label: str | None = None,
+    table_schema: dict[str, str] | None = None,
 ) -> int | None | SqlPlan | SqlOperationResult:
     target_table = _normalize_table_name(table_name)
     source_sql = _normalize_single_query(sql)
@@ -104,6 +111,7 @@ def create_table_from_sql(
         target_backend=target_config.backend,
         target_table=target_table,
         source_sql=source_sql,
+        table_schema=normalize_table_schema(table_schema),
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
         gp_distributed_by_key=gp_distribution,
@@ -127,9 +135,15 @@ def create_table_from_sql(
             target_backend=options.target_backend,
             target_table=options.target_table,
             source_sql=options.source_sql,
+            table_schema=options.table_schema,
             insert_data=options.insert_data,
             drop_target_if_exists=options.drop_target_if_exists,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            ch_partition_by=options.ch_partition_by,
+            ch_order_by=options.ch_order_by,
+            ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
             query_label=options.query_label,
         )
 
@@ -180,10 +194,16 @@ def create_table_from_sql(
                 data_name="source query",
             )
 
-            target_column_types = map_source_schema_to_target(
-                source_schema,
-                target_config.backend,
-            )
+            if options.table_schema is None:
+                target_column_types = map_source_schema_to_target(
+                    source_schema,
+                    target_config.backend,
+                )
+            else:
+                target_column_types = validate_table_schema_columns(
+                    options.table_schema,
+                    source_columns,
+                )
             schema_batch = pd.DataFrame(columns=source_columns)
 
             if drop_target_if_exists:
@@ -215,7 +235,7 @@ def create_table_from_sql(
                 target_connection,
                 target_table,
                 schema_batch,
-                column_types=target_column_types,
+                table_schema=target_column_types,
                 gp_distributed_by_key=gp_distribution,
                 ch_partition_by=ch_partition,
                 ch_order_by=ch_order,
@@ -283,6 +303,8 @@ def create_table_from_sql(
         }
         if query_label is not None:
             transfer_kwargs["query_label"] = query_label
+        if options.table_schema is not None:
+            transfer_kwargs["table_schema"] = target_column_types
         if return_metadata:
             transfer_kwargs["return_metadata"] = return_metadata
         return transfer_table(**transfer_kwargs)
@@ -312,9 +334,15 @@ def _build_create_table_from_sql_plan(
     target_backend: str,
     target_table: str,
     source_sql: str,
+    table_schema: dict[str, str] | None,
     insert_data: bool,
     drop_target_if_exists: bool,
+    gp_distributed_by_key: list[str] | None,
+    ch_partition_by: Sequence[str] | str | None,
+    ch_order_by: Sequence[str] | str | None,
+    ch_engine: str,
     ch_cluster: str,
+    ch_sharding_key: str,
     query_label: str | None,
 ) -> SqlPlan:
     plan = SqlPlan(
@@ -327,6 +355,7 @@ def _build_create_table_from_sql_plan(
         options={
             "insert_data": insert_data,
             "drop_target_if_exists": drop_target_if_exists,
+            "table_schema": table_schema,
         },
     )
     add_inspect_schema_step(
@@ -345,13 +374,35 @@ def _build_create_table_from_sql_plan(
             ch_cluster=ch_cluster,
             query_label=query_label,
         )
-    add_create_table_placeholder_step(
-        plan,
-        alias=target_key,
-        backend=target_backend,
-        table_name=target_table,
-        query_label=query_label,
-    )
+    if table_schema is None:
+        add_create_table_placeholder_step(
+            plan,
+            alias=target_key,
+            backend=target_backend,
+            table_name=target_table,
+            query_label=query_label,
+        )
+    else:
+        add_create_table_steps(
+            plan,
+            build_create_table_sqls(
+                target_backend,
+                target_table,
+                pd.DataFrame(columns=list(table_schema)),
+                table_schema=table_schema,
+                gp_distributed_by_key=gp_distributed_by_key,
+                ch_partition_by=ch_partition_by,
+                ch_order_by=ch_order_by,
+                ch_engine=ch_engine,
+                ch_cluster=ch_cluster,
+                ch_sharding_key=ch_sharding_key,
+                ch_distributed_table=target_backend == "ch",
+                query_label=query_label,
+            ),
+            alias=target_key,
+            backend=target_backend,
+            table_name=target_table,
+        )
     if insert_data:
         add_insert_query_step(
             plan,

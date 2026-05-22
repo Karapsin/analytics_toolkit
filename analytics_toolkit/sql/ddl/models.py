@@ -15,6 +15,7 @@ class CreateSqlTableOptions:
     table_name: str
     batch: pd.DataFrame
     column_types: Mapping[str, str] | None = None
+    table_schema: dict[str, str] | None = None
     gp_distributed_by_key: list[str] | None = None
     ch_partition_by: Sequence[str] | str | None = None
     ch_order_by: Sequence[str] | str | None = None
@@ -26,4 +27,3 @@ class CreateSqlTableOptions:
     return_sql: bool = False
     query_label: str | None = None
     return_metadata: bool = False
-

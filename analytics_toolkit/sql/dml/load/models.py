@@ -8,6 +8,7 @@ class LoadOptions:
     connection_key: str
     connection_backend: str
     destination_table: str
+    table_schema: dict[str, str] | None = None
     append: bool = False
     write_mode: str = "replace"
     gp_distributed_by_key: list[str] | None = None

@@ -238,6 +238,79 @@ def test_create_table_sql_accepts_connection_alias() -> None:
     assert 'DISTRIBUTED BY ("id")' in sql
 
 
+def test_create_table_sql_accepts_table_schema_override() -> None:
+    batch = pd.DataFrame({"id": [1], "amount": [10.5]})
+
+    gp_sql = create_sql_table_module.build_create_table_sql(
+        connection_type="gp",
+        table_name="schema.target",
+        batch=batch,
+        table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
+    )
+    trino_sql = create_sql_table_module.build_create_table_sql(
+        connection_type="trino",
+        table_name="schema.target",
+        batch=batch,
+        table_schema={"id": "VARCHAR", "amount": "DECIMAL(10, 2)"},
+    )
+    ch_sqls = create_sql_table_module.build_create_table_sqls(
+        connection_type="ch",
+        table_name="schema.target",
+        batch=batch,
+        table_schema={"id": "String", "amount": "Decimal(10, 2)"},
+        ch_distributed_table=True,
+    )
+
+    assert '"id" TEXT' in gp_sql
+    assert '"amount" NUMERIC(10, 2)' in gp_sql
+    assert '"id" VARCHAR' in trino_sql
+    assert '"amount" DECIMAL(10, 2)' in trino_sql
+    assert any("`id` String" in sql for sql in ch_sqls)
+    assert any("`amount` Decimal(10, 2)" in sql for sql in ch_sqls)
+
+
+@pytest.mark.parametrize(
+    ("table_schema", "match"),
+    [
+        ({"id": "BIGINT"}, "missing SQL type"),
+        ({"id": "BIGINT", "amount": "DOUBLE", "extra": "TEXT"}, "not present"),
+        ({"id": "BIGINT", "amount": " "}, "must not be empty"),
+    ],
+)
+def test_create_table_sql_validates_table_schema(
+    table_schema: dict[str, str],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        create_sql_table_module.build_create_table_sql(
+            connection_type="gp",
+            table_name="schema.target",
+            batch=pd.DataFrame({"id": [1], "amount": [10.5]}),
+            table_schema=table_schema,
+        )
+
+
+def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
+    with pytest.raises(TypeError, match="table_schema"):
+        create_sql_table_module.build_create_table_sql(
+            connection_type="gp",
+            table_name="schema.target",
+            batch=pd.DataFrame({"id": [1]}),
+            table_schema=[("id", "BIGINT")],
+        )
+
+
+def test_create_table_sql_rejects_conflicting_schema_aliases() -> None:
+    with pytest.raises(ValueError, match="table_schema and column_types"):
+        create_sql_table_module.build_create_table_sql(
+            connection_type="gp",
+            table_name="schema.target",
+            batch=pd.DataFrame({"id": [1]}),
+            column_types={"id": "BIGINT"},
+            table_schema={"id": "TEXT"},
+        )
+
+
 def test_trino_insert_chunk_size_comes_from_connection_config(
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:

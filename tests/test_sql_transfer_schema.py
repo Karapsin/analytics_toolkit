@@ -5,9 +5,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 schema_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.schema")
+stage_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.stage")
+runtime_models = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.runtime.models"
+)
 
 
 class FakeResult:
@@ -118,6 +124,45 @@ def test_refine_clickhouse_nullability_from_rows() -> None:
         "amount": "Nullable(Decimal(12, 2))",
         "label": "String",
     }
+
+
+def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_stage_table(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "target__stage"
+
+    monkeypatch.setattr(stage_module, "create_stage_table", fake_create_stage_table)
+
+    options = runtime_models.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="ch",
+        to_db_backend="ch",
+        source_sql="select id from source_table",
+        target_table="target",
+        table_schema={"id": "String"},
+    )
+    stage_state = runtime_models.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "Nullable(Int64)"},
+    )
+
+    stage_module.initialize_stage_for_first_batch(
+        options=options,
+        connection_refs=runtime_models.TransferConnectionRefs(
+            target={"connection": object()},
+        ),
+        stage_state=stage_state,
+        batch=runtime_models.RowBatch(columns=["id"], rows=[(1,)]),
+    )
+
+    assert stage_state.stage_column_types == {"id": "String"}
+    assert captured["column_types"] == {"id": "String"}
+    assert stage_state.stage_table == "target__stage"
 
 
 def test_existing_target_insert_types_use_target_metadata() -> None:

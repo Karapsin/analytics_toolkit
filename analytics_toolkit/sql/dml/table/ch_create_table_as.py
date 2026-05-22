@@ -21,7 +21,9 @@ from ...ch_lifecycle import (
 from ...ddl.create_sql_table import (
     _normalize_non_empty_string,
     _wait_for_ch_distributed_table_pair,
+    build_table_schema_column_definitions,
     build_ch_shard_table_name,
+    normalize_table_schema,
     quote_identifier,
 )
 from analytics_toolkit.general import time_print
@@ -44,6 +46,7 @@ def ch_create_table_as(
     return_sql: bool = False,
     query_label: str | None = None,
     return_metadata: bool = False,
+    table_schema: dict[str, str] | None = None,
 ) -> SqlPlan | SqlOperationResult | None:
     config = get_connection_config(db_key)
     if config.backend != "ch":
@@ -59,6 +62,7 @@ def ch_create_table_as(
         backend=config.backend,
         target_table=target_table,
         query_sql=query_sql,
+        table_schema=normalize_table_schema(table_schema),
         ch_partition_by=ch_partition_by,
         ch_order_by=ch_order_by,
         ch_engine=ch_engine,
@@ -77,10 +81,7 @@ def ch_create_table_as(
                 options.target_table,
                 ch_cluster=options.ch_cluster,
             ),
-            f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
-            f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
-            f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
-            f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
+            *_build_ch_create_table_as_dry_run_create_sqls(options),
             _build_insert_select_sql(options.target_table, options.query_sql),
         ]
         plan = SqlPlan(
@@ -94,6 +95,7 @@ def ch_create_table_as(
                 "ch_engine": options.ch_engine,
                 "ch_cluster": options.ch_cluster,
                 "sharding_key": options.ch_sharding_key,
+                "table_schema": options.table_schema,
             },
             metadata=SqlOperationMetadata(
                 statement_count=len(sqls),
@@ -140,16 +142,39 @@ def ch_create_table_as(
                 query_label=options.query_label,
             )
 
-            time_print(f"Inferring ClickHouse schema for {options.target_table}")
-            try:
-                joined_columns = _infer_ch_query_columns(connection, options.query_sql)
-            except Exception as exc:
-                _annotate_ch_cte_join_exception(
-                    exc,
-                    options.query_sql,
-                    backend=options.backend,
+            if options.table_schema is None:
+                time_print(f"Inferring ClickHouse schema for {options.target_table}")
+                try:
+                    joined_columns = _infer_ch_query_columns(
+                        connection,
+                        options.query_sql,
+                    )
+                except Exception as exc:
+                    _annotate_ch_cte_join_exception(
+                        exc,
+                        options.query_sql,
+                        backend=options.backend,
+                    )
+                    raise
+            else:
+                time_print(f"Validating ClickHouse schema for {options.target_table}")
+                try:
+                    source_columns = _inspect_ch_query_column_names(
+                        connection,
+                        options.query_sql,
+                    )
+                except Exception as exc:
+                    _annotate_ch_cte_join_exception(
+                        exc,
+                        options.query_sql,
+                        backend=options.backend,
+                    )
+                    raise
+                joined_columns = build_table_schema_column_definitions(
+                    "ch",
+                    options.table_schema,
+                    columns=source_columns,
                 )
-                raise
             shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
                 build_ch_create_table_as_sqls(
                     table_name=options.target_table,
@@ -236,6 +261,31 @@ def build_ch_create_table_as_sqls(
     )
 
 
+def _build_ch_create_table_as_dry_run_create_sqls(
+    options: ChCreateTableAsOptions,
+) -> list[str]:
+    if options.table_schema is None:
+        target_shard_table = build_ch_shard_table_name(options.target_table)
+        return [
+            f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
+            f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
+            f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
+            f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)",
+        ]
+
+    joined_columns = build_table_schema_column_definitions("ch", options.table_schema)
+    return build_ch_create_table_as_sqls(
+        table_name=options.target_table,
+        joined_columns=joined_columns,
+        query=options.query_sql,
+        ch_partition_by=options.ch_partition_by,
+        ch_order_by=options.ch_order_by,
+        ch_engine=options.ch_engine,
+        ch_cluster=options.ch_cluster,
+        ch_sharding_key=options.ch_sharding_key,
+    )
+
+
 def _normalize_single_query(query: str) -> str:
     normalized = query.strip()
     if not normalized:
@@ -254,13 +304,7 @@ def _normalize_single_query(query: str) -> str:
 
 
 def _infer_ch_query_columns(connection: Any, query: str) -> str:
-    result = connection.query(
-        "SELECT *\n"
-        "FROM (\n"
-        f"{query}\n"
-        ") AS _ch_create_table_as_source\n"
-        "LIMIT 0"
-    )
+    result = _query_ch_create_table_as_source(connection, query)
     column_names = list(getattr(result, "column_names", ()) or ())
     column_types = list(getattr(result, "column_types", ()) or ())
     if not column_names:
@@ -273,6 +317,24 @@ def _infer_ch_query_columns(connection: Any, query: str) -> str:
         for column_name, column_type in zip(column_names, column_types)
     ]
     return ", ".join(column_defs)
+
+
+def _inspect_ch_query_column_names(connection: Any, query: str) -> list[str]:
+    result = _query_ch_create_table_as_source(connection, query)
+    column_names = list(getattr(result, "column_names", ()) or ())
+    if not column_names:
+        raise ValueError("ch_create_table_as query must return at least one column.")
+    return [str(column_name) for column_name in column_names]
+
+
+def _query_ch_create_table_as_source(connection: Any, query: str) -> Any:
+    return connection.query(
+        "SELECT *\n"
+        "FROM (\n"
+        f"{query}\n"
+        ") AS _ch_create_table_as_source\n"
+        "LIMIT 0"
+    )
 
 
 def _ch_type_name(column_type: Any) -> str:

@@ -22,6 +22,7 @@ def create_stage_table(
     target_table: str,
     batch: pd.DataFrame,
     column_types: Mapping[str, str] | None = None,
+    table_schema: Mapping[str, str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
     connection_key: str | None = None,
     query_label: str | None = None,
@@ -43,6 +44,8 @@ def create_stage_table(
         create_kwargs: dict[str, Any] = {}
         if query_label is not None:
             create_kwargs["query_label"] = query_label
+        if table_schema is not None:
+            create_kwargs["table_schema"] = table_schema
         create_sql_table(
             connection_type,
             connection,

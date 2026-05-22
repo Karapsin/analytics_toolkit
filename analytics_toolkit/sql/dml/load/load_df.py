@@ -21,6 +21,8 @@ from ...ddl.create_sql_table import (
     build_create_table_sqls,
     column_list_sql,
     create_sql_table,
+    normalize_table_schema,
+    validate_table_schema_columns,
 )
 from ...connection.config import TrinoConfig, get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
@@ -84,6 +86,7 @@ def load_df(
     query_label: str | None = None,
     gp_insert_chunk_size: int | None = None,
     progress: bool = True,
+    table_schema: dict[str, str] | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
@@ -108,6 +111,7 @@ def load_df(
         ch_sharding_key=sharding_key,
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
+        table_schema=table_schema,
     )
 
     if dry_run or return_sql:
@@ -231,6 +235,7 @@ def _build_load_options(
     ch_sharding_key: str = "rand()",
     query_label: str | None = None,
     gp_insert_chunk_size: int | None = None,
+    table_schema: dict[str, str] | None = None,
 ) -> LoadOptions:
     config = get_connection_config(connection_type)
     configured_trino_insert_chunk_size = (
@@ -245,6 +250,7 @@ def _build_load_options(
         connection_key=config.connection_key,
         connection_backend=config.backend,
         destination_table=destination_table.strip(),
+        table_schema=normalize_table_schema(table_schema),
         append=resolved_write_mode == "append",
         write_mode=resolved_write_mode,
         gp_distributed_by_key=_normalize_gp_distributed_by_key(gp_distributed_by_key),
@@ -343,6 +349,9 @@ def _handle_empty_dataframe_load(
 
 
 def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
+    if options.table_schema is not None:
+        validate_table_schema_columns(options.table_schema, df.columns)
+
     if options.gp_distributed_by_key:
         validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
 
@@ -421,6 +430,8 @@ def _create_load_target_table(
     create_kwargs: dict[str, Any] = {}
     if options.query_label is not None:
         create_kwargs["query_label"] = options.query_label
+    if options.table_schema is not None:
+        create_kwargs["table_schema"] = options.table_schema
 
     if distributed:
         create_sql_table(
@@ -524,6 +535,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
+            "table_schema": options.table_schema,
             "ch_partition_by": options.ch_partition_by,
             "ch_order_by": options.ch_order_by,
             "ch_engine": options.ch_engine,
@@ -563,6 +575,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 options.connection_backend,
                 options.destination_table,
                 df,
+                table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
                 ch_partition_by=options.ch_partition_by,
                 ch_order_by=options.ch_order_by,
@@ -586,6 +599,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 options.connection_backend,
                 stage_table,
                 df,
+                table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
                 query_label=options.query_label,
             ),
@@ -705,6 +719,9 @@ def _load_dataframe(
     on_progress: Any | None = None,
 ) -> int:
     if options.append and state.target_exists and options.key_columns:
+        stage_create_kwargs: dict[str, Any] = {}
+        if options.table_schema is not None:
+            stage_create_kwargs["table_schema"] = options.table_schema
         state.overlap_stage_table = create_stage_table(
             connection_type=options.connection_backend,
             connection=connection_ref["connection"],
@@ -713,6 +730,7 @@ def _load_dataframe(
             gp_distributed_by_key=options.gp_distributed_by_key,
             connection_key=options.connection_key,
             query_label=options.query_label,
+            **stage_create_kwargs,
         )
         insert_table_batch(
             options.connection_backend,
@@ -722,7 +740,7 @@ def _load_dataframe(
             retry_fn=run_with_retry,
             retry_cnt=1,
             timeout_increment=0,
-            target_column_types=state.target_column_types,
+            target_column_types=options.table_schema or state.target_column_types,
             trino_insert_chunk_size=options.trino_insert_chunk_size,
             gp_insert_chunk_size=options.gp_insert_chunk_size,
             query_label=options.query_label,

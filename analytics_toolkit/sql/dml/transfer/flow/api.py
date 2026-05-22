@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import pandas as pd
+
 from ....capabilities import validate_write_mode
 from ....ch_options import (
     normalize_ch_columns_or_expression,
@@ -25,11 +27,13 @@ from ....plan_steps import (
     add_clear_target_steps,
     add_cleanup_stage_step,
     add_count_step,
+    add_create_table_steps,
     add_create_table_placeholder_step,
     add_drop_target_steps,
     add_insert_from_stage_step,
     add_load_stage_step,
 )
+from ....ddl.create_sql_table import build_create_table_sqls, normalize_table_schema
 from ....plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
@@ -72,6 +76,7 @@ def transfer_table(
     query_label: str | None = None,
     progress: bool = True,
     estimate_total_rows: bool = False,
+    table_schema: dict[str, str] | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -100,6 +105,7 @@ def transfer_table(
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
+        table_schema=table_schema,
     )
 
     if dry_run or return_sql:
@@ -228,6 +234,7 @@ def build_transfer_options(
     query_label: str | None = None,
     progress: bool = True,
     estimate_total_rows: bool = False,
+    table_schema: dict[str, str] | None = None,
 ) -> TransferOptions:
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
@@ -257,6 +264,7 @@ def build_transfer_options(
         to_db_backend=to_config.backend,
         source_sql=from_sql.strip(),
         target_table=to_table.strip(),
+        table_schema=normalize_table_schema(table_schema),
         replace_target_table=resolved_write_mode != "append",
         write_mode=resolved_write_mode,
         batch_size=batch_size,
@@ -414,6 +422,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "key_columns": options.key_columns,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
+            "table_schema": options.table_schema,
             "ch_partition_by": options.ch_partition_by,
             "ch_order_by": options.ch_order_by,
             "ch_engine": options.ch_engine,
@@ -430,14 +439,31 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         phase="read_source",
         query_label=options.query_label,
     )
-    add_create_table_placeholder_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        phase="create_stage",
-        table_name=stage_table,
-        query_label=options.query_label,
-    )
+    if options.table_schema is None:
+        add_create_table_placeholder_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase="create_stage",
+            table_name=stage_table,
+            query_label=options.query_label,
+        )
+    else:
+        add_create_table_steps(
+            plan,
+            build_create_table_sqls(
+                options.to_db_backend,
+                stage_table,
+                pd.DataFrame(columns=list(options.table_schema)),
+                table_schema=options.table_schema,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                query_label=options.query_label,
+            ),
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase="create_stage",
+            table_name=stage_table,
+        )
     add_load_stage_step(
         plan,
         alias=options.to_db_key,
@@ -474,13 +500,35 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             query_label=options.query_label,
             ch_cluster=options.ch_cluster,
         )
-    add_create_table_placeholder_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        table_name=options.target_table,
-        query_label=options.query_label,
-    )
+    if options.table_schema is None:
+        add_create_table_placeholder_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            table_name=options.target_table,
+            query_label=options.query_label,
+        )
+    else:
+        add_create_table_steps(
+            plan,
+            build_create_table_sqls(
+                options.to_db_backend,
+                options.target_table,
+                pd.DataFrame(columns=list(options.table_schema)),
+                table_schema=options.table_schema,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                ch_partition_by=options.ch_partition_by,
+                ch_order_by=options.ch_order_by,
+                ch_engine=options.ch_engine,
+                ch_cluster=options.ch_cluster,
+                ch_sharding_key=options.ch_sharding_key,
+                ch_distributed_table=options.to_db_backend == "ch",
+                query_label=options.query_label,
+            ),
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            table_name=options.target_table,
+        )
     add_insert_from_stage_step(
         plan,
         alias=options.to_db_key,

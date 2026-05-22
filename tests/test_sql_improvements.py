@@ -437,6 +437,56 @@ def test_load_df_dry_run_returns_ordered_labeled_plan() -> None:
     assert "TRUNCATE TABLE sandbox.scores" in plan.sqls[0]
 
 
+def test_load_df_dry_run_uses_table_schema() -> None:
+    plan = load_df_module.load_df(
+        "gp",
+        "sandbox.scores",
+        pd.DataFrame({"user_id": [1], "score": [10]}),
+        dry_run=True,
+        table_schema={"user_id": "TEXT", "score": "NUMERIC(8, 2)"},
+    )
+
+    create_sql = next(
+        statement.sql for statement in plan.statements if statement.phase == "create_target"
+    )
+    assert plan.options["table_schema"] == {
+        "user_id": "TEXT",
+        "score": "NUMERIC(8, 2)",
+    }
+    assert '"user_id" TEXT' in create_sql
+    assert '"score" NUMERIC(8, 2)' in create_sql
+
+
+def test_load_df_passes_table_schema_to_create_sql_table(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    create_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        load_df_module,
+        "create_sql_table",
+        lambda *args, **kwargs: create_calls.append(kwargs),
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+
+    inserted_rows = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        pd.DataFrame({"id": [1, 2], "amount": [1.5, 2.5]}),
+        retry_cnt=1,
+        timeout_increment=0,
+        table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
+    )
+
+    assert inserted_rows == 2
+    assert create_calls[0]["table_schema"] == {
+        "id": "TEXT",
+        "amount": "NUMERIC(10, 2)",
+    }
+
+
 def test_load_df_return_metadata_preserves_rows_default_path(monkeypatch) -> None:
     connection = FakeDbapiConnection()
     df = pd.DataFrame({"id": [1, 2], "value": ["a", "b"]})
@@ -771,6 +821,30 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     assert plan.statements[0].phase == "read_source"
     assert "query_label=copy-target" in plan.statements[0].sql
     assert plan.statements[-1].phase == "drop_stage"
+
+
+def test_transfer_table_dry_run_uses_table_schema() -> None:
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id, amount from source_table",
+        to_table="sandbox.target",
+        dry_run=True,
+        table_schema={"id": "VARCHAR", "amount": "DECIMAL(10, 2)"},
+    )
+
+    create_sqls = [
+        statement.sql
+        for statement in plan.statements
+        if statement.phase in {"create_stage", "create_target"}
+    ]
+    assert plan.options["table_schema"] == {
+        "id": "VARCHAR",
+        "amount": "DECIMAL(10, 2)",
+    }
+    assert len(create_sqls) == 2
+    assert all('"id" VARCHAR' in sql for sql in create_sqls)
+    assert all('"amount" DECIMAL(10, 2)' in sql for sql in create_sqls)
 
 
 def test_transfer_table_logs_source_sql_preview(monkeypatch, capsys) -> None:

@@ -55,6 +55,7 @@ class TransferOptions:
     to_db_backend: str
     source_sql: str
     target_table: str
+    table_schema: dict[str, str] | None = None
     replace_target_table: bool = True
     write_mode: str = "replace"
     batch_size: int = 100_000

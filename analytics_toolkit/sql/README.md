@@ -462,6 +462,28 @@ types instead of pandas-inferred batch types. Final stage-to-target inserts use
 explicit column lists and cast staged columns to the target types. When
 `replace_target_table=False` and the target already exists, the existing target
 column types are used for those final casts.
+Pass `table_schema={"column": "TYPE"}` to any helper that creates tables when
+you need explicit backend-native column types instead of inferred types. The
+schema must include exactly the columns being created; source DataFrame/query
+column order is preserved when it is available.
+
+```python
+sql.load_df(
+    "gp",
+    "sandbox.scores",
+    scores_df,
+    table_schema={"user_id": "TEXT", "score": "NUMERIC(10, 2)"},
+)
+
+sql.transfer_table(
+    from_db="gp",
+    to_db="trino",
+    from_sql="select user_id, score from sandbox.scores",
+    to_table="sandbox.scores_copy",
+    table_schema={"user_id": "VARCHAR", "score": "DECIMAL(10, 2)"},
+)
+```
+
 For ClickHouse transfer targets, metadata-derived types are refined from the
 first non-empty batch before creating the stage and target tables: columns
 observed with nulls stay `Nullable(...)`, while columns with no observed nulls

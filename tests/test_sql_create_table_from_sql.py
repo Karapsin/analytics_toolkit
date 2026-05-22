@@ -157,6 +157,62 @@ def test_schema_only_creation_uses_native_metadata_types(monkeypatch) -> None:
     assert connection.close_calls == 1
 
 
+def test_create_table_from_sql_table_schema_overrides_source_types(
+    monkeypatch,
+) -> None:
+    connection = FakeDbapiConnection(
+        description=SOURCE_DESCRIPTION,
+        insert_rowcount=3,
+    )
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+
+    inserted_rows = create_module.create_table_from_sql(
+        "gp",
+        "sandbox.target_table",
+        "select id, amount from source_table",
+        insert_data=True,
+        table_schema={"id": "TEXT", "amount": "DOUBLE PRECISION"},
+    )
+
+    assert inserted_rows == 3
+    assert any(
+        sql.startswith("CREATE TABLE sandbox.target_table")
+        and '"id" TEXT' in sql
+        and '"amount" DOUBLE PRECISION' in sql
+        for sql in connection.executed
+    )
+    assert connection.executed[-1] == (
+        'INSERT INTO sandbox.target_table ("id", "amount") '
+        'SELECT CAST("id" AS TEXT) AS "id", '
+        'CAST("amount" AS DOUBLE PRECISION) AS "amount" '
+        "FROM (select id, amount from source_table) AS source_query"
+    )
+
+
+def test_create_table_from_sql_dry_run_uses_table_schema() -> None:
+    plan = create_module.create_table_from_sql(
+        "gp",
+        "sandbox.target_table",
+        "select id, amount from source_table",
+        dry_run=True,
+        table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
+    )
+
+    create_sql = next(
+        statement.sql for statement in plan.statements if statement.phase == "create_target"
+    )
+    assert plan.options["table_schema"] == {
+        "id": "TEXT",
+        "amount": "NUMERIC(10, 2)",
+    }
+    assert '"id" TEXT' in create_sql
+    assert '"amount" NUMERIC(10, 2)' in create_sql
+
+
 def test_schema_only_creation_falls_back_for_gp_unbounded_numeric(
     monkeypatch,
 ) -> None:
@@ -414,6 +470,49 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
     ]
     assert any(
         command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+        for command in target.commands
+    )
+
+
+def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
+    monkeypatch,
+) -> None:
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    target = FakeClickHouseClient()
+    transfer_calls: list[dict[str, object]] = []
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    def fake_transfer_table(**kwargs: object) -> int:
+        transfer_calls.append(kwargs)
+        return 5
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(create_module, "transfer_table", fake_transfer_table)
+
+    inserted_rows = create_module.create_table_from_sql(
+        "gp",
+        "analytics.events",
+        "select id, amount from source_table",
+        table_db="ch",
+        insert_data=True,
+        table_schema={"id": "String", "amount": "Float64"},
+    )
+
+    assert inserted_rows == 5
+    assert transfer_calls[0]["table_schema"] == {
+        "id": "String",
+        "amount": "Float64",
+    }
+    assert any(
+        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+        and "`id` String" in command
+        and "`amount` Float64" in command
         for command in target.commands
     )
 

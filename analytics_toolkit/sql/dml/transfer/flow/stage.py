@@ -1,4 +1,5 @@
 from ....ch_options import validate_ch_columns_in_columns
+from ....ddl.create_sql_table import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table.table_ops import get_trino_table_column_types, table_exists
 from ...table.table_validation import validate_key_columns_in_columns
@@ -31,7 +32,12 @@ def initialize_stage_for_first_batch(
     stage_state: TransferStageState,
     batch: RowBatch,
 ) -> None:
-    if options.to_db_backend == "ch":
+    if options.table_schema is not None:
+        stage_state.stage_column_types = validate_table_schema_columns(
+            options.table_schema,
+            batch.columns,
+        )
+    elif options.to_db_backend == "ch":
         stage_state.stage_column_types = refine_ch_column_types_nullability_from_rows(
             stage_state.stage_column_types,
             batch.columns,

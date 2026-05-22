@@ -187,6 +187,46 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert fake_client.close_calls == 1
 
 
+def test_ch_create_table_as_table_schema_overrides_inferred_types(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        table_schema={"dt": "String", "id": "String", "amount": "Float64"},
+    )
+
+    shard_sql = fake_client.commands[4]
+    assert "`dt` String" in shard_sql
+    assert "`id` String" in shard_sql
+    assert "`amount` Float64" in shard_sql
+    assert "`dt` Date" not in shard_sql
+    assert fake_client.queries[0].startswith("SELECT *\nFROM (\n")
+
+
+def test_ch_create_table_as_dry_run_uses_table_schema() -> None:
+    plan = ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        dry_run=True,
+        table_schema={"dt": "Date", "id": "UInt64", "amount": "Decimal(18, 4)"},
+    )
+
+    create_sql = next(
+        statement.sql for statement in plan.statements if statement.phase == "create_target"
+    )
+    assert plan.options["table_schema"] == {
+        "dt": "Date",
+        "id": "UInt64",
+        "amount": "Decimal(18, 4)",
+    }
+    assert "`dt` Date" in create_sql
+    assert "`id` UInt64" in create_sql
+    assert "`amount` Decimal(18, 4)" in create_sql
+
+
 def test_ch_create_table_as_quotes_cluster_macro(
     fake_client: FakeClickHouseClient,
 ) -> None:

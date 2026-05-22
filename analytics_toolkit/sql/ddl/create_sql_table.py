@@ -39,6 +39,7 @@ def create_sql_table(
     return_sql: bool = False,
     query_label: str | None = None,
     return_metadata: bool = False,
+    table_schema: Mapping[str, str] | None = None,
 ) -> SqlPlan | SqlOperationResult | None:
     backend = resolve_connection_backend(connection_type)
     options = CreateSqlTableOptions(
@@ -48,6 +49,15 @@ def create_sql_table(
         table_name=table_name,
         batch=batch,
         column_types=column_types,
+        table_schema=(
+            _resolve_create_column_types(
+                table_schema=table_schema,
+                column_types=column_types,
+                columns=batch.columns,
+            )
+            if table_schema is not None
+            else None
+        ),
         gp_distributed_by_key=gp_distributed_by_key,
         ch_partition_by=ch_partition_by,
         ch_order_by=ch_order_by,
@@ -66,6 +76,7 @@ def create_sql_table(
         options.table_name,
         options.batch,
         column_types=options.column_types,
+        table_schema=options.table_schema,
         gp_distributed_by_key=options.gp_distributed_by_key,
         ch_partition_by=options.ch_partition_by,
         ch_order_by=options.ch_order_by,
@@ -74,6 +85,18 @@ def create_sql_table(
         ch_sharding_key=options.ch_sharding_key,
         ch_distributed_table=options.ch_distributed_table,
         query_label=options.query_label,
+    )
+    expected_ch_column_types = (
+        _build_expected_ch_column_types(
+            options.batch,
+            _resolve_create_column_types(
+                table_schema=options.table_schema,
+                column_types=options.column_types,
+                columns=options.batch.columns,
+            ),
+        )
+        if options.backend == "ch" and options.ch_distributed_table
+        else None
     )
     metadata = SqlOperationMetadata(
         statement_count=len(create_sqls),
@@ -113,6 +136,7 @@ def create_sql_table(
                     options.connection,
                     options.table_name,
                     ch_cluster=options.ch_cluster,
+                    expected_column_types=expected_ch_column_types,
                 )
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
@@ -133,6 +157,7 @@ def build_create_table_sql(
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
     query_label: str | None = None,
+    table_schema: Mapping[str, str] | None = None,
 ) -> str:
     return ";\n".join(
         build_create_table_sqls(
@@ -140,6 +165,7 @@ def build_create_table_sql(
             table_name,
             batch,
             column_types=column_types,
+            table_schema=table_schema,
             gp_distributed_by_key=gp_distributed_by_key,
             ch_partition_by=ch_partition_by,
             ch_order_by=ch_order_by,
@@ -166,9 +192,19 @@ def build_create_table_sqls(
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
     query_label: str | None = None,
+    table_schema: Mapping[str, str] | None = None,
 ) -> list[str]:
     backend = resolve_connection_backend(connection_type)
-    joined_columns = _build_column_definitions(backend, batch, column_types)
+    resolved_column_types = _resolve_create_column_types(
+        table_schema=table_schema,
+        column_types=column_types,
+        columns=batch.columns,
+    )
+    joined_columns = _build_column_definitions(
+        backend,
+        batch,
+        resolved_column_types,
+    )
     return _apply_query_label_to_sqls(
         _build_backend_create_table_sqls(
             backend=backend,
@@ -200,6 +236,136 @@ def _build_column_definitions(
         )
         column_defs.append(f"{quote_identifier(column_name, backend)} {db_type}")
     return ", ".join(column_defs)
+
+
+def _build_expected_ch_column_types(
+    batch: pd.DataFrame,
+    column_types: Mapping[str, str] | None,
+) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    for column_name in batch.columns:
+        column_key = str(column_name)
+        expected[column_key] = (
+            _explicit_column_type(column_types, column_key)
+            if column_types is not None
+            else _infer_ch_type(batch[column_name])
+        )
+    return expected
+
+
+def build_table_schema_column_definitions(
+    connection_type: str,
+    table_schema: Mapping[str, str],
+    columns: Sequence[str] | None = None,
+) -> str:
+    backend = resolve_connection_backend(connection_type)
+    normalized_schema = normalize_table_schema(table_schema, columns=columns)
+    schema_batch = pd.DataFrame(columns=list(normalized_schema))
+    return _build_column_definitions(backend, schema_batch, normalized_schema)
+
+
+def normalize_table_schema(
+    table_schema: Mapping[str, str] | None,
+    columns: Sequence[str] | None = None,
+    *,
+    option_name: str = "table_schema",
+) -> dict[str, str] | None:
+    if table_schema is None:
+        return None
+    if not isinstance(table_schema, Mapping):
+        raise TypeError(
+            f"{option_name} must be a mapping of column names to SQL types."
+        )
+
+    normalized_schema: dict[str, str] = {}
+    for column_name, db_type in table_schema.items():
+        if not isinstance(column_name, str) or not column_name.strip():
+            raise ValueError(f"{option_name} column names must be non-empty strings.")
+        if not isinstance(db_type, str):
+            raise TypeError(
+                f"SQL type for column {column_name!r} in {option_name} "
+                "must be a string."
+            )
+        normalized_type = db_type.strip()
+        if not normalized_type:
+            raise ValueError(f"SQL type for column {column_name!r} must not be empty.")
+        normalized_schema[column_name] = normalized_type
+
+    if not normalized_schema:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if columns is None:
+        return normalized_schema
+
+    return validate_table_schema_columns(
+        normalized_schema,
+        columns,
+        option_name=option_name,
+    )
+
+
+def validate_table_schema_columns(
+    table_schema: Mapping[str, str],
+    columns: Sequence[str],
+    *,
+    option_name: str = "table_schema",
+) -> dict[str, str]:
+    column_names = [str(column) for column in columns]
+    column_name_set = set(column_names)
+    missing_columns = [
+        column_name for column_name in column_names if column_name not in table_schema
+    ]
+    extra_columns = [
+        column_name for column_name in table_schema if column_name not in column_name_set
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"{option_name} is missing SQL type for column(s): "
+            + ", ".join(missing_columns)
+        )
+    if extra_columns:
+        raise ValueError(
+            f"{option_name} contains column(s) not present in data: "
+            + ", ".join(extra_columns)
+        )
+    return {column_name: table_schema[column_name] for column_name in column_names}
+
+
+def _resolve_create_column_types(
+    *,
+    table_schema: Mapping[str, str] | None,
+    column_types: Mapping[str, str] | None,
+    columns: Sequence[str],
+) -> Mapping[str, str] | None:
+    if table_schema is None:
+        return column_types
+
+    normalized_schema = normalize_table_schema(table_schema, columns=columns)
+    if column_types is None:
+        return normalized_schema
+
+    normalized_column_types = _normalize_column_types_for_columns(
+        column_types,
+        columns,
+    )
+    if normalized_schema != normalized_column_types:
+        raise ValueError(
+            "table_schema and column_types must define the same SQL types "
+            "when both are provided."
+        )
+    return normalized_schema
+
+
+def _normalize_column_types_for_columns(
+    column_types: Mapping[str, str],
+    columns: Sequence[str],
+) -> dict[str, str]:
+    if not isinstance(column_types, Mapping):
+        raise TypeError("column_types must be a mapping of column names to SQL types.")
+    return {
+        str(column_name): _explicit_column_type(column_types, str(column_name))
+        for column_name in columns
+    }
 
 
 def _infer_backend_type(backend: str, series: pd.Series) -> str:
@@ -533,6 +699,7 @@ def _wait_for_ch_distributed_table_pair(
     ch_cluster: str = "{cluster}",
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
+    expected_column_types: Mapping[str, str] | None = None,
 ) -> None:
     shard_table = build_ch_shard_table_name(table_name)
     _wait_for_ch_table(
@@ -541,6 +708,15 @@ def _wait_for_ch_distributed_table_pair(
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
     )
+    if expected_column_types is not None:
+        _wait_for_ch_table_schema_on_cluster(
+            connection,
+            shard_table,
+            expected_column_types=expected_column_types,
+            ch_cluster=ch_cluster,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
     _wait_for_ch_table(
         connection,
         shard_table,
@@ -601,6 +777,149 @@ def _wait_for_ch_table_on_cluster(
                 raise TimeoutError(message) from last_error
             raise TimeoutError(message)
         time.sleep(poll_interval_seconds)
+
+
+def _wait_for_ch_table_schema_on_cluster(
+    connection: Any,
+    table_name: str,
+    *,
+    expected_column_types: Mapping[str, str],
+    ch_cluster: str,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    expected_column_types = normalize_table_schema(
+        expected_column_types,
+        option_name="expected_column_types",
+    )
+    if not expected_column_types:
+        return
+
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
+        table_name
+    )
+    cluster_literal = _sql_string_literal(cluster_name)
+    expected_hosts_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
+    )
+    matching_columns_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, columns)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND table = {_sql_string_literal(relation_name)}\n"
+        f"  AND ({_build_ch_expected_schema_condition(expected_column_types)})"
+    )
+
+    deadline = time.monotonic() + timeout_seconds
+    expected_hosts = 0
+    matching_columns = 0
+    last_error: Exception | None = None
+    while True:
+        try:
+            expected_hosts = _query_ch_count(connection, expected_hosts_sql)
+            matching_columns = _query_ch_count(connection, matching_columns_sql)
+            expected_column_rows = expected_hosts * len(expected_column_types)
+            if expected_hosts > 0 and matching_columns >= expected_column_rows:
+                return
+        except Exception as exc:
+            last_error = exc
+
+        if time.monotonic() >= deadline:
+            message = (
+                f"ClickHouse table {table_name} schema did not match expected "
+                f"columns on every host in cluster {cluster_name!r} after "
+                f"{timeout_seconds} second(s). Last observed {matching_columns} "
+                f"matching column row(s), expected "
+                f"{expected_hosts * len(expected_column_types)}."
+            )
+            mismatch_details = _describe_ch_cluster_schema_mismatch(
+                connection,
+                table_name,
+                expected_column_types=expected_column_types,
+                ch_cluster=cluster_name,
+                expected_hosts=expected_hosts,
+            )
+            if mismatch_details:
+                message = f"{message} {mismatch_details}"
+            if last_error is not None:
+                raise TimeoutError(message) from last_error
+            raise TimeoutError(message)
+        time.sleep(poll_interval_seconds)
+
+
+def _build_ch_expected_schema_condition(
+    expected_column_types: Mapping[str, str],
+) -> str:
+    return " OR ".join(
+        "("
+        f"name = {_sql_string_literal(column_name)} "
+        f"AND type = {_sql_string_literal(column_type)}"
+        ")"
+        for column_name, column_type in expected_column_types.items()
+    )
+
+
+def _describe_ch_cluster_schema_mismatch(
+    connection: Any,
+    table_name: str,
+    *,
+    expected_column_types: Mapping[str, str],
+    ch_cluster: str,
+    expected_hosts: int,
+) -> str:
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
+        table_name
+    )
+    cluster_literal = _sql_string_literal(ch_cluster)
+    observed_sql = (
+        "SELECT name, type, count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, columns)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND table = {_sql_string_literal(relation_name)}\n"
+        "GROUP BY name, type\n"
+        "ORDER BY name, type"
+    )
+    try:
+        observed_rows = _query_ch_rows(connection, observed_sql)
+    except Exception:
+        return ""
+
+    observed: dict[str, dict[str, int]] = {}
+    for row in observed_rows:
+        if len(row) < 3:
+            continue
+        column_name, column_type, count = row[:3]
+        observed.setdefault(str(column_name), {})[str(column_type)] = int(count)
+
+    details: list[str] = []
+    for column_name, expected_type in expected_column_types.items():
+        type_counts = observed.get(column_name, {})
+        if type_counts.get(expected_type, 0) == expected_hosts:
+            continue
+        if not type_counts:
+            observed_summary = "missing"
+        else:
+            observed_summary = ", ".join(
+                f"{column_type} on {count} host(s)"
+                for column_type, count in sorted(type_counts.items())
+            )
+        details.append(
+            f"{column_name}: expected {expected_type} on {expected_hosts} "
+            f"host(s), observed {observed_summary}"
+        )
+
+    extra_columns = sorted(set(observed) - set(expected_column_types))
+    if extra_columns:
+        details.append("extra column(s): " + ", ".join(extra_columns[:5]))
+
+    if not details:
+        return ""
+    if len(details) > 6:
+        details = details[:6] + ["..."]
+    return "Schema mismatch details: " + "; ".join(details)
 
 
 def _resolve_ch_cluster_name_for_wait(connection: Any, cluster_name: str) -> str:
@@ -667,6 +986,11 @@ def _query_ch_count(connection: Any, sql: str) -> int:
     if not rows:
         return 0
     return int(rows[0][0])
+
+
+def _query_ch_rows(connection: Any, sql: str) -> list[tuple[Any, ...]]:
+    result = connection.query(sql)
+    return list(getattr(result, "result_rows", None) or [])
 
 
 def _infer_gp_type(series: pd.Series) -> str:
