@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Any
@@ -361,6 +362,9 @@ def build_ch_distributed_create_table_sqls(
         f"{partition_sql}"
         f"{order_by_sql}"
     )
+    local_shard_sql = add_explicit_ch_uuid_to_local_replicated_create(
+        local_shard_sql
+    )
     distributed_sql = (
         f"CREATE TABLE IF NOT EXISTS {table_name}\n"
         f"ON CLUSTER {_format_ch_cluster_name(cluster_name)}\n"
@@ -641,6 +645,20 @@ def _extract_ch_macro_name(value: str) -> str | None:
     if match is None:
         return None
     return match.group(1)
+
+
+def add_explicit_ch_uuid_to_local_replicated_create(sql: str) -> str:
+    if re.search(r"\bON\s+CLUSTER\b", sql, flags=re.IGNORECASE):
+        return sql
+    if not re.search(r"\bENGINE\s*=\s*Replicated", sql, flags=re.IGNORECASE):
+        return sql
+    if re.search(r"\bUUID\s+'[^']+'", sql, flags=re.IGNORECASE):
+        return sql
+
+    table_header, separator, rest = sql.partition("\n(")
+    if not separator:
+        return sql
+    return f"{table_header}\nUUID '{uuid.uuid4()}'{separator}{rest}"
 
 
 def _query_ch_count(connection: Any, sql: str) -> int:

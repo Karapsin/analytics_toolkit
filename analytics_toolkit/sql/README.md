@@ -484,7 +484,10 @@ ClickHouse `{cluster}` macro so created distributed/shard table pairs are
 visible across the full cluster on Yandex Managed ClickHouse.
 The shard table is also created locally without `ON CLUSTER` so the initiating
 host does not have to wait for asynchronous cluster DDL before it can see its
-own shard table.
+own shard table. For local replicated shard DDL, the helper adds an explicit
+table UUID because ClickHouse only allows the `{uuid}` macro in replicated
+engine arguments when the table UUID is explicit or the statement uses
+`ON CLUSTER`.
 Append loads also re-submit the idempotent `CREATE TABLE IF NOT EXISTS`
 statements before inserting, which repairs cases where an existing Distributed
 target is present locally but its shard table is not yet visible on every host.

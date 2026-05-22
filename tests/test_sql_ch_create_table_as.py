@@ -154,6 +154,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}"
     )
     assert "ON CLUSTER" not in local_shard_sql
+    assert "UUID '" in local_shard_sql
     assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
     assert distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
     assert "ON CLUSTER '{cluster}'" in distributed_sql

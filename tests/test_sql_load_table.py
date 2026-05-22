@@ -472,6 +472,7 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
         f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
     )
     assert "ON CLUSTER" not in local_shard_sql
+    assert "UUID '" in local_shard_sql
     assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
     assert distributed_sql.startswith(
         f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"

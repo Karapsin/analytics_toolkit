@@ -214,6 +214,7 @@ def test_ch_full_table_move_preserves_source_ddl_and_lifecycle(
     assert "ON CLUSTER" not in local_distributed_create
     assert "ON CLUSTER" not in fake_client.commands[5]
     assert f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}" in fake_client.commands[5]
+    assert "UUID '" in fake_client.commands[5]
     assert "UUID" not in shard_create
     assert "UUID" not in distributed_create
     assert "`amount` Decimal(18, 4)" in shard_create

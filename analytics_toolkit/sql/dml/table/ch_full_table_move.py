@@ -11,6 +11,7 @@ from ...ch_lifecycle import (
     drop_ch_distributed_table_pair,
 )
 from ...ddl.create_sql_table import (
+    add_explicit_ch_uuid_to_local_replicated_create,
     build_ch_shard_table_name,
     quote_identifier,
     split_ch_table_name_for_distributed_engine,
@@ -191,6 +192,11 @@ def ch_full_table_move(
                 apply_query_label(target_shard_ddl, options.query_label),
             )
             local_target_shard_ddl = _remove_on_cluster_clause(target_shard_ddl)
+            local_target_shard_ddl = (
+                add_explicit_ch_uuid_to_local_replicated_create(
+                    local_target_shard_ddl
+                )
+            )
             if local_target_shard_ddl != target_shard_ddl:
                 time_print(f"Creating local shard table {target_shard_table}")
                 _execute_ch_command(
