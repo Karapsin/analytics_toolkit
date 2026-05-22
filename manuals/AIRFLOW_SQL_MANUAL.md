@@ -325,7 +325,9 @@ sql.transfer(
 
 The transfer helper manages staged loading, retries, batching, and backend
 specific table creation. Use it instead of moving large data through handwritten
-cursor loops when both source and target are supported SQL backends.
+cursor loops when both source and target are supported SQL backends. For
+memory-constrained Airflow workers, pass `target_batch_memory_mb` so adaptive
+batches target row batch memory instead of insert duration.
 
 ## Airflow Task Examples
 
@@ -359,6 +361,7 @@ def refresh_table() -> None:
         from_sql="select * from iceberg.sandbox.source",
         to_table="sandbox.target",
         replace_target_table=True,
+        target_batch_memory_mb=256,
         ch_partition_by="dt",
         ch_order_by=["dt", "user_id"],
     )

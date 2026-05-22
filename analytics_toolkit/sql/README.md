@@ -40,7 +40,13 @@ sql.gp_create_many_partitions(...)
 sql.drop_many_partitions(...)
 sql.table_info(...)
 sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=True)
-sql.transfer(..., batch_size=100_000, adaptive_batch_size=True, progress=True)
+sql.transfer(
+    ...,
+    batch_size=100_000,
+    adaptive_batch_size=True,
+    target_batch_memory_mb=None,
+    progress=True,
+)
 sql.ch_full_table_move(...)
 sql.format_plan(...)
 sql.get_sql_connection(...)
@@ -301,6 +307,11 @@ batches from successful insert latency: faster than half of
 `target_batch_seconds` grows by 50%, slower than twice the target shrinks by
 50%. `min_batch_size` and `max_batch_size` bound the adaptive size; when
 `max_batch_size` is omitted it defaults to `batch_size * 4`.
+Pass `target_batch_memory_mb` to adapt from the approximate in-process memory
+used by each fetched row batch instead of insert latency. When it is set,
+memory targeting wins over `target_batch_seconds`; batches smaller than half
+the memory target grow by 50%, and batches larger than the target shrink
+proportionally. The same `min_batch_size` and `max_batch_size` bounds apply.
 Pass `estimate_total_rows=True` to ask the source backend for a non-executing
 planner estimate before streaming batches. Greenplum and Trino use `EXPLAIN`
 JSON output; ClickHouse uses `EXPLAIN ESTIMATE` only for simple single-table

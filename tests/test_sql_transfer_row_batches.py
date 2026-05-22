@@ -189,6 +189,46 @@ def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> Non
     assert disabled.current_size == 1_000
 
 
+def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        target_seconds=10.0,
+        target_memory_bytes=1_000,
+    )
+
+    sizer.update(100.0, memory_bytes=400)
+    assert sizer.current_size == 150
+    sizer.update(1.0, memory_bytes=750)
+    assert sizer.current_size == 150
+    sizer.update(1.0, memory_bytes=2_000)
+    assert sizer.current_size == 75
+
+    no_measurement = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        target_seconds=10.0,
+        target_memory_bytes=1_000,
+    )
+    no_measurement.update(1.0)
+    assert no_measurement.current_size == 100
+
+    disabled = models_module.AdaptiveBatchSizer(
+        enabled=False,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        target_seconds=10.0,
+        target_memory_bytes=1_000,
+    )
+    disabled.update(1.0, memory_bytes=10)
+    assert disabled.current_size == 100
+
+
 def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
     options = transfer_api_module.build_transfer_options(
         from_db="gp",
@@ -200,6 +240,18 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
 
     assert options.min_batch_size == 100
     assert options.max_batch_size == 400
+
+    memory_options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        batch_size=100,
+        target_batch_memory_mb=64,
+    )
+
+    assert memory_options.target_batch_memory_mb == 64.0
+    assert memory_options.target_batch_memory_bytes == 64 * 1024 * 1024
 
     with pytest.raises(ValueError, match="min_batch_size"):
         transfer_api_module.build_transfer_options(
@@ -219,6 +271,23 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
             to_table="sandbox.target",
             batch_size=100,
             max_batch_size=99,
+        )
+
+
+@pytest.mark.parametrize(
+    "target_batch_memory_mb",
+    [0, -1, True, "64", float("nan"), float("inf")],
+)
+def test_transfer_options_validate_target_batch_memory(
+    target_batch_memory_mb: Any,
+) -> None:
+    with pytest.raises(ValueError, match="target_batch_memory_mb"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            target_batch_memory_mb=target_batch_memory_mb,
         )
 
 
@@ -291,6 +360,87 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
     assert total_rows == 10
     assert inserted_batch_sizes == [2, 3, 4, 1]
     assert source.cursor_obj.fetch_sizes == [2, 3, 4, 2, 1]
+
+
+def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:
+    source = RecordingSourceConnection(rows=[(row_id,) for row_id in range(10)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=True,
+        min_batch_size=1,
+        max_batch_size=4,
+        target_batch_seconds=10.0,
+        target_batch_memory_mb=1,
+        target_batch_memory_bytes=100,
+    )
+    inserted_batch_sizes: list[int] = []
+    memory_measurements = iter([40, 40, 300, 300])
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_approx_memory_bytes(self: object) -> int:
+        del self
+        return next(memory_measurements)
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name
+        assert columns == ["id"]
+        inserted_batch_sizes.append(len(rows))
+        kwargs["on_success"](30.0)
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(
+        models_module.RowBatch,
+        "approx_memory_bytes",
+        fake_approx_memory_bytes,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 10
+    assert inserted_batch_sizes == [2, 3, 4, 1]
+    assert source.cursor_obj.fetch_sizes == [2, 3, 4, 1, 1]
 
 
 def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
@@ -700,9 +850,11 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
         to_table="sandbox.target",
         dry_run=True,
         estimate_total_rows=True,
+        target_batch_memory_mb=32,
     )
 
     assert plan.options["estimate_total_rows"] is True
+    assert plan.options["target_batch_memory_mb"] == 32.0
 
 
 @pytest.mark.parametrize(

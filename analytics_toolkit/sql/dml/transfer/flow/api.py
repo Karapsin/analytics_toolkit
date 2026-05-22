@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import math
+from numbers import Real
 
 import pandas as pd
 
@@ -59,6 +61,7 @@ def transfer_table(
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
     target_batch_seconds: float = 10.0,
+    target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
@@ -93,6 +96,7 @@ def transfer_table(
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
         target_batch_seconds=target_batch_seconds,
+        target_batch_memory_mb=target_batch_memory_mb,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
@@ -224,6 +228,7 @@ def build_transfer_options(
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
     target_batch_seconds: float = 10.0,
+    target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
@@ -264,6 +269,10 @@ def build_transfer_options(
         target_batch_seconds=target_batch_seconds,
         adaptive_batch_size=adaptive_batch_size,
     )
+    (
+        resolved_target_batch_memory_mb,
+        resolved_target_batch_memory_bytes,
+    ) = _resolve_target_batch_memory(target_batch_memory_mb)
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = TransferOptions(
         from_db_key=from_config.connection_key,
@@ -280,6 +289,8 @@ def build_transfer_options(
         min_batch_size=resolved_min_batch_size,
         max_batch_size=resolved_max_batch_size,
         target_batch_seconds=resolved_target_batch_seconds,
+        target_batch_memory_mb=resolved_target_batch_memory_mb,
+        target_batch_memory_bytes=resolved_target_batch_memory_bytes,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
@@ -392,6 +403,30 @@ def _resolve_adaptive_batch_bounds(
     )
 
 
+def _resolve_target_batch_memory(
+    target_batch_memory_mb: float | None,
+) -> tuple[float | None, int | None]:
+    if target_batch_memory_mb is None:
+        return None, None
+    if isinstance(target_batch_memory_mb, bool) or not isinstance(
+        target_batch_memory_mb,
+        Real,
+    ):
+        raise ValueError("target_batch_memory_mb must be a positive number.")
+
+    resolved_target_batch_memory_mb = float(target_batch_memory_mb)
+    if (
+        not math.isfinite(resolved_target_batch_memory_mb)
+        or resolved_target_batch_memory_mb <= 0
+    ):
+        raise ValueError("target_batch_memory_mb must be a positive number.")
+
+    return (
+        resolved_target_batch_memory_mb,
+        max(1, int(resolved_target_batch_memory_mb * 1024 * 1024)),
+    )
+
+
 def _resolve_transfer_write_mode(
     to_db_backend: str,
     *,
@@ -436,6 +471,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "min_batch_size": options.min_batch_size,
             "max_batch_size": options.max_batch_size,
             "target_batch_seconds": options.target_batch_seconds,
+            "target_batch_memory_mb": options.target_batch_memory_mb,
             "key_columns": options.key_columns,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,

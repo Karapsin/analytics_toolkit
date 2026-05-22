@@ -96,7 +96,7 @@ sql.execute("gp", read_file(here("create_table.sql")), gp_break_query=True, rand
 sql.execute("trino", read_file(here("final_agg.sql")))
 ```
 
-### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, ch_partition_by=None, ch_order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
+### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, adaptive_batch_size=True, target_batch_seconds=10.0, target_batch_memory_mb=None, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, ch_partition_by=None, ch_order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
 
 Transfers query results from one database to another.
 
@@ -108,6 +108,11 @@ Inputs:
 - `to_table`: target table name
 - `replace_target_table`: if `True`, replaces the target on the first load
 - `batch_size`: rows per transfer batch
+- `adaptive_batch_size`: if `True`, adjusts later batches after successful inserts
+- `target_batch_seconds`: latency target for adaptive batches when no memory
+  target is set
+- `target_batch_memory_mb`: optional approximate in-process memory target for
+  adaptive batches; when set, it takes precedence over `target_batch_seconds`
 - `retry_cnt`: retry count for read and insert steps
 - `timeout_increment`: wait time multiplier between retries
 - `full_retry_cnt`: retry count for full transfer restarts
@@ -140,6 +145,7 @@ sql.transfer(
     from_sql=read_query,
     replace_target_table=create_flg,
     batch_size=100_000,
+    target_batch_memory_mb=256,
 )
 ```
 

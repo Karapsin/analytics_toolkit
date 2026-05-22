@@ -125,6 +125,7 @@ def load_stage_batches(
         min_size=options.min_batch_size,
         max_size=options.max_batch_size,
         target_seconds=options.target_batch_seconds,
+        target_memory_bytes=options.target_batch_memory_bytes,
     )
     try:
         for batch in iter_source_batches(
@@ -150,6 +151,18 @@ def load_stage_batches(
                 )
 
             progress_tracker.start_batch()
+            batch_memory_bytes = (
+                batch.approx_memory_bytes()
+                if options.target_batch_memory_bytes is not None
+                else None
+            )
+
+            def update_batch_sizer(duration_seconds: float) -> None:
+                batch_sizer.update(
+                    duration_seconds,
+                    memory_bytes=batch_memory_bytes,
+                )
+
             inserted_rows = insert_rows_batch(
                 options.to_db_backend,
                 connection_refs.target,
@@ -162,7 +175,7 @@ def load_stage_batches(
                 target_column_types=stage_state.stage_column_types,
                 trino_insert_chunk_size=options.trino_insert_chunk_size,
                 query_label=options.query_label,
-                on_success=batch_sizer.update,
+                on_success=update_batch_sizer,
                 on_progress=progress_tracker.update,
             )
             progress_tracker.complete_batch(inserted_rows)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,6 +25,55 @@ class RowBatch:
             return pd.DataFrame(self.rows, columns=self.columns)
         return pd.DataFrame(columns=self.columns)
 
+    def approx_memory_bytes(self) -> int:
+        return _approx_sizeof(self.columns) + _approx_sizeof(self.rows)
+
+
+def _approx_sizeof(
+    value: Any,
+    *,
+    _seen: set[int] | None = None,
+    _depth: int = 0,
+    _max_depth: int = 8,
+) -> int:
+    if _seen is None:
+        _seen = set()
+
+    if _depth > _max_depth:
+        return sys.getsizeof(value)
+
+    value_id = id(value)
+    if value_id in _seen:
+        return 0
+    _seen.add(value_id)
+
+    size = sys.getsizeof(value)
+    if isinstance(value, dict):
+        for key, item in value.items():
+            size += _approx_sizeof(
+                key,
+                _seen=_seen,
+                _depth=_depth + 1,
+                _max_depth=_max_depth,
+            )
+            size += _approx_sizeof(
+                item,
+                _seen=_seen,
+                _depth=_depth + 1,
+                _max_depth=_max_depth,
+            )
+        return size
+
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            size += _approx_sizeof(
+                item,
+                _seen=_seen,
+                _depth=_depth + 1,
+                _max_depth=_max_depth,
+            )
+    return size
+
 
 @dataclass
 class AdaptiveBatchSizer:
@@ -32,9 +82,21 @@ class AdaptiveBatchSizer:
     min_size: int
     max_size: int
     target_seconds: float
+    target_memory_bytes: int | None = None
 
-    def update(self, duration_seconds: float) -> None:
+    def update(
+        self,
+        duration_seconds: float,
+        *,
+        memory_bytes: int | None = None,
+    ) -> None:
         if not self.enabled:
+            return
+
+        if self.target_memory_bytes is not None:
+            if memory_bytes is None:
+                return
+            self._update_for_memory(memory_bytes)
             return
 
         if duration_seconds < self.target_seconds / 2:
@@ -44,6 +106,23 @@ class AdaptiveBatchSizer:
 
         if duration_seconds > self.target_seconds * 2:
             shrunk_size = max(1, int(self.current_size * 0.5))
+            self.current_size = max(shrunk_size, self.min_size)
+
+    def _update_for_memory(self, memory_bytes: int) -> None:
+        target_memory_bytes = self.target_memory_bytes
+        if target_memory_bytes is None:
+            return
+
+        if memory_bytes < target_memory_bytes / 2:
+            grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
+            self.current_size = min(grown_size, self.max_size)
+            return
+
+        if memory_bytes > target_memory_bytes:
+            shrink_ratio = target_memory_bytes / memory_bytes
+            shrunk_size = max(1, int(self.current_size * shrink_ratio))
+            if shrunk_size >= self.current_size:
+                shrunk_size = self.current_size - 1
             self.current_size = max(shrunk_size, self.min_size)
 
 
@@ -70,6 +149,8 @@ class TransferOptions:
     min_batch_size: int = 1_000
     max_batch_size: int = 400_000
     target_batch_seconds: float = 10.0
+    target_batch_memory_mb: float | None = None
+    target_batch_memory_bytes: int | None = None
     ch_partition_by: list[str] | str | None = None
     ch_order_by: list[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"
