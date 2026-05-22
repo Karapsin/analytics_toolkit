@@ -482,6 +482,9 @@ create the requested target as a `Distributed` table. Use `ch_partition_by`,
 shard DDL and distributed sharding expression. The default `ch_cluster` is the
 ClickHouse `{cluster}` macro so created distributed/shard table pairs are
 visible across the full cluster on Yandex Managed ClickHouse.
+Append loads also re-submit the idempotent `CREATE TABLE IF NOT EXISTS`
+statements before inserting, which repairs cases where an existing Distributed
+target is present locally but its shard table is not yet visible on every host.
 Cluster DDL is submitted with `distributed_ddl_task_timeout=0`, so ClickHouse
 queues the `ON CLUSTER` operation without making Python hold the DDL request
 open. Before inserting, the helper polls `clusterAllReplicas(..., system,

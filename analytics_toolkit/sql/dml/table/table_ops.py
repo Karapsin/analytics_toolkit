@@ -346,22 +346,22 @@ def finalize_stage_table(
         )
 
     if backend == "ch":
-        if not target_exists:
-            create_sql_table(
-                connection_type,
-                connection,
-                target_table,
-                sample_batch,
-                column_types=target_column_types,
-                gp_distributed_by_key=gp_distributed_by_key,
-                ch_partition_by=ch_partition_by,
-                ch_order_by=ch_order_by,
-                ch_engine=ch_engine,
-                ch_cluster=ch_cluster,
-                ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=True,
-                query_label=query_label,
-            )
+        _ensure_ch_distributed_target_pair(
+            connection_type,
+            connection,
+            target_table,
+            sample_batch,
+            target_exists=target_exists,
+            target_column_types=target_column_types,
+            insert_column_types=insert_column_types,
+            gp_distributed_by_key=gp_distributed_by_key,
+            ch_partition_by=ch_partition_by,
+            ch_order_by=ch_order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            query_label=query_label,
+        )
         insert_from_table(
             backend,
             connection,
@@ -389,6 +389,52 @@ def finalize_stage_table(
         target_table,
         stage_table,
         column_types=insert_column_types,
+        query_label=query_label,
+    )
+
+
+def _ensure_ch_distributed_target_pair(
+    connection_type: str,
+    connection: Any,
+    target_table: str,
+    sample_batch: pd.DataFrame,
+    *,
+    target_exists: bool,
+    target_column_types: Mapping[str, str] | None,
+    insert_column_types: Mapping[str, str] | None,
+    gp_distributed_by_key: list[str] | None,
+    ch_partition_by: list[str] | str | None,
+    ch_order_by: list[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    query_label: str | None,
+) -> None:
+    create_batch = sample_batch
+    create_column_types = target_column_types or insert_column_types
+    if target_exists:
+        existing_column_types = get_table_column_types(
+            connection_type,
+            connection,
+            target_table,
+        )
+        if existing_column_types:
+            create_batch = pd.DataFrame(columns=list(existing_column_types))
+            create_column_types = existing_column_types
+
+    create_sql_table(
+        connection_type,
+        connection,
+        target_table,
+        create_batch,
+        column_types=create_column_types,
+        gp_distributed_by_key=gp_distributed_by_key,
+        ch_partition_by=ch_partition_by,
+        ch_order_by=ch_order_by,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=True,
         query_label=query_label,
     )
 

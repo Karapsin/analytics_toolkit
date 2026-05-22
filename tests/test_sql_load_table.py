@@ -638,6 +638,61 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
     )
 
 
+def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -> None:
+    client = FakeClickHouseClient()
+    batch = pd.DataFrame(
+        {
+            "month_date": [date(2024, 2, 1)],
+            "users": [10],
+        }
+    )
+    column_types = {
+        "month_date": "Nullable(Date)",
+        "users": "Nullable(Int64)",
+    }
+
+    table_ops_module.finalize_stage_table(
+        connection_type="ch",
+        connection=client,
+        stage_table=TEST_CH_STAGE_TABLE,
+        target_table=TEST_CH_TABLE,
+        replace_target_table=False,
+        target_exists=True,
+        sample_batch=batch,
+        insert_column_types=column_types,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date"],
+        ch_cluster="core",
+    )
+
+    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" not in client.commands
+    assert any(
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
+        and "ON CLUSTER core" in command
+        for command in client.commands
+    )
+    assert any(
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
+        and "ON CLUSTER core" in command
+        for command in client.commands
+    )
+    assert client.commands[-1] == (
+        f"INSERT INTO {TEST_CH_TABLE} (`month_date`, `users`) "
+        f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
+        f"CAST(`users` AS Nullable(Int64)) AS `users` "
+        f"FROM {TEST_CH_STAGE_TABLE}"
+    )
+
+    insert_index = client.commands.index(client.commands[-1])
+    create_indices = [
+        idx
+        for idx, command in enumerate(client.commands)
+        if command.startswith("CREATE TABLE IF NOT EXISTS")
+    ]
+    assert create_indices
+    assert max(create_indices) < insert_index
+
+
 def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() -> None:
     client = FakeClickHouseClient()
     batch = pd.DataFrame(
