@@ -20,6 +20,8 @@ DEFAULT_GP_KEEPALIVES = True
 DEFAULT_GP_KEEPALIVES_IDLE_SECONDS = 60
 DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS = 10
 DEFAULT_GP_KEEPALIVES_COUNT = 3
+_MISSING_OVERRIDE = object()
+_AIRFLOW_EXTRA_RESOLVER_KEYS = {"from", "key", "default"}
 
 
 @dataclass(frozen=True)
@@ -193,7 +195,14 @@ def _build_connection_config(
                 "http_scheme",
                 "http",
             ),
-            verify_value=_optional_string(raw_config, connection_key, "verify", "true"),
+            verify_value=(
+                _optional_bool_or_string_as_string(
+                    raw_config,
+                    connection_key,
+                    "verify",
+                )
+                or "true"
+            ),
             use_keychain_certs=_optional_bool(
                 raw_config,
                 connection_key,
@@ -611,11 +620,17 @@ def _get_airflow_source_raw_connection_config(
         connection_key,
         allow_dynamic=allow_dynamic,
     )
-    raw_config = _get_airflow_raw_connection_config(
+    raw_config, extras = _get_airflow_raw_connection_config_and_extras(
         entry.connection_id,
         entry.backend,
     )
-    raw_config.update(entry.overrides)
+    raw_config.update(
+        _resolve_airflow_entry_overrides(
+            entry.overrides,
+            extras,
+            entry.connection_id,
+        )
+    )
     if entry.backend is not None:
         raw_config["type"] = entry.backend
     return raw_config
@@ -654,6 +669,17 @@ def _get_airflow_raw_connection_config(
     connection_id: str,
     backend: BackendName | None,
 ) -> dict[str, Any]:
+    raw_config, _extras = _get_airflow_raw_connection_config_and_extras(
+        connection_id,
+        backend,
+    )
+    return raw_config
+
+
+def _get_airflow_raw_connection_config_and_extras(
+    connection_id: str,
+    backend: BackendName | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     connection = _get_airflow_connection(connection_id)
     extras = _get_airflow_connection_extras(connection, connection_id)
     resolved_backend = backend or _resolve_airflow_connection_backend(
@@ -729,7 +755,7 @@ def _get_airflow_raw_connection_config(
             f"{resolved_backend!r}."
         )
 
-    return raw_config
+    return raw_config, extras
 
 
 def _get_airflow_connection(connection_id: str) -> Any:
@@ -847,6 +873,76 @@ def _copy_extra_fields(
     for field_name in field_names:
         if field_name in extras:
             raw_config[field_name] = extras[field_name]
+
+
+def _resolve_airflow_entry_overrides(
+    overrides: dict[str, Any],
+    extras: dict[str, Any],
+    connection_id: str,
+) -> dict[str, Any]:
+    resolved: dict[str, Any] = {}
+    for field_name, value in overrides.items():
+        if not _is_airflow_extra_resolver(field_name, value):
+            resolved[field_name] = value
+            continue
+
+        resolved_value = _resolve_airflow_extra_resolver(
+            field_name,
+            value,
+            extras,
+            connection_id,
+        )
+        if resolved_value is not _MISSING_OVERRIDE:
+            resolved[field_name] = resolved_value
+    return resolved
+
+
+def _is_airflow_extra_resolver(field_name: str, value: Any) -> bool:
+    if not isinstance(value, dict) or "from" not in value:
+        return False
+
+    # ClickHouse settings are themselves a mapping. Treat settings as a resolver
+    # only when it has the explicit resolver shape, so normal settings maps keep
+    # working even if they contain a setting named "from".
+    if field_name == "settings":
+        return set(value).issubset(_AIRFLOW_EXTRA_RESOLVER_KEYS)
+    return True
+
+
+def _resolve_airflow_extra_resolver(
+    field_name: str,
+    resolver: dict[str, Any],
+    extras: dict[str, Any],
+    connection_id: str,
+) -> Any:
+    unexpected_keys = set(resolver) - _AIRFLOW_EXTRA_RESOLVER_KEYS
+    if unexpected_keys:
+        unexpected = ", ".join(sorted(unexpected_keys))
+        raise SqlConfigError(
+            f"Airflow connection '{connection_id}' override '{field_name}' "
+            f"has unsupported resolver field(s): {unexpected}."
+        )
+
+    raw_source = resolver.get("from")
+    if not isinstance(raw_source, str) or raw_source.strip().lower() != "extra":
+        raise SqlConfigError(
+            f"Airflow connection '{connection_id}' override '{field_name}' "
+            "resolver field 'from' must be 'extra'."
+        )
+
+    raw_key = resolver.get("key", field_name)
+    if not isinstance(raw_key, str) or not raw_key.strip():
+        raise SqlConfigError(
+            f"Airflow connection '{connection_id}' override '{field_name}' "
+            "resolver field 'key' must be a non-empty string."
+        )
+
+    extra_key = raw_key.strip()
+    if extra_key in extras and extras[extra_key] is not None:
+        return extras[extra_key]
+    if "default" in resolver:
+        return resolver["default"]
+    return _MISSING_OVERRIDE
 
 
 def _set_if_not_none(

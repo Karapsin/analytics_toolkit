@@ -29,10 +29,10 @@ working directory, usually the DAG project root:
     },
     "airflow_trino": {
       "type": "trino",
-      "http_scheme": "https",
-      "verify": false,
-      "request_timeout": 600,
-      "source": "airflow"
+      "http_scheme": {"from": "extra", "default": "https"},
+      "verify": {"from": "extra", "default": false},
+      "request_timeout": {"from": "extra", "default": 600},
+      "source": {"from": "extra", "default": "airflow"}
     },
     "airflow_clickhouse": {
       "type": "ch",
@@ -44,6 +44,33 @@ working directory, usually the DAG project root:
   }
 }
 ```
+
+Use resolver objects when old DAG wrappers used `extra.get("field", default)`:
+
+```json
+{
+  "http_scheme": {"from": "extra", "default": "https"},
+  "verify": {"from": "extra", "default": false},
+  "request_timeout": {"from": "extra", "default": 300},
+  "source": {"from": "extra", "default": "airflow-trino"}
+}
+```
+
+The resolver reads the same-named Airflow Connection `extra_dejson` key when it
+exists and is not `null`; otherwise it uses `default`. Add `key` when the
+Airflow extra key has a different name:
+
+```json
+{
+  "source": {
+    "from": "extra",
+    "key": "client_source",
+    "default": "airflow-trino"
+  }
+}
+```
+
+Plain values still force an override, for example `"request_timeout": 900`.
 
 The key is the Airflow connection ID by default. Use `connection_id` when the
 toolkit alias should be different:

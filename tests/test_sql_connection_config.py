@@ -1007,6 +1007,175 @@ def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
     assert auth.password == "trino-password"
 
 
+def test_airflow_file_extra_fallback_uses_airflow_extra_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "connection_id": "AirTrino",
+                    "type": "trino",
+                    "http_scheme": {"from": "extra", "default": "https"},
+                    "verify": {"from": "extra", "default": False},
+                    "request_timeout": {"from": "extra", "default": 300},
+                    "source": {
+                        "from": "extra",
+                        "key": "client_source",
+                        "default": "airflow-trino",
+                    },
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirTrino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                port=8443,
+                login="trino-user",
+                password="trino-password",
+                extra_dejson={
+                    "catalog": "iceberg",
+                    "schema": "sandbox",
+                    "http_scheme": "http",
+                    "verify": True,
+                    "request_timeout": 120,
+                    "client_source": "airflow-extra",
+                },
+            )
+        },
+    )
+
+    config = config_module.get_connection_config("trino")
+
+    assert isinstance(config, config_module.TrinoConfig)
+    assert config.http_scheme == "http"
+    assert config.verify_value == "true"
+    assert config.request_timeout == 120
+    assert config.source == "airflow-extra"
+
+
+def test_airflow_file_extra_fallback_uses_default_when_extra_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "connection_id": "AirTrino",
+                    "type": "trino",
+                    "http_scheme": {"from": "extra", "default": "https"},
+                    "verify": {"from": "extra", "default": False},
+                    "request_timeout": {"from": "extra", "default": 300},
+                    "source": {"from": "extra", "default": "airflow-trino"},
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirTrino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                port=8443,
+                login="trino-user",
+                password="trino-password",
+                extra_dejson={"catalog": "iceberg", "schema": "sandbox"},
+            )
+        },
+    )
+    connect_calls: list[dict[str, object]] = []
+
+    class FakeBasicAuthentication:
+        def __init__(self, user: str, password: str | None) -> None:
+            self.user = user
+            self.password = password
+
+    fake_auth = types.ModuleType("trino.auth")
+    fake_auth.BasicAuthentication = FakeBasicAuthentication
+    fake_auth.OAuth2Authentication = lambda: object()
+    fake_trino = types.ModuleType("trino")
+    fake_trino.auth = fake_auth
+    fake_trino.dbapi = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "trino", fake_trino)
+    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+
+    connection_module.get_sql_connection("trino")
+
+    assert connect_calls[0]["http_scheme"] == "https"
+    assert connect_calls[0]["verify"] is False
+    assert connect_calls[0]["request_timeout"] == 300
+    assert connect_calls[0]["source"] == "airflow-trino"
+
+
+@pytest.mark.parametrize(
+    "resolver",
+    [
+        {"from": "env", "default": "https"},
+        {"from": "extra", "key": 123, "default": "https"},
+        {"from": "extra", "default": "https", "unexpected": True},
+    ],
+)
+def test_airflow_file_extra_fallback_rejects_malformed_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+    resolver: dict[str, object],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "connection_id": "AirTrino",
+                    "type": "trino",
+                    "http_scheme": resolver,
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirTrino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                login="trino-user",
+            )
+        },
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="resolver"):
+        config_module.get_connection_config("trino")
+
+
+def test_direct_connections_file_does_not_resolve_airflow_fallback_objects(
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "trino": {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "http_scheme": {"from": "extra", "default": "https"},
+            }
+        }
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="http_scheme"):
+        config_module.get_connection_config("trino")
+
+
 def test_transfer_options_allow_two_aliases_with_same_backend() -> None:
     options = api_module.build_transfer_options(
         from_db="gp",
