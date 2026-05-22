@@ -289,6 +289,8 @@ def test_airflow_trino_connection_maps_extras(
                     "http_scheme": "https",
                     "verify": False,
                     "insert_chunk_size": "500",
+                    "request_timeout": "700",
+                    "source": "airflow",
                 },
             )
         },
@@ -309,6 +311,8 @@ def test_airflow_trino_connection_maps_extras(
     assert config.http_scheme == "https"
     assert config.verify_value == "false"
     assert config.insert_chunk_size == 500
+    assert config.request_timeout == 700
+    assert config.source == "airflow"
 
 
 def test_airflow_clickhouse_connection_maps_airflow_fields(
@@ -482,6 +486,297 @@ def test_airflow_connection_config_requires_airflow(
 
     with pytest.raises(config_module.SqlConfigError, match="apache-airflow"):
         config_module.airflow_connection_config("missing", "gp")
+
+
+def test_airflow_connections_file_resolves_alias_without_context(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "AirGp": {
+                    "type": "gp",
+                    "connect_timeout": "8",
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirGp": FakeAirflowConnection(
+                conn_type="postgres",
+                host="air-gp.example",
+                port=15432,
+                login="air-user",
+                password="air-password",
+                schema="air_db",
+            )
+        },
+    )
+
+    config = config_module.get_connection_config("AirGp")
+
+    assert isinstance(config, config_module.GpConfig)
+    assert config.connection_key == "airgp"
+    assert config.backend == "gp"
+    assert config.host == "air-gp.example"
+    assert config.port == 15432
+    assert config.user == "air-user"
+    assert config.password == "air-password"
+    assert config.database == "air_db"
+    assert config.connect_timeout == 8
+
+
+def test_airflow_connections_file_allows_alias_different_from_connection_id(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "connection_id": "AirTrino",
+                    "type": "trino",
+                    "insert_chunk_size": 400,
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirTrino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                port=8443,
+                login="trino-user",
+                password="trino-password",
+                extra_dejson={"catalog": "iceberg", "schema": "sandbox"},
+            )
+        },
+    )
+
+    config = config_module.get_connection_config("trino")
+    raw_connections = config_module.load_sql_connections()
+
+    assert isinstance(config, config_module.TrinoConfig)
+    assert config.connection_key == "trino"
+    assert config.host == "air-trino.example"
+    assert config.catalog == "iceberg"
+    assert config.schema == "sandbox"
+    assert config.insert_chunk_size == 400
+    assert raw_connections["trino"]["host"] == "air-trino.example"
+    assert raw_connections["trino"]["insert_chunk_size"] == 400
+
+
+def test_airflow_connections_file_supports_public_transfer_options(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino_prod-sa": {"type": "trino"},
+                "greenplum_pa_core": {"type": "gp"},
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "trino_prod-sa": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                login="trino-user",
+                extra_dejson={"catalog": "iceberg", "schema": "sandbox"},
+            ),
+            "greenplum_pa_core": FakeAirflowConnection(
+                conn_type="postgres",
+                host="air-gp.example",
+                login="air-user",
+                password="air-password",
+                schema="air_db",
+            ),
+        },
+    )
+
+    options = api_module.build_transfer_options(
+        from_db="trino_prod-sa",
+        to_db="greenplum_pa_core",
+        from_sql="select 1",
+        to_table="schema.target",
+        gp_distributed_by_key=["id"],
+    )
+
+    assert options.from_db_key == "trino_prod-sa"
+    assert options.from_db_backend == "trino"
+    assert options.to_db_key == "greenplum_pa_core"
+    assert options.to_db_backend == "gp"
+    assert options.gp_distributed_by_key == ["id"]
+
+
+def test_airflow_connections_file_rejects_missing_type(
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {"gp": {}},
+        }
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="type"):
+        config_module.get_connection_config("gp")
+
+
+def test_airflow_connections_file_rejects_unknown_source(
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "vault",
+            "connections": {},
+        }
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="unsupported"):
+        config_module.get_connection_config("gp")
+
+
+def test_airflow_connections_file_rejects_malformed_connections(
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": [],
+        }
+    )
+
+    with pytest.raises(config_module.SqlConfigError, match="connections"):
+        config_module.get_connection_config("gp")
+
+
+def test_airflow_connections_file_unknown_airflow_id_raises_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {"gp": {"type": "gp"}},
+        }
+    )
+    install_fake_airflow(monkeypatch, {})
+
+    with pytest.raises(
+        config_module.UnsupportedConnectionTypeError,
+        match="Unknown Airflow connection ID: gp",
+    ):
+        config_module.get_connection_config("gp")
+
+
+def test_direct_connections_file_can_still_have_source_alias(
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": {
+                "type": "gp",
+                "host": "gp-source.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+            }
+        }
+    )
+
+    config = config_module.get_connection_config("source")
+
+    assert isinstance(config, config_module.GpConfig)
+    assert config.host == "gp-source.example"
+
+
+def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "connection_id": "AirTrino",
+                    "type": "trino",
+                    "request_timeout": "900",
+                    "source": "analytics_toolkit",
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirTrino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                port=8443,
+                login="trino-user",
+                password="trino-password",
+                extra_dejson={
+                    "catalog": "iceberg",
+                    "schema": "sandbox",
+                    "http_scheme": "https",
+                    "verify": False,
+                    "request_timeout": 600,
+                    "source": "airflow",
+                },
+            )
+        },
+    )
+    connect_calls: list[dict[str, object]] = []
+
+    class FakeBasicAuthentication:
+        def __init__(self, user: str, password: str | None) -> None:
+            self.user = user
+            self.password = password
+
+    fake_auth = types.ModuleType("trino.auth")
+    fake_auth.BasicAuthentication = FakeBasicAuthentication
+    fake_auth.OAuth2Authentication = lambda: object()
+    fake_trino = types.ModuleType("trino")
+    fake_trino.auth = fake_auth
+    fake_trino.dbapi = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "trino", fake_trino)
+    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+
+    connection_module.get_sql_connection("trino")
+
+    assert connect_calls == [
+        {
+            "host": "air-trino.example",
+            "port": 8443,
+            "user": "trino-user",
+            "http_scheme": "https",
+            "auth": connect_calls[0]["auth"],
+            "verify": False,
+            "catalog": "iceberg",
+            "schema": "sandbox",
+            "request_timeout": 900,
+            "source": "analytics_toolkit",
+        }
+    ]
+    auth = connect_calls[0]["auth"]
+    assert isinstance(auth, FakeBasicAuthentication)
+    assert auth.user == "trino-user"
+    assert auth.password == "trino-password"
 
 
 def test_transfer_options_allow_two_aliases_with_same_backend() -> None:

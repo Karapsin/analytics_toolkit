@@ -23,9 +23,16 @@ DEFAULT_GP_KEEPALIVES_COUNT = 3
 
 
 @dataclass(frozen=True)
+class _AirflowConnectionEntry:
+    connection_id: str
+    backend: BackendName | None
+    overrides: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class _AirflowConnectionSource:
-    connection_backends: dict[str, BackendName]
-    normalized_connection_backends: dict[str, BackendName]
+    connections: dict[str, _AirflowConnectionEntry]
+    normalized_connections: dict[str, str]
     default_backend: BackendName | None
 
 
@@ -50,6 +57,8 @@ class TrinoConfig:
     use_keychain_certs: bool
     keychain_cert_names: list[str]
     insert_chunk_size: int | None
+    request_timeout: int | None
+    source: str | None
 
 
 @dataclass(frozen=True)
@@ -121,18 +130,22 @@ def use_airflow_connections(
     *,
     default_backend: BackendName | str | None = None,
 ) -> Iterator[None]:
-    normalized_backends: dict[str, BackendName] = {}
-    normalized_lookup: dict[str, BackendName] = {}
+    connections: dict[str, _AirflowConnectionEntry] = {}
+    normalized_connections: dict[str, str] = {}
     if connection_backends is not None:
         for connection_id, backend in connection_backends.items():
             resolved_id = _normalize_airflow_connection_id(connection_id)
             resolved_backend = _normalize_backend_name(backend)
-            normalized_backends[resolved_id] = resolved_backend
-            normalized_lookup[normalize_connection_key(resolved_id)] = resolved_backend
+            connections[resolved_id] = _AirflowConnectionEntry(
+                connection_id=resolved_id,
+                backend=resolved_backend,
+                overrides={},
+            )
+            normalized_connections[normalize_connection_key(resolved_id)] = resolved_id
 
     source = _AirflowConnectionSource(
-        connection_backends=normalized_backends,
-        normalized_connection_backends=normalized_lookup,
+        connections=connections,
+        normalized_connections=normalized_connections,
         default_backend=_normalize_optional_backend_name(default_backend),
     )
     token = _AIRFLOW_CONNECTION_SOURCE.set(source)
@@ -187,6 +200,12 @@ def _build_connection_config(
                 connection_key,
                 "insert_chunk_size",
             ),
+            request_timeout=_optional_positive_int(
+                raw_config,
+                connection_key,
+                "request_timeout",
+            ),
+            source=_optional_string(raw_config, connection_key, "source"),
         )
     if backend == "gp":
         return GpConfig(
@@ -320,24 +339,39 @@ def normalize_connection_key(connection_key: str) -> str:
 def load_sql_connections() -> dict[str, dict[str, Any]]:
     source = _AIRFLOW_CONNECTION_SOURCE.get()
     if source is not None:
-        if not source.connection_backends:
+        if not source.connections:
             raise SqlConfigError(
                 "Airflow connection mode cannot list all SQL connections. "
                 "Pass keys to validate_connections or provide connection_backends "
                 "to use_airflow_connections."
             )
         return {
-            connection_id: _get_airflow_raw_connection_config(
-                connection_id,
-                backend,
+            connection_key: _get_airflow_source_raw_connection_config(
+                source,
+                connection_key,
             )
-            for connection_id, backend in source.connection_backends.items()
+            for connection_key in source.connections
         }
 
     return _load_file_sql_connections()
 
 
 def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
+    connections_source = _load_file_connections_source()
+    if isinstance(connections_source, _AirflowConnectionSource):
+        return {
+            connection_key: _get_airflow_source_raw_connection_config(
+                connections_source,
+                connection_key,
+            )
+            for connection_key in connections_source.connections
+        }
+    return connections_source
+
+
+def _load_file_connections_source() -> (
+    dict[str, dict[str, Any]] | _AirflowConnectionSource
+):
     connections_path = get_connections_file_path()
 
     try:
@@ -350,6 +384,41 @@ def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
     if not isinstance(parsed, dict):
         raise SqlConfigError(f"{connections_path} must contain a JSON object.")
 
+    if _is_airflow_connections_file(parsed, connections_path):
+        return _parse_airflow_connections_file(parsed, connections_path)
+
+    return _parse_direct_connections_file(parsed, connections_path)
+
+
+def _is_airflow_connections_file(
+    parsed: dict[str, Any],
+    connections_path: Path,
+) -> bool:
+    if "source" not in parsed:
+        return False
+
+    source = parsed["source"]
+    if isinstance(source, str):
+        normalized_source = source.strip().lower()
+        if normalized_source == "airflow":
+            return True
+        raise SqlConfigError(
+            f"{connections_path} has unsupported SQL connection source "
+            f"{source!r}. Expected 'airflow'."
+        )
+
+    if "connections" in parsed:
+        raise SqlConfigError(
+            f"{connections_path} field 'source' must be a string when "
+            "'connections' is present."
+        )
+    return False
+
+
+def _parse_direct_connections_file(
+    parsed: dict[str, Any],
+    connections_path: Path,
+) -> dict[str, dict[str, Any]]:
     connections: dict[str, dict[str, Any]] = {}
     for raw_key, raw_config in parsed.items():
         if not isinstance(raw_key, str):
@@ -366,6 +435,66 @@ def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
         connections[normalized_key] = raw_config
 
     return connections
+
+
+def _parse_airflow_connections_file(
+    parsed: dict[str, Any],
+    connections_path: Path,
+) -> _AirflowConnectionSource:
+    raw_connections = parsed.get("connections")
+    if not isinstance(raw_connections, dict):
+        raise SqlConfigError(
+            f"{connections_path} field 'connections' must be a JSON object "
+            "when source is 'airflow'."
+        )
+
+    connections: dict[str, _AirflowConnectionEntry] = {}
+    normalized_connections: dict[str, str] = {}
+    for raw_key, raw_config in raw_connections.items():
+        if not isinstance(raw_key, str):
+            raise SqlConfigError(
+                f"{connections_path}['connections'] keys must be strings."
+            )
+        if not isinstance(raw_config, dict):
+            raise SqlConfigError(
+                f"{connections_path}['connections']['{raw_key}'] "
+                "must be a JSON object."
+            )
+
+        normalized_key = normalize_connection_key(raw_key)
+        if normalized_key in normalized_connections:
+            raise SqlConfigError(
+                "Duplicate SQL connection key after normalization: "
+                f"{normalized_key}"
+            )
+
+        backend = _normalize_backend_name(
+            _require_string(raw_config, raw_key, "type")
+        )
+        connection_id = _optional_string(
+            raw_config,
+            raw_key,
+            "connection_id",
+            raw_key,
+        )
+        if connection_id is None:
+            connection_id = raw_key
+
+        overrides = dict(raw_config)
+        overrides.pop("type", None)
+        overrides.pop("connection_id", None)
+        connections[normalized_key] = _AirflowConnectionEntry(
+            connection_id=_normalize_airflow_connection_id(connection_id),
+            backend=backend,
+            overrides=overrides,
+        )
+        normalized_connections[normalized_key] = normalized_key
+
+    return _AirflowConnectionSource(
+        connections=connections,
+        normalized_connections=normalized_connections,
+        default_backend=None,
+    )
 
 
 def get_connections_file_path() -> Path:
@@ -390,12 +519,21 @@ def _find_connections_file_path() -> Path | None:
 def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:
     source = _AIRFLOW_CONNECTION_SOURCE.get()
     if source is not None:
-        return _get_airflow_raw_connection_config(
+        return _get_airflow_source_raw_connection_config(
+            source,
             connection_key,
-            _get_airflow_source_backend(source, connection_key),
+            allow_dynamic=True,
         )
 
-    connections = _load_file_sql_connections()
+    connections_source = _load_file_connections_source()
+    if isinstance(connections_source, _AirflowConnectionSource):
+        return _get_airflow_source_raw_connection_config(
+            connections_source,
+            connection_key,
+            allow_dynamic=False,
+        )
+
+    connections = connections_source
     try:
         return connections[connection_key]
     except KeyError as exc:
@@ -404,6 +542,56 @@ def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:
             f"Unknown SQL connection key: {connection_key}. "
             f"Available keys: {available}"
         ) from exc
+
+
+def _get_airflow_source_raw_connection_config(
+    source: _AirflowConnectionSource,
+    connection_key: str,
+    *,
+    allow_dynamic: bool = False,
+) -> dict[str, Any]:
+    entry = _get_airflow_source_entry(
+        source,
+        connection_key,
+        allow_dynamic=allow_dynamic,
+    )
+    raw_config = _get_airflow_raw_connection_config(
+        entry.connection_id,
+        entry.backend,
+    )
+    raw_config.update(entry.overrides)
+    if entry.backend is not None:
+        raw_config["type"] = entry.backend
+    return raw_config
+
+
+def _get_airflow_source_entry(
+    source: _AirflowConnectionSource,
+    connection_key: str,
+    *,
+    allow_dynamic: bool,
+) -> _AirflowConnectionEntry:
+    entry = source.connections.get(connection_key)
+    if entry is not None:
+        return entry
+
+    normalized_key = normalize_connection_key(connection_key)
+    resolved_key = source.normalized_connections.get(normalized_key)
+    if resolved_key is not None:
+        return source.connections[resolved_key]
+
+    if allow_dynamic:
+        return _AirflowConnectionEntry(
+            connection_id=_normalize_airflow_connection_id(connection_key),
+            backend=source.default_backend,
+            overrides={},
+        )
+
+    available = ", ".join(sorted(source.connections)) or "<none>"
+    raise UnsupportedConnectionTypeError(
+        f"Unknown SQL connection key: {connection_key}. "
+        f"Available keys: {available}"
+    )
 
 
 def _get_airflow_raw_connection_config(
@@ -450,6 +638,8 @@ def _get_airflow_raw_connection_config(
                 "use_keychain_certs",
                 "keychain_cert_names",
                 "insert_chunk_size",
+                "request_timeout",
+                "source",
             ],
         )
         if isinstance(raw_config.get("verify"), bool):
@@ -571,19 +761,6 @@ def _normalize_airflow_connection_id(connection_id: str) -> str:
     if not resolved_id:
         raise SqlConfigError("Airflow connection ID must not be empty.")
     return resolved_id
-
-
-def _get_airflow_source_backend(
-    source: _AirflowConnectionSource,
-    connection_id: str,
-) -> BackendName | None:
-    backend = source.connection_backends.get(connection_id)
-    if backend is not None:
-        return backend
-    return (
-        source.normalized_connection_backends.get(normalize_connection_key(connection_id))
-        or source.default_backend
-    )
 
 
 def _copy_extra_fields(

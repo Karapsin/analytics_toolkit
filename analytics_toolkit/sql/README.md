@@ -673,18 +673,54 @@ Greenplum supports optional `connect_timeout`, `keepalives`,
 default to a 30-second connection timeout with TCP keepalives enabled.
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`,
-`use_keychain_certs`, `keychain_cert_names`, and `insert_chunk_size` fields.
+`use_keychain_certs`, `keychain_cert_names`, `insert_chunk_size`,
+`request_timeout`, and `source` fields.
 
-In Airflow DAGs, keep credentials in Airflow Connections and opt in for the
-SQL calls that should resolve connection IDs through `BaseHook`:
+In Airflow DAGs, keep credentials in Airflow Connections and use an
+Airflow-source `.connections` file with routing metadata only:
+
+```json
+{
+  "source": "airflow",
+  "connections": {
+    "greenplum_pa_core": {"type": "gp"},
+    "trino_prod-sa": {"type": "trino"},
+    "clickhouse_pa_core": {"type": "ch"}
+  }
+}
+```
+
+The connection key is used as the Airflow connection ID by default. Use
+`connection_id` when the toolkit alias should differ from the Airflow ID:
+
+```json
+{
+  "source": "airflow",
+  "connections": {
+    "trino": {
+      "connection_id": "trino_prod-sa",
+      "type": "trino",
+      "insert_chunk_size": 1000,
+      "request_timeout": 600,
+      "source": "analytics_toolkit"
+    }
+  }
+}
+```
+
+Once this file is present, DAG code can call SQL helpers directly:
 
 ```python
 from analytics_toolkit import sql
 
-with sql.use_airflow_connections(
-    {"gp_prod": "gp", "trino_prod": "trino", "clickhouse_prod": "ch"}
-):
-    sql.execute("trino_prod", "select 1", query_label="healthcheck")
+sql.execute("trino_prod-sa", "select 1", query_label="healthcheck")
+df = sql.read("greenplum_pa_core", "select * from sandbox.table")
+sql.transfer(
+    from_db="trino_prod-sa",
+    to_db="clickhouse_pa_core",
+    from_sql="select * from iceberg.sandbox.source",
+    to_table="sandbox.target",
+)
 ```
 
 `sql.airflow_connection_config(connection_id, backend)` maps one Airflow
@@ -692,7 +728,7 @@ Connection to the same config objects used by `.connections`. If `backend` is
 omitted, the package infers it from Airflow `conn_type` or extra `type` /
 `backend`. Greenplum and ClickHouse use the Airflow `schema` field as the
 database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
-and `insert_chunk_size` from connection extras.
+`insert_chunk_size`, `request_timeout`, and `source` from connection extras.
 
 Validate connection files from Python or the CLI:
 

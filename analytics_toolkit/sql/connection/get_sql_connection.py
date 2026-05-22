@@ -104,6 +104,10 @@ def _get_trino_connection(config: TrinoConfig) -> Any:
         connect_kwargs["catalog"] = config.catalog
     if config.schema:
         connect_kwargs["schema"] = config.schema
+    if config.request_timeout is not None:
+        connect_kwargs["request_timeout"] = config.request_timeout
+    if config.source:
+        connect_kwargs["source"] = config.source
 
     return trino.dbapi.connect(**connect_kwargs)
 
