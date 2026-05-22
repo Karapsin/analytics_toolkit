@@ -1018,13 +1018,13 @@ def test_airflow_file_extra_fallback_uses_airflow_extra_when_present(
                 "trino": {
                     "connection_id": "AirTrino",
                     "type": "trino",
-                    "http_scheme": {"from": "extra", "default": "https"},
-                    "verify": {"from": "extra", "default": False},
-                    "request_timeout": {"from": "extra", "default": 300},
+                    "http_scheme": {"from": "extra", "fallback": "https"},
+                    "verify": {"from": "extra", "fallback": False},
+                    "request_timeout": {"from": "extra", "fallback": 300},
                     "source": {
                         "from": "extra",
                         "key": "client_source",
-                        "default": "airflow-trino",
+                        "fallback": "airflow-trino",
                     },
                 }
             },
@@ -1060,7 +1060,7 @@ def test_airflow_file_extra_fallback_uses_airflow_extra_when_present(
     assert config.source == "airflow-extra"
 
 
-def test_airflow_file_extra_fallback_uses_default_when_extra_missing(
+def test_airflow_file_extra_fallback_uses_fallback_when_extra_missing(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, object]], Path],
 ) -> None:
@@ -1071,10 +1071,10 @@ def test_airflow_file_extra_fallback_uses_default_when_extra_missing(
                 "trino": {
                     "connection_id": "AirTrino",
                     "type": "trino",
-                    "http_scheme": {"from": "extra", "default": "https"},
-                    "verify": {"from": "extra", "default": False},
-                    "request_timeout": {"from": "extra", "default": 300},
-                    "source": {"from": "extra", "default": "airflow-trino"},
+                    "http_scheme": {"from": "extra", "fallback": "https"},
+                    "verify": {"from": "extra", "fallback": False},
+                    "request_timeout": {"from": "extra", "fallback": 300},
+                    "source": {"from": "extra", "fallback": "airflow-trino"},
                 }
             },
         }
@@ -1121,9 +1121,10 @@ def test_airflow_file_extra_fallback_uses_default_when_extra_missing(
 @pytest.mark.parametrize(
     "resolver",
     [
-        {"from": "env", "default": "https"},
-        {"from": "extra", "key": 123, "default": "https"},
-        {"from": "extra", "default": "https", "unexpected": True},
+        {"from": "env", "fallback": "https"},
+        {"from": "extra", "key": 123, "fallback": "https"},
+        {"from": "extra", "fallback": "https", "unexpected": True},
+        {"from": "extra", "default": "https"},
     ],
 )
 def test_airflow_file_extra_fallback_rejects_malformed_resolver(
@@ -1167,7 +1168,7 @@ def test_direct_connections_file_does_not_resolve_airflow_fallback_objects(
                 "type": "trino",
                 "host": "trino.example",
                 "user": "user",
-                "http_scheme": {"from": "extra", "default": "https"},
+                "http_scheme": {"from": "extra", "fallback": "https"},
             }
         }
     )

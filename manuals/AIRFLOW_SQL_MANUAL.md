@@ -29,10 +29,10 @@ working directory, usually the DAG project root:
     },
     "airflow_trino": {
       "type": "trino",
-      "http_scheme": {"from": "extra", "default": "https"},
-      "verify": {"from": "extra", "default": false},
-      "request_timeout": {"from": "extra", "default": 600},
-      "source": {"from": "extra", "default": "airflow"}
+      "http_scheme": {"from": "extra", "fallback": "https"},
+      "verify": {"from": "extra", "fallback": false},
+      "request_timeout": {"from": "extra", "fallback": 600},
+      "source": {"from": "extra", "fallback": "airflow"}
     },
     "airflow_clickhouse": {
       "type": "ch",
@@ -45,19 +45,19 @@ working directory, usually the DAG project root:
 }
 ```
 
-Use resolver objects when old DAG wrappers used `extra.get("field", default)`:
+Use resolver objects when old DAG wrappers used `extra.get("field", fallback)`:
 
 ```json
 {
-  "http_scheme": {"from": "extra", "default": "https"},
-  "verify": {"from": "extra", "default": false},
-  "request_timeout": {"from": "extra", "default": 300},
-  "source": {"from": "extra", "default": "airflow-trino"}
+  "http_scheme": {"from": "extra", "fallback": "https"},
+  "verify": {"from": "extra", "fallback": false},
+  "request_timeout": {"from": "extra", "fallback": 300},
+  "source": {"from": "extra", "fallback": "airflow-trino"}
 }
 ```
 
 The resolver reads the same-named Airflow Connection `extra_dejson` key when it
-exists and is not `null`; otherwise it uses `default`. Add `key` when the
+exists and is not `null`; otherwise it uses `fallback`. Add `key` when the
 Airflow extra key has a different name:
 
 ```json
@@ -65,7 +65,7 @@ Airflow extra key has a different name:
   "source": {
     "from": "extra",
     "key": "client_source",
-    "default": "airflow-trino"
+    "fallback": "airflow-trino"
   }
 }
 ```

@@ -21,7 +21,7 @@ DEFAULT_GP_KEEPALIVES_IDLE_SECONDS = 60
 DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS = 10
 DEFAULT_GP_KEEPALIVES_COUNT = 3
 _MISSING_OVERRIDE = object()
-_AIRFLOW_EXTRA_RESOLVER_KEYS = {"from", "key", "default"}
+_AIRFLOW_EXTRA_RESOLVER_KEYS = {"from", "key", "fallback"}
 
 
 @dataclass(frozen=True)
@@ -905,7 +905,9 @@ def _is_airflow_extra_resolver(field_name: str, value: Any) -> bool:
     # only when it has the explicit resolver shape, so normal settings maps keep
     # working even if they contain a setting named "from".
     if field_name == "settings":
-        return set(value).issubset(_AIRFLOW_EXTRA_RESOLVER_KEYS)
+        return set(value).issubset(_AIRFLOW_EXTRA_RESOLVER_KEYS) or (
+            "from" in value and "default" in value
+        )
     return True
 
 
@@ -940,8 +942,8 @@ def _resolve_airflow_extra_resolver(
     extra_key = raw_key.strip()
     if extra_key in extras and extras[extra_key] is not None:
         return extras[extra_key]
-    if "default" in resolver:
-        return resolver["default"]
+    if "fallback" in resolver:
+        return resolver["fallback"]
     return _MISSING_OVERRIDE
 
 

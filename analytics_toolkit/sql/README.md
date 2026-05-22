@@ -724,10 +724,10 @@ The connection key is used as the Airflow connection ID by default. Use
       "connection_id": "airflow_trino",
       "type": "trino",
       "insert_chunk_size": 1000,
-      "http_scheme": {"from": "extra", "default": "https"},
-      "verify": {"from": "extra", "default": false},
-      "request_timeout": {"from": "extra", "default": 600},
-      "source": {"from": "extra", "default": "analytics_toolkit"}
+      "http_scheme": {"from": "extra", "fallback": "https"},
+      "verify": {"from": "extra", "fallback": false},
+      "request_timeout": {"from": "extra", "fallback": 600},
+      "source": {"from": "extra", "fallback": "analytics_toolkit"}
     },
     "clickhouse": {
       "connection_id": "airflow_clickhouse",
@@ -740,8 +740,8 @@ The connection key is used as the Airflow connection ID by default. Use
 
 Airflow-source entries support resolver objects for old wrapper patterns such
 as `extra.get("http_scheme", "https")`. Use
-`{"from": "extra", "default": VALUE}` to read the same-named Airflow
-`extra_dejson` key with a default, or add `"key": "other_name"` to read a
+`{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
+`extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
 
 Once this file is present, DAG code can call SQL helpers directly:
