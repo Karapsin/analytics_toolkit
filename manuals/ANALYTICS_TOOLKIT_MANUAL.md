@@ -113,6 +113,8 @@ Inputs:
   target is set
 - `target_batch_memory_mb`: optional approximate in-process memory target for
   adaptive batches; when set, it takes precedence over `target_batch_seconds`
+- `max_batch_size`: optional adaptive batch ceiling; if omitted, time-based
+  mode defaults to `batch_size * 4` and memory mode has no ceiling
 - `retry_cnt`: retry count for read and insert steps
 - `timeout_increment`: wait time multiplier between retries
 - `full_retry_cnt`: retry count for full transfer restarts

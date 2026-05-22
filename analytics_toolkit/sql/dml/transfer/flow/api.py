@@ -259,6 +259,10 @@ def build_transfer_options(
         write_mode=write_mode,
     )
     (
+        resolved_target_batch_memory_mb,
+        resolved_target_batch_memory_bytes,
+    ) = _resolve_target_batch_memory(target_batch_memory_mb)
+    (
         resolved_min_batch_size,
         resolved_max_batch_size,
         resolved_target_batch_seconds,
@@ -268,11 +272,8 @@ def build_transfer_options(
         max_batch_size=max_batch_size,
         target_batch_seconds=target_batch_seconds,
         adaptive_batch_size=adaptive_batch_size,
+        unlimited_default_max=resolved_target_batch_memory_bytes is not None,
     )
-    (
-        resolved_target_batch_memory_mb,
-        resolved_target_batch_memory_bytes,
-    ) = _resolve_target_batch_memory(target_batch_memory_mb)
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = TransferOptions(
         from_db_key=from_config.connection_key,
@@ -367,7 +368,8 @@ def _resolve_adaptive_batch_bounds(
     max_batch_size: int | None,
     target_batch_seconds: float,
     adaptive_batch_size: bool,
-) -> tuple[int, int, float]:
+    unlimited_default_max: bool = False,
+) -> tuple[int, int | None, float]:
     if not isinstance(adaptive_batch_size, bool):
         raise ValueError("adaptive_batch_size must be a boolean.")
     if batch_size <= 0:
@@ -387,14 +389,20 @@ def _resolve_adaptive_batch_bounds(
     if resolved_min_batch_size > batch_size and min_batch_size == 1_000:
         resolved_min_batch_size = batch_size
 
-    resolved_max_batch_size = (
-        batch_size * 4 if max_batch_size is None else max_batch_size
-    )
+    if max_batch_size is None and unlimited_default_max:
+        resolved_max_batch_size = None
+    else:
+        resolved_max_batch_size = (
+            batch_size * 4 if max_batch_size is None else max_batch_size
+        )
     if resolved_min_batch_size > batch_size:
         raise ValueError("min_batch_size must be less than or equal to batch_size.")
-    if batch_size > resolved_max_batch_size:
+    if resolved_max_batch_size is not None and batch_size > resolved_max_batch_size:
         raise ValueError("max_batch_size must be greater than or equal to batch_size.")
-    if resolved_min_batch_size > resolved_max_batch_size:
+    if (
+        resolved_max_batch_size is not None
+        and resolved_min_batch_size > resolved_max_batch_size
+    ):
         raise ValueError("min_batch_size must be less than or equal to max_batch_size.")
     return (
         resolved_min_batch_size,

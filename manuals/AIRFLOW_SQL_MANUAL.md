@@ -327,7 +327,9 @@ The transfer helper manages staged loading, retries, batching, and backend
 specific table creation. Use it instead of moving large data through handwritten
 cursor loops when both source and target are supported SQL backends. For
 memory-constrained Airflow workers, pass `target_batch_memory_mb` so adaptive
-batches target row batch memory instead of insert duration.
+batches target row batch memory instead of insert duration. Memory-targeted
+transfers have no default `max_batch_size` ceiling; pass `max_batch_size` when
+the Airflow task should enforce a hard row-count cap.
 
 ## Airflow Task Examples
 

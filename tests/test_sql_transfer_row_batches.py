@@ -206,6 +206,19 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
     sizer.update(1.0, memory_bytes=2_000)
     assert sizer.current_size == 75
 
+    unlimited = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=None,
+        target_seconds=10.0,
+        target_memory_bytes=1_000,
+    )
+    unlimited.update(100.0, memory_bytes=400)
+    assert unlimited.current_size == 150
+    unlimited.update(100.0, memory_bytes=400)
+    assert unlimited.current_size == 225
+
     no_measurement = models_module.AdaptiveBatchSizer(
         enabled=True,
         current_size=100,
@@ -252,6 +265,19 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
 
     assert memory_options.target_batch_memory_mb == 64.0
     assert memory_options.target_batch_memory_bytes == 64 * 1024 * 1024
+    assert memory_options.max_batch_size is None
+
+    capped_memory_options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        batch_size=100,
+        target_batch_memory_mb=64,
+        max_batch_size=1_000,
+    )
+
+    assert capped_memory_options.max_batch_size == 1_000
 
     with pytest.raises(ValueError, match="min_batch_size"):
         transfer_api_module.build_transfer_options(
@@ -855,6 +881,7 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
 
     assert plan.options["estimate_total_rows"] is True
     assert plan.options["target_batch_memory_mb"] == 32.0
+    assert plan.options["max_batch_size"] is None
 
 
 @pytest.mark.parametrize(

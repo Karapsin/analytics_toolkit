@@ -306,12 +306,13 @@ initial fetch/insert size. By default `adaptive_batch_size=True` adjusts later
 batches from successful insert latency: faster than half of
 `target_batch_seconds` grows by 50%, slower than twice the target shrinks by
 50%. `min_batch_size` and `max_batch_size` bound the adaptive size; when
-`max_batch_size` is omitted it defaults to `batch_size * 4`.
+`max_batch_size` is omitted in time-based mode it defaults to `batch_size * 4`.
 Pass `target_batch_memory_mb` to adapt from the approximate in-process memory
 used by each fetched row batch instead of insert latency. When it is set,
 memory targeting wins over `target_batch_seconds`; batches smaller than half
 the memory target grow by 50%, and batches larger than the target shrink
-proportionally. The same `min_batch_size` and `max_batch_size` bounds apply.
+proportionally. If `max_batch_size` is omitted in memory mode, growth is
+unlimited; pass `max_batch_size` to set an explicit hard ceiling.
 Pass `estimate_total_rows=True` to ask the source backend for a non-executing
 planner estimate before streaming batches. Greenplum and Trino use `EXPLAIN`
 JSON output; ClickHouse uses `EXPLAIN ESTIMATE` only for simple single-table

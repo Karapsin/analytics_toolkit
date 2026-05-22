@@ -80,7 +80,7 @@ class AdaptiveBatchSizer:
     enabled: bool
     current_size: int
     min_size: int
-    max_size: int
+    max_size: int | None
     target_seconds: float
     target_memory_bytes: int | None = None
 
@@ -101,7 +101,7 @@ class AdaptiveBatchSizer:
 
         if duration_seconds < self.target_seconds / 2:
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
-            self.current_size = min(grown_size, self.max_size)
+            self.current_size = self._cap_size(grown_size)
             return
 
         if duration_seconds > self.target_seconds * 2:
@@ -115,7 +115,7 @@ class AdaptiveBatchSizer:
 
         if memory_bytes < target_memory_bytes / 2:
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
-            self.current_size = min(grown_size, self.max_size)
+            self.current_size = self._cap_size(grown_size)
             return
 
         if memory_bytes > target_memory_bytes:
@@ -124,6 +124,11 @@ class AdaptiveBatchSizer:
             if shrunk_size >= self.current_size:
                 shrunk_size = self.current_size - 1
             self.current_size = max(shrunk_size, self.min_size)
+
+    def _cap_size(self, size: int) -> int:
+        if self.max_size is None:
+            return size
+        return min(size, self.max_size)
 
 
 @dataclass(frozen=True)
@@ -147,7 +152,7 @@ class TransferOptions:
     trino_insert_chunk_size: int | None = None
     adaptive_batch_size: bool = True
     min_batch_size: int = 1_000
-    max_batch_size: int = 400_000
+    max_batch_size: int | None = 400_000
     target_batch_seconds: float = 10.0
     target_batch_memory_mb: float | None = None
     target_batch_memory_bytes: int | None = None
