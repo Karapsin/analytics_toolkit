@@ -523,8 +523,10 @@ When the default `{cluster}` macro is used, the visibility poll resolves it with
 `ch_cluster="core"` avoids that extra lookup.
 Cluster DDL is submitted with `distributed_ddl_task_timeout=0`, so ClickHouse
 queues the `ON CLUSTER` operation without making Python hold the DDL request
-open. Before inserting, the helper polls `clusterAllReplicas(..., system,
-tables)` until the shard table is visible on every cluster host.
+open. Before inserting, the helper checks the configured cluster host count and
+polls `clusterAllReplicas(..., system, tables)` until the shard table is visible
+on every cluster host, then polls `clusterAllReplicas(..., system, columns)`
+until the shard exposes the expected column types everywhere.
 
 `ch_create_table_as` is ClickHouse-only. It drops any existing target
 distributed/shard table pair, creates a new `<target>_shard` table from the

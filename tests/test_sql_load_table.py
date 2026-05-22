@@ -41,6 +41,12 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> object:
         self.queries.append(sql)
+        if "clusterAllReplicas" in sql and "system, columns" in sql:
+            return type(
+                "FakeResult",
+                (),
+                {"result_rows": [(sql.count("name = ") or 1,)]},
+            )()
         return type("FakeResult", (), {"result_rows": [(1,)]})()
 
     def insert_df(
@@ -512,6 +518,12 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
                     (),
                     {"result_rows": [(self.visible_counts.pop(0),)]},
                 )()
+            if "system, columns" in sql:
+                return type(
+                    "FakeResult",
+                    (),
+                    {"result_rows": [(sql.count("name = ") * 3 or 3,)]},
+                )()
             raise AssertionError(f"Unexpected query: {sql}")
 
     client = ClusterVisibilityClient()
@@ -533,6 +545,106 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
     assert "clusterAllReplicas('core', system, tables)" in cluster_table_queries[0]
     assert "WHERE database = 'analytics'" in cluster_table_queries[0]
     assert "AND name = 'events_shard'" in cluster_table_queries[0]
+
+
+def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
+    class ClusterSchemaClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+            self.matching_counts = [1, 4]
+
+        def query(self, sql: str) -> object:
+            self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                return type("FakeResult", (), {"result_rows": [("core",)]})()
+            if sql.startswith("EXISTS TABLE "):
+                return type("FakeResult", (), {"result_rows": [(1,)]})()
+            if "system, one" in sql:
+                return type("FakeResult", (), {"result_rows": [(1,)]})()
+            if "FROM system.clusters" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "system, tables" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "system, columns" in sql:
+                return type(
+                    "FakeResult",
+                    (),
+                    {"result_rows": [(self.matching_counts.pop(0),)]},
+                )()
+            raise AssertionError(f"Unexpected query: {sql}")
+
+    client = ClusterSchemaClient()
+
+    create_sql_table_module._wait_for_ch_distributed_table_pair(
+        client,
+        "analytics.events",
+        ch_cluster="{cluster}",
+        timeout_seconds=1,
+        poll_interval_seconds=0,
+        expected_column_types={
+            "month_date": "Date",
+            "cheque_cnt_total": "Decimal(38, 5)",
+        },
+    )
+
+    cluster_column_queries = [
+        query for query in client.queries if "system, columns" in query
+    ]
+    assert len(cluster_column_queries) == 2
+    assert "clusterAllReplicas('core', system, columns)" in cluster_column_queries[0]
+    assert "WHERE database = 'analytics'" in cluster_column_queries[0]
+    assert "AND table = 'events_shard'" in cluster_column_queries[0]
+    assert "name = 'month_date' AND type = 'Date'" in cluster_column_queries[0]
+    assert (
+        "name = 'cheque_cnt_total' AND type = 'Decimal(38, 5)'"
+        in cluster_column_queries[0]
+    )
+
+
+def test_wait_for_clickhouse_distributed_pair_reports_schema_mismatch() -> None:
+    class StaleSchemaClient:
+        def query(self, sql: str) -> object:
+            if sql.startswith("SELECT getMacro("):
+                return type("FakeResult", (), {"result_rows": [("core",)]})()
+            if sql.startswith("EXISTS TABLE "):
+                return type("FakeResult", (), {"result_rows": [(1,)]})()
+            if "system, one" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "system, tables" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "GROUP BY name, type" in sql:
+                return type(
+                    "FakeResult",
+                    (),
+                    {
+                        "result_rows": [
+                            ("month_date", "Date", 2),
+                            ("cheque_cnt_total", "UInt8", 2),
+                        ]
+                    },
+                )()
+            if "system, columns" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            raise AssertionError(f"Unexpected query: {sql}")
+
+    with pytest.raises(TimeoutError) as exc_info:
+        create_sql_table_module._wait_for_ch_distributed_table_pair(
+            StaleSchemaClient(),
+            "analytics.events",
+            ch_cluster="{cluster}",
+            timeout_seconds=0,
+            poll_interval_seconds=0,
+            expected_column_types={
+                "month_date": "Date",
+                "cheque_cnt_total": "Decimal(38, 5)",
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "schema did not match expected columns" in message
+    assert "cheque_cnt_total" in message
+    assert "expected Decimal(38, 5)" in message
+    assert "observed UInt8 on 2 host(s)" in message
 
 
 def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch) -> None:
@@ -644,6 +756,7 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         f"INSERT INTO {TEST_CH_TABLE} "
         f"SELECT * FROM {TEST_CH_STAGE_TABLE}"
     )
+    assert not any(query.startswith("DESCRIBE TABLE ") for query in client.queries)
 
 
 def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -> None:

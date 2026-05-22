@@ -708,15 +708,6 @@ def _wait_for_ch_distributed_table_pair(
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
     )
-    if expected_column_types is not None:
-        _wait_for_ch_table_schema_on_cluster(
-            connection,
-            shard_table,
-            expected_column_types=expected_column_types,
-            ch_cluster=ch_cluster,
-            timeout_seconds=timeout_seconds,
-            poll_interval_seconds=poll_interval_seconds,
-        )
     _wait_for_ch_table(
         connection,
         shard_table,
@@ -730,6 +721,15 @@ def _wait_for_ch_distributed_table_pair(
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
     )
+    if expected_column_types is not None:
+        _wait_for_ch_table_schema_on_cluster(
+            connection,
+            shard_table,
+            expected_column_types=expected_column_types,
+            ch_cluster=ch_cluster,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
 
 
 def _wait_for_ch_table_on_cluster(
@@ -760,7 +760,11 @@ def _wait_for_ch_table_on_cluster(
     last_error: Exception | None = None
     while True:
         try:
-            expected_hosts = _query_ch_count(connection, expected_hosts_sql)
+            expected_hosts = _query_ch_expected_cluster_hosts(
+                connection,
+                cluster_name=cluster_name,
+                remote_hosts_sql=expected_hosts_sql,
+            )
             visible_tables = _query_ch_count(connection, visible_tables_sql)
             if expected_hosts > 0 and visible_tables >= expected_hosts:
                 return
@@ -819,7 +823,11 @@ def _wait_for_ch_table_schema_on_cluster(
     last_error: Exception | None = None
     while True:
         try:
-            expected_hosts = _query_ch_count(connection, expected_hosts_sql)
+            expected_hosts = _query_ch_expected_cluster_hosts(
+                connection,
+                cluster_name=cluster_name,
+                remote_hosts_sql=expected_hosts_sql,
+            )
             matching_columns = _query_ch_count(connection, matching_columns_sql)
             expected_column_rows = expected_hosts * len(expected_column_types)
             if expected_hosts > 0 and matching_columns >= expected_column_rows:
@@ -986,6 +994,25 @@ def _query_ch_count(connection: Any, sql: str) -> int:
     if not rows:
         return 0
     return int(rows[0][0])
+
+
+def _query_ch_expected_cluster_hosts(
+    connection: Any,
+    *,
+    cluster_name: str,
+    remote_hosts_sql: str,
+) -> int:
+    remote_hosts = _query_ch_count(connection, remote_hosts_sql)
+    configured_hosts_sql = (
+        "SELECT count()\n"
+        "FROM system.clusters\n"
+        f"WHERE cluster = {_sql_string_literal(cluster_name)}"
+    )
+    try:
+        configured_hosts = _query_ch_count(connection, configured_hosts_sql)
+    except Exception:
+        configured_hosts = 0
+    return max(remote_hosts, configured_hosts)
 
 
 def _query_ch_rows(connection: Any, sql: str) -> list[tuple[Any, ...]]:
