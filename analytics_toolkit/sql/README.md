@@ -604,9 +604,9 @@ block.
 ```python
 from analytics_toolkit import sql
 
-sql.gp_vacuum("cvm_sbx.some_table")
-sql.gp_vacuum("cvm_sbx.some_table", analyze=True)
-sql.gp_vacuum("cvm_sbx.some_table", full=True, verbose=True)
+sql.gp_vacuum("sandbox.some_table")
+sql.gp_vacuum("sandbox.some_table", analyze=True)
+sql.gp_vacuum("sandbox.some_table", full=True, verbose=True)
 ```
 
 Use `gp_cancel_all_running_queries` to cancel every current-user Greenplum
@@ -694,9 +694,9 @@ Airflow-source `.connections` file with routing metadata only:
 {
   "source": "airflow",
   "connections": {
-    "greenplum_pa_core": {"type": "gp"},
-    "trino_prod-sa": {"type": "trino"},
-    "clickhouse_pa_core": {"type": "ch"}
+    "airflow_gp": {"type": "gp"},
+    "airflow_trino": {"type": "trino"},
+    "airflow_clickhouse": {"type": "ch"}
   }
 }
 ```
@@ -709,16 +709,16 @@ The connection key is used as the Airflow connection ID by default. Use
   "source": "airflow",
   "connections": {
     "trino": {
-      "connection_id": "trino_prod-sa",
+      "connection_id": "airflow_trino",
       "type": "trino",
       "insert_chunk_size": 1000,
       "request_timeout": 600,
       "source": "analytics_toolkit"
     },
     "clickhouse": {
-      "connection_id": "clickhouse_pa_core",
+      "connection_id": "airflow_clickhouse",
       "type": "ch",
-      "ca_certs_variable": "ca_certificate"
+      "ca_certs_variable": "clickhouse_ca_cert"
     }
   }
 }
@@ -729,11 +729,11 @@ Once this file is present, DAG code can call SQL helpers directly:
 ```python
 from analytics_toolkit import sql
 
-sql.execute("trino_prod-sa", "select 1", query_label="healthcheck")
-df = sql.read("greenplum_pa_core", "select * from sandbox.table")
+sql.execute("airflow_trino", "select 1", query_label="healthcheck")
+df = sql.read("airflow_gp", "select * from sandbox.table")
 sql.transfer(
-    from_db="trino_prod-sa",
-    to_db="clickhouse_pa_core",
+    from_db="airflow_trino",
+    to_db="airflow_clickhouse",
     from_sql="select * from iceberg.sandbox.source",
     to_table="sandbox.target",
 )

@@ -350,7 +350,7 @@ def test_airflow_clickhouse_connection_maps_airflow_fields(
                 extra_dejson={
                     "secure": "true",
                     "verify": False,
-                    "ca_certs_variable": "ca_certificate",
+                    "ca_certs_variable": "clickhouse_ca_cert",
                     "connect_timeout": "11",
                     "send_receive_timeout": "6001",
                     "settings": {"use_numpy": True},
@@ -376,7 +376,7 @@ def test_airflow_clickhouse_connection_maps_airflow_fields(
     assert config.secure is True
     assert config.verify_value == "false"
     assert config.ca_cert is None
-    assert config.ca_cert_variable == "ca_certificate"
+    assert config.ca_cert_variable == "clickhouse_ca_cert"
     assert config.connect_timeout == 11
     assert config.send_receive_timeout == 6001
     assert config.settings == {"use_numpy": True}
@@ -438,7 +438,7 @@ def test_airflow_clickhouse_file_overrides_airflow_extras(
                 extra_dejson={
                     "send_receive_timeout": 6000,
                     "settings": {"connect_timeout": "500"},
-                    "ca_certs_variable": "ca_certificate",
+                    "ca_certs_variable": "clickhouse_ca_cert",
                 },
             )
         },
@@ -468,7 +468,7 @@ def test_clickhouse_connection_passes_optional_connector_settings(
                 "database": "default",
                 "secure": True,
                 "verify": "false",
-                "ca_certs_variable": "ca_certificate",
+                "ca_certs_variable": "clickhouse_ca_cert",
                 "connect_timeout": "11",
                 "send_receive_timeout": "6001",
                 "settings": {"connect_timeout": "500", "use_numpy": True},
@@ -482,7 +482,7 @@ def test_clickhouse_connection_passes_optional_connector_settings(
     install_fake_airflow(
         monkeypatch,
         {},
-        variables={"ca_certificate": "/airflow/ca.pem"},
+        variables={"clickhouse_ca_cert": "/airflow/ca.pem"},
     )
     client = object()
     client_calls: list[dict[str, object]] = []
@@ -809,21 +809,21 @@ def test_airflow_connections_file_supports_public_transfer_options(
         {
             "source": "airflow",
             "connections": {
-                "trino_prod-sa": {"type": "trino"},
-                "greenplum_pa_core": {"type": "gp"},
+                "airflow_trino": {"type": "trino"},
+                "airflow_gp": {"type": "gp"},
             },
         }
     )
     install_fake_airflow(
         monkeypatch,
         {
-            "trino_prod-sa": FakeAirflowConnection(
+            "airflow_trino": FakeAirflowConnection(
                 conn_type="trino",
                 host="air-trino.example",
                 login="trino-user",
                 extra_dejson={"catalog": "iceberg", "schema": "sandbox"},
             ),
-            "greenplum_pa_core": FakeAirflowConnection(
+            "airflow_gp": FakeAirflowConnection(
                 conn_type="postgres",
                 host="air-gp.example",
                 login="air-user",
@@ -834,16 +834,16 @@ def test_airflow_connections_file_supports_public_transfer_options(
     )
 
     options = api_module.build_transfer_options(
-        from_db="trino_prod-sa",
-        to_db="greenplum_pa_core",
+        from_db="airflow_trino",
+        to_db="airflow_gp",
         from_sql="select 1",
         to_table="schema.target",
         gp_distributed_by_key=["id"],
     )
 
-    assert options.from_db_key == "trino_prod-sa"
+    assert options.from_db_key == "airflow_trino"
     assert options.from_db_backend == "trino"
-    assert options.to_db_key == "greenplum_pa_core"
+    assert options.to_db_key == "airflow_gp"
     assert options.to_db_backend == "gp"
     assert options.gp_distributed_by_key == ["id"]
 

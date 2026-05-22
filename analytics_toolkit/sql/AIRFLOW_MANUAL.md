@@ -19,7 +19,7 @@ working directory, usually the DAG project root:
 {
   "source": "airflow",
   "connections": {
-    "greenplum_pa_core": {
+    "airflow_gp": {
       "type": "gp",
       "connect_timeout": 5,
       "keepalives": true,
@@ -27,17 +27,17 @@ working directory, usually the DAG project root:
       "keepalives_interval": 1,
       "keepalives_count": 20
     },
-    "trino_prod-sa": {
+    "airflow_trino": {
       "type": "trino",
       "http_scheme": "https",
       "verify": false,
       "request_timeout": 600,
       "source": "airflow"
     },
-    "clickhouse_pa_core": {
+    "airflow_clickhouse": {
       "type": "ch",
       "secure": true,
-      "ca_certs_variable": "ca_certificate",
+      "ca_certs_variable": "clickhouse_ca_cert",
       "send_receive_timeout": 6000,
       "settings": {"connect_timeout": "500"}
     }
@@ -53,7 +53,7 @@ toolkit alias should be different:
   "source": "airflow",
   "connections": {
     "trino": {
-      "connection_id": "trino_prod-sa",
+      "connection_id": "airflow_trino",
       "type": "trino"
     }
   }
@@ -65,14 +65,14 @@ toolkit alias should be different:
 Old wrapper style:
 
 ```python
-from utils.postgres.func import postgres_conn
+from legacy_dag_utils.postgres import postgres_conn
 
 query = """
 delete from sandbox.daily_result
 where dt = current_date;
 """
 
-with postgres_conn("greenplum_pa_core") as conn:
+with postgres_conn("airflow_gp") as conn:
     with conn.cursor() as cur:
         cur.execute(query)
     conn.commit()
@@ -88,16 +88,16 @@ delete from sandbox.daily_result
 where dt = current_date;
 """
 
-sql.execute("greenplum_pa_core", query, query_label="delete_daily_result")
+sql.execute("airflow_gp", query, query_label="delete_daily_result")
 ```
 
 Old dataframe read:
 
 ```python
 import pandas as pd
-from utils.postgres.func import postgres_conn
+from legacy_dag_utils.postgres import postgres_conn
 
-with postgres_conn("greenplum_pa_core") as conn:
+with postgres_conn("airflow_gp") as conn:
     df = pd.read_sql_query(
         "select * from sandbox.daily_result where dt = current_date",
         conn,
@@ -110,7 +110,7 @@ New dataframe read:
 from analytics_toolkit import sql
 
 df = sql.read(
-    "greenplum_pa_core",
+    "airflow_gp",
     "select * from sandbox.daily_result where dt = current_date",
     query_label="read_daily_result",
 )
@@ -125,7 +125,7 @@ from airflow.hooks.base import BaseHook
 from trino.auth import BasicAuthentication
 from trino.dbapi import connect
 
-conn_params = BaseHook.get_connection("trino_prod-sa")
+conn_params = BaseHook.get_connection("airflow_trino")
 extra = conn_params.extra_dejson
 
 conn = connect(
@@ -153,7 +153,7 @@ New toolkit style:
 from analytics_toolkit import sql
 
 sql.execute(
-    "trino_prod-sa",
+    "airflow_trino",
     "insert into iceberg.sandbox.target select * from source_table",
     query_label="insert_target",
 )
@@ -175,7 +175,7 @@ New dataframe read:
 from analytics_toolkit import sql
 
 df = sql.read(
-    "trino_prod-sa",
+    "airflow_trino",
     "select user_id, amount from iceberg.sandbox.source",
     query_label="read_source",
 )
@@ -186,10 +186,10 @@ df = sql.read(
 Old wrapper style:
 
 ```python
-from utils.clickhouse.func import clickhouse_conn
+from legacy_dag_utils.clickhouse import clickhouse_conn
 
 with clickhouse_conn(
-    clickhouse_conn_id="clickhouse_pa_core",
+    clickhouse_conn_id="airflow_clickhouse",
     settings={"use_numpy": True},
 ) as client:
     client.execute(
@@ -207,7 +207,7 @@ New toolkit style:
 from analytics_toolkit import sql
 
 sql.execute(
-    "clickhouse_pa_core",
+    "airflow_clickhouse",
     """
     insert into sandbox.target
     select *
@@ -220,9 +220,9 @@ sql.execute(
 Old dataframe read:
 
 ```python
-from utils.clickhouse.func import clickhouse_conn
+from legacy_dag_utils.clickhouse import clickhouse_conn
 
-with clickhouse_conn("clickhouse_pa_core") as client:
+with clickhouse_conn("airflow_clickhouse") as client:
     df = client.query_dataframe("select * from sandbox.source")
 ```
 
@@ -232,7 +232,7 @@ New dataframe read:
 from analytics_toolkit import sql
 
 df = sql.read(
-    "clickhouse_pa_core",
+    "airflow_clickhouse",
     "select * from sandbox.source",
     query_label="read_clickhouse_source",
 )
@@ -244,9 +244,9 @@ Old style usually opens a backend client and manages table creation, batches,
 and retries in DAG code.
 
 ```python
-from utils.clickhouse.func import clickhouse_conn
+from legacy_dag_utils.clickhouse import clickhouse_conn
 
-with clickhouse_conn("clickhouse_pa_core", settings={"use_numpy": True}) as client:
+with clickhouse_conn("airflow_clickhouse", settings={"use_numpy": True}) as client:
     client.execute("truncate table sandbox.target")
     client.insert_dataframe("insert into sandbox.target values", df)
 ```
@@ -257,7 +257,7 @@ New toolkit style:
 from analytics_toolkit import sql
 
 sql.load_df(
-    "clickhouse_pa_core",
+    "airflow_clickhouse",
     "sandbox.target",
     df,
     write_mode="replace",
@@ -270,7 +270,7 @@ For Greenplum:
 
 ```python
 sql.load_df(
-    "greenplum_pa_core",
+    "airflow_gp",
     "sandbox.target",
     df,
     write_mode="replace",
@@ -282,7 +282,7 @@ For Trino:
 
 ```python
 sql.load_df(
-    "trino_prod-sa",
+    "airflow_trino",
     "iceberg.sandbox.target",
     df,
     write_mode="replace",
@@ -295,13 +295,13 @@ Old style reads from one client and writes to another inside DAG code.
 
 ```python
 import pandas as pd
-from utils.postgres.func import postgres_conn
-from utils.clickhouse.func import clickhouse_conn
+from legacy_dag_utils.postgres import postgres_conn
+from legacy_dag_utils.clickhouse import clickhouse_conn
 
-with postgres_conn("greenplum_pa_core") as gp_conn:
+with postgres_conn("airflow_gp") as gp_conn:
     df = pd.read_sql_query("select * from sandbox.source", gp_conn)
 
-with clickhouse_conn("clickhouse_pa_core", settings={"use_numpy": True}) as ch:
+with clickhouse_conn("airflow_clickhouse", settings={"use_numpy": True}) as ch:
     ch.execute("truncate table sandbox.target")
     ch.insert_dataframe("insert into sandbox.target values", df)
 ```
@@ -312,8 +312,8 @@ New toolkit style:
 from analytics_toolkit import sql
 
 sql.transfer(
-    from_db="greenplum_pa_core",
-    to_db="clickhouse_pa_core",
+    from_db="airflow_gp",
+    to_db="airflow_clickhouse",
     from_sql="select * from sandbox.source",
     to_table="sandbox.target",
     replace_target_table=True,
@@ -339,7 +339,7 @@ from analytics_toolkit import sql
 @task
 def refresh_table() -> None:
     sql.execute(
-        "trino_prod-sa",
+        "airflow_trino",
         "insert into iceberg.sandbox.target select * from iceberg.sandbox.source",
         query_label="refresh_target",
     )
@@ -354,8 +354,8 @@ from analytics_toolkit import sql
 
 def refresh_table() -> None:
     sql.transfer(
-        from_db="trino_prod-sa",
-        to_db="clickhouse_pa_core",
+        from_db="airflow_trino",
+        to_db="airflow_clickhouse",
         from_sql="select * from iceberg.sandbox.source",
         to_table="sandbox.target",
         replace_target_table=True,

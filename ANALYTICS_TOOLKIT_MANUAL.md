@@ -60,7 +60,7 @@ df = sql.read("gp", read_file(here("read_user_table.sql"), params_dict=params_di
 ```
 
 ```python
-sql.read("trino", "select * from iceberg.pa_core_sandbox.some_table").to_excel(here("load.xlsx"))
+sql.read("trino", "select * from warehouse.sandbox.some_table").to_excel(here("load.xlsx"))
 ```
 
 ### `sql.execute(connection_type, query, random_sleep_seconds=5, print_queries=True, gp_break_query=False, gp_commit_each_statement=False, retry_cnt=5, timeout_increment=5)`
@@ -136,7 +136,7 @@ Real usage patterns from tickets:
 sql.transfer(
     from_db="ch",
     to_db="trino",
-    to_table="iceberg.pa_core_sandbox.karapsin_pal_4423_ch_load3",
+    to_table="warehouse.sandbox.example_ch_load",
     from_sql=read_query,
     replace_target_table=create_flg,
     batch_size=100_000,
@@ -149,7 +149,7 @@ sql.transfer(
     to_db="gp",
     from_sql=read_file(here("get_push_data.sql"), params_dict={"start_dt": start_dt, "end_dt": end_dt}),
     replace_target_table=replace_flg,
-    to_table="cvm_sbx.karapsin_mal3657_marketing_push_load",
+    to_table="sandbox.marketing_push_load",
     batch_size=1_000_000,
 )
 ```
@@ -187,7 +187,7 @@ When to use:
 Real usage pattern from tickets:
 
 ```python
-sql.load_df("trino", "iceberg.pa_core_sandbox.karapsin_test_table", final_df)
+sql.load_df("trino", "warehouse.sandbox.example_table", final_df)
 ```
 
 ### `sql.gp_vacuum(table_name, analyze=False, full=False, verbose=True)`
@@ -212,7 +212,7 @@ When to use:
 Real usage pattern from tickets:
 
 ```python
-sql.gp_vacuum("cvm_sbx.karapsin_mal3657_fctx_sales_subset", full=True, analyze=True, verbose=True)
+sql.gp_vacuum("sandbox.sales_subset", full=True, analyze=True, verbose=True)
 ```
 
 ### `sql.with_sql_connection(connection_type)`
