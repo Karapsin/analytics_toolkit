@@ -110,6 +110,42 @@ def test_gp_connection_liveness_options_can_be_overridden(
     ]
 
 
+def test_clickhouse_connection_disables_auto_session_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = object()
+    setting_calls: list[tuple[str, object]] = []
+    client_calls: list[dict[str, object]] = []
+
+    fake_clickhouse_connect = types.SimpleNamespace(
+        common=types.SimpleNamespace(
+            set_setting=lambda name, value: setting_calls.append((name, value))
+        ),
+        get_client=lambda **kwargs: client_calls.append(kwargs) or client,
+    )
+    monkeypatch.setitem(sys.modules, "clickhouse_connect", fake_clickhouse_connect)
+    monkeypatch.setitem(
+        sys.modules,
+        "clickhouse_connect.common",
+        fake_clickhouse_connect.common,
+    )
+
+    result = connection_module.get_sql_connection("ch")
+
+    assert result is client
+    assert setting_calls == [("autogenerate_session_id", False)]
+    assert client_calls == [
+        {
+            "host": "ch.example",
+            "port": 8123,
+            "username": "user",
+            "password": "password",
+            "secure": False,
+            "database": "default",
+        }
+    ]
+
+
 def test_unknown_connection_key_raises_config_error() -> None:
     with pytest.raises(config_module.UnsupportedConnectionTypeError):
         config_module.get_connection_config("missing")

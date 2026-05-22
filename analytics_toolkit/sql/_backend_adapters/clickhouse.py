@@ -9,6 +9,12 @@ from ..labels import apply_query_label
 from .base import BackendAdapter
 
 
+ON_CLUSTER_COMMAND_SETTINGS = {
+    "distributed_ddl_task_timeout": 0,
+    "distributed_ddl_output_mode": "none",
+}
+
+
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
 
@@ -19,10 +25,7 @@ class ClickHouseAdapter(BackendAdapter):
         try:
             return connection.command(
                 sql,
-                settings={
-                    "distributed_ddl_task_timeout": 300,
-                    "distributed_ddl_output_mode": "none",
-                },
+                settings=ON_CLUSTER_COMMAND_SETTINGS,
             )
         except TypeError:
             return connection.command(sql)

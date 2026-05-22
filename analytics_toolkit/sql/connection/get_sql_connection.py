@@ -124,10 +124,13 @@ def _get_gp_connection(config: GpConfig) -> Any:
 def _get_ch_connection(config: ChConfig) -> Any:
     try:
         import clickhouse_connect
+        from clickhouse_connect import common as clickhouse_common
     except ImportError as exc:
         raise ImportError(
             "The 'clickhouse-connect' package is required for ClickHouse connections."
         ) from exc
+
+    clickhouse_common.set_setting("autogenerate_session_id", False)
 
     client_kwargs = {
         "host": config.host,

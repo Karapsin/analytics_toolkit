@@ -129,7 +129,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'",
     ]
     assert fake_client.command_settings[2] == {
-        "distributed_ddl_task_timeout": 300,
+        "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
     shard_sql, distributed_sql, local_distributed_sql = fake_client.commands[4:7]
@@ -157,7 +157,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert "ON CLUSTER" not in local_distributed_sql
     assert fake_client.commands[7] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
     assert fake_client.command_settings[4] == {
-        "distributed_ddl_task_timeout": 300,
+        "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
     assert len(fake_client.queries) == 2

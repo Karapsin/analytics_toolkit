@@ -195,7 +195,7 @@ def test_backend_adapters_execute_operations_like_existing_table_ops() -> None:
         (
             "DROP TABLE IF EXISTS db.target ON CLUSTER '{cluster}'",
             {
-                "distributed_ddl_task_timeout": 300,
+                "distributed_ddl_task_timeout": 0,
                 "distributed_ddl_output_mode": "none",
             },
         )
@@ -251,7 +251,7 @@ def test_clickhouse_lifecycle_executes_on_cluster_settings() -> None:
     assert client.commands[2] == (
         "DROP TABLE IF EXISTS db.target ON CLUSTER '{cluster}'",
         {
-            "distributed_ddl_task_timeout": 300,
+            "distributed_ddl_task_timeout": 0,
             "distributed_ddl_output_mode": "none",
         },
     )
