@@ -52,6 +52,7 @@ def test_sql_public_api_exports_are_stable() -> None:
         "execute_sql",
         "get_sql_connection",
         "load_df",
+        "parallel_sql",
         "read_sql",
         "table_info",
         "transfer_table",

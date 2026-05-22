@@ -22,6 +22,14 @@ sql.async_sql(
     hard_concurrency_cap=10,
     progress=True,
 )
+sql.parallel_sql(
+    ...,
+    concurrency=5,
+    fail_fast=True,
+    soft_concurrency_cap=None,
+    hard_concurrency_cap=10,
+    progress=True,
+)
 sql.gp_cancel_all_running_queries(...)
 sql.gp_vacuum(...)
 sql.create_sql_table(...)
@@ -45,6 +53,8 @@ sql.get_sql_connection(...)
   dataframe
 - `async_sql`: run a named batch of independent SQL tasks or custom pipelines
   concurrently through the existing sync APIs
+- `parallel_sql`: run the same task specs as `async_sql` through synchronous
+  thread-based parallelism
 - `gp_cancel_all_running_queries`: cancel current-user Greenplum backend
   queries, excluding the caller session
 - `gp_vacuum`: run Greenplum `VACUUM` outside a transaction block
@@ -90,23 +100,23 @@ on the same connection. Greenplum keeps its historical default of executing the
 setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
 `progress=False` to silence multi-statement progress bars.
 
-`async_sql` is a synchronous public function: call it directly and it returns a
-result dictionary. It accepts a non-empty sequence of task specs. Each spec
-declares a `type` (`read`, `execute`, `execute_read`, `load_df`, `transfer`, or
-`custom_sql_pipeline`). SQL task specs pass the same keyword arguments as the
-matching sync function. Add an optional `name` field to control the result key;
-unnamed tasks are keyed as `task_0`, `task_1`, and so on. It uses
-`asyncio.to_thread` internally, so sync work runs concurrently with fresh
-operations; it does not parallelize an individual SQL statement internally.
-Result keys follow the input task order. With `fail_fast=True`, the first raised
-task exception is raised and pending tasks are cancelled; already-running sync
-work can continue until that function exits. Successful task results are
-preserved, except `None` results are reported as `"success"`. With
-`fail_fast=False`, failed tasks are reported under their task names as the error
-text. A `tqdm` progress bar is shown by default; pass `progress=False` to
+`async_sql` and `parallel_sql` are synchronous public functions: call them
+directly and they return a result dictionary. They accept a non-empty sequence
+of task specs. Each spec declares a `type` (`read`, `execute`, `execute_read`,
+`load_df`, `transfer`, or `custom_sql_pipeline`). SQL task specs pass the same
+keyword arguments as the matching sync function. Add an optional `name` field to
+control the result key; unnamed tasks are keyed as `task_0`, `task_1`, and so
+on. `async_sql` uses `asyncio.to_thread` internally, while `parallel_sql` uses a
+`ThreadPoolExecutor`; neither function parallelizes an individual SQL statement
+internally. Result keys follow the input task order. With `fail_fast=True`, the
+first raised task exception is raised and pending tasks are cancelled;
+already-running sync work can continue until that function exits. Successful
+task results are preserved, except `None` results are reported as `"success"`.
+With `fail_fast=False`, failed tasks are reported under their task names as the
+error text. A `tqdm` progress bar is shown by default; pass `progress=False` to
 disable it. Built-in `execute`, `execute_read`, `load_df`, and `transfer` tasks
-run with their inner progress bars suppressed inside `async_sql`, so the async
-task bar is the only progress bar shown for a batch.
+run with their inner progress bars suppressed inside batch helpers, so the batch
+task bar is the only progress bar shown.
 
 SQL query text is not printed by default. Pass `print_queries=True` to
 `read_sql`, `execute_sql`, `execute_read`, or `gp_cancel_all_running_queries`
@@ -185,7 +195,9 @@ Use `custom_sql_pipeline` for ordered Python steps that should run sequentially
 inside one task while other tasks continue under the outer concurrency limit.
 Each step is called as `step(context)`. The context exposes `task_name`,
 `step_index`, `results`, and `last_result`. Sync steps run in a worker thread;
-async steps are awaited directly. A pipeline returns the final step result.
+async steps are awaited directly by `async_sql`. `parallel_sql` supports only
+sync pipeline steps; use `async_sql` when a pipeline step is async or returns a
+coroutine. A pipeline returns the final step result.
 
 ```python
 def read_row_count(context):

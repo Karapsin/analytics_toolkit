@@ -4,10 +4,11 @@ import asyncio
 import contextvars
 import inspect
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from contextlib import AsyncExitStack
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from contextlib import AsyncExitStack, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from queue import Queue
-from threading import Thread
+from threading import Semaphore, Thread
 from typing import Any
 
 from tqdm import tqdm
@@ -27,6 +28,12 @@ _DEFAULT_HARD_CONCURRENCY_CAP = 10
 _CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
     contextvars.ContextVar("analytics_toolkit_async_sql_concurrency", default=None)
 )
+_PARALLEL_CONCURRENCY_STATE: contextvars.ContextVar[
+    "_ParallelConcurrencyState | None"
+] = contextvars.ContextVar("analytics_toolkit_parallel_sql_concurrency", default=None)
+_PARALLEL_HELD_SEMAPHORES: contextvars.ContextVar[tuple[Semaphore, ...]] = (
+    contextvars.ContextVar("analytics_toolkit_parallel_sql_held_semaphores", default=())
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +42,14 @@ class _ConcurrencyState:
     hard_cap: int
     soft_cap: int
     semaphores: tuple[asyncio.Semaphore, ...]
+
+
+@dataclass(frozen=True)
+class _ParallelConcurrencyState:
+    effective_concurrency: int
+    hard_cap: int
+    soft_cap: int
+    semaphores: tuple[Semaphore, ...]
 
 
 @dataclass
@@ -73,6 +88,106 @@ def async_sql(
             progress=progress,
         )
     )
+
+
+@timed_public_sql_function
+def parallel_sql(
+    tasks: Sequence[Mapping[str, Any]],
+    *,
+    concurrency: int = 5,
+    fail_fast: bool = True,
+    start_comment: str | None = None,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
+    progress: bool = True,
+) -> dict[str, Any]:
+    """Run independent SQL tasks concurrently using worker threads."""
+    task_defs = _validate_tasks(tasks, start_comment=start_comment)
+    _validate_concurrency(concurrency)
+    _validate_optional_soft_concurrency_cap(soft_concurrency_cap)
+    _validate_hard_concurrency_cap(hard_concurrency_cap)
+    _validate_progress(progress)
+    state = _build_parallel_concurrency_state(
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+    )
+    reset_token = _PARALLEL_CONCURRENCY_STATE.set(state)
+    try:
+        with _release_held_parallel_semaphores():
+            return _run_parallel_task_defs(
+                task_defs,
+                concurrency=concurrency,
+                fail_fast=fail_fast,
+                progress=progress,
+                soft_semaphores=state.semaphores,
+            )
+    finally:
+        _PARALLEL_CONCURRENCY_STATE.reset(reset_token)
+
+
+def _run_parallel_task_defs(
+    task_defs: list[tuple[str, str, dict[str, Any]]],
+    *,
+    concurrency: int,
+    fail_fast: bool,
+    progress: bool,
+    soft_semaphores: tuple[Semaphore, ...],
+) -> dict[str, Any]:
+    progress_bar = _make_parallel_progress_bar(total=len(task_defs), progress=progress)
+    executor = ThreadPoolExecutor(max_workers=concurrency)
+    executor_shutdown = False
+
+    try:
+        future_to_index: dict[Future[tuple[int, Any]], int] = {}
+        for index, (name, task_type, kwargs) in enumerate(task_defs):
+            context = contextvars.copy_context()
+            future = executor.submit(
+                context.run,
+                _run_parallel_indexed,
+                index,
+                name,
+                task_type,
+                kwargs,
+                soft_semaphores,
+            )
+            future_to_index[future] = index
+
+        results_by_index: dict[int, Any] = {}
+        if fail_fast:
+            try:
+                for future in as_completed(future_to_index):
+                    try:
+                        index, result = future.result()
+                    finally:
+                        progress_bar.update(1)
+                    results_by_index[index] = _normalize_task_result(result)
+            except BaseException:
+                for pending in future_to_index:
+                    pending.cancel()
+                executor.shutdown(wait=True, cancel_futures=True)
+                executor_shutdown = True
+                raise
+        else:
+            for future in as_completed(future_to_index):
+                default_index = future_to_index[future]
+                try:
+                    index, result = future.result()
+                except BaseException as exc:
+                    results_by_index[default_index] = str(exc)
+                else:
+                    results_by_index[index] = _normalize_task_result(result)
+                finally:
+                    progress_bar.update(1)
+
+        return {
+            name: results_by_index[index]
+            for index, (name, _task_type, _kwargs) in enumerate(task_defs)
+        }
+    finally:
+        progress_bar.close()
+        if not executor_shutdown:
+            executor.shutdown(wait=True)
 
 
 async def _async_sql_impl(
@@ -219,6 +334,15 @@ def _make_progress_bar(*, total: int, progress: bool) -> Any:
     )
 
 
+def _make_parallel_progress_bar(*, total: int, progress: bool) -> Any:
+    return tqdm(
+        total=total,
+        desc="parallel_sql tasks",
+        unit="task",
+        disable=not progress,
+    )
+
+
 def _normalize_task_result(result: Any) -> Any:
     if result is None:
         return "success"
@@ -270,6 +394,51 @@ def _build_concurrency_state(
     )
 
 
+def _build_parallel_concurrency_state(
+    *,
+    concurrency: int,
+    soft_concurrency_cap: int | None,
+    hard_concurrency_cap: int,
+) -> _ParallelConcurrencyState:
+    active_state = _PARALLEL_CONCURRENCY_STATE.get()
+    if active_state is None:
+        hard_cap = hard_concurrency_cap
+        soft_cap = concurrency if soft_concurrency_cap is None else soft_concurrency_cap
+        semaphores = (Semaphore(soft_cap),)
+        effective_concurrency = concurrency
+    else:
+        hard_cap = active_state.hard_cap
+        if (
+            hard_concurrency_cap != _DEFAULT_HARD_CONCURRENCY_CAP
+            and hard_concurrency_cap >= hard_cap
+        ):
+            hard_cap = hard_concurrency_cap
+
+        soft_cap = active_state.soft_cap
+        semaphores = active_state.semaphores
+        if soft_concurrency_cap is not None and soft_concurrency_cap < soft_cap:
+            soft_cap = soft_concurrency_cap
+            semaphores = (*semaphores, Semaphore(soft_cap))
+
+        effective_concurrency = active_state.effective_concurrency * concurrency
+
+    actual_worker_ceiling = min(effective_concurrency, soft_cap)
+    if actual_worker_ceiling > hard_cap:
+        raise ValueError(
+            "effective concurrency exceeds hard_concurrency_cap "
+            f"({actual_worker_ceiling} > {hard_cap}). Reduce concurrency, set "
+            "soft_concurrency_cap at or below hard_concurrency_cap, or increase "
+            "hard_concurrency_cap."
+        )
+
+    return _ParallelConcurrencyState(
+        effective_concurrency=effective_concurrency,
+        hard_cap=hard_cap,
+        soft_cap=soft_cap,
+        semaphores=semaphores,
+    )
+
+
 async def _run_pipeline(
     task_name: str,
     steps: Sequence[Any],
@@ -296,6 +465,97 @@ async def _run_blocking(
         for semaphore in reversed(soft_semaphores):
             await stack.enter_async_context(semaphore)
         return await asyncio.to_thread(func, *args)
+
+
+def _run_parallel_indexed(
+    index: int,
+    name: str,
+    task_type: str,
+    kwargs: dict[str, Any],
+    soft_semaphores: tuple[Semaphore, ...],
+) -> tuple[int, Any]:
+    return index, _run_parallel_task(name, task_type, kwargs, soft_semaphores)
+
+
+def _run_parallel_task(
+    name: str,
+    task_type: str,
+    kwargs: dict[str, Any],
+    soft_semaphores: tuple[Semaphore, ...],
+) -> Any:
+    if task_type == _PIPELINE_TASK_TYPE:
+        return _run_parallel_pipeline(name, kwargs["steps"], soft_semaphores)
+    return _run_with_thread_semaphores(
+        soft_semaphores,
+        _run_sync_task,
+        task_type,
+        kwargs,
+    )
+
+
+def _run_parallel_pipeline(
+    task_name: str,
+    steps: Sequence[Any],
+    soft_semaphores: tuple[Semaphore, ...],
+) -> Any:
+    context = _PipelineContext(task_name=task_name)
+    for index, step in enumerate(steps):
+        context.step_index = index
+        if _is_async_callable(step):
+            raise TypeError(
+                "parallel_sql does not support async custom_sql_pipeline steps; "
+                "use async_sql for async pipeline steps."
+            )
+        result = _run_with_thread_semaphores(soft_semaphores, step, context)
+        if inspect.isawaitable(result):
+            close = getattr(result, "close", None)
+            if callable(close):
+                close()
+            raise TypeError(
+                "parallel_sql does not support coroutine custom_sql_pipeline "
+                "step results; use async_sql for async pipeline steps."
+            )
+        context.results.append(result)
+
+    return context.last_result
+
+
+def _run_with_thread_semaphores(
+    soft_semaphores: tuple[Semaphore, ...],
+    func: Any,
+    *args: Any,
+) -> Any:
+    with ExitStack() as stack:
+        acquired: list[Semaphore] = []
+        for semaphore in reversed(soft_semaphores):
+            semaphore.acquire()
+            acquired.append(semaphore)
+            stack.callback(semaphore.release)
+        token = _PARALLEL_HELD_SEMAPHORES.set(
+            (*_PARALLEL_HELD_SEMAPHORES.get(), *acquired)
+        )
+        try:
+            return func(*args)
+        finally:
+            _PARALLEL_HELD_SEMAPHORES.reset(token)
+
+
+@contextmanager
+def _release_held_parallel_semaphores() -> Any:
+    held_semaphores = _PARALLEL_HELD_SEMAPHORES.get()
+    if not held_semaphores:
+        yield
+        return
+
+    token = _PARALLEL_HELD_SEMAPHORES.set(())
+    for semaphore in held_semaphores:
+        semaphore.release()
+    try:
+        yield
+    finally:
+        for semaphore in held_semaphores:
+            semaphore.acquire()
+        _PARALLEL_HELD_SEMAPHORES.reset(token)
 
 
 def _is_async_callable(func: Any) -> bool:

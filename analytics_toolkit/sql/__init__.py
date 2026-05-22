@@ -3,7 +3,7 @@ from .ddl.create_sql_table import (
     build_create_table_sqls,
     create_sql_table,
 )
-from .async_api import async_sql
+from .async_api import async_sql, parallel_sql
 from .capabilities import BACKEND_CAPABILITIES, format_support_matrix, support_matrix_rows
 from .plans import (
     SqlOperationMetadata,
@@ -35,6 +35,7 @@ from .dml.transfer.flow.api import transfer_table, transfer_table as transfer
 
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
+    "parallel_sql",
     "build_create_table_sql",
     "build_create_table_sqls",
     "build_gp_create_many_partitions_sqls",
@@ -65,6 +66,7 @@ transfer = transfer_table
 
 __all__ = [
     "async_sql",
+    "parallel_sql",
     "BACKEND_CAPABILITIES",
     "ConnectionValidationResult",
     "ch_create_table_as",
