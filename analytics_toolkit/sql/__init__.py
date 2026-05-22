@@ -24,7 +24,12 @@ from .dml.io.gp_cancel import gp_cancel_all_running_queries
 from .dml.table.ch_create_table_as import ch_create_table_as
 from .dml.table.ch_full_table_move import ch_full_table_move
 from .dml.table.create_table_from_sql import create_table_from_sql
-from .dml.table import drop_many_partitions, gp_vacuum
+from .dml.table import (
+    build_gp_create_many_partitions_sqls,
+    drop_many_partitions,
+    gp_create_many_partitions,
+    gp_vacuum,
+)
 from analytics_toolkit.general import time_print
 from .dml.transfer.flow.api import transfer_table, transfer_table as transfer
 
@@ -32,6 +37,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "build_create_table_sql",
     "build_create_table_sqls",
+    "build_gp_create_many_partitions_sqls",
     "ch_create_table_as",
     "ch_full_table_move",
     "create_sql_table",
@@ -41,6 +47,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "format_support_matrix",
     "get_sql_connection",
     "drop_many_partitions",
+    "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",
@@ -67,12 +74,14 @@ __all__ = [
     "execute_sql",
     "format_plan",
     "format_support_matrix",
+    "build_gp_create_many_partitions_sqls",
     "build_create_table_sql",
     "build_create_table_sqls",
     "create_sql_table",
     "create_table_from_sql",
     "drop_many_partitions",
     "get_sql_connection",
+    "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",

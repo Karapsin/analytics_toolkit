@@ -27,6 +27,7 @@ sql.gp_vacuum(...)
 sql.create_sql_table(...)
 sql.ch_create_table_as(...)
 sql.create_table_from_sql(...)
+sql.gp_create_many_partitions(...)
 sql.drop_many_partitions(...)
 sql.table_info(...)
 sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=True)
@@ -52,6 +53,8 @@ sql.get_sql_connection(...)
   from a query result
 - `create_table_from_sql`: create a table from a source query's native column
   metadata, optionally inserting the query result
+- `gp_create_many_partitions`: create Greenplum range or list partitions from
+  explicit intervals, values, days, weeks, months, or years
 - `drop_many_partitions`: remove multiple table partitions with backend-specific
   SQL
 - `table_info`: inspect live table existence, columns, optional row count, and
@@ -64,12 +67,12 @@ sql.get_sql_connection(...)
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
 
-`read_sql`, `execute_sql`, `execute_read`, `drop_many_partitions`, `load_df`,
-and `transfer_table` all support `retry_cnt` and `timeout_increment`. Retries
-restart the whole public operation from the beginning with a fresh connection.
-Deterministic SQL errors such as syntax errors, invalid grouping, missing
-tables/columns/functions/schemas, and PostgreSQL/Greenplum undefined objects
-are not retried.
+`read_sql`, `execute_sql`, `execute_read`, `gp_create_many_partitions`,
+`drop_many_partitions`, `load_df`, and `transfer_table` all support `retry_cnt`
+and `timeout_increment`. Retries restart the whole public operation from the
+beginning with a fresh connection. Deterministic SQL errors such as syntax
+errors, invalid grouping, missing tables/columns/functions/schemas, and
+PostgreSQL/Greenplum undefined objects are not retried.
 
 `load_df` and `transfer_table` show `tqdm` row progress bars by default during
 data loading. Pass `progress=False` to silence those bars. `dry_run=True` and
@@ -393,7 +396,42 @@ counted.row_count
 columns_df = counted.to_frame()
 ```
 
-## Partition Deletes
+## Partition Management
+
+Use `gp_create_many_partitions` to create several Greenplum partitions in input
+order. Exactly one of `intervals`, `values`, `days`, `weeks`, `months`, or
+`years` must be passed. Range partitions use `START (...) INCLUSIVE END (...)
+EXCLUSIVE`; list partitions use `VALUES (...)`. Week inputs must already be
+Mondays, month inputs must be first-of-month dates, and year inputs must be
+January 1 dates.
+
+```python
+plan = sql.gp_create_many_partitions(
+    "gp",
+    "sandbox.events",
+    days=["2026-05-01", "2026-05-02"],
+    dry_run=True,
+)
+
+sql.gp_create_many_partitions(
+    "gp",
+    "sandbox.events",
+    intervals=[
+        {"start": "2026-05-01", "end": "2026-05-02"},
+        {"name": "p_custom", "start": "2026-05-02", "end": "2026-05-03"},
+    ],
+    name_template="part_{}",
+)
+
+sql.gp_create_many_partitions(
+    "gp",
+    "sandbox.events_by_country",
+    values=["RU", "KZ"],
+)
+```
+
+Use `build_gp_create_many_partitions_sqls` to render the Greenplum DDL without
+opening a connection.
 
 Use `drop_many_partitions` to remove several partition values from one target
 table in input order. Greenplum emits one native `ALTER TABLE ... DROP PARTITION`
