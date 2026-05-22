@@ -63,6 +63,11 @@ written to:
 
 You can override the state/output directory with `MAGNIT_UTILS_HOME`.
 
+## Manuals
+
+- [analytics_toolkit Manual](manuals/ANALYTICS_TOOLKIT_MANUAL.md)
+- [Airflow SQL Manual](manuals/AIRFLOW_SQL_MANUAL.md)
+
 ## Package Layout
 
 - `analytics_toolkit/ab_utils`: AB-test metric comparison helpers, including `compute_test_metrics`
