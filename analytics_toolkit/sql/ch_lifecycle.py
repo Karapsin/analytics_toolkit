@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,6 +8,9 @@ from .backend_adapters import ch_cluster_clause, get_backend_adapter
 from .ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
+    _normalize_non_empty_string,
+    _resolve_ch_cluster_name_for_wait,
+    _sql_string_literal,
     _wait_for_ch_distributed_table_pair,
     _wait_for_ch_distributed_table_pair_absence,
 )
@@ -70,20 +73,53 @@ def drop_ch_distributed_table_pair(
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
+    retry_per_host_drops: bool = False,
+    per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
+    pair = ch_distributed_table_pair(table_name, shard_table)
     _execute_ch_sqls(
         connection,
         build_drop_ch_distributed_table_pair_sqls(
-            table_name,
+            pair.distributed_table,
             ch_cluster=ch_cluster,
-            shard_table=shard_table,
+            shard_table=pair.shard_table,
             query_label=query_label,
         ),
     )
-    if wait_for_absence:
+    if wait_for_absence or retry_per_host_drops:
+        try:
+            _wait_for_ch_distributed_table_pair_absence(
+                connection,
+                pair.distributed_table,
+                ch_cluster=ch_cluster,
+                timeout_seconds=wait_timeout_seconds,
+                poll_interval_seconds=wait_poll_interval_seconds,
+            )
+            return
+        except TimeoutError as exc:
+            if not retry_per_host_drops:
+                raise
+            if ch_cluster is None:
+                raise TimeoutError(
+                    f"{exc} retry_per_host_drops=True requires a non-null "
+                    "ch_cluster."
+                ) from exc
+            if per_host_connection_factory is None:
+                raise TimeoutError(
+                    f"{exc} retry_per_host_drops=True requires a per-host "
+                    "ClickHouse connection factory."
+                ) from exc
+
+        _drop_ch_distributed_table_pair_on_cluster_hosts(
+            connection,
+            pair,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            per_host_connection_factory=per_host_connection_factory,
+        )
         _wait_for_ch_distributed_table_pair_absence(
             connection,
-            table_name,
+            pair.distributed_table,
             ch_cluster=ch_cluster,
             timeout_seconds=wait_timeout_seconds,
             poll_interval_seconds=wait_poll_interval_seconds,
@@ -221,3 +257,76 @@ def _execute_ch_sqls(connection: Any, sqls: list[str]) -> None:
     adapter = get_backend_adapter("ch")
     for sql in sqls:
         adapter.execute_command(connection, sql)
+
+
+def _drop_ch_distributed_table_pair_on_cluster_hosts(
+    connection: Any,
+    pair: ChDistributedTablePair,
+    *,
+    ch_cluster: str,
+    query_label: str | None,
+    per_host_connection_factory: Callable[[str], Any],
+) -> None:
+    hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
+    if not hosts:
+        raise TimeoutError(
+            "retry_per_host_drops=True could not find any configured "
+            f"ClickHouse hosts for cluster {ch_cluster!r}."
+        )
+
+    errors: list[str] = []
+    for host in hosts:
+        host_connection = None
+        try:
+            host_connection = per_host_connection_factory(host)
+            _execute_ch_sqls(
+                host_connection,
+                [
+                    _build_drop_ch_table_sql(
+                        pair.distributed_table,
+                        query_label=query_label,
+                    ),
+                    _build_drop_ch_table_sql(
+                        pair.shard_table,
+                        query_label=query_label,
+                    ),
+                ],
+            )
+        except Exception as exc:
+            errors.append(f"{host}: {exc!r}")
+        finally:
+            if host_connection is not None:
+                close = getattr(host_connection, "close", None)
+                if callable(close):
+                    close()
+
+    if errors:
+        raise TimeoutError(
+            "retry_per_host_drops=True failed to locally drop ClickHouse "
+            f"table pair {pair.distributed_table} / {pair.shard_table} on "
+            "some host(s): " + "; ".join(errors)
+        )
+
+
+def _query_ch_configured_cluster_hosts(
+    connection: Any,
+    ch_cluster: str,
+) -> list[str]:
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
+    sql = (
+        "SELECT DISTINCT host_name\n"
+        "FROM system.clusters\n"
+        f"WHERE cluster = {_sql_string_literal(cluster_name)}\n"
+        "ORDER BY host_name"
+    )
+    result = connection.query(sql)
+    rows = getattr(result, "result_rows", None) or []
+    hosts: list[str] = []
+    for row in rows:
+        if not row:
+            continue
+        host = str(row[0]).strip()
+        if host:
+            hosts.append(host)
+    return hosts

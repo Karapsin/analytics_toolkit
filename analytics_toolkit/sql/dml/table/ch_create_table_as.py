@@ -9,7 +9,10 @@ from sqlglot import exp, parse_one
 
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
-from ...connection.get_sql_connection import get_sql_connection
+from ...connection.get_sql_connection import (
+    get_ch_connection_for_host,
+    get_sql_connection,
+)
 from ...labels import apply_query_label
 from ...operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
@@ -42,6 +45,7 @@ def ch_create_table_as(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    retry_per_host_drops: bool = False,
     dry_run: bool = False,
     return_sql: bool = False,
     query_label: str | None = None,
@@ -68,6 +72,7 @@ def ch_create_table_as(
         ch_engine=ch_engine,
         ch_cluster=cluster_name,
         ch_sharding_key=sharding_key,
+        retry_per_host_drops=bool(retry_per_host_drops),
         dry_run=dry_run,
         return_sql=return_sql,
         return_metadata=return_metadata,
@@ -140,6 +145,14 @@ def ch_create_table_as(
                 options.target_table,
                 ch_cluster=options.ch_cluster,
                 query_label=options.query_label,
+                wait_for_absence=True,
+                retry_per_host_drops=options.retry_per_host_drops,
+                per_host_connection_factory=(
+                    lambda host: get_ch_connection_for_host(
+                        options.connection_key,
+                        host,
+                    )
+                ),
             )
 
             if options.table_schema is None:

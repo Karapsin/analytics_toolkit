@@ -660,10 +660,13 @@ def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> 
     class ClusterDropClient:
         def __init__(self) -> None:
             self.queries: list[str] = []
-            self.visible_counts = {
-                "events": [1, 0],
-                "events_shard": [1, 0],
-            }
+            self.visible_rows = [
+                [
+                    ("host-a", "analytics", "events", "Distributed"),
+                    ("host-a", "analytics", "events_shard", "ReplicatedMergeTree"),
+                ],
+                [],
+            ]
 
         def query(self, sql: str) -> object:
             self.queries.append(sql)
@@ -674,11 +677,10 @@ def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> 
             if "FROM system.clusters" in sql:
                 return type("FakeResult", (), {"result_rows": [(2,)]})()
             if "system, tables" in sql:
-                table_name = sql.split("AND name = '", 1)[1].split("'", 1)[0]
                 return type(
                     "FakeResult",
                     (),
-                    {"result_rows": [(self.visible_counts[table_name].pop(0),)]},
+                    {"result_rows": self.visible_rows.pop(0)},
                 )()
             raise AssertionError(f"Unexpected query: {sql}")
 
@@ -695,9 +697,49 @@ def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> 
     cluster_table_queries = [
         query for query in client.queries if "system, tables" in query
     ]
-    assert len(cluster_table_queries) == 4
+    assert len(cluster_table_queries) == 2
     assert "AND name = 'events'" in cluster_table_queries[0]
-    assert "AND name = 'events_shard'" in cluster_table_queries[2]
+    assert "AND name = 'events_shard'" in cluster_table_queries[0]
+
+
+def test_wait_for_clickhouse_distributed_pair_absence_reports_leftover_hosts() -> None:
+    class StaleDropClient:
+        def query(self, sql: str) -> object:
+            if sql.startswith("SELECT getMacro("):
+                return type("FakeResult", (), {"result_rows": [("core",)]})()
+            if "system, one" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "FROM system.clusters" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "system, tables" in sql:
+                return type(
+                    "FakeResult",
+                    (),
+                    {
+                        "result_rows": [
+                            (
+                                "host-b",
+                                "analytics",
+                                "events_shard",
+                                "ReplicatedMergeTree",
+                            )
+                        ]
+                    },
+                )()
+            raise AssertionError(f"Unexpected query: {sql}")
+
+    with pytest.raises(TimeoutError) as exc_info:
+        create_sql_table_module._wait_for_ch_distributed_table_pair_absence(
+            StaleDropClient(),
+            "analytics.events",
+            ch_cluster="{cluster}",
+            timeout_seconds=0,
+            poll_interval_seconds=0,
+        )
+
+    message = str(exc_info.value)
+    assert "host-b: analytics.events_shard (ReplicatedMergeTree)" in message
+    assert "retry_per_host_drops=True" in message
 
 
 def test_wait_for_clickhouse_distributed_pair_reports_schema_mismatch() -> None:

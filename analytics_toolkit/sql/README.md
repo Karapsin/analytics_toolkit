@@ -523,10 +523,15 @@ When the default `{cluster}` macro is used, the visibility poll resolves it with
 `ch_cluster="core"` avoids that extra lookup.
 Cluster DDL is submitted with `distributed_ddl_task_timeout=0`, so ClickHouse
 queues the `ON CLUSTER` operation without making Python hold the DDL request
-open. Before inserting, the helper checks the configured cluster host count and
-polls `clusterAllReplicas(..., system, tables)` until the shard table is visible
-on every cluster host, then polls `clusterAllReplicas(..., system, columns)`
-until the shard exposes the expected column types everywhere.
+open. Replacing an existing ClickHouse distributed table pair verifies the drop
+with `clusterAllReplicas(..., system, tables)` before recreate; if a target or
+shard remains on any host, the error lists the leftover `hostName()`, database,
+table, and engine, and states that `retry_per_host_drops=True` can be used for
+an opt-in direct local-drop cleanup attempt on configured cluster hosts. Before
+inserting, the helper checks the configured cluster host count and polls
+`clusterAllReplicas(..., system, tables)` until the shard table is visible on
+every cluster host, then polls `clusterAllReplicas(..., system, columns)` until
+the shard exposes the expected column types everywhere.
 When replacing an existing distributed table pair, recreate paths use
 `CREATE OR REPLACE TABLE` for cluster DDL. New targets still use
 `CREATE TABLE IF NOT EXISTS`. This prevents stale shard or distributed metadata

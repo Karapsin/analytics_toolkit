@@ -70,6 +70,7 @@ def transfer_table(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    retry_per_host_drops: bool = False,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -102,6 +103,7 @@ def transfer_table(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
+        retry_per_host_drops=retry_per_host_drops,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -231,6 +233,7 @@ def build_transfer_options(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    retry_per_host_drops: bool = False,
     query_label: str | None = None,
     progress: bool = True,
     estimate_total_rows: bool = False,
@@ -291,6 +294,7 @@ def build_transfer_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
+        retry_per_host_drops=bool(retry_per_host_drops),
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -320,6 +324,10 @@ def build_transfer_options(
         )
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
+    if options.retry_per_host_drops and options.to_db_backend != "ch":
+        raise ValueError(
+            "retry_per_host_drops can only be used when to_db has type 'ch'."
+        )
     validate_ch_options_not_used(
         target_backend=options.to_db_backend,
         option_owner="to_db",

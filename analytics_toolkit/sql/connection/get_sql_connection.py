@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from dataclasses import replace
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
@@ -33,6 +34,21 @@ def get_sql_connection(connection_key: str) -> Any:
     raise UnsupportedConnectionTypeError(
         "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
     )
+
+
+def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
+    config = get_connection_config(connection_key)
+    if not isinstance(config, ChConfig):
+        raise UnsupportedConnectionTypeError(
+            f"SQL connection '{config.connection_key}' is not a ClickHouse connection."
+        )
+    host_name = str(host).strip()
+    if not host_name:
+        raise ValueError("host must not be empty.")
+    time_print(
+        f"Opening {config.connection_key} ({config.backend}) connection to {host_name}"
+    )
+    return _get_ch_connection(replace(config, host=host_name))
 
 
 @timed_public_sql_function

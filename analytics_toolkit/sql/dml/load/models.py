@@ -20,6 +20,7 @@ class LoadOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
+    retry_per_host_drops: bool = False
     query_label: str | None = None
 
 

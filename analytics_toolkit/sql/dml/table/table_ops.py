@@ -27,7 +27,10 @@ from ...connection.config import (
     get_connection_config,
     resolve_connection_backend,
 )
-from ...connection.get_sql_connection import get_sql_connection
+from ...connection.get_sql_connection import (
+    get_ch_connection_for_host,
+    get_sql_connection,
+)
 from ...ddl.create_sql_table import create_sql_table
 from ...ddl.create_sql_table import build_ch_shard_table_name, quote_identifier
 from ...connection.errors import (
@@ -254,6 +257,8 @@ def apply_target_write_mode(
     connection_label: str | None = None,
     drop_missing_ch_truncate_target: bool = True,
     query_label: str | None = None,
+    connection_key: str | None = None,
+    retry_per_host_drops: bool = False,
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
@@ -281,6 +286,9 @@ def apply_target_write_mode(
             table_name,
             ch_cluster=ch_cluster,
             query_label=query_label,
+            wait_for_absence=True,
+            connection_key=connection_key,
+            retry_per_host_drops=retry_per_host_drops,
         )
         return False
 
@@ -327,6 +335,8 @@ def finalize_stage_table(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     query_label: str | None = None,
+    connection_key: str | None = None,
+    retry_per_host_drops: bool = False,
 ) -> None:
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
@@ -344,6 +354,8 @@ def finalize_stage_table(
             replace_existing_non_ch="clear",
             ch_cluster=ch_cluster,
             query_label=query_label,
+            connection_key=connection_key,
+            retry_per_host_drops=retry_per_host_drops,
         )
 
     if backend == "ch":
@@ -947,6 +959,7 @@ def drop_table(
     query_label: str | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
+    wait_for_absence: bool = False,
 ) -> SqlPlan | None:
     backend = resolve_connection_backend(connection_type)
     if dry_run or return_sql:
@@ -980,6 +993,18 @@ def drop_table(
         ch_cluster=ch_cluster,
         query_label=query_label,
     )
+    if backend == "ch" and wait_for_absence:
+        from ...ddl.create_sql_table import _wait_for_ch_table_absence
+        from ...ddl.create_sql_table import _wait_for_ch_table_absence_on_cluster
+
+        if ch_cluster is None:
+            _wait_for_ch_table_absence(connection, table_name)
+        else:
+            _wait_for_ch_table_absence_on_cluster(
+                connection,
+                table_name,
+                ch_cluster=ch_cluster,
+            )
     return None
 
 
@@ -991,7 +1016,14 @@ def drop_ch_distributed_table_pair(
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
+    connection_key: str | None = None,
+    retry_per_host_drops: bool = False,
 ) -> None:
+    per_host_connection_factory = (
+        (lambda host: get_ch_connection_for_host(connection_key, host))
+        if connection_key is not None
+        else None
+    )
     _drop_ch_pair(
         connection,
         table_name,
@@ -1000,6 +1032,8 @@ def drop_ch_distributed_table_pair(
         wait_for_absence=wait_for_absence,
         wait_timeout_seconds=wait_timeout_seconds,
         wait_poll_interval_seconds=wait_poll_interval_seconds,
+        retry_per_host_drops=retry_per_host_drops,
+        per_host_connection_factory=per_host_connection_factory,
     )
 
 

@@ -786,16 +786,9 @@ def _wait_for_ch_distributed_table_pair_absence(
         )
         return
 
-    _wait_for_ch_table_absence_on_cluster(
+    _wait_for_ch_tables_absence_on_cluster(
         connection,
-        table_name,
-        ch_cluster=ch_cluster,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-    )
-    _wait_for_ch_table_absence_on_cluster(
-        connection,
-        shard_table,
+        [table_name, shard_table],
         ch_cluster=ch_cluster,
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
@@ -829,27 +822,41 @@ def _wait_for_ch_table_absence_on_cluster(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
+    _wait_for_ch_tables_absence_on_cluster(
+        connection,
+        [table_name],
+        ch_cluster=ch_cluster,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+def _wait_for_ch_tables_absence_on_cluster(
+    connection: Any,
+    table_names: Sequence[str],
+    ch_cluster: str,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    normalized_table_names = [str(table_name).strip() for table_name in table_names]
+    normalized_table_names = [
+        table_name for table_name in normalized_table_names if table_name
+    ]
+    if not normalized_table_names:
+        return
+
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
-    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
-        table_name
-    )
     cluster_literal = _sql_string_literal(cluster_name)
     expected_hosts_sql = (
         "SELECT count()\n"
         f"FROM clusterAllReplicas({cluster_literal}, system, one)"
     )
-    visible_tables_sql = (
-        "SELECT count()\n"
-        f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
-        f"WHERE database = {database_expr}\n"
-        f"  AND name = {_sql_string_literal(relation_name)}"
-    )
 
     deadline = time.monotonic() + timeout_seconds
     remote_hosts = 0
     expected_hosts = 0
-    visible_tables = 0
+    visible_table_rows: list[tuple[Any, ...]] = []
     last_error: Exception | None = None
     while True:
         try:
@@ -858,22 +865,34 @@ def _wait_for_ch_table_absence_on_cluster(
                 cluster_name=cluster_name,
                 remote_hosts_sql=expected_hosts_sql,
             )
-            visible_tables = _query_ch_count(connection, visible_tables_sql)
+            visible_table_rows = _query_ch_cluster_table_rows(
+                connection,
+                table_names=normalized_table_names,
+                ch_cluster=cluster_name,
+            )
             if (
                 expected_hosts > 0
                 and remote_hosts >= expected_hosts
-                and visible_tables == 0
+                and not visible_table_rows
             ):
                 return
         except Exception as exc:
             last_error = exc
 
         if time.monotonic() >= deadline:
+            table_summary = ", ".join(normalized_table_names)
             message = (
-                f"ClickHouse table {table_name} was still visible on cluster "
+                f"ClickHouse table(s) {table_summary} were still visible on cluster "
                 f"{cluster_name!r} after {timeout_seconds} second(s). Last "
-                f"observed {visible_tables} visible table row(s); reached "
+                f"observed {len(visible_table_rows)} visible table row(s); reached "
                 f"{remote_hosts}/{expected_hosts} expected host(s)."
+            )
+            leftovers = _format_ch_cluster_table_rows(visible_table_rows)
+            if leftovers:
+                message = f"{message} Leftover table(s): {leftovers}."
+            message = (
+                f"{message} To attempt direct local drops on affected cluster "
+                "hosts, rerun with retry_per_host_drops=True."
             )
             if last_error is not None:
                 raise TimeoutError(message) from last_error
@@ -1143,6 +1162,48 @@ def _query_ch_count(connection: Any, sql: str) -> int:
     if not rows:
         return 0
     return int(rows[0][0])
+
+
+def _query_ch_cluster_table_rows(
+    connection: Any,
+    *,
+    table_names: Sequence[str],
+    ch_cluster: str,
+) -> list[tuple[Any, ...]]:
+    conditions: list[str] = []
+    for table_name in table_names:
+        database_expr, relation_name = split_ch_table_name_for_distributed_engine(
+            table_name
+        )
+        conditions.append(
+            f"(database = {database_expr} "
+            f"AND name = {_sql_string_literal(relation_name)})"
+        )
+    if not conditions:
+        return []
+
+    cluster_literal = _sql_string_literal(ch_cluster)
+    sql = (
+        "SELECT hostName(), database, name, engine\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
+        f"WHERE {' OR '.join(conditions)}\n"
+        "ORDER BY hostName(), database, name"
+    )
+    return [row for row in _query_ch_rows(connection, sql) if len(row) >= 4]
+
+
+def _format_ch_cluster_table_rows(rows: Sequence[Sequence[Any]]) -> str:
+    formatted: list[str] = []
+    for row in rows:
+        if len(row) < 4:
+            continue
+        host, database, table_name, engine = row[:4]
+        formatted.append(f"{host}: {database}.{table_name} ({engine})")
+    if not formatted:
+        return ""
+    if len(formatted) > 10:
+        formatted = formatted[:10] + ["..."]
+    return "; ".join(formatted)
 
 
 def _query_ch_expected_cluster_hosts(

@@ -69,6 +69,7 @@ def create_table_from_sql(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    retry_per_host_drops: bool = False,
     trino_insert_chunk_size: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
@@ -105,6 +106,11 @@ def create_table_from_sql(
     )
     if trino_insert_chunk_size is not None and trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
+    if retry_per_host_drops and target_config.backend != "ch":
+        raise ValueError(
+            "retry_per_host_drops can only be used when the target connection "
+            "has type 'ch'."
+        )
     options = CreateTableFromSqlOptions(
         source_key=source_config.connection_key,
         source_backend=source_config.backend,
@@ -121,6 +127,7 @@ def create_table_from_sql(
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
+        retry_per_host_drops=bool(retry_per_host_drops),
         trino_insert_chunk_size=trino_insert_chunk_size,
         dry_run=dry_run,
         return_sql=return_sql,
@@ -228,6 +235,9 @@ def create_table_from_sql(
                         target_table,
                         ch_cluster=ch_cluster_name,
                         query_label=query_label,
+                        wait_for_absence=True,
+                        connection_key=target_config.connection_key,
+                        retry_per_host_drops=options.retry_per_host_drops,
                     )
                 else:
                     time_print(
