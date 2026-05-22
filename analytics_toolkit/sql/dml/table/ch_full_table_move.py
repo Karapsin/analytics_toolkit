@@ -185,6 +185,7 @@ def ch_full_table_move(
                 target_table,
                 target_cluster,
                 query_label=options.query_label,
+                wait_for_absence=True,
             )
             time_print(f"Creating target shard table {target_shard_table}")
             _execute_ch_command(
@@ -464,6 +465,7 @@ def _drop_ch_distributed_table_pair(
     *,
     shard_table: str | None = None,
     query_label: str | None = None,
+    wait_for_absence: bool = False,
 ) -> None:
     drop_ch_distributed_table_pair(
         connection,
@@ -471,6 +473,7 @@ def _drop_ch_distributed_table_pair(
         ch_cluster=ch_cluster,
         shard_table=shard_table,
         query_label=query_label,
+        wait_for_absence=wait_for_absence,
     )
 
 

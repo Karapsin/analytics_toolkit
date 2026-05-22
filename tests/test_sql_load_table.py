@@ -34,18 +34,39 @@ class FakeClickHouseClient:
         self.calls: list[dict[str, object]] = []
         self.commands: list[str] = []
         self.queries: list[str] = []
+        self.created_tables: set[str] = set()
         self.close_calls = 0
 
     def command(self, sql: str) -> None:
         self.commands.append(sql)
+        self._track_table_ddl(sql)
 
     def query(self, sql: str) -> object:
         self.queries.append(sql)
+        if sql.startswith("SELECT getMacro("):
+            return type("FakeResult", (), {"result_rows": [("core",)]})()
+        if "clusterAllReplicas" in sql and "system, one" in sql:
+            return type("FakeResult", (), {"result_rows": [(1,)]})()
+        if "FROM system.clusters" in sql:
+            return type("FakeResult", (), {"result_rows": [(1,)]})()
+        if "clusterAllReplicas" in sql and "system, tables" in sql:
+            return type(
+                "FakeResult",
+                (),
+                {"result_rows": [(self._cluster_table_count(sql),)]},
+            )()
         if "clusterAllReplicas" in sql and "system, columns" in sql:
             return type(
                 "FakeResult",
                 (),
                 {"result_rows": [(sql.count("name = ") or 1,)]},
+            )()
+        if sql.startswith("EXISTS TABLE "):
+            table_name = sql.removeprefix("EXISTS TABLE ").strip()
+            return type(
+                "FakeResult",
+                (),
+                {"result_rows": [(int(table_name in self.created_tables),)]},
             )()
         return type("FakeResult", (), {"result_rows": [(1,)]})()
 
@@ -85,6 +106,30 @@ class FakeClickHouseClient:
 
     def close(self) -> None:
         self.close_calls += 1
+
+    def _track_table_ddl(self, sql: str) -> None:
+        if sql.startswith("CREATE TABLE IF NOT EXISTS "):
+            table_name = sql.removeprefix("CREATE TABLE IF NOT EXISTS ").split()[0]
+            self.created_tables.add(table_name)
+            return
+        if sql.startswith("CREATE TABLE "):
+            table_name = sql.removeprefix("CREATE TABLE ").split()[0]
+            self.created_tables.add(table_name)
+            return
+        if sql.startswith("DROP TABLE IF EXISTS "):
+            table_name = sql.removeprefix("DROP TABLE IF EXISTS ").split()[0]
+            self.created_tables.discard(table_name)
+
+    def _cluster_table_count(self, sql: str) -> int:
+        marker = "AND name = '"
+        if marker not in sql:
+            return len(self.created_tables)
+        relation_name = sql.split(marker, 1)[1].split("'", 1)[0]
+        return sum(
+            1
+            for table_name in self.created_tables
+            if table_name.rsplit(".", 1)[-1] == relation_name
+        )
 
 
 def test_insert_table_batch_normalizes_decimal_for_clickhouse() -> None:
@@ -599,6 +644,50 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
         "name = 'cheque_cnt_total' AND type = 'Decimal(38, 5)'"
         in cluster_column_queries[0]
     )
+
+
+def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> None:
+    class ClusterDropClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+            self.visible_counts = {
+                "events": [1, 0],
+                "events_shard": [1, 0],
+            }
+
+        def query(self, sql: str) -> object:
+            self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                return type("FakeResult", (), {"result_rows": [("core",)]})()
+            if "system, one" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "FROM system.clusters" in sql:
+                return type("FakeResult", (), {"result_rows": [(2,)]})()
+            if "system, tables" in sql:
+                table_name = sql.split("AND name = '", 1)[1].split("'", 1)[0]
+                return type(
+                    "FakeResult",
+                    (),
+                    {"result_rows": [(self.visible_counts[table_name].pop(0),)]},
+                )()
+            raise AssertionError(f"Unexpected query: {sql}")
+
+    client = ClusterDropClient()
+
+    create_sql_table_module._wait_for_ch_distributed_table_pair_absence(
+        client,
+        "analytics.events",
+        ch_cluster="{cluster}",
+        timeout_seconds=1,
+        poll_interval_seconds=0,
+    )
+
+    cluster_table_queries = [
+        query for query in client.queries if "system, tables" in query
+    ]
+    assert len(cluster_table_queries) == 4
+    assert "AND name = 'events'" in cluster_table_queries[0]
+    assert "AND name = 'events_shard'" in cluster_table_queries[2]
 
 
 def test_wait_for_clickhouse_distributed_pair_reports_schema_mismatch() -> None:

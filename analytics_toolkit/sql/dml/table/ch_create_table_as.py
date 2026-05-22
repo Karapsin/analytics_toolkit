@@ -140,6 +140,7 @@ def ch_create_table_as(
                 options.target_table,
                 ch_cluster=options.ch_cluster,
                 query_label=options.query_label,
+                wait_for_absence=True,
             )
 
             if options.table_schema is None:

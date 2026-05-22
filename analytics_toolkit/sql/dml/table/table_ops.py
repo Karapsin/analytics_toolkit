@@ -281,6 +281,7 @@ def apply_target_write_mode(
             table_name,
             ch_cluster=ch_cluster,
             query_label=query_label,
+            wait_for_absence=True,
         )
         return False
 
@@ -980,12 +981,18 @@ def drop_ch_distributed_table_pair(
     table_name: str,
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
+    wait_for_absence: bool = False,
+    wait_timeout_seconds: int = 300,
+    wait_poll_interval_seconds: float = 1,
 ) -> None:
     _drop_ch_pair(
         connection,
         table_name,
         ch_cluster=ch_cluster,
         query_label=query_label,
+        wait_for_absence=wait_for_absence,
+        wait_timeout_seconds=wait_timeout_seconds,
+        wait_poll_interval_seconds=wait_poll_interval_seconds,
     )
 
 

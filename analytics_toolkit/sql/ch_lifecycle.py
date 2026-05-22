@@ -9,6 +9,7 @@ from .ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
     _wait_for_ch_distributed_table_pair,
+    _wait_for_ch_distributed_table_pair_absence,
 )
 from .labels import apply_query_label
 
@@ -66,6 +67,9 @@ def drop_ch_distributed_table_pair(
     *,
     shard_table: str | None = None,
     query_label: str | None = None,
+    wait_for_absence: bool = False,
+    wait_timeout_seconds: int = 300,
+    wait_poll_interval_seconds: float = 1,
 ) -> None:
     _execute_ch_sqls(
         connection,
@@ -76,6 +80,14 @@ def drop_ch_distributed_table_pair(
             query_label=query_label,
         ),
     )
+    if wait_for_absence:
+        _wait_for_ch_distributed_table_pair_absence(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+            timeout_seconds=wait_timeout_seconds,
+            poll_interval_seconds=wait_poll_interval_seconds,
+        )
 
 
 def build_truncate_ch_distributed_table_pair_sqls(

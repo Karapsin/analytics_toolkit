@@ -90,6 +90,7 @@ class FakeClickHouseClient:
         self.commands: list[str] = []
         self.queries: list[str] = []
         self.inserts: list[dict[str, object]] = []
+        self.created_tables: set[str] = set()
         self.close_calls = 0
 
     def command(
@@ -99,6 +100,7 @@ class FakeClickHouseClient:
     ) -> dict[str, int] | None:
         del settings
         self.commands.append(sql)
+        self._track_table_ddl(sql)
         if sql.startswith("INSERT INTO "):
             return {"written_rows": 1}
         return None
@@ -107,6 +109,12 @@ class FakeClickHouseClient:
         self.queries.append(sql)
         if sql.startswith("SELECT getMacro("):
             return FakeClickHouseResult([("core",)])
+        if "clusterAllReplicas" in sql and "system, one" in sql:
+            return FakeClickHouseResult([(1,)])
+        if "FROM system.clusters" in sql:
+            return FakeClickHouseResult([(1,)])
+        if "clusterAllReplicas" in sql and "system, tables" in sql:
+            return FakeClickHouseResult([(self._cluster_table_count(sql),)])
         if "clusterAllReplicas" in sql and "system, columns" in sql:
             return FakeClickHouseResult([(sql.count("name = ") or 1,)])
         if "clusterAllReplicas" in sql:
@@ -157,3 +165,35 @@ class FakeClickHouseClient:
 
     def close(self) -> None:
         self.close_calls += 1
+
+    def _track_table_ddl(self, sql: str) -> None:
+        body = _strip_query_label(sql)
+        if body.startswith("CREATE TABLE IF NOT EXISTS "):
+            table_name = body.removeprefix("CREATE TABLE IF NOT EXISTS ").split()[0]
+            self.created_tables.add(table_name)
+            return
+        if body.startswith("CREATE TABLE "):
+            table_name = body.removeprefix("CREATE TABLE ").split()[0]
+            self.created_tables.add(table_name)
+            return
+        if body.startswith("DROP TABLE IF EXISTS "):
+            table_name = body.removeprefix("DROP TABLE IF EXISTS ").split()[0]
+            self.created_tables.discard(table_name)
+
+    def _cluster_table_count(self, sql: str) -> int:
+        marker = "AND name = '"
+        if marker not in sql:
+            return len(self.created_tables)
+        relation_name = sql.split(marker, 1)[1].split("'", 1)[0]
+        return sum(
+            1
+            for table_name in self.created_tables
+            if table_name.rsplit(".", 1)[-1] == relation_name
+        )
+
+
+def _strip_query_label(sql: str) -> str:
+    stripped = sql.lstrip()
+    if stripped.startswith("/* analytics_toolkit query_label=") and "*/" in stripped:
+        return stripped.split("*/", 1)[1].lstrip()
+    return stripped

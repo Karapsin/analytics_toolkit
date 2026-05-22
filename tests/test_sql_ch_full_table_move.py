@@ -117,6 +117,7 @@ class FakeClickHouseClient:
         self.commands: list[str] = []
         self.command_settings: list[dict[str, object] | None] = []
         self.queries: list[str] = []
+        self.created_tables: set[str] = set()
         self.close_calls = 0
 
     def command(
@@ -126,6 +127,7 @@ class FakeClickHouseClient:
     ) -> None:
         self.commands.append(sql)
         self.command_settings.append(settings)
+        self._track_table_ddl(sql)
 
     def query(self, sql: str) -> FakeClickHouseResult:
         self.queries.append(sql)
@@ -138,16 +140,49 @@ class FakeClickHouseClient:
             f"SHOW CREATE TABLE {SOURCE_CUSTOM_SHARD_TABLE}",
         }:
             return FakeClickHouseResult([(self.source_shard_ddl,)])
-        if sql == f"EXISTS TABLE {TARGET_TABLE}":
+        if "clusterAllReplicas" in sql and "system, one" in sql:
             return FakeClickHouseResult([(1,)])
-        if sql.startswith(f"EXISTS TABLE {TARGET_TABLE}_shard"):
+        if "FROM system.clusters" in sql:
             return FakeClickHouseResult([(1,)])
+        if "clusterAllReplicas" in sql and "system, tables" in sql:
+            return FakeClickHouseResult([(self._cluster_table_count(sql),)])
         if "clusterAllReplicas" in sql:
             return FakeClickHouseResult([(1,)])
+        if sql.startswith("EXISTS TABLE "):
+            table_name = sql.removeprefix("EXISTS TABLE ").strip()
+            return FakeClickHouseResult([(int(table_name in self.created_tables),)])
         raise AssertionError(f"Unexpected query: {sql}")
 
     def close(self) -> None:
         self.close_calls += 1
+
+    def _track_table_ddl(self, sql: str) -> None:
+        body = _strip_query_label(sql)
+        if body.startswith("CREATE TABLE IF NOT EXISTS "):
+            table_name = body.removeprefix("CREATE TABLE IF NOT EXISTS ").split()[0]
+            self.created_tables.add(table_name)
+            return
+        if body.startswith("DROP TABLE IF EXISTS "):
+            table_name = body.removeprefix("DROP TABLE IF EXISTS ").split()[0]
+            self.created_tables.discard(table_name)
+
+    def _cluster_table_count(self, sql: str) -> int:
+        marker = "AND name = '"
+        if marker not in sql:
+            return len(self.created_tables)
+        relation_name = sql.split(marker, 1)[1].split("'", 1)[0]
+        return sum(
+            1
+            for table_name in self.created_tables
+            if table_name.rsplit(".", 1)[-1] == relation_name
+        )
+
+
+def _strip_query_label(sql: str) -> str:
+    stripped = sql.lstrip()
+    if stripped.startswith("/* analytics_toolkit query_label=") and "*/" in stripped:
+        return stripped.split("*/", 1)[1].lstrip()
+    return stripped
 
 
 @pytest.fixture

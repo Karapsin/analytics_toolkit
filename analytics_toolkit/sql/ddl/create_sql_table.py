@@ -732,6 +732,124 @@ def _wait_for_ch_distributed_table_pair(
         )
 
 
+def _wait_for_ch_distributed_table_pair_absence(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str | None = "{cluster}",
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    shard_table = build_ch_shard_table_name(table_name)
+    if ch_cluster is None:
+        _wait_for_ch_table_absence(
+            connection,
+            table_name,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+        _wait_for_ch_table_absence(
+            connection,
+            shard_table,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+        return
+
+    _wait_for_ch_table_absence_on_cluster(
+        connection,
+        table_name,
+        ch_cluster=ch_cluster,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    _wait_for_ch_table_absence_on_cluster(
+        connection,
+        shard_table,
+        ch_cluster=ch_cluster,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+def _wait_for_ch_table_absence(
+    connection: Any,
+    table_name: str,
+    timeout_seconds: int = 60,
+    poll_interval_seconds: float = 1,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        result = connection.query(f"EXISTS TABLE {table_name}")
+        rows = getattr(result, "result_rows", None) or []
+        if not rows or not rows[0] or not rows[0][0]:
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"ClickHouse table {table_name} was still visible after "
+                f"{timeout_seconds} second(s)."
+            )
+        time.sleep(poll_interval_seconds)
+
+
+def _wait_for_ch_table_absence_on_cluster(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1,
+) -> None:
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
+        table_name
+    )
+    cluster_literal = _sql_string_literal(cluster_name)
+    expected_hosts_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
+    )
+    visible_tables_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND name = {_sql_string_literal(relation_name)}"
+    )
+
+    deadline = time.monotonic() + timeout_seconds
+    remote_hosts = 0
+    expected_hosts = 0
+    visible_tables = 0
+    last_error: Exception | None = None
+    while True:
+        try:
+            remote_hosts, expected_hosts = _query_ch_cluster_host_counts(
+                connection,
+                cluster_name=cluster_name,
+                remote_hosts_sql=expected_hosts_sql,
+            )
+            visible_tables = _query_ch_count(connection, visible_tables_sql)
+            if (
+                expected_hosts > 0
+                and remote_hosts >= expected_hosts
+                and visible_tables == 0
+            ):
+                return
+        except Exception as exc:
+            last_error = exc
+
+        if time.monotonic() >= deadline:
+            message = (
+                f"ClickHouse table {table_name} was still visible on cluster "
+                f"{cluster_name!r} after {timeout_seconds} second(s). Last "
+                f"observed {visible_tables} visible table row(s); reached "
+                f"{remote_hosts}/{expected_hosts} expected host(s)."
+            )
+            if last_error is not None:
+                raise TimeoutError(message) from last_error
+            raise TimeoutError(message)
+        time.sleep(poll_interval_seconds)
+
+
 def _wait_for_ch_table_on_cluster(
     connection: Any,
     table_name: str,
@@ -1002,6 +1120,20 @@ def _query_ch_expected_cluster_hosts(
     cluster_name: str,
     remote_hosts_sql: str,
 ) -> int:
+    _, expected_hosts = _query_ch_cluster_host_counts(
+        connection,
+        cluster_name=cluster_name,
+        remote_hosts_sql=remote_hosts_sql,
+    )
+    return expected_hosts
+
+
+def _query_ch_cluster_host_counts(
+    connection: Any,
+    *,
+    cluster_name: str,
+    remote_hosts_sql: str,
+) -> tuple[int, int]:
     remote_hosts = _query_ch_count(connection, remote_hosts_sql)
     configured_hosts_sql = (
         "SELECT count()\n"
@@ -1012,7 +1144,7 @@ def _query_ch_expected_cluster_hosts(
         configured_hosts = _query_ch_count(connection, configured_hosts_sql)
     except Exception:
         configured_hosts = 0
-    return max(remote_hosts, configured_hosts)
+    return remote_hosts, max(remote_hosts, configured_hosts)
 
 
 def _query_ch_rows(connection: Any, sql: str) -> list[tuple[Any, ...]]:

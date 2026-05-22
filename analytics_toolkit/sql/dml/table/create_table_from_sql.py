@@ -217,6 +217,7 @@ def create_table_from_sql(
                         target_table,
                         ch_cluster=ch_cluster_name,
                         query_label=query_label,
+                        wait_for_absence=True,
                     )
                 else:
                     time_print(
