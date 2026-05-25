@@ -12,7 +12,8 @@ from .dml.io.read_sql import read_sql
 from .operation_runner import timed_public_sql_function
 
 
-_SHOW_TABLES_COLUMNS = ["db", "schema", "table_name", "table_size"]
+_SHOW_TABLES_COLUMNS = ["db", "schema", "table_name", "row_count", "table_size"]
+_ROW_COUNT_COLUMN = "row_count"
 _TABLE_SIZE_BYTES_COLUMN = "table_size_bytes"
 _TABLE_SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
 
@@ -23,7 +24,7 @@ def show_tables(
     schema: str | None = None,
     conditions: str | None = None,
 ) -> pd.DataFrame:
-    """Return backend table metadata with a human-readable table_size column."""
+    """Return backend table metadata with row_count and table_size columns."""
 
     config = get_connection_config(db_key)
     schema_filter = _validate_optional_string(schema, "schema")
@@ -32,6 +33,11 @@ def show_tables(
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
     normalized = result.copy()
+    normalized["row_count"] = pd.Series(
+        (_normalize_row_count(value) for value in normalized[_ROW_COUNT_COLUMN]),
+        index=normalized.index,
+        dtype=object,
+    )
     normalized["table_size"] = normalized[_TABLE_SIZE_BYTES_COLUMN].map(
         _format_table_size,
     )
@@ -70,6 +76,7 @@ SELECT
     database AS db,
     database AS schema,
     name AS table_name,
+    total_rows AS row_count,
     total_bytes AS table_size_bytes
 FROM system.tables
 WHERE 1 = 1{_format_filter_lines(filters)}
@@ -87,7 +94,14 @@ SELECT
     current_database() AS db,
     table_schema AS schema,
     table_name,
-    pg_total_relation_size(c.oid) AS table_size_bytes
+    CASE
+        WHEN c.reltuples >= 0 THEN c.reltuples::bigint
+        ELSE NULL
+    END AS row_count,
+    CASE
+        WHEN c.relkind IN ('r', 'm', 'p') THEN pg_total_relation_size(c.oid)
+        ELSE NULL
+    END AS table_size_bytes
 FROM information_schema.tables AS t
 LEFT JOIN pg_catalog.pg_namespace AS n
   ON n.nspname = t.table_schema
@@ -110,6 +124,7 @@ SELECT
     table_catalog AS db,
     table_schema AS schema,
     table_name,
+    CAST(NULL AS BIGINT) AS row_count,
     CAST(NULL AS BIGINT) AS table_size_bytes
 FROM {catalog}.information_schema.tables
 WHERE 1 = 1{_format_filter_lines(filters)}
@@ -194,6 +209,20 @@ def _format_table_size(value: object) -> str | None:
     if unit == "B":
         return f"{sign}{int(round(size))} {unit}"
     return f"{sign}{size:.2f} {unit}"
+
+
+def _normalize_row_count(value: object) -> int | None:
+    if pd.isna(value):
+        return None
+
+    try:
+        count = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(count) or count < 0:
+        return None
+    return int(round(count))
 
 
 __all__ = ["show_tables"]

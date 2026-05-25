@@ -27,6 +27,7 @@ def _capture_read_sql(
                 "schema": ["mart"],
                 "table_name": ["orders"],
                 "db": ["warehouse"],
+                "row_count": [1200],
                 "table_size_bytes": [1536],
                 "extra": ["ignored"],
             }
@@ -66,7 +67,14 @@ def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(
             current_database() AS db,
             table_schema AS schema,
             table_name,
-            pg_total_relation_size(c.oid) AS table_size_bytes
+            CASE
+                WHEN c.reltuples >= 0 THEN c.reltuples::bigint
+                ELSE NULL
+            END AS row_count,
+            CASE
+                WHEN c.relkind IN ('r', 'm', 'p') THEN pg_total_relation_size(c.oid)
+                ELSE NULL
+            END AS table_size_bytes
         FROM information_schema.tables AS t
         LEFT JOIN pg_catalog.pg_namespace AS n
           ON n.nspname = t.table_schema
@@ -79,7 +87,14 @@ def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(
         ORDER BY table_schema, table_name
         """
     )
-    assert list(result.columns) == ["db", "schema", "table_name", "table_size"]
+    assert list(result.columns) == [
+        "db",
+        "schema",
+        "table_name",
+        "row_count",
+        "table_size",
+    ]
+    assert result.loc[0, "row_count"] == 1200
     assert result.loc[0, "table_size"] == "1.50 KiB"
 
 
@@ -97,6 +112,7 @@ def test_show_tables_clickhouse_filters_database(
             database AS db,
             database AS schema,
             name AS table_name,
+            total_rows AS row_count,
             total_bytes AS table_size_bytes
         FROM system.tables
         WHERE 1 = 1
@@ -120,6 +136,7 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
             table_catalog AS db,
             table_schema AS schema,
             table_name,
+            CAST(NULL AS BIGINT) AS row_count,
             CAST(NULL AS BIGINT) AS table_size_bytes
         FROM iceberg.information_schema.tables
         WHERE 1 = 1
@@ -137,6 +154,7 @@ def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> Non
                 "db": ["db", "db", "db", "db"],
                 "schema": ["mart", "mart", "mart", "mart"],
                 "table_name": ["empty", "small", "medium", "unknown"],
+                "row_count": [0, 1000.0, -1, None],
                 "table_size_bytes": [0, 1024, 2_621_440, None],
             }
         ),
@@ -145,6 +163,7 @@ def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> Non
     result = show_tables_module.show_tables("gp")
 
     assert calls
+    assert result["row_count"].tolist() == [0, 1000, None, None]
     assert result["table_size"].tolist() == [
         "0 B",
         "1.00 KiB",
