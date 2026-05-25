@@ -34,9 +34,14 @@ def show_tables(
     schema: str | None = None,
     conditions: str | None = None,
     table_name: str | Sequence[str] | None = None,
+    ch_distributed_table_stats: bool = False,
 ) -> pd.DataFrame:
     """Return backend table metadata with row_count and table_size columns."""
 
+    _validate_bool(
+        ch_distributed_table_stats,
+        "ch_distributed_table_stats",
+    )
     config = get_connection_config(db_key)
     schema_filter = _validate_optional_string(schema, "schema")
     table_name_filter = _validate_table_names(table_name, schema_filter)
@@ -46,6 +51,7 @@ def show_tables(
         schema_filter,
         table_name_filter,
         conditions_filter,
+        ch_distributed_table_stats=ch_distributed_table_stats,
     )
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
@@ -53,7 +59,7 @@ def show_tables(
         return pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
 
     normalized = result.copy()
-    if config.backend == "ch":
+    if config.backend == "ch" and ch_distributed_table_stats:
         normalized = _apply_clickhouse_shard_stats(
             config.connection_key,
             normalized,
@@ -74,9 +80,16 @@ def _build_show_tables_query(
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
+    *,
+    ch_distributed_table_stats: bool = False,
 ) -> str:
     if config.backend == "ch":
-        return _build_clickhouse_show_tables_query(schema, table_names, conditions)
+        return _build_clickhouse_show_tables_query(
+            schema,
+            table_names,
+            conditions,
+            include_distributed_metadata=ch_distributed_table_stats,
+        )
     if config.backend == "gp":
         return _build_gp_show_tables_query(schema, table_names, conditions)
     if config.backend == "trino":
@@ -101,17 +114,22 @@ def _build_clickhouse_show_tables_query(
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
+    *,
+    include_distributed_metadata: bool = False,
 ) -> str:
     filters = _metadata_filters("database", schema, "name", table_names, conditions)
+    distributed_metadata_columns = (
+        ",\n    engine,\n    engine_full"
+        if include_distributed_metadata
+        else ""
+    )
     return f"""
 SELECT
     database AS db,
     database AS schema,
     name AS table_name,
     total_rows AS row_count,
-    total_bytes AS table_size_bytes,
-    engine,
-    engine_full
+    total_bytes AS table_size_bytes{distributed_metadata_columns}
 FROM system.tables
 WHERE 1 = 1{_format_filter_lines(filters)}
 ORDER BY database, name
@@ -547,6 +565,11 @@ def _validate_optional_string(value: str | None, parameter_name: str) -> str | N
     if not normalized:
         raise InvalidSqlInputError(f"{parameter_name} must not be empty.")
     return normalized
+
+
+def _validate_bool(value: bool, parameter_name: str) -> None:
+    if not isinstance(value, bool):
+        raise TypeError(f"{parameter_name} must be a boolean.")
 
 
 def _validate_table_names(

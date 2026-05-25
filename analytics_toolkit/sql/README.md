@@ -111,12 +111,13 @@ on the same connection. Greenplum keeps its historical default of executing the
 setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
 `progress=False` to silence multi-statement progress bars.
 
-`show_tables(db_key, schema=None, conditions=None, table_name=None)` returns a
-pandas dataframe with exactly `db`, `schema`, `table_name`, `row_count`, and
-`table_size` columns. `row_count` and `table_size` come from backend metadata
-when available; `table_size` is formatted as a human-readable string.
-ClickHouse uses `system.tables`; for `Distributed` tables it resolves
-`Distributed(...)` engine metadata and sums `total_rows` and `total_bytes` from
+`show_tables(db_key, schema=None, conditions=None, table_name=None,
+ch_distributed_table_stats=False)` returns a pandas dataframe with exactly
+`db`, `schema`, `table_name`, `row_count`, and `table_size` columns. `row_count`
+and `table_size` come from backend metadata when available; `table_size` is
+formatted as a human-readable string. ClickHouse uses local `system.tables`
+metadata by default. Pass `ch_distributed_table_stats=True` to resolve
+`Distributed(...)` engine metadata and sum `total_rows` and `total_bytes` from
 the logical shard tables through `cluster(...)`. Greenplum uses
 `information_schema.tables` plus PostgreSQL/Greenplum relation metadata, and
 Trino uses `<catalog>.information_schema.tables`. Trino standard table metadata

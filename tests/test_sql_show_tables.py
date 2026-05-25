@@ -113,9 +113,7 @@ def test_show_tables_clickhouse_filters_database(
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes,
-            engine,
-            engine_full
+            total_bytes AS table_size_bytes
         FROM system.tables
         WHERE 1 = 1
           AND database = 'analytics'
@@ -138,9 +136,7 @@ def test_show_tables_filters_single_table_name(
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes,
-            engine,
-            engine_full
+            total_bytes AS table_size_bytes
         FROM system.tables
         WHERE 1 = 1
           AND name = 'events'
@@ -167,9 +163,7 @@ def test_show_tables_filters_schema_qualified_table_name_when_schema_is_supplied
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes,
-            engine,
-            engine_full
+            total_bytes AS table_size_bytes
         FROM system.tables
         WHERE 1 = 1
           AND database = 'pa_core_stage'
@@ -219,9 +213,11 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
         "ch",
         schema="pa_core_stage",
         table_name=["events", "events_copy", "local_table"],
+        ch_distributed_table_stats=True,
     )
 
     assert [call[0] for call in calls] == ["ch", "ch"]
+    assert "engine_full" in calls[0][1]
     assert _compact(calls[1][1]) == _compact(
         """
         SELECT
@@ -282,7 +278,11 @@ def test_show_tables_clickhouse_distributed_stats_support_current_database_macro
 
     monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
 
-    result = show_tables_module.show_tables("ch", schema="analytics")
+    result = show_tables_module.show_tables(
+        "ch",
+        schema="analytics",
+        ch_distributed_table_stats=True,
+    )
 
     assert [call[0] for call in calls] == ["ch", "ch", "ch"]
     assert "WHERE (database, name) IN (('analytics', 'events_shard'))" in calls[2][1]
@@ -315,7 +315,11 @@ def test_show_tables_clickhouse_distributed_stats_failure_falls_back(
 
     monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
 
-    result = show_tables_module.show_tables("ch", table_name="events")
+    result = show_tables_module.show_tables(
+        "ch",
+        table_name="events",
+        ch_distributed_table_stats=True,
+    )
 
     assert len(calls) == 2
     assert result.loc[0, "row_count"] is None
@@ -483,6 +487,22 @@ def test_show_tables_rejects_invalid_table_name_type(
 
     with pytest.raises(TypeError, match="table_name"):
         show_tables_module.show_tables("gp", table_name=table_name)
+
+
+def test_show_tables_rejects_invalid_ch_distributed_table_stats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        show_tables_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pytest.fail("read_sql should not be called"),
+    )
+
+    with pytest.raises(TypeError, match="ch_distributed_table_stats"):
+        show_tables_module.show_tables(
+            "ch",
+            ch_distributed_table_stats="yes",
+        )
 
 
 def test_show_tables_rejects_multi_statement_conditions(
