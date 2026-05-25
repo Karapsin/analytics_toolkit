@@ -5,7 +5,8 @@ from collections import namedtuple
 from pathlib import Path
 
 import analytics_toolkit.general as general
-from analytics_toolkit.general import here
+from analytics_toolkit.general import here, write_file
+from analytics_toolkit.general.read_file import read_file
 from analytics_toolkit.general.read_file import _resolve_base_dir
 
 
@@ -201,3 +202,25 @@ def test_here_keeps_unique_basename_recursive_lookup_for_compatibility(
 def test_general_here_export_and_read_file_inspect_are_compatible() -> None:
     assert general.here is here
     assert general.read_file.inspect is not None
+
+
+def test_write_file_writes_utf8_text(tmp_path: Path) -> None:
+    output = tmp_path / "result.txt"
+
+    write_file(output, "select 'привет'")
+
+    assert output.read_text(encoding="utf-8") == "select 'привет'"
+    assert read_file(output) == "select 'привет'"
+
+
+def test_write_file_creates_parent_directories(tmp_path: Path) -> None:
+    output = tmp_path / "nested" / "reports" / "result.txt"
+
+    write_file(output, "done")
+
+    assert output.read_text(encoding="utf-8") == "done"
+
+
+def test_general_write_file_export_is_compatible() -> None:
+    assert general.write_file is write_file
+    assert "write_file" in general.__all__

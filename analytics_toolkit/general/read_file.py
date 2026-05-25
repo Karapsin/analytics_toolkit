@@ -144,3 +144,13 @@ def read_file(file_path: str, params_dict: dict[str, Any] | None = None) -> str:
         return text
 
     return text.format(**params_dict)
+
+
+def write_file(file_path: str, text: str) -> None:
+    path = Path(file_path).expanduser()
+
+    from .logging import time_print
+
+    time_print(f"Writing file {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
