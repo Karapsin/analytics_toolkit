@@ -121,7 +121,8 @@ plus PostgreSQL/Greenplum relation metadata, and Trino uses
 expose portable row-count or table-size values, so Trino rows return `None` in
 those columns. `schema` filters ClickHouse `database` or SQL `table_schema`;
 `table_name` accepts one table name string or a sequence of table name strings
-for exact matching. `conditions` is appended to the metadata query as
+for exact matching; when `schema` is supplied, matching `schema.table` values
+are accepted too. `conditions` is appended to the metadata query as
 `AND (<conditions>)`, so backend-native predicates are accepted.
 
 `async_sql` and `parallel_sql` are synchronous public functions: call them

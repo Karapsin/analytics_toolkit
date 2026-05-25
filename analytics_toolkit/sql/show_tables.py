@@ -30,7 +30,7 @@ def show_tables(
 
     config = get_connection_config(db_key)
     schema_filter = _validate_optional_string(schema, "schema")
-    table_name_filter = _validate_table_names(table_name)
+    table_name_filter = _validate_table_names(table_name, schema_filter)
     conditions_filter = _validate_conditions(conditions)
     query = _build_show_tables_query(
         config,
@@ -40,6 +40,9 @@ def show_tables(
     )
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
+    if result.empty:
+        return pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
+
     normalized = result.copy()
     normalized["row_count"] = pd.Series(
         (_normalize_row_count(value) for value in normalized[_ROW_COUNT_COLUMN]),
@@ -194,11 +197,14 @@ def _validate_optional_string(value: str | None, parameter_name: str) -> str | N
     return normalized
 
 
-def _validate_table_names(table_name: str | Sequence[str] | None) -> list[str] | None:
+def _validate_table_names(
+    table_name: str | Sequence[str] | None,
+    schema: str | None,
+) -> list[str] | None:
     if table_name is None:
         return None
     if isinstance(table_name, str):
-        return [_validate_table_name_value(table_name)]
+        return [_validate_table_name_value(table_name, schema)]
     if isinstance(table_name, (bytes, bytearray)) or not isinstance(
         table_name,
         Sequence,
@@ -208,17 +214,21 @@ def _validate_table_names(table_name: str | Sequence[str] | None) -> list[str] |
         raise InvalidSqlInputError("table_name must not be empty.")
 
     return [
-        _validate_table_name_value(value)
+        _validate_table_name_value(value, schema)
         for value in table_name
     ]
 
 
-def _validate_table_name_value(value: str) -> str:
+def _validate_table_name_value(value: str, schema: str | None) -> str:
     if not isinstance(value, str):
         raise TypeError("table_name values must be strings.")
     normalized = value.strip()
     if not normalized:
         raise InvalidSqlInputError("table_name values must not be empty.")
+    if schema is not None and normalized.startswith(f"{schema}."):
+        normalized = normalized[len(schema) + 1 :]
+        if not normalized:
+            raise InvalidSqlInputError("table_name values must not be empty.")
     return normalized
 
 

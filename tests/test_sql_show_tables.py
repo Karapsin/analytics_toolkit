@@ -145,6 +145,34 @@ def test_show_tables_filters_single_table_name(
     )
 
 
+def test_show_tables_filters_schema_qualified_table_name_when_schema_is_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables(
+        "ch",
+        schema="pa_core_stage",
+        table_name="pa_core_stage.funnels_dash_cvmoffers_daily",
+    )
+
+    assert _compact(calls[0][1]) == _compact(
+        """
+        SELECT
+            database AS db,
+            database AS schema,
+            name AS table_name,
+            total_rows AS row_count,
+            total_bytes AS table_size_bytes
+        FROM system.tables
+        WHERE 1 = 1
+          AND database = 'pa_core_stage'
+          AND name = 'funnels_dash_cvmoffers_daily'
+        ORDER BY database, name
+        """
+    )
+
+
 def test_show_tables_filters_multiple_table_names_and_escapes_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -208,6 +236,27 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
         ORDER BY table_schema, table_name
         """
     )
+
+
+def test_show_tables_returns_expected_columns_for_empty_columnless_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _capture_read_sql(monkeypatch, pd.DataFrame())
+
+    result = show_tables_module.show_tables(
+        "ch",
+        schema="pa_core_stage",
+        conditions="table_name = 'pa_core_stage.funnels_dash_cvmoffers_daily'",
+    )
+
+    assert result.empty
+    assert list(result.columns) == [
+        "db",
+        "schema",
+        "table_name",
+        "row_count",
+        "table_size",
+    ]
 
 
 def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> None:
