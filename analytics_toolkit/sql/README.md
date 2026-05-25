@@ -33,6 +33,7 @@ sql.parallel_sql(
 sql.gp_cancel_all_running_queries(...)
 sql.gp_vacuum(...)
 sql.create_sql_table(...)
+sql.extract_ddl(...)
 sql.ch_create_table_as(...)
 sql.ch_drop_table(...)
 sql.create_table_from_sql(...)
@@ -66,6 +67,8 @@ sql.get_sql_connection(...)
   queries, excluding the caller session
 - `gp_vacuum`: run Greenplum `VACUUM` outside a transaction block
 - `create_sql_table`: build and execute `CREATE TABLE` statements
+- `extract_ddl`: return native `CREATE TABLE` DDL for one table or a sequence
+  of tables
 - `ch_create_table_as`: recreate a ClickHouse distributed/shard table pair
   from a query result
 - `ch_drop_table`: drop a ClickHouse distributed table and its managed shard
@@ -128,6 +131,15 @@ does not expose portable row-count or table-size values, so Trino rows return
 for exact matching; when `schema` is supplied, matching `schema.table` values
 are accepted too. `conditions` is appended to the metadata query as
 `AND (<conditions>)`, so backend-native predicates are accepted.
+
+`extract_ddl(db_key, tables)` accepts one table name string or a sequence of
+table name strings and returns the native DDL statements joined with newlines.
+Each returned statement has exactly one trailing semicolon. Trino unqualified
+table names are resolved from the connection's configured catalog and schema.
+
+```python
+ddl = sql.extract_ddl("trino", ["events", "mart.orders"])
+```
 
 `async_sql` and `parallel_sql` are synchronous public functions: call them
 directly and they return a result dictionary. They accept a non-empty sequence

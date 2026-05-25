@@ -3,6 +3,7 @@ from .ddl.create_sql_table import (
     build_create_table_sqls,
     create_sql_table,
 )
+from .ddl.extract_ddl import extract_ddl
 from .async_api import async_sql, parallel_sql
 from .capabilities import BACKEND_CAPABILITIES, format_support_matrix, support_matrix_rows
 from .plans import (
@@ -51,6 +52,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "ch_full_table_move",
     "create_sql_table",
     "create_table_from_sql",
+    "extract_ddl",
     "execute_read",
     "execute_sql",
     "format_support_matrix",
@@ -85,6 +87,7 @@ __all__ = [
     "execute",
     "execute_read",
     "execute_sql",
+    "extract_ddl",
     "format_plan",
     "format_support_matrix",
     "build_gp_create_many_partitions_sqls",

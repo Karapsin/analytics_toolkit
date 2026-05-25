@@ -5,6 +5,7 @@ from .create_sql_table import (
     create_sql_table,
     quote_identifier,
 )
+from .extract_ddl import extract_ddl
 from .models import CreateSqlTableOptions
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "column_list_sql",
     "create_sql_table",
     "CreateSqlTableOptions",
+    "extract_ddl",
     "quote_identifier",
 ]
