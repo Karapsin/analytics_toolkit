@@ -21,6 +21,7 @@ class CreateTableFromSqlOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
+    only_shard: bool = False
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     trino_insert_chunk_size: int | None = None
@@ -59,6 +60,7 @@ class ChCreateTableAsOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
+    only_shard: bool = False
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
@@ -73,6 +75,7 @@ class ChDropTableOptions:
     backend: str
     target_table: str
     shard_table: str
+    only_shard: bool = False
     ch_cluster: str | None = "{cluster}"
     wait_for_absence: bool = False
     wait_timeout_seconds: int = 300

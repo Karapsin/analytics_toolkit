@@ -35,6 +35,7 @@ def create_sql_table(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    only_shard: bool = False,
     ch_replace_table: bool = False,
     dry_run: bool = False,
     return_sql: bool = False,
@@ -66,6 +67,7 @@ def create_sql_table(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=ch_distributed_table,
+        only_shard=only_shard,
         ch_replace_table=ch_replace_table,
         dry_run=dry_run,
         return_sql=return_sql,
@@ -86,6 +88,7 @@ def create_sql_table(
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
         ch_distributed_table=options.ch_distributed_table,
+        only_shard=options.only_shard,
         ch_replace_table=options.ch_replace_table,
         query_label=options.query_label,
     )
@@ -98,7 +101,11 @@ def create_sql_table(
                 columns=options.batch.columns,
             ),
         )
-        if options.backend == "ch" and options.ch_distributed_table
+        if (
+            options.backend == "ch"
+            and options.ch_distributed_table
+            and not options.only_shard
+        )
         else None
     )
     metadata = SqlOperationMetadata(
@@ -134,7 +141,7 @@ def create_sql_table(
     ):
         get_backend_adapter(options.backend).execute_commands(options.connection, create_sqls)
         if options.backend == "ch":
-            if options.ch_distributed_table:
+            if options.ch_distributed_table and not options.only_shard:
                 _wait_for_ch_distributed_table_pair(
                     options.connection,
                     options.table_name,
@@ -159,6 +166,7 @@ def build_create_table_sql(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    only_shard: bool = False,
     ch_replace_table: bool = False,
     query_label: str | None = None,
     table_schema: Mapping[str, str] | None = None,
@@ -177,6 +185,7 @@ def build_create_table_sql(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_distributed_table=ch_distributed_table,
+            only_shard=only_shard,
             ch_replace_table=ch_replace_table,
             query_label=query_label,
         )
@@ -196,11 +205,13 @@ def build_create_table_sqls(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_distributed_table: bool = False,
+    only_shard: bool = False,
     ch_replace_table: bool = False,
     query_label: str | None = None,
     table_schema: Mapping[str, str] | None = None,
 ) -> list[str]:
     backend = resolve_connection_backend(connection_type)
+    _validate_only_shard(backend, only_shard, "connection_type")
     resolved_column_types = _resolve_create_column_types(
         table_schema=table_schema,
         column_types=column_types,
@@ -223,6 +234,7 @@ def build_create_table_sqls(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_distributed_table=ch_distributed_table,
+            only_shard=only_shard,
             ch_replace_table=ch_replace_table,
         ),
         query_label,
@@ -243,6 +255,15 @@ def _build_column_definitions(
         )
         column_defs.append(f"{quote_identifier(column_name, backend)} {db_type}")
     return ", ".join(column_defs)
+
+
+def _validate_only_shard(backend: str, only_shard: bool, option_owner: str) -> None:
+    if not isinstance(only_shard, bool):
+        raise ValueError("only_shard must be a boolean.")
+    if only_shard and backend != "ch":
+        raise ValueError(
+            f"only_shard can only be used when {option_owner} has type 'ch'."
+        )
 
 
 def _build_expected_ch_column_types(
@@ -397,6 +418,7 @@ def _build_backend_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
+    only_shard: bool,
     ch_replace_table: bool,
 ) -> list[str]:
     try:
@@ -415,6 +437,7 @@ def _build_backend_create_table_sqls(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=ch_distributed_table,
+        only_shard=only_shard,
         ch_replace_table=ch_replace_table,
     )
 
@@ -467,9 +490,21 @@ def _build_ch_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
+    only_shard: bool,
     ch_replace_table: bool,
     **_: object,
 ) -> list[str]:
+    if only_shard:
+        return [
+            build_ch_local_create_table_sql(
+                table_name=table_name,
+                joined_columns=joined_columns,
+                ch_partition_by=ch_partition_by,
+                ch_order_by=ch_order_by,
+                ch_engine=ch_engine,
+                ch_replace_table=ch_replace_table,
+            )
+        ]
     if ch_distributed_table:
         return build_ch_distributed_create_table_sqls(
             table_name=table_name,
@@ -538,14 +573,13 @@ def build_ch_distributed_create_table_sqls(
         f"{order_by_sql}"
     )
     local_shard_sql = (
-        f"CREATE TABLE IF NOT EXISTS {shard_table}\n"
-        f"({joined_columns})\n"
-        f"ENGINE = {engine}\n"
-        f"{partition_sql}"
-        f"{order_by_sql}"
-    )
-    local_shard_sql = add_explicit_ch_uuid_to_local_replicated_create(
-        local_shard_sql
+        build_ch_local_create_table_sql(
+            table_name=shard_table,
+            joined_columns=joined_columns,
+            ch_partition_by=ch_partition_by,
+            ch_order_by=ch_order_by,
+            ch_engine=engine,
+        )
     )
     distributed_sql = (
         f"{cluster_create_statement} {table_name}\n"
@@ -569,6 +603,30 @@ def build_ch_distributed_create_table_sqls(
         ")"
     )
     return [shard_sql, local_shard_sql, distributed_sql, local_distributed_sql]
+
+
+def build_ch_local_create_table_sql(
+    table_name: str,
+    joined_columns: str,
+    ch_partition_by: Sequence[str] | str | None = None,
+    ch_order_by: Sequence[str] | str | None = None,
+    ch_engine: str = "ReplicatedMergeTree",
+    ch_replace_table: bool = False,
+) -> str:
+    engine = _normalize_non_empty_string(ch_engine, "ch_engine")
+    partition_sql = _build_ch_partition_by_sql(ch_partition_by)
+    order_by_sql = _build_ch_order_by_sql(ch_order_by)
+    create_statement = (
+        "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
+    )
+    sql = (
+        f"{create_statement} {table_name}\n"
+        f"({joined_columns})\n"
+        f"ENGINE = {engine}\n"
+        f"{partition_sql}"
+        f"{order_by_sql}"
+    )
+    return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
 
 def build_ch_shard_table_name(table_name: str) -> str:

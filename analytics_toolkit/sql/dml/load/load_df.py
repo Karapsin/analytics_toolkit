@@ -81,6 +81,7 @@ def load_df(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
@@ -112,6 +113,7 @@ def load_df(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
+        only_shard=only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         query_label=query_label,
@@ -238,6 +240,7 @@ def _build_load_options(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     query_label: str | None = None,
@@ -276,6 +279,7 @@ def _build_load_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
+        only_shard=_normalize_only_shard(only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -312,6 +316,7 @@ def _build_load_options(
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
+        only_shard=options.only_shard,
     )
     return options
 
@@ -329,6 +334,12 @@ def _resolve_load_write_mode(
     if append and normalized != "append":
         raise ValueError("append=True cannot be combined with write_mode other than 'append'.")
     return normalized
+
+
+def _normalize_only_shard(only_shard: bool) -> bool:
+    if not isinstance(only_shard, bool):
+        raise ValueError("only_shard must be a boolean.")
+    return only_shard
 
 
 def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
@@ -426,6 +437,7 @@ def _apply_load_target_write_mode(
         ch_retry_per_host_drops_concurrency=(
             options.ch_retry_per_host_drops_concurrency
         ),
+        ch_only_shard=options.only_shard,
     )
 
 
@@ -436,7 +448,13 @@ def _ensure_load_target_table(
     df: pd.DataFrame,
 ) -> None:
     if options.connection_backend == "ch":
-        _create_load_target_table(options, state, connection, df, distributed=True)
+        _create_load_target_table(
+            options,
+            state,
+            connection,
+            df,
+            distributed=not options.only_shard,
+        )
         state.target_exists = True
         return
 
@@ -471,9 +489,30 @@ def _create_load_target_table(
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
             ch_distributed_table=True,
+            only_shard=False,
             ch_replace_table=(
                 options.write_mode == "replace" and state.original_target_exists
             ),
+            **create_kwargs,
+        )
+        return
+
+    if options.connection_backend == "ch" and options.only_shard:
+        create_sql_table(
+            options.connection_backend,
+            connection,
+            options.destination_table,
+            df,
+            column_types=None,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            ch_partition_by=options.ch_partition_by,
+            ch_order_by=options.ch_order_by,
+            ch_engine=options.ch_engine,
+            ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
+            ch_distributed_table=False,
+            only_shard=True,
+            ch_replace_table=False,
             **create_kwargs,
         )
         return
@@ -569,6 +608,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "ch_engine": options.ch_engine,
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
+            "only_shard": options.only_shard,
         },
         metadata=metadata,
     )
@@ -584,6 +624,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             table_name=options.destination_table,
             ch_cluster=options.ch_cluster,
             query_label=options.query_label,
+            only_shard=options.only_shard,
         )
     elif options.write_mode == "truncate_insert":
         add_clear_target_steps(
@@ -592,8 +633,11 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             backend=options.connection_backend,
             table_name=options.destination_table,
             query_label=options.query_label,
-            include_ch_shard=options.connection_backend == "ch",
+            include_ch_shard=(
+                options.connection_backend == "ch" and not options.only_shard
+            ),
             ch_cluster=options.ch_cluster,
+            only_shard=options.only_shard,
         )
 
     if options.write_mode in {"replace", "truncate_insert"} or options.connection_backend == "ch":
@@ -610,10 +654,14 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 ch_engine=options.ch_engine,
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
-                ch_distributed_table=options.connection_backend == "ch",
+                ch_distributed_table=(
+                    options.connection_backend == "ch" and not options.only_shard
+                ),
+                only_shard=options.only_shard,
                 ch_replace_table=(
                     options.connection_backend == "ch"
                     and options.write_mode == "replace"
+                    and not options.only_shard
                 ),
                 query_label=options.query_label,
             ),

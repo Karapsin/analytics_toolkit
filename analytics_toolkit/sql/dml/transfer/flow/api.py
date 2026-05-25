@@ -74,6 +74,7 @@ def transfer_table(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
@@ -109,6 +110,7 @@ def transfer_table(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
+        only_shard=only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         query_label=query_label,
@@ -241,6 +243,7 @@ def build_transfer_options(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     query_label: str | None = None,
@@ -311,6 +314,7 @@ def build_transfer_options(
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
+        only_shard=_normalize_only_shard(only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -357,6 +361,7 @@ def build_transfer_options(
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
+        only_shard=options.only_shard,
     )
     return options
 
@@ -463,6 +468,12 @@ def _validate_estimate_total_rows(estimate_total_rows: bool) -> None:
         raise ValueError("estimate_total_rows must be a boolean.")
 
 
+def _normalize_only_shard(only_shard: bool) -> bool:
+    if not isinstance(only_shard, bool):
+        raise ValueError("only_shard must be a boolean.")
+    return only_shard
+
+
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     stage_table = _dry_run_stage_table_name(options)
     plan = SqlPlan(
@@ -489,6 +500,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "ch_engine": options.ch_engine,
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
+            "only_shard": options.only_shard,
             "estimate_total_rows": options.estimate_total_rows,
         },
         metadata=SqlOperationMetadata(stage_table=stage_table),
@@ -542,6 +554,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 table_name=options.target_table,
                 ch_cluster=options.ch_cluster,
                 query_label=options.query_label,
+                only_shard=options.only_shard,
             )
         else:
             add_clear_target_steps(
@@ -560,6 +573,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             table_name=options.target_table,
             query_label=options.query_label,
             ch_cluster=options.ch_cluster,
+            only_shard=options.only_shard,
         )
     if options.table_schema is None:
         add_create_table_placeholder_step(
@@ -583,9 +597,14 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 ch_engine=options.ch_engine,
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
-                ch_distributed_table=options.to_db_backend == "ch",
+                ch_distributed_table=(
+                    options.to_db_backend == "ch" and not options.only_shard
+                ),
+                only_shard=options.only_shard,
                 ch_replace_table=(
-                    options.to_db_backend == "ch" and options.write_mode == "replace"
+                    options.to_db_backend == "ch"
+                    and options.write_mode == "replace"
+                    and not options.only_shard
                 ),
                 query_label=options.query_label,
             ),

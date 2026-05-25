@@ -918,6 +918,33 @@ def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> N
     assert "ON CLUSTER analytics" in plan.sqls[2]
 
 
+def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
+    plan = load_df_module.load_df(
+        "ch",
+        "analytics.events",
+        pd.DataFrame({"dt": ["2024-01-01"], "id": [1]}),
+        write_mode="truncate_insert",
+        only_shard=True,
+        dry_run=True,
+        ch_partition_by=["dt"],
+        ch_order_by=["dt", "id"],
+        ch_cluster="analytics",
+    )
+
+    assert plan.options["only_shard"] is True
+    assert plan.sqls[0] == "TRUNCATE TABLE IF EXISTS analytics.events"
+    create_sql = next(
+        statement.sql for statement in plan.statements if statement.phase == "create_target"
+    )
+    assert create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert "ENGINE = ReplicatedMergeTree" in create_sql
+    assert "PARTITION BY `dt`" in create_sql
+    assert "ORDER BY (`dt`, `id`)" in create_sql
+    assert "_shard" not in "\n".join(plan.sqls)
+    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
+
+
 def test_transfer_clickhouse_dry_run_preserves_drop_pair_cluster() -> None:
     plan = transfer_api_module.transfer_table(
         from_db="gp",
@@ -939,6 +966,40 @@ def test_transfer_clickhouse_dry_run_preserves_drop_pair_cluster() -> None:
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
         "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
     ]
+
+
+def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="ch",
+        from_sql="select dt, id from source_table",
+        to_table="analytics.events",
+        only_shard=True,
+        dry_run=True,
+        table_schema={"dt": "Date", "id": "UInt64"},
+        ch_partition_by=["dt"],
+        ch_order_by=["dt", "id"],
+        ch_cluster="analytics",
+    )
+
+    assert plan.options["only_shard"] is True
+    drop_sqls = [
+        statement.sql for statement in plan.statements if statement.phase == "drop_target"
+    ]
+    assert drop_sqls == ["DROP TABLE IF EXISTS analytics.events"]
+    target_create_sql = [
+        statement.sql
+        for statement in plan.statements
+        if statement.phase == "create_target"
+        and statement.target_table == "analytics.events"
+    ][0]
+    assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert "ENGINE = ReplicatedMergeTree" in target_create_sql
+    assert "PARTITION BY `dt`" in target_create_sql
+    assert "ORDER BY (`dt`, `id`)" in target_create_sql
+    assert "_shard" not in "\n".join(plan.sqls)
+    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
 
 def test_create_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> None:
@@ -965,6 +1026,38 @@ def test_create_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> No
     assert plan.sqls[3] == "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics"
 
 
+def test_create_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target() -> None:
+    plan = create_table_module.create_table_from_sql(
+        "gp",
+        "analytics.events",
+        "select dt, id from source_table",
+        table_db="ch",
+        drop_target_if_exists=True,
+        insert_data=True,
+        dry_run=True,
+        table_schema={"dt": "Date", "id": "UInt64"},
+        only_shard=True,
+        ch_partition_by=["dt"],
+        ch_order_by=["dt", "id"],
+        ch_cluster="analytics",
+    )
+
+    assert plan.options["only_shard"] is True
+    assert [statement.phase for statement in plan.statements] == [
+        "inspect_source_schema",
+        "drop_target",
+        "create_target",
+        "insert_data",
+    ]
+    assert plan.sqls[1] == "DROP TABLE IF EXISTS analytics.events"
+    assert "ENGINE = ReplicatedMergeTree" in plan.sqls[2]
+    assert "PARTITION BY `dt`" in plan.sqls[2]
+    assert "ORDER BY (`dt`, `id`)" in plan.sqls[2]
+    assert "_shard" not in "\n".join(plan.sqls)
+    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
+
+
 def test_ch_create_table_as_dry_run_uses_lifecycle_drop_order() -> None:
     plan = ch_ctas_module.ch_create_table_as(
         "ch",
@@ -980,6 +1073,31 @@ def test_ch_create_table_as_dry_run_uses_lifecycle_drop_order() -> None:
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
         "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
     ]
+
+
+def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:
+    plan = ch_ctas_module.ch_create_table_as(
+        "ch",
+        "analytics.events",
+        "select 1 as id",
+        dry_run=True,
+        table_schema={"id": "UInt64"},
+        only_shard=True,
+        ch_cluster="analytics",
+    )
+
+    assert plan.options["only_shard"] is True
+    assert [statement.phase for statement in plan.statements] == [
+        "drop_target",
+        "create_target",
+        "insert_target",
+    ]
+    assert plan.sqls[0] == "DROP TABLE IF EXISTS analytics.events"
+    assert plan.sqls[1].startswith("CREATE OR REPLACE TABLE analytics.events")
+    assert "ENGINE = ReplicatedMergeTree" in plan.sqls[1]
+    assert "_shard" not in "\n".join(plan.sqls)
+    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
 
 def test_ch_full_table_move_dry_run_marks_inspection_required(monkeypatch) -> None:

@@ -114,6 +114,20 @@ def test_ch_drop_table_dry_run_can_skip_cluster_and_override_shard() -> None:
     ]
 
 
+def test_ch_drop_table_dry_run_accepts_shard_table_as_target() -> None:
+    plan = ch_drop_module.ch_drop_table(
+        "ch",
+        TARGET_SHARD_TABLE,
+        dry_run=True,
+    )
+
+    assert plan.options["only_shard"] is True
+    assert plan.options["shard_table"] == TARGET_SHARD_TABLE
+    assert plan.options["ch_cluster"] is None
+    assert plan.metadata.statement_count == 1
+    assert plan.sqls == ["DROP TABLE IF EXISTS analytics.events_shard"]
+
+
 def test_ch_drop_table_dry_run_applies_query_label() -> None:
     plan = ch_drop_module.ch_drop_table(
         "ch",
@@ -153,6 +167,20 @@ def test_ch_drop_table_executes_pair_drop_sqls(
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
+    assert fake_client.queries == []
+    assert fake_client.close_calls == 1
+
+
+def test_ch_drop_table_executes_shard_table_target_as_single_local_drop(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    ch_drop_module.ch_drop_table(
+        "ch",
+        TARGET_SHARD_TABLE,
+    )
+
+    assert fake_client.commands == ["DROP TABLE IF EXISTS analytics.events_shard"]
+    assert fake_client.command_settings == [None]
     assert fake_client.queries == []
     assert fake_client.close_calls == 1
 

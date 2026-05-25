@@ -42,10 +42,15 @@ def validate_ch_options_not_used(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
+    only_shard: bool = False,
 ) -> None:
     if target_backend == "ch":
         return
 
+    if only_shard:
+        raise ValueError(
+            f"only_shard can only be used when {option_owner} has type 'ch'."
+        )
     if ch_partition_by is not None:
         raise ValueError(
             f"ch_partition_by can only be used when {option_owner} has type 'ch'."

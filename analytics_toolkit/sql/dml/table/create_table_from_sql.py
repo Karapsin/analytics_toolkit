@@ -70,6 +70,7 @@ def create_table_from_sql(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     trino_insert_chunk_size: int | None = None,
@@ -96,6 +97,7 @@ def create_table_from_sql(
     ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
     ch_cluster_name = normalize_ch_string(ch_cluster, "ch_cluster")
     ch_sharding_key = normalize_ch_string(sharding_key, "sharding_key")
+    only_shard = _normalize_only_shard(only_shard)
 
     _validate_backend_options(
         target_backend=target_config.backend,
@@ -105,6 +107,7 @@ def create_table_from_sql(
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
+        only_shard=only_shard,
     )
     if trino_insert_chunk_size is not None and trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
@@ -127,6 +130,7 @@ def create_table_from_sql(
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
+        only_shard=only_shard,
         ch_retry_per_host_drops=retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -160,6 +164,7 @@ def create_table_from_sql(
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
+            only_shard=options.only_shard,
             query_label=options.query_label,
         )
 
@@ -234,22 +239,34 @@ def create_table_from_sql(
 
             if drop_target_if_exists:
                 if target_config.backend == "ch":
-                    time_print(
-                        "Dropping existing ClickHouse distributed table pair "
-                        f"{target_table}"
-                    )
-                    drop_ch_distributed_table_pair(
-                        target_connection,
-                        target_table,
-                        ch_cluster=ch_cluster_name,
-                        query_label=query_label,
-                        wait_for_absence=True,
-                        connection_key=target_config.connection_key,
-                        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                        ch_retry_per_host_drops_concurrency=(
-                            options.ch_retry_per_host_drops_concurrency
-                        ),
-                    )
+                    if options.only_shard:
+                        time_print(
+                            f"Dropping existing ClickHouse table {target_table}"
+                        )
+                        drop_table(
+                            target_config.backend,
+                            target_connection,
+                            target_table,
+                            ch_cluster=None,
+                            query_label=query_label,
+                        )
+                    else:
+                        time_print(
+                            "Dropping existing ClickHouse distributed table pair "
+                            f"{target_table}"
+                        )
+                        drop_ch_distributed_table_pair(
+                            target_connection,
+                            target_table,
+                            ch_cluster=ch_cluster_name,
+                            query_label=query_label,
+                            wait_for_absence=True,
+                            connection_key=target_config.connection_key,
+                            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                            ch_retry_per_host_drops_concurrency=(
+                                options.ch_retry_per_host_drops_concurrency
+                            ),
+                        )
                 else:
                     time_print(
                         f"Dropping existing table {target_table} "
@@ -274,9 +291,13 @@ def create_table_from_sql(
                 ch_engine=ch_engine_name,
                 ch_cluster=ch_cluster_name,
                 ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=target_config.backend == "ch",
+                ch_distributed_table=(
+                    target_config.backend == "ch" and not options.only_shard
+                ),
+                only_shard=options.only_shard,
                 ch_replace_table=(
                     target_config.backend == "ch"
+                    and not options.only_shard
                     and drop_target_if_exists
                     and target_exists_before_drop
                 ),
@@ -338,6 +359,8 @@ def create_table_from_sql(
             "ch_cluster": ch_cluster_name,
             "sharding_key": ch_sharding_key,
         }
+        if options.only_shard:
+            transfer_kwargs["only_shard"] = True
         if query_label is not None:
             transfer_kwargs["query_label"] = query_label
         if options.table_schema is not None:
@@ -380,6 +403,7 @@ def _build_create_table_from_sql_plan(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
+    only_shard: bool,
     query_label: str | None,
 ) -> SqlPlan:
     plan = SqlPlan(
@@ -393,6 +417,7 @@ def _build_create_table_from_sql_plan(
             "insert_data": insert_data,
             "drop_target_if_exists": drop_target_if_exists,
             "table_schema": table_schema,
+            "only_shard": only_shard,
         },
     )
     add_inspect_schema_step(
@@ -410,6 +435,7 @@ def _build_create_table_from_sql_plan(
             table_name=target_table,
             ch_cluster=ch_cluster,
             query_label=query_label,
+            only_shard=only_shard,
         )
     if table_schema is None:
         add_create_table_placeholder_step(
@@ -433,7 +459,8 @@ def _build_create_table_from_sql_plan(
                 ch_engine=ch_engine,
                 ch_cluster=ch_cluster,
                 ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=target_backend == "ch",
+                ch_distributed_table=target_backend == "ch" and not only_shard,
+                only_shard=only_shard,
                 query_label=query_label,
             ),
             alias=target_key,
@@ -488,6 +515,7 @@ def _validate_backend_options(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
+    only_shard: bool,
 ) -> None:
     if gp_distributed_by_key and target_backend != "gp":
         raise ValueError(
@@ -501,7 +529,14 @@ def _validate_backend_options(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
+        only_shard=only_shard,
     )
+
+
+def _normalize_only_shard(only_shard: bool) -> bool:
+    if not isinstance(only_shard, bool):
+        raise ValueError("only_shard must be a boolean.")
+    return only_shard
 
 
 def _close_connections(

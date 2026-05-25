@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from sqlglot import exp, parse_one
+
 from ...ch_lifecycle import (
     build_drop_ch_distributed_table_pair_sqls,
+    build_drop_ch_table_sqls,
     drop_ch_distributed_table_pair,
+    drop_ch_table,
 )
 from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
 from ...connection.config import get_connection_config
@@ -43,14 +47,17 @@ def ch_drop_table(
         )
 
     target_table = _normalize_non_empty_string(table, "table")
+    only_shard = shard_table is None and _is_default_ch_shard_table_name(target_table)
     target_shard_table = (
-        build_ch_shard_table_name(target_table)
+        target_table
+        if only_shard
+        else build_ch_shard_table_name(target_table)
         if shard_table is None
         else _normalize_non_empty_string(shard_table, "shard_table")
     )
     cluster_name = (
         None
-        if ch_cluster is None
+        if only_shard or ch_cluster is None
         else _normalize_non_empty_string(ch_cluster, "ch_cluster")
     )
     options = ChDropTableOptions(
@@ -58,6 +65,7 @@ def ch_drop_table(
         backend=config.backend,
         target_table=target_table,
         shard_table=target_shard_table,
+        only_shard=only_shard,
         ch_cluster=cluster_name,
         wait_for_absence=bool(wait_for_absence),
         wait_timeout_seconds=wait_timeout_seconds,
@@ -93,8 +101,27 @@ def ch_drop_table(
             preview_sql=plan.sqls[0] if plan.sqls else None,
         ):
             time_print(
-                f"Dropping ClickHouse table pair {options.target_table} / "
-                f"{options.shard_table} on {options.connection_key}"
+                f"Dropping ClickHouse table {options.target_table} "
+                f"on {options.connection_key}"
+            )
+            if options.only_shard:
+                drop_ch_table(
+                    connection,
+                    options.target_table,
+                    ch_cluster=options.ch_cluster,
+                    query_label=options.query_label,
+                    wait_for_absence=options.wait_for_absence,
+                    wait_timeout_seconds=options.wait_timeout_seconds,
+                    wait_poll_interval_seconds=options.wait_poll_interval_seconds,
+                )
+                metadata.affected_rows = None
+                return (
+                    SqlOperationResult(rows=None, metadata=metadata, plan=plan)
+                    if options.return_metadata
+                    else None
+                )
+            time_print(
+                f"Dropping paired ClickHouse shard table {options.shard_table}"
             )
             drop_ch_distributed_table_pair(
                 connection,
@@ -127,10 +154,17 @@ def ch_drop_table(
 
 
 def build_ch_drop_table_plan(options: ChDropTableOptions) -> SqlPlan:
-    sqls = build_drop_ch_distributed_table_pair_sqls(
-        options.target_table,
-        ch_cluster=options.ch_cluster,
-        shard_table=options.shard_table,
+    sqls = (
+        build_drop_ch_table_sqls(
+            options.target_table,
+            ch_cluster=options.ch_cluster,
+        )
+        if options.only_shard
+        else build_drop_ch_distributed_table_pair_sqls(
+            options.target_table,
+            ch_cluster=options.ch_cluster,
+            shard_table=options.shard_table,
+        )
     )
     plan = SqlPlan(
         operation="ch_drop_table",
@@ -139,6 +173,7 @@ def build_ch_drop_table_plan(options: ChDropTableOptions) -> SqlPlan:
         target_table=options.target_table,
         options={
             "shard_table": options.shard_table,
+            "only_shard": options.only_shard,
             "ch_cluster": options.ch_cluster,
             "wait_for_absence": options.wait_for_absence,
             "ch_retry_per_host_drops": options.ch_retry_per_host_drops,
@@ -160,3 +195,13 @@ def build_ch_drop_table_plan(options: ChDropTableOptions) -> SqlPlan:
         query_label=options.query_label,
     )
     return plan
+
+
+def _is_default_ch_shard_table_name(table_name: str) -> bool:
+    try:
+        table = parse_one(table_name, read="clickhouse", into=exp.Table)
+    except Exception:
+        return False
+    if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
+        return False
+    return str(table.this.this).endswith("_shard")

@@ -537,6 +537,12 @@ create the requested target as a `Distributed` table. Use `ch_partition_by`,
 shard DDL and distributed sharding expression. The default `ch_cluster` is the
 ClickHouse `{cluster}` macro so created distributed/shard table pairs are
 visible across the full cluster on Yandex Managed ClickHouse.
+Pass `only_shard=True` to `load_df`, `transfer_table`,
+`create_table_from_sql`, `create_sql_table`, or `ch_create_table_as` when the
+requested ClickHouse table should be the local table itself. In that mode the
+helpers do not create `<target>_shard`, do not create a `Distributed` table, and
+do not submit `ON CLUSTER` DDL. Replace and truncate modes drop or truncate only
+the requested local target table.
 The shard table is also created locally without `ON CLUSTER` so the initiating
 host does not have to wait for asynchronous cluster DDL before it can see its
 own shard table. For local replicated shard DDL, the helper adds an explicit
@@ -579,6 +585,8 @@ options as `load_df`: `ch_partition_by`, `ch_order_by`, `ch_engine`,
 `ch_cluster`, and `sharding_key`. Its default `ch_cluster` is the ClickHouse
 `{cluster}` macro so the created tables are visible across the full cluster on
 Yandex Managed ClickHouse.
+Pass `only_shard=True` to create and insert into `table_name` as a local
+ClickHouse table instead of creating the distributed/shard pair.
 
 If `ch_create_table_as` fails with `UNKNOWN_TABLE` for a small CTE joined by the
 query, ClickHouse may be resolving that CTE name on a remote shard as a physical
@@ -598,7 +606,9 @@ GLOBAL LEFT JOIN trigger_map AS trigger_map
 `ch_drop_table` is ClickHouse-only. It drops the requested distributed table and
 its managed shard table, using `<table>_shard` by default. Pass `shard_table`
 when the shard table has a custom name, and pass `ch_cluster=None` to skip
-`ON CLUSTER` drop statements.
+`ON CLUSTER` drop statements. If `table` itself ends with the standard
+`_shard` suffix and `shard_table` is omitted, `ch_drop_table` treats it as a
+single local shard table and drops only that table.
 
 `ch_full_table_move` is ClickHouse-only. It reads `SHOW CREATE TABLE` for
 `move_table`, extracts the source shard table from its `Distributed` engine, and

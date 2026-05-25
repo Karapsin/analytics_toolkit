@@ -79,6 +79,7 @@ def finalize_loaded_stage(
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
+        ch_only_shard=options.only_shard,
         query_label=options.query_label,
         connection_key=options.to_db_key,
         ch_retry_per_host_drops=options.ch_retry_per_host_drops,
@@ -103,6 +104,14 @@ def finalize_empty_transfer(
         if not stage_state.target_exists:
             raise ValueError("Cannot create target table from an empty result set.")
         if options.to_db_backend == "ch":
+            if options.only_shard:
+                clear_target_table(
+                    options.to_db_backend,
+                    connection_refs.target["connection"],
+                    options.target_table,
+                    query_label=options.query_label,
+                )
+                return
             clear_ch_distributed_table_data(
                 connection_refs.target["connection"],
                 options.target_table,

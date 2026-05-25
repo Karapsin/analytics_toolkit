@@ -16,6 +16,8 @@ from .ddl.create_sql_table import (
     _sql_string_literal,
     _wait_for_ch_distributed_table_pair,
     _wait_for_ch_distributed_table_pair_absence,
+    _wait_for_ch_table_absence,
+    _wait_for_ch_table_absence_on_cluster,
 )
 from .labels import apply_query_label
 
@@ -62,6 +64,24 @@ def build_drop_ch_distributed_table_pair_sqls(
                     query_label=query_label,
                 ),
             ]
+        )
+    return sqls
+
+
+def build_drop_ch_table_sqls(
+    table_name: str,
+    ch_cluster: str | None = "{cluster}",
+    *,
+    query_label: str | None = None,
+) -> list[str]:
+    sqls = [_build_drop_ch_table_sql(table_name, query_label=query_label)]
+    if ch_cluster is not None:
+        sqls.append(
+            _build_drop_ch_table_sql(
+                table_name,
+                ch_cluster=ch_cluster,
+                query_label=query_label,
+            )
         )
     return sqls
 
@@ -135,6 +155,45 @@ def drop_ch_distributed_table_pair(
             timeout_seconds=wait_timeout_seconds,
             poll_interval_seconds=wait_poll_interval_seconds,
         )
+
+
+def drop_ch_table(
+    connection: Any,
+    table_name: str,
+    ch_cluster: str | None = "{cluster}",
+    *,
+    query_label: str | None = None,
+    wait_for_absence: bool = False,
+    wait_timeout_seconds: int = 300,
+    wait_poll_interval_seconds: float = 1,
+) -> None:
+    _execute_ch_sqls(
+        connection,
+        build_drop_ch_table_sqls(
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+        ),
+    )
+    if not wait_for_absence:
+        return
+
+    if ch_cluster is None:
+        _wait_for_ch_table_absence(
+            connection,
+            table_name,
+            timeout_seconds=wait_timeout_seconds,
+            poll_interval_seconds=wait_poll_interval_seconds,
+        )
+        return
+
+    _wait_for_ch_table_absence_on_cluster(
+        connection,
+        table_name,
+        ch_cluster=ch_cluster,
+        timeout_seconds=wait_timeout_seconds,
+        poll_interval_seconds=wait_poll_interval_seconds,
+    )
 
 
 def build_truncate_ch_distributed_table_pair_sqls(

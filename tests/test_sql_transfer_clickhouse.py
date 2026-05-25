@@ -244,3 +244,59 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'"
         in target.commands
     )
+
+
+def test_transfer_table_clickhouse_only_shard_creates_local_target(
+    monkeypatch,
+) -> None:
+    source = FakeSourceConnection(rows=[(date(2024, 2, 1), 10)])
+    target = FakeClickHouseClient()
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    monkeypatch.setattr(
+        transfer_attempt_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
+
+    transferred_rows = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="ch",
+        from_sql="select month_date, users from source_table",
+        to_table=TARGET_TABLE,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+        only_shard=True,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date"],
+    )
+
+    assert transferred_rows == 1
+    assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" in target.commands
+    assert all("ON CLUSTER" not in command for command in target.commands)
+    assert all("ENGINE = Distributed(" not in command for command in target.commands)
+    assert not any(TARGET_SHARD_TABLE in command for command in target.commands)
+    target_creates = [
+        command
+        for command in target.commands
+        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}\n")
+    ]
+    assert len(target_creates) == 1
+    assert "ENGINE = ReplicatedMergeTree" in target_creates[0]
+    assert "PARTITION BY `month_date`" in target_creates[0]
+    assert "ORDER BY `month_date`" in target_creates[0]
+    assert not any("clusterAllReplicas" in query for query in target.queries)
+    assert any(
+        command.startswith(
+            f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) "
+        )
+        for command in target.commands
+    )

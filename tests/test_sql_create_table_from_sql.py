@@ -544,6 +544,48 @@ def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
     )
 
 
+def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
+    monkeypatch,
+) -> None:
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    target = FakeClickHouseClient()
+    transfer_calls: list[dict[str, object]] = []
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    def fake_transfer_table(**kwargs: object) -> int:
+        transfer_calls.append(kwargs)
+        return 5
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(create_module, "transfer_table", fake_transfer_table)
+
+    inserted_rows = create_module.create_table_from_sql(
+        "gp",
+        "analytics.events",
+        "select id, amount from source_table",
+        table_db="ch",
+        insert_data=True,
+        only_shard=True,
+        ch_order_by=["id"],
+    )
+
+    assert inserted_rows == 5
+    assert transfer_calls[0]["only_shard"] is True
+    assert any(
+        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+        and "ENGINE = ReplicatedMergeTree" in command
+        for command in target.commands
+    )
+    assert not any("events_shard" in command for command in target.commands)
+    assert not any("ENGINE = Distributed(" in command for command in target.commands)
+
+
 def test_create_table_from_sql_validates_empty_inputs(monkeypatch) -> None:
     monkeypatch.setattr(
         create_module,

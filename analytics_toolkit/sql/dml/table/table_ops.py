@@ -260,6 +260,7 @@ def apply_target_write_mode(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
+    ch_only_shard: bool = False,
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
@@ -267,6 +268,28 @@ def apply_target_write_mode(
         return target_exists
 
     if backend == "ch":
+        if ch_only_shard:
+            if write_mode == "truncate_insert" and target_exists:
+                clear_target_table(
+                    backend,
+                    connection,
+                    table_name,
+                    query_label=query_label,
+                )
+                return True
+            if write_mode == "truncate_insert" and not drop_missing_ch_truncate_target:
+                return False
+
+            time_print(f"Dropping existing ClickHouse table {table_name}")
+            drop_table(
+                backend,
+                connection,
+                table_name,
+                ch_cluster=None,
+                query_label=query_label,
+            )
+            return False
+
         if write_mode == "truncate_insert" and target_exists:
             clear_ch_distributed_table_data(
                 connection,
@@ -340,6 +363,7 @@ def finalize_stage_table(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
+    ch_only_shard: bool = False,
 ) -> None:
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
@@ -360,6 +384,7 @@ def finalize_stage_table(
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
             ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
+            ch_only_shard=ch_only_shard,
         )
 
     if backend == "ch":
@@ -382,7 +407,9 @@ def finalize_stage_table(
                 original_target_exists
                 and replace_target_table
                 and write_mode == "replace"
+                and not ch_only_shard
             ),
+            only_shard=ch_only_shard,
         )
         insert_from_table(
             backend,
@@ -432,6 +459,7 @@ def _ensure_ch_distributed_target_pair(
     ch_sharding_key: str,
     query_label: str | None,
     ch_replace_table: bool = False,
+    only_shard: bool = False,
 ) -> None:
     create_batch = sample_batch
     create_column_types = target_column_types or insert_column_types
@@ -457,7 +485,8 @@ def _ensure_ch_distributed_target_pair(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=True,
+        ch_distributed_table=not only_shard,
+        only_shard=only_shard,
         ch_replace_table=ch_replace_table,
         query_label=query_label,
     )

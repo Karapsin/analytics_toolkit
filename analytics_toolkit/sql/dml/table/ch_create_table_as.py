@@ -20,11 +20,14 @@ from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...ch_lifecycle import (
     build_create_ch_distributed_table_pair_sqls,
     build_drop_ch_distributed_table_pair_sqls,
+    build_drop_ch_table_sqls,
     drop_ch_distributed_table_pair,
+    drop_ch_table,
 )
 from ...ddl.create_sql_table import (
     _normalize_non_empty_string,
     _wait_for_ch_distributed_table_pair,
+    build_ch_local_create_table_sql,
     build_table_schema_column_definitions,
     build_ch_shard_table_name,
     normalize_table_schema,
@@ -46,6 +49,7 @@ def ch_create_table_as(
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
+    only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
@@ -74,6 +78,7 @@ def ch_create_table_as(
         ch_engine=ch_engine,
         ch_cluster=cluster_name,
         ch_sharding_key=sharding_key,
+        only_shard=_normalize_only_shard(only_shard),
         ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -90,13 +95,11 @@ def ch_create_table_as(
     )
 
     if options.dry_run or options.return_sql:
-        target_shard_table = build_ch_shard_table_name(options.target_table)
+        drop_sqls = _build_ch_create_table_as_dry_run_drop_sqls(options)
+        create_sqls = _build_ch_create_table_as_dry_run_create_sqls(options)
         sqls = [
-            *build_drop_ch_distributed_table_pair_sqls(
-                options.target_table,
-                ch_cluster=options.ch_cluster,
-            ),
-            *_build_ch_create_table_as_dry_run_create_sqls(options),
+            *drop_sqls,
+            *create_sqls,
             _build_insert_select_sql(options.target_table, options.query_sql),
         ]
         plan = SqlPlan(
@@ -111,13 +114,18 @@ def ch_create_table_as(
                 "ch_cluster": options.ch_cluster,
                 "sharding_key": options.ch_sharding_key,
                 "table_schema": options.table_schema,
+                "only_shard": options.only_shard,
             },
             metadata=SqlOperationMetadata(
                 statement_count=len(sqls),
                 query_label=options.query_label,
             ),
         )
-        phases = ["drop_target"] * 4 + ["create_target"] * 4 + ["insert_target"]
+        phases = (
+            ["drop_target"] * len(drop_sqls)
+            + ["create_target"] * len(create_sqls)
+            + ["insert_target"]
+        )
         for sql, phase in zip(sqls, phases):
             plan.add(
                 sql,
@@ -146,27 +154,37 @@ def ch_create_table_as(
                 f"Creating ClickHouse table {options.target_table} from query on "
                 f"{options.connection_key}"
             )
-            time_print(
-                f"Dropping target ClickHouse table pair {options.target_table} / "
-                f"{target_shard_table}"
-            )
-            drop_ch_distributed_table_pair(
-                connection,
-                options.target_table,
-                ch_cluster=options.ch_cluster,
-                query_label=options.query_label,
-                wait_for_absence=True,
-                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                ch_retry_per_host_drops_concurrency=(
-                    options.ch_retry_per_host_drops_concurrency
-                ),
-                per_host_connection_factory=(
-                    lambda host: get_ch_connection_for_host(
-                        options.connection_key,
-                        host,
-                    )
-                ),
-            )
+            if options.only_shard:
+                time_print(f"Dropping target ClickHouse table {options.target_table}")
+                drop_ch_table(
+                    connection,
+                    options.target_table,
+                    ch_cluster=None,
+                    query_label=options.query_label,
+                    wait_for_absence=False,
+                )
+            else:
+                time_print(
+                    f"Dropping target ClickHouse table pair {options.target_table} / "
+                    f"{target_shard_table}"
+                )
+                drop_ch_distributed_table_pair(
+                    connection,
+                    options.target_table,
+                    ch_cluster=options.ch_cluster,
+                    query_label=options.query_label,
+                    wait_for_absence=True,
+                    ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                    ch_retry_per_host_drops_concurrency=(
+                        options.ch_retry_per_host_drops_concurrency
+                    ),
+                    per_host_connection_factory=(
+                        lambda host: get_ch_connection_for_host(
+                            options.connection_key,
+                            host,
+                        )
+                    ),
+                )
 
             if options.table_schema is None:
                 time_print(f"Inferring ClickHouse schema for {options.target_table}")
@@ -201,36 +219,44 @@ def ch_create_table_as(
                     options.table_schema,
                     columns=source_columns,
                 )
-            shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
-                build_ch_create_table_as_sqls(
-                    table_name=options.target_table,
-                    joined_columns=joined_columns,
-                    query=options.query_sql,
-                    ch_partition_by=options.ch_partition_by,
-                    ch_order_by=options.ch_order_by,
-                    ch_engine=options.ch_engine,
-                    ch_cluster=options.ch_cluster,
-                    ch_sharding_key=options.ch_sharding_key,
-                    ch_replace_table=True,
-                    query_label=options.query_label,
-                )
-            )
-            metadata.statement_count = 8
-
-            time_print(f"Creating target shard table {target_shard_table}")
-            _execute_ch_command(connection, shard_sql)
-            time_print(f"Creating local shard table {target_shard_table}")
-            _execute_ch_command(connection, local_shard_sql)
-            time_print(f"Creating target distributed table {options.target_table}")
-            _execute_ch_command(connection, distributed_sql)
-            time_print(f"Creating local distributed table {options.target_table}")
-            _execute_ch_command(connection, local_distributed_sql)
-            time_print(f"Waiting for target table pair {options.target_table}")
-            _wait_for_ch_distributed_table_pair(
-                connection,
-                options.target_table,
+            create_sqls = build_ch_create_table_as_sqls(
+                table_name=options.target_table,
+                joined_columns=joined_columns,
+                query=options.query_sql,
+                ch_partition_by=options.ch_partition_by,
+                ch_order_by=options.ch_order_by,
+                ch_engine=options.ch_engine,
                 ch_cluster=options.ch_cluster,
+                ch_sharding_key=options.ch_sharding_key,
+                ch_replace_table=True,
+                only_shard=options.only_shard,
+                query_label=options.query_label,
             )
+            metadata.statement_count = len(create_sqls) + (
+                1 if options.only_shard else 4
+            ) + 1
+
+            if options.only_shard:
+                time_print(f"Creating local ClickHouse table {options.target_table}")
+                _execute_ch_command(connection, create_sqls[0])
+            else:
+                shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = (
+                    create_sqls
+                )
+                time_print(f"Creating target shard table {target_shard_table}")
+                _execute_ch_command(connection, shard_sql)
+                time_print(f"Creating local shard table {target_shard_table}")
+                _execute_ch_command(connection, local_shard_sql)
+                time_print(f"Creating target distributed table {options.target_table}")
+                _execute_ch_command(connection, distributed_sql)
+                time_print(f"Creating local distributed table {options.target_table}")
+                _execute_ch_command(connection, local_distributed_sql)
+                time_print(f"Waiting for target table pair {options.target_table}")
+                _wait_for_ch_distributed_table_pair(
+                    connection,
+                    options.target_table,
+                    ch_cluster=options.ch_cluster,
+                )
             time_print(f"Inserting query results into {options.target_table}")
             try:
                 connection.command(
@@ -269,6 +295,7 @@ def build_ch_create_table_as_sqls(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_replace_table: bool = True,
+    only_shard: bool = False,
     query_label: str | None = None,
 ) -> list[str]:
     target_table = _normalize_non_empty_string(table_name, "table_name")
@@ -277,6 +304,21 @@ def build_ch_create_table_as_sqls(
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
+    only_shard = _normalize_only_shard(only_shard)
+    if only_shard:
+        return [
+            apply_query_label(
+                build_ch_local_create_table_sql(
+                    table_name=target_table,
+                    joined_columns=columns_sql,
+                    ch_partition_by=ch_partition_by,
+                    ch_order_by=ch_order_by,
+                    ch_engine=engine,
+                    ch_replace_table=ch_replace_table,
+                ),
+                query_label,
+            )
+        ]
     return build_create_ch_distributed_table_pair_sqls(
         table_name=target_table,
         joined_columns=columns_sql,
@@ -290,10 +332,28 @@ def build_ch_create_table_as_sqls(
     )
 
 
+def _build_ch_create_table_as_dry_run_drop_sqls(
+    options: ChCreateTableAsOptions,
+) -> list[str]:
+    if options.only_shard:
+        return build_drop_ch_table_sqls(
+            options.target_table,
+            ch_cluster=None,
+        )
+    return build_drop_ch_distributed_table_pair_sqls(
+        options.target_table,
+        ch_cluster=options.ch_cluster,
+    )
+
+
 def _build_ch_create_table_as_dry_run_create_sqls(
     options: ChCreateTableAsOptions,
 ) -> list[str]:
     if options.table_schema is None:
+        if options.only_shard:
+            return [
+                f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)"
+            ]
         target_shard_table = build_ch_shard_table_name(options.target_table)
         return [
             f"CREATE TABLE IF NOT EXISTS {target_shard_table} (<query schema>)",
@@ -313,7 +373,14 @@ def _build_ch_create_table_as_dry_run_create_sqls(
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
         ch_replace_table=True,
+        only_shard=options.only_shard,
     )
+
+
+def _normalize_only_shard(only_shard: bool) -> bool:
+    if not isinstance(only_shard, bool):
+        raise ValueError("only_shard must be a boolean.")
+    return only_shard
 
 
 def _normalize_single_query(query: str) -> str:

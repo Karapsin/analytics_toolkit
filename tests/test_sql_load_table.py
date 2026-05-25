@@ -543,6 +543,37 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert "ENGINE = Distributed(" in local_distributed_sql
 
 
+def test_build_create_table_sqls_clickhouse_only_shard_creates_local_target() -> None:
+    batch = pd.DataFrame(
+        {
+            "min_month_use": [date(2024, 1, 1)],
+            "month_date": [date(2024, 2, 1)],
+            "users": [10],
+        }
+    )
+
+    sqls = create_sql_table_module.build_create_table_sqls(
+        connection_type="ch",
+        table_name=TEST_CH_TABLE,
+        batch=batch,
+        ch_distributed_table=True,
+        only_shard=True,
+        ch_partition_by=["month_date"],
+        ch_order_by=["month_date", "min_month_use"],
+        ch_sharding_key="cityHash64(month_date, min_month_use)",
+    )
+
+    assert len(sqls) == 1
+    create_sql = sqls[0]
+    assert create_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
+    assert TEST_CH_SHARD_TABLE not in create_sql
+    assert "ON CLUSTER" not in create_sql
+    assert "ENGINE = Distributed(" not in create_sql
+    assert "ENGINE = ReplicatedMergeTree" in create_sql
+    assert "PARTITION BY `month_date`" in create_sql
+    assert "ORDER BY (`month_date`, `min_month_use`)" in create_sql
+
+
 def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
     class ClusterVisibilityClient:
         def __init__(self) -> None:
