@@ -27,6 +27,7 @@ def _capture_read_sql(
                 "schema": ["mart"],
                 "table_name": ["orders"],
                 "db": ["warehouse"],
+                "table_size_bytes": [1536],
                 "extra": ["ignored"],
             }
         )
@@ -64,15 +65,22 @@ def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(
         SELECT
             current_database() AS db,
             table_schema AS schema,
-            table_name
-        FROM information_schema.tables
+            table_name,
+            pg_total_relation_size(c.oid) AS table_size_bytes
+        FROM information_schema.tables AS t
+        LEFT JOIN pg_catalog.pg_namespace AS n
+          ON n.nspname = t.table_schema
+        LEFT JOIN pg_catalog.pg_class AS c
+          ON c.relnamespace = n.oid
+          AND c.relname = t.table_name
         WHERE 1 = 1
           AND table_schema = 'mart'
           AND (table_name ILIKE '%collections%')
         ORDER BY table_schema, table_name
         """
     )
-    assert list(result.columns) == ["db", "schema", "table_name"]
+    assert list(result.columns) == ["db", "schema", "table_name", "table_size"]
+    assert result.loc[0, "table_size"] == "1.50 KiB"
 
 
 def test_show_tables_clickhouse_filters_database(
@@ -88,7 +96,8 @@ def test_show_tables_clickhouse_filters_database(
         SELECT
             database AS db,
             database AS schema,
-            name AS table_name
+            name AS table_name,
+            total_bytes AS table_size_bytes
         FROM system.tables
         WHERE 1 = 1
           AND database = 'analytics'
@@ -110,13 +119,38 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
         SELECT
             table_catalog AS db,
             table_schema AS schema,
-            table_name
+            table_name,
+            CAST(NULL AS BIGINT) AS table_size_bytes
         FROM iceberg.information_schema.tables
         WHERE 1 = 1
           AND table_schema = 'sandbox'
         ORDER BY table_schema, table_name
         """
     )
+
+
+def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _capture_read_sql(
+        monkeypatch,
+        pd.DataFrame(
+            {
+                "db": ["db", "db", "db", "db"],
+                "schema": ["mart", "mart", "mart", "mart"],
+                "table_name": ["empty", "small", "medium", "unknown"],
+                "table_size_bytes": [0, 1024, 2_621_440, None],
+            }
+        ),
+    )
+
+    result = show_tables_module.show_tables("gp")
+
+    assert calls
+    assert result["table_size"].tolist() == [
+        "0 B",
+        "1.00 KiB",
+        "2.50 MiB",
+        None,
+    ]
 
 
 @pytest.mark.parametrize(

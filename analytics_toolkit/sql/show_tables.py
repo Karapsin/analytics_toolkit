@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import cast
 
 import pandas as pd
@@ -11,7 +12,9 @@ from .dml.io.read_sql import read_sql
 from .operation_runner import timed_public_sql_function
 
 
-_SHOW_TABLES_COLUMNS = ["db", "schema", "table_name"]
+_SHOW_TABLES_COLUMNS = ["db", "schema", "table_name", "table_size"]
+_TABLE_SIZE_BYTES_COLUMN = "table_size_bytes"
+_TABLE_SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
 
 
 @timed_public_sql_function
@@ -20,7 +23,7 @@ def show_tables(
     schema: str | None = None,
     conditions: str | None = None,
 ) -> pd.DataFrame:
-    """Return backend table metadata as db, schema, and table_name columns."""
+    """Return backend table metadata with a human-readable table_size column."""
 
     config = get_connection_config(db_key)
     schema_filter = _validate_optional_string(schema, "schema")
@@ -28,7 +31,11 @@ def show_tables(
     query = _build_show_tables_query(config, schema_filter, conditions_filter)
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
-    return result.loc[:, _SHOW_TABLES_COLUMNS].copy()
+    normalized = result.copy()
+    normalized["table_size"] = normalized[_TABLE_SIZE_BYTES_COLUMN].map(
+        _format_table_size,
+    )
+    return normalized.loc[:, _SHOW_TABLES_COLUMNS].copy()
 
 
 def _build_show_tables_query(
@@ -62,7 +69,8 @@ def _build_clickhouse_show_tables_query(
 SELECT
     database AS db,
     database AS schema,
-    name AS table_name
+    name AS table_name,
+    total_bytes AS table_size_bytes
 FROM system.tables
 WHERE 1 = 1{_format_filter_lines(filters)}
 ORDER BY database, name
@@ -78,8 +86,14 @@ def _build_gp_show_tables_query(
 SELECT
     current_database() AS db,
     table_schema AS schema,
-    table_name
-FROM information_schema.tables
+    table_name,
+    pg_total_relation_size(c.oid) AS table_size_bytes
+FROM information_schema.tables AS t
+LEFT JOIN pg_catalog.pg_namespace AS n
+  ON n.nspname = t.table_schema
+LEFT JOIN pg_catalog.pg_class AS c
+  ON c.relnamespace = n.oid
+  AND c.relname = t.table_name
 WHERE 1 = 1{_format_filter_lines(filters)}
 ORDER BY table_schema, table_name
 """.strip()
@@ -95,7 +109,8 @@ def _build_trino_show_tables_query(
 SELECT
     table_catalog AS db,
     table_schema AS schema,
-    table_name
+    table_name,
+    CAST(NULL AS BIGINT) AS table_size_bytes
 FROM {catalog}.information_schema.tables
 WHERE 1 = 1{_format_filter_lines(filters)}
 ORDER BY table_schema, table_name
@@ -154,6 +169,31 @@ def _validate_conditions(conditions: str | None) -> str | None:
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _format_table_size(value: object) -> str | None:
+    if pd.isna(value):
+        return None
+
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    if not math.isfinite(size):
+        return None
+
+    sign = "-" if size < 0 else ""
+    size = abs(size)
+    unit_index = 0
+    while size >= 1024 and unit_index < len(_TABLE_SIZE_UNITS) - 1:
+        size /= 1024
+        unit_index += 1
+
+    unit = _TABLE_SIZE_UNITS[unit_index]
+    if unit == "B":
+        return f"{sign}{int(round(size))} {unit}"
+    return f"{sign}{size:.2f} {unit}"
 
 
 __all__ = ["show_tables"]
