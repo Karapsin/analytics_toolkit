@@ -1,0 +1,59 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ${{ matrix.tox-env }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.8"
+            tox-env: py38-latest
+          - python-version: "3.9"
+            tox-env: py39-latest
+          - python-version: "3.10"
+            tox-env: py310-latest
+          - python-version: "3.11"
+            tox-env: py311-latest
+          - python-version: "3.12"
+            tox-env: py312-latest
+          - python-version: "3.13"
+            tox-env: py313-latest
+          - python-version: "3.14"
+            tox-env: py314-latest
+          - python-version: "3.8"
+            tox-env: py38-min
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install tox
+        run: python -m pip install "tox>=4"
+
+      - name: Run tox
+        run: tox -e "${{ matrix.tox-env }}"
+
+      - name: Freeze tox environment
+        if: always()
+        run: |
+          if [ -x ".tox/${{ matrix.tox-env }}/bin/python" ]; then
+            .tox/${{ matrix.tox-env }}/bin/python -m pip freeze
+          else
+            python -m pip freeze
+          fi
