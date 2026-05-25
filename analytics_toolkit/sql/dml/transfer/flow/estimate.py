@@ -258,7 +258,7 @@ def _is_simple_clickhouse_select(source_sql: str) -> bool:
         return False
 
     tables = list(tree.find_all(exp.Table))
-    from_expression = tree.args.get("from_")
+    from_expression = tree.args.get("from_") or tree.args.get("from")
     if (
         len(tables) != 1
         or from_expression is None

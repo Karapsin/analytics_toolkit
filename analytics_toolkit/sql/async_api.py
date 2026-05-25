@@ -66,6 +66,18 @@ class _PipelineContext:
         return self.results[-1]
 
 
+def _shutdown_executor(
+    executor: ThreadPoolExecutor,
+    *,
+    wait: bool,
+    cancel_futures: bool,
+) -> None:
+    try:
+        executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+    except TypeError:
+        executor.shutdown(wait=wait)
+
+
 @timed_public_sql_function
 def async_sql(
     tasks: Sequence[Mapping[str, Any]],
@@ -166,7 +178,7 @@ def _run_parallel_task_defs(
             except BaseException:
                 for pending in future_to_index:
                     pending.cancel()
-                executor.shutdown(wait=True, cancel_futures=True)
+                _shutdown_executor(executor, wait=True, cancel_futures=True)
                 executor_shutdown = True
                 raise
         else:

@@ -452,7 +452,11 @@ def _insert_rows_backend(
 
 
 def normalize_ch_batch(batch: pd.DataFrame) -> pd.DataFrame:
-    normalized = batch.map(_normalize_ch_scalar)
+    map_values = getattr(batch, "map", None)
+    if map_values is None:
+        normalized = batch.applymap(_normalize_ch_scalar)
+    else:
+        normalized = map_values(_normalize_ch_scalar)
     for column_name in normalized.columns:
         series = normalized[column_name]
         normalized[column_name] = series.astype(object).where(series.notna(), None)
@@ -494,8 +498,9 @@ def _iter_trino_row_values(
     target_column_types: dict[str, str] | None,
 ) -> Iterator[tuple[Any, ...]]:
     for row in rows:
+        _validate_row_width(columns, row)
         normalized_values = []
-        for column_name, value in zip(columns, row, strict=True):
+        for column_name, value in zip(columns, row):
             target_type = (
                 target_column_types.get(column_name)
                 if target_column_types is not None
@@ -525,8 +530,9 @@ def _build_trino_values_tuple(
     row: Sequence[Any],
     target_column_types: dict[str, str] | None,
 ) -> str:
+    _validate_row_width(columns, row)
     values_sql = []
-    for column_name, value in zip(columns, row, strict=True):
+    for column_name, value in zip(columns, row):
         target_type = (
             target_column_types.get(column_name)
             if target_column_types is not None
@@ -534,6 +540,11 @@ def _build_trino_values_tuple(
         )
         values_sql.append(_trino_literal(value, target_type))
     return f"({', '.join(values_sql)})"
+
+
+def _validate_row_width(columns: Sequence[str], row: Sequence[Any]) -> None:
+    if len(columns) != len(row):
+        raise ValueError("Column and row value counts must match.")
 
 
 def _chunk_rows(

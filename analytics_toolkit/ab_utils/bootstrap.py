@@ -272,6 +272,7 @@ def _compute_bootstrap_statistics_in_executor(
     n_jobs: int,
     show_progress: bool,
 ) -> list[tuple[dict[str, list[float]], dict[tuple[str, int], list[float]]]]:
+    _validate_parallel_batches(batch_sizes, child_sequences)
     with executor_cls(max_workers=n_jobs) as executor:
         futures = [
             executor.submit(
@@ -282,7 +283,7 @@ def _compute_bootstrap_statistics_in_executor(
                 index if show_progress else None,
             )
             for index, (batch_size, child_sequence) in enumerate(
-                zip(batch_sizes, child_sequences, strict=True)
+                zip(batch_sizes, child_sequences)
             )
         ]
         return [future.result() for future in futures]
@@ -296,6 +297,7 @@ def _compute_bootstrap_family_max_statistics_in_executor(
     n_jobs: int,
     show_progress: bool,
 ) -> list[dict[str, list[float]]]:
+    _validate_parallel_batches(batch_sizes, child_sequences)
     with executor_cls(max_workers=n_jobs) as executor:
         futures = [
             executor.submit(
@@ -306,10 +308,18 @@ def _compute_bootstrap_family_max_statistics_in_executor(
                 index if show_progress else None,
             )
             for index, (batch_size, child_sequence) in enumerate(
-                zip(batch_sizes, child_sequences, strict=True)
+                zip(batch_sizes, child_sequences)
             )
         ]
         return [future.result() for future in futures]
+
+
+def _validate_parallel_batches(
+    batch_sizes: list[int],
+    child_sequences: list[np.random.SeedSequence],
+) -> None:
+    if len(batch_sizes) != len(child_sequences):
+        raise ValueError("Batch sizes and child seed sequences must have the same length.")
 
 
 def _split_resamples_into_batches(resamples: int, n_jobs: int) -> list[int]:

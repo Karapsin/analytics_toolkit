@@ -48,11 +48,21 @@ def sql_preview(sql: str | None, max_chars: int = 500) -> str | None:
 
 def annotate_sql_exception(exc: Exception, context: SqlOperationContext) -> Exception:
     setattr(exc, "sql_context", context)
-    try:
-        exc.add_note(_format_context_note(context))
-    except AttributeError:
-        pass
+    _add_exception_note(exc, _format_context_note(context))
     return exc
+
+
+def _add_exception_note(exc: Exception, note: str) -> None:
+    add_note = getattr(exc, "add_note", None)
+    if add_note is not None:
+        add_note(note)
+        return
+    notes = list(getattr(exc, "__notes__", ()))
+    notes.append(note)
+    try:
+        setattr(exc, "__notes__", notes)
+    except Exception:
+        return
 
 
 def operation_error(exc: Exception, context: SqlOperationContext) -> SqlOperationError:

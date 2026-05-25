@@ -45,7 +45,7 @@ class TableIdentifier:
         backend = resolve_connection_backend(connection_type)
         return ".".join(
             quote_identifier_part(part, backend, quoted=quoted)
-            for part, quoted in zip(self.parts, self.quoted, strict=True)
+            for part, quoted in zip(self.parts, self.quoted)
         )
 
     def render_quoted(self, connection_type: str) -> str:

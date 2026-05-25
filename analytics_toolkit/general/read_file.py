@@ -9,6 +9,40 @@ from typing import Any
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 
+_FALLBACK_STDLIB_MODULE_NAMES = frozenset(
+    {
+        "abc",
+        "argparse",
+        "asyncio",
+        "collections",
+        "contextlib",
+        "dataclasses",
+        "datetime",
+        "functools",
+        "importlib",
+        "inspect",
+        "itertools",
+        "json",
+        "logging",
+        "multiprocessing",
+        "os",
+        "pathlib",
+        "queue",
+        "re",
+        "runpy",
+        "site",
+        "subprocess",
+        "sys",
+        "threading",
+        "time",
+        "typing",
+        "unittest",
+        "urllib",
+        "warnings",
+    }
+)
+
+
 def here(filename: str) -> str:
     normalized_name = Path(filename.replace("\\", "/"))
 
@@ -117,7 +151,11 @@ def _is_runtime_path(path: Path) -> bool:
 
 
 def _looks_like_stdlib_path(path: Path) -> bool:
-    stdlib_modules = getattr(sys, "stdlib_module_names", frozenset())
+    stdlib_modules = getattr(
+        sys,
+        "stdlib_module_names",
+        _FALLBACK_STDLIB_MODULE_NAMES,
+    )
     for index, part in enumerate(path.parts[:-1]):
         if not part.startswith("python"):
             continue

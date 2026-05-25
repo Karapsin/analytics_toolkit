@@ -32,6 +32,18 @@ class _ConcurrencyState:
     semaphores: tuple[Semaphore, ...]
 
 
+def _shutdown_executor(
+    executor: ThreadPoolExecutor,
+    *,
+    wait: bool,
+    cancel_futures: bool,
+) -> None:
+    try:
+        executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+    except TypeError:
+        executor.shutdown(wait=wait)
+
+
 def parallel_compute_metrics(
     tasks: Mapping[str, Mapping[str, Any]],
     *,
@@ -82,7 +94,7 @@ def parallel_compute_metrics(
                     for pending in future_to_index:
                         if pending is not future:
                             pending.cancel()
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    _shutdown_executor(executor, wait=False, cancel_futures=True)
                     shutdown_called = True
                     raise
                 results_by_index[index] = str(exc)
@@ -97,7 +109,7 @@ def parallel_compute_metrics(
         if progress_bar is not None:
             progress_bar.close()
         if executor is not None and not shutdown_called:
-            executor.shutdown(wait=True, cancel_futures=True)
+            _shutdown_executor(executor, wait=True, cancel_futures=True)
         _CONCURRENCY_STATE.reset(reset_token)
 
 

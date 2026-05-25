@@ -457,7 +457,13 @@ def _ch_cte_join_note(cte_name: str) -> str:
 def _add_exception_note_once(exc: Exception, note: str) -> None:
     if note in getattr(exc, "__notes__", ()):
         return
+    add_note = getattr(exc, "add_note", None)
+    if add_note is not None:
+        add_note(note)
+        return
+    notes = list(getattr(exc, "__notes__", ()))
+    notes.append(note)
     try:
-        exc.add_note(note)
-    except AttributeError:
+        setattr(exc, "__notes__", notes)
+    except Exception:
         return

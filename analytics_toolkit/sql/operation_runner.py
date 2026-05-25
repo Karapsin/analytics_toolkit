@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, TypeVar, cast
+from typing import Any, Callable, Dict, TypeVar, cast
 
 from analytics_toolkit.general import time_print
 
@@ -13,7 +12,7 @@ from .plans import SqlOperationMetadata
 
 
 T = TypeVar("T")
-ConnectionRef = dict[str, Any]
+ConnectionRef = Dict[str, Any]
 
 
 def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
