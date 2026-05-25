@@ -76,6 +76,8 @@ sql.get_sql_connection(...)
   explicit intervals, values, days, weeks, months, or years
 - `drop_many_partitions`: remove multiple table partitions with backend-specific
   SQL
+- `show_tables`: list tables visible through backend metadata as `db`, `schema`,
+  and `table_name`
 - `table_info`: inspect live table existence, columns, optional row count, and
   resolved backend table names
 - `load_df`: load a pandas dataframe into a SQL table
@@ -108,6 +110,13 @@ statement except the last, then reads the last statement into a pandas dataframe
 on the same connection. Greenplum keeps its historical default of executing the
 setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
 `progress=False` to silence multi-statement progress bars.
+
+`show_tables(db_key, schema=None, conditions=None)` returns a pandas dataframe
+with exactly `db`, `schema`, and `table_name` columns. It reads
+`system.tables` for ClickHouse, `information_schema.tables` for Greenplum, and
+`<catalog>.information_schema.tables` for Trino. `schema` filters ClickHouse
+`database` or SQL `table_schema`; `conditions` is appended to the metadata
+query as `AND (<conditions>)`, so backend-native predicates are accepted.
 
 `async_sql` and `parallel_sql` are synchronous public functions: call them
 directly and they return a result dictionary. They accept a non-empty sequence

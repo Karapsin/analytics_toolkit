@@ -12,6 +12,7 @@ from .plans import (
     SqlStatement,
     format_plan,
 )
+from .show_tables import show_tables
 from .table_info import SqlTableInfo, table_info
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
@@ -60,6 +61,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "gp_vacuum",
     "load_df",
     "read_sql",
+    "show_tables",
     "support_matrix_rows",
     "table_info",
     "transfer_table",
@@ -98,6 +100,7 @@ __all__ = [
     "load_df",
     "read",
     "read_sql",
+    "show_tables",
     "SqlOperationMetadata",
     "SqlOperationResult",
     "SqlOperationContext",
