@@ -209,7 +209,10 @@ def _zero_row_query(query: str) -> str:
 
 
 def _strip_query_semicolon(query: str) -> str:
-    return query.strip().removesuffix(";").strip()
+    stripped = query.strip()
+    if stripped.endswith(";"):
+        return stripped[:-1].strip()
+    return stripped
 
 
 def _normalize_type_name(source_type: str | None) -> str:

@@ -169,15 +169,15 @@ class FakeClickHouseClient:
     def _track_table_ddl(self, sql: str) -> None:
         body = _strip_query_label(sql)
         if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body.removeprefix("CREATE TABLE IF NOT EXISTS ").split()[0]
+            table_name = body[len("CREATE TABLE IF NOT EXISTS "):].split()[0]
             self.created_tables.add(table_name)
             return
         if body.startswith("CREATE TABLE "):
-            table_name = body.removeprefix("CREATE TABLE ").split()[0]
+            table_name = body[len("CREATE TABLE "):].split()[0]
             self.created_tables.add(table_name)
             return
         if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body.removeprefix("DROP TABLE IF EXISTS ").split()[0]
+            table_name = body[len("DROP TABLE IF EXISTS "):].split()[0]
             self.created_tables.discard(table_name)
 
     def _cluster_table_count(self, sql: str) -> int:

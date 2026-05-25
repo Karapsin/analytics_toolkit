@@ -115,9 +115,10 @@ of task specs. Each spec declares a `type` (`read`, `execute`, `execute_read`,
 `load_df`, `transfer`, or `custom_sql_pipeline`). SQL task specs pass the same
 keyword arguments as the matching sync function. Add an optional `name` field to
 control the result key; unnamed tasks are keyed as `task_0`, `task_1`, and so
-on. `async_sql` uses `asyncio.to_thread` internally, while `parallel_sql` uses a
-`ThreadPoolExecutor`; neither function parallelizes an individual SQL statement
-internally. Result keys follow the input task order. With `fail_fast=True`, the
+on. `async_sql` runs blocking sync calls in worker threads, while
+`parallel_sql` uses a `ThreadPoolExecutor`; neither function parallelizes an
+individual SQL statement internally. Result keys follow the input task order.
+With `fail_fast=True`, the
 first raised task exception is raised and pending tasks are cancelled;
 already-running sync work can continue until that function exits. Successful
 task results are preserved, except `None` results are reported as `"success"`.

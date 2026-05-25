@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import random
 from datetime import date, datetime, time, timedelta
-from typing import Literal
+from typing import Literal, Union
 from warnings import warn
 
 from dateutil.relativedelta import relativedelta
 
-DateInput = str | date | datetime
+DateInput = Union[str, date, datetime]
 OutputPeriod = Literal["week", "month"]
 OutputInterval = Literal["days", "weeks", "months"]
 

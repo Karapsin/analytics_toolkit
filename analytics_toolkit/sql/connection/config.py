@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Union, cast
 
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 from ..operation_runner import timed_public_sql_function
@@ -101,7 +101,7 @@ class ChConfig:
     client_name: str | None
 
 
-ConnectionConfig = TrinoConfig | GpConfig | ChConfig
+ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]
 
 
 @dataclass(frozen=True)

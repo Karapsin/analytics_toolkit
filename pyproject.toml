@@ -4,36 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "analytics_toolkit"
-version = "1.1.5.0"
+version = "1.1.6.0"
 description = "Shared Python utilities for SQL, Excel, and date helpers."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 dependencies = [
-  "apache-airflow",
-  "certifi==2026.2.25",
-  "charset-normalizer==3.4.7",
-  "clickhouse-connect==0.15.1",
-  "et_xmlfile==2.0.0",
-  "gdown==5.2.0",
-  "idna==3.11",
-  "lz4==4.4.5",
-  "openpyxl==3.1.5",
-  "orjson==3.11.5",
-  "pandas==2.3.3",
-  "psycopg2-binary==2.9.11",
-  "python-dateutil==2.9.0.post0",
-  "pytz==2026.1.post1",
-  "requests==2.32.5",
-  "scipy==1.17.1",
-  "six==1.17.0",
-  "sqlparse==0.5.3",
-  "sqlglot==30.3.0",
-  "tqdm==4.67.3",
-  "trino==0.337.0",
-  "tzlocal==5.3.1",
-  "urllib3==2.6.3",
-  "zstandard==0.25.0",
+  "clickhouse-connect>=0.5.14,<1",
+  "lz4>=4.3.2,<5",
+  "numpy>=1.24.2,<2",
+  "openpyxl>=3.1.1,<4",
+  "orjson>=3.8.7,<4",
+  "pandas>=1.4.4,<3",
+  "psycopg2-binary>=2.9.5,<3",
+  "python-dateutil>=2.8.2,<3",
+  "pytz>=2022.7",
+  "requests>=2.28.2,<3",
+  "scipy>=1.10.1,<2",
+  "sqlglot>=20,<31",
+  "sqlparse>=0.4.3,<1",
+  "tqdm>=4.65.0,<5",
+  "trino>=0.320,<1",
+  "zstandard>=0.20.0,<1",
 ]
+
+[project.optional-dependencies]
+airflow = ["apache-airflow>=2.4,<3"]
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"

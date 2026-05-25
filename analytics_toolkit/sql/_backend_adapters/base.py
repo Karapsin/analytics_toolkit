@@ -248,7 +248,9 @@ class BackendAdapter:
         source_sql: str,
         column_types: Mapping[str, str],
     ) -> str:
-        query_sql = source_sql.strip().removesuffix(";").strip()
+        query_sql = source_sql.strip()
+        if query_sql.endswith(";"):
+            query_sql = query_sql[:-1].strip()
         return self._build_typed_insert_select_sql(
             target_table,
             f"FROM ({query_sql}) AS source_query",

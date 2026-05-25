@@ -7,6 +7,7 @@ from collections.abc import Callable, Coroutine, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import AsyncExitStack, ExitStack, contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from queue import Queue
 from threading import Semaphore, Thread
 from typing import Any
@@ -464,7 +465,18 @@ async def _run_blocking(
     async with AsyncExitStack() as stack:
         for semaphore in reversed(soft_semaphores):
             await stack.enter_async_context(semaphore)
-        return await asyncio.to_thread(func, *args)
+        return await _to_thread(func, *args)
+
+
+async def _to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+    to_thread = getattr(asyncio, "to_thread", None)
+    if to_thread is not None:
+        return await to_thread(func, *args, **kwargs)
+
+    loop = asyncio.get_running_loop()
+    context = contextvars.copy_context()
+    call = partial(func, *args, **kwargs)
+    return await loop.run_in_executor(None, context.run, call)
 
 
 def _run_parallel_indexed(
