@@ -122,6 +122,70 @@ def test_show_tables_clickhouse_filters_database(
     )
 
 
+def test_show_tables_filters_single_table_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables("ch", table_name="events")
+
+    assert _compact(calls[0][1]) == _compact(
+        """
+        SELECT
+            database AS db,
+            database AS schema,
+            name AS table_name,
+            total_rows AS row_count,
+            total_bytes AS table_size_bytes
+        FROM system.tables
+        WHERE 1 = 1
+          AND name = 'events'
+        ORDER BY database, name
+        """
+    )
+
+
+def test_show_tables_filters_multiple_table_names_and_escapes_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables(
+        "gp",
+        schema="mart",
+        table_name=["orders", "customer's"],
+        conditions="table_type = 'BASE TABLE'",
+    )
+
+    assert _compact(calls[0][1]) == _compact(
+        """
+        SELECT
+            current_database() AS db,
+            table_schema AS schema,
+            table_name,
+            CASE
+                WHEN c.reltuples >= 0 THEN c.reltuples::bigint
+                ELSE NULL
+            END AS row_count,
+            CASE
+                WHEN c.relkind IN ('r', 'm', 'p') THEN pg_total_relation_size(c.oid)
+                ELSE NULL
+            END AS table_size_bytes
+        FROM information_schema.tables AS t
+        LEFT JOIN pg_catalog.pg_namespace AS n
+          ON n.nspname = t.table_schema
+        LEFT JOIN pg_catalog.pg_class AS c
+          ON c.relnamespace = n.oid
+          AND c.relname = t.table_name
+        WHERE 1 = 1
+          AND table_schema = 'mart'
+          AND table_name IN ('orders', 'customer''s')
+          AND (table_type = 'BASE TABLE')
+        ORDER BY table_schema, table_name
+        """
+    )
+
+
 def test_show_tables_trino_uses_catalog_and_schema_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -177,13 +241,17 @@ def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> Non
     [
         {"schema": ""},
         {"schema": "   "},
+        {"table_name": ""},
+        {"table_name": "   "},
+        {"table_name": []},
+        {"table_name": ["orders", ""]},
         {"conditions": ""},
         {"conditions": "   "},
     ],
 )
-def test_show_tables_rejects_empty_schema_or_conditions(
+def test_show_tables_rejects_empty_schema_table_name_or_conditions(
     monkeypatch: pytest.MonkeyPatch,
-    kwargs: dict[str, str],
+    kwargs: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
         show_tables_module,
@@ -196,6 +264,27 @@ def test_show_tables_rejects_empty_schema_or_conditions(
         match="must not be empty",
     ):
         show_tables_module.show_tables("gp", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "table_name",
+    [
+        123,
+        ["orders", 123],
+    ],
+)
+def test_show_tables_rejects_invalid_table_name_type(
+    monkeypatch: pytest.MonkeyPatch,
+    table_name: object,
+) -> None:
+    monkeypatch.setattr(
+        show_tables_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pytest.fail("read_sql should not be called"),
+    )
+
+    with pytest.raises(TypeError, match="table_name"):
+        show_tables_module.show_tables("gp", table_name=table_name)
 
 
 def test_show_tables_rejects_multi_statement_conditions(

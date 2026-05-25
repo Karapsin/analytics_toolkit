@@ -111,17 +111,18 @@ on the same connection. Greenplum keeps its historical default of executing the
 setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
 `progress=False` to silence multi-statement progress bars.
 
-`show_tables(db_key, schema=None, conditions=None)` returns a pandas dataframe
-with exactly `db`, `schema`, `table_name`, `row_count`, and `table_size`
-columns. `row_count` and `table_size` come from backend metadata when available;
-`table_size` is formatted as a human-readable string. ClickHouse uses
-`system.tables`, Greenplum uses `information_schema.tables` plus
-PostgreSQL/Greenplum relation metadata, and Trino uses
+`show_tables(db_key, schema=None, conditions=None, table_name=None)` returns a
+pandas dataframe with exactly `db`, `schema`, `table_name`, `row_count`, and
+`table_size` columns. `row_count` and `table_size` come from backend metadata
+when available; `table_size` is formatted as a human-readable string.
+ClickHouse uses `system.tables`, Greenplum uses `information_schema.tables`
+plus PostgreSQL/Greenplum relation metadata, and Trino uses
 `<catalog>.information_schema.tables`. Trino standard table metadata does not
 expose portable row-count or table-size values, so Trino rows return `None` in
 those columns. `schema` filters ClickHouse `database` or SQL `table_schema`;
-`conditions` is appended to the metadata query as `AND (<conditions>)`, so
-backend-native predicates are accepted.
+`table_name` accepts one table name string or a sequence of table name strings
+for exact matching. `conditions` is appended to the metadata query as
+`AND (<conditions>)`, so backend-native predicates are accepted.
 
 `async_sql` and `parallel_sql` are synchronous public functions: call them
 directly and they return a result dictionary. They accept a non-empty sequence

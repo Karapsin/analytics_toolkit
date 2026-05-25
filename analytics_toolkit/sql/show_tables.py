@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
 from typing import cast
 
@@ -23,13 +24,20 @@ def show_tables(
     db_key: str,
     schema: str | None = None,
     conditions: str | None = None,
+    table_name: str | Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Return backend table metadata with row_count and table_size columns."""
 
     config = get_connection_config(db_key)
     schema_filter = _validate_optional_string(schema, "schema")
+    table_name_filter = _validate_table_names(table_name)
     conditions_filter = _validate_conditions(conditions)
-    query = _build_show_tables_query(config, schema_filter, conditions_filter)
+    query = _build_show_tables_query(
+        config,
+        schema_filter,
+        table_name_filter,
+        conditions_filter,
+    )
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
     normalized = result.copy()
@@ -47,19 +55,25 @@ def show_tables(
 def _build_show_tables_query(
     config: ConnectionConfig,
     schema: str | None,
+    table_names: list[str] | None,
     conditions: str | None,
 ) -> str:
     if config.backend == "ch":
-        return _build_clickhouse_show_tables_query(schema, conditions)
+        return _build_clickhouse_show_tables_query(schema, table_names, conditions)
     if config.backend == "gp":
-        return _build_gp_show_tables_query(schema, conditions)
+        return _build_gp_show_tables_query(schema, table_names, conditions)
     if config.backend == "trino":
         if not isinstance(config, TrinoConfig) or not config.catalog:
             raise ValueError(
                 "show_tables for Trino requires "
                 f".connections['{config.connection_key}'].catalog."
             )
-        return _build_trino_show_tables_query(config.catalog, schema, conditions)
+        return _build_trino_show_tables_query(
+            config.catalog,
+            schema,
+            table_names,
+            conditions,
+        )
 
     raise UnsupportedConnectionTypeError(
         "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
@@ -68,9 +82,10 @@ def _build_show_tables_query(
 
 def _build_clickhouse_show_tables_query(
     schema: str | None,
+    table_names: list[str] | None,
     conditions: str | None,
 ) -> str:
-    filters = _schema_and_conditions_filters("database", schema, conditions)
+    filters = _metadata_filters("database", schema, "name", table_names, conditions)
     return f"""
 SELECT
     database AS db,
@@ -86,9 +101,16 @@ ORDER BY database, name
 
 def _build_gp_show_tables_query(
     schema: str | None,
+    table_names: list[str] | None,
     conditions: str | None,
 ) -> str:
-    filters = _schema_and_conditions_filters("table_schema", schema, conditions)
+    filters = _metadata_filters(
+        "table_schema",
+        schema,
+        "table_name",
+        table_names,
+        conditions,
+    )
     return f"""
 SELECT
     current_database() AS db,
@@ -116,9 +138,16 @@ ORDER BY table_schema, table_name
 def _build_trino_show_tables_query(
     catalog: str,
     schema: str | None,
+    table_names: list[str] | None,
     conditions: str | None,
 ) -> str:
-    filters = _schema_and_conditions_filters("table_schema", schema, conditions)
+    filters = _metadata_filters(
+        "table_schema",
+        schema,
+        "table_name",
+        table_names,
+        conditions,
+    )
     return f"""
 SELECT
     table_catalog AS db,
@@ -132,14 +161,18 @@ ORDER BY table_schema, table_name
 """.strip()
 
 
-def _schema_and_conditions_filters(
+def _metadata_filters(
     schema_column: str,
     schema: str | None,
+    table_name_column: str,
+    table_names: list[str] | None,
     conditions: str | None,
 ) -> list[str]:
     filters: list[str] = []
     if schema is not None:
         filters.append(f"{schema_column} = {_sql_string_literal(schema)}")
+    if table_names is not None:
+        filters.append(_table_names_filter(table_name_column, table_names))
     if conditions is not None:
         filters.append(f"({conditions})")
     return filters
@@ -158,6 +191,34 @@ def _validate_optional_string(value: str | None, parameter_name: str) -> str | N
     normalized = value.strip()
     if not normalized:
         raise InvalidSqlInputError(f"{parameter_name} must not be empty.")
+    return normalized
+
+
+def _validate_table_names(table_name: str | Sequence[str] | None) -> list[str] | None:
+    if table_name is None:
+        return None
+    if isinstance(table_name, str):
+        return [_validate_table_name_value(table_name)]
+    if isinstance(table_name, (bytes, bytearray)) or not isinstance(
+        table_name,
+        Sequence,
+    ):
+        raise TypeError("table_name must be a string, a sequence of strings, or None.")
+    if not table_name:
+        raise InvalidSqlInputError("table_name must not be empty.")
+
+    return [
+        _validate_table_name_value(value)
+        for value in table_name
+    ]
+
+
+def _validate_table_name_value(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("table_name values must be strings.")
+    normalized = value.strip()
+    if not normalized:
+        raise InvalidSqlInputError("table_name values must not be empty.")
     return normalized
 
 
@@ -184,6 +245,13 @@ def _validate_conditions(conditions: str | None) -> str | None:
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _table_names_filter(column: str, table_names: list[str]) -> str:
+    if len(table_names) == 1:
+        return f"{column} = {_sql_string_literal(table_names[0])}"
+    values = ", ".join(_sql_string_literal(name) for name in table_names)
+    return f"{column} IN ({values})"
 
 
 def _format_table_size(value: object) -> str | None:
