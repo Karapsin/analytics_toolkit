@@ -113,7 +113,9 @@ def test_show_tables_clickhouse_filters_database(
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes
+            total_bytes AS table_size_bytes,
+            engine,
+            engine_full
         FROM system.tables
         WHERE 1 = 1
           AND database = 'analytics'
@@ -136,7 +138,9 @@ def test_show_tables_filters_single_table_name(
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes
+            total_bytes AS table_size_bytes,
+            engine,
+            engine_full
         FROM system.tables
         WHERE 1 = 1
           AND name = 'events'
@@ -163,7 +167,9 @@ def test_show_tables_filters_schema_qualified_table_name_when_schema_is_supplied
             database AS schema,
             name AS table_name,
             total_rows AS row_count,
-            total_bytes AS table_size_bytes
+            total_bytes AS table_size_bytes,
+            engine,
+            engine_full
         FROM system.tables
         WHERE 1 = 1
           AND database = 'pa_core_stage'
@@ -171,6 +177,149 @@ def test_show_tables_filters_schema_qualified_table_name_when_schema_is_supplied
         ORDER BY database, name
         """
     )
+
+
+def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        calls.append((connection_type, query))
+        if "FROM system.tables" in query:
+            return pd.DataFrame(
+                {
+                    "db": ["pa_core_stage", "pa_core_stage", "pa_core_stage"],
+                    "schema": ["pa_core_stage", "pa_core_stage", "pa_core_stage"],
+                    "table_name": ["events", "events_copy", "local_table"],
+                    "row_count": [None, None, 7],
+                    "table_size_bytes": [0, 0, 32],
+                    "engine": ["Distributed", "Distributed", "MergeTree"],
+                    "engine_full": [
+                        "Distributed('core', 'pa_core_stage', 'events_shard', cityHash64(id))",
+                        "Distributed('core', 'pa_core_stage', 'events_shard', cityHash64(id))",
+                        "MergeTree ORDER BY tuple()",
+                    ],
+                }
+            )
+        if "FROM cluster('core', system, tables)" in query:
+            return pd.DataFrame(
+                {
+                    "shard_database": ["pa_core_stage"],
+                    "shard_table": ["events_shard"],
+                    "row_count": [1200],
+                    "table_size_bytes": [2048],
+                }
+            )
+        raise AssertionError(f"Unexpected query:\n{query}")
+
+    monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
+
+    result = show_tables_module.show_tables(
+        "ch",
+        schema="pa_core_stage",
+        table_name=["events", "events_copy", "local_table"],
+    )
+
+    assert [call[0] for call in calls] == ["ch", "ch"]
+    assert _compact(calls[1][1]) == _compact(
+        """
+        SELECT
+            database AS shard_database,
+            name AS shard_table,
+            sum(ifNull(total_rows, 0)) AS row_count,
+            sum(ifNull(total_bytes, 0)) AS table_size_bytes
+        FROM cluster('core', system, tables)
+        WHERE (database, name) IN (('pa_core_stage', 'events_shard'))
+        GROUP BY database, name
+        ORDER BY database, name
+        """
+    )
+    assert result["row_count"].tolist() == [1200, 1200, 7]
+    assert result["table_size"].tolist() == ["2.00 KiB", "2.00 KiB", "32 B"]
+    assert list(result.columns) == [
+        "db",
+        "schema",
+        "table_name",
+        "row_count",
+        "table_size",
+    ]
+
+
+def test_show_tables_clickhouse_distributed_stats_support_current_database_macro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        calls.append((connection_type, query))
+        if "FROM system.tables" in query:
+            return pd.DataFrame(
+                {
+                    "db": ["analytics"],
+                    "schema": ["analytics"],
+                    "table_name": ["events"],
+                    "row_count": [None],
+                    "table_size_bytes": [0],
+                    "engine": ["Distributed"],
+                    "engine_full": [
+                        "Distributed('{cluster}', currentDatabase(), 'events_shard')",
+                    ],
+                }
+            )
+        if "getMacro('cluster')" in query:
+            return pd.DataFrame({"cluster_name": ["core"]})
+        if "FROM cluster('core', system, tables)" in query:
+            return pd.DataFrame(
+                {
+                    "shard_database": ["analytics"],
+                    "shard_table": ["events_shard"],
+                    "row_count": [42],
+                    "table_size_bytes": [1024],
+                }
+            )
+        raise AssertionError(f"Unexpected query:\n{query}")
+
+    monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
+
+    result = show_tables_module.show_tables("ch", schema="analytics")
+
+    assert [call[0] for call in calls] == ["ch", "ch", "ch"]
+    assert "WHERE (database, name) IN (('analytics', 'events_shard'))" in calls[2][1]
+    assert result.loc[0, "row_count"] == 42
+    assert result.loc[0, "table_size"] == "1.00 KiB"
+
+
+def test_show_tables_clickhouse_distributed_stats_failure_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        calls.append((connection_type, query))
+        if "FROM system.tables" in query:
+            return pd.DataFrame(
+                {
+                    "db": ["pa_core_stage"],
+                    "schema": ["pa_core_stage"],
+                    "table_name": ["events"],
+                    "row_count": [None],
+                    "table_size_bytes": [0],
+                    "engine": ["Distributed"],
+                    "engine_full": [
+                        "Distributed('core', 'pa_core_stage', 'events_shard')",
+                    ],
+                }
+            )
+        raise RuntimeError("cluster metadata unavailable")
+
+    monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
+
+    result = show_tables_module.show_tables("ch", table_name="events")
+
+    assert len(calls) == 2
+    assert result.loc[0, "row_count"] is None
+    assert result.loc[0, "table_size"] == "0 B"
 
 
 def test_show_tables_filters_multiple_table_names_and_escapes_values(

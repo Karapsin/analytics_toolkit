@@ -115,11 +115,14 @@ setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
 pandas dataframe with exactly `db`, `schema`, `table_name`, `row_count`, and
 `table_size` columns. `row_count` and `table_size` come from backend metadata
 when available; `table_size` is formatted as a human-readable string.
-ClickHouse uses `system.tables`, Greenplum uses `information_schema.tables`
-plus PostgreSQL/Greenplum relation metadata, and Trino uses
-`<catalog>.information_schema.tables`. Trino standard table metadata does not
-expose portable row-count or table-size values, so Trino rows return `None` in
-those columns. `schema` filters ClickHouse `database` or SQL `table_schema`;
+ClickHouse uses `system.tables`; for `Distributed` tables it resolves
+`Distributed(...)` engine metadata and sums `total_rows` and `total_bytes` from
+the logical shard tables through `cluster(...)`. Greenplum uses
+`information_schema.tables` plus PostgreSQL/Greenplum relation metadata, and
+Trino uses `<catalog>.information_schema.tables`. Trino standard table metadata
+does not expose portable row-count or table-size values, so Trino rows return
+`None` in those columns. `schema` filters ClickHouse `database` or SQL
+`table_schema`;
 `table_name` accepts one table name string or a sequence of table name strings
 for exact matching; when `schema` is supplied, matching `schema.table` values
 are accepted too. `conditions` is appended to the metadata query as
