@@ -321,8 +321,8 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
         "analytics.events",
         "select id, dt, amount from source_table",
         table_db="ch",
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         sharding_key="cityHash64(id)",
     )
 
@@ -474,7 +474,7 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
         "select id, amount from source_table;",
         table_db="ch",
         insert_data=True,
-        ch_order_by=["id"],
+        order_by=["id"],
         trino_insert_chunk_size=500,
     )
 
@@ -488,8 +488,8 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
             "replace_target_table": False,
             "gp_distributed_by_key": None,
             "trino_insert_chunk_size": 500,
-            "ch_partition_by": None,
-            "ch_order_by": ["id"],
+            "partition_by": None,
+            "order_by": ["id"],
             "ch_engine": "ReplicatedMergeTree",
             "ch_cluster": "{cluster}",
             "sharding_key": "rand()",
@@ -572,7 +572,7 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
         table_db="ch",
         insert_data=True,
         only_shard=True,
-        ch_order_by=["id"],
+        order_by=["id"],
     )
 
     assert inserted_rows == 5

@@ -65,8 +65,8 @@ def create_table_from_sql(
     insert_data: bool = False,
     drop_target_if_exists: bool = False,
     gp_distributed_by_key: list[str] | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
@@ -89,11 +89,11 @@ def create_table_from_sql(
         else get_connection_config(table_db)
     )
     gp_distribution = normalize_key_columns(gp_distributed_by_key)
-    ch_partition = normalize_ch_columns_or_expression(
-        ch_partition_by,
-        "ch_partition_by",
+    partition = normalize_ch_columns_or_expression(
+        partition_by,
+        "partition_by",
     )
-    ch_order = normalize_ch_columns_or_expression(ch_order_by, "ch_order_by")
+    order = normalize_ch_columns_or_expression(order_by, "order_by")
     ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
     ch_cluster_name = normalize_ch_string(ch_cluster, "ch_cluster")
     ch_sharding_key = normalize_ch_string(sharding_key, "sharding_key")
@@ -102,8 +102,8 @@ def create_table_from_sql(
     _validate_backend_options(
         target_backend=target_config.backend,
         gp_distributed_by_key=gp_distribution,
-        ch_partition_by=ch_partition,
-        ch_order_by=ch_order,
+        partition_by=partition,
+        order_by=order,
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
@@ -125,8 +125,8 @@ def create_table_from_sql(
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
         gp_distributed_by_key=gp_distribution,
-        ch_partition_by=ch_partition,
-        ch_order_by=ch_order,
+        partition_by=partition,
+        order_by=order,
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
@@ -159,8 +159,8 @@ def create_table_from_sql(
             insert_data=options.insert_data,
             drop_target_if_exists=options.drop_target_if_exists,
             gp_distributed_by_key=options.gp_distributed_by_key,
-            ch_partition_by=options.ch_partition_by,
-            ch_order_by=options.ch_order_by,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
@@ -203,15 +203,15 @@ def create_table_from_sql(
             _validate_source_columns(source_columns)
             validate_key_columns_in_columns(gp_distribution, source_columns)
             validate_ch_columns_in_columns(
-                ch_partition,
+                partition,
                 source_columns,
-                "ch_partition_by",
+                "partition_by",
                 data_name="source query",
             )
             validate_ch_columns_in_columns(
-                ch_order,
+                order,
                 source_columns,
-                "ch_order_by",
+                "order_by",
                 data_name="source query",
             )
 
@@ -279,29 +279,35 @@ def create_table_from_sql(
                         query_label=query_label,
                     )
 
-            create_sql_table(
-                target_config.backend,
-                target_connection,
-                target_table,
-                schema_batch,
-                table_schema=target_column_types,
-                gp_distributed_by_key=gp_distribution,
-                ch_partition_by=ch_partition,
-                ch_order_by=ch_order,
-                ch_engine=ch_engine_name,
-                ch_cluster=ch_cluster_name,
-                ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=(
+            create_kwargs: dict[str, object] = {
+                "table_schema": target_column_types,
+                "gp_distributed_by_key": gp_distribution,
+                "ch_engine": ch_engine_name,
+                "ch_cluster": ch_cluster_name,
+                "ch_sharding_key": ch_sharding_key,
+                "ch_distributed_table": (
                     target_config.backend == "ch" and not options.only_shard
                 ),
-                only_shard=options.only_shard,
-                ch_replace_table=(
+                "only_shard": options.only_shard,
+                "ch_replace_table": (
                     target_config.backend == "ch"
                     and not options.only_shard
                     and drop_target_if_exists
                     and target_exists_before_drop
                 ),
-                query_label=query_label,
+                "query_label": query_label,
+            }
+            if partition is not None:
+                create_kwargs["partition_by"] = partition
+            if order is not None:
+                create_kwargs["order_by"] = order
+
+            create_sql_table(
+                target_config.backend,
+                target_connection,
+                target_table,
+                schema_batch,
+                **create_kwargs,
             )
 
             if not insert_data:
@@ -353,8 +359,8 @@ def create_table_from_sql(
             "replace_target_table": False,
             "gp_distributed_by_key": gp_distribution,
             "trino_insert_chunk_size": trino_insert_chunk_size,
-            "ch_partition_by": ch_partition,
-            "ch_order_by": ch_order,
+            "partition_by": partition,
+            "order_by": order,
             "ch_engine": ch_engine_name,
             "ch_cluster": ch_cluster_name,
             "sharding_key": ch_sharding_key,
@@ -398,8 +404,8 @@ def _build_create_table_from_sql_plan(
     insert_data: bool,
     drop_target_if_exists: bool,
     gp_distributed_by_key: list[str] | None,
-    ch_partition_by: Sequence[str] | str | None,
-    ch_order_by: Sequence[str] | str | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
@@ -417,6 +423,9 @@ def _build_create_table_from_sql_plan(
             "insert_data": insert_data,
             "drop_target_if_exists": drop_target_if_exists,
             "table_schema": table_schema,
+            "gp_distributed_by_key": gp_distributed_by_key,
+            "partition_by": partition_by,
+            "order_by": order_by,
             "only_shard": only_shard,
         },
     )
@@ -454,8 +463,8 @@ def _build_create_table_from_sql_plan(
                 pd.DataFrame(columns=list(table_schema)),
                 table_schema=table_schema,
                 gp_distributed_by_key=gp_distributed_by_key,
-                ch_partition_by=ch_partition_by,
-                ch_order_by=ch_order_by,
+                partition_by=partition_by,
+                order_by=order_by,
                 ch_engine=ch_engine,
                 ch_cluster=ch_cluster,
                 ch_sharding_key=ch_sharding_key,
@@ -510,8 +519,8 @@ def _validate_backend_options(
     *,
     target_backend: str,
     gp_distributed_by_key: list[str] | None,
-    ch_partition_by: list[str] | str | None,
-    ch_order_by: list[str] | str | None,
+    partition_by: list[str] | str | None,
+    order_by: list[str] | str | None,
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
@@ -524,8 +533,8 @@ def _validate_backend_options(
     validate_ch_options_not_used(
         target_backend=target_backend,
         option_owner="table_db",
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,

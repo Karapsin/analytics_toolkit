@@ -56,15 +56,15 @@ def initialize_stage_for_first_batch(
         batch.columns,
     )
     validate_ch_columns_in_columns(
-        options.ch_partition_by,
+        options.partition_by,
         batch.columns,
-        "ch_partition_by",
+        "partition_by",
         data_name="staged data",
     )
     validate_ch_columns_in_columns(
-        options.ch_order_by,
+        options.order_by,
         batch.columns,
-        "ch_order_by",
+        "order_by",
         data_name="staged data",
     )
     stage_state.stage_table = create_stage_table(

@@ -77,7 +77,7 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
                     "destination_table": "sandbox.batch",
                     "df": df,
                     "append": True,
-                    "ch_order_by": ["id"],
+                    "order_by": ["id"],
                 },
                 "copy_table": {
                     "type": "transfer",
@@ -128,7 +128,7 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
         "connection_type": "ch",
         "destination_table": "sandbox.batch",
         "append": True,
-        "ch_order_by": ["id"],
+        "order_by": ["id"],
         "progress": False,
     }
     assert calls_by_type["transfer"] == {

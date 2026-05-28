@@ -288,8 +288,8 @@ sql.load_df(
     "sandbox.target",
     df,
     write_mode="replace",
-    ch_partition_by="dt",
-    ch_order_by=["dt", "user_id"],
+    partition_by="dt",
+    order_by=["dt", "user_id"],
 )
 ```
 
@@ -345,8 +345,8 @@ sql.transfer(
     to_table="sandbox.target",
     replace_target_table=True,
     key_columns=["user_id", "dt"],
-    ch_partition_by="dt",
-    ch_order_by=["dt", "user_id"],
+    partition_by="dt",
+    order_by=["dt", "user_id"],
 )
 ```
 
@@ -391,8 +391,8 @@ def refresh_table() -> None:
         to_table="sandbox.target",
         replace_target_table=True,
         target_batch_memory_mb=256,
-        ch_partition_by="dt",
-        ch_order_by=["dt", "user_id"],
+        partition_by="dt",
+        order_by=["dt", "user_id"],
     )
 
 

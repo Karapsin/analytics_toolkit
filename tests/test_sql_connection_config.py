@@ -1315,6 +1315,42 @@ def test_create_table_sql_accepts_table_schema_override() -> None:
     assert any("`amount` Decimal(10, 2)" in sql for sql in ch_sqls)
 
 
+def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None:
+    sql = create_sql_table_module.build_create_table_sql(
+        connection_type="trino",
+        table_name="schema.target",
+        batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+        partition_by=["dt"],
+        order_by=["dt", "id"],
+    )
+
+    assert "format = 'PARQUET'" in sql
+    assert "object_store_layout_enabled = true" in sql
+    assert "partitioning = ARRAY['dt']" in sql
+    assert "sorted_by = ARRAY['dt', 'id']" in sql
+
+
+def test_gp_create_table_sql_accepts_partition_column_and_rejects_order() -> None:
+    sql = create_sql_table_module.build_create_table_sql(
+        connection_type="gp",
+        table_name="schema.target",
+        batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+        gp_distributed_by_key=["id"],
+        partition_by="dt",
+    )
+
+    assert 'DISTRIBUTED BY ("id")' in sql
+    assert 'PARTITION BY RANGE ("dt")' in sql
+
+    with pytest.raises(ValueError, match="order_by is not supported"):
+        create_sql_table_module.build_create_table_sql(
+            connection_type="gp",
+            table_name="schema.target",
+            batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+            order_by=["id"],
+        )
+
+
 @pytest.mark.parametrize(
     ("table_schema", "match"),
     [

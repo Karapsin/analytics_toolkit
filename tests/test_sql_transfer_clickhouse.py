@@ -199,8 +199,8 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         timeout_increment=0,
         full_retry_cnt=1,
         full_timeout_increment=0,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date"],
+        partition_by=["month_date"],
+        order_by=["month_date"],
         sharding_key="cityHash64(month_date)",
     )
 
@@ -275,8 +275,8 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
         full_retry_cnt=1,
         full_timeout_increment=0,
         only_shard=True,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date"],
+        partition_by=["month_date"],
+        order_by=["month_date"],
     )
 
     assert transferred_rows == 1

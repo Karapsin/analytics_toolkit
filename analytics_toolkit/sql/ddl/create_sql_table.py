@@ -29,8 +29,8 @@ def create_sql_table(
     batch: pd.DataFrame,
     column_types: Mapping[str, str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -61,8 +61,8 @@ def create_sql_table(
             else None
         ),
         gp_distributed_by_key=gp_distributed_by_key,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
@@ -82,8 +82,8 @@ def create_sql_table(
         column_types=options.column_types,
         table_schema=options.table_schema,
         gp_distributed_by_key=options.gp_distributed_by_key,
-        ch_partition_by=options.ch_partition_by,
-        ch_order_by=options.ch_order_by,
+        partition_by=options.partition_by,
+        order_by=options.order_by,
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
@@ -160,8 +160,8 @@ def build_create_table_sql(
     batch: pd.DataFrame,
     column_types: Mapping[str, str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -179,8 +179,8 @@ def build_create_table_sql(
             column_types=column_types,
             table_schema=table_schema,
             gp_distributed_by_key=gp_distributed_by_key,
-            ch_partition_by=ch_partition_by,
-            ch_order_by=ch_order_by,
+            partition_by=partition_by,
+            order_by=order_by,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
@@ -199,8 +199,8 @@ def build_create_table_sqls(
     batch: pd.DataFrame,
     column_types: Mapping[str, str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -228,8 +228,8 @@ def build_create_table_sqls(
             table_name=table_name,
             joined_columns=joined_columns,
             gp_distributed_by_key=gp_distributed_by_key,
-            ch_partition_by=ch_partition_by,
-            ch_order_by=ch_order_by,
+            partition_by=partition_by,
+            order_by=order_by,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
@@ -412,8 +412,8 @@ def _build_backend_create_table_sqls(
     table_name: str,
     joined_columns: str,
     gp_distributed_by_key: list[str] | None,
-    ch_partition_by: Sequence[str] | str | None,
-    ch_order_by: Sequence[str] | str | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
@@ -431,8 +431,8 @@ def _build_backend_create_table_sqls(
         table_name=table_name,
         joined_columns=joined_columns,
         gp_distributed_by_key=gp_distributed_by_key,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
@@ -447,8 +447,12 @@ def _build_gp_create_table_sqls(
     table_name: str,
     joined_columns: str,
     gp_distributed_by_key: list[str] | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     **_: object,
 ) -> list[str]:
+    if order_by is not None:
+        raise ValueError("order_by is not supported for Greenplum create table.")
     storage_sql = (
         "WITH (appendonly=true,\n"
         "        blocksize=32768,\n"
@@ -462,9 +466,10 @@ def _build_gp_create_table_sqls(
         )
     else:
         distribution_sql = "DISTRIBUTED RANDOMLY"
+    partition_sql = _build_gp_partition_by_sql(partition_by)
     return [
         f"CREATE TABLE {table_name} ({joined_columns}) "
-        f"{storage_sql} {distribution_sql}"
+        f"{storage_sql} {distribution_sql}{partition_sql}"
     ]
 
 
@@ -472,11 +477,17 @@ def _build_trino_create_table_sqls(
     *,
     table_name: str,
     joined_columns: str,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     **_: object,
 ) -> list[str]:
+    properties = _build_trino_table_properties(
+        partition_by=partition_by,
+        order_by=order_by,
+    )
     return [
         f"CREATE TABLE {table_name} ({joined_columns}) "
-        "WITH (format = 'PARQUET', object_store_layout_enabled = true)"
+        f"WITH ({properties})"
     ]
 
 
@@ -484,8 +495,8 @@ def _build_ch_create_table_sqls(
     *,
     table_name: str,
     joined_columns: str,
-    ch_partition_by: Sequence[str] | str | None,
-    ch_order_by: Sequence[str] | str | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
@@ -499,8 +510,8 @@ def _build_ch_create_table_sqls(
             build_ch_local_create_table_sql(
                 table_name=table_name,
                 joined_columns=joined_columns,
-                ch_partition_by=ch_partition_by,
-                ch_order_by=ch_order_by,
+                partition_by=partition_by,
+                order_by=order_by,
                 ch_engine=ch_engine,
                 ch_replace_table=ch_replace_table,
             )
@@ -509,8 +520,8 @@ def _build_ch_create_table_sqls(
         return build_ch_distributed_create_table_sqls(
             table_name=table_name,
             joined_columns=joined_columns,
-            ch_partition_by=ch_partition_by,
-            ch_order_by=ch_order_by,
+            partition_by=partition_by,
+            order_by=order_by,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
@@ -543,8 +554,8 @@ def _explicit_column_type(
 def build_ch_distributed_create_table_sqls(
     table_name: str,
     joined_columns: str,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -554,8 +565,8 @@ def build_ch_distributed_create_table_sqls(
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
     sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
-    partition_sql = _build_ch_partition_by_sql(ch_partition_by)
-    order_by_sql = _build_ch_order_by_sql(ch_order_by)
+    partition_sql = _build_partition_by_sql(partition_by)
+    order_by_sql = _build_order_by_sql(order_by)
     database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(
         shard_table
     )
@@ -576,8 +587,8 @@ def build_ch_distributed_create_table_sqls(
         build_ch_local_create_table_sql(
             table_name=shard_table,
             joined_columns=joined_columns,
-            ch_partition_by=ch_partition_by,
-            ch_order_by=ch_order_by,
+            partition_by=partition_by,
+            order_by=order_by,
             ch_engine=engine,
         )
     )
@@ -608,14 +619,14 @@ def build_ch_distributed_create_table_sqls(
 def build_ch_local_create_table_sql(
     table_name: str,
     joined_columns: str,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_replace_table: bool = False,
 ) -> str:
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
-    partition_sql = _build_ch_partition_by_sql(ch_partition_by)
-    order_by_sql = _build_ch_order_by_sql(ch_order_by)
+    partition_sql = _build_partition_by_sql(partition_by)
+    order_by_sql = _build_order_by_sql(order_by)
     create_statement = (
         "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
     )
@@ -681,22 +692,80 @@ def _identifier_name(identifier: exp.Expression) -> str:
     return str(identifier.this)
 
 
-def _build_ch_partition_by_sql(
-    ch_partition_by: Sequence[str] | str | None,
+def _build_partition_by_sql(
+    partition_by: Sequence[str] | str | None,
 ) -> str:
-    if ch_partition_by is None:
+    if partition_by is None:
         return ""
-    expression = _normalize_ch_expression(ch_partition_by, "ch_partition_by")
+    expression = _normalize_ch_expression(partition_by, "partition_by")
     return f"PARTITION BY {expression}\n"
 
 
-def _build_ch_order_by_sql(ch_order_by: Sequence[str] | str | None) -> str:
+def _build_order_by_sql(order_by: Sequence[str] | str | None) -> str:
     expression = (
         "tuple()"
-        if ch_order_by is None
-        else _normalize_ch_expression(ch_order_by, "ch_order_by")
+        if order_by is None
+        else _normalize_ch_expression(order_by, "order_by")
     )
     return f"ORDER BY {expression}"
+
+
+def _build_gp_partition_by_sql(partition_by: Sequence[str] | str | None) -> str:
+    if partition_by is None:
+        return ""
+    partition_column = _normalize_gp_partition_column(partition_by)
+    return f" PARTITION BY RANGE ({quote_identifier(partition_column, 'gp')})"
+
+
+def _normalize_gp_partition_column(partition_by: Sequence[str] | str) -> str:
+    if isinstance(partition_by, str):
+        return _normalize_non_empty_string(partition_by, "partition_by")
+
+    columns = [_normalize_non_empty_string(column, "partition_by") for column in partition_by]
+    if len(columns) != 1:
+        raise ValueError("partition_by for Greenplum must contain exactly one column.")
+    return columns[0]
+
+
+def _build_trino_table_properties(
+    *,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+) -> str:
+    properties = [
+        "format = 'PARQUET'",
+        "object_store_layout_enabled = true",
+    ]
+    partition_entries = _normalize_trino_property_entries(partition_by, "partition_by")
+    if partition_entries:
+        properties.append(
+            f"partitioning = {_trino_string_array_sql(partition_entries)}"
+        )
+    order_entries = _normalize_trino_property_entries(order_by, "order_by")
+    if order_entries:
+        properties.append(f"sorted_by = {_trino_string_array_sql(order_entries)}")
+    return ", ".join(properties)
+
+
+def _normalize_trino_property_entries(
+    value: Sequence[str] | str | None,
+    option_name: str,
+) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [_normalize_non_empty_string(value, option_name)]
+
+    entries = [_normalize_non_empty_string(entry, option_name) for entry in value]
+    if not entries:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if len(set(entries)) != len(entries):
+        raise ValueError(f"{option_name} must not contain duplicate entries.")
+    return entries
+
+
+def _trino_string_array_sql(entries: Sequence[str]) -> str:
+    return "ARRAY[" + ", ".join(_sql_string_literal(entry) for entry in entries) + "]"
 
 
 def _normalize_ch_expression(value: Sequence[str] | str, option_name: str) -> str:

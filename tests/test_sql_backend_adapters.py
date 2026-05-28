@@ -231,8 +231,8 @@ def test_clickhouse_lifecycle_builds_distributed_pair_sql_in_order() -> None:
     create_sqls = ch_lifecycle_module.build_create_ch_distributed_table_pair_sqls(
         table_name="db.target",
         joined_columns="`id` UInt64",
-        ch_partition_by=["id"],
-        ch_order_by=["id"],
+        partition_by=["id"],
+        order_by=["id"],
         ch_cluster="{cluster}",
         ch_sharding_key="cityHash64(id)",
     )

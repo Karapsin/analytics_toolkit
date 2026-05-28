@@ -290,7 +290,7 @@ def test_ch_full_table_move_partition_override_replaces_partition_only(
 ) -> None:
     shard_create, distributed_create, _ = _run_move(
         fake_client,
-        ch_partition_by=["dt"],
+        partition_by=["dt"],
     )
 
     assert "PARTITION BY `dt`" in shard_create
@@ -303,7 +303,7 @@ def test_ch_full_table_move_partition_override_replaces_partition_only(
 def test_ch_full_table_move_empty_partition_sequence_removes_partition_clause(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    shard_create, _, _ = _run_move(fake_client, ch_partition_by=[])
+    shard_create, _, _ = _run_move(fake_client, partition_by=[])
 
     assert "PARTITION BY" not in shard_create
     assert "ORDER BY (dt, id)" in shard_create
@@ -312,7 +312,7 @@ def test_ch_full_table_move_empty_partition_sequence_removes_partition_clause(
 def test_ch_full_table_move_order_override_replaces_order_only(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    shard_create, _, _ = _run_move(fake_client, ch_order_by="tuple()")
+    shard_create, _, _ = _run_move(fake_client, order_by="tuple()")
 
     assert "ORDER BY tuple()" in shard_create
     assert "PARTITION BY toYYYYMM(dt)" in shard_create

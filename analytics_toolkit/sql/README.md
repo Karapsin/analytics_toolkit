@@ -206,7 +206,7 @@ tasks = [
         "destination_table": "sandbox.scores",
         "df": pd.DataFrame({"user_id": [1], "score": [10]}),
         "append": False,
-        "ch_order_by": ["user_id"],
+        "order_by": ["user_id"],
     },
     {
         "name": "copy_events",
@@ -259,7 +259,7 @@ def transfer_if_not_empty(context):
         to_db="ch",
         from_sql="select * from sandbox.source_table",
         to_table="sandbox.source_table_copy",
-        ch_order_by=["id"],
+        order_by=["id"],
     )
 
 
@@ -356,7 +356,14 @@ Greenplum tables created by `create_sql_table`, `load_df`, `transfer_table`,
 and `create_table_from_sql` default to append-only column-oriented storage:
 `WITH (appendonly=true, blocksize=32768, compresstype=zstd, compresslevel=4,
 orientation=column)`. Pass `gp_distributed_by_key` to use `DISTRIBUTED BY`;
-otherwise created Greenplum tables use `DISTRIBUTED RANDOMLY`.
+otherwise created Greenplum tables use `DISTRIBUTED RANDOMLY`. Pass
+`partition_by` to create a parent table with `PARTITION BY RANGE`; child
+partitions are still created separately with `gp_create_many_partitions`.
+`order_by` is not supported for Greenplum targets.
+
+Trino tables created by these helpers use `WITH (format = 'PARQUET',
+object_store_layout_enabled = true)`. Pass `partition_by` to add Iceberg
+`partitioning = ARRAY[...]` and `order_by` to add `sorted_by = ARRAY[...]`.
 
 ## Opt-In Write Controls
 
@@ -564,8 +571,8 @@ backend's safe default decimal type. Binary source columns are preserved as
 
 For ClickHouse targets, `load_df`, `transfer_table`, and
 `create_table_from_sql` create a local `<target>_shard` table first and then
-create the requested target as a `Distributed` table. Use `ch_partition_by`,
-`ch_order_by`, `ch_engine`, `ch_cluster`, and `sharding_key` to control the
+create the requested target as a `Distributed` table. Use `partition_by`,
+`order_by`, `ch_engine`, `ch_cluster`, and `sharding_key` to control the
 shard DDL and distributed sharding expression. The default `ch_cluster` is the
 ClickHouse `{cluster}` macro so created distributed/shard table pairs are
 visible across the full cluster on Yandex Managed ClickHouse.
@@ -613,7 +620,7 @@ creation.
 distributed/shard table pair, creates a new `<target>_shard` table from the
 provided query schema, creates the target `Distributed` table, and inserts the
 query result into the distributed target. It accepts the same ClickHouse DDL
-options as `load_df`: `ch_partition_by`, `ch_order_by`, `ch_engine`,
+options as `load_df`: `partition_by`, `order_by`, `ch_engine`,
 `ch_cluster`, and `sharding_key`. Its default `ch_cluster` is the ClickHouse
 `{cluster}` macro so the created tables are visible across the full cluster on
 Yandex Managed ClickHouse.

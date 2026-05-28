@@ -61,8 +61,8 @@ def ch_full_table_move(
     move_table: str,
     to_table: str,
     *,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str | None = None,
     ch_cluster: str | None = "{cluster}",
     sharding_key: str | None = None,
@@ -85,13 +85,13 @@ def ch_full_table_move(
     target_shard_table = build_ch_shard_table_name(target_table)
 
     partition_override = _normalize_ch_expression_or_empty(
-        ch_partition_by,
-        "ch_partition_by",
+        partition_by,
+        "partition_by",
         allow_empty_sequence=True,
     )
     order_override = _normalize_ch_expression_or_empty(
-        ch_order_by,
-        "ch_order_by",
+        order_by,
+        "order_by",
         allow_empty_sequence=False,
     )
     engine_override = (
@@ -114,8 +114,8 @@ def ch_full_table_move(
         backend=config.backend,
         source_table=source_table,
         target_table=target_table,
-        ch_partition_by=partition_override,
-        ch_order_by=order_override,
+        partition_by=partition_override,
+        order_by=order_override,
         ch_engine=engine_override,
         ch_cluster=cluster_override,
         sharding_key=sharding_key_override,
@@ -178,8 +178,8 @@ def ch_full_table_move(
             target_shard_ddl = _build_target_shard_ddl(
                 source_shard_ddl,
                 target_shard_table,
-                ch_partition_by=partition_override,
-                ch_order_by=order_override,
+                partition_by=partition_override,
+                order_by=order_override,
                 ch_engine=engine_override,
                 ch_cluster=target_cluster,
             )
@@ -380,8 +380,8 @@ def build_ch_full_table_move_plan(options: ChFullTableMoveOptions) -> SqlPlan:
         source_table=options.source_table,
         target_table=options.target_table,
         options={
-            "ch_partition_by": options.ch_partition_by,
-            "ch_order_by": options.ch_order_by,
+            "partition_by": options.partition_by,
+            "order_by": options.order_by,
             "ch_engine": options.ch_engine,
             "ch_cluster": options.ch_cluster,
             "sharding_key": options.sharding_key,
@@ -411,8 +411,8 @@ def _build_target_shard_ddl(
     source_ddl: str,
     target_shard_table: str,
     *,
-    ch_partition_by: str | None,
-    ch_order_by: str | None,
+    partition_by: str | None,
+    order_by: str | None,
     ch_engine: str | None,
     ch_cluster: str | None,
 ) -> str:
@@ -427,18 +427,18 @@ def _build_target_shard_ddl(
             _SHARD_ENGINE_FOLLOWING_CLAUSES,
             separator=" = ",
         )
-    if ch_partition_by is not None:
+    if partition_by is not None:
         ddl = _replace_top_level_clause_expression(
             ddl,
             "PARTITION BY",
-            ch_partition_by,
+            partition_by,
             _PARTITION_FOLLOWING_CLAUSES,
         )
-    if ch_order_by is not None:
+    if order_by is not None:
         ddl = _replace_top_level_clause_expression(
             ddl,
             "ORDER BY",
-            ch_order_by,
+            order_by,
             _ORDER_FOLLOWING_CLAUSES,
         )
     return ddl

@@ -504,8 +504,8 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
         table_name=TEST_CH_TABLE,
         batch=batch,
         ch_distributed_table=True,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date", "min_month_use"],
+        partition_by=["month_date"],
+        order_by=["month_date", "min_month_use"],
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
@@ -558,8 +558,8 @@ def test_build_create_table_sqls_clickhouse_only_shard_creates_local_target() ->
         batch=batch,
         ch_distributed_table=True,
         only_shard=True,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date", "min_month_use"],
+        partition_by=["month_date"],
+        order_by=["month_date", "min_month_use"],
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
@@ -842,8 +842,8 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
         batch,
         retry_cnt=1,
         timeout_increment=0,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date", "min_month_use"],
+        partition_by=["month_date"],
+        order_by=["month_date", "min_month_use"],
         sharding_key="cityHash64(month_date, min_month_use)",
     )
 
@@ -895,8 +895,8 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         replace_target_table=True,
         target_exists=True,
         sample_batch=batch,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date", "min_month_use"],
+        partition_by=["month_date"],
+        order_by=["month_date", "min_month_use"],
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
@@ -953,8 +953,8 @@ def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -
         target_exists=True,
         sample_batch=batch,
         insert_column_types=column_types,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date"],
+        partition_by=["month_date"],
+        order_by=["month_date"],
         ch_cluster="core",
     )
 
@@ -1009,8 +1009,8 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
         sample_batch=batch,
         target_column_types=column_types,
         insert_column_types=column_types,
-        ch_partition_by=["month_date"],
-        ch_order_by=["month_date"],
+        partition_by=["month_date"],
+        order_by=["month_date"],
     )
 
     create_sql = "\n".join(client.commands)

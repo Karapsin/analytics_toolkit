@@ -354,8 +354,8 @@ def finalize_stage_table(
     insert_column_types: Mapping[str, str] | None = None,
     write_mode: str = "replace",
     gp_distributed_by_key: list[str] | None = None,
-    ch_partition_by: list[str] | str | None = None,
-    ch_order_by: list[str] | str | None = None,
+    partition_by: list[str] | str | None = None,
+    order_by: list[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -397,8 +397,8 @@ def finalize_stage_table(
             target_column_types=target_column_types,
             insert_column_types=insert_column_types,
             gp_distributed_by_key=gp_distributed_by_key,
-            ch_partition_by=ch_partition_by,
-            ch_order_by=ch_order_by,
+            partition_by=partition_by,
+            order_by=order_by,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
@@ -422,6 +422,11 @@ def finalize_stage_table(
         return
 
     if not target_exists:
+        create_kwargs: dict[str, Any] = {}
+        if partition_by is not None:
+            create_kwargs["partition_by"] = partition_by
+        if order_by is not None:
+            create_kwargs["order_by"] = order_by
         create_sql_table(
             backend,
             connection,
@@ -430,6 +435,7 @@ def finalize_stage_table(
             column_types=target_column_types,
             gp_distributed_by_key=gp_distributed_by_key,
             query_label=query_label,
+            **create_kwargs,
         )
 
     insert_from_table(
@@ -452,8 +458,8 @@ def _ensure_ch_distributed_target_pair(
     target_column_types: Mapping[str, str] | None,
     insert_column_types: Mapping[str, str] | None,
     gp_distributed_by_key: list[str] | None,
-    ch_partition_by: list[str] | str | None,
-    ch_order_by: list[str] | str | None,
+    partition_by: list[str] | str | None,
+    order_by: list[str] | str | None,
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
@@ -480,8 +486,8 @@ def _ensure_ch_distributed_target_pair(
         create_batch,
         column_types=create_column_types,
         gp_distributed_by_key=gp_distributed_by_key,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,

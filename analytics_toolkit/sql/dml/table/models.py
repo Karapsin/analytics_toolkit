@@ -16,8 +16,8 @@ class CreateTableFromSqlOptions:
     insert_data: bool = False
     drop_target_if_exists: bool = False
     gp_distributed_by_key: list[str] | None = None
-    ch_partition_by: Sequence[str] | str | None = None
-    ch_order_by: Sequence[str] | str | None = None
+    partition_by: Sequence[str] | str | None = None
+    order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
@@ -55,8 +55,8 @@ class ChCreateTableAsOptions:
     target_table: str
     query_sql: str
     table_schema: dict[str, str] | None = None
-    ch_partition_by: Sequence[str] | str | None = None
-    ch_order_by: Sequence[str] | str | None = None
+    partition_by: Sequence[str] | str | None = None
+    order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
@@ -94,8 +94,8 @@ class ChFullTableMoveOptions:
     backend: str
     source_table: str
     target_table: str
-    ch_partition_by: str | None = None
-    ch_order_by: str | None = None
+    partition_by: str | None = None
+    order_by: str | None = None
     ch_engine: str | None = None
     ch_cluster: str | None = "{cluster}"
     sharding_key: str | None = None

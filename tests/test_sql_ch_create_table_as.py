@@ -158,8 +158,8 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         "ch",
         TARGET_TABLE,
         QUERY + ";",
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         sharding_key="cityHash64(dt, id)",
     )
 

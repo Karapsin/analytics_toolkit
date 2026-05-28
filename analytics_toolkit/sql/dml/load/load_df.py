@@ -76,8 +76,8 @@ def load_df(
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     trino_insert_chunk_size: int | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     sharding_key: str = "rand()",
@@ -108,8 +108,8 @@ def load_df(
         gp_distributed_by_key=gp_distributed_by_key,
         key_columns=key_columns,
         trino_insert_chunk_size=trino_insert_chunk_size,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=sharding_key,
@@ -235,8 +235,8 @@ def _build_load_options(
     gp_distributed_by_key: list[str] | None,
     key_columns: list[str] | None,
     trino_insert_chunk_size: int | None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
@@ -271,11 +271,11 @@ def _build_load_options(
             if trino_insert_chunk_size is not None
             else configured_trino_insert_chunk_size
         ),
-        ch_partition_by=normalize_ch_columns_or_expression(
-            ch_partition_by,
-            "ch_partition_by",
+        partition_by=normalize_ch_columns_or_expression(
+            partition_by,
+            "partition_by",
         ),
-        ch_order_by=normalize_ch_columns_or_expression(ch_order_by, "ch_order_by"),
+        order_by=normalize_ch_columns_or_expression(order_by, "order_by"),
         ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
         ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "sharding_key"),
@@ -311,8 +311,8 @@ def _build_load_options(
     validate_ch_options_not_used(
         target_backend=options.connection_backend,
         option_owner="connection_type",
-        ch_partition_by=options.ch_partition_by,
-        ch_order_by=options.ch_order_by,
+        partition_by=options.partition_by,
+        order_by=options.order_by,
         ch_engine=options.ch_engine,
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
@@ -387,15 +387,15 @@ def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
 
     validate_key_columns_in_columns(options.key_columns, df.columns)
     validate_ch_columns_in_columns(
-        options.ch_partition_by,
+        options.partition_by,
         df.columns,
-        "ch_partition_by",
+        "partition_by",
         data_name="staged data",
     )
     validate_ch_columns_in_columns(
-        options.ch_order_by,
+        options.order_by,
         df.columns,
-        "ch_order_by",
+        "order_by",
         data_name="staged data",
     )
     _validate_dataframe_key_uniqueness(df, options.key_columns)
@@ -483,8 +483,8 @@ def _create_load_target_table(
             options.destination_table,
             df,
             gp_distributed_by_key=options.gp_distributed_by_key,
-            ch_partition_by=options.ch_partition_by,
-            ch_order_by=options.ch_order_by,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
@@ -505,8 +505,8 @@ def _create_load_target_table(
             df,
             column_types=None,
             gp_distributed_by_key=options.gp_distributed_by_key,
-            ch_partition_by=options.ch_partition_by,
-            ch_order_by=options.ch_order_by,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
@@ -516,6 +516,11 @@ def _create_load_target_table(
             **create_kwargs,
         )
         return
+
+    if options.partition_by is not None:
+        create_kwargs["partition_by"] = options.partition_by
+    if options.order_by is not None:
+        create_kwargs["order_by"] = options.order_by
 
     create_sql_table(
         options.connection_backend,
@@ -603,8 +608,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "table_schema": options.table_schema,
-            "ch_partition_by": options.ch_partition_by,
-            "ch_order_by": options.ch_order_by,
+            "partition_by": options.partition_by,
+            "order_by": options.order_by,
             "ch_engine": options.ch_engine,
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
@@ -649,8 +654,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 df,
                 table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
-                ch_partition_by=options.ch_partition_by,
-                ch_order_by=options.ch_order_by,
+                partition_by=options.partition_by,
+                order_by=options.order_by,
                 ch_engine=options.ch_engine,
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,

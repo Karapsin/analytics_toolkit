@@ -901,8 +901,8 @@ def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> N
         pd.DataFrame({"dt": ["2024-01-01"], "id": [1]}),
         write_mode="truncate_insert",
         dry_run=True,
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 
@@ -926,8 +926,8 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
         write_mode="truncate_insert",
         only_shard=True,
         dry_run=True,
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 
@@ -977,8 +977,8 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         only_shard=True,
         dry_run=True,
         table_schema={"dt": "Date", "id": "UInt64"},
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 
@@ -1037,8 +1037,8 @@ def test_create_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target()
         dry_run=True,
         table_schema={"dt": "Date", "id": "UInt64"},
         only_shard=True,
-        ch_partition_by=["dt"],
-        ch_order_by=["dt", "id"],
+        partition_by=["dt"],
+        order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 

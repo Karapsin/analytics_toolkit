@@ -156,8 +156,8 @@ class TransferOptions:
     target_batch_seconds: float = 10.0
     target_batch_memory_mb: float | None = None
     target_batch_memory_bytes: int | None = None
-    ch_partition_by: list[str] | str | None = None
-    ch_order_by: list[str] | str | None = None
+    partition_by: list[str] | str | None = None
+    order_by: list[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"

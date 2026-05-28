@@ -17,8 +17,8 @@ class CreateSqlTableOptions:
     column_types: Mapping[str, str] | None = None
     table_schema: dict[str, str] | None = None
     gp_distributed_by_key: list[str] | None = None
-    ch_partition_by: Sequence[str] | str | None = None
-    ch_order_by: Sequence[str] | str | None = None
+    partition_by: Sequence[str] | str | None = None
+    order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
