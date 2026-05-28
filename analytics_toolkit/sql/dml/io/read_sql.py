@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
 import sqlparse
 
-from ...backend_adapters import get_backend_adapter
+from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, get_backend_adapter
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -19,11 +20,15 @@ from ...operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
+    validate_retry_options,
 )
 from ...plans import SqlOperationMetadata, SqlOperationResult
 from ...query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .models import ReadSqlOptions
+
+
+ReadBackend = Callable[[Any, str, bool], pd.DataFrame]
 
 
 def _read_trino(conn: Any, query: str, print_queries: bool = False) -> pd.DataFrame:
@@ -198,10 +203,7 @@ def _build_read_sql_options(
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
-    if retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    validate_retry_options(retry_cnt, timeout_increment)
 
     statements = [
         statement.strip()
@@ -234,10 +236,34 @@ def _maybe_print_query(query: str, print_queries: bool) -> None:
         time_print(f"Executing query:\n{statement_to_print}")
 
 
-_READ_FUNCTION_NAMES = {
-    "trino": "_read_trino",
-    "gp": "_read_gp",
-    "ch": "_read_ch",
+def _read_trino_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+) -> pd.DataFrame:
+    return _read_trino(connection, sql, print_queries)
+
+
+def _read_gp_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+) -> pd.DataFrame:
+    return _read_gp(connection, sql, print_queries)
+
+
+def _read_ch_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+) -> pd.DataFrame:
+    return _read_ch(connection, sql, print_queries)
+
+
+_READ_BACKENDS: dict[str, ReadBackend] = {
+    "trino": _read_trino_backend,
+    "gp": _read_gp_backend,
+    "ch": _read_ch_backend,
 }
 
 
@@ -248,16 +274,14 @@ def _read_backend(
     *,
     print_queries: bool,
 ) -> pd.DataFrame:
-    function_name = _READ_FUNCTION_NAMES.get(backend)
-    if function_name is None:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        )
+    read_backend = _READ_BACKENDS.get(backend)
+    if read_backend is None:
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
     return run_timed_query(
         backend,
-        lambda: globals()[function_name](
+        lambda: read_backend(
             connection,
             sql,
-            print_queries=print_queries,
+            print_queries,
         ),
     )

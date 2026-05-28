@@ -31,6 +31,8 @@ from ...operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
+    validate_progress_option,
+    validate_retry_options,
 )
 from ...plan_steps import (
     add_analyze_step,
@@ -94,10 +96,7 @@ def load_df(
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
-    if retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
 
     options = _build_load_options(
@@ -895,8 +894,7 @@ def _make_load_progress_bar(
 
 
 def _validate_progress(progress: bool) -> None:
-    if not isinstance(progress, bool):
-        raise ValueError("progress must be a boolean.")
+    validate_progress_option(progress)
 
 
 def _cleanup_load(

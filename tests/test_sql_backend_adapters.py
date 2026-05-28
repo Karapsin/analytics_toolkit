@@ -4,6 +4,7 @@ import importlib
 import inspect
 import threading
 
+import pandas as pd
 import pytest
 
 from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
@@ -11,6 +12,14 @@ from tests.sql_fakes import FakeClickHouseResult, FakeDbapiConnection
 
 
 sql_module = importlib.import_module("analytics_toolkit.sql")
+read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
+execute_read_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.io.execute_read"
+)
+load_sql_table_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.load.load_sql_table"
+)
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
 ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.ch_lifecycle")
 
@@ -174,6 +183,86 @@ def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
         "OR (stage_src.`id` IS NULL AND target_dst.`id` IS NULL)) "
         "LIMIT 1"
     )
+
+
+def test_sql_backend_dispatch_uses_callable_registries() -> None:
+    dispatch_functions = [
+        read_sql_module._read_backend,
+        execute_sql_module._execute_backend,
+        execute_read_module._execute_read_backend,
+        load_sql_table_module._insert_batch_backend,
+        load_sql_table_module._insert_rows_backend,
+    ]
+    for function in dispatch_functions:
+        assert "globals()[" not in inspect.getsource(function)
+
+    assert set(read_sql_module._READ_BACKENDS) == {"gp", "trino", "ch"}
+    assert all(callable(callback) for callback in read_sql_module._READ_BACKENDS.values())
+    assert set(execute_sql_module._EXECUTE_BACKENDS) == {"gp", "trino", "ch"}
+    assert all(
+        callable(callback)
+        for callback in execute_sql_module._EXECUTE_BACKENDS.values()
+    )
+    assert set(execute_read_module._EXECUTE_READ_BACKENDS) == {"gp", "trino", "ch"}
+    assert all(
+        callable(callback)
+        for callback in execute_read_module._EXECUTE_READ_BACKENDS.values()
+    )
+    assert set(load_sql_table_module._BATCH_INSERT_BACKENDS) == {"gp", "trino", "ch"}
+    assert all(
+        callable(callback)
+        for callback in load_sql_table_module._BATCH_INSERT_BACKENDS.values()
+    )
+    assert set(load_sql_table_module._ROW_INSERT_BACKENDS) == {"gp", "trino", "ch"}
+    assert all(
+        callable(callback)
+        for callback in load_sql_table_module._ROW_INSERT_BACKENDS.values()
+    )
+
+
+def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
+    gp_connection = FakeDbapiConnection(
+        rows=[(1, "ok")],
+        description=[("id",), ("label",)],
+    )
+    printed: list[tuple[str, bool]] = []
+
+    gp_result = get_backend_adapter("gp").read_dataframe(
+        gp_connection,
+        "select id, label",
+        print_queries=True,
+        print_query=lambda query, enabled: printed.append((query, enabled)),
+        read_dbapi_query=read_sql_module._read_dbapi_query,
+    )
+
+    pd.testing.assert_frame_equal(
+        gp_result,
+        pd.DataFrame({"id": [1], "label": ["ok"]}),
+    )
+    assert printed == [("select id, label", True)]
+    assert gp_connection.executed == ["select id, label"]
+
+    class ReadClickHouseClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def query_df(self, sql: str) -> pd.DataFrame:
+            self.queries.append(sql)
+            return pd.DataFrame({"value": [2]})
+
+    ch_client = ReadClickHouseClient()
+    ch_result = get_backend_adapter("ch").read_dataframe(
+        ch_client,
+        "select value",
+        print_queries=False,
+        print_query=lambda query, enabled: printed.append((query, enabled)),
+        read_dbapi_query=lambda connection, query: pytest.fail(
+            "ClickHouse should use query_df"
+        ),
+    )
+
+    pd.testing.assert_frame_equal(ch_result, pd.DataFrame({"value": [2]}))
+    assert ch_client.queries == ["select value"]
 
 
 def test_backend_adapters_execute_operations_like_existing_table_ops() -> None:

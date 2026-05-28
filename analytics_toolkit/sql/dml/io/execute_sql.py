@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Iterator
 
 import sqlparse
 from tqdm import tqdm
 
+from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -18,11 +20,16 @@ from ...operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
+    validate_progress_option,
+    validate_retry_options,
 )
 from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .models import ExecuteSqlOptions
+
+
+ExecuteBackend = Callable[[Any, str, bool, bool, bool, bool], Any]
 
 
 def _execute_trino(
@@ -237,10 +244,7 @@ def _build_execute_sql_options(
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
-    if retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
     sql = apply_query_label(sql, query_label)
     return ExecuteSqlOptions(
@@ -337,14 +341,65 @@ def _maybe_print_query(query: str, print_queries: bool, split_preview: bool) -> 
 
 
 def _validate_progress(progress: bool) -> None:
-    if not isinstance(progress, bool):
-        raise ValueError("progress must be a boolean.")
+    validate_progress_option(progress)
 
 
-_EXECUTE_FUNCTION_NAMES = {
-    "trino": "_execute_trino",
-    "gp": "_execute_gp",
-    "ch": "_execute_ch",
+def _execute_trino_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> Any:
+    del gp_break_query, gp_commit_each_statement
+    return _execute_trino(
+        connection,
+        sql,
+        print_queries=print_queries,
+        progress=progress,
+    )
+
+
+def _execute_gp_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> Any:
+    return _execute_gp(
+        connection,
+        sql,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
+    )
+
+
+def _execute_ch_backend(
+    connection: Any,
+    sql: str,
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> Any:
+    del gp_break_query, gp_commit_each_statement
+    return _execute_ch(
+        connection,
+        sql,
+        print_queries=print_queries,
+        progress=progress,
+    )
+
+
+_EXECUTE_BACKENDS: dict[str, ExecuteBackend] = {
+    "trino": _execute_trino_backend,
+    "gp": _execute_gp_backend,
+    "ch": _execute_ch_backend,
 }
 
 
@@ -358,23 +413,14 @@ def _execute_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> Any:
-    function_name = _EXECUTE_FUNCTION_NAMES.get(backend)
-    if function_name is None:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        )
-    if backend == "gp":
-        return globals()[function_name](
-            connection,
-            sql,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
-        )
-    return globals()[function_name](
+    execute_backend = _EXECUTE_BACKENDS.get(backend)
+    if execute_backend is None:
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    return execute_backend(
         connection,
         sql,
-        print_queries=print_queries,
-        progress=progress,
+        print_queries,
+        gp_break_query,
+        gp_commit_each_statement,
+        progress,
     )

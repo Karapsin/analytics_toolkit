@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 from psycopg2.extras import execute_values
 
-from ...backend_adapters import get_backend_adapter
+from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, get_backend_adapter
 from ...connection.config import (
     TrinoConfig,
     get_connection_config,
@@ -25,6 +25,35 @@ class AmbiguousTableLoadError(Exception):
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
 DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
+BatchInsertBackend = Callable[
+    [
+        Any,
+        str,
+        pd.DataFrame,
+        dict[str, str] | None,
+        int | None,
+        int | None,
+        str,
+        str | None,
+        Callable[[int], None] | None,
+    ],
+    None,
+]
+RowInsertBackend = Callable[
+    [
+        Any,
+        str,
+        Sequence[str],
+        Sequence[Sequence[Any]],
+        dict[str, str] | None,
+        int | None,
+        int | None,
+        str,
+        str | None,
+        Callable[[int], None] | None,
+    ],
+    None,
+]
 
 
 def insert_table_batch(
@@ -342,16 +371,151 @@ def _insert_ch_rows(
         on_progress(len(rows))
 
 
-_BATCH_INSERT_FUNCTION_NAMES = {
-    "gp": "_insert_gp_batch",
-    "trino": "_insert_trino_batch",
-    "ch": "_insert_ch_batch",
+def _insert_gp_batch_backend(
+    connection: Any,
+    table_name: str,
+    batch: pd.DataFrame,
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del target_column_types, trino_insert_chunk_size, connection_type
+    _insert_gp_batch(
+        connection,
+        table_name,
+        batch,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        query_label=query_label,
+        on_progress=on_progress,
+    )
+
+
+def _insert_trino_batch_backend(
+    connection: Any,
+    table_name: str,
+    batch: pd.DataFrame,
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del gp_insert_chunk_size
+    _insert_trino_batch(
+        connection,
+        table_name,
+        batch,
+        target_column_types=target_column_types,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        connection_type=connection_type,
+        query_label=query_label,
+        on_progress=on_progress,
+    )
+
+
+def _insert_ch_batch_backend(
+    connection: Any,
+    table_name: str,
+    batch: pd.DataFrame,
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del target_column_types, trino_insert_chunk_size, gp_insert_chunk_size
+    del connection_type, query_label
+    _insert_ch_batch(connection, table_name, batch, on_progress=on_progress)
+
+
+def _insert_gp_rows_backend(
+    connection: Any,
+    table_name: str,
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del target_column_types, trino_insert_chunk_size, connection_type
+    _insert_gp_rows(
+        connection,
+        table_name,
+        columns,
+        rows,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        query_label=query_label,
+        on_progress=on_progress,
+    )
+
+
+def _insert_trino_rows_backend(
+    connection: Any,
+    table_name: str,
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del gp_insert_chunk_size
+    _insert_trino_rows(
+        connection,
+        table_name,
+        columns,
+        rows,
+        target_column_types=target_column_types,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        connection_type=connection_type,
+        query_label=query_label,
+        on_progress=on_progress,
+    )
+
+
+def _insert_ch_rows_backend(
+    connection: Any,
+    table_name: str,
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    target_column_types: dict[str, str] | None,
+    trino_insert_chunk_size: int | None,
+    gp_insert_chunk_size: int | None,
+    connection_type: str,
+    query_label: str | None,
+    on_progress: Callable[[int], None] | None,
+) -> None:
+    del trino_insert_chunk_size, gp_insert_chunk_size, connection_type, query_label
+    _insert_ch_rows(
+        connection,
+        table_name,
+        columns,
+        rows,
+        target_column_types,
+        on_progress=on_progress,
+    )
+
+
+_BATCH_INSERT_BACKENDS: dict[str, BatchInsertBackend] = {
+    "gp": _insert_gp_batch_backend,
+    "trino": _insert_trino_batch_backend,
+    "ch": _insert_ch_batch_backend,
 }
 
-_ROW_INSERT_FUNCTION_NAMES = {
-    "gp": "_insert_gp_rows",
-    "trino": "_insert_trino_rows",
-    "ch": "_insert_ch_rows",
+_ROW_INSERT_BACKENDS: dict[str, RowInsertBackend] = {
+    "gp": _insert_gp_rows_backend,
+    "trino": _insert_trino_rows_backend,
+    "ch": _insert_ch_rows_backend,
 }
 
 
@@ -368,34 +532,20 @@ def _insert_batch_backend(
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
 ) -> None:
-    function_name = _BATCH_INSERT_FUNCTION_NAMES.get(backend)
-    if function_name is None:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        )
-    if backend == "gp":
-        globals()[function_name](
-            connection,
-            table_name,
-            batch,
-            gp_insert_chunk_size=gp_insert_chunk_size,
-            query_label=query_label,
-            on_progress=on_progress,
-        )
-        return
-    if backend == "trino":
-        globals()[function_name](
-            connection,
-            table_name,
-            batch,
-            target_column_types=target_column_types,
-            trino_insert_chunk_size=trino_insert_chunk_size,
-            connection_type=connection_type,
-            query_label=query_label,
-            on_progress=on_progress,
-        )
-        return
-    globals()[function_name](connection, table_name, batch, on_progress=on_progress)
+    insert_backend = _BATCH_INSERT_BACKENDS.get(backend)
+    if insert_backend is None:
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    insert_backend(
+        connection,
+        table_name,
+        batch,
+        target_column_types,
+        trino_insert_chunk_size,
+        gp_insert_chunk_size,
+        connection_type,
+        query_label,
+        on_progress,
+    )
 
 
 def _insert_rows_backend(
@@ -412,42 +562,20 @@ def _insert_rows_backend(
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
 ) -> None:
-    function_name = _ROW_INSERT_FUNCTION_NAMES.get(backend)
-    if function_name is None:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        )
-    if backend == "gp":
-        globals()[function_name](
-            connection,
-            table_name,
-            columns,
-            rows,
-            gp_insert_chunk_size=gp_insert_chunk_size,
-            query_label=query_label,
-            on_progress=on_progress,
-        )
-        return
-    if backend == "trino":
-        globals()[function_name](
-            connection,
-            table_name,
-            columns,
-            rows,
-            target_column_types=target_column_types,
-            trino_insert_chunk_size=trino_insert_chunk_size,
-            connection_type=connection_type,
-            query_label=query_label,
-            on_progress=on_progress,
-        )
-        return
-    globals()[function_name](
+    insert_backend = _ROW_INSERT_BACKENDS.get(backend)
+    if insert_backend is None:
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    insert_backend(
         connection,
         table_name,
         columns,
         rows,
         target_column_types,
-        on_progress=on_progress,
+        trino_insert_chunk_size,
+        gp_insert_chunk_size,
+        connection_type,
+        query_label,
+        on_progress,
     )
 
 

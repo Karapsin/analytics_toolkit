@@ -109,6 +109,21 @@ def merge_operation_metadata(
     return metadata
 
 
+def validate_retry_options(
+    retry_cnt: int,
+    timeout_increment: int | float,
+) -> None:
+    if retry_cnt < 1:
+        raise ValueError("retry_cnt must be at least 1.")
+    if timeout_increment < 0:
+        raise ValueError("timeout_increment must be non-negative.")
+
+
+def validate_progress_option(progress: bool) -> None:
+    if not isinstance(progress, bool):
+        raise ValueError("progress must be a boolean.")
+
+
 def run_connection_operation(
     *,
     operation_name: str,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
 
+from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
@@ -17,6 +19,7 @@ from ...operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
+    validate_retry_options,
 )
 from ...plans import SqlOperationMetadata, SqlOperationResult
 from ...query_timing import run_timed_query
@@ -30,6 +33,9 @@ from .execute_sql import (
     _validate_progress,
 )
 from .models import ExecuteReadOptions
+
+
+ExecuteReadBackend = Callable[[Any, list[str], bool, bool, bool, bool], pd.DataFrame]
 
 
 @timed_public_sql_function
@@ -138,10 +144,7 @@ def _build_execute_read_options(
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
-    if retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
 
     statements = _split_sql_statements(sql)
@@ -306,10 +309,62 @@ def _read_dbapi_cursor(
     return run_timed_query(connection_type, read_query)
 
 
-_EXECUTE_READ_FUNCTION_NAMES = {
-    "trino": "_execute_read_trino",
-    "gp": "_execute_read_gp",
-    "ch": "_execute_read_ch",
+def _execute_read_trino_backend(
+    connection: Any,
+    statements: list[str],
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> pd.DataFrame:
+    del gp_break_query, gp_commit_each_statement
+    return _execute_read_trino(
+        connection,
+        statements,
+        print_queries=print_queries,
+        progress=progress,
+    )
+
+
+def _execute_read_gp_backend(
+    connection: Any,
+    statements: list[str],
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> pd.DataFrame:
+    return _execute_read_gp(
+        connection,
+        statements,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
+    )
+
+
+def _execute_read_ch_backend(
+    connection: Any,
+    statements: list[str],
+    print_queries: bool,
+    gp_break_query: bool,
+    gp_commit_each_statement: bool,
+    progress: bool,
+) -> pd.DataFrame:
+    del gp_break_query, gp_commit_each_statement
+    return _execute_read_ch(
+        connection,
+        statements,
+        print_queries=print_queries,
+        progress=progress,
+    )
+
+
+_EXECUTE_READ_BACKENDS: dict[str, ExecuteReadBackend] = {
+    "trino": _execute_read_trino_backend,
+    "gp": _execute_read_gp_backend,
+    "ch": _execute_read_ch_backend,
 }
 
 
@@ -323,23 +378,14 @@ def _execute_read_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> pd.DataFrame:
-    function_name = _EXECUTE_READ_FUNCTION_NAMES.get(backend)
-    if function_name is None:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        )
-    if backend == "gp":
-        return globals()[function_name](
-            connection,
-            statements,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
-        )
-    return globals()[function_name](
+    execute_read_backend = _EXECUTE_READ_BACKENDS.get(backend)
+    if execute_read_backend is None:
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    return execute_read_backend(
         connection,
         statements,
-        print_queries=print_queries,
-        progress=progress,
+        print_queries,
+        gp_break_query,
+        gp_commit_each_statement,
+        progress,
     )
