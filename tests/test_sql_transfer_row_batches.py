@@ -559,6 +559,66 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
     assert progress_bars[0].closed is True
 
 
+def test_load_stage_batches_formats_transferred_row_count(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = make_progress_options(progress=False)
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns, rows
+        kwargs["on_success"](1.0)
+        return 1_000_000
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    output = capsys.readouterr().out
+    assert total_rows == 1_000_000
+    assert (
+        "Transferred batch of 1_000_000 row(s) "
+        "to gp_sandbox.sandbox.target__stage__abcd1234"
+    ) in output
+
+
 def test_load_stage_batches_estimated_total_sets_progress_bar_total(
     monkeypatch,
 ) -> None:
