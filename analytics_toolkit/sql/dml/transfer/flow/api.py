@@ -24,6 +24,8 @@ from ....operation_runner import (
     run_retrying_operation,
     timed_public_sql_function,
     tracked_sql_operation,
+    validate_progress_option,
+    validate_retry_options,
 )
 from ....plan_steps import (
     add_analyze_step,
@@ -337,10 +339,7 @@ def build_transfer_options(
         raise ValueError("to_table must not be empty.")
     if options.batch_size <= 0:
         raise ValueError("batch_size must be a positive integer.")
-    if options.retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if options.timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    validate_retry_options(options.retry_cnt, options.timeout_increment)
     if options.full_retry_cnt < 1:
         raise ValueError("full_retry_cnt must be at least 1.")
     if options.full_timeout_increment < 0:
@@ -459,8 +458,7 @@ def _resolve_transfer_write_mode(
 
 
 def _validate_progress(progress: bool) -> None:
-    if not isinstance(progress, bool):
-        raise ValueError("progress must be a boolean.")
+    validate_progress_option(progress)
 
 
 def _validate_estimate_total_rows(estimate_total_rows: bool) -> None:

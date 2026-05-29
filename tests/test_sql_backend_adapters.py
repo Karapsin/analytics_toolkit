@@ -21,7 +21,14 @@ load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
 )
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
+table_basic_ops_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.table._basic_ops"
+)
 ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.ch_lifecycle")
+ch_wait_module = importlib.import_module("analytics_toolkit.sql.ch_wait")
+create_sql_table_module = importlib.import_module(
+    "analytics_toolkit.sql.ddl.create_sql_table"
+)
 
 
 class RecordingClickHouseClient:
@@ -123,6 +130,52 @@ def test_table_ops_compatibility_helpers_remain_importable() -> None:
 
     for name in helper_names:
         assert callable(getattr(table_ops_module, name))
+
+
+def test_table_ops_reexports_split_basic_helpers() -> None:
+    helper_names = {
+        "build_analyze_table_sql",
+        "build_clear_table_sqls",
+        "build_count_table_rows_sql",
+        "build_drop_ch_distributed_table_pair_sqls",
+        "build_drop_table_sql",
+        "build_insert_from_query_sql",
+        "build_insert_from_table_sql",
+        "count_table_rows",
+        "get_table_column_types",
+        "get_trino_table_column_types",
+        "insert_from_query",
+        "insert_from_table",
+        "quote_qualified_table_name",
+        "split_trino_table_name",
+        "table_exists",
+        "_build_typed_insert_select_sql",
+        "_ch_cluster_clause",
+        "_execute_ch_command",
+        "_gp_table_exists",
+        "_trino_table_exists",
+    }
+
+    for name in helper_names:
+        assert getattr(table_ops_module, name) is getattr(table_basic_ops_module, name)
+
+
+def test_clickhouse_wait_helpers_are_lifecycle_owned_with_ddl_shims() -> None:
+    assert (
+        ch_lifecycle_module._wait_for_ch_distributed_table_pair
+        is ch_wait_module._wait_for_ch_distributed_table_pair
+    )
+    assert (
+        ch_lifecycle_module._wait_for_ch_distributed_table_pair_absence
+        is ch_wait_module._wait_for_ch_distributed_table_pair_absence
+    )
+    assert (
+        ch_lifecycle_module._query_ch_cluster_table_rows
+        is ch_wait_module._query_ch_cluster_table_rows
+    )
+    assert "ch_wait" in inspect.getsource(
+        create_sql_table_module._wait_for_ch_distributed_table_pair
+    )
 
 
 def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:

@@ -7,9 +7,7 @@ from typing import Any
 
 from .backend_adapters import ch_cluster_clause, get_backend_adapter
 from .ch_options import resolve_ch_retry_per_host_drops_concurrency
-from .ddl.create_sql_table import (
-    build_ch_distributed_create_table_sqls,
-    build_ch_shard_table_name,
+from .ch_wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
     _resolve_ch_cluster_name_for_wait,
@@ -18,6 +16,10 @@ from .ddl.create_sql_table import (
     _wait_for_ch_distributed_table_pair_absence,
     _wait_for_ch_table_absence,
     _wait_for_ch_table_absence_on_cluster,
+)
+from .ddl.create_sql_table import (
+    build_ch_distributed_create_table_sqls,
+    build_ch_shard_table_name,
 )
 from .labels import apply_query_label
 

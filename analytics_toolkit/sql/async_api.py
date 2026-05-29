@@ -19,13 +19,27 @@ from .dml.io.execute_sql import execute_sql
 from .dml.io.read_sql import read_sql
 from .dml.load.load_df import load_df
 from .dml.transfer.flow.api import transfer_table
-from .operation_runner import timed_public_sql_function
+from .operation_runner import timed_public_sql_function, validate_progress_option
 
 _SUPPORTED_TASK_TYPES = frozenset(
     {"read", "execute", "execute_read", "load_df", "transfer", "custom_sql_pipeline"}
 )
 _PIPELINE_TASK_TYPE = "custom_sql_pipeline"
 _DEFAULT_HARD_CONCURRENCY_CAP = 10
+_PROGRESS_TASK_TYPES = frozenset({"execute", "execute_read", "load_df", "transfer"})
+_START_COMMENT_SQL_FIELDS = {
+    "read": "query",
+    "execute": "query",
+    "execute_read": "query",
+    "transfer": "from_sql",
+}
+_SYNC_TASK_RUNNERS = {
+    "read": lambda kwargs: read_sql(**kwargs),
+    "execute": lambda kwargs: execute_sql(**kwargs),
+    "execute_read": lambda kwargs: execute_read(**kwargs),
+    "load_df": lambda kwargs: load_df(**kwargs),
+    "transfer": lambda kwargs: transfer_table(**kwargs),
+}
 _CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
     contextvars.ContextVar("analytics_toolkit_async_sql_concurrency", default=None)
 )
@@ -682,13 +696,7 @@ def _apply_start_comment(
     if start_comment is None:
         return kwargs
 
-    sql_field_by_task_type = {
-        "read": "query",
-        "execute": "query",
-        "execute_read": "query",
-        "transfer": "from_sql",
-    }
-    sql_field = sql_field_by_task_type.get(task_type)
+    sql_field = _START_COMMENT_SQL_FIELDS.get(task_type)
     if sql_field is None:
         return kwargs
 
@@ -755,25 +763,17 @@ def _validate_hard_concurrency_cap(hard_concurrency_cap: int) -> None:
 
 
 def _validate_progress(progress: bool) -> None:
-    if not isinstance(progress, bool):
-        raise ValueError("progress must be a boolean.")
+    validate_progress_option(progress)
 
 
 def _run_sync_task(task_type: str, kwargs: dict[str, Any]) -> Any:
     task_kwargs = dict(kwargs)
-    if task_type in {"execute", "execute_read", "load_df", "transfer"}:
+    if task_type in _PROGRESS_TASK_TYPES:
         if "progress" in task_kwargs:
             _validate_progress(task_kwargs["progress"])
         task_kwargs["progress"] = False
 
-    if task_type == "read":
-        return read_sql(**task_kwargs)
-    if task_type == "execute":
-        return execute_sql(**task_kwargs)
-    if task_type == "execute_read":
-        return execute_read(**task_kwargs)
-    if task_type == "load_df":
-        return load_df(**task_kwargs)
-    if task_type == "transfer":
-        return transfer_table(**task_kwargs)
+    task_runner = _SYNC_TASK_RUNNERS.get(task_type)
+    if task_runner is not None:
+        return task_runner(task_kwargs)
     raise ValueError(f"Unsupported task type: {task_type!r}.")

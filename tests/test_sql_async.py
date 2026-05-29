@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import sys
 import threading
 import time
@@ -23,6 +24,25 @@ def named_tasks(tasks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
 
 def test_async_sql_is_exported() -> None:
     assert sql_module.async_sql is async_module.async_sql
+
+
+def test_async_sql_sync_task_dispatch_uses_callable_registry() -> None:
+    assert set(async_module._SYNC_TASK_RUNNERS) == {
+        "read",
+        "execute",
+        "execute_read",
+        "load_df",
+        "transfer",
+    }
+    assert all(callable(runner) for runner in async_module._SYNC_TASK_RUNNERS.values())
+    assert async_module._PROGRESS_TASK_TYPES == {
+        "execute",
+        "execute_read",
+        "load_df",
+        "transfer",
+    }
+    source = inspect.getsource(async_module._run_sync_task)
+    assert "if task_type == " not in source
 
 
 def test_async_sql_dispatches_supported_task_types_and_preserves_order(

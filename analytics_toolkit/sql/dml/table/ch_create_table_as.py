@@ -24,9 +24,9 @@ from ...ch_lifecycle import (
     drop_ch_distributed_table_pair,
     drop_ch_table,
 )
+from ...ch_wait import _wait_for_ch_distributed_table_pair
 from ...ddl.create_sql_table import (
     _normalize_non_empty_string,
-    _wait_for_ch_distributed_table_pair,
     build_ch_local_create_table_sql,
     build_table_schema_column_definitions,
     build_ch_shard_table_name,
