@@ -9,7 +9,13 @@
 
 ## Install
 
-From the repository root:
+From PyPI:
+
+```bash
+pip install analytics-toolkit
+```
+
+From GitHub:
 
 ```bash
 pip install git+https://github.com/Karapsin/analytics_toolkit.git

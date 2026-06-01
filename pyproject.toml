@@ -3,11 +3,37 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "analytics_toolkit"
-version = "1.2.8.1"
+name = "analytics-toolkit"
+version = "1.2.8.2"
 description = "Shared Python utilities for SQL, Excel, and date helpers."
 readme = "README.md"
 requires-python = ">=3.8"
+authors = [
+  { name = "analytics_toolkit contributors" },
+]
+keywords = [
+  "analytics",
+  "ab-testing",
+  "sql",
+  "excel",
+  "airflow",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Database",
+  "Topic :: Office/Business",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
   "clickhouse-connect>=0.5.14,<1",
   "lz4>=4.3.2,<5",
@@ -32,6 +58,11 @@ airflow = ["apache-airflow>=2.4,<3"]
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Karapsin/analytics_toolkit"
+Source = "https://github.com/Karapsin/analytics_toolkit"
+Issues = "https://github.com/Karapsin/analytics_toolkit/issues"
 
 [tool.setuptools]
 include-package-data = false
