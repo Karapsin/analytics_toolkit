@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "analytics-toolkit"
-version = "1.2.8.3"
+version = "1.2.8.4"
 description = "Shared Python utilities for SQL, Excel, and date helpers."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.8,<3.13"
 authors = [
   { name = "analytics_toolkit contributors" },
 ]
@@ -28,8 +28,6 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
   "Topic :: Database",
   "Topic :: Office/Business",
   "Topic :: Scientific/Engineering :: Information Analysis",

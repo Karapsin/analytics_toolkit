@@ -10,28 +10,24 @@ permissions:
 
 jobs:
   tests:
-    name: ${{ matrix.tox-env }}
+    name: ${{ matrix.env_name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - python-version: "3.8"
-            tox-env: py38-latest
+            env_name: py38-latest
           - python-version: "3.9"
-            tox-env: py39-latest
+            env_name: py39-latest
           - python-version: "3.10"
-            tox-env: py310-latest
+            env_name: py310-latest
           - python-version: "3.11"
-            tox-env: py311-latest
+            env_name: py311-latest
           - python-version: "3.12"
-            tox-env: py312-latest
-          - python-version: "3.13"
-            tox-env: py313-latest
-          - python-version: "3.14"
-            tox-env: py314-latest
+            env_name: py312-latest
           - python-version: "3.8"
-            tox-env: py38-min
+            env_name: py38-min
 
     steps:
       - name: Checkout
@@ -43,17 +39,23 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install tox
-        run: python -m pip install "tox>=4,<4.26"
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
 
-      - name: Run tox
-        run: tox -e "${{ matrix.tox-env }}"
+      - name: Install latest test environment
+        if: matrix.env_name != 'py38-min'
+        run: python -m pip install -e . pytest
 
-      - name: Freeze tox environment
+      - name: Install minimum Python 3.8 test environment
+        if: matrix.env_name == 'py38-min'
+        run: python -m pip install -c constraints/py38-min.txt -e . pytest
+
+      - name: Compile package and tests
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
+
+      - name: Run tests
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
+
+      - name: Freeze environment
         if: always()
-        run: |
-          if [ -x ".tox/${{ matrix.tox-env }}/bin/python" ]; then
-            .tox/${{ matrix.tox-env }}/bin/python -m pip freeze
-          else
-            python -m pip freeze
-          fi
+        run: python -m pip freeze
