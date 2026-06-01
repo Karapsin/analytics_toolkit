@@ -76,6 +76,98 @@ def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
     pd.testing.assert_frame_equal(result, expected)
 
 
+def test_format_ab_metrics_allows_configured_repeated_group_values() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test_1", "test_2"],
+            "group_2": ["control", "control"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 10.000000000001],
+            "metric_test": [12.0, 13.0],
+        }
+    )
+
+    result = format_ab_metrics(df, allow_repeated_groups=["control"])
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["orders"],
+            "control": [10.0],
+            "test_1": [12.0],
+            "test_2": [13.0],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_allows_configured_repeated_group_values_for_group_outputs() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test_1", "test_2"],
+            "group_2": ["control", "control"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 11.0],
+            "metric_test": [12.0, 13.0],
+            "n0": [100, 101],
+            "n1": [120, 130],
+            "variance_control": [1.5, 1.6],
+            "variance_test": [2.5, 2.6],
+        }
+    )
+
+    result = format_ab_metrics(
+        df,
+        output_type=["metric_values", "n", "variance"],
+        allow_repeated_groups=["control"],
+    )
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["orders"],
+            "control_metric_value": [10.0],
+            "test_1_metric_value": [12.0],
+            "test_2_metric_value": [13.0],
+            "control_n": [100],
+            "test_1_n": [120],
+            "test_2_n": [130],
+            "control_variance": [1.5],
+            "test_1_variance": [2.5],
+            "test_2_variance": [2.6],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_rejects_unconfigured_repeated_group_values() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test_1", "test_2"],
+            "group_2": ["control", "control"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 11.0],
+            "metric_test": [12.0, 13.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Duplicate formatted output cell"):
+        format_ab_metrics(df)
+
+
+def test_format_ab_metrics_rejects_repeated_values_for_groups_not_configured() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test", "test"],
+            "group_2": ["control_1", "control_2"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 11.0],
+            "metric_test": [12.0, 13.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Duplicate formatted output cell"):
+        format_ab_metrics(df, allow_repeated_groups=["control_1", "control_2"])
+
+
 def test_format_ab_metrics_keeps_labels_and_first_seen_order() -> None:
     df = pd.DataFrame(
         {
@@ -262,6 +354,26 @@ def test_format_ab_metrics_raises_for_missing_requested_optional_columns() -> No
 def test_format_ab_metrics_validates_output_type() -> None:
     with pytest.raises(ValueError, match="Unsupported output_type"):
         format_ab_metrics(_build_metric_rows(), output_type=["metric_values", "unknown"])
+
+
+def test_format_ab_metrics_validates_allow_repeated_groups() -> None:
+    with pytest.raises(ValueError, match="allow_repeated_groups"):
+        format_ab_metrics(
+            _build_metric_rows(),
+            allow_repeated_groups="control",  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="allow_repeated_groups"):
+        format_ab_metrics(
+            _build_metric_rows(),
+            allow_repeated_groups=["control", 1],  # type: ignore[list-item]
+        )
+
+    with pytest.raises(ValueError, match="allow_repeated_groups"):
+        format_ab_metrics(
+            _build_metric_rows(),
+            allow_repeated_groups=["control", "control"],
+        )
 
 
 def test_format_ab_metrics_is_publicly_reexported() -> None:

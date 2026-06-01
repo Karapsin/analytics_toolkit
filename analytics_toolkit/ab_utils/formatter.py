@@ -73,10 +73,12 @@ def format_ab_metrics(
     output_type: str | list[str] | None = None,
     significance_alpha: float | None = None,
     significance_p_value: str | None = None,
+    allow_repeated_groups: list[str] | None = None,
 ) -> pd.DataFrame:
     """Format AB metric comparison rows into a wide presentation dataframe."""
     labels = _validate_label_cols(df, label_cols)
     outputs = _validate_output_type(output_type)
+    repeated_groups = _validate_allow_repeated_groups(allow_repeated_groups)
     significance_source_column = _validate_significance_options(
         outputs=outputs,
         significance_alpha=significance_alpha,
@@ -141,6 +143,7 @@ def format_ab_metrics(
                         assigned_cells=assigned_cells,
                         output_column=output_column,
                         value=source_row[value_col],
+                        allow_existing_any=group_name in repeated_groups,
                         allow_existing_equal=True,
                     )
             elif output in _COMPARISON_OUTPUTS:
@@ -156,6 +159,7 @@ def format_ab_metrics(
                     assigned_cells=assigned_cells,
                     output_column=output_column,
                     value=source_row[value_col],
+                    allow_existing_any=False,
                     allow_existing_equal=False,
                 )
             else:
@@ -177,6 +181,7 @@ def format_ab_metrics(
                     assigned_cells=assigned_cells,
                     output_column=output_column,
                     value=value,
+                    allow_existing_any=False,
                     allow_existing_equal=False,
                 )
 
@@ -223,6 +228,23 @@ def _validate_output_type(output_type: str | list[str] | None) -> list[str]:
     if len(set(outputs)) != len(outputs):
         raise ValueError("output_type must not contain duplicates.")
     return list(outputs)
+
+
+def _validate_allow_repeated_groups(
+    allow_repeated_groups: list[str] | None,
+) -> set[str]:
+    if allow_repeated_groups is None:
+        return set()
+    if not isinstance(allow_repeated_groups, list):
+        raise ValueError("allow_repeated_groups must be a list of group names or None.")
+    invalid_groups = [
+        group for group in allow_repeated_groups if not isinstance(group, str)
+    ]
+    if invalid_groups:
+        raise ValueError("allow_repeated_groups must contain only group names.")
+    if len(set(allow_repeated_groups)) != len(allow_repeated_groups):
+        raise ValueError("allow_repeated_groups must not contain duplicates.")
+    return set(allow_repeated_groups)
 
 
 def _validate_significance_options(
@@ -401,10 +423,13 @@ def _set_output_value(
     assigned_cells: set[tuple[tuple[Any, ...], str]],
     output_column: str,
     value: Any,
+    allow_existing_any: bool,
     allow_existing_equal: bool,
 ) -> None:
     cell_key = (row_key, output_column)
     if cell_key in assigned_cells:
+        if allow_existing_any:
+            return
         if allow_existing_equal and _values_equal(target_row[output_column], value):
             return
         raise ValueError(
