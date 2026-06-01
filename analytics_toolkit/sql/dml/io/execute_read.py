@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Callable, List
 
 import pandas as pd
 
@@ -35,7 +34,7 @@ from .execute_sql import (
 from .models import ExecuteReadOptions
 
 
-ExecuteReadBackend = Callable[[Any, list[str], bool, bool, bool, bool], pd.DataFrame]
+ExecuteReadBackend = Callable[[Any, List[str], bool, bool, bool, bool], pd.DataFrame]
 
 
 @timed_public_sql_function

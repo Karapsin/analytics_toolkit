@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator, Sequence
+from typing import Any, Callable, Dict, Iterator, Optional, Sequence
 from decimal import Decimal
 from itertools import islice
-from typing import Any
 
 import pandas as pd
 from psycopg2.extras import execute_values
@@ -30,12 +29,12 @@ BatchInsertBackend = Callable[
         Any,
         str,
         pd.DataFrame,
-        dict[str, str] | None,
-        int | None,
-        int | None,
+        Optional[Dict[str, str]],
+        Optional[int],
+        Optional[int],
         str,
-        str | None,
-        Callable[[int], None] | None,
+        Optional[str],
+        Optional[Callable[[int], None]],
     ],
     None,
 ]
@@ -45,12 +44,12 @@ RowInsertBackend = Callable[
         str,
         Sequence[str],
         Sequence[Sequence[Any]],
-        dict[str, str] | None,
-        int | None,
-        int | None,
+        Optional[Dict[str, str]],
+        Optional[int],
+        Optional[int],
         str,
-        str | None,
-        Callable[[int], None] | None,
+        Optional[str],
+        Optional[Callable[[int], None]],
     ],
     None,
 ]
