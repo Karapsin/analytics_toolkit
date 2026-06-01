@@ -96,7 +96,8 @@ sql.get_sql_connection(...)
 and `timeout_increment`. Retries restart the whole public operation from the
 beginning with a fresh connection. Deterministic SQL errors such as syntax
 errors, invalid grouping, missing tables/columns/functions/schemas, and
-PostgreSQL/Greenplum undefined objects are not retried.
+PostgreSQL/Greenplum undefined objects or unsupported feature errors are not
+retried.
 
 `load_df` and `transfer_table` show `tqdm` row progress bars by default during
 data loading. Pass `progress=False` to silence those bars. `dry_run=True` and
