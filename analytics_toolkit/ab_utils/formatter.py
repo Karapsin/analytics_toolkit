@@ -74,11 +74,13 @@ def format_ab_metrics(
     significance_alpha: float | None = None,
     significance_p_value: str | None = None,
     allow_repeated_groups: list[str] | None = None,
+    keep_simple_group_names: bool = False,
 ) -> pd.DataFrame:
     """Format AB metric comparison rows into a wide presentation dataframe."""
     labels = _validate_label_cols(df, label_cols)
     outputs = _validate_output_type(output_type)
     repeated_groups = _validate_allow_repeated_groups(allow_repeated_groups)
+    simple_group_names = _validate_keep_simple_group_names(keep_simple_group_names)
     significance_source_column = _validate_significance_options(
         outputs=outputs,
         significance_alpha=significance_alpha,
@@ -97,6 +99,7 @@ def format_ab_metrics(
         outputs=outputs,
         groups=group_order,
         comparisons=comparison_order,
+        keep_simple_group_names=simple_group_names,
     )
     _validate_output_columns(labels, output_columns)
 
@@ -152,6 +155,7 @@ def format_ab_metrics(
                     test_group=_column_part(source_row["group_1"]),
                     baseline_group=_column_part(source_row["group_2"]),
                     suffix=suffix,
+                    keep_simple_group_names=simple_group_names,
                 )
                 _set_output_value(
                     row_key=row_key,
@@ -168,6 +172,7 @@ def format_ab_metrics(
                     test_group=_column_part(source_row["group_1"]),
                     baseline_group=_column_part(source_row["group_2"]),
                     suffix=suffix,
+                    keep_simple_group_names=simple_group_names,
                 )
                 value = _significant_delta_value(
                     source_row=source_row,
@@ -245,6 +250,12 @@ def _validate_allow_repeated_groups(
     if len(set(allow_repeated_groups)) != len(allow_repeated_groups):
         raise ValueError("allow_repeated_groups must not contain duplicates.")
     return set(allow_repeated_groups)
+
+
+def _validate_keep_simple_group_names(keep_simple_group_names: bool) -> bool:
+    if not isinstance(keep_simple_group_names, bool):
+        raise ValueError("keep_simple_group_names must be a boolean.")
+    return keep_simple_group_names
 
 
 def _validate_significance_options(
@@ -339,6 +350,7 @@ def _build_output_columns(
     outputs: Sequence[str],
     groups: Sequence[str],
     comparisons: Sequence[tuple[str, str]],
+    keep_simple_group_names: bool,
 ) -> list[str]:
     plain_metric_values = list(outputs) == ["metric_values"]
     columns: list[str] = []
@@ -360,6 +372,7 @@ def _build_output_columns(
                     test_group=test_group,
                     baseline_group=baseline_group,
                     suffix=suffix,
+                    keep_simple_group_names=keep_simple_group_names,
                 )
                 for test_group, baseline_group in comparisons
             )
@@ -370,6 +383,7 @@ def _build_output_columns(
                     test_group=test_group,
                     baseline_group=baseline_group,
                     suffix=suffix,
+                    keep_simple_group_names=keep_simple_group_names,
                 )
                 for test_group, baseline_group in comparisons
             )
@@ -412,7 +426,10 @@ def _comparison_output_column(
     test_group: str,
     baseline_group: str,
     suffix: str,
+    keep_simple_group_names: bool,
 ) -> str:
+    if keep_simple_group_names:
+        return test_group
     return f"{test_group}_vs_{baseline_group}_{suffix}"
 
 

@@ -228,6 +228,34 @@ def test_format_ab_metrics_accepts_single_output_type_string() -> None:
     pd.testing.assert_frame_equal(result, expected)
 
 
+def test_format_ab_metrics_keeps_simple_group_names_for_single_comparison_output() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test_1", "test_2"],
+            "group_2": ["control", "control"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 10.0],
+            "metric_test": [12.0, 13.0],
+            "delta_relative": [0.2, 0.3],
+        }
+    )
+
+    result = format_ab_metrics(
+        df,
+        output_type=["delta_relative"],
+        keep_simple_group_names=True,
+    )
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["orders"],
+            "test_1": [0.2],
+            "test_2": [0.3],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
 def test_format_ab_metrics_supports_significant_delta_outputs() -> None:
     result = format_ab_metrics(
         _build_metric_rows(),
@@ -244,6 +272,40 @@ def test_format_ab_metrics_supports_significant_delta_outputs() -> None:
         }
     )
     pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_keeps_simple_group_names_for_significant_delta_output() -> None:
+    df = _build_metric_rows()
+    df["group_1"] = ["test_1", "test_2"]
+    df["metric_name"] = ["orders", "orders"]
+    df["delta_relative"] = [0.2, 0.3]
+    df["p-value"] = [0.04, 0.2]
+
+    result = format_ab_metrics(
+        df,
+        output_type=["delta_relative_significant"],
+        significance_alpha=0.05,
+        significance_p_value="p_values",
+        keep_simple_group_names=True,
+    )
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["orders"],
+            "test_1": [0.2],
+            "test_2": [np.nan],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_rejects_ambiguous_simple_group_names() -> None:
+    with pytest.raises(ValueError, match="Duplicate formatted output column"):
+        format_ab_metrics(
+            _build_metric_rows().iloc[[0]],
+            output_type=["p_values", "delta_relative"],
+            keep_simple_group_names=True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -373,6 +435,14 @@ def test_format_ab_metrics_validates_allow_repeated_groups() -> None:
         format_ab_metrics(
             _build_metric_rows(),
             allow_repeated_groups=["control", "control"],
+        )
+
+
+def test_format_ab_metrics_validates_keep_simple_group_names() -> None:
+    with pytest.raises(ValueError, match="keep_simple_group_names"):
+        format_ab_metrics(
+            _build_metric_rows(),
+            keep_simple_group_names="yes",  # type: ignore[arg-type]
         )
 
 

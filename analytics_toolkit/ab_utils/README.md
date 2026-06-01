@@ -198,6 +198,18 @@ Use `significance_p_value="p_values"`, `"p_values_cuped"`, or `"p_values_adj"`
 to choose the p-value source. Use `allow_repeated_groups` when a shared group
 such as `"control"` appears in multiple comparisons for the same metric and the
 formatted table should keep the first value for that repeated group.
+Use `keep_simple_group_names=True` with a single comparison output such as
+`output_type=["delta_relative"]` to name comparison columns by test group only,
+for example `test_1` instead of `test_1_vs_control_delta_relative`.
+
+```python
+formatted_delta = format_ab_metrics(
+    result["segment_1"],
+    label_cols=["segment"],
+    output_type=["delta_relative"],
+    keep_simple_group_names=True,
+)
+```
 
 Output notes:
 
