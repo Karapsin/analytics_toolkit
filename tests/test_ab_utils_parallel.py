@@ -941,6 +941,103 @@ def test_parallel_compute_metrics_from_sql_fail_fast_prints_both_sqls(
     assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
 
 
+def test_parallel_compute_metrics_from_sql_prints_sqls_for_compute_error(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    empty_df = pd.DataFrame(columns=["user_id", "group_name", "orders"])
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        return {
+            "broken:sql": empty_df,
+            "broken:pre_exp_sql": empty_df,
+        }
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+
+    with pytest.raises(ValueError, match="Control label 'control'"):
+        parallel_module.parallel_compute_metrics_from_sql(
+            {
+                "broken": {
+                    "sql": "select * from experiment_source",
+                    "pre_exp_sql": "select * from pre_experiment_source",
+                },
+            },
+            db="analytics_prod",
+            concurrency=1,
+            fail_fast=True,
+            progress=False,
+        )
+
+    output = capsys.readouterr().out
+    assert "task 'broken' failed during metric computation" in output
+    assert "Control label 'control' was not found in column 'group_name'" in output
+    assert "Experiment SQL:\nselect * from experiment_source" in output
+    assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
+
+
+def test_parallel_compute_metrics_from_sql_fail_fast_false_prints_compute_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    experiment_df = pd.DataFrame({"user_id": [1], "group_name": ["test"], "orders": [1]})
+    computed = pd.DataFrame({"metric_name": ["orders"]})
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        return {
+            "ok:sql": experiment_df,
+            "broken:sql": experiment_df,
+            "broken:pre_exp_sql": experiment_df,
+        }
+
+    def fake_parallel_compute_metrics(
+        tasks: dict[str, dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        return {
+            "ok": computed,
+            "broken": "Control label 'control' was not found in column 'group_name'.",
+        }
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+    monkeypatch.setattr(
+        parallel_module,
+        "parallel_compute_metrics",
+        fake_parallel_compute_metrics,
+    )
+
+    result = parallel_module.parallel_compute_metrics_from_sql(
+        {
+            "ok": {"sql": "select * from ok_source"},
+            "broken": {
+                "sql": "select * from experiment_source",
+                "pre_exp_sql": "select * from pre_experiment_source",
+            },
+        },
+        db="analytics_prod",
+        fail_fast=False,
+        progress=False,
+    )
+
+    pd.testing.assert_frame_equal(result["ok"], computed)
+    assert result["broken"] == (
+        "Control label 'control' was not found in column 'group_name'."
+    )
+    output = capsys.readouterr().out
+    assert "task 'broken' failed during metric computation" in output
+    assert "Experiment SQL:\nselect * from experiment_source" in output
+    assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
+
+
 @pytest.mark.parametrize(
     ("tasks", "expected_exception"),
     [

@@ -91,6 +91,7 @@ def parallel_compute_metrics(
             try:
                 results_by_index[index] = future.result()
             except BaseException as exc:
+                _annotate_metric_exception(exc, task_defs[index][0])
                 if fail_fast:
                     for pending in future_to_index:
                         if pending is not future:
@@ -215,16 +216,32 @@ def parallel_compute_metrics_from_sql(
     if hard_concurrency_cap != _DEFAULT_HARD_CONCURRENCY_CAP:
         metric_kwargs["hard_concurrency_cap"] = hard_concurrency_cap
 
-    metric_results = (
-        parallel_compute_metrics(metric_tasks, **metric_kwargs)
-        if metric_tasks
-        else {}
-    )
+    try:
+        metric_results = (
+            parallel_compute_metrics(metric_tasks, **metric_kwargs)
+            if metric_tasks
+            else {}
+        )
+    except BaseException as exc:
+        _log_sql_metric_compute_failure_from_exception(exc, task_defs)
+        raise
 
-    return {
-        name: sql_failures[name] if name in sql_failures else metric_results[name]
-        for name, _kwargs, _sql, _pre_exp_sql, _task_start_comment in task_defs
-    }
+    results: dict[str, pd.DataFrame | str] = {}
+    for name, _kwargs, sql, pre_exp_sql, _task_start_comment in task_defs:
+        if name in sql_failures:
+            results[name] = sql_failures[name]
+            continue
+
+        metric_result = metric_results[name]
+        if isinstance(metric_result, str):
+            _log_sql_metric_compute_failure(
+                name=name,
+                error=metric_result,
+                sql=sql,
+                pre_exp_sql=pre_exp_sql,
+            )
+        results[name] = metric_result
+    return results
 
 
 def _make_progress_bar(*, total: int, progress: bool) -> Any:
@@ -306,6 +323,13 @@ def _run_task(kwargs: dict[str, Any], labels: dict[str, Any]) -> pd.DataFrame:
     for index, (column, value) in enumerate(labels.items()):
         labeled_result.insert(index, column, value)
     return labeled_result
+
+
+def _annotate_metric_exception(exc: BaseException, name: str) -> None:
+    try:
+        setattr(exc, "analytics_toolkit_metric_task_name", name)
+    except Exception:
+        return
 
 
 def _validate_tasks(
@@ -450,6 +474,25 @@ def _log_sql_metric_task_failure_from_exception(
             return
 
 
+def _log_sql_metric_compute_failure_from_exception(
+    exc: BaseException,
+    task_defs: list[tuple[str, dict[str, Any], str, str | None, Any]],
+) -> None:
+    metric_task_name = getattr(exc, "analytics_toolkit_metric_task_name", None)
+    if not isinstance(metric_task_name, str):
+        return
+
+    for name, _kwargs, sql, pre_exp_sql, _task_start_comment in task_defs:
+        if name == metric_task_name:
+            _log_sql_metric_compute_failure(
+                name=name,
+                error=str(exc),
+                sql=sql,
+                pre_exp_sql=pre_exp_sql,
+            )
+            return
+
+
 def _sql_read_task_field(sql_task_name: Any) -> str | None:
     if not isinstance(sql_task_name, str):
         return None
@@ -475,6 +518,26 @@ def _log_sql_metric_task_failure(
     time_print(
         f"parallel_compute_metrics_from_sql task {name!r} failed while loading "
         f"{failed_field}: {error}\n"
+        f"Experiment SQL:\n{sql}\n"
+        f"Pre-experiment SQL:\n{pre_exp_message}"
+    )
+
+
+def _log_sql_metric_compute_failure(
+    *,
+    name: str,
+    error: str,
+    sql: str,
+    pre_exp_sql: str | None,
+) -> None:
+    pre_exp_message = (
+        pre_exp_sql
+        if pre_exp_sql is not None
+        else "pre_exp_sql was not provided for this metrics task."
+    )
+    time_print(
+        f"parallel_compute_metrics_from_sql task {name!r} failed during metric "
+        f"computation: {error}\n"
         f"Experiment SQL:\n{sql}\n"
         f"Pre-experiment SQL:\n{pre_exp_message}"
     )
