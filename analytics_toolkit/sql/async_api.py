@@ -14,6 +14,8 @@ from typing import Any
 
 from tqdm import tqdm
 
+from analytics_toolkit.general import time_print
+
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql
 from .dml.io.read_sql import read_sql
@@ -262,7 +264,12 @@ async def _async_sql_impl(
         task_type: str,
         kwargs: dict[str, Any],
     ) -> tuple[int, Any]:
-        return index, await run_task(name, task_type, kwargs)
+        try:
+            return index, await run_task(name, task_type, kwargs)
+        except BaseException as exc:
+            _annotate_task_exception(exc, name, task_type, kwargs)
+            _log_failed_sql_task(name, task_type, kwargs, exc)
+            raise
 
     try:
         async_tasks = [
@@ -374,6 +381,54 @@ def _normalize_task_result(result: Any) -> Any:
     if result is None:
         return "success"
     return result
+
+
+def _annotate_task_exception(
+    exc: BaseException,
+    name: str,
+    task_type: str,
+    kwargs: dict[str, Any],
+) -> None:
+    try:
+        setattr(exc, "analytics_toolkit_sql_task_name", name)
+        setattr(exc, "analytics_toolkit_sql_task_type", task_type)
+        field, query = _task_sql_field_and_query(task_type, kwargs)
+        if field is not None:
+            setattr(exc, "analytics_toolkit_sql_field", field)
+        if query is not None:
+            setattr(exc, "analytics_toolkit_sql_query", query)
+    except Exception:
+        return
+
+
+def _task_sql_field_and_query(
+    task_type: str,
+    kwargs: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    sql_field = _START_COMMENT_SQL_FIELDS.get(task_type)
+    if sql_field is None:
+        return None, None
+
+    query = kwargs.get(sql_field)
+    if isinstance(query, str) and query.strip():
+        return sql_field, query
+    return sql_field, None
+
+
+def _log_failed_sql_task(
+    name: str,
+    task_type: str,
+    kwargs: dict[str, Any],
+    exc: BaseException,
+) -> None:
+    sql_field, query = _task_sql_field_and_query(task_type, kwargs)
+    if query is None:
+        return
+
+    time_print(
+        f"SQL task {name!r} ({task_type}) failed while running {sql_field}: "
+        f"{exc}\n{sql_field}:\n{query}"
+    )
 
 
 def _build_concurrency_state(
@@ -512,7 +567,12 @@ def _run_parallel_indexed(
     kwargs: dict[str, Any],
     soft_semaphores: tuple[Semaphore, ...],
 ) -> tuple[int, Any]:
-    return index, _run_parallel_task(name, task_type, kwargs, soft_semaphores)
+    try:
+        return index, _run_parallel_task(name, task_type, kwargs, soft_semaphores)
+    except BaseException as exc:
+        _annotate_task_exception(exc, name, task_type, kwargs)
+        _log_failed_sql_task(name, task_type, kwargs, exc)
+        raise
 
 
 def _run_parallel_task(

@@ -169,6 +169,9 @@ query or statement. Public SQL operations also log the first non-empty line of
 the representative SQL after the operation-finished status line. Public
 functions exported from `analytics_toolkit.sql` print a final total function
 duration line, including dry-run and `return_sql` paths.
+When a built-in SQL task fails inside `async_sql` or `parallel_sql`, the batch
+helper prints the failed task name and its SQL field (`query` or `from_sql`) to
+make concurrent task failures easier to diagnose.
 
 Pass `start_comment` to prepend a raw SQL prefix to every `read`, `execute`,
 `execute_read`, and `transfer` task query. For `transfer`, the prefix is applied

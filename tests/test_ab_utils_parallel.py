@@ -833,6 +833,114 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_returns_sql_errors(
     assert compute_calls[0]["ok"]["df"] is ok_df
 
 
+def test_parallel_compute_metrics_from_sql_prints_both_sqls_for_exp_error(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        return {
+            "broken:sql": "experiment query failed",
+            "broken:pre_exp_sql": pd.DataFrame({"user_id": [1]}),
+        }
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+
+    result = parallel_module.parallel_compute_metrics_from_sql(
+        {
+            "broken": {
+                "sql": "select * from experiment_source",
+                "pre_exp_sql": "select * from pre_experiment_source",
+            },
+        },
+        db="analytics_prod",
+        fail_fast=False,
+        progress=False,
+    )
+
+    assert result["broken"] == "experiment query failed"
+    output = capsys.readouterr().out
+    assert "task 'broken' failed while loading sql" in output
+    assert "experiment query failed" in output
+    assert "Experiment SQL:\nselect * from experiment_source" in output
+    assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
+
+
+def test_parallel_compute_metrics_from_sql_prints_both_sqls_for_pre_exp_error(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        return {
+            "broken:sql": pd.DataFrame({"user_id": [1]}),
+            "broken:pre_exp_sql": "pre experiment query failed",
+        }
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+
+    result = parallel_module.parallel_compute_metrics_from_sql(
+        {
+            "broken": {
+                "sql": "select * from experiment_source",
+                "pre_exp_sql": "select * from pre_experiment_source",
+            },
+        },
+        db="analytics_prod",
+        fail_fast=False,
+        progress=False,
+    )
+
+    assert result["broken"] == "pre experiment query failed"
+    output = capsys.readouterr().out
+    assert "task 'broken' failed while loading pre_exp_sql" in output
+    assert "pre experiment query failed" in output
+    assert "Experiment SQL:\nselect * from experiment_source" in output
+    assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
+
+
+def test_parallel_compute_metrics_from_sql_fail_fast_prints_both_sqls(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    error = RuntimeError("pre experiment query failed")
+    error.analytics_toolkit_sql_task_name = "broken:pre_exp_sql"  # type: ignore[attr-defined]
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame | str]:
+        del tasks, kwargs
+        raise error
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        parallel_module.parallel_compute_metrics_from_sql(
+            {
+                "broken": {
+                    "sql": "select * from experiment_source",
+                    "pre_exp_sql": "select * from pre_experiment_source",
+                },
+            },
+            db="analytics_prod",
+            fail_fast=True,
+            progress=False,
+        )
+
+    assert exc_info.value is error
+    output = capsys.readouterr().out
+    assert "task 'broken' failed while loading pre_exp_sql" in output
+    assert "Experiment SQL:\nselect * from experiment_source" in output
+    assert "Pre-experiment SQL:\nselect * from pre_experiment_source" in output
+
+
 @pytest.mark.parametrize(
     ("tasks", "expected_exception"),
     [

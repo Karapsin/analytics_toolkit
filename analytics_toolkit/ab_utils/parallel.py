@@ -12,6 +12,7 @@ import pandas as pd
 from pandas.api.types import is_scalar
 from tqdm import tqdm
 
+from analytics_toolkit.general import time_print
 from analytics_toolkit.sql import async_sql
 
 from .api import compute_test_metrics
@@ -166,13 +167,24 @@ def parallel_compute_metrics_from_sql(
     if hard_concurrency_cap != _DEFAULT_HARD_CONCURRENCY_CAP:
         async_kwargs["hard_concurrency_cap"] = hard_concurrency_cap
 
-    sql_results = async_sql(sql_tasks, **async_kwargs)
+    try:
+        sql_results = async_sql(sql_tasks, **async_kwargs)
+    except BaseException as exc:
+        _log_sql_metric_task_failure_from_exception(exc, task_defs)
+        raise
 
     metric_tasks: dict[str, dict[str, Any]] = {}
     sql_failures: dict[str, str] = {}
     for name, kwargs, _sql, pre_exp_sql, _task_start_comment in task_defs:
         df_result = sql_results[_sql_read_task_name(name, "sql")]
         if isinstance(df_result, str):
+            _log_sql_metric_task_failure(
+                name=name,
+                failed_field="sql",
+                error=df_result,
+                sql=_sql,
+                pre_exp_sql=pre_exp_sql,
+            )
             sql_failures[name] = df_result
             continue
 
@@ -181,6 +193,13 @@ def parallel_compute_metrics_from_sql(
         if pre_exp_sql is not None:
             pre_exp_df_result = sql_results[_sql_read_task_name(name, "pre_exp_sql")]
             if isinstance(pre_exp_df_result, str):
+                _log_sql_metric_task_failure(
+                    name=name,
+                    failed_field="pre_exp_sql",
+                    error=pre_exp_df_result,
+                    sql=_sql,
+                    pre_exp_sql=pre_exp_sql,
+                )
                 sql_failures[name] = pre_exp_df_result
                 continue
             metric_kwargs["pre_exp_df"] = pre_exp_df_result
@@ -407,6 +426,58 @@ def _validate_start_comment(field_name: str, value: Any) -> None:
 
 def _sql_read_task_name(name: str, field: str) -> str:
     return f"{name}:{field}"
+
+
+def _log_sql_metric_task_failure_from_exception(
+    exc: BaseException,
+    task_defs: list[tuple[str, dict[str, Any], str, str | None, Any]],
+) -> None:
+    sql_task_name = getattr(exc, "analytics_toolkit_sql_task_name", None)
+    failed_field = _sql_read_task_field(sql_task_name)
+    if failed_field is None:
+        return
+
+    metric_task_name = sql_task_name[: -len(f":{failed_field}")]
+    for name, _kwargs, sql, pre_exp_sql, _task_start_comment in task_defs:
+        if name == metric_task_name:
+            _log_sql_metric_task_failure(
+                name=name,
+                failed_field=failed_field,
+                error=str(exc),
+                sql=sql,
+                pre_exp_sql=pre_exp_sql,
+            )
+            return
+
+
+def _sql_read_task_field(sql_task_name: Any) -> str | None:
+    if not isinstance(sql_task_name, str):
+        return None
+    for field in ("pre_exp_sql", "sql"):
+        if sql_task_name.endswith(f":{field}"):
+            return field
+    return None
+
+
+def _log_sql_metric_task_failure(
+    *,
+    name: str,
+    failed_field: str,
+    error: str,
+    sql: str,
+    pre_exp_sql: str | None,
+) -> None:
+    pre_exp_message = (
+        pre_exp_sql
+        if pre_exp_sql is not None
+        else "pre_exp_sql was not provided for this metrics task."
+    )
+    time_print(
+        f"parallel_compute_metrics_from_sql task {name!r} failed while loading "
+        f"{failed_field}: {error}\n"
+        f"Experiment SQL:\n{sql}\n"
+        f"Pre-experiment SQL:\n{pre_exp_message}"
+    )
 
 
 def _validate_labels(name: str, labels: Any) -> dict[str, Any]:

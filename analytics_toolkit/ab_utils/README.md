@@ -173,6 +173,9 @@ A task-level `start_comment` overrides it and applies to both `sql` and
 `pre_exp_sql` for that metrics task. `soft_concurrency_cap` and
 `hard_concurrency_cap` are applied to both the SQL-loading phase and the metric
 calculation phase.
+When a SQL-loading task fails, `parallel_compute_metrics_from_sql` prints the
+metrics task name plus both the experiment `sql` and the `pre_exp_sql` value, if
+one was provided.
 
 Format metric comparison output for presentation with `format_ab_metrics`:
 

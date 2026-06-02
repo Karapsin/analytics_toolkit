@@ -531,6 +531,43 @@ def test_parallel_sql_fail_fast_raises_first_exception(
     assert exc_info.value is error
 
 
+def test_parallel_sql_fail_fast_true_prints_failed_transfer_sql(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    error = RuntimeError("transfer failed")
+
+    def fake_transfer_table(**kwargs: Any) -> str:
+        raise error
+
+    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        async_module.parallel_sql(
+            [
+                {
+                    "name": "copy_table",
+                    "type": "transfer",
+                    "from_db": "gp",
+                    "to_db": "trino",
+                    "from_sql": "select * from source_table",
+                    "to_table": "sandbox.copy",
+                }
+            ],
+            concurrency=1,
+            fail_fast=True,
+            progress=False,
+        )
+
+    assert exc_info.value is error
+    assert error.analytics_toolkit_sql_task_name == "copy_table"  # type: ignore[attr-defined]
+    assert error.analytics_toolkit_sql_field == "from_sql"  # type: ignore[attr-defined]
+    assert error.analytics_toolkit_sql_query == "select * from source_table"  # type: ignore[attr-defined]
+    output = capsys.readouterr().out
+    assert "SQL task 'copy_table' (transfer) failed while running from_sql" in output
+    assert "from_sql:\nselect * from source_table" in output
+
+
 def test_parallel_sql_fail_fast_false_returns_exceptions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -574,6 +611,36 @@ def test_parallel_sql_fail_fast_false_returns_exceptions(
     assert result["ok"] == "select ok"
     assert result["broken"] == str(error)
     assert result["write_ok"] == "success"
+
+
+def test_parallel_sql_fail_fast_false_prints_failed_task_query(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    error = RuntimeError("read failed")
+
+    def fake_read_sql(**kwargs: Any) -> str:
+        raise error
+
+    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+
+    result = async_module.parallel_sql(
+        [
+            {
+                "name": "broken",
+                "type": "read",
+                "connection_type": "gp",
+                "query": "select * from broken_table",
+            }
+        ],
+        fail_fast=False,
+        progress=False,
+    )
+
+    assert result["broken"] == str(error)
+    output = capsys.readouterr().out
+    assert "SQL task 'broken' (read) failed while running query" in output
+    assert "query:\nselect * from broken_table" in output
 
 
 def test_parallel_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> None:
