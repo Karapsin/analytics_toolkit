@@ -100,6 +100,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         "ALREADY_EXISTS",
         "FEATURE_NOT_SUPPORTED",
         "INSUFFICIENT_PRIVILEGE",
+        "ILLEGAL_TYPE_OF_ARGUMENT",
     }:
         return True
 
@@ -131,6 +132,8 @@ _NON_RETRYABLE_MESSAGE_PATTERNS = (
     "undefined_table",
     "is ambiguous",
     "must appear in the group by clause",
+    "illegal type of argument",
+    "illegal value (aggregate function) for positional argument in group by",
     "cross-database references are not implemented",
     "must be owner of relation",
     "must be owner of table",

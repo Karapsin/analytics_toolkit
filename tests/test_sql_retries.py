@@ -405,6 +405,34 @@ def test_run_with_retry_does_not_retry_grouping_error() -> None:
     assert attempts == [1]
 
 
+def test_run_with_retry_does_not_retry_clickhouse_illegal_group_by() -> None:
+    attempts: list[int] = []
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise RuntimeError(
+            "Received ClickHouse exception, code: 43, server response: Code: 43. "
+            "DB::Exception: Illegal value (aggregate function) for positional "
+            "argument in GROUP BY: While processing SELECT dt, uniqState(magnit_id) "
+            "AS magnit_id_state FROM pa_core_stage.target GROUP BY dt, 2. "
+            "(ILLEGAL_TYPE_OF_ARGUMENT)"
+        )
+
+    try:
+        retry_module.run_with_retry(
+            operation_name="executing SQL on ch (ch)",
+            retry_cnt=3,
+            timeout_increment=0,
+            operation=operation,
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected ClickHouse semantic error to be raised.")
+
+    assert attempts == [1]
+
+
 def test_run_with_retry_does_not_retry_cross_database_reference_error() -> None:
     attempts: list[int] = []
 
