@@ -225,6 +225,32 @@ def test_format_ab_metrics_keeps_labels_and_first_seen_order() -> None:
     pd.testing.assert_frame_equal(result, expected)
 
 
+def test_format_ab_metrics_puts_group_size_first_in_each_label_block() -> None:
+    df = pd.DataFrame(
+        {
+            "segment": ["B", "A", "B", "A"],
+            "country": ["RU", "KZ", "RU", "KZ"],
+            "group_1": ["variant_b", "variant_a", "variant_b", "variant_a"],
+            "group_2": ["control", "control", "control", "control"],
+            "metric_name": ["orders", "orders", "gmv", "gmv"],
+            "metric_control": [10.0, 20.0, 100.0, 200.0],
+            "metric_test": [12.0, 22.0, 115.0, 210.0],
+            "n0": [100, 200, 100, 200],
+            "n1": [120, 220, 120, 220],
+        }
+    )
+
+    result = format_ab_metrics(df, label_cols=["segment", "country"])
+    label_keys = result[["segment", "country"]].apply(tuple, axis=1).tolist()
+    first_positions = {
+        label_key: label_keys.index(label_key) for label_key in dict.fromkeys(label_keys)
+    }
+
+    assert [
+        result.iloc[position]["metric"] for position in first_positions.values()
+    ] == ["group_size", "group_size"]
+
+
 def test_format_ab_metrics_supports_multiple_output_types() -> None:
     result = format_ab_metrics(
         _build_metric_rows().iloc[[0]],

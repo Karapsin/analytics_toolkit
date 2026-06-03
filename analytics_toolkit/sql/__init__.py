@@ -15,6 +15,7 @@ from .plans import (
 )
 from .show_tables import show_tables
 from .table_info import SqlTableInfo, table_info
+from .types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.config import (
@@ -80,6 +81,11 @@ __all__ = [
     "parallel_sql",
     "BACKEND_CAPABILITIES",
     "ConnectionValidationResult",
+    "BackendName",
+    "ConnectionKey",
+    "SqlTaskType",
+    "SqlText",
+    "TableName",
     "airflow_connection_config",
     "ch_create_table_as",
     "ch_drop_table",

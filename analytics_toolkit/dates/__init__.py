@@ -1,6 +1,7 @@
 from .dates import (
     add_days,
     add_months,
+    add_quarters,
     add_weeks,
     first_day,
     gen_dates_list,
@@ -17,6 +18,7 @@ __all__ = [
     "add_days",
     "add_weeks",
     "add_months",
+    "add_quarters",
     "get_today",
     "get_random_day",
     "sanitize_date",

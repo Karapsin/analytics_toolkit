@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import importlib
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,61 @@ def test_table_identifier_preserves_qualified_parts_and_quotes() -> None:
         'sandbox."Target Table_stage"'
     )
     assert identifier.render_quoted("ch") == "`sandbox`.`Target Table`"
+
+
+@pytest.mark.parametrize(
+    ("backend", "table_name"),
+    [
+        ("gp", "sandbox.events"),
+        ("gp", '"sandbox"."Target Table"'),
+        ("trino", "catalog.schema.events"),
+        ("trino", '"catalog"."schema"."Target Table"'),
+        ("ch", "sandbox.events"),
+        ("ch", "`sandbox`.`Target Table`"),
+    ],
+)
+def test_table_identifier_round_trips_rendered_parts(
+    backend: str,
+    table_name: str,
+) -> None:
+    identifier = identifiers_module.parse_table_identifier(table_name, backend)
+    rendered = identifier.render(backend)
+    reparsed = identifiers_module.parse_table_identifier(rendered, backend)
+
+    assert reparsed.parts == identifier.parts
+    assert reparsed.quoted == identifier.quoted
+
+
+def test_public_sql_type_aliases_are_exported() -> None:
+    assert sql_module.BackendName is not None
+    assert sql_module.ConnectionKey is str
+    assert sql_module.SqlText is str
+    assert sql_module.TableName is str
+    assert sql_module.SqlTaskType is not None
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "ch_create_table_as",
+        "ch_drop_table",
+        "ch_full_table_move",
+        "create_sql_table",
+        "create_table_from_sql",
+        "drop_many_partitions",
+        "execute_sql",
+        "gp_create_many_partitions",
+        "load_df",
+        "transfer_table",
+    ],
+)
+def test_public_mutating_sql_helpers_accept_dry_run_plan_options(
+    function_name: str,
+) -> None:
+    signature = inspect.signature(getattr(sql_module, function_name))
+
+    assert "dry_run" in signature.parameters
+    assert "return_sql" in signature.parameters
 
 
 def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:

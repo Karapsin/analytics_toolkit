@@ -91,6 +91,9 @@ sql.get_sql_connection(...)
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
 
+Public type aliases are exported for common option bundles and annotations:
+`BackendName`, `ConnectionKey`, `SqlText`, `TableName`, and `SqlTaskType`.
+
 `read_sql`, `execute_sql`, `execute_read`, `gp_create_many_partitions`,
 `drop_many_partitions`, `load_df`, and `transfer_table` all support `retry_cnt`
 and `timeout_increment`. Retries restart the whole public operation from the
@@ -383,7 +386,8 @@ use `write_mode` for explicit behavior:
 - `upsert`: reserved and currently rejected for all backends.
 
 `execute_sql`, `load_df`, `transfer_table`, `create_table_from_sql`,
-`create_sql_table`, `drop_many_partitions`, `ch_create_table_as`,
+`create_sql_table`, `gp_create_many_partitions`, `drop_many_partitions`,
+`ch_create_table_as`,
 `ch_drop_table`, and `ch_full_table_move` accept `dry_run=True` or
 `return_sql=True` to return a `SqlPlan` without mutating a database. Plans
 contain ordered SQL statements, aliases/backends, target metadata, and notable

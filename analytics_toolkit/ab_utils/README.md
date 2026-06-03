@@ -5,6 +5,7 @@ Helpers for AB-test related workflows.
 ## Available Helpers
 
 - `compute_test_metrics`: compare experiment groups across all metric columns in a dataframe
+- `compute_mde_only`: estimate pre-test MDE from historical variance and planned group sizes
 - `do_split`: deterministically sample users and assign AB groups, with optional exact-value stratification
 - `format_ab_metrics`: reshape metric comparison output into a wide presentation table
 - `parallel_compute_metrics`: run named `compute_test_metrics` tasks concurrently
@@ -78,6 +79,36 @@ The reported `mde_abs` and `mde_relative` use a normal approximation based on th
 observed group variances and sample sizes. When CUPED is enabled, `mde_abs CUPED`
 and `mde_relative CUPED` use the same approximation with the CUPED-adjusted
 standard error.
+
+For experiment planning without observed groups, use `compute_mde_only` on a
+historical one-row-per-user dataframe:
+
+```python
+from analytics_toolkit.ab_utils import (
+    MdePlanningOptions,
+    RatioMetricSpec,
+    compute_mde_only,
+)
+
+planning = compute_mde_only(
+    historical_df,
+    metric_columns=["orders", "gmv"],
+    ratio_metrics=[
+        RatioMetricSpec(
+            name="ctr_user",
+            numerator="clicks",
+            denominator="impressions",
+            level="user",
+        )
+    ],
+    options=MdePlanningOptions(n0=50_000, n1=50_000),
+)
+```
+
+The result contains the historical sample size, planned group sizes, baseline,
+variance, standard error, absolute MDE, relative MDE, and outlier diagnostics for
+each mean or ratio metric. `RatioMetricSpec` can also be passed to
+`compute_test_metrics`; it is equivalent to the dictionary form shown below.
 
 The output also reports `variance_control`, `variance_test`, and `s.e.` for each
 comparison. Mean metrics and `level="user"` ratio metrics use sample variances

@@ -17,6 +17,8 @@ def _normalize_ratio_metrics(
     normalized_specs: list[dict[str, str]] = []
     ratio_names: set[str] = set()
     for index, raw_spec in enumerate(ratio_metrics):
+        if hasattr(raw_spec, "as_dict"):
+            raw_spec = raw_spec.as_dict()
         if not isinstance(raw_spec, dict):
             raise TypeError(f"ratio_metrics[{index}] must be a dictionary.")
 

@@ -8,8 +8,8 @@ from warnings import warn
 from dateutil.relativedelta import relativedelta
 
 DateInput = Union[str, date, datetime]
-OutputPeriod = Literal["week", "month"]
-OutputInterval = Literal["days", "weeks", "months"]
+OutputPeriod = Literal["week", "month", "quarter"]
+OutputInterval = Literal["days", "weeks", "months", "quarters"]
 
 
 def gen_dates_list(
@@ -29,11 +29,12 @@ def gen_dates_list(
         _warn_if_truncated(end_date, truncated_end, "week", "end_dt")
         start_date = truncated_start
         end_date = truncated_end
-    elif normalized_interval == "months":
-        truncated_start = _period_start(start_date, "month")
-        truncated_end = _period_start(end_date, "month")
-        _warn_if_truncated(start_date, truncated_start, "month", "start_dt")
-        _warn_if_truncated(end_date, truncated_end, "month", "end_dt")
+    elif normalized_interval in {"months", "quarters"}:
+        period = "quarter" if normalized_interval == "quarters" else "month"
+        truncated_start = _period_start(start_date, period)
+        truncated_end = _period_start(end_date, period)
+        _warn_if_truncated(start_date, truncated_start, period, "start_dt")
+        _warn_if_truncated(end_date, truncated_end, period, "end_dt")
         start_date = truncated_start
         end_date = truncated_end
 
@@ -96,6 +97,15 @@ def add_months(
     return _format_output(result, output_string)
 
 
+def add_quarters(
+    dt: DateInput,
+    n: int,
+    output_string: bool = True,
+) -> str | datetime:
+    result = _period_start(_to_date(dt), "quarter") + relativedelta(months=3 * n)
+    return _format_output(result, output_string)
+
+
 def get_today(output_string: bool = True) -> str | datetime:
     return _format_output(date.today(), output_string)
 
@@ -144,7 +154,9 @@ def _normalize_interval(interval: str) -> OutputInterval:
         return "weeks"
     if normalized in {"month", "months"}:
         return "months"
-    raise ValueError("interval must be one of: 'days', 'weeks', 'months'.")
+    if normalized in {"quarter", "quarters"}:
+        return "quarters"
+    raise ValueError("interval must be one of: 'days', 'weeks', 'months', 'quarters'.")
 
 
 def _normalize_period(period: str) -> OutputPeriod:
@@ -153,18 +165,25 @@ def _normalize_period(period: str) -> OutputPeriod:
         return "week"
     if normalized == "month":
         return "month"
-    raise ValueError("period must be one of: 'week', 'month'.")
+    if normalized == "quarter":
+        return "quarter"
+    raise ValueError("period must be one of: 'week', 'month', 'quarter'.")
 
 
 def _period_start(value: date, period: OutputPeriod) -> date:
     if period == "week":
         return value - timedelta(days=value.weekday())
+    if period == "quarter":
+        quarter_start_month = ((value.month - 1) // 3) * 3 + 1
+        return value.replace(month=quarter_start_month, day=1)
     return value.replace(day=1)
 
 
 def _period_end(value: date, period: OutputPeriod) -> date:
     if period == "week":
         return _period_start(value, "week") + timedelta(days=6)
+    if period == "quarter":
+        return _period_start(value, "quarter") + relativedelta(months=3) - timedelta(days=1)
     return _period_start(value, "month") + relativedelta(months=1) - timedelta(days=1)
 
 
@@ -173,6 +192,8 @@ def _add_interval(value: date, interval: OutputInterval) -> date:
         return value + timedelta(days=1)
     if interval == "weeks":
         return value + timedelta(weeks=1)
+    if interval == "quarters":
+        return value + relativedelta(months=3)
     return value + relativedelta(months=1)
 
 

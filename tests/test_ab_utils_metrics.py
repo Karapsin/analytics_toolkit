@@ -8,7 +8,12 @@ import pandas as pd
 import pytest
 from scipy.stats import ttest_ind
 
-from analytics_toolkit.ab_utils import compute_test_metrics
+from analytics_toolkit.ab_utils import (
+    MdePlanningOptions,
+    RatioMetricSpec,
+    compute_mde_only,
+    compute_test_metrics,
+)
 from analytics_toolkit.ab_utils.metrics import (
     DEFAULT_ALPHA,
     DEFAULT_POWER,
@@ -438,6 +443,99 @@ def test_compute_test_metrics_uses_raw_relative_fields() -> None:
     expected_test = (13 + orders_cutoff + 11 + 14) / 4
     expected_delta_abs = expected_test - expected_control
     assert orders_row["delta_relative"] == pytest.approx(expected_delta_abs / expected_control)
+
+
+def test_compute_mde_only_estimates_mean_metric_from_historical_variance() -> None:
+    df = pd.DataFrame(
+        {"user_id": [1, 2, 3, 4, 5], "orders": [10.0, 12.0, 14.0, 16.0, 16.0]}
+    )
+
+    result = compute_mde_only(
+        df,
+        user_id="user_id",
+        n0=100,
+        n1=120,
+        outliers_quantile=0.99,
+    )
+
+    row = _single_metric_row(result, "orders")
+    expected_variance = df["orders"].var(ddof=1)
+    expected_se = math.sqrt((expected_variance / 100) + (expected_variance / 120))
+    expected_mde = _compute_mde_from_standard_error(
+        standard_error=expected_se,
+        alpha=DEFAULT_ALPHA,
+        power=DEFAULT_POWER,
+    )
+    assert row["metric_type"] == "mean"
+    assert row["historical_n"] == 5
+    assert row["planned_n0"] == 100
+    assert row["planned_n1"] == 120
+    assert row["metric_baseline"] == pytest.approx(float(df["orders"].mean()))
+    assert row["variance"] == pytest.approx(expected_variance)
+    assert row["s.e."] == pytest.approx(expected_se)
+    assert row["mde_abs"] == pytest.approx(expected_mde)
+    assert row["mde_relative"] == pytest.approx(expected_mde / float(df["orders"].mean()))
+
+
+def test_compute_mde_only_accepts_ratio_spec_dataclass_and_options() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4],
+            "clicks": [1.0, 2.0, 3.0, 4.0],
+            "impressions": [10.0, 10.0, 20.0, 20.0],
+        }
+    )
+
+    result = compute_mde_only(
+        df,
+        user_id="user_id",
+        metric_columns=[],
+        ratio_metrics=[
+            RatioMetricSpec(
+                name="ctr_user",
+                numerator="clicks",
+                denominator="impressions",
+                level="user",
+            )
+        ],
+        options=MdePlanningOptions(n0=50, n1=60),
+    )
+
+    row = _single_metric_row(result, "ctr_user")
+    ratio_values = df["clicks"] / df["impressions"]
+    expected_variance = ratio_values.var(ddof=1)
+    expected_se = math.sqrt((expected_variance / 50) + (expected_variance / 60))
+    assert row["metric_type"] == "ratio"
+    assert row["historical_n"] == 4
+    assert row["metric_baseline"] == pytest.approx(float(ratio_values.mean()))
+    assert row["variance"] == pytest.approx(expected_variance)
+    assert row["s.e."] == pytest.approx(expected_se)
+
+
+def test_compute_test_metrics_accepts_ratio_spec_dataclass() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4, 5, 6],
+            "group_name": ["control", "control", "control", "test", "test", "test"],
+            "clicks": [1, 2, 3, 2, 3, 4],
+            "impressions": [10, 10, 10, 10, 10, 10],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        ratio_metrics=[
+            RatioMetricSpec(
+                name="ctr_user",
+                numerator="clicks",
+                denominator="impressions",
+                level="user",
+            )
+        ],
+        test_vs_test=False,
+    )
+
+    assert "ctr_user" in set(result["metric_name"])
 
 
 def test_ratio_metrics_default_to_agg_level() -> None:
