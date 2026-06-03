@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.stats import ttest_ind
 
 from analytics_toolkit.ab_utils import compute_test_metrics
 from analytics_toolkit.ab_utils.metrics import (
@@ -49,6 +51,74 @@ def _build_sample_metrics_df() -> pd.DataFrame:
             "impressions": [10, 8, 0, 4, 14, 10, 12, 16, 8, 10, 6, 8],
         }
     )
+
+
+def _manual_cuped_statistics_from_frame(
+    cuped_frame: pd.DataFrame,
+    group_column: str,
+    baseline_group: str,
+    test_group: str,
+) -> tuple[float, float]:
+    metric_exp = cuped_frame["metric_exp"].astype(float)
+    metric_pre = cuped_frame["metric_pre"].astype(float)
+    theta = float(metric_exp.cov(metric_pre) / metric_pre.var(ddof=1))
+    adjusted = metric_exp - theta * (metric_pre - float(metric_pre.mean()))
+    baseline_values = adjusted[cuped_frame[group_column] == baseline_group]
+    test_values = adjusted[cuped_frame[group_column] == test_group]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        p_value = float(
+            ttest_ind(test_values, baseline_values, equal_var=False, nan_policy="omit").pvalue
+        )
+    standard_error = math.sqrt(
+        float(baseline_values.var(ddof=1)) / int(baseline_values.shape[0])
+        + float(test_values.var(ddof=1)) / int(test_values.shape[0])
+    )
+    return p_value, standard_error
+
+
+def _single_metric_row(
+    result: pd.DataFrame,
+    metric_name: str,
+    *,
+    group_1: str | None = None,
+    group_2: str | None = None,
+) -> pd.Series:
+    mask = result["metric_name"] == metric_name
+    if group_1 is not None:
+        mask &= result["group_1"] == group_1
+    if group_2 is not None:
+        mask &= result["group_2"] == group_2
+    rows = result.loc[mask]
+    assert rows.shape[0] == 1
+    return rows.iloc[0]
+
+
+def _assert_cuped_row_matches_frame(
+    row: pd.Series,
+    cuped_frame: pd.DataFrame,
+    baseline_group: str,
+    test_group: str,
+) -> None:
+    expected_p_value, expected_standard_error = _manual_cuped_statistics_from_frame(
+        cuped_frame=cuped_frame,
+        group_column="group_name",
+        baseline_group=baseline_group,
+        test_group=test_group,
+    )
+    assert row["s.e. CUPED"] == pytest.approx(expected_standard_error)
+    assert row["p-value CUPED"] == pytest.approx(expected_p_value)
+
+
+def _manual_agg_ratio_linearized_values(
+    numerator: pd.Series,
+    denominator: pd.Series,
+) -> pd.Series:
+    valid_mask = numerator.notna() & denominator.notna()
+    ratio = float(numerator.loc[valid_mask].sum()) / float(denominator.loc[valid_mask].sum())
+    values = pd.Series(np.nan, index=numerator.index, dtype=float)
+    values.loc[valid_mask] = numerator.loc[valid_mask] - ratio * denominator.loc[valid_mask]
+    return values
 
 
 def _legacy_metric_test_statistic(
@@ -661,6 +731,33 @@ def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
     assert not math.isnan(float(orders_row["p-value CUPED"]))
 
 
+def test_compute_cuped_statistics_from_frame_matches_manual_cuped_welch_ttest() -> None:
+    cuped_frame = pd.DataFrame(
+        {
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "metric_exp": [11.0, 14.0, 13.0, 17.0, 16.0, 19.0, 18.0, 23.0],
+            "metric_pre": [4.0, 6.0, 5.0, 9.0, 6.0, 8.0, 7.0, 12.0],
+        }
+    )
+
+    expected_p_value, expected_standard_error = _manual_cuped_statistics_from_frame(
+        cuped_frame=cuped_frame,
+        group_column="group_name",
+        baseline_group="control",
+        test_group="test",
+    )
+    p_value, standard_error, reason = _compute_cuped_statistics_from_frame(
+        cuped_frame=cuped_frame,
+        group_column="group_name",
+        baseline_group="control",
+        test_group="test",
+    )
+
+    assert reason is None
+    assert standard_error == pytest.approx(expected_standard_error)
+    assert p_value == pytest.approx(expected_p_value)
+
+
 def test_compute_test_metrics_cuped_uses_transformed_values() -> None:
     df = pd.DataFrame(
         {
@@ -745,6 +842,278 @@ def test_compute_test_metrics_adds_cuped_p_value_for_ratio_metrics() -> None:
     assert ratio_row["metric_type"] == "ratio"
     assert not math.isnan(float(ratio_row["s.e. CUPED"]))
     assert not math.isnan(float(ratio_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_cuped_warns_when_pre_variance_is_not_positive() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [10, 12, 11, 13, 15, 17, 16, 18],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [5] * 8,
+        }
+    )
+
+    with pytest.warns(UserWarning, match="pre-experiment covariate variance is not positive"):
+        result = compute_test_metrics(
+            df,
+            control="control",
+            test_vs_test=False,
+            pre_exp_metrics_df=pre_df,
+        )
+
+    orders_row = _single_metric_row(result, "orders")
+    assert math.isnan(float(orders_row["s.e. CUPED"]))
+    assert math.isnan(float(orders_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_cuped_warns_when_no_overlapping_observations() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [10, 12, 11, 13, 15, 17, 16, 18],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(101, 109)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "orders": [8, 9, 10, 11, 12, 13, 14, 15],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="no overlapping non-missing experiment/pre-experiment observations"):
+        result = compute_test_metrics(
+            df,
+            control="control",
+            test_vs_test=False,
+            pre_exp_metrics_df=pre_df,
+        )
+
+    orders_row = _single_metric_row(result, "orders")
+    assert math.isnan(float(orders_row["s.e. CUPED"]))
+    assert math.isnan(float(orders_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_cuped_warns_when_too_few_usable_observations() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4],
+            "group_name": ["control", "control", "test", "test"],
+            "orders": [10.0, np.nan, 14.0, 15.0],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4],
+            "group_name": ["control", "control", "test", "test"],
+            "orders": [8.0, 9.0, 12.0, 13.0],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="not enough overlapping observations to run the CUPED t-test"):
+        result = compute_test_metrics(
+            df,
+            control="control",
+            test_vs_test=False,
+            pre_exp_metrics_df=pre_df,
+        )
+
+    orders_row = _single_metric_row(result, "orders")
+    assert math.isnan(float(orders_row["s.e. CUPED"]))
+    assert math.isnan(float(orders_row["p-value CUPED"]))
+
+
+def test_compute_test_metrics_cuped_uses_only_overlapping_nonmissing_users() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4, 5, 6],
+            "group_name": ["control", "control", "control", "test", "test", "test"],
+            "orders": [10.0, 11.0, 16.0, 14.0, 16.0, 16.0],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": [999, 6, 4, 5, 2, 1, 3, 1000],
+            "group_name": ["control", "test", "test", "test", "control", "control", "control", "test"],
+            "orders": [16.0, 16.0, 14.0, np.nan, 9.0, 8.0, 16.0, 16.0],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        test_vs_test=False,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    expected_frame = pd.DataFrame(
+        {
+            "group_name": ["control", "control", "control", "test", "test"],
+            "metric_exp": [10.0, 11.0, 16.0, 14.0, 16.0],
+            "metric_pre": [8.0, 9.0, 16.0, 14.0, 16.0],
+        }
+    )
+    _assert_cuped_row_matches_frame(
+        _single_metric_row(result, "orders"),
+        expected_frame,
+        baseline_group="control",
+        test_group="test",
+    )
+
+
+def test_compute_test_metrics_cuped_user_ratio_matches_manual_frame() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [4, 5, 6, 9, 8, 14, 10, 18],
+            "impressions": [10, 0, 12, 10, 16, 20, -1, 20],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [3, 3, 4, 7, 4, 10, 14, 9],
+            "impressions": [10, 6, 0, 10, 10, 20, 20, 0],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        ratio_metrics=[
+            {
+                "name": "ctr_user",
+                "numerator": "clicks",
+                "denominator": "impressions",
+                "level": "user",
+            }
+        ],
+        test_vs_test=False,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    expected_frame = pd.DataFrame(
+        {
+            "group_name": ["control", "control", "test", "test"],
+            "metric_exp": [0.4, 0.9, 0.5, 0.7],
+            "metric_pre": [0.3, 0.7, 0.4, 0.5],
+        }
+    )
+    _assert_cuped_row_matches_frame(
+        _single_metric_row(result, "ctr_user"),
+        expected_frame,
+        baseline_group="control",
+        test_group="test",
+    )
+
+
+def test_compute_test_metrics_cuped_agg_ratio_matches_manual_linearization() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [10, 11, 12, 13, 16, 16, 16, 16],
+            "impressions": [100, 110, 120, 130, 100, 100, 100, 100],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": ["control"] * 4 + ["test"] * 4,
+            "clicks": [9, 10, 11, 12, 13, 13, 13, 13],
+            "impressions": [90, 100, 110, 120, 100, 100, 100, 100],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        ratio_metrics=[
+            {
+                "name": "ctr_agg",
+                "numerator": "clicks",
+                "denominator": "impressions",
+                "level": "agg",
+            }
+        ],
+        test_vs_test=False,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    expected_frame = pd.DataFrame(
+        {
+            "group_name": df["group_name"],
+            "metric_exp": _manual_agg_ratio_linearized_values(
+                df["clicks"].astype(float),
+                df["impressions"].astype(float),
+            ),
+            "metric_pre": _manual_agg_ratio_linearized_values(
+                pre_df["clicks"].astype(float),
+                pre_df["impressions"].astype(float),
+            ),
+        }
+    )
+    _assert_cuped_row_matches_frame(
+        _single_metric_row(result, "ctr_agg"),
+        expected_frame,
+        baseline_group="control",
+        test_group="test",
+    )
+
+
+def test_compute_test_metrics_cuped_matches_each_multi_group_comparison() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 10)),
+            "group_name": ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
+            "orders": [10.0, 11.0, 16.0, 13.0, 15.0, 16.0, 9.0, 12.0, 16.0],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 10)),
+            "group_name": ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
+            "orders": [5.0, 7.0, 16.0, 8.0, 9.0, 16.0, 4.0, 6.0, 16.0],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        test_vs_test=True,
+        pre_exp_metrics_df=pre_df,
+    )
+
+    assert result.shape[0] == 3
+    for test_group, baseline_group in [
+        ("test_a", "control"),
+        ("test_b", "control"),
+        ("test_a", "test_b"),
+    ]:
+        comparison_mask = df["group_name"].isin([baseline_group, test_group])
+        expected_frame = pd.DataFrame(
+            {
+                "group_name": df.loc[comparison_mask, "group_name"].to_numpy(),
+                "metric_exp": df.loc[comparison_mask, "orders"].to_numpy(dtype=float),
+                "metric_pre": pre_df.loc[comparison_mask, "orders"].to_numpy(dtype=float),
+            }
+        )
+        _assert_cuped_row_matches_frame(
+            _single_metric_row(result, "orders", group_1=test_group, group_2=baseline_group),
+            expected_frame,
+            baseline_group=baseline_group,
+            test_group=test_group,
+        )
 
 
 def test_compute_test_metrics_warns_and_sets_nan_when_pre_metric_is_missing() -> None:
