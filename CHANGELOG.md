@@ -2,6 +2,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.1 - 2026-06-03
+
+- Added regression coverage that keeps new `time_print` keyword-only options
+  optional for SQL timing wrappers and public dry-run paths.
+
 ## 1.3.6.0 - 2026-06-03
 
 - Extended `time_print` with level filtering, structured context, stream

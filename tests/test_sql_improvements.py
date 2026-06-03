@@ -227,6 +227,32 @@ def test_public_sql_function_logs_total_elapsed_for_dry_run(capsys) -> None:
     assert "SQL function load_df execution took " in output
 
 
+def test_execute_dry_run_public_timing_uses_optional_time_print_kwargs(
+    capsys,
+) -> None:
+    plan = sql_module.execute("ch", "select 1", dry_run=True)
+
+    output = capsys.readouterr().out
+    assert isinstance(plan, plans_module.SqlPlan)
+    assert plan.operation == "execute_sql"
+    assert "SQL function execute_sql execution took " in output
+
+
+def test_ch_drop_table_dry_run_public_timing_uses_optional_time_print_kwargs(
+    capsys,
+) -> None:
+    plan = sql_module.ch_drop_table(
+        "ch",
+        "sandbox.events",
+        dry_run=True,
+    )
+
+    output = capsys.readouterr().out
+    assert isinstance(plan, plans_module.SqlPlan)
+    assert plan.operation == "ch_drop_table"
+    assert "SQL function ch_drop_table execution took " in output
+
+
 def test_table_info_gp_reads_columns_and_skips_row_count_by_default(
     monkeypatch,
 ) -> None:

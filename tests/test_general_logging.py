@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import inspect
 from io import StringIO
 
 import pytest
@@ -34,6 +35,41 @@ def test_time_print_preserves_legacy_output(capsys: pytest.CaptureFixture[str]) 
     time_print("starting load")
 
     assert capsys.readouterr().out == "[2026-06-03 18:00:00] starting load\n"
+
+
+def test_time_print_keyword_only_options_have_compatible_defaults() -> None:
+    signature = inspect.signature(time_print)
+
+    assert list(signature.parameters) == [
+        "message",
+        "level",
+        "enabled",
+        "operation",
+        "connection",
+        "backend",
+        "phase",
+        "stream",
+    ]
+    for parameter_name in [
+        "level",
+        "enabled",
+        "operation",
+        "connection",
+        "backend",
+        "phase",
+        "stream",
+    ]:
+        parameter = signature.parameters[parameter_name]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is not inspect.Parameter.empty
+
+    assert signature.parameters["level"].default == "info"
+    assert signature.parameters["enabled"].default is True
+    assert signature.parameters["operation"].default is None
+    assert signature.parameters["connection"].default is None
+    assert signature.parameters["backend"].default is None
+    assert signature.parameters["phase"].default is None
+    assert signature.parameters["stream"].default is None
 
 
 def test_time_print_filters_by_level(capsys: pytest.CaptureFixture[str]) -> None:
