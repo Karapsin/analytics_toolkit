@@ -100,6 +100,10 @@ def get_today(output_string: bool = True) -> str | datetime:
     return _format_output(date.today(), output_string)
 
 
+def sanitize_date(dt: DateInput) -> str:
+    return _to_date(dt).strftime("%Y%m%d")
+
+
 def get_random_day(
     start_dt: DateInput,
     end_dt: DateInput,

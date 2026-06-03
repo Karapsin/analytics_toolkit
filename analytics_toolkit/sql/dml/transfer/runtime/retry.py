@@ -59,6 +59,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         "UndefinedTable",
         "UndefinedColumn",
         "UndefinedFunction",
+        "AmbiguousColumn",
         "InvalidColumnReference",
         "InvalidTableDefinition",
         "InvalidSchemaName",
@@ -77,6 +78,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         "42P01",  # undefined_table
         "42703",  # undefined_column
         "42883",  # undefined_function
+        "42702",  # ambiguous_column
         "42803",  # grouping_error
         "3F000",  # invalid_schema_name
         "0A000",  # feature_not_supported
@@ -127,6 +129,7 @@ _NON_RETRYABLE_MESSAGE_PATTERNS = (
     "no such table",
     "undefined table",
     "undefined_table",
+    "is ambiguous",
     "must appear in the group by clause",
     "cross-database references are not implemented",
     "must be owner of relation",

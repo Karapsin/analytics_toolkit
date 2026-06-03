@@ -7,6 +7,7 @@ from .dates import (
     get_random_day,
     get_today,
     last_day,
+    sanitize_date,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "add_months",
     "get_today",
     "get_random_day",
+    "sanitize_date",
 ]

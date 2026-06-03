@@ -9,6 +9,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
+execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
@@ -34,6 +35,10 @@ class FakeUndefinedTableError(Exception):
 
 class FakeUndefinedObjectError(Exception):
     pgcode = "42704"
+
+
+class AmbiguousColumn(Exception):
+    pgcode = "42702"
 
 
 class FakeTrinoSyntaxError(Exception):
@@ -158,6 +163,53 @@ def test_read_sql_does_not_retry_undefined_object(monkeypatch) -> None:
         pass
     else:
         raise AssertionError("Expected undefined-object error to be raised.")
+
+    assert attempts == ["first"]
+    assert len(connections) == 1
+    assert first_connection.rollback_calls == 1
+    assert first_connection.close_calls == 1
+    assert second_connection.close_calls == 0
+
+
+def test_execute_read_does_not_retry_ambiguous_column(monkeypatch) -> None:
+    first_connection = FakeConnection("first")
+    second_connection = FakeConnection("second")
+    connections = [first_connection, second_connection]
+    attempts: list[str] = []
+
+    monkeypatch.setattr(
+        execute_read_module,
+        "get_sql_connection",
+        lambda connection_type: connections.pop(0),
+    )
+
+    def fake_execute_read_gp(
+        conn: FakeConnection,
+        statements: list[str],
+        print_queries: bool = False,
+        gp_break_query: bool = False,
+        gp_commit_each_statement: bool = False,
+        progress: bool = True,
+    ) -> pd.DataFrame:
+        del statements, print_queries, gp_break_query, gp_commit_each_statement, progress
+        attempts.append(conn.name)
+        raise AmbiguousColumn(
+            'column reference "is_qr_plus" is ambiguous\nLINE 55:     is_qr_plus,'
+        )
+
+    monkeypatch.setattr(execute_read_module, "_execute_read_gp", fake_execute_read_gp)
+
+    try:
+        execute_read_module.execute_read(
+            "gp",
+            'select is_qr_plus from schema.table',
+            retry_cnt=3,
+            timeout_increment=0,
+        )
+    except AmbiguousColumn:
+        pass
+    else:
+        raise AssertionError("Expected ambiguous-column error to be raised.")
 
     assert attempts == ["first"]
     assert len(connections) == 1
