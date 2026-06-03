@@ -29,7 +29,9 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
             elapsed_seconds = time.perf_counter() - started_at
             time_print(
                 f"SQL function {function.__name__} execution took "
-                f"{elapsed_seconds:.3f}s"
+                f"{elapsed_seconds:.3f}s",
+                operation=function.__name__,
+                phase="total",
             )
 
     setattr(wrapper, "__sql_public_timing__", True)
@@ -64,7 +66,13 @@ def tracked_sql_operation(
         label = f"{label} for {label_parts[2]}"
 
     started_at = time.perf_counter()
-    time_print(f"Starting SQL operation {label}")
+    time_print(
+        f"Starting SQL operation {label}",
+        operation=operation_name,
+        connection=alias,
+        backend=backend,
+        phase=phase,
+    )
     try:
         yield operation_metadata
     except Exception:
@@ -77,11 +85,21 @@ def tracked_sql_operation(
         status = operation_metadata.operation_status or "finished"
         time_print(
             f"Finished SQL operation {label}: {status} "
-            f"in {operation_metadata.elapsed_seconds:.3f}s"
+            f"in {operation_metadata.elapsed_seconds:.3f}s",
+            operation=operation_name,
+            connection=alias,
+            backend=backend,
+            phase=phase,
         )
         preview_line = _first_non_empty_sql_line(preview_sql)
         if preview_line is not None:
-            time_print(f"Finished SQL statement:\n{preview_line}")
+            time_print(
+                f"Finished SQL statement:\n{preview_line}",
+                operation=operation_name,
+                connection=alias,
+                backend=backend,
+                phase=phase,
+            )
 
 
 def merge_operation_metadata(
@@ -199,7 +217,11 @@ def run_annotated_once(
 
 
 def _close_connection(connection_ref: ConnectionRef, connection_key: str) -> None:
-    time_print(f"Closing {connection_key} connection")
+    time_print(
+        f"Closing {connection_key} connection",
+        connection=connection_key,
+        phase="close",
+    )
     connection_ref["connection"].close()
 
 

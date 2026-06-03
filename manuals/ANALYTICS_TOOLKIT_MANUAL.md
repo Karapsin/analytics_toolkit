@@ -509,13 +509,19 @@ query = read_file(
 )
 ```
 
-### `time_print(message)`
+### `time_print(message, *, level="info", enabled=True, operation=None, connection=None, backend=None, phase=None, stream=None)`
 
-Prints a message with a timestamp.
+Prints a message with a timestamp. The legacy `time_print("message")` call keeps
+the existing output format.
 
 Inputs:
 
 - `message`: text to print
+- `level`: one of `"debug"`, `"info"`, `"warning"`, or `"error"`
+- `enabled`: pass `False` to skip this message
+- `operation`, `connection`, `backend`, `phase`: optional structured context
+- `stream`: `None` or `"stdout"` for stdout, `"stderr"` for stderr, or a
+  file-like object
 
 Returns:
 
@@ -525,6 +531,24 @@ Example:
 
 ```python
 time_print("starting load")
+time_print("retry failed", level="warning", operation="transfer_table", phase="retry")
+```
+
+Control the minimum printed level:
+
+```python
+from analytics_toolkit.general import set_time_print_level
+
+set_time_print_level("warning")
+```
+
+Use scoped structured context:
+
+```python
+from analytics_toolkit.general import time_print_context
+
+with time_print_context(operation="load_df", connection="ch_prod", backend="ch"):
+    time_print("creating target table")
 ```
 
 ## Module: `excel`

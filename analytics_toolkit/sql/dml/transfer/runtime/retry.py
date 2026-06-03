@@ -27,21 +27,34 @@ def run_with_retry(
                 raise
             if should_not_retry(exc):
                 time_print(
-                    f"{operation_name} failed with a non-retryable error: {exc!r}"
+                    f"{operation_name} failed with a non-retryable error: {exc!r}",
+                    level="warning",
+                    operation=operation_name,
+                    phase="retry",
                 )
                 raise
             last_error = exc
             if attempt >= retry_cnt:
                 time_print(
-                    f"{operation_name} failed after {attempt} attempt(s): {exc!r}"
+                    f"{operation_name} failed after {attempt} attempt(s): {exc!r}",
+                    level="warning",
+                    operation=operation_name,
+                    phase="retry",
                 )
                 break
 
             sleep_seconds = attempt * timeout_increment
             time_print(
-                f"{operation_name} failed on attempt {attempt}/{retry_cnt}: {exc!r}"
+                f"{operation_name} failed on attempt {attempt}/{retry_cnt}: {exc!r}",
+                level="warning",
+                operation=operation_name,
+                phase="retry",
             )
-            time_print(f"Retrying {operation_name} in {sleep_seconds:.2f}s")
+            time_print(
+                f"Retrying {operation_name} in {sleep_seconds:.2f}s",
+                operation=operation_name,
+                phase="retry",
+            )
             if sleep_seconds > 0:
                 time.sleep(sleep_seconds)
 
@@ -164,10 +177,17 @@ def close_connection_ref(
     connection = connection_ref.get("connection")
     if connection is None:
         return
-    time_print(f"Closing {connection_type} {role} connection")
+    time_print(
+        f"Closing {connection_type} {role} connection",
+        connection=connection_type,
+        phase=f"close_{role}",
+    )
     try:
         connection.close()
     except Exception as exc:
         time_print(
-            f"Failed to close {connection_type} {role} connection cleanly: {exc!r}"
+            f"Failed to close {connection_type} {role} connection cleanly: {exc!r}",
+            level="warning",
+            connection=connection_type,
+            phase=f"close_{role}",
         )
