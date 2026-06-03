@@ -75,7 +75,9 @@ ratio behavior and are not classified as row-ratio outliers. For aggregate ratio
 `"truncate"` replaces an outlier row numerator with `cutoff * denominator`.
 
 The reported `mde_abs` and `mde_relative` use a normal approximation based on the
-observed group variances and sample sizes.
+observed group variances and sample sizes. When CUPED is enabled, `mde_abs CUPED`
+and `mde_relative CUPED` use the same approximation with the CUPED-adjusted
+standard error.
 
 The output also reports `variance_control`, `variance_test`, and `s.e.` for each
 comparison. Mean metrics and `level="user"` ratio metrics use sample variances
@@ -106,7 +108,7 @@ Other function options:
 - `mde_power=0.80`
 - `outliers_quantile=0.999`: upper-tail quantile used for the per-metric outlier cutoff
 - `outliers_policy="truncate"`: either `"truncate"` or `"drop"`
-- `pre_exp_metrics_df=None`: optional pre-experiment dataframe used to compute CUPED-adjusted standard errors and p-values
+- `pre_exp_metrics_df=None`: optional pre-experiment dataframe used to compute CUPED-adjusted standard errors, p-values, and MDE
 - `test_vs_test=True`: when `False`, only compare each test group against control
 - `multiple_comparisons_adjustment=False`: when `True`, add `s.e. bootstrap` and `bootstrap_adj_p`
 - `multiple_comparisons_adjustment_resamples=2000`: number of bootstrap resamples for `s.e. bootstrap` and `bootstrap_adj_p`
@@ -194,7 +196,8 @@ With the default `output_type`, the result is a wide table with label columns,
 `metric`, and one metric-value column per experiment group. Additional output
 types add comparison columns such as `test_vs_control_p_value` and
 `test_vs_control_delta_relative`. `output_type` accepts either one output name
-or a list of output names. Significant delta outputs add columns such as
+or a list of output names. CUPED MDE can be selected with `mde_abs_cuped` and
+`mde_relative_cuped`. Significant delta outputs add columns such as
 `test_vs_control_delta_relative_significant` and keep the delta only when the
 configured p-value is below `significance_alpha`; otherwise they return `NaN`.
 Use `significance_p_value="p_values"`, `"p_values_cuped"`, or `"p_values_adj"`
@@ -227,7 +230,8 @@ Output notes:
 - `delta_relative` and `mde_relative` are raw relative changes, e.g. `0.05` for 5%
 - `delta_relative_significant` and `delta_absolute_significant` format `delta_relative`
   and `delta_abs` only when the configured p-value is significant
-- when `pre_exp_metrics_df` is provided, `s.e. CUPED` and `p-value CUPED` are added after `p-value`
+- when `pre_exp_metrics_df` is provided, `s.e. CUPED`, `p-value CUPED`,
+  `mde_abs CUPED`, and `mde_relative CUPED` are added after `p-value`
 - when `multiple_comparisons_adjustment=True`, `s.e. bootstrap` and `bootstrap_adj_p` are added after CUPED columns, if any
 
 `pre_exp_metrics_df` requirements:
@@ -235,7 +239,8 @@ Output notes:
 - it must contain the same `group` and `user_id` columns used for the main call
 - it must contain the control label in the same group column
 - overlapping `user_id` values must map to the same experiment group in both dataframes
-- if a metric cannot be built from the pre-experiment dataframe, `s.e. CUPED` and `p-value CUPED` are set to `NaN` and a warning is emitted
+- if a metric cannot be built from the pre-experiment dataframe, CUPED statistics
+  and CUPED MDE columns are set to `NaN` and a warning is emitted
 
 `bootstrap_adj_p` is computed per metric using a bootstrap max-statistic procedure:
 

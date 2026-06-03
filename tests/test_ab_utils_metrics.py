@@ -10,6 +10,8 @@ from scipy.stats import ttest_ind
 
 from analytics_toolkit.ab_utils import compute_test_metrics
 from analytics_toolkit.ab_utils.metrics import (
+    DEFAULT_ALPHA,
+    DEFAULT_POWER,
     _apply_outliers_to_agg_ratio_components,
     _apply_outliers_to_values,
     _build_comparisons,
@@ -20,6 +22,7 @@ from analytics_toolkit.ab_utils.metrics import (
     _compute_agg_ratio_group_stats,
     _compute_agg_ratio_variance,
     _compute_cuped_statistics_from_frame,
+    _compute_mde_from_standard_error,
     _compute_studentized_statistic,
     _compute_ttest_stat_and_p_value,
     _get_numeric_metric_series,
@@ -106,8 +109,17 @@ def _assert_cuped_row_matches_frame(
         baseline_group=baseline_group,
         test_group=test_group,
     )
+    expected_mde_abs = _compute_mde_from_standard_error(
+        standard_error=expected_standard_error,
+        alpha=DEFAULT_ALPHA,
+        power=DEFAULT_POWER,
+    )
     assert row["s.e. CUPED"] == pytest.approx(expected_standard_error)
     assert row["p-value CUPED"] == pytest.approx(expected_p_value)
+    assert row["mde_abs CUPED"] == pytest.approx(expected_mde_abs)
+    assert row["mde_relative CUPED"] == pytest.approx(
+        expected_mde_abs / row["metric_control"]
+    )
 
 
 def _manual_agg_ratio_linearized_values(
@@ -411,6 +423,8 @@ def test_compute_test_metrics_uses_raw_relative_fields() -> None:
 
     assert "delta_relative" in result.columns
     assert "mde_relative" in result.columns
+    assert "mde_abs CUPED" not in result.columns
+    assert "mde_relative CUPED" not in result.columns
     assert "uplift" not in result.columns
     assert "mde_percentage" not in result.columns
 
@@ -726,9 +740,23 @@ def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
 
     assert result.columns[result.columns.get_loc("p-value") + 1] == "s.e. CUPED"
     assert result.columns[result.columns.get_loc("s.e. CUPED") + 1] == "p-value CUPED"
+    assert result.columns[result.columns.get_loc("p-value CUPED") + 1] == "mde_abs CUPED"
+    assert (
+        result.columns[result.columns.get_loc("mde_abs CUPED") + 1]
+        == "mde_relative CUPED"
+    )
     orders_row = result[result["metric_name"] == "orders"].iloc[0]
+    expected_mde_abs = _compute_mde_from_standard_error(
+        standard_error=orders_row["s.e. CUPED"],
+        alpha=DEFAULT_ALPHA,
+        power=DEFAULT_POWER,
+    )
     assert not math.isnan(float(orders_row["s.e. CUPED"]))
     assert not math.isnan(float(orders_row["p-value CUPED"]))
+    assert orders_row["mde_abs CUPED"] == pytest.approx(expected_mde_abs)
+    assert orders_row["mde_relative CUPED"] == pytest.approx(
+        expected_mde_abs / orders_row["metric_control"]
+    )
 
 
 def test_compute_cuped_statistics_from_frame_matches_manual_cuped_welch_ttest() -> None:
@@ -842,6 +870,8 @@ def test_compute_test_metrics_adds_cuped_p_value_for_ratio_metrics() -> None:
     assert ratio_row["metric_type"] == "ratio"
     assert not math.isnan(float(ratio_row["s.e. CUPED"]))
     assert not math.isnan(float(ratio_row["p-value CUPED"]))
+    assert not math.isnan(float(ratio_row["mde_abs CUPED"]))
+    assert not math.isnan(float(ratio_row["mde_relative CUPED"]))
 
 
 def test_compute_test_metrics_cuped_warns_when_pre_variance_is_not_positive() -> None:
@@ -871,6 +901,8 @@ def test_compute_test_metrics_cuped_warns_when_pre_variance_is_not_positive() ->
     orders_row = _single_metric_row(result, "orders")
     assert math.isnan(float(orders_row["s.e. CUPED"]))
     assert math.isnan(float(orders_row["p-value CUPED"]))
+    assert math.isnan(float(orders_row["mde_abs CUPED"]))
+    assert math.isnan(float(orders_row["mde_relative CUPED"]))
 
 
 def test_compute_test_metrics_cuped_warns_when_no_overlapping_observations() -> None:

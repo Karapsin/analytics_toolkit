@@ -43,6 +43,8 @@ _COMPARISON_OUTPUTS = {
     "delta_relative": ("delta_relative", "delta_relative"),
     "mde_abs": ("mde_abs", "mde_abs"),
     "mde_relative": ("mde_relative", "mde_relative"),
+    "mde_abs_cuped": ("mde_abs CUPED", "mde_abs_cuped"),
+    "mde_relative_cuped": ("mde_relative CUPED", "mde_relative_cuped"),
     "se": ("s.e.", "se"),
     "se_cuped": ("s.e. CUPED", "se_cuped"),
     "se_bootstrap": ("s.e. bootstrap", "se_bootstrap"),

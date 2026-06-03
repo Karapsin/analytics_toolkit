@@ -33,6 +33,8 @@ def _build_metric_rows() -> pd.DataFrame:
             "p-value": [0.04, 0.2],
             "s.e. CUPED": [0.4, 4.0],
             "p-value CUPED": [0.03, 0.15],
+            "mde_abs CUPED": [2.4, 24.0],
+            "mde_relative CUPED": [0.24, 0.24],
             "s.e. bootstrap": [0.6, 6.0],
             "bootstrap_adj_p": [0.08, 0.3],
         }
@@ -214,6 +216,22 @@ def test_format_ab_metrics_supports_multiple_output_types() -> None:
             "test_vs_control_p_value": [0.04],
             "test_vs_control_delta_abs": [2.0],
             "test_vs_control_se": [0.5],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_supports_cuped_mde_outputs() -> None:
+    result = format_ab_metrics(
+        _build_metric_rows().iloc[[0]],
+        output_type=["mde_abs_cuped", "mde_relative_cuped"],
+    )
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["orders"],
+            "test_vs_control_mde_abs_cuped": [2.4],
+            "test_vs_control_mde_relative_cuped": [0.24],
         }
     )
     pd.testing.assert_frame_equal(result, expected)

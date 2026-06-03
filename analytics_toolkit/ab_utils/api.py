@@ -10,6 +10,7 @@ from .cuped import _compute_cuped_statistics
 from .outliers import _build_outlier_context
 from .ratio import _normalize_ratio_metrics
 from .rows import _build_comparisons, _build_metric_definitions, _build_metric_row
+from .stats import _compute_mde_from_standard_error, _safe_relative
 from .validation import (
     _validate_input_columns,
     _validate_mde_parameters,
@@ -160,6 +161,15 @@ def compute_test_metrics(
                     outlier_context=outlier_context,
                     pre_outlier_context=metric_definition.get("_pre_outlier_context"),
                 )
+                row["mde_abs CUPED"] = _compute_mde_from_standard_error(
+                    standard_error=row["s.e. CUPED"],
+                    alpha=mde_alpha,
+                    power=mde_power,
+                )
+                row["mde_relative CUPED"] = _safe_relative(
+                    row["mde_abs CUPED"],
+                    row["metric_control"],
+                )
             if include_groups:
                 row = {
                     "metric_type": str(metric_definition["kind"]),
@@ -211,6 +221,8 @@ def compute_test_metrics(
     if pre_exp_metrics_df is not None:
         columns.append("s.e. CUPED")
         columns.append("p-value CUPED")
+        columns.append("mde_abs CUPED")
+        columns.append("mde_relative CUPED")
     if multiple_comparisons_adjustment:
         columns.append("s.e. bootstrap")
         columns.append("bootstrap_adj_p")
