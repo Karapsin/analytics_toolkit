@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from functools import wraps
 from typing import Any, Callable, Dict, TypeVar, cast
 
-from analytics_toolkit.general import time_print
+from analytics_toolkit.general import time_print, time_print_context
 
 from .connection.errors import SqlOperationContext, annotate_sql_exception
 from .plans import SqlOperationMetadata
@@ -23,16 +23,17 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
     @wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> T:
         started_at = time.perf_counter()
-        try:
-            return function(*args, **kwargs)
-        finally:
-            elapsed_seconds = time.perf_counter() - started_at
-            time_print(
-                f"SQL function {function.__name__} execution took "
-                f"{elapsed_seconds:.3f}s",
-                operation=function.__name__,
-                phase="total",
-            )
+        with time_print_context(operation=function.__name__, phase="total"):
+            try:
+                return function(*args, **kwargs)
+            finally:
+                elapsed_seconds = time.perf_counter() - started_at
+                time_print(
+                    f"SQL function {function.__name__} execution took "
+                    f"{elapsed_seconds:.3f}s",
+                    operation=function.__name__,
+                    phase="total",
+                )
 
     setattr(wrapper, "__sql_public_timing__", True)
     return cast(Callable[..., T], wrapper)
@@ -74,7 +75,13 @@ def tracked_sql_operation(
         phase=phase,
     )
     try:
-        yield operation_metadata
+        with time_print_context(
+            operation=operation_name,
+            connection=alias,
+            backend=backend,
+            phase=phase,
+        ):
+            yield operation_metadata
     except Exception:
         operation_metadata.operation_status = "failed"
         raise
@@ -167,7 +174,7 @@ def run_connection_operation(
             raise
         finally:
             if cleanup is None:
-                _close_connection(connection_ref, connection_key)
+                _close_connection(connection_ref, connection_key, backend=backend)
             else:
                 cleanup(connection_ref)
 
@@ -216,10 +223,16 @@ def run_annotated_once(
         raise
 
 
-def _close_connection(connection_ref: ConnectionRef, connection_key: str) -> None:
+def _close_connection(
+    connection_ref: ConnectionRef,
+    connection_key: str,
+    *,
+    backend: str | None = None,
+) -> None:
     time_print(
         f"Closing {connection_key} connection",
         connection=connection_key,
+        backend=backend,
         phase="close",
     )
     connection_ref["connection"].close()

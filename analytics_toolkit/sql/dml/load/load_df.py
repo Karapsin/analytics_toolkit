@@ -914,7 +914,12 @@ def _cleanup_load(
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
             )
-    time_print(f"Closing {options.connection_key} connection")
+    time_print(
+        f"Closing {options.connection_key} connection",
+        connection=options.connection_key,
+        backend=options.connection_backend,
+        phase="close",
+    )
     connection_ref["connection"].close()
 
 

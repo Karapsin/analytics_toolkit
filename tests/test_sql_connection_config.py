@@ -106,7 +106,10 @@ def test_connection_alias_resolves_backend() -> None:
     assert config.keepalives_count == 3
 
 
-def test_gp_connection_uses_liveness_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gp_connection_uses_liveness_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     connect_calls: list[dict[str, object]] = []
     fake_psycopg2 = types.SimpleNamespace(
         connect=lambda **kwargs: connect_calls.append(kwargs) or object()
@@ -115,6 +118,8 @@ def test_gp_connection_uses_liveness_defaults(monkeypatch: pytest.MonkeyPatch) -
 
     connection_module.get_sql_connection("gp")
 
+    output = capsys.readouterr().out
+    assert "[get_sql_connection] [gp/gp] [connect] Opening gp (gp) connection" in output
     assert connect_calls == [
         {
             "host": "gp.example",

@@ -145,7 +145,12 @@ def ch_drop_table(
             )
             metadata.affected_rows = None
     finally:
-        time_print(f"Closing {config.connection_key} connection")
+        time_print(
+            f"Closing {config.connection_key} connection",
+            connection=config.connection_key,
+            backend=config.backend,
+            phase="close",
+        )
         connection.close()
 
     if options.return_metadata:

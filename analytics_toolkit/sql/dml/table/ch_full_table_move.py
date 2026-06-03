@@ -272,7 +272,12 @@ def ch_full_table_move(
                 f"Finished moving ClickHouse table {source_table} to {target_table}"
             )
     finally:
-        time_print(f"Closing {config.connection_key} connection")
+        time_print(
+            f"Closing {config.connection_key} connection",
+            connection=config.connection_key,
+            backend=config.backend,
+            phase="close",
+        )
         connection.close()
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata)

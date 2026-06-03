@@ -346,8 +346,10 @@ def create_table_from_sql(
         _close_connections(
             source_connection=source_connection,
             source_key=source_config.connection_key,
+            source_backend=source_config.backend,
             target_connection=target_connection,
             target_key=target_config.connection_key,
+            target_backend=target_config.backend,
         )
 
     if delegate_transfer:
@@ -552,12 +554,24 @@ def _close_connections(
     *,
     source_connection: Any | None,
     source_key: str,
+    source_backend: str,
     target_connection: Any | None,
     target_key: str,
+    target_backend: str,
 ) -> None:
     if target_connection is not None and target_connection is not source_connection:
-        time_print(f"Closing {target_key} connection")
+        time_print(
+            f"Closing {target_key} connection",
+            connection=target_key,
+            backend=target_backend,
+            phase="close",
+        )
         target_connection.close()
     if source_connection is not None:
-        time_print(f"Closing {source_key} connection")
+        time_print(
+            f"Closing {source_key} connection",
+            connection=source_key,
+            backend=source_backend,
+            phase="close",
+        )
         source_connection.close()

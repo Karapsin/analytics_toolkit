@@ -22,7 +22,12 @@ from analytics_toolkit.general import time_print
 @timed_public_sql_function
 def get_sql_connection(connection_key: str) -> Any:
     config = get_connection_config(connection_key)
-    time_print(f"Opening {config.connection_key} ({config.backend}) connection")
+    time_print(
+        f"Opening {config.connection_key} ({config.backend}) connection",
+        connection=config.connection_key,
+        backend=config.backend,
+        phase="connect",
+    )
 
     if isinstance(config, TrinoConfig):
         return _get_trino_connection(config)
@@ -46,7 +51,10 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
     if not host_name:
         raise ValueError("host must not be empty.")
     time_print(
-        f"Opening {config.connection_key} ({config.backend}) connection to {host_name}"
+        f"Opening {config.connection_key} ({config.backend}) connection to {host_name}",
+        connection=config.connection_key,
+        backend=config.backend,
+        phase="connect",
     )
     return _get_ch_connection(replace(config, host=host_name))
 
@@ -61,7 +69,12 @@ def with_sql_connection(connection_key: str) -> Callable[..., Any]:
             try:
                 return func(connection, *args, **kwargs)
             finally:
-                time_print(f"Closing {config.connection_key} connection")
+                time_print(
+                    f"Closing {config.connection_key} connection",
+                    connection=config.connection_key,
+                    backend=config.backend,
+                    phase="close",
+                )
                 connection.close()
 
         return wrapper

@@ -149,7 +149,12 @@ def table_info(
             shard_table=shard_table,
         )
     finally:
-        time_print(f"Closing {config.connection_key} connection")
+        time_print(
+            f"Closing {config.connection_key} connection",
+            connection=config.connection_key,
+            backend=config.backend,
+            phase="close",
+        )
         connection.close()
 
 

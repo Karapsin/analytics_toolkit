@@ -341,7 +341,8 @@ def _run_coroutine_sync_in_thread(
         except BaseException as exc:
             queue.put((False, exc, exc.__traceback__))
 
-    thread = Thread(target=run, daemon=True)
+    context = contextvars.copy_context()
+    thread = Thread(target=lambda: context.run(run), daemon=True)
     thread.start()
     ok, value, traceback = queue.get()
     thread.join()

@@ -42,6 +42,7 @@ ch_move_module = importlib.import_module(
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.operation_runner"
 )
+query_timing_module = importlib.import_module("analytics_toolkit.sql.query_timing")
 plans_module = importlib.import_module("analytics_toolkit.sql.plans")
 table_info_module = importlib.import_module("analytics_toolkit.sql.table_info")
 sql_module = importlib.import_module("analytics_toolkit.sql")
@@ -211,6 +212,36 @@ def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:
         in output
     )
     assert "Finished SQL statement:\nselect * from source_table" in output
+
+
+def test_tracked_sql_operation_tags_inner_time_print(capsys) -> None:
+    with operation_runner_module.tracked_sql_operation(
+        operation_name="unit_operation",
+        alias="gp",
+        backend="gp",
+        phase="phase",
+    ):
+        sql_module.time_print("inner message")
+
+    output = capsys.readouterr().out
+    assert "[unit_operation] [gp/gp] [phase] inner message" in output
+
+
+def test_run_timed_query_inherits_sql_operation_tags(capsys) -> None:
+    with operation_runner_module.tracked_sql_operation(
+        operation_name="timed_query",
+        alias="gp",
+        backend="gp",
+        phase="read",
+    ):
+        result = query_timing_module.run_timed_query("gp", lambda: "ok")
+
+    output = capsys.readouterr().out
+    assert result == "ok"
+    assert (
+        "[timed_query] [gp/gp] [read] "
+        "SQL query on gp finished: success in "
+    ) in output
 
 
 def test_public_sql_function_logs_total_elapsed_for_dry_run(capsys) -> None:
@@ -749,6 +780,7 @@ def test_execute_sql_logs_elapsed_for_each_statement_by_default(
     assert "Executing query:" not in output
     assert output.count("SQL query on trino finished: success in ") == 2
     assert "Finished SQL statement:\nselect 1; select 2" in output
+    assert "[execute_sql] [trino/trino] [close] Closing trino connection" in output
 
 
 def test_execute_sql_progress_false_suppresses_statement_bar(
