@@ -13,6 +13,8 @@ _REQUIRED_COLUMNS = frozenset(
         "group_2",
         "metric_control",
         "metric_test",
+        "n0",
+        "n1",
     }
 )
 
@@ -97,20 +99,47 @@ def format_ab_metrics(
 
     group_order = _ordered_groups(df)
     comparison_order = _ordered_comparisons(df)
-    output_columns = _build_output_columns(
+    metric_output_columns = _build_output_columns(
         outputs=outputs,
         groups=group_order,
         comparisons=comparison_order,
         keep_simple_group_names=simple_group_names,
     )
+    group_size_columns, group_size_value_columns = _build_group_size_columns(
+        outputs=outputs,
+        groups=group_order,
+        metric_output_columns=metric_output_columns,
+    )
+    output_columns = [*group_size_columns, *metric_output_columns]
     _validate_output_columns(labels, output_columns)
 
-    row_order: list[tuple[Any, ...]] = []
+    label_order: list[tuple[Any, ...]] = []
+    row_order_by_label: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
     rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    group_size_rows_by_label: dict[tuple[Any, ...], dict[str, Any]] = {}
     assigned_cells: set[tuple[tuple[Any, ...], str]] = set()
     seen_comparisons: set[tuple[Any, ...]] = set()
 
     for _, source_row in df.iterrows():
+        label_key = _label_key(source_row, labels)
+        if label_key not in group_size_rows_by_label:
+            label_order.append(label_key)
+            row_order_by_label[label_key] = []
+            group_size_rows_by_label[label_key] = {
+                **{column: source_row[column] for column in labels},
+                "metric": "group_size",
+            }
+        group_size_row = group_size_rows_by_label[label_key]
+        for group_col, value_col in (("group_2", "n0"), ("group_1", "n1")):
+            group_name = _column_part(source_row[group_col])
+            _set_group_size_value(
+                label_key=label_key,
+                target_row=group_size_row,
+                group_name=group_name,
+                output_column=group_size_value_columns[group_name],
+                value=source_row[value_col],
+            )
+
         row_key = _row_key(source_row, labels)
         comparison_key = (
             *row_key,
@@ -126,7 +155,7 @@ def format_ab_metrics(
         seen_comparisons.add(comparison_key)
 
         if row_key not in rows_by_key:
-            row_order.append(row_key)
+            row_order_by_label[label_key].append(row_key)
             rows_by_key[row_key] = {
                 **{column: source_row[column] for column in labels},
                 "metric": source_row["metric_name"],
@@ -193,7 +222,11 @@ def format_ab_metrics(
                 )
 
     columns = [*labels, "metric", *output_columns]
-    return pd.DataFrame([rows_by_key[key] for key in row_order], columns=columns)
+    formatted_rows: list[dict[str, Any]] = []
+    for label_key in label_order:
+        formatted_rows.append(group_size_rows_by_label[label_key])
+        formatted_rows.extend(rows_by_key[row_key] for row_key in row_order_by_label[label_key])
+    return pd.DataFrame(formatted_rows, columns=columns)
 
 
 def _validate_label_cols(df: pd.DataFrame, label_cols: list[str] | None) -> list[str]:
@@ -392,6 +425,29 @@ def _build_output_columns(
     return columns
 
 
+def _build_group_size_columns(
+    outputs: Sequence[str],
+    groups: Sequence[str],
+    metric_output_columns: Sequence[str],
+) -> tuple[list[str], dict[str, str]]:
+    if "metric_values" in outputs:
+        plain_metric_values = list(outputs) == ["metric_values"]
+        return [], {
+            group_name: _group_output_column(
+                group_name=group_name,
+                suffix="metric_value",
+                plain_metric_values=plain_metric_values,
+            )
+            for group_name in groups
+        }
+
+    metric_output_column_set = set(metric_output_columns)
+    extra_columns = [
+        group_name for group_name in groups if group_name not in metric_output_column_set
+    ]
+    return extra_columns, {group_name: group_name for group_name in groups}
+
+
 def _validate_output_columns(label_cols: Sequence[str], output_columns: Sequence[str]) -> None:
     leading_columns = [*label_cols, "metric"]
     all_columns = [*leading_columns, *output_columns]
@@ -404,8 +460,12 @@ def _validate_output_columns(label_cols: Sequence[str], output_columns: Sequence
         raise ValueError(f"Duplicate formatted output column(s): {', '.join(duplicates)}.")
 
 
+def _label_key(row: pd.Series, label_cols: Sequence[str]) -> tuple[Any, ...]:
+    return tuple(row[column] for column in label_cols)
+
+
 def _row_key(row: pd.Series, label_cols: Sequence[str]) -> tuple[Any, ...]:
-    return (*[row[column] for column in label_cols], row["metric_name"])
+    return (*_label_key(row, label_cols), row["metric_name"])
 
 
 def _column_part(value: Any) -> str:
@@ -456,6 +516,25 @@ def _set_output_value(
             f"metric {row_key[-1]!r} and column {output_column!r}."
         )
     assigned_cells.add(cell_key)
+    target_row[output_column] = value
+
+
+def _set_group_size_value(
+    *,
+    label_key: tuple[Any, ...],
+    target_row: dict[str, Any],
+    group_name: str,
+    output_column: str,
+    value: Any,
+) -> None:
+    if output_column in target_row:
+        if _values_equal(target_row[output_column], value):
+            return
+        label_summary = ", ".join(str(part) for part in label_key) or "<all>"
+        raise ValueError(
+            "Conflicting group size for "
+            f"label group {label_summary!r} and group {group_name!r}."
+        )
     target_row[output_column] = value
 
 

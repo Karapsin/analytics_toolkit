@@ -219,6 +219,10 @@ formatted_delta = format_ab_metrics(
 
 Output notes:
 
+- `format_ab_metrics` always adds a first `group_size` row inside each `label_cols`
+  group; sizes come from `n0` for `group_2` and `n1` for `group_1`
+- group-size counts must be consistent for repeated groups inside the same
+  `label_cols` group, including groups listed in `allow_repeated_groups`
 - ratio metric names use the provided ratio metric `name` directly
 - `metric_type` is `"mean"` for regular metrics and `"ratio"` for ratio metrics
 - `group_1` and `group_2` are included when there are more than two experiment groups

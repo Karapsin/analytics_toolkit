@@ -46,9 +46,9 @@ def test_format_ab_metrics_defaults_to_metric_value_table() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders", "gmv"],
-            "control": [10.0, 100.0],
-            "test": [12.0, 110.0],
+            "metric": ["group_size", "orders", "gmv"],
+            "control": [3.0, 10.0, 100.0],
+            "test": [4.0, 12.0, 110.0],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -62,6 +62,8 @@ def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
             "metric_name": ["orders", "orders"],
             "metric_control": [10.0, 10.0],
             "metric_test": [12.0, 13.0],
+            "n0": [100, 100],
+            "n1": [120, 130],
         }
     )
 
@@ -69,10 +71,10 @@ def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "control": [10.0],
-            "test_1": [12.0],
-            "test_2": [13.0],
+            "metric": ["group_size", "orders"],
+            "control": [100.0, 10.0],
+            "test_1": [120.0, 12.0],
+            "test_2": [130.0, 13.0],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -86,6 +88,8 @@ def test_format_ab_metrics_allows_configured_repeated_group_values() -> None:
             "metric_name": ["orders", "orders"],
             "metric_control": [10.0, 10.000000000001],
             "metric_test": [12.0, 13.0],
+            "n0": [100, 100],
+            "n1": [120, 130],
         }
     )
 
@@ -93,10 +97,10 @@ def test_format_ab_metrics_allows_configured_repeated_group_values() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "control": [10.0],
-            "test_1": [12.0],
-            "test_2": [13.0],
+            "metric": ["group_size", "orders"],
+            "control": [100.0, 10.0],
+            "test_1": [120.0, 12.0],
+            "test_2": [130.0, 13.0],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -110,7 +114,7 @@ def test_format_ab_metrics_allows_configured_repeated_group_values_for_group_out
             "metric_name": ["orders", "orders"],
             "metric_control": [10.0, 11.0],
             "metric_test": [12.0, 13.0],
-            "n0": [100, 101],
+            "n0": [100, 100],
             "n1": [120, 130],
             "variance_control": [1.5, 1.6],
             "variance_test": [2.5, 2.6],
@@ -125,19 +129,36 @@ def test_format_ab_metrics_allows_configured_repeated_group_values_for_group_out
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "control_metric_value": [10.0],
-            "test_1_metric_value": [12.0],
-            "test_2_metric_value": [13.0],
-            "control_n": [100],
-            "test_1_n": [120],
-            "test_2_n": [130],
-            "control_variance": [1.5],
-            "test_1_variance": [2.5],
-            "test_2_variance": [2.6],
+            "metric": ["group_size", "orders"],
+            "control_metric_value": [100.0, 10.0],
+            "test_1_metric_value": [120.0, 12.0],
+            "test_2_metric_value": [130.0, 13.0],
+            "control_n": [np.nan, 100.0],
+            "test_1_n": [np.nan, 120.0],
+            "test_2_n": [np.nan, 130.0],
+            "control_variance": [np.nan, 1.5],
+            "test_1_variance": [np.nan, 2.5],
+            "test_2_variance": [np.nan, 2.6],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_rejects_conflicting_group_size_for_repeated_groups() -> None:
+    df = pd.DataFrame(
+        {
+            "group_1": ["test_1", "test_2"],
+            "group_2": ["control", "control"],
+            "metric_name": ["orders", "orders"],
+            "metric_control": [10.0, 11.0],
+            "metric_test": [12.0, 13.0],
+            "n0": [100, 101],
+            "n1": [120, 130],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Conflicting group size"):
+        format_ab_metrics(df, allow_repeated_groups=["control"])
 
 
 def test_format_ab_metrics_rejects_unconfigured_repeated_group_values() -> None:
@@ -148,6 +169,8 @@ def test_format_ab_metrics_rejects_unconfigured_repeated_group_values() -> None:
             "metric_name": ["orders", "orders"],
             "metric_control": [10.0, 11.0],
             "metric_test": [12.0, 13.0],
+            "n0": [100, 100],
+            "n1": [120, 130],
         }
     )
 
@@ -163,6 +186,8 @@ def test_format_ab_metrics_rejects_repeated_values_for_groups_not_configured() -
             "metric_name": ["orders", "orders"],
             "metric_control": [10.0, 11.0],
             "metric_test": [12.0, 13.0],
+            "n0": [100, 110],
+            "n1": [120, 120],
         }
     )
 
@@ -180,6 +205,8 @@ def test_format_ab_metrics_keeps_labels_and_first_seen_order() -> None:
             "metric_name": ["orders", "orders", "gmv"],
             "metric_control": [10.0, 20.0, 100.0],
             "metric_test": [12.0, 22.0, 115.0],
+            "n0": [100, 200, 100],
+            "n1": [120, 220, 120],
         }
     )
 
@@ -187,12 +214,12 @@ def test_format_ab_metrics_keeps_labels_and_first_seen_order() -> None:
 
     expected = pd.DataFrame(
         {
-            "segment": ["B", "A", "B"],
-            "country": ["RU", "KZ", "RU"],
-            "metric": ["orders", "orders", "gmv"],
-            "control": [10.0, 20.0, 100.0],
-            "variant_b": [12.0, np.nan, 115.0],
-            "variant_a": [np.nan, 22.0, np.nan],
+            "segment": ["B", "B", "B", "A", "A"],
+            "country": ["RU", "RU", "RU", "KZ", "KZ"],
+            "metric": ["group_size", "orders", "gmv", "group_size", "orders"],
+            "control": [100.0, 10.0, 100.0, 200.0, 20.0],
+            "variant_b": [120.0, 12.0, 115.0, np.nan, np.nan],
+            "variant_a": [np.nan, np.nan, np.nan, 220.0, 22.0],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -206,16 +233,33 @@ def test_format_ab_metrics_supports_multiple_output_types() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "control_metric_value": [10.0],
-            "test_metric_value": [12.0],
-            "control_variance": [1.5],
-            "test_variance": [2.5],
-            "control_n": [3],
-            "test_n": [4],
-            "test_vs_control_p_value": [0.04],
-            "test_vs_control_delta_abs": [2.0],
-            "test_vs_control_se": [0.5],
+            "metric": ["group_size", "orders"],
+            "control_metric_value": [3.0, 10.0],
+            "test_metric_value": [4.0, 12.0],
+            "control_variance": [np.nan, 1.5],
+            "test_variance": [np.nan, 2.5],
+            "control_n": [np.nan, 3.0],
+            "test_n": [np.nan, 4.0],
+            "test_vs_control_p_value": [np.nan, 0.04],
+            "test_vs_control_delta_abs": [np.nan, 2.0],
+            "test_vs_control_se": [np.nan, 0.5],
+        }
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_format_ab_metrics_adds_group_size_columns_for_comparison_outputs() -> None:
+    result = format_ab_metrics(
+        _build_metric_rows().iloc[[0]],
+        output_type=["p_values"],
+    )
+
+    expected = pd.DataFrame(
+        {
+            "metric": ["group_size", "orders"],
+            "control": [3.0, np.nan],
+            "test": [4.0, np.nan],
+            "test_vs_control_p_value": [np.nan, 0.04],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -229,9 +273,11 @@ def test_format_ab_metrics_supports_cuped_mde_outputs() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "test_vs_control_mde_abs_cuped": [2.4],
-            "test_vs_control_mde_relative_cuped": [0.24],
+            "metric": ["group_size", "orders"],
+            "control": [3.0, np.nan],
+            "test": [4.0, np.nan],
+            "test_vs_control_mde_abs_cuped": [np.nan, 2.4],
+            "test_vs_control_mde_relative_cuped": [np.nan, 0.24],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -255,6 +301,8 @@ def test_format_ab_metrics_keeps_simple_group_names_for_single_comparison_output
             "metric_control": [10.0, 10.0],
             "metric_test": [12.0, 13.0],
             "delta_relative": [0.2, 0.3],
+            "n0": [100, 100],
+            "n1": [120, 130],
         }
     )
 
@@ -266,9 +314,10 @@ def test_format_ab_metrics_keeps_simple_group_names_for_single_comparison_output
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "test_1": [0.2],
-            "test_2": [0.3],
+            "metric": ["group_size", "orders"],
+            "control": [100.0, np.nan],
+            "test_1": [120.0, 0.2],
+            "test_2": [130.0, 0.3],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -284,9 +333,11 @@ def test_format_ab_metrics_supports_significant_delta_outputs() -> None:
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders", "gmv"],
-            "test_vs_control_delta_relative_significant": [0.2, np.nan],
-            "test_vs_control_delta_absolute_significant": [2.0, np.nan],
+            "metric": ["group_size", "orders", "gmv"],
+            "control": [3.0, np.nan, np.nan],
+            "test": [4.0, np.nan, np.nan],
+            "test_vs_control_delta_relative_significant": [np.nan, 0.2, np.nan],
+            "test_vs_control_delta_absolute_significant": [np.nan, 2.0, np.nan],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -309,9 +360,10 @@ def test_format_ab_metrics_keeps_simple_group_names_for_significant_delta_output
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders"],
-            "test_1": [0.2],
-            "test_2": [np.nan],
+            "metric": ["group_size", "orders"],
+            "control": [3.0, np.nan],
+            "test_1": [4.0, 0.2],
+            "test_2": [4.0, np.nan],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
@@ -352,8 +404,13 @@ def test_format_ab_metrics_uses_configured_significance_p_value_source(
 
     expected = pd.DataFrame(
         {
-            "metric": ["orders", "gmv"],
-            "test_vs_control_delta_relative_significant": expected_values,
+            "metric": ["group_size", "orders", "gmv"],
+            "control": [3.0, np.nan, np.nan],
+            "test": [4.0, np.nan, np.nan],
+            "test_vs_control_delta_relative_significant": [
+                np.nan,
+                *expected_values,
+            ],
         }
     )
     pd.testing.assert_frame_equal(result, expected)
