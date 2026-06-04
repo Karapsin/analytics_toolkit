@@ -34,6 +34,14 @@ PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_general_read_fil
 PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py
 ```
 
+CI matrix checks:
+
+```bash
+tox -e py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest
+```
+
+Run the CI matrix locally before committing whenever the interpreters are available. Do not silently skip missing interpreters; install them or explicitly report the blocker before committing.
+
 Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
 
 ## General Rules

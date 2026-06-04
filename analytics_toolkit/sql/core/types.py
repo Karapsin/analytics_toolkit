@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal, TypeAlias
+from typing import Literal
 
-BackendName: TypeAlias = Literal["gp", "trino", "ch"]
-ConnectionKey: TypeAlias = str
-SqlText: TypeAlias = str
-TableName: TypeAlias = str
-SqlTaskType: TypeAlias = Literal[
+BackendName = Literal["gp", "trino", "ch"]
+ConnectionKey = str
+SqlText = str
+TableName = str
+SqlTaskType = Literal[
     "read",
     "execute",
     "execute_read",
