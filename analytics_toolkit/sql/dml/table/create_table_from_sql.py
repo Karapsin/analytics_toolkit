@@ -21,9 +21,11 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...ddl.create_sql_table import (
+from ...ddl.api import (
     build_create_table_sqls,
     create_sql_table,
+)
+from ...ddl.schema import (
     normalize_table_schema,
     validate_table_schema_columns,
 )
@@ -38,11 +40,13 @@ from ...execution.plan_steps import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..transfer.schema import inspect_source_query_schema, map_source_schema_to_target
-from .table_ops import (
-    drop_ch_distributed_table_pair,
-    drop_table,
+from ._basic_ops import (
     insert_from_query,
     table_exists,
+)
+from .maintenance import (
+    drop_ch_distributed_table_pair,
+    drop_table,
 )
 from .models import CreateTableFromSqlOptions
 from .table_validation import normalize_key_columns, validate_key_columns_in_columns

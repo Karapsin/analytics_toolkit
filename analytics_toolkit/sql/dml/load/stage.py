@@ -9,8 +9,8 @@ from sqlglot import exp, parse_one
 
 from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
-from ...ddl.create_sql_table import create_sql_table
-from ..table.table_ops import table_exists
+from ...ddl.api import create_sql_table
+from ..table._basic_ops import table_exists
 
 
 STAGE_TABLE_NAME_MAX_ATTEMPTS = 10

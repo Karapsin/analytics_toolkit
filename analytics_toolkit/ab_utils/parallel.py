@@ -12,10 +12,12 @@ import pandas as pd
 from pandas.api.types import is_scalar
 from tqdm import tqdm
 
+from analytics_toolkit import sql as sql_facade
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql import async_sql
 
 from .api import compute_test_metrics
+
+async_sql = sql_facade.async_sql
 
 _SQL_DATAFRAME_FIELDS = frozenset({"df", "pre_exp_df", "pre_exp_metrics_df"})
 _DEFAULT_HARD_CONCURRENCY_CAP = 10

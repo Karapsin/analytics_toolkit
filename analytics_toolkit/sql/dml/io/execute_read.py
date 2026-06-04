@@ -13,6 +13,7 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
+from ...connection.protocols import ClickHouseClient, DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -170,7 +171,7 @@ def _build_execute_read_options(
 
 
 def _execute_read_trino(
-    conn: Any,
+    conn: DbApiConnection,
     statements: list[str],
     print_queries: bool = False,
     progress: bool = True,
@@ -199,7 +200,7 @@ def _execute_read_trino(
 
 
 def _execute_read_gp(
-    conn: Any,
+    conn: DbApiConnection,
     statements: list[str],
     print_queries: bool = False,
     gp_break_query: bool = False,
@@ -246,7 +247,7 @@ def _execute_read_gp(
 
 
 def _execute_read_ch(
-    client: Any,
+    client: ClickHouseClient,
     statements: list[str],
     print_queries: bool = False,
     progress: bool = True,

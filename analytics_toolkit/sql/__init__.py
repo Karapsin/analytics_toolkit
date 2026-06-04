@@ -1,4 +1,4 @@
-from .ddl.create_sql_table import (
+from .ddl.api import (
     build_create_table_sql,
     build_create_table_sqls,
     create_sql_table,

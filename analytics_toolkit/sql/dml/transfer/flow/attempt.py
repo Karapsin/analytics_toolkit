@@ -5,7 +5,7 @@ from typing import Any
 from tqdm import tqdm
 
 from ....connection.get_sql_connection import get_sql_connection
-from ....ddl.create_sql_table import validate_table_schema_columns
+from ....ddl.schema import validate_table_schema_columns
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import insert_rows_batch
 from .estimate import estimate_source_rows

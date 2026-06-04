@@ -20,13 +20,14 @@ TEST_CH_STAGE_TABLE = f"test_table_{CURRENT_DT}__stage__abcd1234"
 TEST_CH_SHARD_RELATION = f"test_table_{CURRENT_DT}_shard"
 
 create_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.ddl.create_sql_table"
+    "analytics_toolkit.sql.ddl.api"
 )
+ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
 load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
 )
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
-table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
+table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.write_modes")
 
 
 class FakeClickHouseClient:
@@ -608,7 +609,7 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
 
     client = ClusterVisibilityClient()
 
-    create_sql_table_module._wait_for_ch_distributed_table_pair(
+    ch_wait_module._wait_for_ch_distributed_table_pair(
         client,
         "analytics.events",
         ch_cluster="{cluster}",
@@ -660,7 +661,7 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
 
     client = ClusterSchemaClient()
 
-    create_sql_table_module._wait_for_ch_distributed_table_pair(
+    ch_wait_module._wait_for_ch_distributed_table_pair(
         client,
         "analytics.events",
         ch_cluster="{cluster}",
@@ -717,7 +718,7 @@ def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> 
 
     client = ClusterDropClient()
 
-    create_sql_table_module._wait_for_ch_distributed_table_pair_absence(
+    ch_wait_module._wait_for_ch_distributed_table_pair_absence(
         client,
         "analytics.events",
         ch_cluster="{cluster}",
@@ -760,7 +761,7 @@ def test_wait_for_clickhouse_distributed_pair_absence_reports_leftover_hosts() -
             raise AssertionError(f"Unexpected query: {sql}")
 
     with pytest.raises(TimeoutError) as exc_info:
-        create_sql_table_module._wait_for_ch_distributed_table_pair_absence(
+        ch_wait_module._wait_for_ch_distributed_table_pair_absence(
             StaleDropClient(),
             "analytics.events",
             ch_cluster="{cluster}",
@@ -800,7 +801,7 @@ def test_wait_for_clickhouse_distributed_pair_reports_schema_mismatch() -> None:
             raise AssertionError(f"Unexpected query: {sql}")
 
     with pytest.raises(TimeoutError) as exc_info:
-        create_sql_table_module._wait_for_ch_distributed_table_pair(
+        ch_wait_module._wait_for_ch_distributed_table_pair(
             StaleSchemaClient(),
             "analytics.events",
             ch_cluster="{cluster}",

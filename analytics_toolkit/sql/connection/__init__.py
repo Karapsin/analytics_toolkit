@@ -21,6 +21,7 @@ from .errors import (
     UnsupportedConnectionTypeError,
 )
 from .get_sql_connection import get_sql_connection, with_sql_connection
+from .protocols import ClickHouseClient, ClickHouseResult, DbApiConnection, DbApiCursor
 from analytics_toolkit.general import time_print
 
 __all__ = [
@@ -39,6 +40,10 @@ __all__ = [
     "get_connection_config",
     "get_connections_file_path",
     "get_sql_connection",
+    "ClickHouseClient",
+    "ClickHouseResult",
+    "DbApiConnection",
+    "DbApiCursor",
     "load_sql_connections",
     "resolve_connection_backend",
     "time_print",

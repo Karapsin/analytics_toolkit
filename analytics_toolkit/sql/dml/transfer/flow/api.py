@@ -38,12 +38,13 @@ from ....execution.plan_steps import (
     add_insert_from_stage_step,
     add_load_stage_step,
 )
-from ....ddl.create_sql_table import build_create_table_sqls, normalize_table_schema
+from ....ddl.api import build_create_table_sqls
+from ....ddl.schema import normalize_table_schema
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...load.stage import build_stage_table_name
-from ...table.table_ops import count_table_rows
+from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from .attempt import run_transfer_attempt
 from ..runtime.models import TransferOptions

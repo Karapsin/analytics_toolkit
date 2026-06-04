@@ -89,7 +89,7 @@ def add_insert_query_step(
     phase: str = "insert_data",
     query_label: str | None = None,
 ) -> None:
-    from ..dml.table.table_ops import build_insert_from_query_sql
+    from ..dml.table._basic_ops import build_insert_from_query_sql
 
     plan.add(
         build_insert_from_query_sql(
@@ -133,7 +133,7 @@ def add_drop_target_steps(
     query_label: str | None = None,
     only_shard: bool = False,
 ) -> None:
-    from ..dml.table.table_ops import (
+    from ..dml.table._basic_ops import (
         build_drop_ch_distributed_table_pair_sqls,
         build_drop_table_sql,
     )
@@ -204,7 +204,7 @@ def build_clear_target_sqls(
     only_shard: bool = False,
 ) -> list[str]:
     from ..clickhouse.lifecycle import build_truncate_ch_distributed_table_pair_sqls
-    from ..dml.table.table_ops import build_clear_table_sqls
+    from ..dml.table._basic_ops import build_clear_table_sqls
 
     if backend != "ch" or not include_ch_shard or only_shard:
         return build_clear_table_sqls(
@@ -230,7 +230,7 @@ def add_insert_from_stage_step(
     phase: str,
     query_label: str | None = None,
 ) -> None:
-    from ..dml.table.table_ops import build_insert_from_table_sql
+    from ..dml.table._basic_ops import build_insert_from_table_sql
 
     plan.add(
         build_insert_from_table_sql(
@@ -255,7 +255,7 @@ def add_analyze_step(
     table_name: str,
     query_label: str | None = None,
 ) -> None:
-    from ..dml.table.table_ops import build_analyze_table_sql
+    from ..dml.table._basic_ops import build_analyze_table_sql
 
     if backend == "ch":
         return
@@ -281,7 +281,7 @@ def add_count_step(
     table_name: str,
     query_label: str | None = None,
 ) -> None:
-    from ..dml.table.table_ops import build_count_table_rows_sql
+    from ..dml.table._basic_ops import build_count_table_rows_sql
 
     plan.add(
         build_count_table_rows_sql(
@@ -304,7 +304,7 @@ def add_drop_stage_step(
     stage_table: str,
     query_label: str | None = None,
 ) -> None:
-    from ..dml.table.table_ops import build_drop_table_sql
+    from ..dml.table._basic_ops import build_drop_table_sql
 
     plan.add(
         build_drop_table_sql(

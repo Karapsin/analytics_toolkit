@@ -30,6 +30,12 @@ from analytics_toolkit.dates.dates import first_day
 from analytics_toolkit.excel import break_table, pivot_and_break_table
 ```
 
+Supported SQL imports are `from analytics_toolkit import sql` or
+`import analytics_toolkit.sql as sql`. Deep imports under
+`analytics_toolkit.sql.*` are internal implementation details and may change;
+call SQL helpers through the `sql` facade, for example `sql.create_sql_table(...)`
+or `sql.transfer(...)`. Do not restore removed root implementation paths.
+
 ## Configuration
 
 SQL connection settings are read from `.connections`. The package searches

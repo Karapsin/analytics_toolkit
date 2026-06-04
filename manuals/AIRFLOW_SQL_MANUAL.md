@@ -3,6 +3,12 @@
 Use this manual when migrating DAG code from local Airflow connection wrappers to
 `analytics_toolkit.sql`.
 
+Supported user-facing import style is `from analytics_toolkit import sql` or
+`import analytics_toolkit.sql as sql`. Deep imports under
+`analytics_toolkit.sql.*` are internal only and may change; call public helpers
+through the `sql` facade, for example `sql.read(...)`, `sql.load_df(...)`, or
+`sql.transfer(...)`. Do not restore removed root implementation paths.
+
 The intended Airflow pattern is:
 
 - keep credentials in Airflow Connections;

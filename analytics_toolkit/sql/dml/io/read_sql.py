@@ -14,6 +14,7 @@ from ...connection.errors import (
 )
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
+from ...connection.protocols import ClickHouseClient, DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -30,7 +31,11 @@ from .models import ReadSqlOptions
 ReadBackend = Callable[[Any, str, bool], pd.DataFrame]
 
 
-def _read_trino(conn: Any, query: str, print_queries: bool = False) -> pd.DataFrame:
+def _read_trino(
+    conn: DbApiConnection,
+    query: str,
+    print_queries: bool = False,
+) -> pd.DataFrame:
     return get_backend_adapter("trino").read_dataframe(
         conn,
         query,
@@ -40,7 +45,11 @@ def _read_trino(conn: Any, query: str, print_queries: bool = False) -> pd.DataFr
     )
 
 
-def _read_gp(conn: Any, query: str, print_queries: bool = False) -> pd.DataFrame:
+def _read_gp(
+    conn: DbApiConnection,
+    query: str,
+    print_queries: bool = False,
+) -> pd.DataFrame:
     return get_backend_adapter("gp").read_dataframe(
         conn,
         query,
@@ -50,7 +59,11 @@ def _read_gp(conn: Any, query: str, print_queries: bool = False) -> pd.DataFrame
     )
 
 
-def _read_ch(client: Any, query: str, print_queries: bool = False) -> pd.DataFrame:
+def _read_ch(
+    client: ClickHouseClient,
+    query: str,
+    print_queries: bool = False,
+) -> pd.DataFrame:
     return get_backend_adapter("ch").read_dataframe(
         client,
         query,
@@ -60,7 +73,7 @@ def _read_ch(client: Any, query: str, print_queries: bool = False) -> pd.DataFra
     )
 
 
-def _read_dbapi_query(conn: Any, query: str) -> pd.DataFrame:
+def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
     cursor = conn.cursor()
     try:
         cursor.execute(query)

@@ -18,6 +18,12 @@ Typical import:
 from analytics_toolkit import sql
 ```
 
+Supported user-facing import style is `from analytics_toolkit import sql` or
+`import analytics_toolkit.sql as sql`. Deep imports under
+`analytics_toolkit.sql.*` are internal only and may change; call public helpers
+through the `sql` facade, for example `sql.create_sql_table(...)`,
+`sql.load_df(...)`, or `sql.transfer(...)`. Do not restore removed root implementation paths.
+
 Database keys are configured in `.connections`. The package searches from
 the current working directory upward through parent directories. Each key is a
 connection alias and each value must define `type` as `'trino'`, `'gp'`, or

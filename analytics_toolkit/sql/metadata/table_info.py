@@ -10,8 +10,8 @@ from ..backend_adapters import split_trino_table_name
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..connection.get_sql_connection import get_sql_connection
-from ..ddl.create_sql_table import build_ch_shard_table_name
-from ..dml.table.table_ops import (
+from ..ddl.clickhouse import build_ch_shard_table_name
+from ..dml.table._basic_ops import (
     count_table_rows,
     get_table_column_types,
     table_exists,

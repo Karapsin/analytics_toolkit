@@ -5,13 +5,13 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..ddl.create_sql_table import (
+from ..ddl.clickhouse import (
     _normalize_non_empty_string,
     _sql_string_literal,
     build_ch_shard_table_name,
-    normalize_table_schema,
     split_ch_table_name_for_distributed_engine,
 )
+from ..ddl.schema import normalize_table_schema
 
 
 def _wait_for_ch_table(

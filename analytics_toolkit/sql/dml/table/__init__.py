@@ -11,7 +11,7 @@ from .models import (
     CreateTableFromSqlOptions,
     DropManyPartitionsOptions,
 )
-from .table_ops import (
+from .api import (
     analyze_table,
     build_analyze_table_sql,
     build_clear_table_sqls,

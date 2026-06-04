@@ -14,6 +14,7 @@ from ...connection.errors import (
 )
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
+from ...connection.protocols import ClickHouseClient, DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -32,7 +33,7 @@ ExecuteBackend = Callable[[Any, str, bool, bool, bool, bool], Any]
 
 
 def _execute_trino(
-    conn: Any,
+    conn: DbApiConnection,
     query: str,
     print_queries: bool = False,
     progress: bool = True,
@@ -63,7 +64,7 @@ def _execute_trino(
 
 
 def _execute_gp(
-    conn: Any,
+    conn: DbApiConnection,
     query: str,
     print_queries: bool = False,
     gp_break_query: bool = False,
@@ -105,7 +106,7 @@ def _execute_gp(
 
 
 def _execute_ch(
-    client: Any,
+    client: ClickHouseClient,
     query: str,
     print_queries: bool = False,
     progress: bool = True,
@@ -295,7 +296,7 @@ def _planned_execute_statements(options: ExecuteSqlOptions) -> list[str]:
     return _split_sql_statements(options.sql)
 
 
-def _execute_ch_statement(client: Any, query: str) -> None:
+def _execute_ch_statement(client: ClickHouseClient, query: str) -> None:
     client.command(query)
 
 

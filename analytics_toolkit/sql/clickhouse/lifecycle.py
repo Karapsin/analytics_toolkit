@@ -17,7 +17,7 @@ from .wait import (
     _wait_for_ch_table_absence,
     _wait_for_ch_table_absence_on_cluster,
 )
-from ..ddl.create_sql_table import (
+from ..ddl.clickhouse import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
 )

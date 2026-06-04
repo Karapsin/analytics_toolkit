@@ -18,10 +18,12 @@ from ...connection.errors import (
     SqlOperationContext,
     sql_preview,
 )
-from ...ddl.create_sql_table import (
+from ...ddl.api import (
     build_create_table_sqls,
-    column_list_sql,
     create_sql_table,
+)
+from ...ddl.identifiers import column_list_sql
+from ...ddl.schema import (
     normalize_table_schema,
     validate_table_schema_columns,
 )
@@ -50,14 +52,18 @@ from analytics_toolkit.general import time_print
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
 from .stage import create_stage_table
-from ..table.table_ops import (
-    analyze_table,
-    apply_target_write_mode,
+from ..table._basic_ops import (
     count_table_rows,
-    drop_table,
     insert_from_table,
     get_trino_table_column_types,
     table_exists,
+)
+from ..table.maintenance import (
+    analyze_table,
+    drop_table,
+)
+from ..table.write_modes import (
+    apply_target_write_mode,
 )
 from ..table.table_validation import (
     normalize_key_columns,

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from ...table.table_ops import (
+from ...table.maintenance import (
     analyze_table,
     clear_ch_distributed_table_data,
-    clear_target_table,
     drop_table_with_retry,
+)
+from ...table.write_modes import (
+    clear_target_table,
     finalize_stage_table,
 )
 from ...table.table_validation import (

@@ -15,8 +15,7 @@ from ...connection.get_sql_connection import (
     get_ch_connection_for_host,
     get_sql_connection,
 )
-from ...ddl.create_sql_table import build_ch_shard_table_name
-from ...ddl.create_sql_table import _normalize_non_empty_string
+from ...ddl.clickhouse import build_ch_shard_table_name, _normalize_non_empty_string
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print

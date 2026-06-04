@@ -13,7 +13,7 @@ from tests.sql_fakes import FakeClickHouseClient, FakeDbapiConnection
 
 sql_module = importlib.import_module("analytics_toolkit.sql")
 dml_table_module = importlib.import_module("analytics_toolkit.sql.dml.table")
-table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
+table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.partitions")
 
 
 def test_drop_many_partitions_is_public_and_timed() -> None:

@@ -15,7 +15,7 @@ from tests.sql_fakes import FakeDbapiConnection, FakeDbapiCursor
 sql_module = importlib.import_module("analytics_toolkit.sql")
 dml_module = importlib.import_module("analytics_toolkit.sql.dml")
 dml_table_module = importlib.import_module("analytics_toolkit.sql.dml.table")
-table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.table_ops")
+table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.partitions")
 
 
 def test_gp_create_many_partitions_is_public_and_timed() -> None:

@@ -28,7 +28,7 @@ transfer_api_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.api"
 )
 ddl_create_table_module = importlib.import_module(
-    "analytics_toolkit.sql.ddl.create_sql_table"
+    "analytics_toolkit.sql.ddl.api"
 )
 create_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.table.create_table_from_sql"

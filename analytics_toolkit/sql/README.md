@@ -872,9 +872,11 @@ Previous env-based configuration is no longer read. Move values into
 
 ## Internal Layout
 
-Public consumers should import through `analytics_toolkit.sql` or
-`from analytics_toolkit import sql`. Deep implementation module paths are not
-treated as public compatibility surface.
+Supported user-facing import style is `from analytics_toolkit import sql` or
+`import analytics_toolkit.sql as sql`. Deep imports under
+`analytics_toolkit.sql.*` are internal only and may change; call public helpers
+through the `sql` facade, for example `sql.create_sql_table(...)`,
+`sql.load_df(...)`, or `sql.transfer(...)`. Do not restore removed root implementation paths.
 
 - `core/`: backend capabilities, identifiers, and public type aliases
 - `execution/`: timing, retry wrappers, plans, plan steps, labels, and query

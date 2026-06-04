@@ -25,17 +25,16 @@ from ...clickhouse.lifecycle import (
     drop_ch_table,
 )
 from ...clickhouse.wait import _wait_for_ch_distributed_table_pair
-from ...ddl.create_sql_table import (
+from ...ddl.clickhouse import (
     _normalize_non_empty_string,
     build_ch_local_create_table_sql,
-    build_table_schema_column_definitions,
     build_ch_shard_table_name,
-    normalize_table_schema,
-    quote_identifier,
 )
+from ...ddl.identifiers import quote_identifier
+from ...ddl.schema import build_table_schema_column_definitions, normalize_table_schema
 from analytics_toolkit.general import time_print
 from .models import ChCreateTableAsOptions
-from .table_ops import _execute_ch_command
+from ._basic_ops import _execute_ch_command
 
 
 @timed_public_sql_function

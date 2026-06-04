@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from ..table.table_ops import get_table_column_types
+from ..table._basic_ops import get_table_column_types
 
 
 @dataclass(frozen=True)

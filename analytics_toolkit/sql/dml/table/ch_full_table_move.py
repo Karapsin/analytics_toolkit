@@ -15,18 +15,18 @@ from ...connection.get_sql_connection import (
     get_ch_connection_for_host,
     get_sql_connection,
 )
-from ...ddl.create_sql_table import (
+from ...ddl.clickhouse import (
     add_explicit_ch_uuid_to_local_replicated_create,
     build_ch_shard_table_name,
-    quote_identifier,
     split_ch_table_name_for_distributed_engine,
 )
+from ...ddl.identifiers import quote_identifier
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from .models import ChFullTableMoveOptions
-from .table_ops import _execute_ch_command, build_insert_from_table_sql, insert_from_table
+from ._basic_ops import _execute_ch_command, build_insert_from_table_sql, insert_from_table
 
 
 _SHARD_ENGINE_FOLLOWING_CLAUSES = (

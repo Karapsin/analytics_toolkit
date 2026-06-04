@@ -18,7 +18,7 @@ from ...clickhouse.lifecycle import (
 )
 from ...connection.config import resolve_connection_backend
 from ...connection.errors import InvalidSqlInputError
-from ...ddl.create_sql_table import quote_identifier
+from ...ddl.identifiers import quote_identifier
 from ...execution.labels import apply_query_label
 
 
