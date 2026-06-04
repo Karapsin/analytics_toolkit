@@ -189,7 +189,7 @@ def test_execute_read_logs_elapsed_for_setup_and_final_query_by_default(
 
     output = capsys.readouterr().out
     assert "Executing query:" not in output
-    assert output.count("SQL query on gp finished: success in ") == 2
+    assert output.count("[execute_read] [gp/gp] [execute_read] Finished SQL query in ") == 2
 
 
 def test_execute_read_retries_with_fresh_connection(

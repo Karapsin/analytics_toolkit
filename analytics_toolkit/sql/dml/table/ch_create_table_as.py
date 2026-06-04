@@ -151,8 +151,7 @@ def ch_create_table_as(
         ):
             target_shard_table = build_ch_shard_table_name(options.target_table)
             time_print(
-                f"Creating ClickHouse table {options.target_table} from query on "
-                f"{options.connection_key}"
+                f"Creating ClickHouse table {options.target_table} from query"
             )
             if options.only_shard:
                 time_print(f"Dropping target ClickHouse table {options.target_table}")
@@ -278,7 +277,7 @@ def ch_create_table_as(
             time_print(f"Finished creating ClickHouse table {options.target_table}")
     finally:
         time_print(
-            f"Closing {config.connection_key} connection",
+            "Closing connection",
             connection=config.connection_key,
             backend=config.backend,
             phase="close",

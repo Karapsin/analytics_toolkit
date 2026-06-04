@@ -34,21 +34,25 @@ def estimate_source_rows(options: TransferOptions, connection: Any) -> int | Non
         if options.from_db_backend == "gp":
             rollback_quietly(connection)
         time_print(
-            "Could not estimate source row count for transfer from "
-            f"{options.from_db_key}; progress total will be unknown: {exc!r}"
+            "Could not estimate source row count; "
+            f"progress total will be unknown: {exc!r}",
+            connection=options.from_db_key,
+            backend=options.from_db_backend,
         )
         return None
 
     if estimated_rows is None:
         time_print(
-            "Source row estimate is unavailable for transfer from "
-            f"{options.from_db_key}; progress total will be unknown."
+            "Source row estimate is unavailable; progress total will be unknown.",
+            connection=options.from_db_key,
+            backend=options.from_db_backend,
         )
         return None
 
     time_print(
-        "Using approximate source row estimate for transfer from "
-        f"{options.from_db_key}: {estimated_rows} row(s)"
+        f"Using approximate source row estimate: {estimated_rows} row(s)",
+        connection=options.from_db_key,
+        backend=options.from_db_backend,
     )
     return estimated_rows
 

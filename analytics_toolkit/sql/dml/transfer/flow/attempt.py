@@ -183,7 +183,9 @@ def load_stage_batches(
             time_print(
                 f"Transferred batch of "
                 f"{_format_transfer_progress_count(inserted_rows)} row(s) "
-                f"to {options.to_db_key}.{stage_state.stage_table}"
+                f"to {stage_state.stage_table}",
+                connection=options.to_db_key,
+                backend=options.to_db_backend,
             )
         return total_rows
     finally:

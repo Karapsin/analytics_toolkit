@@ -74,7 +74,11 @@ def create_sql_table(
         query_label=query_label,
         return_metadata=return_metadata,
     )
-    time_print(f"Creating target table {table_name} on {connection_type}")
+    time_print(
+        f"Creating target table {table_name}",
+        connection=connection_type,
+        backend=backend,
+    )
     create_sqls = build_create_table_sqls(
         options.backend,
         options.table_name,

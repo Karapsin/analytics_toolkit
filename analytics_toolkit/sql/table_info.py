@@ -150,7 +150,7 @@ def table_info(
         )
     finally:
         time_print(
-            f"Closing {config.connection_key} connection",
+            "Closing connection",
             connection=config.connection_key,
             backend=config.backend,
             phase="close",

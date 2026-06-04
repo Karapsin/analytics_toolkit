@@ -22,7 +22,10 @@ def run_timed_query(backend: str, action: Callable[[], T]) -> T:
         return result
     finally:
         elapsed_seconds = time.perf_counter() - started_at
+        message_prefix = (
+            "Failed SQL query" if status == "failed" else "Finished SQL query"
+        )
         time_print(
-            f"SQL query on {backend} finished: {status} "
-            f"in {elapsed_seconds:.3f}s"
+            f"{message_prefix} in {elapsed_seconds:.3f}s",
+            backend=backend,
         )

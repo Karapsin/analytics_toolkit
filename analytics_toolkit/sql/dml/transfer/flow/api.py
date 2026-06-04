@@ -158,8 +158,7 @@ def transfer_table(
                     )
                 except AmbiguousTableLoadError as exc:
                     time_print(
-                        f"Discarding staged load for {options.to_db_key} "
-                        f"and restarting from scratch: {exc!r}"
+                        f"Discarding staged load and restarting from scratch: {exc!r}"
                     )
                     raise
 

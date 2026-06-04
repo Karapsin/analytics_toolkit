@@ -168,10 +168,12 @@ SQL query text is not printed by default. Pass `print_queries=True` to
 `read_sql`, `execute_sql`, `execute_read`, or `gp_cancel_all_running_queries`
 when you want each statement echoed before execution. `read_sql`,
 `execute_sql`, and `execute_read` still log elapsed time after every executed
-query or statement. Public SQL operations also log the first non-empty line of
-the representative SQL after the operation-finished status line. Public
-functions exported from `analytics_toolkit.sql` print a final total function
-duration line, including dry-run and `return_sql` paths.
+query or statement. SQL logs use structured tags for operation, connection,
+backend, and phase, so message bodies avoid repeating those values. Public SQL
+operations also log the first non-empty line of the representative SQL after the
+operation-finished status line. Public functions exported from
+`analytics_toolkit.sql` print a final `[timing]` function duration line,
+including dry-run and `return_sql` paths.
 When a built-in SQL task fails inside `async_sql` or `parallel_sql`, the batch
 helper prints the failed task name and its SQL field (`query` or `from_sql`) to
 make concurrent task failures easier to diagnose.

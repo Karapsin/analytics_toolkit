@@ -76,7 +76,11 @@ def _iter_dbapi_batches(
                 break
             yield RowBatch(columns=columns, rows=_rows_as_tuples(rows))
     except Exception:
-        time_print(f"SQL failed while reading transfer source:\n{query}")
+        time_print(
+            f"Failed SQL while reading transfer source:\n{query}",
+            connection=connection_key,
+            backend=connection_backend,
+        )
         raise
     finally:
         cursor.close()
@@ -124,13 +128,17 @@ def _iter_clickhouse_batches(
                     if len(pending_rows) < current_batch_size:
                         break
                     batch_rows = pending_rows[:current_batch_size]
-                    pending_rows = pending_rows[current_batch_size:]
-                    yield RowBatch(columns=columns, rows=batch_rows)
+                pending_rows = pending_rows[current_batch_size:]
+                yield RowBatch(columns=columns, rows=batch_rows)
 
         if pending_rows and columns is not None:
             yield RowBatch(columns=columns, rows=pending_rows)
     except Exception:
-        time_print(f"SQL failed while reading transfer source:\n{query}")
+        time_print(
+            f"Failed SQL while reading transfer source:\n{query}",
+            connection=connection_key,
+            backend="ch",
+        )
         raise
     finally:
         if context_manager is not None:

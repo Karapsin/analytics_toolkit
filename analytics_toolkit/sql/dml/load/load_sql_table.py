@@ -94,12 +94,17 @@ def insert_table_batch(
                     raise
             else:
                 time_print(
-                    f"Stage insert on {connection_type} failed for {table_name}; "
-                    "the current stage table will be discarded and reloaded from scratch."
+                    f"Stage insert failed for {table_name}; "
+                    "the current stage table will be discarded and reloaded "
+                    "from scratch.",
+                    connection=connection_type,
+                    backend=backend,
                 )
                 time_print(
-                    f"Original {connection_type} insert error for {table_name}: "
-                    f"{type(exc).__name__}: {exc!r}"
+                    f"Original insert error for {table_name}: "
+                    f"{type(exc).__name__}: {exc!r}",
+                    connection=connection_type,
+                    backend=backend,
                 )
                 raise AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
@@ -162,12 +167,17 @@ def insert_rows_batch(
                     raise
             else:
                 time_print(
-                    f"Stage insert on {connection_type} failed for {table_name}; "
-                    "the current stage table will be discarded and reloaded from scratch."
+                    f"Stage insert failed for {table_name}; "
+                    "the current stage table will be discarded and reloaded "
+                    "from scratch.",
+                    connection=connection_type,
+                    backend=backend,
                 )
                 time_print(
-                    f"Original {connection_type} insert error for {table_name}: "
-                    f"{type(exc).__name__}: {exc!r}"
+                    f"Original insert error for {table_name}: "
+                    f"{type(exc).__name__}: {exc!r}",
+                    connection=connection_type,
+                    backend=backend,
                 )
                 raise AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
@@ -298,7 +308,10 @@ def _insert_trino_rows(
                 row_count=len(row_chunk),
                 query_label=query_label,
             )
-            time_print(f"Writing {len(row_chunk)} row(s) to trino table {table_name}")
+            time_print(
+                f"Writing {len(row_chunk)} row(s) to table {table_name}",
+                backend="trino",
+            )
             cursor.execute(sql, params)
             if on_progress is not None:
                 on_progress(len(row_chunk))

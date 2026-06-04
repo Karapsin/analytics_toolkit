@@ -23,7 +23,7 @@ from analytics_toolkit.general import time_print
 def get_sql_connection(connection_key: str) -> Any:
     config = get_connection_config(connection_key)
     time_print(
-        f"Opening {config.connection_key} ({config.backend}) connection",
+        "Opening connection",
         connection=config.connection_key,
         backend=config.backend,
         phase="connect",
@@ -51,7 +51,7 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
     if not host_name:
         raise ValueError("host must not be empty.")
     time_print(
-        f"Opening {config.connection_key} ({config.backend}) connection to {host_name}",
+        f"Opening connection to {host_name}",
         connection=config.connection_key,
         backend=config.backend,
         phase="connect",
@@ -70,7 +70,7 @@ def with_sql_connection(connection_key: str) -> Callable[..., Any]:
                 return func(connection, *args, **kwargs)
             finally:
                 time_print(
-                    f"Closing {config.connection_key} connection",
+                    "Closing connection",
                     connection=config.connection_key,
                     backend=config.backend,
                     phase="close",

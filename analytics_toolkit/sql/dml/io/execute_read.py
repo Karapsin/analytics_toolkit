@@ -177,7 +177,8 @@ def _execute_read_trino(
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query on trino"
+        "and reading final query",
+        backend="trino",
     )
     cursor = conn.cursor()
     try:
@@ -191,7 +192,7 @@ def _execute_read_trino(
         )
         return _read_dbapi_cursor(cursor, statements[-1], "trino", print_queries)
     except Exception:
-        time_print(f"SQL failed on trino:\n{statements[-1]}")
+        time_print(f"Failed SQL:\n{statements[-1]}", backend="trino")
         raise
     finally:
         cursor.close()
@@ -207,7 +208,8 @@ def _execute_read_gp(
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query on gp"
+        "and reading final query",
+        backend="gp",
     )
     cursor = conn.cursor()
     should_commit_at_end = len(statements) > 1
@@ -237,7 +239,7 @@ def _execute_read_gp(
             conn.commit()
         return result
     except Exception:
-        time_print(f"SQL failed on gp:\n{statements[-1]}")
+        time_print(f"Failed SQL:\n{statements[-1]}", backend="gp")
         raise
     finally:
         cursor.close()
@@ -251,7 +253,8 @@ def _execute_read_ch(
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query on ch"
+        "and reading final query",
+        backend="ch",
     )
     try:
         _execute_setup_statements(
@@ -265,7 +268,7 @@ def _execute_read_ch(
         _maybe_print_query(statements[-1], print_queries, split_preview=True)
         return run_timed_query("ch", lambda: client.query_df(statements[-1]))
     except Exception:
-        time_print(f"SQL failed on ch:\n{statements[-1]}")
+        time_print(f"Failed SQL:\n{statements[-1]}", backend="ch")
         raise
 
 
@@ -296,7 +299,7 @@ def _read_dbapi_cursor(
     connection_type: str,
     print_queries: bool,
 ) -> pd.DataFrame:
-    time_print(f"Reading DataFrame from {connection_type}")
+    time_print("Reading DataFrame", backend=connection_type)
     _maybe_print_query(query, print_queries, split_preview=True)
 
     def read_query() -> pd.DataFrame:

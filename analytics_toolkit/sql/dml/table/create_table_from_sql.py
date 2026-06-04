@@ -192,7 +192,9 @@ def create_table_from_sql(
             )
 
             time_print(
-                f"Inspecting source query schema on {source_config.connection_key}"
+                "Inspecting source query schema",
+                connection=source_config.connection_key,
+                backend=source_config.backend,
             )
             source_schema = inspect_source_query_schema(
                 source_config.backend,
@@ -269,8 +271,9 @@ def create_table_from_sql(
                         )
                 else:
                     time_print(
-                        f"Dropping existing table {target_table} "
-                        f"on {target_config.connection_key}"
+                        f"Dropping existing table {target_table}",
+                        connection=target_config.connection_key,
+                        backend=target_config.backend,
                     )
                     drop_table(
                         target_config.backend,
@@ -561,7 +564,7 @@ def _close_connections(
 ) -> None:
     if target_connection is not None and target_connection is not source_connection:
         time_print(
-            f"Closing {target_key} connection",
+            "Closing connection",
             connection=target_key,
             backend=target_backend,
             phase="close",
@@ -569,7 +572,7 @@ def _close_connections(
         target_connection.close()
     if source_connection is not None:
         time_print(
-            f"Closing {source_key} connection",
+            "Closing connection",
             connection=source_key,
             backend=source_backend,
             phase="close",

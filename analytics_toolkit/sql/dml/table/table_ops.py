@@ -178,8 +178,12 @@ def clear_target_table(
     dry_run: bool = False,
     return_sql: bool = False,
 ) -> SqlPlan | None:
-    time_print(f"Clearing target table {table_name} on {connection_type}")
     backend = resolve_connection_backend(connection_type)
+    time_print(
+        f"Clearing target table {table_name}",
+        connection=connection_type,
+        backend=backend,
+    )
     if dry_run or return_sql:
         sqls = build_clear_table_sqls(
             backend,
@@ -297,7 +301,11 @@ def apply_target_write_mode(
         return True
 
     if replace_existing_non_ch == "drop":
-        time_print(f"Dropping existing table {table_name} on {log_connection}")
+        time_print(
+            f"Dropping existing table {table_name}",
+            connection=log_connection,
+            backend=backend,
+        )
         drop_table(
             backend,
             connection,
@@ -332,10 +340,12 @@ def finalize_stage_table(
     ch_retry_per_host_drops_concurrency: int | None = None,
     ch_only_shard: bool = False,
 ) -> None:
-    time_print(
-        f"Finalizing staged transfer from {stage_table} into {target_table} on {connection_type}"
-    )
     backend = resolve_connection_backend(connection_type)
+    time_print(
+        f"Finalizing staged transfer from {stage_table} into {target_table}",
+        connection=connection_key or connection_type,
+        backend=backend,
+    )
     original_target_exists = target_exists
 
     if replace_target_table:
@@ -489,7 +499,11 @@ def analyze_table(
             )
         return None
 
-    time_print(f"Analyzing target table {table_name} on {connection_type}")
+    time_print(
+        f"Analyzing target table {table_name}",
+        connection=connection_type,
+        backend=backend,
+    )
     if dry_run or return_sql:
         sql = build_analyze_table_sql(
             backend,
@@ -564,8 +578,9 @@ def gp_create_many_partitions(
 
     metadata = plan.metadata
     time_print(
-        f"Creating {metadata.statement_count} partition(s) "
-        f"on {options.target_table} via {options.connection_key}"
+        f"Creating {metadata.statement_count} partition(s) on {options.target_table}",
+        connection=options.connection_key,
+        backend=options.backend,
     )
 
     def operation(connection_ref: dict[str, Any], attempt: int) -> None:
@@ -648,7 +663,9 @@ def drop_many_partitions(
     metadata = plan.metadata
     time_print(
         f"Dropping {len(options.partition_keys)} partition(s) "
-        f"from {options.target_table} on {options.connection_key}"
+        f"from {options.target_table}",
+        connection=options.connection_key,
+        backend=options.backend,
     )
 
     def operation(connection_ref: dict[str, Any], attempt: int) -> None:
@@ -903,7 +920,11 @@ def gp_vacuum(
     options_sql = f" ({', '.join(options)})" if options else ""
     sql = f"VACUUM{options_sql} {qualified_table_name}"
 
-    time_print(f"Vacuuming table {qualified_table_name} on gp")
+    time_print(
+        f"Vacuuming table {qualified_table_name}",
+        connection=config.connection_key,
+        backend=config.backend,
+    )
     try:
         previous_autocommit = conn.autocommit
         cursor = conn.cursor()
@@ -915,7 +936,7 @@ def gp_vacuum(
             conn.autocommit = previous_autocommit
     finally:
         time_print(
-            f"Closing {config.connection_key} connection",
+            "Closing connection",
             connection=config.connection_key,
             backend=config.backend,
             phase="close",

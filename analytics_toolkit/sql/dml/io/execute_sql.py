@@ -39,7 +39,7 @@ def _execute_trino(
 ) -> Any:
     cursor = conn.cursor()
     statements = _split_sql_statements(query)
-    time_print(f"Executing {len(statements)} statement(s) on trino")
+    time_print(f"Executing {len(statements)} statement(s)", backend="trino")
     statement: str | None = None
     try:
         for statement in _iterate_statements_with_progress(
@@ -57,7 +57,7 @@ def _execute_trino(
             )
     except Exception:
         failed_query = statement if statement is not None else query
-        time_print(f"SQL failed on trino:\n{failed_query}")
+        time_print(f"Failed SQL:\n{failed_query}", backend="trino")
         raise
     return None
 
@@ -75,13 +75,13 @@ def _execute_gp(
         with conn.cursor() as cursor:
             should_commit_at_end = True
             if not gp_break_query:
-                time_print("Executing 1 statement set on gp")
+                time_print("Executing 1 statement set", backend="gp")
                 statement = query
                 _maybe_print_query(statement, print_queries, split_preview=False)
                 run_timed_query("gp", lambda: cursor.execute(statement))
             else:
                 statements = _split_sql_statements(query)
-                time_print(f"Executing {len(statements)} statement(s) on gp")
+                time_print(f"Executing {len(statements)} statement(s)", backend="gp")
                 for statement in _iterate_statements_with_progress(
                     statements,
                     "gp",
@@ -100,7 +100,7 @@ def _execute_gp(
             return None
     except Exception:
         failed_query = statement if statement is not None else query
-        time_print(f"SQL failed on gp:\n{failed_query}")
+        time_print(f"Failed SQL:\n{failed_query}", backend="gp")
         raise
 
 
@@ -111,7 +111,7 @@ def _execute_ch(
     progress: bool = True,
 ) -> Any:
     statements = _split_sql_statements(query)
-    time_print(f"Executing {len(statements)} statement(s) on ch")
+    time_print(f"Executing {len(statements)} statement(s)", backend="ch")
     statement: str | None = None
     try:
         for statement in _iterate_statements_with_progress(
@@ -126,7 +126,7 @@ def _execute_ch(
             )
     except Exception:
         failed_query = statement if statement is not None else query
-        time_print(f"SQL failed on ch:\n{failed_query}")
+        time_print(f"Failed SQL:\n{failed_query}", backend="ch")
         raise
     return None
 

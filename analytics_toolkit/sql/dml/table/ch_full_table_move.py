@@ -151,8 +151,7 @@ def ch_full_table_move(
             preview_sql=preview_sql,
         ):
             time_print(
-                f"Moving ClickHouse table {source_table} to "
-                f"{target_table} on {config.connection_key}"
+                f"Moving ClickHouse table {source_table} to {target_table}"
             )
             time_print(f"Reading ClickHouse DDL for distributed table {source_table}")
             source_distributed_ddl = _show_create_table(connection, source_table)
@@ -273,7 +272,7 @@ def ch_full_table_move(
             )
     finally:
         time_print(
-            f"Closing {config.connection_key} connection",
+            "Closing connection",
             connection=config.connection_key,
             backend=config.backend,
             phase="close",

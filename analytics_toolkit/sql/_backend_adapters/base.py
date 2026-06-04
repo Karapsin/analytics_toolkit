@@ -36,12 +36,12 @@ class BackendAdapter:
         print_query: Callable[[str, bool], None],
         read_dbapi_query: Callable[[Any, str], Any],
     ) -> Any:
-        time_print(f"Reading DataFrame from {self.backend}")
+        time_print("Reading DataFrame", backend=self.backend)
         try:
             print_query(query, print_queries)
             return self._read_dataframe_impl(connection, query, read_dbapi_query)
         except Exception:
-            time_print(f"SQL failed on {self.backend}:\n{query}")
+            time_print(f"Failed SQL:\n{query}", backend=self.backend)
             raise
 
     def _read_dataframe_impl(

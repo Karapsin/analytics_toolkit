@@ -101,8 +101,7 @@ def ch_drop_table(
             preview_sql=plan.sqls[0] if plan.sqls else None,
         ):
             time_print(
-                f"Dropping ClickHouse table {options.target_table} "
-                f"on {options.connection_key}"
+                f"Dropping ClickHouse table {options.target_table}"
             )
             if options.only_shard:
                 drop_ch_table(
@@ -146,7 +145,7 @@ def ch_drop_table(
             metadata.affected_rows = None
     finally:
         time_print(
-            f"Closing {config.connection_key} connection",
+            "Closing connection",
             connection=config.connection_key,
             backend=config.backend,
             phase="close",

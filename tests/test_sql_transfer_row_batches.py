@@ -614,8 +614,9 @@ def test_load_stage_batches_formats_transferred_row_count(
     output = capsys.readouterr().out
     assert total_rows == 1_000_000
     assert (
+        "[gp_sandbox/gp] "
         "Transferred batch of 1_000_000 row(s) "
-        "to gp_sandbox.sandbox.target__stage__abcd1234"
+        "to sandbox.target__stage__abcd1234"
     ) in output
 
 

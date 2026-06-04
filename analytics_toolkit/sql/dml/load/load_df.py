@@ -184,7 +184,7 @@ def load_df(
             _analyze_load_target(options, connection_ref["connection"])
             time_print(
                 f"Finished loading DataFrame into "
-                f"{options.connection_key}.{options.destination_table}: "
+                f"{options.destination_table}: "
                 f"{inserted_rows} row(s)"
             )
             return _build_load_result(
@@ -364,7 +364,7 @@ def _handle_empty_dataframe_load(
     if options.append and state.target_exists:
         time_print(
             f"Skipping empty DataFrame append into "
-            f"{options.connection_key}.{options.destination_table}"
+            f"{options.destination_table}"
         )
         if return_metadata:
             operation_metadata.inserted_rows = 0
@@ -913,9 +913,9 @@ def _cleanup_load(
         except Exception:
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
-            )
+    )
     time_print(
-        f"Closing {options.connection_key} connection",
+        "Closing connection",
         connection=options.connection_key,
         backend=options.connection_backend,
         phase="close",

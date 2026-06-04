@@ -23,16 +23,15 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
     @wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> T:
         started_at = time.perf_counter()
-        with time_print_context(operation=function.__name__, phase="total"):
+        with time_print_context(operation=function.__name__):
             try:
                 return function(*args, **kwargs)
             finally:
                 elapsed_seconds = time.perf_counter() - started_at
                 time_print(
-                    f"SQL function {function.__name__} execution took "
-                    f"{elapsed_seconds:.3f}s",
+                    f"Finished SQL function in {elapsed_seconds:.3f}s",
                     operation=function.__name__,
-                    phase="total",
+                    phase="timing",
                 )
 
     setattr(wrapper, "__sql_public_timing__", True)
@@ -57,18 +56,9 @@ def tracked_sql_operation(
     if retry_attempt is not None:
         operation_metadata.retry_attempts = retry_attempt
 
-    label_parts = [operation_name, phase]
-    if alias is not None and backend is not None:
-        label_parts.append(f"{alias} ({backend})")
-    elif alias is not None:
-        label_parts.append(alias)
-    label = " on ".join(label_parts[:2])
-    if len(label_parts) > 2:
-        label = f"{label} for {label_parts[2]}"
-
     started_at = time.perf_counter()
     time_print(
-        f"Starting SQL operation {label}",
+        "Starting SQL",
         operation=operation_name,
         connection=alias,
         backend=backend,
@@ -90,9 +80,9 @@ def tracked_sql_operation(
     finally:
         operation_metadata.elapsed_seconds = time.perf_counter() - started_at
         status = operation_metadata.operation_status or "finished"
+        message_prefix = "Failed SQL" if status == "failed" else "Finished SQL"
         time_print(
-            f"Finished SQL operation {label}: {status} "
-            f"in {operation_metadata.elapsed_seconds:.3f}s",
+            f"{message_prefix} in {operation_metadata.elapsed_seconds:.3f}s",
             operation=operation_name,
             connection=alias,
             backend=backend,
@@ -230,7 +220,7 @@ def _close_connection(
     backend: str | None = None,
 ) -> None:
     time_print(
-        f"Closing {connection_key} connection",
+        "Closing connection",
         connection=connection_key,
         backend=backend,
         phase="close",

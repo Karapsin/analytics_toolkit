@@ -119,7 +119,7 @@ def test_gp_connection_uses_liveness_defaults(
     connection_module.get_sql_connection("gp")
 
     output = capsys.readouterr().out
-    assert "[get_sql_connection] [gp/gp] [connect] Opening gp (gp) connection" in output
+    assert "[get_sql_connection] [gp/gp] [connect] Opening connection" in output
     assert connect_calls == [
         {
             "host": "gp.example",

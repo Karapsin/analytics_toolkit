@@ -207,10 +207,9 @@ def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:
         pass
 
     output = capsys.readouterr().out
-    assert (
-        "Finished SQL operation unit_operation on phase for gp (gp): success in "
-        in output
-    )
+    assert "[unit_operation] [gp/gp] [phase] Starting SQL" in output
+    assert "[unit_operation] [gp/gp] [phase] Finished SQL in " in output
+    assert "Finished SQL operation unit_operation" not in output
     assert "Finished SQL statement:\nselect * from source_table" in output
 
 
@@ -240,7 +239,7 @@ def test_run_timed_query_inherits_sql_operation_tags(capsys) -> None:
     assert result == "ok"
     assert (
         "[timed_query] [gp/gp] [read] "
-        "SQL query on gp finished: success in "
+        "Finished SQL query in "
     ) in output
 
 
@@ -255,7 +254,7 @@ def test_public_sql_function_logs_total_elapsed_for_dry_run(capsys) -> None:
 
     output = capsys.readouterr().out
     assert plan.operation == "load_df"
-    assert "SQL function load_df execution took " in output
+    assert "[load_df] [timing] Finished SQL function in " in output
 
 
 def test_execute_dry_run_public_timing_uses_optional_time_print_kwargs(
@@ -266,7 +265,7 @@ def test_execute_dry_run_public_timing_uses_optional_time_print_kwargs(
     output = capsys.readouterr().out
     assert isinstance(plan, plans_module.SqlPlan)
     assert plan.operation == "execute_sql"
-    assert "SQL function execute_sql execution took " in output
+    assert "[execute_sql] [timing] Finished SQL function in " in output
 
 
 def test_ch_drop_table_dry_run_public_timing_uses_optional_time_print_kwargs(
@@ -281,7 +280,7 @@ def test_ch_drop_table_dry_run_public_timing_uses_optional_time_print_kwargs(
     output = capsys.readouterr().out
     assert isinstance(plan, plans_module.SqlPlan)
     assert plan.operation == "ch_drop_table"
-    assert "SQL function ch_drop_table execution took " in output
+    assert "[ch_drop_table] [timing] Finished SQL function in " in output
 
 
 def test_table_info_gp_reads_columns_and_skips_row_count_by_default(
@@ -675,7 +674,7 @@ def test_read_sql_prefixes_query_label(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert result["value"].tolist() == [1]
     assert "Executing query:" not in output
-    assert "SQL query on gp finished: success in " in output
+    assert "[read_sql] [gp/gp] [read] Finished SQL query in " in output
     assert (
         "Finished SQL statement:\n"
         "/* analytics_toolkit query_label=unit-test */"
@@ -778,9 +777,14 @@ def test_execute_sql_logs_elapsed_for_each_statement_by_default(
 
     output = capsys.readouterr().out
     assert "Executing query:" not in output
-    assert output.count("SQL query on trino finished: success in ") == 2
+    assert (
+        output.count(
+            "[execute_sql] [trino/trino] [execute] Finished SQL query in "
+        )
+        == 2
+    )
     assert "Finished SQL statement:\nselect 1; select 2" in output
-    assert "[execute_sql] [trino/trino] [close] Closing trino connection" in output
+    assert "[execute_sql] [trino/trino] [close] Closing connection" in output
 
 
 def test_execute_sql_progress_false_suppresses_statement_bar(
@@ -982,10 +986,7 @@ def test_transfer_table_logs_source_sql_preview(monkeypatch, capsys) -> None:
 
     output = capsys.readouterr().out
     assert result == 3
-    assert (
-        "Finished SQL operation transfer_table on transfer for trino (trino): "
-        "success in "
-    ) in output
+    assert "[transfer_table] [trino/trino] [transfer] Finished SQL in " in output
     assert "Finished SQL statement:\nselect id from source_table" in output
 
 
@@ -1000,10 +1001,7 @@ def test_create_sql_table_logs_generated_sql_preview(capsys) -> None:
     )
 
     output = capsys.readouterr().out
-    assert (
-        "Finished SQL operation create_sql_table on create_target for gp (gp): "
-        "success in "
-    ) in output
+    assert "[create_sql_table] [gp/gp] [create_target] Finished SQL in " in output
     assert "Finished SQL statement:\nCREATE TABLE sandbox.created_table" in output
     assert connection.executed[0].startswith("CREATE TABLE sandbox.created_table")
 

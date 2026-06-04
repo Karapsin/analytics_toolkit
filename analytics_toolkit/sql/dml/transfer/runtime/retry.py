@@ -27,7 +27,7 @@ def run_with_retry(
                 raise
             if should_not_retry(exc):
                 time_print(
-                    f"{operation_name} failed with a non-retryable error: {exc!r}",
+                    f"Failed with a non-retryable error: {exc!r}",
                     level="warning",
                     operation=operation_name,
                     phase="retry",
@@ -36,7 +36,7 @@ def run_with_retry(
             last_error = exc
             if attempt >= retry_cnt:
                 time_print(
-                    f"{operation_name} failed after {attempt} attempt(s): {exc!r}",
+                    f"Failed after {attempt} attempt(s): {exc!r}",
                     level="warning",
                     operation=operation_name,
                     phase="retry",
@@ -45,13 +45,13 @@ def run_with_retry(
 
             sleep_seconds = attempt * timeout_increment
             time_print(
-                f"{operation_name} failed on attempt {attempt}/{retry_cnt}: {exc!r}",
+                f"Failed on attempt {attempt}/{retry_cnt}: {exc!r}",
                 level="warning",
                 operation=operation_name,
                 phase="retry",
             )
             time_print(
-                f"Retrying {operation_name} in {sleep_seconds:.2f}s",
+                f"Retrying in {sleep_seconds:.2f}s",
                 operation=operation_name,
                 phase="retry",
             )
@@ -178,15 +178,15 @@ def close_connection_ref(
     if connection is None:
         return
     time_print(
-        f"Closing {connection_type} {role} connection",
+        "Closing connection",
         connection=connection_type,
         phase=f"close_{role}",
     )
     try:
         connection.close()
-    except Exception as exc:
+    except Exception:
         time_print(
-            f"Failed to close {connection_type} {role} connection cleanly: {exc!r}",
+            "Failed",
             level="warning",
             connection=connection_type,
             phase=f"close_{role}",
