@@ -222,6 +222,52 @@ def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:
     assert "Finished SQL statement:\nselect * from source_table" in output
 
 
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (-0.001, "0 seconds"),
+        (0, "0 seconds"),
+        (0.1234, "0.123 seconds"),
+        (1, "1 second"),
+        (2, "2 seconds"),
+        (90, "1 minute 30 seconds"),
+        (3661, "1 hour 1 minute 1 second"),
+        (90061, "1 day 1 hour 1 minute 1 second"),
+    ],
+)
+def test_sql_duration_formatter_is_human_readable(
+    seconds: float,
+    expected: str,
+) -> None:
+    assert operation_runner_module._format_duration(seconds) == expected
+
+
+def test_tracked_sql_operation_logs_human_readable_elapsed(
+    monkeypatch,
+    capsys,
+) -> None:
+    perf_counter_values = iter([10.0, 100.0])
+    monkeypatch.setattr(
+        operation_runner_module.time,
+        "perf_counter",
+        lambda: next(perf_counter_values),
+    )
+
+    with operation_runner_module.tracked_sql_operation(
+        operation_name="unit_operation",
+        alias="gp",
+        backend="gp",
+        phase="phase",
+    ):
+        pass
+
+    output = capsys.readouterr().out
+    assert (
+        "[unit_operation] [gp/gp] [phase] "
+        "Finished SQL in 1 minute 30 seconds"
+    ) in output
+
+
 def test_tracked_sql_operation_tags_inner_time_print(capsys) -> None:
     with operation_runner_module.tracked_sql_operation(
         operation_name="unit_operation",
@@ -250,6 +296,24 @@ def test_run_timed_query_inherits_sql_operation_tags(capsys) -> None:
         "[timed_query] [gp/gp] [read] "
         "Finished SQL query in "
     ) in output
+
+
+def test_run_timed_query_logs_human_readable_elapsed(
+    monkeypatch,
+    capsys,
+) -> None:
+    perf_counter_values = iter([0.0, 3661.0])
+    monkeypatch.setattr(
+        query_timing_module.time,
+        "perf_counter",
+        lambda: next(perf_counter_values),
+    )
+
+    result = query_timing_module.run_timed_query("gp", lambda: "ok")
+
+    output = capsys.readouterr().out
+    assert result == "ok"
+    assert "[gp] Finished SQL query in 1 hour 1 minute 1 second" in output
 
 
 def test_public_sql_function_logs_total_elapsed_for_dry_run(capsys) -> None:

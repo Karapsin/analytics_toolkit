@@ -6,6 +6,8 @@ from typing import TypeVar
 
 from analytics_toolkit.general import time_print
 
+from .operation_runner import _format_duration
+
 
 T = TypeVar("T")
 
@@ -26,6 +28,6 @@ def run_timed_query(backend: str, action: Callable[[], T]) -> T:
             "Failed SQL query" if status == "failed" else "Finished SQL query"
         )
         time_print(
-            f"{message_prefix} in {elapsed_seconds:.3f}s",
+            f"{message_prefix} in {_format_duration(elapsed_seconds)}",
             backend=backend,
         )

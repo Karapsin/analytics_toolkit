@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ....connection.get_sql_connection import get_sql_connection
+from ....execution.operation_runner import _format_duration
 from analytics_toolkit.general import time_print
 
 
@@ -51,7 +52,7 @@ def run_with_retry(
                 phase="retry",
             )
             time_print(
-                f"Retrying in {sleep_seconds:.2f}s",
+                f"Retrying in {_format_duration(sleep_seconds)}",
                 operation=operation_name,
                 phase="retry",
             )

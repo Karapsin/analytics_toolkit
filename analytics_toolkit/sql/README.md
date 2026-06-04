@@ -418,7 +418,8 @@ print(sql.format_plan(plan, include_sql=False))
 `return_metadata=True`; the returned `SqlOperationResult` includes row counts
 when available plus metadata such as elapsed seconds, retry attempts, statement
 count, operation status, and query label. Historical default return values are
-unchanged.
+unchanged. SQL timing logs render elapsed durations in human-readable units,
+for example `1 minute 30 seconds`; metadata continues to store numeric seconds.
 
 Use `query_label` to add a safe SQL comment to generated statements and logs:
 

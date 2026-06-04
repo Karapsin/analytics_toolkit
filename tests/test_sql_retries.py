@@ -459,6 +459,34 @@ def test_run_with_retry_does_not_retry_cross_database_reference_error() -> None:
     assert attempts == [1]
 
 
+def test_run_with_retry_logs_human_readable_wait(
+    monkeypatch,
+    capsys,
+) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> str:
+        attempts.append(attempt)
+        if attempt == 1:
+            raise RuntimeError("temporary failure")
+        return "ok"
+
+    result = retry_module.run_with_retry(
+        "unit retry",
+        retry_cnt=2,
+        timeout_increment=90,
+        operation=operation,
+    )
+
+    output = capsys.readouterr().out
+    assert result == "ok"
+    assert attempts == [1, 2]
+    assert sleeps == [90]
+    assert "[unit retry] [retry] Retrying in 1 minute 30 seconds" in output
+
+
 def test_operation_runner_retries_with_fresh_connections_and_gp_rollback() -> None:
     first_connection = FakeConnection("first")
     second_connection = FakeConnection("second")

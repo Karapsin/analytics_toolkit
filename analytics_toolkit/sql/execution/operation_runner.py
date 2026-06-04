@@ -29,7 +29,7 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
             finally:
                 elapsed_seconds = time.perf_counter() - started_at
                 time_print(
-                    f"Finished SQL function in {elapsed_seconds:.3f}s",
+                    f"Finished SQL function in {_format_duration(elapsed_seconds)}",
                     operation=function.__name__,
                     phase="timing",
                 )
@@ -82,7 +82,8 @@ def tracked_sql_operation(
         status = operation_metadata.operation_status or "finished"
         message_prefix = "Failed SQL" if status == "failed" else "Finished SQL"
         time_print(
-            f"{message_prefix} in {operation_metadata.elapsed_seconds:.3f}s",
+            f"{message_prefix} in "
+            f"{_format_duration(operation_metadata.elapsed_seconds)}",
             operation=operation_name,
             connection=alias,
             backend=backend,
@@ -97,6 +98,33 @@ def tracked_sql_operation(
                 backend=backend,
                 phase=phase,
             )
+
+
+def _format_duration(seconds: float) -> str:
+    normalized_seconds = max(float(seconds), 0.0)
+    if normalized_seconds < 1:
+        rounded = round(normalized_seconds, 3)
+        if rounded <= 0:
+            return "0 seconds"
+        if rounded >= 1:
+            return "1 second"
+        value = f"{rounded:.3f}".rstrip("0").rstrip(".")
+        return f"{value} seconds"
+
+    remaining_seconds = int(normalized_seconds + 0.5)
+    units = (
+        ("day", 24 * 60 * 60),
+        ("hour", 60 * 60),
+        ("minute", 60),
+        ("second", 1),
+    )
+    parts: list[str] = []
+    for unit_name, unit_seconds in units:
+        value, remaining_seconds = divmod(remaining_seconds, unit_seconds)
+        if value:
+            suffix = "" if value == 1 else "s"
+            parts.append(f"{value} {unit_name}{suffix}")
+    return " ".join(parts) if parts else "0 seconds"
 
 
 def merge_operation_metadata(
