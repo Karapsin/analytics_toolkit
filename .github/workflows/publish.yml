@@ -44,6 +44,29 @@ jobs:
           name: distributions
           path: dist/
 
+  publish-testpypi:
+    name: publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v6
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
   publish:
     name: publish to PyPI
     needs: build

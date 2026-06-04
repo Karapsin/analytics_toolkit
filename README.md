@@ -21,6 +21,26 @@ From GitHub:
 pip install git+https://github.com/Karapsin/analytics_toolkit.git
 ```
 
+## Release
+
+PyPI publishing uses GitHub Actions trusted publishing. Before each release,
+run the full local tox matrix from `AGENTS.md`, update the changelog, and verify
+the package build:
+
+```bash
+python -m pip install --upgrade build twine
+python -m build
+python -m twine check dist/*
+```
+
+Run the `publish` workflow manually to publish the current version to TestPyPI.
+After the TestPyPI install check passes, create and publish a GitHub release
+tagged as `v<pyproject.toml version>`; the release event publishes to PyPI.
+The PyPI trusted publisher uses repository `Karapsin/analytics_toolkit`,
+workflow `.github/workflows/publish.yml`, and environment `pypi`. The TestPyPI
+trusted publisher uses the same repository and workflow with environment
+`testpypi`.
+
 ## Quick Start
 
 ```python

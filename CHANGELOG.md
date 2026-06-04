@@ -2,6 +2,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.12 - 2026-06-04
+
+- Added MIT license metadata for PyPI packaging.
+- Added a TestPyPI trusted-publishing path to the publish workflow.
+- Documented the PyPI/TestPyPI release checklist and trusted publisher setup.
+
 ## 1.3.6.1 - 2026-06-03
 
 - Added regression coverage that keeps new `time_print` keyword-only options
