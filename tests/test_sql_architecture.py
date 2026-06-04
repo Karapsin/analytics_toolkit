@@ -48,9 +48,12 @@ def test_removed_sql_deep_module_files_stay_removed() -> None:
         SQL_ROOT / "types.py",
         SQL_ROOT / "ddl" / "create_sql_table.py",
         SQL_ROOT / "dml" / "table" / "table_ops.py",
+        SQL_ROOT / "orchestration" / "async_api.py",
     ]
 
-    assert [path.relative_to(PROJECT_ROOT) for path in removed_paths if path.exists()] == []
+    assert [
+        path.relative_to(PROJECT_ROOT) for path in removed_paths if path.exists()
+    ] == []
 
 
 def test_sql_docs_state_facade_import_policy() -> None:
@@ -83,6 +86,8 @@ def test_sql_source_does_not_restore_removed_aggregation_imports() -> None:
         "from ..dml.table.table_ops",
         "from .dml.table.table_ops",
         "from .table_ops",
+        "orchestration.async_api",
+        "from .async_api",
     ]
     offenders: list[str] = []
     for path in SQL_ROOT.rglob("*.py"):

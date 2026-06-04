@@ -4,7 +4,8 @@ from .ddl.api import (
     create_sql_table,
 )
 from .ddl.extract_ddl import extract_ddl
-from .orchestration.async_api import async_sql, parallel_sql
+from .orchestration.async_sql import async_sql
+from .orchestration.parallel_sql import parallel_sql
 from .core.capabilities import (
     BACKEND_CAPABILITIES,
     format_support_matrix,

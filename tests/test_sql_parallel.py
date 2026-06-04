@@ -8,7 +8,9 @@ from typing import Any
 import pandas as pd
 import pytest
 
-async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_api")
+parallel_module = importlib.import_module(
+    "analytics_toolkit.sql.orchestration.parallel_sql"
+)
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -17,7 +19,7 @@ def named_tasks(tasks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def test_parallel_sql_is_exported() -> None:
-    assert sql_module.parallel_sql is async_module.parallel_sql
+    assert sql_module.parallel_sql is parallel_module.parallel_sql
 
 
 def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
@@ -37,21 +39,21 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
 
         return fake_operation
 
-    monkeypatch.setattr(async_module, "read_sql", record("read", read_result))
-    monkeypatch.setattr(async_module, "execute_sql", record("execute", None))
+    monkeypatch.setattr(parallel_module, "read_sql", record("read", read_result))
+    monkeypatch.setattr(parallel_module, "execute_sql", record("execute", None))
     monkeypatch.setattr(
-        async_module,
+        parallel_module,
         "execute_read",
         record("execute_read", execute_read_result),
     )
-    monkeypatch.setattr(async_module, "load_df", record("load_df", load_result))
+    monkeypatch.setattr(parallel_module, "load_df", record("load_df", load_result))
     monkeypatch.setattr(
-        async_module,
+        parallel_module,
         "transfer_table",
         record("transfer", transfer_result),
     )
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 "read_users": {
@@ -156,12 +158,12 @@ def test_parallel_sql_start_comment_prefixes_sql_fields(
     def fake_transfer_table(**kwargs: Any) -> str:
         return kwargs["from_sql"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
-    monkeypatch.setattr(async_module, "execute_read", fake_execute_read)
-    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
+    monkeypatch.setattr(parallel_module, "execute_read", fake_execute_read)
+    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 "read_users": {
@@ -209,9 +211,9 @@ def test_parallel_sql_uses_generated_names_for_unnamed_task_sequence(
     def fake_execute_sql(**kwargs: Any) -> str:
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         [
             {
                 "type": "execute",
@@ -251,9 +253,9 @@ def test_parallel_sql_concurrency_limits_active_top_level_work(
             active_tasks -= 1
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 f"read_{index}": {
@@ -288,9 +290,9 @@ def test_parallel_sql_soft_cap_limits_actual_worker_execution(
             active_workers -= 1
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 f"read_{index}": {
@@ -324,7 +326,7 @@ def test_parallel_sql_soft_cap_limits_pipeline_step_execution() -> None:
             active_steps -= 1
         return context.task_name
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 f"pipeline_{index}": {
@@ -361,7 +363,7 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
         return kwargs["query"]
 
     def nested_batch(context: Any) -> dict[str, Any]:
-        return async_module.parallel_sql(
+        return parallel_module.parallel_sql(
             named_tasks(
                 {
                     f"read_{index}": {
@@ -376,9 +378,9 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
             progress=False,
         )
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         [
             {
                 "name": "pipeline",
@@ -397,7 +399,7 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
 
 def test_parallel_sql_hard_cap_rejects_excessive_nested_concurrency() -> None:
     def nested_batch(context: Any) -> dict[str, Any]:
-        return async_module.parallel_sql(
+        return parallel_module.parallel_sql(
             [
                 {
                     "type": "read",
@@ -416,7 +418,7 @@ def test_parallel_sql_hard_cap_rejects_excessive_nested_concurrency() -> None:
             "soft_concurrency_cap"
         ),
     ):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [
                 {
                     "name": "pipeline",
@@ -456,7 +458,7 @@ def test_parallel_sql_pipeline_runs_steps_sequentially_and_returns_last_result()
         )
         return f"{context.last_result}:second"
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         [
             {
                 "name": "pipeline",
@@ -485,7 +487,7 @@ def test_parallel_sql_rejects_async_pipeline_steps(step_factory: str) -> None:
     step = async_step if step_factory == "async_function" else coroutine_step
 
     with pytest.raises(TypeError, match="use async_sql for async pipeline steps"):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [
                 {
                     "name": "pipeline",
@@ -505,10 +507,10 @@ def test_parallel_sql_fail_fast_raises_first_exception(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
 
     with pytest.raises(RuntimeError) as exc_info:
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             named_tasks(
                 {
                     "broken": {
@@ -540,10 +542,10 @@ def test_parallel_sql_fail_fast_true_prints_failed_transfer_sql(
     def fake_transfer_table(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
 
     with pytest.raises(RuntimeError) as exc_info:
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [
                 {
                     "name": "copy_table",
@@ -581,10 +583,10 @@ def test_parallel_sql_fail_fast_false_returns_exceptions(
     def fake_execute_sql(**kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         named_tasks(
             {
                 "ok": {
@@ -622,9 +624,9 @@ def test_parallel_sql_fail_fast_false_prints_failed_task_query(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         [
             {
                 "name": "broken",
@@ -662,10 +664,10 @@ def test_parallel_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> N
     def fake_execute_sql(**kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(async_module, "tqdm", FakeTqdm)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    monkeypatch.setattr(parallel_module, "tqdm", FakeTqdm)
+    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
 
-    result = async_module.parallel_sql(
+    result = parallel_module.parallel_sql(
         [
             {
                 "type": "execute",
@@ -714,13 +716,13 @@ def test_parallel_sql_validates_task_input(
     expected_exception: type[Exception],
 ) -> None:
     with pytest.raises(expected_exception):
-        async_module.parallel_sql(tasks)
+        parallel_module.parallel_sql(tasks)
 
 
 @pytest.mark.parametrize("concurrency", [0, -1, True, 1.5])
 def test_parallel_sql_validates_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="concurrency"):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [{"type": "read", "connection_type": "gp", "query": "select 1"}],
             concurrency=concurrency,
         )
@@ -731,7 +733,7 @@ def test_parallel_sql_validates_soft_concurrency_cap(
     soft_concurrency_cap: Any,
 ) -> None:
     with pytest.raises(ValueError, match="soft_concurrency_cap"):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [{"type": "read", "connection_type": "gp", "query": "select 1"}],
             soft_concurrency_cap=soft_concurrency_cap,
         )
@@ -742,7 +744,7 @@ def test_parallel_sql_validates_hard_concurrency_cap(
     hard_concurrency_cap: Any,
 ) -> None:
     with pytest.raises(ValueError, match="hard_concurrency_cap"):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [{"type": "read", "connection_type": "gp", "query": "select 1"}],
             hard_concurrency_cap=hard_concurrency_cap,
         )
@@ -751,7 +753,7 @@ def test_parallel_sql_validates_hard_concurrency_cap(
 @pytest.mark.parametrize("progress", [None, 0, 1, "yes"])
 def test_parallel_sql_validates_progress(progress: Any) -> None:
     with pytest.raises(ValueError, match="progress"):
-        async_module.parallel_sql(
+        parallel_module.parallel_sql(
             [{"type": "read", "connection_type": "gp", "query": "select 1"}],
             progress=progress,
         )

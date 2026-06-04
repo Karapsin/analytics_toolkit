@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_api")
+async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
