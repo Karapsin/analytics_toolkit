@@ -34,13 +34,18 @@ PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_general_read_fil
 PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py
 ```
 
-CI matrix checks:
+CI matrix checks, required before every commit:
 
 ```bash
+PYTHON38="$(pyenv prefix 3.8.18)/bin/python" \
+PYTHON39="$(pyenv prefix 3.9.25)/bin/python" \
+PYTHON310="$(pyenv prefix 3.10.20)/bin/python" \
+PYTHON311="$(pyenv prefix 3.11.15)/bin/python" \
+PYTHON312="$(pyenv prefix 3.12.13)/bin/python" \
 tox -e py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest
 ```
 
-Run the CI matrix locally before committing whenever the interpreters are available. Do not silently skip missing interpreters; install them or explicitly report the blocker before committing.
+Run the full CI matrix locally before every commit. Do not commit unless all matrix environments pass; if an interpreter or dependency is missing, install it or explicitly report the blocker instead of skipping that environment.
 
 Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
 
@@ -50,7 +55,7 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
 - After every repository change, bump the package version in `pyproject.toml`. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing public behavior, update the relevant module README and focused tests.
-- At the end of every change, run the full test suite with `PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q`, even if focused tests were run earlier. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
+- At the end of every change, run the full local CI matrix from Development Commands before committing, even if focused tests were run earlier. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - Once a coherent batch of changes is done, run `git add . && git commit -m '...'`, replacing `...` with a short description of the changes.
