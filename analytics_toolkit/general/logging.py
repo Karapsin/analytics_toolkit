@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 import sys
 from typing import TextIO
 
@@ -15,7 +16,10 @@ _TIME_PRINT_LEVELS = {
     "warning": 30,
     "error": 40,
 }
+_TIME_PRINT_SINKS = {"print", "logging"}
+_TIME_PRINT_LOGGER_NAME = "analytics_toolkit"
 _time_print_level = "info"
+_time_print_sink = "print"
 _time_print_clock: Callable[[], datetime] = datetime.now
 
 
@@ -61,10 +65,19 @@ def time_print(
         backend=_normalize_context_part(backend) or context.backend,
         phase=_normalize_context_part(phase) or context.phase,
     )
-    print(
-        _format_time_print_message(formatted_time, resolved_context, message),
-        file=_resolve_stream(stream),
+    formatted_message = _format_time_print_message(
+        formatted_time,
+        resolved_context,
+        message,
     )
+    if _time_print_sink == "logging" and stream is None:
+        logging.getLogger(_TIME_PRINT_LOGGER_NAME).log(
+            _TIME_PRINT_LEVELS[normalized_level],
+            formatted_message,
+        )
+        return
+
+    print(formatted_message, file=_resolve_stream(stream))
 
 
 def set_time_print_level(level: str) -> None:
@@ -78,6 +91,19 @@ def get_time_print_level() -> str:
     """Return the current minimum ``time_print`` level."""
 
     return _time_print_level
+
+
+def set_time_print_sink(sink: str) -> None:
+    """Set where ``time_print`` sends messages: ``print`` or ``logging``."""
+
+    global _time_print_sink
+    _time_print_sink = _normalize_time_print_sink(sink)
+
+
+def get_time_print_sink() -> str:
+    """Return the current ``time_print`` sink."""
+
+    return _time_print_sink
 
 
 def set_time_print_clock(clock: Callable[[], datetime] | None) -> None:
@@ -124,6 +150,16 @@ def _normalize_time_print_level(level: str) -> str:
     if normalized not in _TIME_PRINT_LEVELS:
         allowed = "', '".join(_TIME_PRINT_LEVELS)
         raise ValueError(f"level must be one of: '{allowed}'.")
+    return normalized
+
+
+def _normalize_time_print_sink(sink: str) -> str:
+    if not isinstance(sink, str):
+        raise TypeError("sink must be a string.")
+    normalized = sink.strip().lower()
+    if normalized not in _TIME_PRINT_SINKS:
+        allowed = "', '".join(sorted(_TIME_PRINT_SINKS))
+        raise ValueError(f"sink must be one of: '{allowed}'.")
     return normalized
 
 

@@ -12,15 +12,15 @@ SQL utilities for reading, executing, loading, and transferring data across:
 from analytics_toolkit import sql
 
 sql.read(..., retry_cnt=5, timeout_increment=5)
-sql.execute(..., retry_cnt=5, timeout_increment=5, progress=True)
-sql.execute_read(..., retry_cnt=5, timeout_increment=5, progress=True)
+sql.execute(..., retry_cnt=5, timeout_increment=5, progress=False)
+sql.execute_read(..., retry_cnt=5, timeout_increment=5, progress=False)
 sql.async_sql(
     ...,
     concurrency=5,
     fail_fast=True,
     soft_concurrency_cap=None,
     hard_concurrency_cap=10,
-    progress=True,
+    progress=False,
 )
 sql.parallel_sql(
     ...,
@@ -28,7 +28,7 @@ sql.parallel_sql(
     fail_fast=True,
     soft_concurrency_cap=None,
     hard_concurrency_cap=10,
-    progress=True,
+    progress=False,
 )
 sql.gp_cancel_all_running_queries(...)
 sql.gp_vacuum(...)
@@ -40,16 +40,18 @@ sql.create_table_from_sql(...)
 sql.gp_create_many_partitions(...)
 sql.drop_many_partitions(...)
 sql.table_info(...)
-sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=True)
+sql.load_df(..., retry_cnt=5, timeout_increment=5, progress=False)
 sql.transfer(
     ...,
     batch_size=100_000,
     adaptive_batch_size=True,
     target_batch_memory_mb=None,
-    progress=True,
+    progress=False,
 )
 sql.ch_full_table_move(...)
 sql.format_plan(...)
+sql.airflow_query_label(...)
+sql.set_time_print_sink("logging")
 sql.get_sql_connection(...)
 ```
 
@@ -88,6 +90,8 @@ sql.get_sql_connection(...)
 - `ch_full_table_move`: recreate a ClickHouse distributed/shard table pair
   from source DDL, copy all rows, and drop the source pair
 - `format_plan`: render a compact multi-line summary for a `SqlPlan`
+- `airflow_query_label`: build a sanitized SQL query label from Airflow context
+  fields
 - `get_sql_connection`: open a backend connection directly
 - `with_sql_connection`: decorate a function with managed connection lifecycle
 
@@ -102,10 +106,11 @@ errors, invalid grouping, missing tables/columns/functions/schemas, and
 PostgreSQL/Greenplum undefined objects or unsupported feature errors are not
 retried.
 
-`load_df` and `transfer_table` show `tqdm` row progress bars by default during
-data loading. Pass `progress=False` to silence those bars. `dry_run=True` and
-`return_sql=True` return plans without creating progress bars. Transfer row
-progress is indeterminate by default; pass `estimate_total_rows=True` to use a
+`load_df` and `transfer_table` can show `tqdm` row progress bars during data
+loading. Progress bars are disabled by default; pass `progress=True` to enable
+them. `dry_run=True` and `return_sql=True` return plans without creating
+progress bars. Transfer row progress is indeterminate by default; pass
+`estimate_total_rows=True` to use a
 best-effort backend planner estimate as the progress total. `transfer_table`
 formats progress row counts with underscore digit grouping, for example
 `1_722_355row` or `1_722_355/2_000_000`.
@@ -116,7 +121,7 @@ only after the previous driver call returns. `execute_read` executes every
 statement except the last, then reads the last statement into a pandas dataframe
 on the same connection. Greenplum keeps its historical default of executing the
 setup SQL as one statement set unless `gp_break_query=True` is passed. Pass
-`progress=False` to silence multi-statement progress bars.
+`progress=True` to enable multi-statement progress bars.
 
 `show_tables(db_key, schema=None, conditions=None, table_name=None,
 ch_distributed_table_stats=False)` returns a pandas dataframe with exactly
@@ -159,10 +164,10 @@ first raised task exception is raised and pending tasks are cancelled;
 already-running sync work can continue until that function exits. Successful
 task results are preserved, except `None` results are reported as `"success"`.
 With `fail_fast=False`, failed tasks are reported under their task names as the
-error text. A `tqdm` progress bar is shown by default; pass `progress=False` to
-disable it. Built-in `execute`, `execute_read`, `load_df`, and `transfer` tasks
-run with their inner progress bars suppressed inside batch helpers, so the batch
-task bar is the only progress bar shown.
+error text. A `tqdm` progress bar is disabled by default; pass `progress=True`
+to enable a batch task bar. Built-in `execute`, `execute_read`, `load_df`, and
+`transfer` tasks run with their inner progress bars suppressed inside batch
+helpers, so the batch task bar is the only progress bar shown.
 
 SQL query text is not printed by default. Pass `print_queries=True` to
 `read_sql`, `execute_sql`, `execute_read`, or `gp_cancel_all_running_queries`
@@ -174,6 +179,9 @@ operations also log the first non-empty line of the representative SQL after the
 operation-finished status line. Public functions exported from
 `analytics_toolkit.sql` print a final `[timing]` function duration line,
 including dry-run and `return_sql` paths.
+Use `sql.set_time_print_sink("logging")` to route those messages through the
+`analytics_toolkit` Python logger, which is usually a better fit for Airflow
+task logs.
 When a built-in SQL task fails inside `async_sql` or `parallel_sql`, the batch
 helper prints the failed task name and its SQL field (`query` or `from_sql`) to
 make concurrent task failures easier to diagnose.
@@ -233,7 +241,6 @@ result = sql.async_sql(
     tasks,
     concurrency=3,
     start_comment="/* nightly async batch */",
-    progress=True,
 )
 
 users_df = result["users"]

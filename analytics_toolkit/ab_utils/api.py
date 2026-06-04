@@ -33,7 +33,7 @@ def compute_test_metrics(
     multiple_comparisons_adjustment_resamples: int = 2000,
     bootstrap_random_state: int | None = 0,
     bootstrap_n_jobs: int = 1,
-    bootstrap_progress: bool = True,
+    bootstrap_progress: bool = False,
     pre_exp_metrics_df: pd.DataFrame | None = None,
     outliers_quantile: float = 0.999,
     outliers_policy: str = "truncate",

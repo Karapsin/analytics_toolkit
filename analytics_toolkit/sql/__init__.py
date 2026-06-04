@@ -18,6 +18,7 @@ from .execution.plans import (
     SqlStatement,
     format_plan,
 )
+from .execution.labels import airflow_query_label
 from .metadata.show_tables import show_tables
 from .metadata.table_info import SqlTableInfo, table_info
 from .core.types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
@@ -44,7 +45,11 @@ from .dml.table import (
     gp_create_many_partitions,
     gp_vacuum,
 )
-from analytics_toolkit.general import time_print
+from analytics_toolkit.general import (
+    get_time_print_sink,
+    set_time_print_sink,
+    time_print,
+)
 from .dml.transfer.flow.api import transfer_table, transfer_table as transfer
 
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
@@ -127,6 +132,8 @@ __all__ = [
     "transfer",
     "transfer_table",
     "support_matrix_rows",
+    "get_time_print_sink",
+    "set_time_print_sink",
     "use_airflow_connections",
     "validate_connections",
     "with_sql_connection",

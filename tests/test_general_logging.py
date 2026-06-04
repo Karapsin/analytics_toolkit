@@ -10,8 +10,10 @@ import analytics_toolkit.general as general_module
 import analytics_toolkit.sql as sql_module
 from analytics_toolkit.general import (
     get_time_print_level,
+    get_time_print_sink,
     set_time_print_clock,
     set_time_print_level,
+    set_time_print_sink,
     time_print,
     time_print_context,
 )
@@ -23,11 +25,13 @@ FIXED_TIME = datetime(2026, 6, 3, 18, 0, 0)
 @pytest.fixture(autouse=True)
 def reset_time_print_state() -> None:
     set_time_print_level("info")
+    set_time_print_sink("print")
     set_time_print_clock(lambda: FIXED_TIME)
     try:
         yield
     finally:
         set_time_print_level("info")
+        set_time_print_sink("print")
         set_time_print_clock(None)
 
 
@@ -97,6 +101,65 @@ def test_time_print_validates_levels() -> None:
 
     with pytest.raises(TypeError, match="level must be a string"):
         time_print("message", level=1)  # type: ignore[arg-type]
+
+
+def test_time_print_can_emit_through_logging(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_time_print_sink("logging")
+
+    with caplog.at_level("INFO", logger="analytics_toolkit"):
+        time_print(
+            "loaded rows",
+            operation="load_df",
+            connection="airflow_ch",
+            backend="ch",
+            phase="insert",
+        )
+
+    assert capsys.readouterr().out == ""
+    assert [
+        (record.name, record.levelname, record.getMessage())
+        for record in caplog.records
+    ] == [
+        (
+            "analytics_toolkit",
+            "INFO",
+            (
+                "[2026-06-03 18:00:00] [load_df] [airflow_ch/ch] "
+                "[insert] loaded rows"
+            ),
+        )
+    ]
+    assert get_time_print_sink() == "logging"
+
+
+def test_time_print_logging_sink_respects_levels(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    set_time_print_sink("logging")
+    set_time_print_level("warning")
+
+    with caplog.at_level("DEBUG", logger="analytics_toolkit"):
+        time_print("debug message", level="debug")
+        time_print("info message", level="info")
+        time_print("warning message", level="warning")
+        time_print("error message", level="error")
+
+    assert [record.levelname for record in caplog.records] == ["WARNING", "ERROR"]
+    assert [record.getMessage().rsplit("] ", 1)[-1] for record in caplog.records] == [
+        "warning message",
+        "error message",
+    ]
+
+
+def test_time_print_validates_sink() -> None:
+    with pytest.raises(ValueError, match="sink must be one of"):
+        set_time_print_sink("airflow")
+
+    with pytest.raises(TypeError, match="sink must be a string"):
+        set_time_print_sink(1)  # type: ignore[arg-type]
 
 
 def test_time_print_enabled_flag_suppresses_output(
@@ -184,6 +247,10 @@ def test_time_print_public_reexports_are_preserved() -> None:
     assert general_module.time_print is time_print
     assert general_module.set_time_print_level is set_time_print_level
     assert general_module.get_time_print_level is get_time_print_level
+    assert general_module.set_time_print_sink is set_time_print_sink
+    assert general_module.get_time_print_sink is get_time_print_sink
     assert general_module.set_time_print_clock is set_time_print_clock
     assert general_module.time_print_context is time_print_context
     assert sql_module.time_print is time_print
+    assert sql_module.set_time_print_sink is set_time_print_sink
+    assert sql_module.get_time_print_sink is get_time_print_sink

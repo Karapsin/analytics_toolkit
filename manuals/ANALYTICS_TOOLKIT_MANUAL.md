@@ -643,7 +643,7 @@ Typical import:
 from analytics_toolkit import ab_utils as ab
 ```
 
-### `ab.compute_test_metrics(df, group="group_name", control="control", user_id="user_id", mde_alpha=0.05, mde_power=0.80, ratio_metrics=None, test_vs_test=True, multiple_comparisons_adjustment=False, multiple_comparisons_adjustment_resamples=2000, bootstrap_random_state=0, bootstrap_n_jobs=1, bootstrap_progress=True, pre_exp_metrics_df=None)`
+### `ab.compute_test_metrics(df, group="group_name", control="control", user_id="user_id", mde_alpha=0.05, mde_power=0.80, ratio_metrics=None, test_vs_test=True, multiple_comparisons_adjustment=False, multiple_comparisons_adjustment_resamples=2000, bootstrap_random_state=0, bootstrap_n_jobs=1, bootstrap_progress=False, pre_exp_metrics_df=None)`
 
 Computes A/B test metrics and statistical comparisons.
 
@@ -661,7 +661,7 @@ Inputs:
 - `multiple_comparisons_adjustment_resamples`: bootstrap iterations
 - `bootstrap_random_state`: random seed or `None`
 - `bootstrap_n_jobs`: parallel workers for bootstrap
-- `bootstrap_progress`: show bootstrap progress bar
+- `bootstrap_progress`: show bootstrap progress bar when explicitly set to `True`
 - `pre_exp_metrics_df`: optional pre-experiment dataframe for CUPED p-values
 
 Returns:

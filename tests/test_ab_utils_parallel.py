@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import threading
 import time
 from typing import Any
@@ -27,6 +28,21 @@ def test_parallel_compute_metrics_from_sql_is_exported() -> None:
         metrics_module.parallel_compute_metrics_from_sql
         is parallel_module.parallel_compute_metrics_from_sql
     )
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "parallel_compute_metrics",
+        "parallel_compute_metrics_from_sql",
+    ],
+)
+def test_parallel_compute_metrics_progress_defaults_to_false(
+    function_name: str,
+) -> None:
+    signature = inspect.signature(getattr(parallel_module, function_name))
+
+    assert signature.parameters["progress"].default is False
 
 
 def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
@@ -308,7 +324,8 @@ def test_parallel_compute_metrics_updates_progress_bar(
         {
             "first": {"df": pd.DataFrame(), "metric_name": "first"},
             "second": {"df": pd.DataFrame(), "metric_name": "second"},
-        }
+        },
+        progress=True,
     )
 
     assert len(progress_bars) == 1

@@ -537,6 +537,7 @@ def test_async_sql_uses_generated_names_for_unnamed_task_sequence(
             },
         ],
         concurrency=1,
+        progress=True,
     )
 
     assert result == {
@@ -616,6 +617,7 @@ def test_async_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> None
             },
         ],
         concurrency=1,
+        progress=True,
     )
 
     assert result == {

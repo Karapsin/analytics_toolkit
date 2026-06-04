@@ -15,6 +15,55 @@ The intended Airflow pattern is:
 - keep only routing metadata and optional connector overrides in `.connections`;
 - call `sql.read`, `sql.execute`, `sql.load_df`, and `sql.transfer` directly from
   DAG tasks.
+- leave progress bars disabled unless a local interactive run explicitly needs
+  them.
+
+## Airflow Logs And Query Labels
+
+By default, toolkit status messages keep using the historical `print` sink. In
+Airflow DAG projects, route them through Python logging so task logs preserve
+levels and logger names:
+
+```python
+from analytics_toolkit import sql
+
+sql.set_time_print_sink("logging")
+```
+
+Build SQL query labels from the Airflow task context so database query history
+can be tied back to a DAG run:
+
+```python
+from airflow.decorators import get_current_context, task
+from analytics_toolkit import sql
+
+
+@task
+def refresh_table() -> None:
+    context = get_current_context()
+    query_label = sql.airflow_query_label(context, operation="refresh_table")
+    sql.execute(
+        "airflow_trino",
+        "insert into iceberg.sandbox.target select * from iceberg.sandbox.source",
+        query_label=query_label,
+    )
+```
+
+The helper also accepts explicit fields when a task already has them:
+
+```python
+query_label = sql.airflow_query_label(
+    dag_id=dag_id,
+    task_id=task_id,
+    run_id=run_id,
+    try_number=try_number,
+    operation="refresh_table",
+)
+```
+
+Importing `analytics_toolkit.sql` is DAG-parse safe: it does not read
+`.connections`, import Airflow hooks, resolve Airflow Variables, or open database
+clients until a runtime helper resolves a connection or opens a client.
 
 ## Airflow `.connections`
 

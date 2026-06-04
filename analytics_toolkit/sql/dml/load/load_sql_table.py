@@ -6,7 +6,6 @@ from decimal import Decimal
 from itertools import islice
 
 import pandas as pd
-from psycopg2.extras import execute_values
 
 from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, get_backend_adapter
 from ...connection.config import (
@@ -20,6 +19,21 @@ from analytics_toolkit.general import time_print
 
 class AmbiguousTableLoadError(Exception):
     pass
+
+
+def execute_values(
+    cursor: Any,
+    sql: str,
+    rows: Sequence[Sequence[Any]],
+    page_size: int,
+) -> Any:
+    try:
+        from psycopg2.extras import execute_values as psycopg2_execute_values
+    except ImportError as exc:
+        raise ImportError(
+            "The 'psycopg2' package is required for Greenplum batch inserts."
+        ) from exc
+    return psycopg2_execute_values(cursor, sql, rows, page_size=page_size)
 
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000

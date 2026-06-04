@@ -49,7 +49,7 @@ def execute_read(
     timeout_increment: int | float = 5,
     query_label: str | None = None,
     return_metadata: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> pd.DataFrame | SqlOperationResult:
     options = _build_execute_read_options(
         connection_type=connection_type,
@@ -174,7 +174,7 @@ def _execute_read_trino(
     conn: DbApiConnection,
     statements: list[str],
     print_queries: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
@@ -205,7 +205,7 @@ def _execute_read_gp(
     print_queries: bool = False,
     gp_break_query: bool = False,
     gp_commit_each_statement: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
@@ -250,7 +250,7 @@ def _execute_read_ch(
     client: ClickHouseClient,
     statements: list[str],
     print_queries: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> pd.DataFrame:
     time_print(
         f"Executing {max(len(statements) - 1, 0)} setup statement(s) "

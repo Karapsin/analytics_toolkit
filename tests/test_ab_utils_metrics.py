@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import math
 import warnings
 
@@ -33,6 +34,12 @@ from analytics_toolkit.ab_utils.metrics import (
     _get_numeric_metric_series,
     _normalize_ratio_metrics,
 )
+
+
+def test_compute_test_metrics_bootstrap_progress_defaults_to_false() -> None:
+    signature = inspect.signature(compute_test_metrics)
+
+    assert signature.parameters["bootstrap_progress"].default is False
 
 
 def _build_sample_metrics_df() -> pd.DataFrame:

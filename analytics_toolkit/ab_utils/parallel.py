@@ -54,7 +54,7 @@ def parallel_compute_metrics(
     fail_fast: bool = True,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
-    progress: bool = True,
+    progress: bool = False,
 ) -> dict[str, pd.DataFrame | str]:
     """Run independent ``compute_test_metrics`` tasks concurrently."""
     task_defs = _validate_tasks(tasks)
@@ -126,7 +126,7 @@ def parallel_compute_metrics_from_sql(
     start_comment: str | None = None,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
-    progress: bool = True,
+    progress: bool = False,
 ) -> dict[str, pd.DataFrame | str]:
     """Load SQL-backed task dataframes, then run ``parallel_compute_metrics``."""
     _validate_start_comment("start_comment", start_comment)

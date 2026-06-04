@@ -1,7 +1,9 @@
 from .logging import (
     get_time_print_level,
+    get_time_print_sink,
     set_time_print_clock,
     set_time_print_level,
+    set_time_print_sink,
     time_print,
     time_print_context,
 )
@@ -16,10 +18,12 @@ read_file.inspect = _read_file_module.inspect
 
 __all__ = [
     "get_time_print_level",
+    "get_time_print_sink",
     "here",
     "read_file",
     "set_time_print_clock",
     "set_time_print_level",
+    "set_time_print_sink",
     "time_print",
     "time_print_context",
     "write_file",

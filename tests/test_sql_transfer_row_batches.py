@@ -151,9 +151,24 @@ def make_progress_options(**overrides: Any) -> Any:
         "source_sql": "select id from source_table",
         "target_table": "sandbox.target",
         "batch_size": 2,
+        "progress": True,
     }
     values.update(overrides)
     return models_module.TransferOptions(**values)
+
+
+def test_transfer_options_progress_defaults_to_false() -> None:
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+    )
+
+    assert options.progress is False
 
 
 def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> None:
@@ -491,6 +506,7 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
         min_batch_size=1,
         max_batch_size=4,
         target_batch_seconds=10.0,
+        progress=True,
     )
     progress_bars: list[Any] = []
 
@@ -645,6 +661,7 @@ def test_load_stage_batches_estimated_total_sets_progress_bar_total(
         max_batch_size=4,
         target_batch_seconds=10.0,
         estimate_total_rows=True,
+        progress=True,
     )
     progress_bars: list[Any] = []
 
@@ -727,6 +744,7 @@ def test_load_stage_batches_estimator_failure_keeps_unknown_total(
         max_batch_size=4,
         target_batch_seconds=10.0,
         estimate_total_rows=True,
+        progress=True,
     )
     progress_bars: list[Any] = []
 
@@ -982,6 +1000,7 @@ def test_estimate_source_rows_uses_backend_planner_estimates(
         source_sql="select id from source_table",
         target_table="sandbox.target",
         estimate_total_rows=True,
+        progress=True,
     )
 
     estimated_total = estimate_module.estimate_source_rows(options, connection)

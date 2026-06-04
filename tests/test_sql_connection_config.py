@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import os
+import subprocess
 import sys
 import types
 from collections.abc import Callable
@@ -25,6 +27,48 @@ load_sql_table_module = importlib.import_module(
 )
 
 _MISSING = object()
+
+
+def test_sql_facade_import_is_airflow_parse_safe(tmp_path: Path) -> None:
+    script = r"""
+import builtins
+import importlib
+
+blocked_roots = {"airflow", "clickhouse_connect", "psycopg2", "trino"}
+real_import = builtins.__import__
+
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split(".", 1)[0]
+    if level == 0 and root in blocked_roots:
+        raise AssertionError(f"unexpected runtime import: {name}")
+    return real_import(name, globals, locals, fromlist, level)
+
+
+builtins.__import__ = guarded_import
+sql = importlib.import_module("analytics_toolkit.sql")
+assert sql.read is sql.read_sql
+assert sql.execute is sql.execute_sql
+assert callable(sql.airflow_query_label)
+"""
+    env = dict(os.environ)
+    repo_root = Path(__file__).resolve().parents[1]
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}"
+        if env.get("PYTHONPATH")
+        else str(repo_root)
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 class FakeAirflowConnection:

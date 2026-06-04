@@ -165,7 +165,7 @@ class TransferOptions:
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     query_label: str | None = None
-    progress: bool = True
+    progress: bool = False
     estimate_total_rows: bool = False
 
 

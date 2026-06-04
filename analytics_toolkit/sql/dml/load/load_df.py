@@ -97,7 +97,7 @@ def load_df(
     return_metadata: bool = False,
     query_label: str | None = None,
     gp_insert_chunk_size: int | None = None,
-    progress: bool = True,
+    progress: bool = False,
     table_schema: dict[str, str] | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):

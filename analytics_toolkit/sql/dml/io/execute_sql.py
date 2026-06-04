@@ -36,7 +36,7 @@ def _execute_trino(
     conn: DbApiConnection,
     query: str,
     print_queries: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> Any:
     cursor = conn.cursor()
     statements = _split_sql_statements(query)
@@ -69,7 +69,7 @@ def _execute_gp(
     print_queries: bool = False,
     gp_break_query: bool = False,
     gp_commit_each_statement: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> Any:
     statement: str | None = None
     try:
@@ -109,7 +109,7 @@ def _execute_ch(
     client: ClickHouseClient,
     query: str,
     print_queries: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> Any:
     statements = _split_sql_statements(query)
     time_print(f"Executing {len(statements)} statement(s)", backend="ch")
@@ -145,7 +145,7 @@ def execute_sql(
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
-    progress: bool = True,
+    progress: bool = False,
 ) -> Any:
     options = _build_execute_sql_options(
         connection_type=connection_type,
@@ -316,7 +316,7 @@ def _iterate_statements_with_progress(
     statements: list[str],
     connection_type: str,
     *,
-    progress: bool = True,
+    progress: bool = False,
 ) -> Iterator[str]:
     if len(statements) <= 1 or not progress:
         return iter(statements)

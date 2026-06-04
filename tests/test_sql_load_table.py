@@ -200,6 +200,7 @@ def test_load_df_updates_progress_bar(monkeypatch) -> None:
         batch,
         retry_cnt=1,
         timeout_increment=0,
+        progress=True,
     )
 
     assert inserted_rows == 3

@@ -681,6 +681,7 @@ def test_parallel_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> N
             },
         ],
         concurrency=1,
+        progress=True,
     )
 
     assert result == {

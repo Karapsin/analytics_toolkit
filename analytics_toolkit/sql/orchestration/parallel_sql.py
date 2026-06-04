@@ -65,7 +65,7 @@ def parallel_sql(
     start_comment: str | None = None,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
-    progress: bool = True,
+    progress: bool = False,
 ) -> dict[str, Any]:
     """Run independent SQL tasks concurrently using worker threads."""
     task_defs = _validate_tasks(tasks, start_comment=start_comment)

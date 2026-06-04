@@ -44,6 +44,7 @@ operation_runner_module = importlib.import_module(
 )
 query_timing_module = importlib.import_module("analytics_toolkit.sql.execution.query_timing")
 plans_module = importlib.import_module("analytics_toolkit.sql.execution.plans")
+labels_module = importlib.import_module("analytics_toolkit.sql.execution.labels")
 table_info_module = importlib.import_module("analytics_toolkit.sql.metadata.table_info")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 cli_module = importlib.import_module("analytics_toolkit.cli")
@@ -203,6 +204,23 @@ def test_public_mutating_sql_helpers_accept_dry_run_plan_options(
 
     assert "dry_run" in signature.parameters
     assert "return_sql" in signature.parameters
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "async_sql",
+        "execute_read",
+        "execute_sql",
+        "load_df",
+        "parallel_sql",
+        "transfer_table",
+    ],
+)
+def test_public_sql_progress_defaults_to_false(function_name: str) -> None:
+    signature = inspect.signature(getattr(sql_module, function_name))
+
+    assert signature.parameters["progress"].default is False
 
 
 def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:
@@ -595,6 +613,74 @@ def test_format_plan_rejects_invalid_max_sql_chars() -> None:
             plans_module.SqlPlan(operation="noop"),
             max_sql_chars=0,
         )
+
+
+def test_airflow_query_label_builds_deterministic_label() -> None:
+    label = labels_module.airflow_query_label(
+        dag_id="daily-dag",
+        task_id="refresh.table",
+        run_id="scheduled__2026-06-04T00:00:00+00:00",
+        try_number=2,
+        operation="load target",
+    )
+
+    assert label == (
+        "airflow dag=daily-dag task=refresh.table "
+        "run=scheduled__2026-06-04T00:00:00+00:00 try=2 op=load target"
+    )
+    assert sql_module.airflow_query_label is labels_module.airflow_query_label
+
+
+def test_airflow_query_label_reads_task_instance_context() -> None:
+    class TaskInstance:
+        dag_id = "dag_ctx"
+        task_id = "task_ctx"
+        run_id = "run_ctx"
+        try_number = 3
+
+    label = labels_module.airflow_query_label({"ti": TaskInstance()})
+
+    assert label == "airflow dag=dag_ctx task=task_ctx run=run_ctx try=3"
+
+
+def test_airflow_query_label_explicit_fields_override_context() -> None:
+    class TaskInstance:
+        dag_id = "context_dag"
+        task_id = "context_task"
+        run_id = "context_run"
+        try_number = 1
+
+    label = labels_module.airflow_query_label(
+        {"task_instance": TaskInstance()},
+        task_id="explicit_task",
+        operation="step;drop*/",
+    )
+
+    assert label == (
+        "airflow dag=context_dag task=explicit_task "
+        "run=context_run try=1 op=step_drop_/"
+    )
+
+
+def test_airflow_query_label_is_sanitized_and_length_limited() -> None:
+    label = labels_module.airflow_query_label(
+        dag_id="dag",
+        task_id="task",
+        run_id="run",
+        operation="x" * 500,
+    )
+
+    assert label is not None
+    assert len(label) == 200
+    assert ";" not in labels_module.airflow_query_label(operation="unsafe;label")
+    assert labels_module.apply_query_label("select 1", label).startswith(
+        "/* analytics_toolkit query_label=airflow dag=dag task=task run=run op="
+    )
+
+
+def test_airflow_query_label_validates_context_type() -> None:
+    with pytest.raises(TypeError, match="context"):
+        labels_module.airflow_query_label(["not", "a", "mapping"])  # type: ignore[arg-type]
 
 
 def test_load_df_dry_run_returns_ordered_labeled_plan() -> None:
