@@ -60,6 +60,17 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - Once a coherent batch of changes is done, run `git add . && git commit -m '...'`, replacing `...` with a short description of the changes.
 
+## PyPI Release Rules
+
+When the user asks to update, publish, or release the package on PyPI, run the complete publishing workflow unless they explicitly ask for a narrower action:
+
+- Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
+- Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
+- Publish the same production package/version to real PyPI through the GitHub release workflow.
+- Verify the real PyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
+- Check the GitHub Actions jobs after each publish. TestPyPI publishes must leave the real PyPI job skipped; real PyPI publishes must leave the TestPyPI job skipped.
+- If TestPyPI uses a temporary project name, keep any package-name change on a temporary branch only and do not merge that branch into `main`.
+
 ## SQL Module Contracts
 
 - Public SQL APIs accept connection keys/aliases from `.connections`; callers should not need to pass backend names separately.
