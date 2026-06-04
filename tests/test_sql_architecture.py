@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
-
-import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -33,35 +30,27 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         assert callable(getattr(sql, name))
 
 
-@pytest.mark.parametrize(
-    "module_name",
-    [
-        "analytics_toolkit.sql.async_api",
-        "analytics_toolkit.sql.capabilities",
-        "analytics_toolkit.sql.ch_lifecycle",
-        "analytics_toolkit.sql.ch_options",
-        "analytics_toolkit.sql.ch_wait",
-        "analytics_toolkit.sql.identifiers",
-        "analytics_toolkit.sql.labels",
-        "analytics_toolkit.sql.operation_runner",
-        "analytics_toolkit.sql.plan_steps",
-        "analytics_toolkit.sql.plans",
-        "analytics_toolkit.sql.query_timing",
-        "analytics_toolkit.sql.show_tables",
-        "analytics_toolkit.sql.table_info",
-        "analytics_toolkit.sql.types",
-        "analytics_toolkit.sql.ddl.create_sql_table",
-        "analytics_toolkit.sql.dml.table.table_ops",
-    ],
-)
-def test_removed_sql_deep_imports_fail_with_facade_guidance(module_name: str) -> None:
-    with pytest.raises(ImportError) as exc_info:
-        importlib.import_module(module_name)
+def test_removed_sql_deep_module_files_stay_removed() -> None:
+    removed_paths = [
+        SQL_ROOT / "async_api.py",
+        SQL_ROOT / "capabilities.py",
+        SQL_ROOT / "ch_lifecycle.py",
+        SQL_ROOT / "ch_options.py",
+        SQL_ROOT / "ch_wait.py",
+        SQL_ROOT / "identifiers.py",
+        SQL_ROOT / "labels.py",
+        SQL_ROOT / "operation_runner.py",
+        SQL_ROOT / "plan_steps.py",
+        SQL_ROOT / "plans.py",
+        SQL_ROOT / "query_timing.py",
+        SQL_ROOT / "show_tables.py",
+        SQL_ROOT / "table_info.py",
+        SQL_ROOT / "types.py",
+        SQL_ROOT / "ddl" / "create_sql_table.py",
+        SQL_ROOT / "dml" / "table" / "table_ops.py",
+    ]
 
-    message = str(exc_info.value)
-    assert module_name in message
-    assert "from analytics_toolkit import sql" in message
-    assert "import analytics_toolkit.sql as sql" in message
+    assert [path.relative_to(PROJECT_ROOT) for path in removed_paths if path.exists()] == []
 
 
 def test_sql_docs_state_facade_import_policy() -> None:
@@ -95,15 +84,8 @@ def test_sql_source_does_not_restore_removed_aggregation_imports() -> None:
         "from .dml.table.table_ops",
         "from .table_ops",
     ]
-    allowed_paths = {
-        SQL_ROOT / "ddl" / "create_sql_table.py",
-        SQL_ROOT / "dml" / "table" / "table_ops.py",
-    }
-
     offenders: list[str] = []
     for path in SQL_ROOT.rglob("*.py"):
-        if path in allowed_paths:
-            continue
         text = path.read_text()
         for forbidden in forbidden_imports:
             if forbidden in text:
