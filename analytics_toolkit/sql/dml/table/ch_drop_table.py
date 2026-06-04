@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from sqlglot import exp, parse_one
 
-from ...ch_lifecycle import (
+from ...clickhouse.lifecycle import (
     build_drop_ch_distributed_table_pair_sqls,
     build_drop_ch_table_sqls,
     drop_ch_distributed_table_pair,
     drop_ch_table,
 )
-from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
+from ...clickhouse.options import resolve_ch_retry_per_host_drops_concurrency
 from ...connection.config import get_connection_config
 from ...connection.errors import UnsupportedConnectionTypeError
 from ...connection.get_sql_connection import (
@@ -17,8 +17,8 @@ from ...connection.get_sql_connection import (
 )
 from ...ddl.create_sql_table import build_ch_shard_table_name
 from ...ddl.create_sql_table import _normalize_non_empty_string
-from ...operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from .models import ChDropTableOptions
 

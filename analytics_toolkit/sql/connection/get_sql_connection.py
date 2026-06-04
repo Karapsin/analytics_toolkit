@@ -15,7 +15,7 @@ from .config import (
     get_connections_file_path,
 )
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
-from ..operation_runner import timed_public_sql_function
+from ..execution.operation_runner import timed_public_sql_function
 from analytics_toolkit.general import time_print
 
 

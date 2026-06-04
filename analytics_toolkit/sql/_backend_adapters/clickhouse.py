@@ -5,7 +5,7 @@ from typing import Any
 
 from ..connection.config import BackendName
 from ..connection.errors import UnsupportedConnectionTypeError
-from ..labels import apply_query_label
+from ..execution.labels import apply_query_label
 from .base import BackendAdapter
 
 

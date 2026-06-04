@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .connection.config import BackendName, resolve_connection_backend
-from .operation_runner import timed_public_sql_function
+from ..connection.config import BackendName, resolve_connection_backend
+from ..execution.operation_runner import timed_public_sql_function
 
 
 WriteMode = Literal["append", "replace", "truncate_insert", "upsert"]

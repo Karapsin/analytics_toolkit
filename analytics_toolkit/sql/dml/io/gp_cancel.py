@@ -7,7 +7,7 @@ import pandas as pd
 
 from ...connection.config import get_connection_config
 from ...connection.errors import UnsupportedConnectionTypeError
-from ...operation_runner import timed_public_sql_function
+from ...execution.operation_runner import timed_public_sql_function
 from .read_sql import read_sql
 
 

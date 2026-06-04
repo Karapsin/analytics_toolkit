@@ -24,8 +24,8 @@ table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.tabl
 table_basic_ops_module = importlib.import_module(
     "analytics_toolkit.sql.dml.table._basic_ops"
 )
-ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.ch_lifecycle")
-ch_wait_module = importlib.import_module("analytics_toolkit.sql.ch_wait")
+ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.clickhouse.lifecycle")
+ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
 create_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.create_sql_table"
 )
@@ -173,7 +173,7 @@ def test_clickhouse_wait_helpers_are_lifecycle_owned_with_ddl_shims() -> None:
         ch_lifecycle_module._query_ch_cluster_table_rows
         is ch_wait_module._query_ch_cluster_table_rows
     )
-    assert "ch_wait" in inspect.getsource(
+    assert "clickhouse.wait" in inspect.getsource(
         create_sql_table_module._wait_for_ch_distributed_table_pair
     )
 

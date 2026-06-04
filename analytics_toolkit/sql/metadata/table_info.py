@@ -6,17 +6,17 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 
-from .backend_adapters import split_trino_table_name
-from .connection.config import get_connection_config
-from .connection.errors import InvalidSqlInputError
-from .connection.get_sql_connection import get_sql_connection
-from .ddl.create_sql_table import build_ch_shard_table_name
-from .dml.table.table_ops import (
+from ..backend_adapters import split_trino_table_name
+from ..connection.config import get_connection_config
+from ..connection.errors import InvalidSqlInputError
+from ..connection.get_sql_connection import get_sql_connection
+from ..ddl.create_sql_table import build_ch_shard_table_name
+from ..dml.table.table_ops import (
     count_table_rows,
     get_table_column_types,
     table_exists,
 )
-from .operation_runner import timed_public_sql_function
+from ..execution.operation_runner import timed_public_sql_function
 
 
 @dataclass(frozen=True)

@@ -15,8 +15,8 @@ from tests.sql_fakes import (
 )
 
 
-capabilities_module = importlib.import_module("analytics_toolkit.sql.capabilities")
-identifiers_module = importlib.import_module("analytics_toolkit.sql.identifiers")
+capabilities_module = importlib.import_module("analytics_toolkit.sql.core.capabilities")
+identifiers_module = importlib.import_module("analytics_toolkit.sql.core.identifiers")
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
@@ -40,11 +40,11 @@ ch_move_module = importlib.import_module(
     "analytics_toolkit.sql.dml.table.ch_full_table_move"
 )
 operation_runner_module = importlib.import_module(
-    "analytics_toolkit.sql.operation_runner"
+    "analytics_toolkit.sql.execution.operation_runner"
 )
-query_timing_module = importlib.import_module("analytics_toolkit.sql.query_timing")
-plans_module = importlib.import_module("analytics_toolkit.sql.plans")
-table_info_module = importlib.import_module("analytics_toolkit.sql.table_info")
+query_timing_module = importlib.import_module("analytics_toolkit.sql.execution.query_timing")
+plans_module = importlib.import_module("analytics_toolkit.sql.execution.plans")
+table_info_module = importlib.import_module("analytics_toolkit.sql.metadata.table_info")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 cli_module = importlib.import_module("analytics_toolkit.cli")
 
@@ -170,6 +170,15 @@ def test_public_sql_type_aliases_are_exported() -> None:
     assert sql_module.SqlText is str
     assert sql_module.TableName is str
     assert sql_module.SqlTaskType is not None
+
+
+def test_public_sql_facade_exports_refactored_helpers() -> None:
+    assert sql_module.async_sql is not None
+    assert sql_module.parallel_sql is not None
+    assert sql_module.show_tables is not None
+    assert sql_module.table_info is not None
+    assert sql_module.format_plan is plans_module.format_plan
+    assert sql_module.BACKEND_CAPABILITIES is capabilities_module.BACKEND_CAPABILITIES
 
 
 @pytest.mark.parametrize(

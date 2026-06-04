@@ -12,7 +12,7 @@ from ...backend_adapters import (
     ch_cluster_clause,
     get_backend_adapter,
 )
-from ...ch_lifecycle import (
+from ...clickhouse.lifecycle import (
     drop_ch_distributed_table_pair as _drop_ch_pair,
     truncate_ch_distributed_table_pair as _truncate_ch_pair,
 )
@@ -32,14 +32,14 @@ from ...connection.errors import (
     UnsupportedConnectionTypeError,
     sql_preview,
 )
-from ...labels import apply_query_label
-from ...operation_runner import (
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_retry_options,
 )
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from ._basic_ops import (
     _build_insert_from_table_sql,
@@ -1020,8 +1020,8 @@ def drop_table(
         query_label=query_label,
     )
     if backend == "ch" and wait_for_absence:
-        from ...ch_wait import _wait_for_ch_table_absence
-        from ...ch_wait import _wait_for_ch_table_absence_on_cluster
+        from ...clickhouse.wait import _wait_for_ch_table_absence
+        from ...clickhouse.wait import _wait_for_ch_table_absence_on_cluster
 
         if ch_cluster is None:
             _wait_for_ch_table_absence(connection, table_name)

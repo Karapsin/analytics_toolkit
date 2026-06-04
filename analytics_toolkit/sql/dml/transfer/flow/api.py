@@ -6,8 +6,8 @@ from numbers import Real
 
 import pandas as pd
 
-from ....capabilities import validate_write_mode
-from ....ch_options import (
+from ....core.capabilities import validate_write_mode
+from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
     resolve_ch_retry_per_host_drops_concurrency,
@@ -19,7 +19,7 @@ from ....connection.errors import (
     sql_preview,
 )
 from ....connection.get_sql_connection import get_sql_connection
-from ....operation_runner import (
+from ....execution.operation_runner import (
     run_annotated_once,
     run_retrying_operation,
     timed_public_sql_function,
@@ -27,7 +27,7 @@ from ....operation_runner import (
     validate_progress_option,
     validate_retry_options,
 )
-from ....plan_steps import (
+from ....execution.plan_steps import (
     add_analyze_step,
     add_clear_target_steps,
     add_cleanup_stage_step,
@@ -39,7 +39,7 @@ from ....plan_steps import (
     add_load_stage_step,
 )
 from ....ddl.create_sql_table import build_create_table_sqls, normalize_table_schema
-from ....plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...load.stage import build_stage_table_name

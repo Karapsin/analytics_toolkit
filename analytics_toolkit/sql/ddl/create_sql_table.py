@@ -11,12 +11,12 @@ import pandas as pd
 from sqlglot import exp, parse_one
 
 from ..backend_adapters import get_backend_adapter
-from ..capabilities import get_backend_capability
+from ..core.capabilities import get_backend_capability
 from ..connection.config import resolve_connection_backend
 from ..connection.errors import UnsupportedConnectionTypeError
-from ..labels import apply_query_label
-from ..operation_runner import timed_public_sql_function, tracked_sql_operation
-from ..plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ..execution.labels import apply_query_label
+from ..execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ..execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from .models import CreateSqlTableOptions
 
@@ -827,7 +827,7 @@ def _wait_for_ch_table(
     timeout_seconds: int = 60,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import _wait_for_ch_table as wait_for_ch_table
+    from ..clickhouse.wait import _wait_for_ch_table as wait_for_ch_table
 
     return wait_for_ch_table(
         connection,
@@ -845,7 +845,7 @@ def _wait_for_ch_distributed_table_pair(
     poll_interval_seconds: float = 1,
     expected_column_types: Mapping[str, str] | None = None,
 ) -> None:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _wait_for_ch_distributed_table_pair as wait_for_ch_distributed_table_pair,
     )
 
@@ -866,7 +866,7 @@ def _wait_for_ch_distributed_table_pair_absence(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _wait_for_ch_distributed_table_pair_absence
         as wait_for_ch_distributed_table_pair_absence,
     )
@@ -886,7 +886,7 @@ def _wait_for_ch_table_absence(
     timeout_seconds: int = 60,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import _wait_for_ch_table_absence as wait_for_ch_table_absence
+    from ..clickhouse.wait import _wait_for_ch_table_absence as wait_for_ch_table_absence
 
     return wait_for_ch_table_absence(
         connection,
@@ -903,7 +903,7 @@ def _wait_for_ch_table_absence_on_cluster(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _wait_for_ch_table_absence_on_cluster as wait_for_ch_table_absence_on_cluster,
     )
 
@@ -923,7 +923,7 @@ def _wait_for_ch_tables_absence_on_cluster(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _wait_for_ch_tables_absence_on_cluster as wait_for_ch_tables_absence_on_cluster,
     )
 
@@ -943,7 +943,7 @@ def _wait_for_ch_table_on_cluster(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import _wait_for_ch_table_on_cluster as wait_for_ch_table_on_cluster
+    from ..clickhouse.wait import _wait_for_ch_table_on_cluster as wait_for_ch_table_on_cluster
 
     return wait_for_ch_table_on_cluster(
         connection,
@@ -963,7 +963,7 @@ def _wait_for_ch_table_schema_on_cluster(
     timeout_seconds: int = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _wait_for_ch_table_schema_on_cluster as wait_for_ch_table_schema_on_cluster,
     )
 
@@ -980,7 +980,7 @@ def _wait_for_ch_table_schema_on_cluster(
 def _build_ch_expected_schema_condition(
     expected_column_types: Mapping[str, str],
 ) -> str:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _build_ch_expected_schema_condition as build_ch_expected_schema_condition,
     )
 
@@ -995,7 +995,7 @@ def _describe_ch_cluster_schema_mismatch(
     ch_cluster: str,
     expected_hosts: int,
 ) -> str:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _describe_ch_cluster_schema_mismatch as describe_ch_cluster_schema_mismatch,
     )
 
@@ -1009,7 +1009,7 @@ def _describe_ch_cluster_schema_mismatch(
 
 
 def _resolve_ch_cluster_name_for_wait(connection: Any, cluster_name: str) -> str:
-    from ..ch_wait import (
+    from ..clickhouse.wait import (
         _resolve_ch_cluster_name_for_wait as resolve_ch_cluster_name_for_wait,
     )
 
@@ -1017,19 +1017,19 @@ def _resolve_ch_cluster_name_for_wait(connection: Any, cluster_name: str) -> str
 
 
 def _strip_sql_wrapping_quotes(value: str) -> str:
-    from ..ch_wait import _strip_sql_wrapping_quotes as strip_sql_wrapping_quotes
+    from ..clickhouse.wait import _strip_sql_wrapping_quotes as strip_sql_wrapping_quotes
 
     return strip_sql_wrapping_quotes(value)
 
 
 def _extract_ch_macro_name(value: str) -> str | None:
-    from ..ch_wait import _extract_ch_macro_name as extract_ch_macro_name
+    from ..clickhouse.wait import _extract_ch_macro_name as extract_ch_macro_name
 
     return extract_ch_macro_name(value)
 
 
 def _query_ch_count(connection: Any, sql: str) -> int:
-    from ..ch_wait import _query_ch_count as query_ch_count
+    from ..clickhouse.wait import _query_ch_count as query_ch_count
 
     return query_ch_count(connection, sql)
 
@@ -1040,7 +1040,7 @@ def _query_ch_cluster_table_rows(
     table_names: Sequence[str],
     ch_cluster: str,
 ) -> list[tuple[Any, ...]]:
-    from ..ch_wait import _query_ch_cluster_table_rows as query_ch_cluster_table_rows
+    from ..clickhouse.wait import _query_ch_cluster_table_rows as query_ch_cluster_table_rows
 
     return query_ch_cluster_table_rows(
         connection,
@@ -1050,7 +1050,7 @@ def _query_ch_cluster_table_rows(
 
 
 def _format_ch_cluster_table_rows(rows: Sequence[Sequence[Any]]) -> str:
-    from ..ch_wait import _format_ch_cluster_table_rows as format_ch_cluster_table_rows
+    from ..clickhouse.wait import _format_ch_cluster_table_rows as format_ch_cluster_table_rows
 
     return format_ch_cluster_table_rows(rows)
 
@@ -1061,7 +1061,7 @@ def _query_ch_expected_cluster_hosts(
     cluster_name: str,
     remote_hosts_sql: str,
 ) -> int:
-    from ..ch_wait import _query_ch_expected_cluster_hosts as query_ch_expected_hosts
+    from ..clickhouse.wait import _query_ch_expected_cluster_hosts as query_ch_expected_hosts
 
     return query_ch_expected_hosts(
         connection,
@@ -1076,7 +1076,7 @@ def _query_ch_cluster_host_counts(
     cluster_name: str,
     remote_hosts_sql: str,
 ) -> tuple[int, int]:
-    from ..ch_wait import _query_ch_cluster_host_counts as query_ch_cluster_host_counts
+    from ..clickhouse.wait import _query_ch_cluster_host_counts as query_ch_cluster_host_counts
 
     return query_ch_cluster_host_counts(
         connection,
@@ -1086,7 +1086,7 @@ def _query_ch_cluster_host_counts(
 
 
 def _query_ch_rows(connection: Any, sql: str) -> list[tuple[Any, ...]]:
-    from ..ch_wait import _query_ch_rows as query_ch_rows
+    from ..clickhouse.wait import _query_ch_rows as query_ch_rows
 
     return query_ch_rows(connection, sql)
 

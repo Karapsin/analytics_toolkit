@@ -13,7 +13,7 @@ execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.exec
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
-operation_runner_module = importlib.import_module("analytics_toolkit.sql.operation_runner")
+operation_runner_module = importlib.import_module("analytics_toolkit.sql.execution.operation_runner")
 
 
 class FakeConnection:

@@ -6,8 +6,8 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from ...capabilities import validate_write_mode
-from ...ch_options import (
+from ...core.capabilities import validate_write_mode
+from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
     resolve_ch_retry_per_host_drops_concurrency,
@@ -27,14 +27,14 @@ from ...ddl.create_sql_table import (
 )
 from ...connection.config import TrinoConfig, get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
-from ...operation_runner import (
+from ...execution.operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_progress_option,
     validate_retry_options,
 )
-from ...plan_steps import (
+from ...execution.plan_steps import (
     add_analyze_step,
     add_clear_target_steps,
     add_count_step,
@@ -44,7 +44,7 @@ from ...plan_steps import (
     add_insert_from_stage_step,
     add_load_stage_step,
 )
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..transfer.runtime.retry import run_with_retry
 from analytics_toolkit.general import time_print
 from .load_sql_table import insert_table_batch

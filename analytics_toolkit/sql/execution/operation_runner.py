@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, TypeVar, cast
 
 from analytics_toolkit.general import time_print, time_print_context
 
-from .connection.errors import SqlOperationContext, annotate_sql_exception
+from ..connection.errors import SqlOperationContext, annotate_sql_exception
 from .plans import SqlOperationMetadata
 
 
@@ -239,12 +239,12 @@ def _first_non_empty_sql_line(sql: str | None) -> str | None:
 
 
 def _run_with_retry(**kwargs: Any) -> Any:
-    from .dml.transfer.runtime.retry import run_with_retry
+    from ..dml.transfer.runtime.retry import run_with_retry
 
     return run_with_retry(**kwargs)
 
 
 def _rollback_quietly(connection: Any) -> None:
-    from .dml.transfer.runtime.retry import rollback_quietly
+    from ..dml.transfer.runtime.retry import rollback_quietly
 
     rollback_quietly(connection)

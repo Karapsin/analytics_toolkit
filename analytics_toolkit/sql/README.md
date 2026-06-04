@@ -872,8 +872,20 @@ Previous env-based configuration is no longer read. Move values into
 
 ## Internal Layout
 
+Public consumers should import through `analytics_toolkit.sql` or
+`from analytics_toolkit import sql`. Deep implementation module paths are not
+treated as public compatibility surface.
+
+- `core/`: backend capabilities, identifiers, and public type aliases
+- `execution/`: timing, retry wrappers, plans, plan steps, labels, and query
+  timing
+- `orchestration/`: async and thread-based parallel task runners
+- `metadata/`: table listing and table inspection helpers
+- `clickhouse/`: ClickHouse lifecycle, options, and wait helpers
 - `connection/`: connection config and backend connection creation
-- `ddl/`: table-creation helpers
+- `ddl/`: table-creation and DDL extraction helpers
 - `dml/io/`: read and execute operations
 - `dml/load/`: dataframe loading and staging helpers
+- `dml/table/`: table operations, validation, partition helpers, and
+  ClickHouse table moves
 - `dml/transfer/`: table transfer flow and runtime models

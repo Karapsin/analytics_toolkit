@@ -9,7 +9,7 @@ import sqlparse
 from sqlglot import exp, parse_one
 
 from ....connection.errors import InvalidSqlInputError
-from ....labels import apply_query_label
+from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
 from ..runtime.models import TransferOptions
 from ..runtime.retry import rollback_quietly

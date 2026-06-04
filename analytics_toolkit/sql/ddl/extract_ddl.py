@@ -9,7 +9,7 @@ from ..backend_adapters import split_trino_table_name
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from ..dml.io.read_sql import read_sql
-from ..operation_runner import timed_public_sql_function
+from ..execution.operation_runner import timed_public_sql_function
 
 
 @timed_public_sql_function

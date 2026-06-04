@@ -13,15 +13,15 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...labels import apply_query_label
-from ...operation_runner import (
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_retry_options,
 )
-from ...plans import SqlOperationMetadata, SqlOperationResult
-from ...query_timing import run_timed_query
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult
+from ...execution.query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .execute_sql import (
     _execute_ch_statement,

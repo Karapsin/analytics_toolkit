@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
-from ...ch_lifecycle import (
+from ...clickhouse.options import resolve_ch_retry_per_host_drops_concurrency
+from ...clickhouse.lifecycle import (
     build_drop_ch_distributed_table_pair_sqls,
     drop_ch_distributed_table_pair,
 )
-from ...ch_wait import _wait_for_ch_distributed_table_pair
+from ...clickhouse.wait import _wait_for_ch_distributed_table_pair
 from ...connection.config import get_connection_config
 from ...connection.errors import UnsupportedConnectionTypeError
 from ...connection.get_sql_connection import (
@@ -21,9 +21,9 @@ from ...ddl.create_sql_table import (
     quote_identifier,
     split_ch_table_name_for_distributed_engine,
 )
-from ...labels import apply_query_label
-from ...operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from .models import ChFullTableMoveOptions
 from .table_ops import _execute_ch_command, build_insert_from_table_sql, insert_from_table

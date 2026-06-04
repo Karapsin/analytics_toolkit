@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-from .backend_adapters import ch_cluster_clause, get_backend_adapter
-from .ch_options import resolve_ch_retry_per_host_drops_concurrency
-from .ch_wait import (
+from ..backend_adapters import ch_cluster_clause, get_backend_adapter
+from .options import resolve_ch_retry_per_host_drops_concurrency
+from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
     _resolve_ch_cluster_name_for_wait,
@@ -17,11 +17,11 @@ from .ch_wait import (
     _wait_for_ch_table_absence,
     _wait_for_ch_table_absence_on_cluster,
 )
-from .ddl.create_sql_table import (
+from ..ddl.create_sql_table import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
 )
-from .labels import apply_query_label
+from ..execution.labels import apply_query_label
 
 
 @dataclass(frozen=True)

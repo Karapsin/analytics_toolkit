@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 
-show_tables_module = importlib.import_module("analytics_toolkit.sql.show_tables")
+show_tables_module = importlib.import_module("analytics_toolkit.sql.metadata.show_tables")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 

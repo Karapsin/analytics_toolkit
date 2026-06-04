@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-async_module = importlib.import_module("analytics_toolkit.sql.async_api")
+async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_api")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 

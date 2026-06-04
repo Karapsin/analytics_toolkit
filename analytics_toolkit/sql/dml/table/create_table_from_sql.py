@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import sqlparse
 
-from ...ch_options import (
+from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
     resolve_ch_retry_per_host_drops_concurrency,
@@ -27,16 +27,16 @@ from ...ddl.create_sql_table import (
     normalize_table_schema,
     validate_table_schema_columns,
 )
-from ...labels import apply_query_label
-from ...operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...plan_steps import (
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ...execution.plan_steps import (
     add_create_table_steps,
     add_create_table_placeholder_step,
     add_drop_target_steps,
     add_inspect_schema_step,
     add_insert_query_step,
 )
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..transfer.schema import inspect_source_query_schema, map_source_schema_to_target
 from .table_ops import (
     drop_ch_distributed_table_pair,

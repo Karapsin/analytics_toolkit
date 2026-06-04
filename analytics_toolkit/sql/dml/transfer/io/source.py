@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 
 from ....connection.errors import UnsupportedConnectionTypeError
-from ....labels import apply_query_label
+from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
 from ..runtime.models import RowBatch
 from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry

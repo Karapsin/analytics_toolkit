@@ -9,10 +9,10 @@ from typing import cast
 import pandas as pd
 import sqlparse
 
-from .connection.config import ConnectionConfig, TrinoConfig, get_connection_config
-from .connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
-from .dml.io.read_sql import read_sql
-from .operation_runner import timed_public_sql_function
+from ..connection.config import ConnectionConfig, TrinoConfig, get_connection_config
+from ..connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
+from ..dml.io.read_sql import read_sql
+from ..execution.operation_runner import timed_public_sql_function
 
 
 _SHOW_TABLES_COLUMNS = ["db", "schema", "table_name", "row_count", "table_size"]

@@ -7,24 +7,24 @@ from typing import Any
 import sqlparse
 from sqlglot import exp, parse_one
 
-from ...ch_options import resolve_ch_retry_per_host_drops_concurrency
+from ...clickhouse.options import resolve_ch_retry_per_host_drops_concurrency
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from ...connection.get_sql_connection import (
     get_ch_connection_for_host,
     get_sql_connection,
 )
-from ...labels import apply_query_label
-from ...operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...ch_lifecycle import (
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...clickhouse.lifecycle import (
     build_create_ch_distributed_table_pair_sqls,
     build_drop_ch_distributed_table_pair_sqls,
     build_drop_ch_table_sqls,
     drop_ch_distributed_table_pair,
     drop_ch_table,
 )
-from ...ch_wait import _wait_for_ch_distributed_table_pair
+from ...clickhouse.wait import _wait_for_ch_distributed_table_pair
 from ...ddl.create_sql_table import (
     _normalize_non_empty_string,
     build_ch_local_create_table_sql,

@@ -1,4 +1,4 @@
-from ....ch_options import validate_ch_columns_in_columns
+from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.create_sql_table import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table.table_ops import get_trino_table_column_types, table_exists

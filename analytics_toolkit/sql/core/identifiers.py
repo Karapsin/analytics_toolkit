@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlglot import exp, parse_one
 
 from .capabilities import get_backend_capability
-from .connection.config import BackendName, resolve_connection_backend
+from ..connection.config import BackendName, resolve_connection_backend
 
 
 @dataclass(frozen=True)

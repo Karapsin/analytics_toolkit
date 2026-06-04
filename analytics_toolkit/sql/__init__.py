@@ -4,18 +4,22 @@ from .ddl.create_sql_table import (
     create_sql_table,
 )
 from .ddl.extract_ddl import extract_ddl
-from .async_api import async_sql, parallel_sql
-from .capabilities import BACKEND_CAPABILITIES, format_support_matrix, support_matrix_rows
-from .plans import (
+from .orchestration.async_api import async_sql, parallel_sql
+from .core.capabilities import (
+    BACKEND_CAPABILITIES,
+    format_support_matrix,
+    support_matrix_rows,
+)
+from .execution.plans import (
     SqlOperationMetadata,
     SqlOperationResult,
     SqlPlan,
     SqlStatement,
     format_plan,
 )
-from .show_tables import show_tables
-from .table_info import SqlTableInfo, table_info
-from .types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
+from .metadata.show_tables import show_tables
+from .metadata.table_info import SqlTableInfo, table_info
+from .core.types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
 from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.config import (

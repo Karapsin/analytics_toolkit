@@ -14,16 +14,16 @@ from ...connection.errors import (
 )
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
-from ...labels import apply_query_label
-from ...operation_runner import (
+from ...execution.labels import apply_query_label
+from ...execution.operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_progress_option,
     validate_retry_options,
 )
-from ...plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...query_timing import run_timed_query
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .models import ExecuteSqlOptions
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, Union, cast
 
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
-from ..operation_runner import timed_public_sql_function
+from ..execution.operation_runner import timed_public_sql_function
 
 
 BackendName = Literal["trino", "gp", "ch"]

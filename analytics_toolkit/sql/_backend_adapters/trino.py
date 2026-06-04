@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..connection.config import TrinoConfig, get_connection_config
-from ..labels import apply_query_label
+from ..execution.labels import apply_query_label
 from .dbapi import DbApiBackendAdapter
 
 

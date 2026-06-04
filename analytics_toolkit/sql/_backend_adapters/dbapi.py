@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..connection.config import BackendName
-from ..labels import apply_query_label
+from ..execution.labels import apply_query_label
 from .base import BackendAdapter
 from .utils import extract_row_count
 

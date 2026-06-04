@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ..labels import apply_query_label
+from ..execution.labels import apply_query_label
 from .dbapi import DbApiBackendAdapter
 
 

@@ -13,13 +13,13 @@ from ...backend_adapters import (
     split_gp_table_name,
     split_trino_table_name as _adapter_split_trino_table_name,
 )
-from ...ch_lifecycle import (
+from ...clickhouse.lifecycle import (
     build_drop_ch_distributed_table_pair_sqls as _build_ch_pair_drop_sqls,
 )
 from ...connection.config import resolve_connection_backend
 from ...connection.errors import InvalidSqlInputError
 from ...ddl.create_sql_table import quote_identifier
-from ...labels import apply_query_label
+from ...execution.labels import apply_query_label
 
 
 def table_exists(

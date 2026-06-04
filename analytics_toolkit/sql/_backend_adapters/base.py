@@ -7,8 +7,8 @@ from analytics_toolkit.general import time_print
 
 from ..connection.config import BackendName
 from ..connection.errors import UnsupportedConnectionTypeError
-from ..identifiers import quote_identifier_part
-from ..labels import apply_query_label
+from ..core.identifiers import quote_identifier_part
+from ..execution.labels import apply_query_label
 from .utils import extract_row_count
 
 

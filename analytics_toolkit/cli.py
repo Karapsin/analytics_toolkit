@@ -4,7 +4,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from .sql.capabilities import format_support_matrix
+from .sql import format_support_matrix
 from .sql.connection import validate_connections
 
 
