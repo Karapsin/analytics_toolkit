@@ -86,7 +86,7 @@ experiment_df = sql.read(
       orders,
       revenue,
       clicks,
-      impressions
+      views
     from sandbox.experiment_metrics
     """,
 )
@@ -100,7 +100,7 @@ result = compute_test_metrics(
         RatioMetricSpec(
             name="ctr",
             numerator="clicks",
-            denominator="impressions",
+            denominator="views",
         )
     ],
 )

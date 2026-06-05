@@ -97,7 +97,7 @@ planning = compute_mde_only(
         RatioMetricSpec(
             name="ctr_user",
             numerator="clicks",
-            denominator="impressions",
+            denominator="views",
             level="user",
         )
     ],
@@ -118,8 +118,8 @@ Ratio metrics can be passed via `ratio_metrics`, for example:
 
 ```python
 ratio_metrics = [
-    {"name": "ctr", "numerator": "clicks", "denominator": "impressions"},
-    {"name": "ctr_user", "numerator": "clicks", "denominator": "impressions", "level": "user"},
+    {"name": "ctr", "numerator": "clicks", "denominator": "views"},
+    {"name": "ctr_user", "numerator": "clicks", "denominator": "views", "level": "user"},
 ]
 ```
 
