@@ -60,10 +60,10 @@ def test_removed_sql_deep_module_files_stay_removed() -> None:
 def test_sql_docs_state_facade_import_policy() -> None:
     docs = [
         PROJECT_ROOT / "README.md",
-        PROJECT_ROOT / "docs" / "modules" / "sql.md",
+        PROJECT_ROOT / "docs" / "modules" / "sql" / "index.md",
         PROJECT_ROOT / "docs" / "ANALYTICS_TOOLKIT_MANUAL.md",
         PROJECT_ROOT / "docs" / "AIRFLOW_SQL_MANUAL.md",
-        PROJECT_ROOT / "docs" / "modules" / "ab_utils.md",
+        PROJECT_ROOT / "docs" / "modules" / "ab_utils" / "index.md",
     ]
 
     for path in docs:

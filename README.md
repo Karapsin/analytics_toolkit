@@ -47,11 +47,10 @@ or `sql.transfer(...)`. Do not restore removed root implementation paths.
 ## Documentation
 
 - [Quick Start](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/QUICK_START.md)
-- [Full README](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/README_FULL.md)
 - [analytics_toolkit Manual](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/ANALYTICS_TOOLKIT_MANUAL.md)
 - [Airflow SQL Manual](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/AIRFLOW_SQL_MANUAL.md)
-- [SQL module](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql.md)
-- [AB utilities](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/ab_utils.md)
-- [Excel helpers](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/excel.md)
-- [Date helpers](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/dates.md)
+- [SQL module](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql/index.md)
+- [AB utilities](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/ab_utils/index.md)
+- [Excel helpers](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/excel/index.md)
+- [Date helpers](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/dates/index.md)
 - [Changelog](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/CHANGELOG.md)

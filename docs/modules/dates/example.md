@@ -1,19 +1,6 @@
-# analytics_toolkit.dates
+[Date helpers index](index.md)
 
-Date helpers for common reporting workflows.
-
-## Available Helpers
-
-- `gen_dates_list`: build a daily, weekly, or monthly sequence
-- `first_day`: first day of a week or month
-- `last_day`: last day of a week or month
-- `add_days`
-- `add_weeks`
-- `add_months`
-- `add_quarters`
-- `sanitize_date`: convert a date to `YYYYMMDD`
-
-## Example
+# Example
 
 ```python
 from analytics_toolkit.dates.dates import first_day, gen_dates_list, sanitize_date
@@ -27,3 +14,5 @@ sanitize_date("2026-05-18")
 Inputs accept ISO date strings, `date`, or `datetime` values.
 Weekly, monthly, and quarterly sequences are truncated to period starts and warn
 when either bound is adjusted.
+
+[Date helpers index](index.md)

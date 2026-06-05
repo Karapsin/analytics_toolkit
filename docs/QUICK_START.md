@@ -50,7 +50,7 @@ the placeholder values before use:
 ```
 
 All supported connection options are described in the
-[SQL configuration docs](modules/sql.md#configuration).
+[SQL configuration docs](modules/sql/configuration.md).
 
 For Airflow DAGs, generate routing metadata instead:
 
