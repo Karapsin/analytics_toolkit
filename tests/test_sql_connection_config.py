@@ -138,6 +138,34 @@ def install_fake_airflow(
     monkeypatch.setitem(sys.modules, "airflow.models.variable", variable_module)
 
 
+def _write_cert(relative_path: str, contents: str = "CERT\n") -> Path:
+    path = Path.cwd() / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+    return path
+
+
+def _install_fake_trino(
+    monkeypatch: pytest.MonkeyPatch,
+    connect_calls: list[dict[str, object]],
+) -> None:
+    class FakeBasicAuthentication:
+        def __init__(self, user: str, password: str | None) -> None:
+            self.user = user
+            self.password = password
+
+    fake_auth = types.ModuleType("trino.auth")
+    fake_auth.BasicAuthentication = FakeBasicAuthentication
+    fake_auth.OAuth2Authentication = lambda: object()
+    fake_trino = types.ModuleType("trino")
+    fake_trino.auth = fake_auth
+    fake_trino.dbapi = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "trino", fake_trino)
+    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+
+
 def test_connection_alias_resolves_backend() -> None:
     config = config_module.get_connection_config("gp_sandbox")
 
@@ -229,6 +257,260 @@ def test_gp_connection_liveness_options_can_be_overridden(
     ]
 
 
+def test_greenplum_connection_passes_ssl_cert_options(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    ca_path = _write_cert(".certs/gp-ca.pem", "GP CA\n")
+    client_cert = _write_cert(".certs/client.pem", "CLIENT CERT\n")
+    client_key = _write_cert(".certs/client.key", "CLIENT KEY\n")
+    write_sql_connections(
+        {
+            "gp_ssl": {
+                "type": "gp",
+                "host": "gp.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+                "ca_certs": "gp-ca.pem",
+                "ssl_cert": ".certs/client.pem",
+                "ssl_key": ".certs/client.key",
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    config = config_module.get_connection_config("gp_ssl")
+    connection_module.get_sql_connection("gp_ssl")
+
+    assert config.sslmode == "verify-full"
+    assert config.ca_certs == ["gp-ca.pem"]
+    assert connect_calls[0]["sslmode"] == "verify-full"
+    assert connect_calls[0]["sslrootcert"] == str(ca_path.resolve())
+    assert connect_calls[0]["sslcert"] == str(client_cert.resolve())
+    assert connect_calls[0]["sslkey"] == str(client_key.resolve())
+
+
+def test_greenplum_connection_respects_explicit_sslmode(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    _write_cert(".certs/gp-ca.pem")
+    write_sql_connections(
+        {
+            "gp_ssl": {
+                "type": "gp",
+                "host": "gp.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+                "sslmode": "verify-ca",
+                "ca_certs": "gp-ca.pem",
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    connection_module.get_sql_connection("gp_ssl")
+
+    assert connect_calls[0]["sslmode"] == "verify-ca"
+
+
+def test_greenplum_ca_certs_missing_file_fails_only_when_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "gp_ssl": {
+                "type": "gp",
+                "host": "gp.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+                "ca_certs": "missing.pem",
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    config = config_module.get_connection_config("gp_ssl")
+    assert config.ca_certs == ["missing.pem"]
+    with pytest.raises(config_module.SqlConfigError, match="missing certificate file"):
+        connection_module.get_sql_connection("gp_ssl")
+    assert connect_calls == []
+
+
+def test_trino_ca_certs_resolves_bare_name_and_overrides_verify(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    ca_path = _write_cert(".certs/trino-ca.pem", "TRINO CA\n")
+    write_sql_connections(
+        {
+            "trino_ssl": {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "verify": False,
+                "ca_certs": "trino-ca.pem",
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    _install_fake_trino(monkeypatch, connect_calls)
+
+    config = config_module.get_connection_config("trino_ssl")
+    connection_module.get_sql_connection("trino_ssl")
+
+    assert config.verify_value == "false"
+    assert config.ca_certs == ["trino-ca.pem"]
+    assert connect_calls[0]["verify"] == str(ca_path.resolve())
+
+
+def test_trino_ca_certs_missing_file_fails_only_when_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "trino_ssl": {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "ca_certs": "missing.pem",
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    _install_fake_trino(monkeypatch, connect_calls)
+
+    config = config_module.get_connection_config("trino_ssl")
+    assert config.ca_certs == ["missing.pem"]
+    with pytest.raises(config_module.SqlConfigError, match="missing certificate file"):
+        connection_module.get_sql_connection("trino_ssl")
+    assert connect_calls == []
+
+
+def test_multiple_ca_certs_are_bundled_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    _write_cert(".certs/root.pem", "ROOT\n")
+    _write_cert(".certs/intermediate.pem", "INTERMEDIATE\n")
+    write_sql_connections(
+        {
+            "trino_bundle": {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "ca_certs": ["root.pem", ".certs/intermediate.pem"],
+            }
+        }
+    )
+    connect_calls: list[dict[str, object]] = []
+    _install_fake_trino(monkeypatch, connect_calls)
+
+    connection_module.get_sql_connection("trino_bundle")
+
+    bundle_path = Path(str(connect_calls[0]["verify"]))
+    expected_bundle_path = (
+        Path.cwd() / ".certs" / ".generated" / "trino_bundle-ca-bundle.pem"
+    )
+    assert bundle_path == expected_bundle_path
+    assert bundle_path.read_text(encoding="utf-8") == "ROOT\nINTERMEDIATE\n"
+
+
+def test_clickhouse_ca_certs_list_uses_generated_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    _write_cert(".certs/clickhouse-root.pem", "CLICKHOUSE ROOT\n")
+    _write_cert(".certs/clickhouse-intermediate.pem", "CLICKHOUSE INTERMEDIATE\n")
+    write_sql_connections(
+        {
+            "ch_ssl": {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "ca_certs": ["clickhouse-root.pem", "clickhouse-intermediate.pem"],
+            }
+        }
+    )
+    client = object()
+    client_calls: list[dict[str, object]] = []
+    fake_clickhouse_connect = types.SimpleNamespace(
+        common=types.SimpleNamespace(set_setting=lambda name, value: None),
+        get_client=lambda **kwargs: client_calls.append(kwargs) or client,
+    )
+    monkeypatch.setitem(sys.modules, "clickhouse_connect", fake_clickhouse_connect)
+    monkeypatch.setitem(
+        sys.modules,
+        "clickhouse_connect.common",
+        fake_clickhouse_connect.common,
+    )
+
+    result = connection_module.get_sql_connection("ch_ssl")
+
+    assert result is client
+    bundle_path = Path(str(client_calls[0]["ca_cert"]))
+    expected_bundle_path = (
+        Path.cwd() / ".certs" / ".generated" / "ch_ssl-ca-bundle.pem"
+    )
+    assert bundle_path == expected_bundle_path
+    assert (
+        bundle_path.read_text(encoding="utf-8")
+        == "CLICKHOUSE ROOT\nCLICKHOUSE INTERMEDIATE\n"
+    )
+
+
+def test_clickhouse_ca_certs_missing_file_fails_only_when_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "ch_ssl": {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "ca_certs": "missing.pem",
+            }
+        }
+    )
+    client_calls: list[dict[str, object]] = []
+    fake_clickhouse_connect = types.SimpleNamespace(
+        common=types.SimpleNamespace(set_setting=lambda name, value: None),
+        get_client=lambda **kwargs: client_calls.append(kwargs) or object(),
+    )
+    monkeypatch.setitem(sys.modules, "clickhouse_connect", fake_clickhouse_connect)
+    monkeypatch.setitem(
+        sys.modules,
+        "clickhouse_connect.common",
+        fake_clickhouse_connect.common,
+    )
+
+    config = config_module.get_connection_config("ch_ssl")
+    assert config.ca_certs == ["missing.pem"]
+    with pytest.raises(config_module.SqlConfigError, match="missing certificate file"):
+        connection_module.get_sql_connection("ch_ssl")
+    assert client_calls == []
+
+
 def test_clickhouse_connection_disables_auto_session_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,12 +559,38 @@ def test_malformed_connections_file_raises_config_error(tmp_path: Path) -> None:
         config_module.get_connection_config("gp")
 
 
-def test_generate_dummy_connections_writes_direct_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("connection_key", "raw_config"),
+    [
+        ("trino_keychain", {"type": "trino", "use_keychain_certs": True}),
+        ("trino_keychain_names", {"type": "trino", "keychain_cert_names": ["ca"]}),
+        ("trino_ca_cert", {"type": "trino", "ca_cert": "trino-ca.pem"}),
+        ("gp_ca_cert", {"type": "gp", "ca_cert": "gp-ca.pem"}),
+        ("ch_ca_cert", {"type": "ch", "ca_cert": "clickhouse-ca.pem"}),
+        ("ch_ca_cert_variable", {"type": "ch", "ca_cert_variable": "clickhouse_ca"}),
+    ],
+)
+def test_removed_certificate_fields_raise_config_error(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+    connection_key: str,
+    raw_config: dict[str, object],
+) -> None:
+    write_sql_connections({connection_key: raw_config})
+
+    with pytest.raises(config_module.SqlConfigError, match="not supported"):
+        config_module.get_connection_config(connection_key)
+
+
+def test_generate_dummy_connections_writes_direct_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     (tmp_path / ".connections").unlink()
 
     created = config_module.generate_dummy_connections()
 
     assert created == tmp_path / ".connections"
+    assert (tmp_path / ".certs").is_dir()
     assert created.read_text(encoding="utf-8").endswith("\n")
     assert json.loads(created.read_text(encoding="utf-8")) == {
         "gp": {
@@ -292,6 +600,7 @@ def test_generate_dummy_connections_writes_direct_file(tmp_path: Path) -> None:
             "user": "user",
             "password": "password",
             "database": "db",
+            "ca_certs": "gp-ca.pem",
         },
         "trino": {
             "type": "trino",
@@ -301,6 +610,8 @@ def test_generate_dummy_connections_writes_direct_file(tmp_path: Path) -> None:
             "password": "password",
             "catalog": "iceberg",
             "schema": "sandbox",
+            "http_scheme": "https",
+            "ca_certs": "trino-ca.pem",
         },
         "ch": {
             "type": "ch",
@@ -309,26 +620,42 @@ def test_generate_dummy_connections_writes_direct_file(tmp_path: Path) -> None:
             "user": "user",
             "password": "password",
             "database": "default",
+            "secure": True,
+            "ca_certs": "clickhouse-ca.pem",
         },
     }
+    output = capsys.readouterr().out
+    assert ".certs" in output
+    assert "Greenplum" in output
+    assert "Trino" in output
+    assert "ClickHouse" in output
     assert config_module.load_sql_connections()["gp"]["type"] == "gp"
 
 
-def test_generate_dummy_connections_writes_airflow_file(tmp_path: Path) -> None:
+def test_generate_dummy_connections_writes_airflow_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     (tmp_path / ".connections").unlink()
 
     created = config_module.generate_dummy_connections(airflow=True)
 
     assert created == tmp_path / ".connections"
+    assert (tmp_path / ".certs").is_dir()
     assert created.read_text(encoding="utf-8").endswith("\n")
     assert json.loads(created.read_text(encoding="utf-8")) == {
         "source": "airflow",
         "connections": {
-            "gp": {"type": "gp"},
-            "trino": {"type": "trino"},
-            "ch": {"type": "ch"},
+            "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
+            "trino": {"type": "trino", "ca_certs": "trino-ca.pem"},
+            "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },
     }
+    output = capsys.readouterr().out
+    assert ".certs" in output
+    assert "Greenplum" in output
+    assert "Trino" in output
+    assert "ClickHouse" in output
 
 
 def test_generate_dummy_connections_rejects_existing_file(tmp_path: Path) -> None:
@@ -489,8 +816,8 @@ def test_airflow_clickhouse_connection_maps_airflow_fields(
     assert config.database == "default"
     assert config.secure is True
     assert config.verify_value == "false"
-    assert config.ca_cert is None
-    assert config.ca_cert_variable == "clickhouse_ca_cert"
+    assert config.ca_certs == []
+    assert config.ca_certs_variable == "clickhouse_ca_cert"
     assert config.connect_timeout == 11
     assert config.send_receive_timeout == 6001
     assert config.settings == {"use_numpy": True}
@@ -535,7 +862,7 @@ def test_airflow_clickhouse_file_overrides_airflow_extras(
                     "type": "ch",
                     "send_receive_timeout": 12,
                     "settings": {"max_threads": 4},
-                    "ca_cert": "/local/ca.pem",
+                    "ca_certs": "/local/ca.pem",
                 }
             },
         }
@@ -563,14 +890,18 @@ def test_airflow_clickhouse_file_overrides_airflow_extras(
     assert isinstance(config, config_module.ChConfig)
     assert config.send_receive_timeout == 12
     assert config.settings == {"max_threads": 4}
-    assert config.ca_cert == "/local/ca.pem"
-    assert config.ca_cert_variable is None
+    assert config.ca_certs == ["/local/ca.pem"]
+    assert config.ca_certs_variable is None
 
 
 def test_clickhouse_connection_passes_optional_connector_settings(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:
+    certs_dir = Path.cwd() / ".certs"
+    certs_dir.mkdir()
+    ca_path = certs_dir / "clickhouse-ca.pem"
+    ca_path.write_text("CLICKHOUSE CA\n", encoding="utf-8")
     write_sql_connections(
         {
             "ch_custom": {
@@ -596,7 +927,7 @@ def test_clickhouse_connection_passes_optional_connector_settings(
     install_fake_airflow(
         monkeypatch,
         {},
-        variables={"clickhouse_ca_cert": "/airflow/ca.pem"},
+        variables={"clickhouse_ca_cert": "clickhouse-ca.pem"},
     )
     client = object()
     client_calls: list[dict[str, object]] = []
@@ -623,7 +954,7 @@ def test_clickhouse_connection_passes_optional_connector_settings(
             "secure": True,
             "database": "default",
             "verify": False,
-            "ca_cert": "/airflow/ca.pem",
+            "ca_cert": str(ca_path.resolve()),
             "connect_timeout": 11,
             "send_receive_timeout": 6001,
             "settings": {"connect_timeout": "500", "use_numpy": True},
@@ -654,7 +985,7 @@ def test_clickhouse_settings_must_be_mapping(
         config_module.get_connection_config("ch_bad")
 
 
-def test_clickhouse_missing_ca_cert_variable_is_clear_config_error(
+def test_clickhouse_missing_ca_certs_variable_is_clear_config_error(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:

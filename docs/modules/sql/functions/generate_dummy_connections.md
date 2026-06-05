@@ -2,7 +2,8 @@
 
 # generate_dummy_connections
 
-Create a starter `.connections` file in the current working directory.
+Create a starter `.connections` file and `.certs/` directory in the current
+working directory.
 
 ```python
 generate_dummy_connections(airflow: 'bool' = False) -> 'Path'
@@ -25,5 +26,7 @@ sql.generate_dummy_connections()
 ## Notes
 
 - The helper writes `./.connections` only when it does not already exist; an existing file raises `ValueError`.
+- The helper creates `./.certs/` for local certificate files and prints short certificate setup notes for Greenplum, Trino, and ClickHouse.
+- Generated connection placeholders include example `ca_certs` values. Replace them with real certificate file names, lists of file names, or remove them if your backend does not require custom CA certificates.
 
 [SQL functions index](index.md)

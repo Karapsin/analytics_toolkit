@@ -14,7 +14,7 @@ to write a starter direct `./.connections` file in the current working
 directory. Use
 [sql.generate_dummy_connections](functions/generate_dummy_connections.md)(airflow=True)
 for an Airflow-source file. The helper never overwrites an existing
-`./.connections` file.
+`./.connections` file and creates `./.certs/` for local certificate files.
 
 ```json
 {
@@ -28,7 +28,8 @@ for an Airflow-source file. The helper never overwrites an existing
     "connect_timeout": 30,
     "keepalives_idle": 60,
     "keepalives_interval": 10,
-    "keepalives_count": 3
+    "keepalives_count": 3,
+    "ca_certs": "gp-ca.pem"
   },
   "gp_sandbox": {
     "type": "gp",
@@ -45,6 +46,8 @@ for an Airflow-source file. The helper never overwrites an existing
     "password": "password",
     "catalog": "iceberg",
     "schema": "sandbox",
+    "http_scheme": "https",
+    "ca_certs": "trino-ca.pem",
     "insert_chunk_size": 1000
   },
   "ch": {
@@ -55,7 +58,7 @@ for an Airflow-source file. The helper never overwrites an existing
     "password": "password",
     "database": "default",
     "secure": true,
-    "ca_cert": "/path/to/ca.pem",
+    "ca_certs": "clickhouse-ca.pem",
     "send_receive_timeout": 6000,
     "settings": {"connect_timeout": "500"}
   }
@@ -83,19 +86,27 @@ analytics-toolkit sql support-matrix
 ## Backend-Specific Direct Options
 
 Greenplum supports optional `connect_timeout`, `keepalives`,
-`keepalives_idle`, `keepalives_interval`, and `keepalives_count` fields. They
-default to a 30-second connection timeout with TCP keepalives enabled.
+`keepalives_idle`, `keepalives_interval`, `keepalives_count`, `sslmode`,
+`ca_certs`, `ssl_cert`, and `ssl_key` fields. It defaults to a 30-second
+connection timeout with TCP keepalives enabled. When `ca_certs` is set and
+`sslmode` is omitted, Greenplum uses `sslmode="verify-full"`.
 
-Trino supports optional `auth_mode`, `http_scheme`, `verify`,
-`use_keychain_certs`, `keychain_cert_names`, `insert_chunk_size`,
-`request_timeout`, and `source` fields.
+Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
+`insert_chunk_size`, `request_timeout`, and `source` fields.
 
-ClickHouse supports optional `secure`, `verify`, `ca_cert` / `ca_certs`,
-`ca_cert_variable` / `ca_certs_variable`, `connect_timeout`,
-`send_receive_timeout`, `settings`, `interface`, `query_limit`,
-`query_retries`, and `client_name` fields. `ca_cert_variable` resolves an
-Airflow Variable lazily when the connection is opened, which keeps the
-certificate path in Airflow instead of the file.
+ClickHouse supports optional `secure`, `verify`, `ca_certs`,
+`ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
+`interface`, `query_limit`, `query_retries`, and `client_name` fields.
+`ca_certs_variable` resolves an Airflow Variable lazily when the connection is
+opened, which keeps the certificate path in Airflow instead of the file.
+
+For Greenplum, Trino, and ClickHouse, `ca_certs` accepts one certificate file
+name/path or a list of certificate file names/paths. A bare name such as
+`trino-ca.pem` resolves to `.certs/trino-ca.pem` next to `.connections`; a
+relative path such as `.certs/trino-ca.pem` resolves relative to the
+`.connections` directory; an absolute path is used as-is. Multiple CA files are
+bundled into a generated PEM bundle under `.certs/.generated/`. Missing
+certificate files are reported when the connection is opened.
 
 ## Airflow-Source Connections
 
@@ -165,9 +176,10 @@ one Airflow Connection to the same config objects used by `.connections`. If
 `backend` is omitted, the package infers it from Airflow `conn_type` or extra
 `type` / `backend`. Greenplum and ClickHouse use the Airflow `schema` field as
 the database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`,
-`verify`, `insert_chunk_size`, `request_timeout`, and `source` from connection
-extras. ClickHouse uses the fields listed above from connection extras and
-defaults Airflow-source connections to `send_receive_timeout=6000` and
+`verify`, `ca_certs`, `insert_chunk_size`, `request_timeout`, and `source` from
+connection extras. Greenplum uses SSL fields from connection extras. ClickHouse
+uses the fields listed above from connection extras and defaults
+Airflow-source connections to `send_receive_timeout=6000` and
 `settings={"connect_timeout": "500"}` when those fields are not provided.
 
 Use [sql.use_airflow_connections](functions/use_airflow_connections.md) when

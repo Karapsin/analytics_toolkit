@@ -56,8 +56,7 @@ class TrinoConfig:
     auth_mode: str
     http_scheme: str
     verify_value: str
-    use_keychain_certs: bool
-    keychain_cert_names: list[str]
+    ca_certs: list[str]
     insert_chunk_size: int | None
     request_timeout: int | None
     source: str | None
@@ -77,6 +76,10 @@ class GpConfig:
     keepalives_idle: int
     keepalives_interval: int
     keepalives_count: int
+    sslmode: str | None
+    ca_certs: list[str]
+    ssl_cert: str | None
+    ssl_key: str | None
 
 
 @dataclass(frozen=True)
@@ -90,8 +93,8 @@ class ChConfig:
     database: str | None
     secure: bool
     verify_value: str | None
-    ca_cert: str | None
-    ca_cert_variable: str | None
+    ca_certs: list[str]
+    ca_certs_variable: str | None
     connect_timeout: int | None
     send_receive_timeout: int | None
     settings: dict[str, Any] | None
@@ -174,6 +177,11 @@ def _build_connection_config(
     backend = _require_backend(connection_key, raw_config)
 
     if backend == "trino":
+        _reject_removed_fields(
+            raw_config,
+            connection_key,
+            ["use_keychain_certs", "keychain_cert_names", "ca_cert"],
+        )
         return TrinoConfig(
             connection_key=connection_key,
             backend=backend,
@@ -203,16 +211,10 @@ def _build_connection_config(
                 )
                 or "true"
             ),
-            use_keychain_certs=_optional_bool(
+            ca_certs=_optional_string_or_string_list(
                 raw_config,
                 connection_key,
-                "use_keychain_certs",
-                False,
-            ),
-            keychain_cert_names=_optional_string_list(
-                raw_config,
-                connection_key,
-                "keychain_cert_names",
+                "ca_certs",
             ),
             insert_chunk_size=_optional_positive_int(
                 raw_config,
@@ -227,6 +229,15 @@ def _build_connection_config(
             source=_optional_string(raw_config, connection_key, "source"),
         )
     if backend == "gp":
+        _reject_removed_fields(raw_config, connection_key, ["ca_cert"])
+        ca_certs = _optional_string_or_string_list(
+            raw_config,
+            connection_key,
+            "ca_certs",
+        )
+        sslmode = _optional_string(raw_config, connection_key, "sslmode")
+        if ca_certs and sslmode is None:
+            sslmode = "verify-full"
         return GpConfig(
             connection_key=connection_key,
             backend=backend,
@@ -265,24 +276,29 @@ def _build_connection_config(
                 "keepalives_count",
                 DEFAULT_GP_KEEPALIVES_COUNT,
             ),
+            sslmode=sslmode,
+            ca_certs=ca_certs,
+            ssl_cert=_optional_string(raw_config, connection_key, "ssl_cert"),
+            ssl_key=_optional_string(raw_config, connection_key, "ssl_key"),
         )
     if backend == "ch":
-        ca_cert = _optional_string(raw_config, connection_key, "ca_cert")
-        if ca_cert is None:
-            ca_cert = _optional_string(raw_config, connection_key, "ca_certs")
-        ca_cert_variable = _optional_string(
+        _reject_removed_fields(
             raw_config,
             connection_key,
-            "ca_cert_variable",
+            ["ca_cert", "ca_cert_variable"],
         )
-        if ca_cert_variable is None:
-            ca_cert_variable = _optional_string(
-                raw_config,
-                connection_key,
-                "ca_certs_variable",
-            )
-        if ca_cert is not None:
-            ca_cert_variable = None
+        ca_certs = _optional_string_or_string_list(
+            raw_config,
+            connection_key,
+            "ca_certs",
+        )
+        ca_certs_variable = _optional_string(
+            raw_config,
+            connection_key,
+            "ca_certs_variable",
+        )
+        if ca_certs:
+            ca_certs_variable = None
         return ChConfig(
             connection_key=connection_key,
             backend=backend,
@@ -297,8 +313,8 @@ def _build_connection_config(
                 connection_key,
                 "verify",
             ),
-            ca_cert=ca_cert,
-            ca_cert_variable=ca_cert_variable,
+            ca_certs=ca_certs,
+            ca_certs_variable=ca_certs_variable,
             connect_timeout=_optional_positive_int(
                 raw_config,
                 connection_key,
@@ -338,17 +354,33 @@ def generate_dummy_connections(airflow: bool = False) -> Path:
     connections_path = Path.cwd() / CONNECTIONS_FILE_NAME
     if connections_path.exists():
         raise ValueError(f"SQL connections file already exists: {connections_path}")
+    certs_dir = Path.cwd() / ".certs"
 
     content = (
         _build_dummy_airflow_connections()
         if airflow
         else _build_dummy_direct_connections()
     )
+    certs_dir.mkdir(exist_ok=True)
     connections_path.write_text(
         json.dumps(content, indent=2) + "\n",
         encoding="utf-8",
     )
+    _print_dummy_connections_cert_instructions(certs_dir)
     return connections_path
+
+
+def _print_dummy_connections_cert_instructions(certs_dir: Path) -> None:
+    print(f"Created {certs_dir} for local certificate files.")
+    print(
+        "Greenplum: put CA PEMs in .certs/ and set ca_certs; "
+        "optional ssl_cert, ssl_key, sslmode."
+    )
+    print("Trino: put HTTPS CA PEMs in .certs/ and set ca_certs.")
+    print(
+        "ClickHouse: put HTTPS CA PEMs in .certs/ and set ca_certs; "
+        "Airflow can use ca_certs_variable."
+    )
 
 
 def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
@@ -360,6 +392,7 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "user": "user",
             "password": "password",
             "database": "db",
+            "ca_certs": "gp-ca.pem",
         },
         "trino": {
             "type": "trino",
@@ -369,6 +402,8 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "password": "password",
             "catalog": "iceberg",
             "schema": "sandbox",
+            "http_scheme": "https",
+            "ca_certs": "trino-ca.pem",
         },
         "ch": {
             "type": "ch",
@@ -377,6 +412,8 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "user": "user",
             "password": "password",
             "database": "default",
+            "secure": True,
+            "ca_certs": "clickhouse-ca.pem",
         },
     }
 
@@ -385,9 +422,9 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
     return {
         "source": "airflow",
         "connections": {
-            "gp": {"type": "gp"},
-            "trino": {"type": "trino"},
-            "ch": {"type": "ch"},
+            "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
+            "trino": {"type": "trino", "ca_certs": "trino-ca.pem"},
+            "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },
     }
 
@@ -763,6 +800,10 @@ def _get_airflow_raw_connection_config_and_extras(
                 "keepalives_idle",
                 "keepalives_interval",
                 "keepalives_count",
+                "sslmode",
+                "ca_certs",
+                "ssl_cert",
+                "ssl_key",
             ],
         )
     elif resolved_backend == "trino":
@@ -775,8 +816,7 @@ def _get_airflow_raw_connection_config_and_extras(
                 "auth_mode",
                 "http_scheme",
                 "verify",
-                "use_keychain_certs",
-                "keychain_cert_names",
+                "ca_certs",
                 "insert_chunk_size",
                 "request_timeout",
                 "source",
@@ -794,9 +834,7 @@ def _get_airflow_raw_connection_config_and_extras(
             [
                 "secure",
                 "verify",
-                "ca_cert",
                 "ca_certs",
-                "ca_cert_variable",
                 "ca_certs_variable",
                 "connect_timeout",
                 "send_receive_timeout",
@@ -1208,7 +1246,21 @@ def _optional_mapping(
     return dict(value)
 
 
-def _optional_string_list(
+def _reject_removed_fields(
+    config: dict[str, Any],
+    connection_key: str,
+    field_names: Sequence[str],
+) -> None:
+    for field_name in field_names:
+        if field_name in config:
+            raise SqlConfigError(
+                f"SQL connection '{connection_key}' field '{field_name}' "
+                "is not supported. "
+                "Use 'ca_certs' for CA certificate files."
+            )
+
+
+def _optional_string_or_string_list(
     config: dict[str, Any],
     connection_key: str,
     field_name: str,
@@ -1217,7 +1269,7 @@ def _optional_string_list(
     if value is None:
         return []
     if isinstance(value, str):
-        names = [name.strip() for name in value.split("|")]
+        names = [value.strip()]
     elif isinstance(value, list):
         names = []
         for item in value:

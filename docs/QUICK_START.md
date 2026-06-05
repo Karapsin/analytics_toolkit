@@ -10,7 +10,8 @@ pip install analytics-toolkit
 
 ## SQL Setup
 
-Create a starter `.connections` file in the current working directory:
+Create a starter `.connections` file and local `.certs/` directory in the
+current working directory:
 
 ```python
 from analytics_toolkit import sql
@@ -19,7 +20,8 @@ sql.generate_dummy_connections()
 ```
 
 The generated direct file has one starter entry per supported backend. Replace
-the placeholder values before use:
+the placeholder values before use, and put any referenced certificate files in
+`.certs/`:
 
 ```json
 {
@@ -29,7 +31,8 @@ the placeholder values before use:
     "port": 5432,
     "user": "put_your_user_here",
     "password": "put_your_password_here",
-    "database": "put_your_database_here"
+    "database": "put_your_database_here",
+    "ca_certs": "gp-ca.pem"
   },
   "trino": {
     "type": "trino",
@@ -38,7 +41,9 @@ the placeholder values before use:
     "user": "put_your_user_here",
     "password": "put_your_password_here",
     "catalog": "put_your_catalog_here",
-    "schema": "put_your_schema_here"
+    "schema": "put_your_schema_here",
+    "http_scheme": "https",
+    "ca_certs": "trino-ca.pem"
   },
   "ch": {
     "type": "ch",
@@ -46,7 +51,9 @@ the placeholder values before use:
     "port": 8123,
     "user": "put_your_user_here",
     "password": "put_your_password_here",
-    "database": "put_your_database_here"
+    "database": "put_your_database_here",
+    "secure": true,
+    "ca_certs": "clickhouse-ca.pem"
   }
 }
 ```
@@ -62,8 +69,9 @@ from analytics_toolkit import sql
 sql.generate_dummy_connections(airflow=True)
 ```
 
-The helper writes `./.connections` only when it does not already exist. Edit the
-generated placeholders before running real SQL.
+The helper writes `./.connections` only when it does not already exist and
+creates `./.certs/` for local certificate files. Edit the generated
+placeholders before running real SQL.
 
 ## General
 

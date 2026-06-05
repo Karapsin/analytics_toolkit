@@ -4,6 +4,7 @@ __pycache__/
 *.so
 .env
 .connections
+.certs/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -14,5 +15,4 @@ build/
 dist/
 *.egg-info/
 .DS_Store
-certs/trino-keychain-ca.pem
 ~$*.xlsx

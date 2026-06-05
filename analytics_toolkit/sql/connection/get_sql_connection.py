@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import replace
 from functools import wraps
 from pathlib import Path
@@ -91,9 +89,8 @@ def _get_trino_connection(config: TrinoConfig) -> Any:
             "The 'trino' package is required for Trino connections."
         ) from exc
 
-    verify_value = config.verify_value
-    if config.use_keychain_certs:
-        verify_value = str(_build_trino_keychain_bundle(config))
+    ca_certs = _resolve_ca_certs(config.connection_key, config.ca_certs)
+    verify_value = ca_certs or config.verify_value
 
     if config.auth_mode == "oauth2":
         auth = trino.auth.OAuth2Authentication()
@@ -150,6 +147,25 @@ def _get_gp_connection(config: GpConfig) -> Any:
                 "keepalives_count": config.keepalives_count,
             }
         )
+    if config.sslmode is not None:
+        connect_kwargs["sslmode"] = config.sslmode
+    ca_certs = _resolve_ca_certs(config.connection_key, config.ca_certs)
+    if ca_certs is not None:
+        connect_kwargs["sslrootcert"] = ca_certs
+    if config.ssl_cert is not None:
+        ssl_cert = _resolve_single_cert_path(
+            config.connection_key,
+            config.ssl_cert,
+            field_name="ssl_cert",
+        )
+        connect_kwargs["sslcert"] = str(ssl_cert)
+    if config.ssl_key is not None:
+        ssl_key = _resolve_single_cert_path(
+            config.connection_key,
+            config.ssl_key,
+            field_name="ssl_key",
+        )
+        connect_kwargs["sslkey"] = str(ssl_key)
 
     return psycopg2.connect(**connect_kwargs)
 
@@ -176,9 +192,9 @@ def _get_ch_connection(config: ChConfig) -> Any:
         client_kwargs["database"] = config.database
     if config.verify_value is not None:
         client_kwargs["verify"] = _parse_verify_value(config.verify_value)
-    ca_cert = _resolve_ch_ca_cert(config)
-    if ca_cert is not None:
-        client_kwargs["ca_cert"] = ca_cert
+    ca_certs = _resolve_ch_ca_certs(config)
+    if ca_certs is not None:
+        client_kwargs["ca_cert"] = ca_certs
     if config.connect_timeout is not None:
         client_kwargs["connect_timeout"] = config.connect_timeout
     if config.send_receive_timeout is not None:
@@ -197,35 +213,35 @@ def _get_ch_connection(config: ChConfig) -> Any:
     return clickhouse_connect.get_client(**client_kwargs)
 
 
-def _resolve_ch_ca_cert(config: ChConfig) -> str | None:
-    if config.ca_cert:
-        return config.ca_cert
-    if config.ca_cert_variable is None:
+def _resolve_ch_ca_certs(config: ChConfig) -> str | None:
+    if config.ca_certs:
+        return _resolve_ca_certs(config.connection_key, config.ca_certs)
+    if config.ca_certs_variable is None:
         return None
 
     try:
         from airflow.models.variable import Variable
     except ImportError as exc:
         raise SqlConfigError(
-            f"SQL connection '{config.connection_key}' uses ca_cert_variable "
+            f"SQL connection '{config.connection_key}' uses ca_certs_variable "
             "but Airflow Variable support is unavailable."
         ) from exc
 
     try:
-        ca_cert = Variable.get(config.ca_cert_variable)
+        ca_certs = Variable.get(config.ca_certs_variable)
     except Exception as exc:
         raise SqlConfigError(
-            f"Could not resolve Airflow Variable '{config.ca_cert_variable}' "
+            f"Could not resolve Airflow Variable '{config.ca_certs_variable}' "
             f"for SQL connection '{config.connection_key}'. "
             f"{type(exc).__name__}: {exc}"
         ) from exc
 
-    if not isinstance(ca_cert, str) or not ca_cert.strip():
+    if not isinstance(ca_certs, str) or not ca_certs.strip():
         raise SqlConfigError(
-            f"Airflow Variable '{config.ca_cert_variable}' for SQL connection "
+            f"Airflow Variable '{config.ca_certs_variable}' for SQL connection "
             f"'{config.connection_key}' must be a non-empty string."
         )
-    return ca_cert.strip()
+    return _resolve_ca_certs(config.connection_key, [ca_certs.strip()])
 
 
 def _parse_verify_value(value: str) -> bool | str:
@@ -238,69 +254,56 @@ def _parse_verify_value(value: str) -> bool | str:
     return normalized
 
 
-def _build_trino_keychain_bundle(config: TrinoConfig) -> Path:
-    if not config.keychain_cert_names:
-        raise SqlConfigError(
-            f"SQL connection '{config.connection_key}' enables keychain certs "
-            "but does not define keychain_cert_names."
-        )
+def _resolve_ca_certs(connection_key: str, ca_certs: list[str]) -> str | None:
+    if not ca_certs:
+        return None
 
-    certs_dir = _state_dir() / "certs"
-    certs_dir.mkdir(parents=True, exist_ok=True)
-    bundle_path = certs_dir / f"trino-{_safe_file_key(config.connection_key)}-keychain-ca.pem"
-    keychains = [
-        str(Path.home() / "Library/Keychains/login.keychain-db"),
-        "/Library/Keychains/System.keychain",
+    resolved_paths = [
+        _resolve_single_cert_path(connection_key, cert_path, field_name="ca_certs")
+        for cert_path in ca_certs
     ]
+    if len(resolved_paths) == 1:
+        return str(resolved_paths[0])
 
-    certificates: list[str] = []
-    for cert_name in config.keychain_cert_names:
-        certificate = _export_keychain_certificate(cert_name, keychains)
-        if not certificate:
-            raise SqlConfigError(
-                f"Could not export '{cert_name}' from macOS Keychain."
-            )
-        certificates.append(certificate.strip())
-    bundle_contents = "\n".join(certificates) + "\n"
-    if not bundle_path.exists() or bundle_path.read_text(encoding="utf-8") != bundle_contents:
+    connections_dir = get_connections_file_path().parent
+    bundle_dir = connections_dir / ".certs" / ".generated"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle_path = bundle_dir / f"{_safe_file_key(connection_key)}-ca-bundle.pem"
+    bundle_contents = "\n".join(
+        path.read_text(encoding="utf-8").strip()
+        for path in resolved_paths
+    ) + "\n"
+    if (
+        not bundle_path.exists()
+        or bundle_path.read_text(encoding="utf-8") != bundle_contents
+    ):
         bundle_path.write_text(bundle_contents, encoding="utf-8")
-    return bundle_path
+    return str(bundle_path)
 
 
-def _export_keychain_certificate(cert_name: str, keychains: list[str]) -> str:
-    for keychain in keychains:
-        if not Path(keychain).exists():
-            continue
-
-        result = subprocess.run(
-            [
-                "security",
-                "find-certificate",
-                "-a",
-                "-c",
-                cert_name,
-                "-p",
-                keychain,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+def _resolve_single_cert_path(
+    connection_key: str,
+    cert_path: str,
+    *,
+    field_name: str,
+) -> Path:
+    raw_path = cert_path.strip()
+    path = Path(raw_path)
+    if path.is_absolute():
+        resolved = path
+    else:
+        connections_dir = get_connections_file_path().parent
+        if "/" in raw_path or "\\" in raw_path:
+            resolved = connections_dir / path
+        else:
+            resolved = connections_dir / ".certs" / path
+    resolved = resolved.resolve()
+    if not resolved.is_file():
+        raise SqlConfigError(
+            f"SQL connection '{connection_key}' field '{field_name}' references "
+            f"missing certificate file: {resolved}"
         )
-        if result.returncode == 0 and "BEGIN CERTIFICATE" in result.stdout:
-            return result.stdout
-
-    return ""
-
-
-def _state_dir() -> Path:
-    state_override = os.getenv("MAGNIT_UTILS_HOME")
-    if state_override:
-        return Path(state_override).expanduser()
-
-    try:
-        return get_connections_file_path().parent
-    except SqlConfigError:
-        return Path.cwd().resolve()
+    return resolved
 
 
 def _safe_file_key(connection_key: str) -> str:
