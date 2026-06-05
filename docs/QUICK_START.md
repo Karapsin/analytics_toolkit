@@ -49,6 +49,9 @@ the placeholder values before use:
 }
 ```
 
+All supported connection options are described in the
+[SQL configuration docs](modules/sql.md#configuration).
+
 For Airflow DAGs, generate routing metadata instead:
 
 ```python
