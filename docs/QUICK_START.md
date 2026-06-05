@@ -74,13 +74,35 @@ df = sql.execute_read(
 ## AB Utilities
 
 ```python
-from analytics_toolkit.ab_utils import compute_test_metrics
+from analytics_toolkit import sql
+from analytics_toolkit.ab_utils import RatioMetricSpec, compute_test_metrics
+
+experiment_df = sql.read(
+    "gp",
+    """
+    select
+      user_id,
+      group_name,
+      orders,
+      revenue,
+      clicks,
+      impressions
+    from sandbox.experiment_metrics
+    """,
+)
 
 result = compute_test_metrics(
     df=experiment_df,
     group="group_name",
     control="control",
     user_id="user_id",
+    ratio_metrics=[
+        RatioMetricSpec(
+            name="ctr",
+            numerator="clicks",
+            denominator="impressions",
+        )
+    ],
 )
 ```
 
