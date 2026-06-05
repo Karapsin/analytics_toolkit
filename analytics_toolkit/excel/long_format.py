@@ -12,8 +12,8 @@ from openpyxl import load_workbook
 _INVALID_SHEET_CHARS_RE = re.compile(r"[\[\]\*:/\\?]")
 _DEFAULT_SHEET_NAME = "Sheet1"
 _MELTED_VALUE_COLUMN = "__pivot_and_break_value__"
-_PRETTIFY_PERCENT_FORMAT = "0.0%"
-_PRETTIFY_DECIMAL_FORMAT = "0.0"
+_PRETTIFY_PERCENT_FORMAT = "0.00%"
+_PRETTIFY_DECIMAL_FORMAT = "0.00"
 _PRETTIFY_WHOLE_FORMAT = "#,##0"
 
 

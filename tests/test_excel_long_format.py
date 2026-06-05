@@ -622,14 +622,14 @@ def test_break_table_prettify_formats_numeric_cells_by_body_row(tmp_path: Path) 
         sheet = workbook["Sheet1"]
         assert sheet["A2"].number_format == "General"
         assert sheet["B2"].number_format == "General"
-        assert sheet["C2"].number_format == "0.0%"
-        assert sheet["D2"].number_format == "0.0%"
+        assert sheet["C2"].number_format == "0.00%"
+        assert sheet["D2"].number_format == "0.00%"
 
         assert sheet["C3"].number_format == "General"
-        assert sheet["D3"].number_format == "0.0%"
+        assert sheet["D3"].number_format == "0.00%"
 
-        assert sheet["C4"].number_format == "0.0"
-        assert sheet["D4"].number_format == "0.0"
+        assert sheet["C4"].number_format == "0.00"
+        assert sheet["D4"].number_format == "0.00"
 
         assert sheet["C5"].number_format == "#,##0"
         assert sheet["D5"].number_format == "#,##0"
@@ -695,10 +695,10 @@ def test_pivot_and_break_table_prettify_formats_pivoted_body_rows(tmp_path: Path
     try:
         sheet = workbook["Sheet1"]
         assert sheet["A2"].number_format == "General"
-        assert sheet["B2"].number_format == "0.0%"
-        assert sheet["C2"].number_format == "0.0%"
-        assert sheet["B3"].number_format == "0.0"
-        assert sheet["C3"].number_format == "0.0"
+        assert sheet["B2"].number_format == "0.00%"
+        assert sheet["C2"].number_format == "0.00%"
+        assert sheet["B3"].number_format == "0.00"
+        assert sheet["C3"].number_format == "0.00"
         assert sheet["B4"].number_format == "#,##0"
         assert sheet["C4"].number_format == "#,##0"
     finally:

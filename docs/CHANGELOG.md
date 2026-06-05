@@ -2,6 +2,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.15 - 2026-06-05
+
+- Changed Excel `prettify=True` percentage and bounded decimal display formats
+  to two decimal places.
+
 ## 1.3.6.14 - 2026-06-05
 
 - Reworked the PyPI README into a compact CRAN-style package summary.

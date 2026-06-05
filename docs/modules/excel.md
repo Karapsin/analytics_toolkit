@@ -38,8 +38,8 @@ Pass `prettify=True` to apply row-level numeric display formats in the Excel
 file. Returned dataframes and raw Excel cell values are unchanged. For each
 table body row, text cells are ignored and only numeric cells are formatted:
 
-- all numeric values in `0..1`: one-decimal percentages, `0.0%`
-- otherwise all numeric values in `-100..100`: one-decimal numbers, `0.0`
+- all numeric values in `0..1`: two-decimal percentages, `0.00%`
+- otherwise all numeric values in `-100..100`: two-decimal numbers, `0.00`
 - otherwise: whole numbers with thousands grouping, `#,##0`
 
 Rows with no numeric values and all header or group-title cells keep their
