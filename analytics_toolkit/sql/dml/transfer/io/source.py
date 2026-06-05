@@ -113,6 +113,11 @@ def _iter_clickhouse_batches(
         if first_block is not None and not first_block.empty:
             columns = list(first_block.columns)
             pending_rows.extend(_dataframe_rows_as_tuples(first_block))
+            yield from _drain_full_row_batches(
+                columns,
+                pending_rows,
+                get_batch_size,
+            )
 
         if stream_iterator is not None:
             for block in stream_iterator:
@@ -122,14 +127,11 @@ def _iter_clickhouse_batches(
                 if columns is None:
                     columns = list(block.columns)
                 pending_rows.extend(_dataframe_rows_as_tuples(block))
-
-                while True:
-                    current_batch_size = get_batch_size()
-                    if len(pending_rows) < current_batch_size:
-                        break
-                    batch_rows = pending_rows[:current_batch_size]
-                pending_rows = pending_rows[current_batch_size:]
-                yield RowBatch(columns=columns, rows=batch_rows)
+                yield from _drain_full_row_batches(
+                    columns,
+                    pending_rows,
+                    get_batch_size,
+                )
 
         if pending_rows and columns is not None:
             yield RowBatch(columns=columns, rows=pending_rows)
@@ -213,3 +215,17 @@ def _rows_as_tuples(rows: list[Any]) -> list[tuple[Any, ...]]:
 
 def _dataframe_rows_as_tuples(block: pd.DataFrame) -> list[tuple[Any, ...]]:
     return list(block.itertuples(index=False, name=None))
+
+
+def _drain_full_row_batches(
+    columns: list[str],
+    pending_rows: list[tuple[Any, ...]],
+    get_batch_size: Callable[[], int],
+) -> Iterator[RowBatch]:
+    while True:
+        current_batch_size = get_batch_size()
+        if len(pending_rows) < current_batch_size:
+            break
+        batch_rows = pending_rows[:current_batch_size]
+        del pending_rows[:current_batch_size]
+        yield RowBatch(columns=columns, rows=batch_rows)
