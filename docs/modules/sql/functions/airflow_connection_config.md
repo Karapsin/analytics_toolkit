@@ -1,0 +1,16 @@
+[SQL functions index](index.md)
+
+# airflow_connection_config
+
+Build toolkit connection config from one Airflow Connection.
+
+```python
+airflow_connection_config(connection_id: 'str', backend: 'BackendName | str | None' = None) -> 'ConnectionConfig'
+```
+
+## Inputs
+
+- `connection_id`: Airflow connection ID to read.
+- `backend`: Backend name to use for an Airflow Connection; when omitted, infer it from Airflow metadata.
+
+[SQL functions index](index.md)
