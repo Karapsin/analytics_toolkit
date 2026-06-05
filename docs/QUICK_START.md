@@ -42,8 +42,33 @@ time_print("loaded SQL template")
 ```python
 from analytics_toolkit import sql
 
+sql.execute(
+    "gp",
+    """
+    insert into sandbox.orders
+    select user_id, count(*) as orders
+    from sandbox.raw_orders
+    group by user_id
+    """,
+)
 df = sql.read("gp", "select * from sandbox.orders limit 10")
-sql.execute("gp", "analyze sandbox.orders")
+```
+
+Use `execute_read` to run setup statements and read the final result in one
+call:
+
+```python
+df = sql.execute_read(
+    "gp",
+    """
+    insert into sandbox.orders
+    select user_id, count(*) as orders
+    from sandbox.raw_orders
+    group by user_id;
+
+    select * from sandbox.orders limit 10
+    """,
+)
 ```
 
 ## AB Utilities
