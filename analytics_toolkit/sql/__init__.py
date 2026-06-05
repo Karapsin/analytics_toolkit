@@ -27,6 +27,7 @@ from .dml.io.execute_sql import execute_sql, execute_sql as execute
 from .connection.config import (
     ConnectionValidationResult,
     airflow_connection_config,
+    generate_dummy_connections,
     use_airflow_connections,
     validate_connections,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "extract_ddl",
     "format_plan",
     "format_support_matrix",
+    "generate_dummy_connections",
     "build_gp_create_many_partitions_sqls",
     "build_create_table_sql",
     "build_create_table_sqls",

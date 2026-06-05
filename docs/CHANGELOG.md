@@ -2,6 +2,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.16 - 2026-06-05
+
+- Added `sql.generate_dummy_connections()` for writing starter direct or
+  Airflow-source `.connections` files without overwriting existing files.
+
 ## 1.3.6.15 - 2026-06-05
 
 - Changed Excel `prettify=True` percentage and bounded decimal display formats

@@ -706,6 +706,11 @@ the current working directory upward through parent directories. Public SQL
 functions accept a key from that file; backend behavior is selected from the
 key's `type`.
 
+Call `sql.generate_dummy_connections()` to write a starter direct
+`./.connections` file in the current working directory. Use
+`sql.generate_dummy_connections(airflow=True)` for an Airflow-source file. The
+helper never overwrites an existing `./.connections` file.
+
 ```json
 {
   "gp": {

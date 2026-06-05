@@ -63,6 +63,11 @@ from the current working directory upward through parent directories. Each key i
 the public connection alias used by `analytics_toolkit.sql`; each value must
 include `type` as one of `gp`, `trino`, or `ch`.
 
+Use `sql.generate_dummy_connections()` to create a starter direct
+`./.connections` file in the current working directory. Use
+`sql.generate_dummy_connections(airflow=True)` for an Airflow-source starter
+file. Existing files are not overwritten.
+
 ```json
 {
   "gp": {

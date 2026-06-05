@@ -17,6 +17,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         "create_sql_table",
         "drop_many_partitions",
         "execute_sql",
+        "generate_dummy_connections",
         "gp_create_many_partitions",
         "load_df",
         "read_sql",

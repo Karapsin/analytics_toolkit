@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -274,6 +275,70 @@ def test_malformed_connections_file_raises_config_error(tmp_path: Path) -> None:
 
     with pytest.raises(config_module.SqlConfigError):
         config_module.get_connection_config("gp")
+
+
+def test_generate_dummy_connections_writes_direct_file(tmp_path: Path) -> None:
+    (tmp_path / ".connections").unlink()
+
+    created = config_module.generate_dummy_connections()
+
+    assert created == tmp_path / ".connections"
+    assert created.read_text(encoding="utf-8").endswith("\n")
+    assert json.loads(created.read_text(encoding="utf-8")) == {
+        "gp": {
+            "type": "gp",
+            "host": "gp.example",
+            "port": 5432,
+            "user": "user",
+            "password": "password",
+            "database": "db",
+        },
+        "trino": {
+            "type": "trino",
+            "host": "trino.example",
+            "port": 8080,
+            "user": "user",
+            "password": "password",
+            "catalog": "iceberg",
+            "schema": "sandbox",
+        },
+        "ch": {
+            "type": "ch",
+            "host": "ch.example",
+            "port": 8123,
+            "user": "user",
+            "password": "password",
+            "database": "default",
+        },
+    }
+    assert config_module.load_sql_connections()["gp"]["type"] == "gp"
+
+
+def test_generate_dummy_connections_writes_airflow_file(tmp_path: Path) -> None:
+    (tmp_path / ".connections").unlink()
+
+    created = config_module.generate_dummy_connections(airflow=True)
+
+    assert created == tmp_path / ".connections"
+    assert created.read_text(encoding="utf-8").endswith("\n")
+    assert json.loads(created.read_text(encoding="utf-8")) == {
+        "source": "airflow",
+        "connections": {
+            "gp": {"type": "gp"},
+            "trino": {"type": "trino"},
+            "ch": {"type": "ch"},
+        },
+    }
+
+
+def test_generate_dummy_connections_rejects_existing_file(tmp_path: Path) -> None:
+    connections_path = tmp_path / ".connections"
+    original_content = connections_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="SQL connections file already exists"):
+        config_module.generate_dummy_connections()
+
+    assert connections_path.read_text(encoding="utf-8") == original_content
 
 
 def test_missing_connections_file_ignores_legacy_backend_env_vars(

@@ -29,6 +29,10 @@ the current working directory upward through parent directories. Each key is a
 connection alias and each value must define `type` as `'trino'`, `'gp'`, or
 `'ch'`, so multiple aliases can point to the same backend type.
 
+Call `sql.generate_dummy_connections()` to create a starter direct
+`./.connections` file in the current working directory, or pass `airflow=True`
+for an Airflow-source starter file. Existing files are not overwritten.
+
 Example:
 
 ```json

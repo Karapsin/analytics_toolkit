@@ -334,6 +334,64 @@ def get_connection_backend(connection_key: str) -> BackendName:
     return config.backend
 
 
+def generate_dummy_connections(airflow: bool = False) -> Path:
+    connections_path = Path.cwd() / CONNECTIONS_FILE_NAME
+    if connections_path.exists():
+        raise ValueError(f"SQL connections file already exists: {connections_path}")
+
+    content = (
+        _build_dummy_airflow_connections()
+        if airflow
+        else _build_dummy_direct_connections()
+    )
+    connections_path.write_text(
+        json.dumps(content, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return connections_path
+
+
+def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
+    return {
+        "gp": {
+            "type": "gp",
+            "host": "gp.example",
+            "port": 5432,
+            "user": "user",
+            "password": "password",
+            "database": "db",
+        },
+        "trino": {
+            "type": "trino",
+            "host": "trino.example",
+            "port": 8080,
+            "user": "user",
+            "password": "password",
+            "catalog": "iceberg",
+            "schema": "sandbox",
+        },
+        "ch": {
+            "type": "ch",
+            "host": "ch.example",
+            "port": 8123,
+            "user": "user",
+            "password": "password",
+            "database": "default",
+        },
+    }
+
+
+def _build_dummy_airflow_connections() -> dict[str, Any]:
+    return {
+        "source": "airflow",
+        "connections": {
+            "gp": {"type": "gp"},
+            "trino": {"type": "trino"},
+            "ch": {"type": "ch"},
+        },
+    }
+
+
 @timed_public_sql_function
 def validate_connections(
     keys: Sequence[str] | None = None,
