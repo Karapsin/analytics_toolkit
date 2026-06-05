@@ -88,7 +88,10 @@ When the user asks to update, publish, or release the package on PyPI, run the c
 - Publish the same production package/version to real PyPI through the GitHub release workflow.
 - Verify the real PyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
 - Check the GitHub Actions jobs after each publish. TestPyPI publishes must leave the real PyPI job skipped; real PyPI publishes must leave the TestPyPI job skipped.
-- If TestPyPI uses a temporary project name, keep any package-name change on a temporary branch only and do not merge that branch into `main`.
+- TestPyPI trusted publishing is currently configured for the temporary project name `karapsin-analytics-toolkit`, while the production PyPI project name is `analytics-toolkit`. For TestPyPI, create a temporary `testpypi-<version>` branch from the exact release candidate commit and change only `[project].name` in `pyproject.toml` to `karapsin-analytics-toolkit`.
+- Keep TestPyPI package-name changes on temporary branches only. Do not merge temporary TestPyPI branches into `main`, and publish production PyPI only from the unchanged production project metadata.
+- When verifying TestPyPI artifacts, install `karapsin-analytics-toolkit==<version>` but still confirm the import package is `analytics_toolkit` from `site-packages`.
+- After every successful deployment to real PyPI and artifact verification, delete all temporary TestPyPI branches locally and remotely, including old `testpypi-*` branches.
 
 ## SQL Module Contracts
 
