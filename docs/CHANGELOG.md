@@ -2,6 +2,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.14 - 2026-06-05
+
+- Reworked the PyPI README into a compact CRAN-style package summary.
+- Added a concise root README installation section.
+- Moved detailed documentation into `docs/` and linked it from the package
+  summary.
+- Added PyPI/TestPyPI documentation rules for docs-only changes and dependency
+  table updates.
+
 ## 1.3.6.12 - 2026-06-04
 
 - Added MIT license metadata for PyPI packaging.
