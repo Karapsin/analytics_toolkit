@@ -26,6 +26,10 @@ jobs:
             env_name: py311-latest
           - python-version: "3.12"
             env_name: py312-latest
+          - python-version: "3.13"
+            env_name: py313-latest
+          - python-version: "3.14"
+            env_name: py314-latest
           - python-version: "3.8"
             env_name: py38-min
 

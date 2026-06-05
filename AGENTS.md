@@ -18,7 +18,15 @@ Keep public APIs stable unless the user explicitly asks for a breaking change. M
 
 ## Development Commands
 
-Use a temporary bytecode cache when running Python commands from this sandboxed workspace:
+Use release routines for repository-wide checks and releases. Run pre-commit checks with:
+
+```bash
+release_routines/pre_commit_checks.sh
+```
+
+The pre-commit script uses a temporary bytecode cache, runs compileall and pytest, and then runs the full tox matrix for Python 3.8 through 3.14 plus the Python 3.8 minimum-dependency environment.
+
+Use a temporary bytecode cache when running focused Python commands from this sandboxed workspace:
 
 ```bash
 PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
@@ -34,18 +42,7 @@ PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_general_read_fil
 PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py
 ```
 
-CI matrix checks, required before every commit:
-
-```bash
-PYTHON38="$(pyenv prefix 3.8.18)/bin/python" \
-PYTHON39="$(pyenv prefix 3.9.25)/bin/python" \
-PYTHON310="$(pyenv prefix 3.10.20)/bin/python" \
-PYTHON311="$(pyenv prefix 3.11.15)/bin/python" \
-PYTHON312="$(pyenv prefix 3.12.13)/bin/python" \
-tox -e py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest
-```
-
-Run the full CI matrix locally before every commit. Do not commit unless all matrix environments pass; if an interpreter or dependency is missing, install it or explicitly report the blocker instead of skipping that environment.
+Run `release_routines/pre_commit_checks.sh` before every commit. Do not commit unless all matrix environments pass; if an interpreter or dependency is missing, install it or explicitly report the blocker instead of skipping that environment.
 
 Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
 
@@ -73,7 +70,7 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - In SQL function pages, `### Backend-Specific Inputs` should contain only backend-only public inputs with `gp_`, `trino_`, or `ch_` prefixes. Cross-backend table-shape inputs such as `table_schema`, `column_types`, `partition_by`, and `order_by` stay in general inputs.
 - Non-SQL function pages should keep `## Inputs` as one flat section without general/backend-specific subsections.
 - Usage examples should be concise, use public module imports, and avoid real credentials or production table names.
-- At the end of every non-documentation change, run the full local CI matrix from Development Commands before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
+- At the end of every non-documentation change, run `release_routines/pre_commit_checks.sh` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - Once a coherent batch of changes is done, run `git add . && git commit -m '...'`, replacing `...` with a short description of the changes.
@@ -82,6 +79,7 @@ Do not run tests against real databases. Unit tests should use fake connections,
 
 When the user asks to update, publish, or release the package on PyPI, run the complete publishing workflow unless they explicitly ask for a narrower action:
 
+- Use `release_routines/test_pypi_release.sh` for TestPyPI publishing and artifact verification. Use `release_routines/pypi_release.sh` for real PyPI publishing and artifact verification. Do not manually reimplement these workflows unless the script itself is blocked; fix the script or report the blocker.
 - If the release only changes documentation or PyPI README content, bump the package version for the release artifact even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
 - Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
 - Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
