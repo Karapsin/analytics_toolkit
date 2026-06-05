@@ -71,11 +71,12 @@ Use `read_file` to keep long SQL templates out of Python code while still
 making runtime parameters explicit:
 
 ```python
-from analytics_toolkit.general import read_file, time_print
+from analytics_toolkit import sql
+from analytics_toolkit.general import read_file
 
 params = {"start_dt": "2026-03-01", "end_dt": "2026-03-31"}
-query = read_file("queries/orders.sql", params_dict=params)
-time_print("loaded SQL template")
+query = read_file("queries/orders_by_day.sql", params_dict=params)
+df = sql.read("gp", query)
 ```
 
 ## SQL
@@ -109,6 +110,28 @@ df = sql.execute_read(
 
     select * from sandbox.orders limit 10
     """,
+)
+```
+
+Use `transfer` to stream a query result from one configured connection into a
+table on another connection:
+
+```python
+rows = sql.transfer(
+    from_db="trino",
+    to_db="gp",
+    from_sql="""
+    select
+      order_date,
+      count(*) as order_count,
+      sum(order_amount) as revenue
+    from sandbox.raw_orders
+    where order_date >= date '2026-03-01'
+      and order_date < date '2026-04-01'
+    group by order_date
+    """,
+    to_table="sandbox.daily_order_metrics",
+    batch_size=50_000,
 )
 ```
 
