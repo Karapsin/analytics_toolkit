@@ -16,6 +16,39 @@ from analytics_toolkit import sql
 sql.generate_dummy_connections()
 ```
 
+The generated direct file has one starter entry per supported backend. Replace
+the placeholder values before use:
+
+```json
+{
+  "gp": {
+    "type": "gp",
+    "host": "put_your_gp_host_here",
+    "port": 5432,
+    "user": "put_your_user_here",
+    "password": "put_your_password_here",
+    "database": "put_your_database_here"
+  },
+  "trino": {
+    "type": "trino",
+    "host": "put_your_trino_host_here",
+    "port": 8080,
+    "user": "put_your_user_here",
+    "password": "put_your_password_here",
+    "catalog": "put_your_catalog_here",
+    "schema": "put_your_schema_here"
+  },
+  "ch": {
+    "type": "ch",
+    "host": "put_your_clickhouse_host_here",
+    "port": 8123,
+    "user": "put_your_user_here",
+    "password": "put_your_password_here",
+    "database": "put_your_database_here"
+  }
+}
+```
+
 For Airflow DAGs, generate routing metadata instead:
 
 ```python
