@@ -67,6 +67,9 @@ generated placeholders before running real SQL.
 
 ## General
 
+Use `read_file` to keep long SQL templates out of Python code while still
+making runtime parameters explicit:
+
 ```python
 from analytics_toolkit.general import read_file, time_print
 
@@ -151,6 +154,37 @@ from analytics_toolkit.dates import first_day, gen_dates_list
 
 month_start = first_day("2026-03-18", "month")
 weeks = gen_dates_list("2026-03-01", "2026-03-31", interval="week")
+```
+
+Date lists are useful for batch SQL jobs where the same query runs once per
+period. For example, keep this template in `queries/load_daily_order_metrics.sql`:
+
+```sql
+insert into sandbox.daily_order_metrics (dt, order_count, revenue)
+select
+  date '{start_dt}' as dt,
+  count(*) as order_count,
+  sum(order_amount) as revenue
+from sandbox.raw_orders
+where order_created_at >= timestamp '{start_dt}'
+  and order_created_at < timestamp '{end_dt}'
+group by 1
+```
+
+Then execute it one day at a time:
+
+```python
+from analytics_toolkit import sql
+from analytics_toolkit.dates import add_days, gen_dates_list
+from analytics_toolkit.general import read_file
+
+for start_dt in gen_dates_list("2026-03-01", "2026-03-31", interval="day"):
+    end_dt = add_days(start_dt, 1)
+    query = read_file(
+        "queries/load_daily_order_metrics.sql",
+        params_dict={"start_dt": start_dt, "end_dt": end_dt},
+    )
+    sql.execute("gp", query)
 ```
 
 ## Excel
