@@ -212,15 +212,42 @@ for start_dt in gen_dates_list("2026-03-01", "2026-03-31", interval="day"):
 
 ## Excel
 
-```python
-from analytics_toolkit.excel import pivot_and_break_table
+Use Excel helpers at the end of a report pipeline. This example reads a SQL
+template that returns one row per user, computes AB metrics, formats report
+tables, and writes them side by side:
 
-tables = pivot_and_break_table(
-    df=report_df,
-    rows="metric",
-    columns="group_name",
-    value="value",
-    output="report.xlsx",
+```python
+from analytics_toolkit import ab_utils as ab
+from analytics_toolkit import excel, sql
+from analytics_toolkit.general import read_file
+
+query = read_file(
+    "queries/experiment_user_metrics.sql",
+    params_dict={"start_dt": "2026-03-01", "end_dt": "2026-03-31"},
+)
+experiment_df = sql.read("gp", query)
+
+metrics_df = ab.compute_test_metrics(
+    df=experiment_df,
+    group="group_name",
+    control="control",
+    user_id="user_id",
+    ratio_metrics=[
+        {"name": "ctr", "numerator": "clicks", "denominator": "views"},
+    ],
+)
+
+values_df = ab.format_ab_metrics(metrics_df, output_type="metric_values")
+uplifts_df = ab.format_ab_metrics(
+    metrics_df,
+    output_type="delta_relative_significant",
+    significance_alpha=0.05,
+    significance_p_value="p_values",
+)
+
+tables = excel.break_table(
+    df=[values_df, uplifts_df],
+    output="experiment_report.xlsx",
     prettify=True,
 )
 ```
