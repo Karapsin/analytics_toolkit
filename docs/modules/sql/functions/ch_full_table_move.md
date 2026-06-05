@@ -5,7 +5,7 @@
 Move a ClickHouse distributed/shard table pair to a new name and drop the source pair.
 
 ```python
-ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = '{cluster}', sharding_key: 'str | None' = None, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = '{cluster}', ch_sharding_key: 'str | None' = None, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -19,14 +19,14 @@ ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partiti
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `partition_by`: Partitioning columns or expression for created tables, interpreted according to the target backend.
+- `order_by`: Ordering or sorting columns or expression for created tables, interpreted according to the target backend.
 
 ### Backend-Specific Inputs
 
-- `partition_by`: Backend-specific partitioning columns or expression for created tables.
-- `order_by`: Backend-specific ordering or sorting columns for created tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
 - `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
-- `sharding_key`: ClickHouse sharding expression for distributed table creation.
+- `ch_sharding_key`: ClickHouse sharding expression for distributed table creation.
 - `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
 - `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
 

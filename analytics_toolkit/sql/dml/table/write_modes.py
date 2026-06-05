@@ -236,7 +236,7 @@ def finalize_stage_table(
                 and write_mode == "replace"
                 and not ch_only_shard
             ),
-            only_shard=ch_only_shard,
+            ch_only_shard=ch_only_shard,
         )
         insert_from_table(
             backend,
@@ -291,7 +291,7 @@ def _ensure_ch_distributed_target_pair(
     ch_sharding_key: str,
     query_label: str | None,
     ch_replace_table: bool = False,
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
 ) -> None:
     create_batch = sample_batch
     create_column_types = target_column_types or insert_column_types
@@ -317,8 +317,8 @@ def _ensure_ch_distributed_target_pair(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=not only_shard,
-        only_shard=only_shard,
+        ch_distributed_table=not ch_only_shard,
+        ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
         query_label=query_label,
     )

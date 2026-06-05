@@ -79,7 +79,7 @@ def test_ch_drop_table_dry_run_builds_default_pair_drop_sqls(
     assert plan.target_alias == "ch"
     assert plan.target_backend == "ch"
     assert plan.target_table == TARGET_TABLE
-    assert plan.options["shard_table"] == TARGET_SHARD_TABLE
+    assert plan.options["ch_shard_table"] == TARGET_SHARD_TABLE
     assert plan.options["ch_cluster"] == "analytics"
     assert plan.metadata.statement_count == 4
     assert [statement.phase for statement in plan.statements] == [
@@ -101,11 +101,11 @@ def test_ch_drop_table_dry_run_can_skip_cluster_and_override_shard() -> None:
         "ch",
         TARGET_TABLE,
         ch_cluster=None,
-        shard_table="analytics.events_local",
+        ch_shard_table="analytics.events_local",
         return_sql=True,
     )
 
-    assert plan.options["shard_table"] == "analytics.events_local"
+    assert plan.options["ch_shard_table"] == "analytics.events_local"
     assert plan.options["ch_cluster"] is None
     assert plan.metadata.statement_count == 2
     assert plan.sqls == [
@@ -121,8 +121,8 @@ def test_ch_drop_table_dry_run_accepts_shard_table_as_target() -> None:
         dry_run=True,
     )
 
-    assert plan.options["only_shard"] is True
-    assert plan.options["shard_table"] == TARGET_SHARD_TABLE
+    assert plan.options["ch_only_shard"] is True
+    assert plan.options["ch_shard_table"] == TARGET_SHARD_TABLE
     assert plan.options["ch_cluster"] is None
     assert plan.metadata.statement_count == 1
     assert plan.sqls == ["DROP TABLE IF EXISTS analytics.events_shard"]

@@ -160,7 +160,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         QUERY + ";",
         partition_by=["dt"],
         order_by=["dt", "id"],
-        sharding_key="cityHash64(dt, id)",
+        ch_sharding_key="cityHash64(dt, id)",
     )
 
     assert fake_client.commands[:4] == [

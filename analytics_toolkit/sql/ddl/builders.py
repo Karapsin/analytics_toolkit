@@ -12,12 +12,12 @@ from .clickhouse import (
 from .identifiers import column_list_sql, quote_identifier
 
 
-def _validate_only_shard(backend: str, only_shard: bool, option_owner: str) -> None:
-    if not isinstance(only_shard, bool):
-        raise ValueError("only_shard must be a boolean.")
-    if only_shard and backend != "ch":
+def _validate_only_shard(backend: str, ch_only_shard: bool, option_owner: str) -> None:
+    if not isinstance(ch_only_shard, bool):
+        raise ValueError("ch_only_shard must be a boolean.")
+    if ch_only_shard and backend != "ch":
         raise ValueError(
-            f"only_shard can only be used when {option_owner} has type 'ch'."
+            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
         )
 
 def _build_backend_create_table_sqls(
@@ -32,7 +32,7 @@ def _build_backend_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
-    only_shard: bool,
+    ch_only_shard: bool,
     ch_replace_table: bool,
 ) -> list[str]:
     try:
@@ -51,7 +51,7 @@ def _build_backend_create_table_sqls(
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
         ch_distributed_table=ch_distributed_table,
-        only_shard=only_shard,
+        ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
     )
 

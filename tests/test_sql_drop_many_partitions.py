@@ -50,7 +50,7 @@ def test_build_drop_many_partitions_sqls_renders_backend_sql() -> None:
         "trino",
         "sandbox.events",
         partition_keys,
-        partition_column="dt",
+        trino_partition_column="dt",
     ) == [
         "DELETE FROM sandbox.events\n"
         "WHERE dt IN (DATE '2025-05-01', DATE '2025-05-02')"
@@ -113,7 +113,7 @@ def test_drop_many_partitions_executes_trino_delete_without_commit(
         "trino",
         "sandbox.events",
         ["2025-05-01", "2025-05-02"],
-        partition_column="dt",
+        trino_partition_column="dt",
         retry_cnt=1,
         timeout_increment=0,
     )
@@ -186,7 +186,7 @@ def test_drop_many_partitions_dry_run_returns_plan_without_connection(
 
 
 def test_drop_many_partitions_validates_required_inputs() -> None:
-    with pytest.raises(InvalidSqlInputError, match="partition_column"):
+    with pytest.raises(InvalidSqlInputError, match="trino_partition_column"):
         table_ops_module.drop_many_partitions(
             "trino",
             "sandbox.events",

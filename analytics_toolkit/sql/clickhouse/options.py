@@ -42,7 +42,7 @@ def validate_ch_options_not_used(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
 ) -> None:
     if target_backend == "gp" and order_by is not None:
         raise ValueError(
@@ -51,9 +51,9 @@ def validate_ch_options_not_used(
     if target_backend == "ch":
         return
 
-    if only_shard:
+    if ch_only_shard:
         raise ValueError(
-            f"only_shard can only be used when {option_owner} has type 'ch'."
+            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
         )
     if ch_engine != DEFAULT_CH_ENGINE:
         raise ValueError(
@@ -65,7 +65,7 @@ def validate_ch_options_not_used(
         )
     if ch_sharding_key != DEFAULT_CH_SHARDING_KEY:
         raise ValueError(
-            f"sharding_key can only be used when {option_owner} has type 'ch'."
+            f"ch_sharding_key can only be used when {option_owner} has type 'ch'."
         )
 
 

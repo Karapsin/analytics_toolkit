@@ -559,7 +559,7 @@ def test_build_create_table_sqls_clickhouse_only_shard_creates_local_target() ->
         table_name=TEST_CH_TABLE,
         batch=batch,
         ch_distributed_table=True,
-        only_shard=True,
+        ch_only_shard=True,
         partition_by=["month_date"],
         order_by=["month_date", "min_month_use"],
         ch_sharding_key="cityHash64(month_date, min_month_use)",
@@ -846,7 +846,7 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
         timeout_increment=0,
         partition_by=["month_date"],
         order_by=["month_date", "min_month_use"],
-        sharding_key="cityHash64(month_date, min_month_use)",
+        ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
     assert inserted_rows == 1

@@ -359,7 +359,7 @@ def test_ch_full_table_move_sharding_key_override_replaces_final_distributed_arg
 ) -> None:
     _, distributed_create, _ = _run_move(
         fake_client,
-        sharding_key="sipHash64(id)",
+        ch_sharding_key="sipHash64(id)",
     )
 
     assert "sipHash64(id)" in distributed_create

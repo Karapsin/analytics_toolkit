@@ -5,7 +5,7 @@
 Recreate a ClickHouse distributed/shard table pair from a query result.
 
 ```python
-ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', sharding_key: 'str' = 'rand()', only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -19,16 +19,16 @@ ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `table_schema`: Explicit backend-native column type mapping for created tables.
+- `partition_by`: Partitioning columns or expression for created tables, interpreted according to the target backend.
+- `order_by`: Ordering or sorting columns or expression for created tables, interpreted according to the target backend.
 
 ### Backend-Specific Inputs
 
-- `table_schema`: Explicit backend-native column type mapping for created tables.
-- `partition_by`: Backend-specific partitioning columns or expression for created tables.
-- `order_by`: Backend-specific ordering or sorting columns for created tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
 - `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
-- `sharding_key`: ClickHouse sharding expression for distributed table creation.
-- `only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
+- `ch_sharding_key`: ClickHouse sharding expression for distributed table creation.
+- `ch_only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
 - `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
 - `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
 

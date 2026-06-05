@@ -5,7 +5,7 @@
 Create a SQL table from dataframe column metadata and backend-specific options.
 
 ```python
-create_sql_table(connection_type: 'str', connection: 'Any', table_name: 'str', batch: 'pd.DataFrame', column_types: 'Mapping[str, str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, only_shard: 'bool' = False, ch_replace_table: 'bool' = False, dry_run: 'bool' = False, return_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+create_sql_table(connection_type: 'str', connection: 'Any', table_name: 'str', batch: 'pd.DataFrame', column_types: 'Mapping[str, str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, dry_run: 'bool' = False, return_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -20,19 +20,19 @@ create_sql_table(connection_type: 'str', connection: 'Any', table_name: 'str', b
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `table_schema`: Explicit backend-native column type mapping for created tables.
+- `partition_by`: Partitioning columns or expression for created tables, interpreted according to the target backend.
+- `order_by`: Ordering or sorting columns or expression for created tables, interpreted according to the target backend.
+- `column_types`: Optional backend-native column type mapping used by table DDL builders.
 
 ### Backend-Specific Inputs
 
-- `table_schema`: Explicit backend-native column type mapping for created tables.
-- `column_types`: Optional backend-native column type mapping used by table DDL builders.
-- `partition_by`: Backend-specific partitioning columns or expression for created tables.
-- `order_by`: Backend-specific ordering or sorting columns for created tables.
 - `gp_distributed_by_key`: Greenplum distribution key columns for created target tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
 - `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
 - `ch_sharding_key`: ClickHouse sharding expression used for generated distributed table DDL.
 - `ch_distributed_table`: Whether the rendered ClickHouse DDL should include a `Distributed` table.
-- `only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
+- `ch_only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
 - `ch_replace_table`: Whether rendered ClickHouse DDL should use replace-style table creation.
 
 ## Usage

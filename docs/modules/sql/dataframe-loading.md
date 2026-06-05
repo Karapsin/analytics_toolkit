@@ -38,7 +38,7 @@ chunk size can be set in `.connections`, and call-level settings can override
 it.
 
 ClickHouse targets normally create and maintain a distributed/shard table pair.
-Use `only_shard=True` only when the target should intentionally be a local
+Use `ch_only_shard=True` only when the target should intentionally be a local
 ClickHouse table.
 
 ## Progress and Results

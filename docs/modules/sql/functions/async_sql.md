@@ -10,8 +10,6 @@ async_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_
 
 ## Inputs
 
-### General Inputs
-
 - `tasks`: Sequence of batch task specifications.
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 - `fail_fast`: Whether a batch should raise after the first failed task and cancel pending tasks.
@@ -19,10 +17,6 @@ async_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_
 - `concurrency`: Maximum requested task or cancellation concurrency.
 - `soft_concurrency_cap`: Optional lower cap for actual worker execution inside a larger requested batch.
 - `hard_concurrency_cap`: Maximum allowed actual worker concurrency after soft throttling.
-
-### Backend-Specific Inputs
-
-None.
 
 ## Usage
 

@@ -60,11 +60,12 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - Non-index section files under `docs/modules/<module>/` should start and end with a link back to that module folder's `index.md`.
 - Top-level SQL docs under `docs/modules/sql/` should be concept/workflow guides. Keep exact function signatures and exhaustive input lists in `docs/modules/sql/functions/`.
 - In SQL module docs, describe general concepts before backend-specific concepts. Within each section, order likely higher-frequency workflows first.
-- `docs/modules/sql/index.md` should link concept guides first and `docs/modules/sql/functions/index.md` as the function reference.
+- `docs/modules/sql/index.md` should keep the `docs/modules/sql/functions/index.md` link at the top, before concept guides, under the label "All SQL functions".
 - When a top-level SQL concept doc mentions a public SQL helper, link that helper to its page under `docs/modules/sql/functions/`. If a concept describes a workflow centered on a public helper, name and link that helper at least once.
 - SQL function docs live under `docs/modules/sql/functions/`. `functions/index.md` should start and end with a link back to `../index.md`, group general functions before backend-specific functions, and order likely high-frequency functions first in each section.
 - Each SQL function page should start and end with a link back to `functions/index.md`, then include a brief function description, the exact `function_name(...inputs with defaults...)` signature, input descriptions, and optional notes. Prefer short public entrypoint pages such as `read.md`, `execute.md`, and `transfer.md` instead of duplicating long-form alias pages such as `read_sql.md`, `execute_sql.md`, or `transfer_table.md`.
-- In SQL function pages, split `## Inputs` into `### General Inputs` and `### Backend-Specific Inputs`. Order likely higher-frequency inputs first in each subsection.
+- In SQL function pages, split `## Inputs` into `### General Inputs` and `### Backend-Specific Inputs` only when both groups are non-empty. If all inputs are general, all inputs are backend-specific, or there are no inputs, keep `## Inputs` as one flat section. Order likely higher-frequency inputs first.
+- In SQL function pages, `### Backend-Specific Inputs` should contain only backend-only public inputs with `gp_`, `trino_`, or `ch_` prefixes. Cross-backend table-shape inputs such as `table_schema`, `column_types`, `partition_by`, and `order_by` stay in general inputs.
 - Every SQL function page must include a `## Usage` section between `## Inputs` and `## Notes` when notes exist. Usage examples should be concise, use `from analytics_toolkit import sql`, and avoid real credentials or production table names.
 - At the end of every non-documentation change, run the full local CI matrix from Development Commands before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
@@ -85,6 +86,7 @@ When the user asks to update, publish, or release the package on PyPI, run the c
 ## SQL Module Contracts
 
 - Public SQL APIs accept connection keys/aliases from `.connections`; callers should not need to pass backend names separately.
+- Public SQL input names that work only for one backend must use the backend prefix: `gp_`, `trino_`, or `ch_`. Do not keep unprefixed compatibility aliases for those backend-only inputs unless the user explicitly asks for compatibility.
 - Each `.connections` value must include `type` as `gp`, `trino`, or `ch`. Backend dispatch comes from this `type`, while reconnect/retry/log messages keep using the alias key.
 - Env-based SQL config such as `SQL_CONNECTIONS`, `GP_HOST`, `TRINO_HOST`, `CH_HOST`, `TRINO_INSERT_CHUNK_SIZE`, and config-file override env vars is intentionally unsupported. Do not restore fallback support.
 - Keep public names such as `connection_type`, `from_db`, and `to_db` compatible even when they now represent aliases.

@@ -73,8 +73,8 @@ def create_table_from_sql(
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
-    sharding_key: str = "rand()",
-    only_shard: bool = False,
+    ch_sharding_key: str = "rand()",
+    ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     trino_insert_chunk_size: int | None = None,
@@ -100,8 +100,8 @@ def create_table_from_sql(
     order = normalize_ch_columns_or_expression(order_by, "order_by")
     ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
     ch_cluster_name = normalize_ch_string(ch_cluster, "ch_cluster")
-    ch_sharding_key = normalize_ch_string(sharding_key, "sharding_key")
-    only_shard = _normalize_only_shard(only_shard)
+    ch_sharding_key = normalize_ch_string(ch_sharding_key, "ch_sharding_key")
+    ch_only_shard = _normalize_only_shard(ch_only_shard)
 
     _validate_backend_options(
         target_backend=target_config.backend,
@@ -111,7 +111,7 @@ def create_table_from_sql(
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
-        only_shard=only_shard,
+        ch_only_shard=ch_only_shard,
     )
     if trino_insert_chunk_size is not None and trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
@@ -134,7 +134,7 @@ def create_table_from_sql(
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
-        only_shard=only_shard,
+        ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=retry_per_host_drops,
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -168,7 +168,7 @@ def create_table_from_sql(
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
-            only_shard=options.only_shard,
+            ch_only_shard=options.ch_only_shard,
             query_label=options.query_label,
         )
 
@@ -245,7 +245,7 @@ def create_table_from_sql(
 
             if drop_target_if_exists:
                 if target_config.backend == "ch":
-                    if options.only_shard:
+                    if options.ch_only_shard:
                         time_print(
                             f"Dropping existing ClickHouse table {target_table}"
                         )
@@ -293,12 +293,12 @@ def create_table_from_sql(
                 "ch_cluster": ch_cluster_name,
                 "ch_sharding_key": ch_sharding_key,
                 "ch_distributed_table": (
-                    target_config.backend == "ch" and not options.only_shard
+                    target_config.backend == "ch" and not options.ch_only_shard
                 ),
-                "only_shard": options.only_shard,
+                "ch_only_shard": options.ch_only_shard,
                 "ch_replace_table": (
                     target_config.backend == "ch"
-                    and not options.only_shard
+                    and not options.ch_only_shard
                     and drop_target_if_exists
                     and target_exists_before_drop
                 ),
@@ -372,10 +372,10 @@ def create_table_from_sql(
             "order_by": order,
             "ch_engine": ch_engine_name,
             "ch_cluster": ch_cluster_name,
-            "sharding_key": ch_sharding_key,
+            "ch_sharding_key": ch_sharding_key,
         }
-        if options.only_shard:
-            transfer_kwargs["only_shard"] = True
+        if options.ch_only_shard:
+            transfer_kwargs["ch_only_shard"] = True
         if query_label is not None:
             transfer_kwargs["query_label"] = query_label
         if options.table_schema is not None:
@@ -418,7 +418,7 @@ def _build_create_table_from_sql_plan(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
-    only_shard: bool,
+    ch_only_shard: bool,
     query_label: str | None,
 ) -> SqlPlan:
     plan = SqlPlan(
@@ -435,7 +435,7 @@ def _build_create_table_from_sql_plan(
             "gp_distributed_by_key": gp_distributed_by_key,
             "partition_by": partition_by,
             "order_by": order_by,
-            "only_shard": only_shard,
+            "ch_only_shard": ch_only_shard,
         },
     )
     add_inspect_schema_step(
@@ -453,7 +453,7 @@ def _build_create_table_from_sql_plan(
             table_name=target_table,
             ch_cluster=ch_cluster,
             query_label=query_label,
-            only_shard=only_shard,
+            ch_only_shard=ch_only_shard,
         )
     if table_schema is None:
         add_create_table_placeholder_step(
@@ -477,8 +477,8 @@ def _build_create_table_from_sql_plan(
                 ch_engine=ch_engine,
                 ch_cluster=ch_cluster,
                 ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=target_backend == "ch" and not only_shard,
-                only_shard=only_shard,
+                ch_distributed_table=target_backend == "ch" and not ch_only_shard,
+                ch_only_shard=ch_only_shard,
                 query_label=query_label,
             ),
             alias=target_key,
@@ -533,7 +533,7 @@ def _validate_backend_options(
     ch_engine: str,
     ch_cluster: str,
     ch_sharding_key: str,
-    only_shard: bool,
+    ch_only_shard: bool,
 ) -> None:
     if gp_distributed_by_key and target_backend != "gp":
         raise ValueError(
@@ -547,14 +547,14 @@ def _validate_backend_options(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
-        only_shard=only_shard,
+        ch_only_shard=ch_only_shard,
     )
 
 
-def _normalize_only_shard(only_shard: bool) -> bool:
-    if not isinstance(only_shard, bool):
-        raise ValueError("only_shard must be a boolean.")
-    return only_shard
+def _normalize_only_shard(ch_only_shard: bool) -> bool:
+    if not isinstance(ch_only_shard, bool):
+        raise ValueError("ch_only_shard must be a boolean.")
+    return ch_only_shard
 
 
 def _close_connections(

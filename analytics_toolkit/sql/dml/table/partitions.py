@@ -58,7 +58,7 @@ def build_drop_many_partitions_sqls(
     connection_type: str,
     table: str,
     partition_keys_list: Sequence[str],
-    partition_column: str | None = None,
+    trino_partition_column: str | None = None,
     gp_truncate: bool = False,
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
@@ -66,10 +66,12 @@ def build_drop_many_partitions_sqls(
     backend = resolve_connection_backend(connection_type)
     target_table = _validate_non_empty_table_name(table)
     partition_keys = _validate_partition_keys(partition_keys_list)
-    normalized_partition_column = _normalize_partition_column(partition_column)
+    normalized_trino_partition_column = _normalize_partition_column(
+        trino_partition_column
+    )
     _validate_drop_many_partitions_options(
         backend,
-        partition_column=normalized_partition_column,
+        trino_partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
     )
     return [
@@ -78,7 +80,7 @@ def build_drop_many_partitions_sqls(
             backend,
             target_table,
             partition_keys,
-            partition_column=normalized_partition_column,
+            partition_column=normalized_trino_partition_column,
             gp_truncate=gp_truncate,
             ch_cluster=ch_cluster,
         )
@@ -211,7 +213,7 @@ def drop_many_partitions(
     db_key: str,
     table: str,
     partition_keys_list: list[str],
-    partition_column: str | None = None,
+    trino_partition_column: str | None = None,
     gp_truncate: bool = False,
     *,
     retry_cnt: int = 5,
@@ -225,7 +227,7 @@ def drop_many_partitions(
         db_key=db_key,
         table=table,
         partition_keys_list=partition_keys_list,
-        partition_column=partition_column,
+        trino_partition_column=trino_partition_column,
         gp_truncate=gp_truncate,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -396,7 +398,7 @@ def build_drop_many_partitions_plan(
         options.backend,
         options.target_table,
         options.partition_keys,
-        partition_column=options.partition_column,
+        trino_partition_column=options.trino_partition_column,
         gp_truncate=options.gp_truncate,
         ch_cluster=options.ch_cluster,
         query_label=options.query_label,
@@ -408,7 +410,7 @@ def build_drop_many_partitions_plan(
         target_table=options.target_table,
         options={
             "partition_keys": options.partition_keys,
-            "partition_column": options.partition_column,
+            "trino_partition_column": options.trino_partition_column,
             "gp_truncate": options.gp_truncate,
             "ch_cluster": options.ch_cluster,
         },
@@ -431,7 +433,7 @@ def _build_drop_many_partitions_options(
     db_key: str,
     table: str,
     partition_keys_list: Sequence[str],
-    partition_column: str | None,
+    trino_partition_column: str | None,
     gp_truncate: bool,
     retry_cnt: int,
     timeout_increment: int | float,
@@ -445,10 +447,12 @@ def _build_drop_many_partitions_options(
 
     target_table = _validate_non_empty_table_name(table)
     partition_keys = _validate_partition_keys(partition_keys_list)
-    normalized_partition_column = _normalize_partition_column(partition_column)
+    normalized_trino_partition_column = _normalize_partition_column(
+        trino_partition_column
+    )
     _validate_drop_many_partitions_options(
         config.backend,
-        partition_column=normalized_partition_column,
+        trino_partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
     )
     return DropManyPartitionsOptions(
@@ -456,7 +460,7 @@ def _build_drop_many_partitions_options(
         backend=config.backend,
         target_table=target_table,
         partition_keys=partition_keys,
-        partition_column=normalized_partition_column,
+        trino_partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -484,7 +488,7 @@ def _build_drop_many_partitions_sqls_for_backend(
     if backend == "trino":
         if partition_column is None:
             raise InvalidSqlInputError(
-                "partition_column is required for Trino partition deletes."
+                "trino_partition_column is required for Trino partition deletes."
             )
         partition_values = ", ".join(
             f"DATE {_sql_string_literal(key)}" for key in partition_keys
@@ -784,16 +788,16 @@ def _normalize_partition_column(partition_column: str | None) -> str | None:
 def _validate_drop_many_partitions_options(
     backend: str,
     *,
-    partition_column: str | None,
+    trino_partition_column: str | None,
     gp_truncate: bool,
 ) -> None:
     if gp_truncate and backend != "gp":
         raise UnsupportedConnectionTypeError(
             "gp_truncate=True is only supported for Greenplum connections."
         )
-    if backend == "trino" and partition_column is None:
+    if backend == "trino" and trino_partition_column is None:
         raise InvalidSqlInputError(
-            "partition_column is required for Trino partition deletes."
+            "trino_partition_column is required for Trino partition deletes."
         )
 
 def _sql_string_literal(value: str) -> str:

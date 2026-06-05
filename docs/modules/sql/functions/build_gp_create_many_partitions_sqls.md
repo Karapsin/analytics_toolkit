@@ -10,13 +10,8 @@ build_gp_create_many_partitions_sqls(table: 'str', *, intervals: 'Sequence[Mappi
 
 ## Inputs
 
-### General Inputs
-
 - `table`: Table name to inspect, modify, or use for partition operations.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-
-### Backend-Specific Inputs
-
 - `intervals`: Explicit Greenplum partition interval definitions.
 - `values`: List partition values used to create Greenplum list partitions.
 - `days`: Day values used to create Greenplum range partitions.

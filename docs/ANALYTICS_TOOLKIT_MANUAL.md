@@ -106,7 +106,7 @@ sql.execute("gp", read_file("create_table.sql"), gp_break_query=True, random_sle
 sql.execute("trino", read_file("final_agg.sql"))
 ```
 
-### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, adaptive_batch_size=True, target_batch_seconds=10.0, target_batch_memory_mb=None, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, partition_by=None, order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
+### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, adaptive_batch_size=True, target_batch_seconds=10.0, target_batch_memory_mb=None, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, partition_by=None, order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", ch_sharding_key="rand()")`
 
 Transfers query results from one database to another.
 
@@ -137,7 +137,7 @@ Inputs:
 - `order_by`: optional target order/sort columns or backend-native expression
 - `ch_engine`: ClickHouse shard engine, defaults to `ReplicatedMergeTree`
 - `ch_cluster`: ClickHouse cluster name, defaults to `core`
-- `sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
+- `ch_sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
 
 Returns:
 
@@ -172,7 +172,7 @@ sql.transfer(
 )
 ```
 
-### `sql.load_df(connection_type, destination_table, df, append=False, gp_distributed_by_key=None, key_columns=None, retry_cnt=5, timeout_increment=5, trino_insert_chunk_size=None, partition_by=None, order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
+### `sql.load_df(connection_type, destination_table, df, append=False, gp_distributed_by_key=None, key_columns=None, retry_cnt=5, timeout_increment=5, trino_insert_chunk_size=None, partition_by=None, order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", ch_sharding_key="rand()")`
 
 Loads a pandas dataframe into a database table.
 
@@ -192,7 +192,7 @@ Inputs:
 - `order_by`: optional target order/sort columns or backend-native expression
 - `ch_engine`: ClickHouse shard engine, defaults to `ReplicatedMergeTree`
 - `ch_cluster`: ClickHouse cluster name, defaults to `core`
-- `sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
+- `ch_sharding_key`: ClickHouse `Distributed` sharding key, defaults to `rand()`
 
 Returns:
 

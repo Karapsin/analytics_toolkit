@@ -131,14 +131,14 @@ def add_drop_target_steps(
     table_name: str,
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
 ) -> None:
     from ..dml.table._basic_ops import (
         build_drop_ch_distributed_table_pair_sqls,
         build_drop_table_sql,
     )
 
-    if backend == "ch" and not only_shard:
+    if backend == "ch" and not ch_only_shard:
         plan.extend(
             build_drop_ch_distributed_table_pair_sqls(
                 table_name,
@@ -175,7 +175,7 @@ def add_clear_target_steps(
     query_label: str | None = None,
     include_ch_shard: bool = False,
     ch_cluster: str = "{cluster}",
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
 ) -> None:
     for sql in build_clear_target_sqls(
         backend,
@@ -183,7 +183,7 @@ def add_clear_target_steps(
         query_label=query_label,
         include_ch_shard=include_ch_shard,
         ch_cluster=ch_cluster,
-        only_shard=only_shard,
+        ch_only_shard=ch_only_shard,
     ):
         plan.add(
             sql,
@@ -201,12 +201,12 @@ def build_clear_target_sqls(
     query_label: str | None = None,
     include_ch_shard: bool = False,
     ch_cluster: str = "{cluster}",
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
 ) -> list[str]:
     from ..clickhouse.lifecycle import build_truncate_ch_distributed_table_pair_sqls
     from ..dml.table._basic_ops import build_clear_table_sqls
 
-    if backend != "ch" or not include_ch_shard or only_shard:
+    if backend != "ch" or not include_ch_shard or ch_only_shard:
         return build_clear_table_sqls(
             backend,
             table_name,

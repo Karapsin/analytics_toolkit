@@ -24,11 +24,11 @@ def _build_ch_create_table_sqls(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_distributed_table: bool,
-    only_shard: bool,
+    ch_only_shard: bool,
     ch_replace_table: bool,
     **_: object,
 ) -> list[str]:
-    if only_shard:
+    if ch_only_shard:
         return [
             build_ch_local_create_table_sql(
                 table_name=table_name,
@@ -68,7 +68,7 @@ def build_ch_distributed_create_table_sqls(
     shard_table = build_ch_shard_table_name(table_name)
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
-    sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
+    ch_sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
     partition_sql = _build_partition_by_sql(partition_by)
     order_by_sql = _build_order_by_sql(order_by)
     database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(
@@ -104,7 +104,7 @@ def build_ch_distributed_create_table_sqls(
         f"    {_sql_string_literal(cluster_name)},\n"
         f"    {database_name},\n"
         f"    {_sql_string_literal(shard_relation_name)},\n"
-        f"    {sharding_key}\n"
+        f"    {ch_sharding_key}\n"
         ")"
     )
     local_distributed_sql = (
@@ -114,7 +114,7 @@ def build_ch_distributed_create_table_sqls(
         f"    {_sql_string_literal(cluster_name)},\n"
         f"    {database_name},\n"
         f"    {_sql_string_literal(shard_relation_name)},\n"
-        f"    {sharding_key}\n"
+        f"    {ch_sharding_key}\n"
         ")"
     )
     return [shard_sql, local_shard_sql, distributed_sql, local_distributed_sql]

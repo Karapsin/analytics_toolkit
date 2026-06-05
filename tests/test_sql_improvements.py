@@ -1195,14 +1195,14 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
         "analytics.events",
         pd.DataFrame({"dt": ["2024-01-01"], "id": [1]}),
         write_mode="truncate_insert",
-        only_shard=True,
+        ch_only_shard=True,
         dry_run=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 
-    assert plan.options["only_shard"] is True
+    assert plan.options["ch_only_shard"] is True
     assert plan.sqls[0] == "TRUNCATE TABLE IF EXISTS analytics.events"
     create_sql = next(
         statement.sql for statement in plan.statements if statement.phase == "create_target"
@@ -1245,7 +1245,7 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         to_db="ch",
         from_sql="select dt, id from source_table",
         to_table="analytics.events",
-        only_shard=True,
+        ch_only_shard=True,
         dry_run=True,
         table_schema={"dt": "Date", "id": "UInt64"},
         partition_by=["dt"],
@@ -1253,7 +1253,7 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         ch_cluster="analytics",
     )
 
-    assert plan.options["only_shard"] is True
+    assert plan.options["ch_only_shard"] is True
     drop_sqls = [
         statement.sql for statement in plan.statements if statement.phase == "drop_target"
     ]
@@ -1307,13 +1307,13 @@ def test_create_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target()
         insert_data=True,
         dry_run=True,
         table_schema={"dt": "Date", "id": "UInt64"},
-        only_shard=True,
+        ch_only_shard=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
         ch_cluster="analytics",
     )
 
-    assert plan.options["only_shard"] is True
+    assert plan.options["ch_only_shard"] is True
     assert [statement.phase for statement in plan.statements] == [
         "inspect_source_schema",
         "drop_target",
@@ -1353,11 +1353,11 @@ def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:
         "select 1 as id",
         dry_run=True,
         table_schema={"id": "UInt64"},
-        only_shard=True,
+        ch_only_shard=True,
         ch_cluster="analytics",
     )
 
-    assert plan.options["only_shard"] is True
+    assert plan.options["ch_only_shard"] is True
     assert [statement.phase for statement in plan.statements] == [
         "drop_target",
         "create_target",

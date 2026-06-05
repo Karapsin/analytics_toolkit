@@ -10,8 +10,6 @@ read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, retry_
 
 ## Inputs
 
-### General Inputs
-
 - `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `query`: SQL text to execute or read.
 - `retry_cnt`: Number of operation retries with fresh connections.
@@ -19,10 +17,6 @@ read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, retry_
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `print_queries`: Whether to print SQL text before execution.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-
-### Backend-Specific Inputs
-
-None.
 
 ## Usage
 

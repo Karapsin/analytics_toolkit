@@ -5,7 +5,7 @@
 Drop or truncate several partition values from one target table.
 
 ```python
-drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -25,7 +25,7 @@ drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str
 ### Backend-Specific Inputs
 
 - `gp_truncate`: For Greenplum partition removal, truncate matching partitions instead of dropping them.
-- `partition_column`: Partition column used by backends that need it for partition removal.
+- `trino_partition_column`: Partition column used by Trino partition deletes.
 
 ## Usage
 

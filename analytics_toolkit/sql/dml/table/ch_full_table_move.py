@@ -65,7 +65,7 @@ def ch_full_table_move(
     order_by: Sequence[str] | str | None = None,
     ch_engine: str | None = None,
     ch_cluster: str | None = "{cluster}",
-    sharding_key: str | None = None,
+    ch_sharding_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
@@ -106,8 +106,8 @@ def ch_full_table_move(
     )
     sharding_key_override = (
         None
-        if sharding_key is None
-        else _normalize_required_string(sharding_key, "sharding_key")
+        if ch_sharding_key is None
+        else _normalize_required_string(ch_sharding_key, "ch_sharding_key")
     )
     options = ChFullTableMoveOptions(
         connection_key=config.connection_key,
@@ -118,7 +118,7 @@ def ch_full_table_move(
         order_by=order_override,
         ch_engine=engine_override,
         ch_cluster=cluster_override,
-        sharding_key=sharding_key_override,
+        ch_sharding_key=sharding_key_override,
         ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -187,7 +187,7 @@ def ch_full_table_move(
                 target_table,
                 target_shard_table,
                 ch_cluster=target_cluster,
-                sharding_key=sharding_key_override,
+                ch_sharding_key=sharding_key_override,
             )
 
             time_print(
@@ -388,7 +388,7 @@ def build_ch_full_table_move_plan(options: ChFullTableMoveOptions) -> SqlPlan:
             "order_by": options.order_by,
             "ch_engine": options.ch_engine,
             "ch_cluster": options.ch_cluster,
-            "sharding_key": options.sharding_key,
+            "ch_sharding_key": options.ch_sharding_key,
             "inspection_required": True,
             "inspection_note": (
                 "Exact target DDL and source shard name require SHOW CREATE TABLE."
@@ -454,7 +454,7 @@ def _build_target_distributed_ddl(
     target_shard_table: str,
     *,
     ch_cluster: str | None,
-    sharding_key: str | None,
+    ch_sharding_key: str | None,
 ) -> str:
     ddl = _prepare_target_create_table_ddl(source_ddl, target_table)
     if ch_cluster is not None:
@@ -463,7 +463,7 @@ def _build_target_distributed_ddl(
         ddl,
         target_shard_table,
         ch_cluster=ch_cluster,
-        sharding_key=sharding_key,
+        ch_sharding_key=ch_sharding_key,
     )
 
 
@@ -678,7 +678,7 @@ def _rewrite_distributed_engine_args(
     target_shard_table: str,
     *,
     ch_cluster: str | None,
-    sharding_key: str | None,
+    ch_sharding_key: str | None,
 ) -> str:
     args_span = _find_distributed_args_span(ddl)
     if args_span is None:
@@ -697,12 +697,12 @@ def _rewrite_distributed_engine_args(
     ]
     if ch_cluster is not None:
         replacements.append((*spans[0], _sql_string_literal(ch_cluster)))
-    if sharding_key is not None:
+    if ch_sharding_key is not None:
         if len(spans) >= 4:
-            replacements.append((*spans[-1], sharding_key))
+            replacements.append((*spans[-1], ch_sharding_key))
         else:
             insertion = args_end
-            return ddl[:insertion] + f", {sharding_key}" + ddl[insertion:]
+            return ddl[:insertion] + f", {ch_sharding_key}" + ddl[insertion:]
 
     rewritten_args_sql = args_sql
     for start, end, replacement in sorted(replacements, reverse=True):

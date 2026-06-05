@@ -47,8 +47,8 @@ def ch_create_table_as(
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_cluster: str = "{cluster}",
-    sharding_key: str = "rand()",
-    only_shard: bool = False,
+    ch_sharding_key: str = "rand()",
+    ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
@@ -76,8 +76,8 @@ def ch_create_table_as(
         order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=cluster_name,
-        ch_sharding_key=sharding_key,
-        only_shard=_normalize_only_shard(only_shard),
+        ch_sharding_key=ch_sharding_key,
+        ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
         ch_retry_per_host_drops_concurrency=(
             resolve_ch_retry_per_host_drops_concurrency(
@@ -111,9 +111,9 @@ def ch_create_table_as(
                 "order_by": options.order_by,
                 "ch_engine": options.ch_engine,
                 "ch_cluster": options.ch_cluster,
-                "sharding_key": options.ch_sharding_key,
+                "ch_sharding_key": options.ch_sharding_key,
                 "table_schema": options.table_schema,
-                "only_shard": options.only_shard,
+                "ch_only_shard": options.ch_only_shard,
             },
             metadata=SqlOperationMetadata(
                 statement_count=len(sqls),
@@ -152,7 +152,7 @@ def ch_create_table_as(
             time_print(
                 f"Creating ClickHouse table {options.target_table} from query"
             )
-            if options.only_shard:
+            if options.ch_only_shard:
                 time_print(f"Dropping target ClickHouse table {options.target_table}")
                 drop_ch_table(
                     connection,
@@ -227,14 +227,14 @@ def ch_create_table_as(
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
                 ch_replace_table=True,
-                only_shard=options.only_shard,
+                ch_only_shard=options.ch_only_shard,
                 query_label=options.query_label,
             )
             metadata.statement_count = len(create_sqls) + (
-                1 if options.only_shard else 4
+                1 if options.ch_only_shard else 4
             ) + 1
 
-            if options.only_shard:
+            if options.ch_only_shard:
                 time_print(f"Creating local ClickHouse table {options.target_table}")
                 _execute_ch_command(connection, create_sqls[0])
             else:
@@ -298,17 +298,17 @@ def build_ch_create_table_as_sqls(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_replace_table: bool = True,
-    only_shard: bool = False,
+    ch_only_shard: bool = False,
     query_label: str | None = None,
 ) -> list[str]:
     target_table = _normalize_non_empty_string(table_name, "table_name")
     _normalize_single_query(query)
     columns_sql = _normalize_non_empty_string(joined_columns, "joined_columns")
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
-    sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
+    ch_sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
-    only_shard = _normalize_only_shard(only_shard)
-    if only_shard:
+    ch_only_shard = _normalize_only_shard(ch_only_shard)
+    if ch_only_shard:
         return [
             apply_query_label(
                 build_ch_local_create_table_sql(
@@ -329,7 +329,7 @@ def build_ch_create_table_as_sqls(
         order_by=order_by,
         ch_engine=engine,
         ch_cluster=cluster_name,
-        ch_sharding_key=sharding_key,
+        ch_sharding_key=ch_sharding_key,
         ch_replace_table=ch_replace_table,
         query_label=query_label,
     )
@@ -338,7 +338,7 @@ def build_ch_create_table_as_sqls(
 def _build_ch_create_table_as_dry_run_drop_sqls(
     options: ChCreateTableAsOptions,
 ) -> list[str]:
-    if options.only_shard:
+    if options.ch_only_shard:
         return build_drop_ch_table_sqls(
             options.target_table,
             ch_cluster=None,
@@ -353,7 +353,7 @@ def _build_ch_create_table_as_dry_run_create_sqls(
     options: ChCreateTableAsOptions,
 ) -> list[str]:
     if options.table_schema is None:
-        if options.only_shard:
+        if options.ch_only_shard:
             return [
                 f"CREATE TABLE IF NOT EXISTS {options.target_table} (<query schema>)"
             ]
@@ -376,14 +376,14 @@ def _build_ch_create_table_as_dry_run_create_sqls(
         ch_cluster=options.ch_cluster,
         ch_sharding_key=options.ch_sharding_key,
         ch_replace_table=True,
-        only_shard=options.only_shard,
+        ch_only_shard=options.ch_only_shard,
     )
 
 
-def _normalize_only_shard(only_shard: bool) -> bool:
-    if not isinstance(only_shard, bool):
-        raise ValueError("only_shard must be a boolean.")
-    return only_shard
+def _normalize_only_shard(ch_only_shard: bool) -> bool:
+    if not isinstance(ch_only_shard, bool):
+        raise ValueError("ch_only_shard must be a boolean.")
+    return ch_only_shard
 
 
 def _normalize_single_query(query: str) -> str:

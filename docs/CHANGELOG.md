@@ -2,6 +2,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.6.17 - 2026-06-05
+
+- Renamed backend-only SQL inputs to backend-prefixed names and updated SQL
+  function documentation grouping rules.
+
 ## 1.3.6.16 - 2026-06-05
 
 - Added `sql.generate_dummy_connections()` for writing starter direct or

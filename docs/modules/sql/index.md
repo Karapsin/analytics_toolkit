@@ -3,8 +3,12 @@
 SQL utilities for reading, executing, loading, and transferring data through
 configured Greenplum, Trino, and ClickHouse connections.
 
-These pages explain concepts and workflows. Use the function reference when you
+These pages explain concepts and workflows. Use all SQL functions when you
 need exact signatures and input defaults.
+
+## All SQL Functions
+
+- [All SQL functions](functions/index.md)
 
 ## Workflow Guides
 
@@ -20,4 +24,3 @@ need exact signatures and input defaults.
 - [Greenplum operations](greenplum-operations.md)
 - [Logging and observability](logging-and-observability.md)
 - [Backend support matrix](support-matrix.md)
-- [Function reference](functions/index.md)

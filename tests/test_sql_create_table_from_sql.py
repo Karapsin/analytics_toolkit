@@ -323,7 +323,7 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
         table_db="ch",
         partition_by=["dt"],
         order_by=["dt", "id"],
-        sharding_key="cityHash64(id)",
+        ch_sharding_key="cityHash64(id)",
     )
 
     assert not any(command.startswith("DROP TABLE") for command in target.commands)
@@ -492,7 +492,7 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
             "order_by": ["id"],
             "ch_engine": "ReplicatedMergeTree",
             "ch_cluster": "{cluster}",
-            "sharding_key": "rand()",
+            "ch_sharding_key": "rand()",
         }
     ]
     assert any(
@@ -571,12 +571,12 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
         "select id, amount from source_table",
         table_db="ch",
         insert_data=True,
-        only_shard=True,
+        ch_only_shard=True,
         order_by=["id"],
     )
 
     assert inserted_rows == 5
-    assert transfer_calls[0]["only_shard"] is True
+    assert transfer_calls[0]["ch_only_shard"] is True
     assert any(
         command.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
         and "ENGINE = ReplicatedMergeTree" in command

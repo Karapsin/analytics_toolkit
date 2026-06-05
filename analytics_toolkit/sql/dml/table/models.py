@@ -21,7 +21,7 @@ class CreateTableFromSqlOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
-    only_shard: bool = False
+    ch_only_shard: bool = False
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     trino_insert_chunk_size: int | None = None
@@ -37,7 +37,7 @@ class DropManyPartitionsOptions:
     backend: str
     target_table: str
     partition_keys: list[str]
-    partition_column: str | None = None
+    trino_partition_column: str | None = None
     gp_truncate: bool = False
     ch_cluster: str = "{cluster}"
     retry_cnt: int = 5
@@ -60,7 +60,7 @@ class ChCreateTableAsOptions:
     ch_engine: str = "ReplicatedMergeTree"
     ch_cluster: str = "{cluster}"
     ch_sharding_key: str = "rand()"
-    only_shard: bool = False
+    ch_only_shard: bool = False
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
@@ -74,12 +74,12 @@ class ChDropTableOptions:
     connection_key: str
     backend: str
     target_table: str
-    shard_table: str
-    only_shard: bool = False
+    ch_shard_table: str
+    ch_only_shard: bool = False
     ch_cluster: str | None = "{cluster}"
-    wait_for_absence: bool = False
-    wait_timeout_seconds: int = 300
-    wait_poll_interval_seconds: float = 1
+    ch_wait_for_absence: bool = False
+    ch_wait_timeout_seconds: int = 300
+    ch_wait_poll_interval_seconds: float = 1
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
@@ -98,7 +98,7 @@ class ChFullTableMoveOptions:
     order_by: str | None = None
     ch_engine: str | None = None
     ch_cluster: str | None = "{cluster}"
-    sharding_key: str | None = None
+    ch_sharding_key: str | None = None
     ch_retry_per_host_drops: bool = True
     ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
