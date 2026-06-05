@@ -79,7 +79,7 @@ Do not run tests against real databases. Unit tests should use fake connections,
 
 When the user asks to update, publish, or release the package on PyPI, run the complete publishing workflow unless they explicitly ask for a narrower action:
 
-- Use `release_routines/test_pypi_release.sh` for TestPyPI publishing and artifact verification. Use `release_routines/pypi_release.sh` for real PyPI publishing and artifact verification. Do not manually reimplement these workflows unless the script itself is blocked; fix the script or report the blocker.
+- Use `release_routines/pypi_release.sh` for the full publishing workflow. It runs TestPyPI publishing and artifact verification first, then real PyPI publishing and artifact verification. Do not call the internal scripts under `release_routines/scripts/` unless the user explicitly asks for a narrower release action or the top-level script itself is blocked.
 - If the release only changes documentation or PyPI README content, bump the package version for the release artifact even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
 - Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
 - Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.

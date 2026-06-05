@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.5 - 2026-06-06
+
+- Moved release validation Python logic into organized helper modules and kept
+  only the pre-commit and full PyPI release scripts at the top level.
+
 ## 1.3.7.4 - 2026-06-06
 
 - Added release checks for module function documentation coverage,
