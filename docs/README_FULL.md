@@ -102,6 +102,7 @@ You can override the state/output directory with `MAGNIT_UTILS_HOME`.
 
 ## Manuals
 
+- [Quick Start](QUICK_START.md)
 - [analytics_toolkit Manual](ANALYTICS_TOOLKIT_MANUAL.md)
 - [Airflow SQL Manual](AIRFLOW_SQL_MANUAL.md)
 

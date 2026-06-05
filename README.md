@@ -44,6 +44,7 @@ or `sql.transfer(...)`. Do not restore removed root implementation paths.
 
 ## Documentation
 
+- [Quick Start](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/QUICK_START.md)
 - [Full README](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/README_FULL.md)
 - [analytics_toolkit Manual](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/ANALYTICS_TOOLKIT_MANUAL.md)
 - [Airflow SQL Manual](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/AIRFLOW_SQL_MANUAL.md)
