@@ -30,10 +30,10 @@ generated placeholders before running real SQL.
 ## General
 
 ```python
-from analytics_toolkit.general import here, read_file, time_print
+from analytics_toolkit.general import read_file, time_print
 
 params = {"start_dt": "2026-03-01", "end_dt": "2026-03-31"}
-query = read_file(here("queries/orders.sql"), params_dict=params)
+query = read_file("queries/orders.sql", params_dict=params)
 time_print("loaded SQL template")
 ```
 

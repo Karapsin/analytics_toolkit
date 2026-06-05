@@ -66,11 +66,11 @@ When to use:
 Real usage patterns from tickets:
 
 ```python
-df = sql.read("gp", read_file(here("read_user_table.sql"), params_dict=params_dict))
+df = sql.read("gp", read_file("read_user_table.sql", params_dict=params_dict))
 ```
 
 ```python
-sql.read("trino", "select * from warehouse.sandbox.some_table").to_excel(here("load.xlsx"))
+sql.read("trino", "select * from warehouse.sandbox.some_table").to_excel("load.xlsx")
 ```
 
 ### `sql.execute(connection_type, query, random_sleep_seconds=5, print_queries=True, gp_break_query=False, gp_commit_each_statement=False, retry_cnt=5, timeout_increment=5)`
@@ -99,11 +99,11 @@ When to use:
 Real usage patterns from tickets:
 
 ```python
-sql.execute("gp", read_file(here("create_table.sql")), gp_break_query=True, random_sleep_seconds=None)
+sql.execute("gp", read_file("create_table.sql"), gp_break_query=True, random_sleep_seconds=None)
 ```
 
 ```python
-sql.execute("trino", read_file(here("final_agg.sql")))
+sql.execute("trino", read_file("final_agg.sql"))
 ```
 
 ### `sql.transfer(from_db, to_db, from_sql, to_table, replace_target_table=True, batch_size=100_000, adaptive_batch_size=True, target_batch_seconds=10.0, target_batch_memory_mb=None, retry_cnt=5, timeout_increment=5, full_retry_cnt=5, full_timeout_increment=600, key_columns=None, gp_distributed_by_key=None, trino_insert_chunk_size=None, partition_by=None, order_by=None, ch_engine="ReplicatedMergeTree", ch_cluster="core", sharding_key="rand()")`
@@ -165,7 +165,7 @@ sql.transfer(
 sql.transfer(
     from_db="ch",
     to_db="gp",
-    from_sql=read_file(here("get_push_data.sql"), params_dict={"start_dt": start_dt, "end_dt": end_dt}),
+    from_sql=read_file("get_push_data.sql", params_dict={"start_dt": start_dt, "end_dt": end_dt}),
     replace_target_table=replace_flg,
     to_table="sandbox.marketing_push_load",
     batch_size=1_000_000,
@@ -453,43 +453,7 @@ random_day = dt.get_random_day("2026-03-01", "2026-03-20")
 Typical import:
 
 ```python
-from analytics_toolkit.general import here, read_file, time_print
-```
-
-### `here(filename)`
-
-Builds a path relative to the current script location.
-
-Inputs:
-
-- `filename`: file name or relative path, for example `"query.sql"` or `"sql/report.sql"`
-
-Returns:
-
-- String path to the file
-
-When to use:
-
-- When your script and SQL files live in the same working folder
-- When you want `read_file(here(...))` instead of hardcoding absolute paths
-
-Important:
-
-- First call `os.chdir(...)` to switch into the ticket folder, then use `here(...)`
-
-Example:
-
-```python
-import os
-
-os.chdir("/path/to/dir")
-
-# reads file /path/to/dir/get_push_data.sql
-query = read_file(here("get_push_data.sql"))
-df = sql.read('gp', query)
-
-# saves df to /path/to/dir/output.xlsx
-df.to_excel(here("output.xlsx"))
+from analytics_toolkit.general import read_file, time_print
 ```
 
 ### `read_file(file_path, params_dict=None)`
@@ -514,7 +478,7 @@ Example:
 
 ```python
 query = read_file(
-    here("get_push_data.sql"),
+    "get_push_data.sql",
     params_dict={"start_dt": "2026-03-15", "end_dt": "2026-03-21"},
 )
 ```
@@ -603,7 +567,7 @@ excel.pivot_and_break_table(
     break_by="qr_group",
     sheet_by="start_dt",
     enforce_same_row_order=True,
-    output=here("prepared_results.xlsx"),
+    output="prepared_results.xlsx",
     append=True,
 )
 ```
@@ -634,7 +598,7 @@ Real usage pattern from tickets:
 excel.break_table(
     metrics_df.assign(start_dt=lambda x: x["start_dt"].apply(lambda v: f"{v}_metrics")),
     sheet_by="start_dt",
-    output=here("prepared_results.xlsx"),
+    output="prepared_results.xlsx",
     append=True,
 )
 ```
