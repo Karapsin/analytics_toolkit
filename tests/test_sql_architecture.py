@@ -61,19 +61,22 @@ def test_sql_docs_state_facade_import_policy() -> None:
     docs = [
         PROJECT_ROOT / "README.md",
         PROJECT_ROOT / "docs" / "modules" / "sql" / "functions" / "index.md",
-        PROJECT_ROOT / "docs" / "ANALYTICS_TOOLKIT_MANUAL.md",
         PROJECT_ROOT / "docs" / "AIRFLOW_SQL_MANUAL.md",
         PROJECT_ROOT / "docs" / "modules" / "ab_utils" / "index.md",
     ]
+
+    assert not (PROJECT_ROOT / "docs" / "ANALYTICS_TOOLKIT_MANUAL.md").exists()
 
     for path in docs:
         text = path.read_text()
         assert "from analytics_toolkit import sql" in text
 
-    for path in docs[:-1]:
+    for path in docs[:3]:
         text = path.read_text()
         assert "Deep imports under" in text
-        assert "Do not restore removed root implementation paths" in text
+
+    agents = (PROJECT_ROOT / "AGENTS.md").read_text()
+    assert "Do not restore removed root implementation paths" in agents
 
 
 def test_sql_source_does_not_restore_removed_aggregation_imports() -> None:

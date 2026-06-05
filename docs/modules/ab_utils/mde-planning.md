@@ -2,8 +2,9 @@
 
 # MDE Planning
 
-For experiment planning without observed groups, use `compute_mde_only` on a
-historical one-row-per-user dataframe:
+For experiment planning without observed groups, use
+[compute_mde_only](functions/compute-mde-only.md) on a historical
+one-row-per-user dataframe:
 
 ```python
 from analytics_toolkit.ab_utils import (
@@ -30,6 +31,8 @@ planning = compute_mde_only(
 The result contains the historical sample size, planned group sizes, baseline,
 variance, standard error, absolute MDE, relative MDE, and outlier diagnostics for
 each mean or ratio metric. `RatioMetricSpec` can also be passed to
-`compute_test_metrics`; see [Ratio Metrics](ratio-metrics.md) for the dictionary form.
+[compute_test_metrics](functions/compute-test-metrics.md); see
+[Ratio Metrics](ratio-metrics.md) for the dictionary form and
+[Metric Comparison Workflow](metric-comparison.md) for experiment analysis.
 
 [AB utilities index](index.md)

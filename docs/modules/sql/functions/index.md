@@ -2,10 +2,9 @@
 
 # SQL Functions
 
-Supported user-facing import style is `from analytics_toolkit import sql` or
-`import analytics_toolkit.sql as sql`. Deep imports under
-`analytics_toolkit.sql.*` are internal only and may change; call public helpers
-through the `sql` facade. Do not restore removed root implementation paths.
+Use `from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`
+in user-facing code. Deep imports under `analytics_toolkit.sql.*` are internal
+and may change.
 
 General functions are listed before backend-specific functions. Within each
 section, the helpers most likely to be used in normal workflows appear first.

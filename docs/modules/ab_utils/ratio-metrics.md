@@ -6,7 +6,9 @@ The output also reports `variance_control`, `variance_test`, and `s.e.` for each
 comparison. Mean metrics and `level="user"` ratio metrics use sample variances
 with `ddof=1`; `level="agg"` ratio metrics use delta-method ratio variances.
 
-Ratio metrics can be passed via `ratio_metrics`, for example:
+Pass ratio metrics to
+[compute_test_metrics](functions/compute-test-metrics.md) via `ratio_metrics`,
+for example:
 
 ```python
 ratio_metrics = [

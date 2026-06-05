@@ -16,7 +16,7 @@ load_df(connection_type: 'str', destination_table: 'str', df: 'pd.DataFrame', ap
 - `destination_table`: Target table name for dataframe loading.
 - `df`: Dataframe to load.
 - `append`: Historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied.
-- `write_mode`: Explicit write behavior: append, replace, truncate_insert, or reserved upsert.
+- `write_mode`: Explicit write behavior: append, replace, or truncate_insert. `upsert` is reserved and currently unsupported.
 - `key_columns`: Columns used to validate staged rows against an existing target before final insert.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
@@ -58,7 +58,7 @@ rows = sql.load_df(
 
 ## Notes
 
-- `write_mode` can make append/replace/truncate_insert behavior explicit while preserving historical `append` defaults.
+- `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 
 [SQL functions index](index.md)

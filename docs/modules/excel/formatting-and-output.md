@@ -2,10 +2,11 @@
 
 # Formatting and Output
 
-When writing multiple dataframes with `pivot_and_break_table`, pass
+When writing multiple dataframes with
+[pivot_and_break_table](functions/pivot-and-break-table.md), pass
 `enforce_same_row_order=True` to align each later dataframe's pivoted row-label
-order to the first dataframe. Missing row labels are written as blank rows; extra
-row labels in later dataframes raise a `ValueError`.
+order to the first dataframe. Missing row labels are written as blank rows;
+extra row labels in later dataframes raise a `ValueError`.
 
 Pass `prettify=True` to apply row-level numeric display formats in the Excel
 file. Returned dataframes and raw Excel cell values are unchanged. For each
@@ -57,11 +58,12 @@ combined_tables = pivot_and_break_table(
 )
 ```
 
-Both helpers return the written dataframes grouped by the original `sheet_by`
-values, which makes them convenient for tests or for callers that need both the
-Excel file and the transformed tables. When a list of dataframes is passed, each
-sheet places the first dataframe's tables in the left block, the second
-dataframe's tables in the next block to the right with one blank column between
-blocks, and so on.
+[pivot_and_break_table](functions/pivot-and-break-table.md) and
+[break_table](functions/break-table.md) return the written dataframes grouped
+by the original `sheet_by` values, which makes them convenient for tests or for
+callers that need both the Excel file and the transformed tables. When a list of
+dataframes is passed, each sheet places the first dataframe's tables in the left
+block, the second dataframe's tables in the next block to the right with one
+blank column between blocks, and so on.
 
 [Excel helpers index](index.md)

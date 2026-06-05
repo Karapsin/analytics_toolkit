@@ -17,7 +17,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', replace
 - `from_sql`: Source SQL query used by a transfer.
 - `to_table`: Target table name.
 - `replace_target_table`: Whether transfer should replace the target table using historical replace behavior.
-- `write_mode`: Explicit write behavior: append, replace, truncate_insert, or reserved upsert.
+- `write_mode`: Explicit write behavior: append, replace, or truncate_insert. `upsert` is reserved and currently unsupported.
 - `batch_size`: Initial number of rows fetched and inserted per transfer batch.
 - `adaptive_batch_size`: Whether transfer batch size should adapt after successful inserts.
 - `min_batch_size`: Minimum adaptive transfer batch size.

@@ -1,3 +1,5 @@
+[Documentation overview](README.md)
+
 # Quick Start
 
 Install the package:
@@ -145,7 +147,7 @@ result = compute_test_metrics(
 ## Dates
 
 ```python
-from analytics_toolkit.dates.dates import first_day, gen_dates_list
+from analytics_toolkit.dates import first_day, gen_dates_list
 
 month_start = first_day("2026-03-18", "month")
 weeks = gen_dates_list("2026-03-01", "2026-03-31", interval="week")
@@ -165,3 +167,5 @@ tables = pivot_and_break_table(
     prettify=True,
 )
 ```
+
+[Documentation overview](README.md)

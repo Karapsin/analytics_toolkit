@@ -56,17 +56,23 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - After every non-documentation repository change, bump the package version in `pyproject.toml`. Documentation-only changes must not bump the package version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
-- When adding, removing, or renaming files under `docs/modules/<module>/`, update that module folder's `index.md` navigation in the same change.
-- Non-index section files under `docs/modules/<module>/` should start and end with a link back to that module folder's `index.md`.
-- Top-level SQL docs under `docs/modules/sql/` should be concept/workflow guides. Keep exact function signatures and exhaustive input lists in `docs/modules/sql/functions/`.
-- In SQL module docs, describe general concepts before backend-specific concepts. Within each section, order likely higher-frequency workflows first.
+- When adding, removing, or renaming files under `docs/modules/<module>/`, update `docs/modules/README.md`, that module folder's `index.md`, and any affected function index navigation in the same change.
+- `docs/README.md` is the top-level documentation overview. Keep it linked to quick start, the Airflow SQL manual, module documentation, and the changelog.
+- All documentation must be reachable through hyperlinks starting from the root `README.md` to `docs/README.md` and then through the relevant overview, module, or function index pages. When adding, removing, or renaming a docs file, update the parent index or overview so the file is discoverable.
+- Every documentation Markdown file should include a hyperlink back to the nearest index or overview: top-level `docs/*.md` files link to `docs/README.md`, `docs/modules/README.md` links to `docs/README.md`, module indexes link to `docs/modules/README.md`, top-level module workflow docs link to that module's `index.md`, and function docs link to that module's `functions/index.md`.
+- `docs/modules/README.md` should link every module index and should start and end with a link back to `docs/README.md`.
+- Every top-level module index at `docs/modules/<module>/index.md` should start and end with a link back to `docs/modules/README.md`.
+- Every top-level module index should put the function reference first, before workflow guides, using `## All <Module> Functions`, then `## Workflow Guides`.
+- Top-level module docs under `docs/modules/<module>/` should be concept/workflow guides. Keep exact function signatures and exhaustive input lists in `docs/modules/<module>/functions/`.
+- In module docs, describe general concepts before backend-specific or advanced concepts. Within each section, order likely higher-frequency workflows first.
+- When a top-level concept doc mentions a public helper, link that helper to its page under that module's `functions/` folder. If a concept describes a workflow centered on a public helper, name and link that helper at least once.
+- Function docs live under `docs/modules/<module>/functions/`. `functions/index.md` should start and end with a link back to `../index.md`, group general functions before backend-specific or advanced functions, and order likely high-frequency functions first in each section.
+- Each function page should start and end with a link back to `functions/index.md`, then include a brief function description, the exact `function_name(...inputs with defaults...)` signature, input descriptions ordered from most to least frequent, a `## Usage` section, and optional notes. Prefer short public entrypoint pages such as `read.md`, `execute.md`, and `transfer.md` instead of duplicating long-form alias pages such as `read_sql.md`, `execute_sql.md`, or `transfer_table.md`.
 - `docs/modules/sql/index.md` should keep the `docs/modules/sql/functions/index.md` link at the top, before concept guides, under the label "All SQL functions".
-- When a top-level SQL concept doc mentions a public SQL helper, link that helper to its page under `docs/modules/sql/functions/`. If a concept describes a workflow centered on a public helper, name and link that helper at least once.
-- SQL function docs live under `docs/modules/sql/functions/`. `functions/index.md` should start and end with a link back to `../index.md`, group general functions before backend-specific functions, and order likely high-frequency functions first in each section.
-- Each SQL function page should start and end with a link back to `functions/index.md`, then include a brief function description, the exact `function_name(...inputs with defaults...)` signature, input descriptions, and optional notes. Prefer short public entrypoint pages such as `read.md`, `execute.md`, and `transfer.md` instead of duplicating long-form alias pages such as `read_sql.md`, `execute_sql.md`, or `transfer_table.md`.
 - In SQL function pages, split `## Inputs` into `### General Inputs` and `### Backend-Specific Inputs` only when both groups are non-empty. If all inputs are general, all inputs are backend-specific, or there are no inputs, keep `## Inputs` as one flat section. Order likely higher-frequency inputs first.
 - In SQL function pages, `### Backend-Specific Inputs` should contain only backend-only public inputs with `gp_`, `trino_`, or `ch_` prefixes. Cross-backend table-shape inputs such as `table_schema`, `column_types`, `partition_by`, and `order_by` stay in general inputs.
-- Every SQL function page must include a `## Usage` section between `## Inputs` and `## Notes` when notes exist. Usage examples should be concise, use `from analytics_toolkit import sql`, and avoid real credentials or production table names.
+- Non-SQL function pages should keep `## Inputs` as one flat section without general/backend-specific subsections.
+- Usage examples should be concise, use public module imports, and avoid real credentials or production table names.
 - At the end of every non-documentation change, run the full local CI matrix from Development Commands before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
@@ -76,6 +82,7 @@ Do not run tests against real databases. Unit tests should use fake connections,
 
 When the user asks to update, publish, or release the package on PyPI, run the complete publishing workflow unless they explicitly ask for a narrower action:
 
+- If the release only changes documentation or PyPI README content, bump the package version for the release artifact even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
 - Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
 - Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
 - Publish the same production package/version to real PyPI through the GitHub release workflow.
@@ -86,6 +93,7 @@ When the user asks to update, publish, or release the package on PyPI, run the c
 ## SQL Module Contracts
 
 - Public SQL APIs accept connection keys/aliases from `.connections`; callers should not need to pass backend names separately.
+- User-facing SQL imports should use `from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`. Deep imports under `analytics_toolkit.sql.*` are internal and may change. Do not restore removed root implementation paths.
 - Public SQL input names that work only for one backend must use the backend prefix: `gp_`, `trino_`, or `ch_`. Do not keep unprefixed compatibility aliases for those backend-only inputs unless the user explicitly asks for compatibility.
 - Each `.connections` value must include `type` as `gp`, `trino`, or `ch`. Backend dispatch comes from this `type`, while reconnect/retry/log messages keep using the alias key.
 - Env-based SQL config such as `SQL_CONNECTIONS`, `GP_HOST`, `TRINO_HOST`, `CH_HOST`, `TRINO_INSERT_CHUNK_SIZE`, and config-file override env vars is intentionally unsupported. Do not restore fallback support.

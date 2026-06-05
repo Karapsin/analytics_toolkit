@@ -1,10 +1,13 @@
+[All module docs](../README.md)
+
 # analytics_toolkit.sql
 
 SQL utilities for reading, executing, loading, and transferring data through
 configured Greenplum, Trino, and ClickHouse connections.
 
-These pages explain concepts and workflows. Use all SQL functions when you
-need exact signatures and input defaults.
+These pages explain concepts and workflows. Use the
+[All SQL functions](functions/index.md) reference when you need exact signatures
+and input defaults.
 
 ## All SQL Functions
 
@@ -16,11 +19,13 @@ need exact signatures and input defaults.
 - [DataFrame loading](dataframe-loading.md)
 - [Transfers](transfers.md)
 - [Write safety](write-safety.md)
+- [Logging and observability](logging-and-observability.md)
 - [Table creation](table-creation.md)
 - [Metadata and DDL](metadata-and-ddl.md)
 - [Parallel workflows](parallel-workflows.md)
 - [Partitioning](partitioning.md)
 - [ClickHouse distributed tables](clickhouse-distributed-tables.md)
 - [Greenplum operations](greenplum-operations.md)
-- [Logging and observability](logging-and-observability.md)
 - [Backend support matrix](support-matrix.md)
+
+[All module docs](../README.md)

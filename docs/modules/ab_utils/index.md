@@ -1,17 +1,28 @@
+[All module docs](../README.md)
+
 # analytics_toolkit.ab_utils
 
-Helpers for AB-test related workflows.
+AB-test helpers for user splitting, metric comparison, MDE planning, parallel
+execution, and presentation output.
 
-## Sections
+These pages explain concepts and workflows. Use the
+[All AB functions](functions/index.md) reference when you need exact signatures
+and input defaults.
 
-- [Available Helpers](available-helpers.md)
-- [Split Users](split.md)
-- [Compute Test Metrics](compute-test-metrics.md)
+## All AB Functions
+
+- [All AB functions](functions/index.md)
+
+## Workflow Guides
+
+- [Experiment splitting](experiment-splitting.md)
+- [Metric comparison workflow](metric-comparison.md)
 - [Ratio Metrics](ratio-metrics.md)
 - [MDE Planning](mde-planning.md)
-- [Parallel Compute Metrics](parallel-compute-metrics.md)
-- [Parallel Compute Metrics From SQL](parallel-compute-metrics-from-sql.md)
-- [Format AB Metrics](format-ab-metrics.md)
-- [Output Notes](output-notes.md)
+- [Parallel metric workflows](parallel-workflows.md)
+- [Presentation formatting](presentation-formatting.md)
+- [Interpreting metric output](interpreting-metric-output.md)
 
 SQL-backed helpers use the supported `from analytics_toolkit import sql` facade.
+
+[All module docs](../README.md)

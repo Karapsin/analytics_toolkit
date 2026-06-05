@@ -1,6 +1,15 @@
+[Documentation overview](README.md)
+
 # Changelog
 
 Generated from package version bumps and recent commit history.
+
+## 1.3.6.18 - 2026-06-05
+
+- Reworked non-SQL module documentation into SQL-style function references and
+  workflow guides.
+- Removed the legacy analytics toolkit manual in favor of module documentation.
+- Updated the package summary wording for the PyPI README.
 
 ## 1.3.6.17 - 2026-06-05
 
@@ -19,7 +28,7 @@ Generated from package version bumps and recent commit history.
 
 ## 1.3.6.14 - 2026-06-05
 
-- Reworked the PyPI README into a compact CRAN-style package summary.
+- Reworked the PyPI README into a CRAN-style package summary.
 - Added a concise root README installation section.
 - Moved detailed documentation into `docs/` and linked it from the package
   summary.
@@ -66,3 +75,5 @@ Generated from package version bumps and recent commit history.
 - `1.3.2.x`: treated deterministic ClickHouse and SQL semantic errors as
   non-retryable.
 - `1.3.1.x`: added `sanitize_date` and strengthened CUPED tests.
+
+[Documentation overview](README.md)

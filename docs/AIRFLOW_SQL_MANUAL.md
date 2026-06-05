@@ -1,3 +1,5 @@
+[Documentation overview](README.md)
+
 # Airflow SQL Manual
 
 Use this manual when migrating DAG code from local Airflow connection wrappers to
@@ -468,3 +470,5 @@ Keep specialized DAG utilities when the toolkit does not own the behavior yet:
 
 For plain SQL execution, dataframe reads, dataframe loads, and supported
 backend-to-backend transfers, prefer the toolkit calls shown above.
+
+[Documentation overview](README.md)
