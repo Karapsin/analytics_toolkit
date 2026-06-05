@@ -26,6 +26,21 @@ build_create_table_sqls(connection_type: 'str', table_name: 'str', batch: 'pd.Da
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+import pandas as pd
+from analytics_toolkit import sql
+
+batch = pd.DataFrame({"event_date": ["2026-06-01"], "views": [100]})
+statements = sql.build_create_table_sqls(
+    "ch",
+    "sandbox.daily_events",
+    batch,
+    order_by=["event_date"],
+)
+```
+
 ## Notes
 
 - ClickHouse distributed targets can require multiple DDL statements.

@@ -17,6 +17,15 @@ gp_cancel_all_running_queries(connection_key: 'str' = 'gp', concurrency: 'int' =
 - `timeout_increment`: Delay increment used between operation retries.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+cancelled = sql.gp_cancel_all_running_queries("gp", concurrency=4)
+print(cancelled)
+```
+
 ## Notes
 
 - The caller session is excluded from cancellation.

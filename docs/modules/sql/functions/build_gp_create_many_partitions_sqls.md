@@ -20,6 +20,17 @@ build_gp_create_many_partitions_sqls(table: 'str', *, intervals: 'Sequence[Mappi
 - `name_template`: Template used to build generated Greenplum partition names.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+statements = sql.build_gp_create_many_partitions_sqls(
+    "sandbox.events",
+    days=["2026-06-01", "2026-06-02"],
+)
+```
+
 ## Notes
 
 - Exactly one of `intervals`, `values`, `days`, `weeks`, `months`, or `years` must be passed.

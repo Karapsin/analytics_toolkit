@@ -45,6 +45,20 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', replace
 - `estimate_total_rows`: Whether transfer should ask the source backend for a best-effort row estimate for progress.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+rows = sql.transfer(
+    from_db="trino",
+    to_db="gp",
+    from_sql="select order_id, user_id, amount from sandbox.orders",
+    to_table="sandbox.orders_copy",
+    batch_size=50_000,
+)
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.

@@ -22,6 +22,20 @@ drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+plan = sql.drop_many_partitions(
+    "gp",
+    "sandbox.events",
+    ["2026-06-01", "2026-06-02"],
+    dry_run=True,
+)
+print(sql.format_plan(plan))
+```
+
 ## Notes
 
 - Greenplum, Trino, and ClickHouse use different generated SQL for partition removal.

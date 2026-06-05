@@ -36,6 +36,21 @@ load_df(connection_type: 'str', destination_table: 'str', df: 'pd.DataFrame', ap
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+import pandas as pd
+from analytics_toolkit import sql
+
+scores = pd.DataFrame({"user_id": [1, 2], "score": [10.5, 12.0]})
+rows = sql.load_df(
+    "gp",
+    "sandbox.scores",
+    scores,
+    write_mode="truncate_insert",
+)
+```
+
 ## Notes
 
 - `write_mode` can make append/replace/truncate_insert behavior explicit while preserving historical `append` defaults.

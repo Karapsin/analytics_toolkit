@@ -30,6 +30,17 @@ create_sql_table(connection_type: 'str', connection: 'Any', table_name: 'str', b
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+import pandas as pd
+from analytics_toolkit import sql
+
+batch = pd.DataFrame({"user_id": [1], "score": [10.5]})
+connection = sql.get_sql_connection("gp")
+sql.create_sql_table("gp", connection, "sandbox.scores", batch)
+```
+
 ## Notes
 
 - This helper expects an already opened backend connection; most callers use `load_df` or `create_table_from_sql` instead.

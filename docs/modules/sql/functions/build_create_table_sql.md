@@ -26,6 +26,17 @@ build_create_table_sql(connection_type: 'str', table_name: 'str', batch: 'pd.Dat
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+import pandas as pd
+from analytics_toolkit import sql
+
+batch = pd.DataFrame({"user_id": [1], "score": [10.5]})
+ddl = sql.build_create_table_sql("gp", "sandbox.scores", batch)
+print(ddl)
+```
+
 ## Notes
 
 - This renders SQL only and does not open a connection.

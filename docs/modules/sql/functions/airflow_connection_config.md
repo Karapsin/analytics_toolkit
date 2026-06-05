@@ -13,4 +13,13 @@ airflow_connection_config(connection_id: 'str', backend: 'BackendName | str | No
 - `connection_id`: Airflow connection ID to read.
 - `backend`: Backend name to use for an Airflow Connection; when omitted, infer it from Airflow metadata.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+config = sql.airflow_connection_config("airflow_trino", backend="trino")
+print(config.type)
+```
+
 [SQL functions index](index.md)

@@ -32,4 +32,18 @@ create_table_from_sql(source_db: 'str', table_name: 'str', sql: 'str', *, table_
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+plan = sql.create_table_from_sql(
+    "trino",
+    "sandbox.orders_daily",
+    "select order_date, count(*) as orders from sandbox.orders group by order_date",
+    dry_run=True,
+)
+print(sql.format_plan(plan))
+```
+
 [SQL functions index](index.md)

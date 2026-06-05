@@ -24,6 +24,15 @@ ch_drop_table(db_key: 'str', table: 'str', *, ch_cluster: 'str | None' = '{clust
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+plan = sql.ch_drop_table("ch", "sandbox.events_daily", dry_run=True)
+print(sql.format_plan(plan))
+```
+
 ## Notes
 
 - ClickHouse-only helper.

@@ -18,6 +18,20 @@ async_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_
 - `hard_concurrency_cap`: Maximum allowed actual worker concurrency after soft throttling.
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+tasks = [
+    {"name": "orders", "type": "read", "connection_type": "gp", "query": "select * from sandbox.orders limit 10"},
+    {"name": "refresh", "type": "execute", "connection_type": "gp", "query": "analyze sandbox.orders"},
+]
+
+result = sql.async_sql(tasks, concurrency=2)
+orders = result["orders"]
+```
+
 ## Notes
 
 - The function itself is synchronous from the caller perspective; it returns a result dictionary.

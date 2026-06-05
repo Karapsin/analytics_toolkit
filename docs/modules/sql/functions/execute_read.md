@@ -21,6 +21,22 @@ execute_read(connection_type: 'str', query: 'str', print_queries: 'bool' = False
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+result = sql.execute_read(
+    "gp",
+    """
+    analyze sandbox.orders;
+    select order_date, count(*) as orders
+    from sandbox.orders
+    group by order_date
+    """,
+)
+```
+
 ## Notes
 
 - Every statement except the last is executed first; the last statement is read into a dataframe.

@@ -23,6 +23,17 @@ execute(connection_type: 'str', query: 'str', print_queries: 'bool' = False, gp_
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+sql.execute(
+    "gp",
+    "insert into sandbox.order_summary select order_date, count(*) from sandbox.orders group by order_date",
+)
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.

@@ -12,4 +12,13 @@ support_matrix_rows() -> 'list[dict[str, str]]'
 
 No inputs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+for row in sql.support_matrix_rows():
+    print(row["backend"], row["write_modes"])
+```
+
 [SQL functions index](index.md)

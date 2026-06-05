@@ -18,6 +18,19 @@ parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fa
 - `hard_concurrency_cap`: Maximum allowed actual worker concurrency after soft throttling.
 - `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+tasks = [
+    {"name": "orders", "type": "read", "connection_type": "gp", "query": "select * from sandbox.orders limit 10"},
+    {"name": "events", "type": "read", "connection_type": "trino", "query": "select * from sandbox.events limit 10"},
+]
+
+result = sql.parallel_sql(tasks, concurrency=2)
+```
+
 ## Notes
 
 - Use the same task specification shape as `async_sql`.

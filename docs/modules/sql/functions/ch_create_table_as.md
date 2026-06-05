@@ -27,6 +27,21 @@ ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `table_schema`: Explicit backend-native column type mapping for created tables.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+plan = sql.ch_create_table_as(
+    "ch",
+    "sandbox.events_daily",
+    "select event_date, count() as views from sandbox.events group by event_date",
+    order_by=["event_date"],
+    dry_run=True,
+)
+print(sql.format_plan(plan))
+```
+
 ## Notes
 
 - ClickHouse-only helper.

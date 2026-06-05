@@ -26,6 +26,18 @@ gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[M
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+sql.gp_create_many_partitions(
+    "gp",
+    "sandbox.events",
+    days=["2026-06-01", "2026-06-02"],
+)
+```
+
 ## Notes
 
 - Exactly one of `intervals`, `values`, `days`, `weeks`, `months`, or `years` must be passed.

@@ -12,4 +12,12 @@ format_support_matrix() -> 'str'
 
 No inputs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+print(sql.format_support_matrix())
+```
+
 [SQL functions index](index.md)

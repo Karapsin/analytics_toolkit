@@ -25,6 +25,20 @@ ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partiti
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+plan = sql.ch_full_table_move(
+    "ch",
+    move_table="sandbox.events_daily_old",
+    to_table="sandbox.events_daily",
+    dry_run=True,
+)
+print(sql.format_plan(plan))
+```
+
 ## Notes
 
 - ClickHouse-only helper.

@@ -16,6 +16,14 @@ gp_vacuum(table_name: 'str', analyze: 'bool' = False, full: 'bool' = False, verb
 - `verbose`: Whether Greenplum vacuum should include `VERBOSE`.
 - `connection_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+sql.gp_vacuum("sandbox.orders", analyze=True)
+```
+
 ## Notes
 
 - Runs outside a transaction block.

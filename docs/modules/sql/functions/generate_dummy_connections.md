@@ -12,6 +12,16 @@ generate_dummy_connections(airflow: 'bool' = False) -> 'Path'
 
 - `airflow`: When `True`, generate Airflow routing metadata instead of direct connection placeholders.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+sql.generate_dummy_connections()
+# For Airflow DAG routing metadata:
+# sql.generate_dummy_connections(airflow=True)
+```
+
 ## Notes
 
 - The helper writes `./.connections` only when it does not already exist; an existing file raises `ValueError`.

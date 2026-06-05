@@ -18,6 +18,17 @@ read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, retry_
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 
+## Usage
+
+```python
+from analytics_toolkit import sql
+
+orders = sql.read(
+    "gp",
+    "select order_id, user_id, amount from sandbox.orders limit 100",
+)
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.
