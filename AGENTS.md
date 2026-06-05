@@ -58,8 +58,9 @@ Do not run tests against real databases. Unit tests should use fake connections,
 - When changing public behavior, update the relevant module README and focused tests.
 - When adding, removing, or renaming files under `docs/modules/<module>/`, update that module folder's `index.md` navigation in the same change.
 - Non-index section files under `docs/modules/<module>/` should start and end with a link back to that module folder's `index.md`.
-- In SQL module docs, describe general/public functions before backend-specific functions. Within each section, order functions by expected user frequency, with the more commonly used helper first.
-- `docs/modules/sql/index.md` should contain only the link to `docs/modules/sql/functions/index.md`.
+- Top-level SQL docs under `docs/modules/sql/` should be concept/workflow guides. Keep exact function signatures and exhaustive input lists in `docs/modules/sql/functions/`.
+- In SQL module docs, describe general concepts before backend-specific concepts. Within each section, order likely higher-frequency workflows first.
+- `docs/modules/sql/index.md` should link concept guides first and `docs/modules/sql/functions/index.md` as the function reference.
 - SQL function docs live under `docs/modules/sql/functions/`. `functions/index.md` should start and end with a link back to `../index.md`, group general functions before backend-specific functions, and order likely high-frequency functions first in each section.
 - Each SQL function page should start and end with a link back to `functions/index.md`, then include a brief function description, the exact `function_name(...inputs with defaults...)` signature, input descriptions, and optional notes. Prefer short public entrypoint pages such as `read.md`, `execute.md`, and `transfer.md` instead of duplicating long-form alias pages such as `read_sql.md`, `execute_sql.md`, or `transfer_table.md`.
 - At the end of every non-documentation change, run the full local CI matrix from Development Commands before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
