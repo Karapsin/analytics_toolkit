@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.4 - 2026-06-06
+
+- Added release checks for module function documentation coverage,
+  documentation navigation links, and README dependency metadata.
+
 ## 1.3.7.3 - 2026-06-06
 
 - Added release checks that keep the README package version synchronized with
