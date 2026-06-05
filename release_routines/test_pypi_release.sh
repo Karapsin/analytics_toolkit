@@ -111,6 +111,7 @@ verify_testpypi_artifact() {
 
   (
     set -euo pipefail
+    local install_attempt
     local temp_dir
     local venv_dir
 
@@ -120,10 +121,19 @@ verify_testpypi_artifact() {
 
     python -m venv "${venv_dir}"
     "${venv_dir}/bin/python" -m pip install --upgrade pip
-    "${venv_dir}/bin/python" -m pip install \
-      --index-url https://test.pypi.org/simple/ \
-      --extra-index-url https://pypi.org/simple/ \
-      "karapsin-analytics-toolkit==${version}"
+    for install_attempt in {1..10}; do
+      if "${venv_dir}/bin/python" -m pip install --no-cache-dir \
+        --index-url https://test.pypi.org/simple/ \
+        --extra-index-url https://pypi.org/simple/ \
+        "karapsin-analytics-toolkit==${version}"; then
+        break
+      fi
+      if [ "${install_attempt}" -eq 10 ]; then
+        exit 1
+      fi
+      printf 'Install attempt %s failed; retrying after TestPyPI propagation delay\n' "${install_attempt}" >&2
+      sleep 30
+    done
 
     cd "${temp_dir}"
     "${venv_dir}/bin/python" <<'PY'

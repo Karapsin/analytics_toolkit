@@ -79,6 +79,7 @@ verify_pypi_artifact() {
 
   (
     set -euo pipefail
+    local install_attempt
     local temp_dir
     local venv_dir
 
@@ -88,7 +89,16 @@ verify_pypi_artifact() {
 
     python -m venv "${venv_dir}"
     "${venv_dir}/bin/python" -m pip install --upgrade pip
-    "${venv_dir}/bin/python" -m pip install "analytics-toolkit==${version}"
+    for install_attempt in {1..10}; do
+      if "${venv_dir}/bin/python" -m pip install --no-cache-dir "analytics-toolkit==${version}"; then
+        break
+      fi
+      if [ "${install_attempt}" -eq 10 ]; then
+        exit 1
+      fi
+      printf 'Install attempt %s failed; retrying after PyPI propagation delay\n' "${install_attempt}" >&2
+      sleep 30
+    done
 
     cd "${temp_dir}"
     "${venv_dir}/bin/python" <<'PY'
