@@ -56,6 +56,7 @@ PYTHON312="$(pyenv_python 3.12.13)"
 PYTHON313="$(pyenv_python 3.13.13)"
 PYTHON314="$(pyenv_python 3.14.5)"
 
+"${script_dir}/check_package_metadata.sh"
 python -m compileall analytics_toolkit tests
 pytest -q
 tox -e py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest

@@ -167,6 +167,7 @@ if [ "${project_name}" != "analytics-toolkit" ]; then
   printf 'Expected production project name analytics-toolkit, got %s\n' "${project_name}" >&2
   exit 1
 fi
+"${script_dir}/check_package_metadata.sh"
 
 branch_name="testpypi-${version}"
 base_commit="$(git rev-parse HEAD)"

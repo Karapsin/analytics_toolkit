@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.3 - 2026-06-06
+
+- Added release checks that keep the README package version synchronized with
+  `pyproject.toml`.
+- Added retry handling for PyPI and TestPyPI artifact verification installs.
+
 ## 1.3.6.18 - 2026-06-05
 
 - Reworked non-SQL module documentation into SQL-style function references and
