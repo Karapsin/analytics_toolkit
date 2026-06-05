@@ -9,10 +9,12 @@ the current working directory upward through parent directories. Public SQL
 functions accept a key from that file; backend behavior is selected from the
 key's `type`.
 
-Call `sql.generate_dummy_connections()` to write a starter direct
-`./.connections` file in the current working directory. Use
-`sql.generate_dummy_connections(airflow=True)` for an Airflow-source file. The
-helper never overwrites an existing `./.connections` file.
+Call [sql.generate_dummy_connections](functions/generate_dummy_connections.md)()
+to write a starter direct `./.connections` file in the current working
+directory. Use
+[sql.generate_dummy_connections](functions/generate_dummy_connections.md)(airflow=True)
+for an Airflow-source file. The helper never overwrites an existing
+`./.connections` file.
 
 ```json
 {
@@ -62,7 +64,8 @@ helper never overwrites an existing `./.connections` file.
 
 ## Validation
 
-Validate connection files from Python or the CLI:
+Use [sql.validate_connections](functions/validate_connections.md) to validate
+connection files from Python, or use the CLI:
 
 ```python
 from analytics_toolkit import sql
@@ -140,7 +143,9 @@ Use `{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
 `extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
 
-Once this file is present, DAG code can call SQL helpers directly:
+Once this file is present, DAG code can call SQL helpers directly. The common
+entrypoints are [sql.execute](functions/execute.md),
+[sql.read](functions/read.md), and [sql.transfer](functions/transfer.md):
 
 ```python
 from analytics_toolkit import sql
@@ -155,14 +160,18 @@ sql.transfer(
 )
 ```
 
-`sql.airflow_connection_config(connection_id, backend)` maps one Airflow
-Connection to the same config objects used by `.connections`. If `backend` is
-omitted, the package infers it from Airflow `conn_type` or extra `type` /
-`backend`. Greenplum and ClickHouse use the Airflow `schema` field as the
-database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
-`insert_chunk_size`, `request_timeout`, and `source` from connection extras.
-ClickHouse uses the fields listed above from connection extras and defaults
-Airflow-source connections to `send_receive_timeout=6000` and
+[sql.airflow_connection_config](functions/airflow_connection_config.md) maps
+one Airflow Connection to the same config objects used by `.connections`. If
+`backend` is omitted, the package infers it from Airflow `conn_type` or extra
+`type` / `backend`. Greenplum and ClickHouse use the Airflow `schema` field as
+the database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`,
+`verify`, `insert_chunk_size`, `request_timeout`, and `source` from connection
+extras. ClickHouse uses the fields listed above from connection extras and
+defaults Airflow-source connections to `send_receive_timeout=6000` and
 `settings={"connect_timeout": "500"}` when those fields are not provided.
+
+Use [sql.use_airflow_connections](functions/use_airflow_connections.md) when
+Python code should temporarily resolve configured connection IDs through
+Airflow instead of a local `.connections` file.
 
 [SQL module index](index.md)

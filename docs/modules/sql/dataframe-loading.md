@@ -4,7 +4,8 @@
 
 DataFrame loading is for pushing in-memory pandas data into a configured SQL
 target. It is the right workflow when Python already owns the rows and the
-target table should be appended, replaced, or refreshed in place.
+target table should be appended, replaced, or refreshed in place. The public
+entrypoint is [sql.load_df](functions/load_df.md).
 
 Use `write_mode` when the intended mutation matters:
 
@@ -19,7 +20,9 @@ Do not mix both unless you are preserving compatibility with an existing call.
 
 By default, table creation uses dataframe columns and inferred backend types.
 Pass `table_schema` when a column needs a specific backend-native type or when
-source data can produce ambiguous pandas dtypes.
+source data can produce ambiguous pandas dtypes. Use
+[sql.create_sql_table](functions/create_sql_table.md) when you need the table
+creation step independently from loading rows.
 
 `key_columns` lets the load validate staged rows against an existing target
 before final insertion. Use it when duplicate keys in append-like flows would be

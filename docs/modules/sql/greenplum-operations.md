@@ -3,7 +3,9 @@
 # Greenplum Operations
 
 Greenplum-specific operations cover maintenance and table-shape defaults that
-are not portable to every backend.
+are not portable to every backend. The maintenance helpers are
+[sql.gp_vacuum](functions/gp_vacuum.md) and
+[sql.gp_cancel_all_running_queries](functions/gp_cancel_all_running_queries.md).
 
 ## Maintenance
 
@@ -22,5 +24,10 @@ compression. Distribution is random unless a distribution key is provided.
 
 Partitioned parent tables can be created with range partitioning options, while
 child partitions are managed separately through the partitioning workflow.
+These defaults apply to table creation and write workflows such as
+[sql.create_sql_table](functions/create_sql_table.md),
+[sql.load_df](functions/load_df.md), and [sql.transfer](functions/transfer.md).
+Use [sql.gp_create_many_partitions](functions/gp_create_many_partitions.md) for
+Greenplum child partitions.
 
 [SQL module index](index.md)

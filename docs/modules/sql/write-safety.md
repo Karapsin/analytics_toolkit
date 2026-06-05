@@ -13,6 +13,15 @@ partition changes, and backend-specific table operations. A dry-run plan
 contains ordered statements, connection aliases, backend names, targets, and
 notable options.
 
+Common planned workflows include [sql.load_df](functions/load_df.md),
+[sql.transfer](functions/transfer.md),
+[sql.create_table_from_sql](functions/create_table_from_sql.md), and
+[sql.drop_many_partitions](functions/drop_many_partitions.md). ClickHouse table
+plans can also come from
+[sql.ch_create_table_as](functions/ch_create_table_as.md),
+[sql.ch_drop_table](functions/ch_drop_table.md), and
+[sql.ch_full_table_move](functions/ch_full_table_move.md).
+
 Operations that require live inspection for exact SQL may include placeholder
 plan steps instead of opening a connection. Treat those placeholders as a
 signal that runtime metadata is needed before the final SQL can be known.
@@ -23,6 +32,9 @@ Metadata results keep historical return values available while adding elapsed
 seconds, retry attempts, statement counts, operation status, row counts where
 available, and labels. Use them when automation needs to assert what happened
 after a write.
+
+Use [sql.format_plan](functions/format_plan.md) when a dry-run plan needs to be
+rendered as readable text.
 
 ## Labels
 

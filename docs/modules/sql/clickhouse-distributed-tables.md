@@ -4,7 +4,10 @@
 
 ClickHouse write helpers default to a distributed table backed by a managed
 local shard table. This keeps user-facing reads pointed at the distributed table
-while writes and DDL preserve the shard/distributed pair.
+while writes and DDL preserve the shard/distributed pair. The main workflows
+are [sql.load_df](functions/load_df.md), [sql.transfer](functions/transfer.md),
+[sql.create_table_from_sql](functions/create_table_from_sql.md), and
+[sql.ch_create_table_as](functions/ch_create_table_as.md).
 
 ## Shard and Distributed Pair
 
@@ -27,7 +30,9 @@ Replace flows verify that old distributed and shard tables disappear before
 recreate. If a host keeps stale metadata, per-host cleanup can retry local drops
 on affected hosts before the replacement continues.
 
-Full table moves copy the source distributed/shard shape to a destination,
-insert all rows, and then drop the source pair.
+[sql.ch_drop_table](functions/ch_drop_table.md) removes managed table pairs.
+[sql.ch_full_table_move](functions/ch_full_table_move.md) copies the source
+distributed/shard shape to a destination, inserts all rows, and then drops the
+source pair.
 
 [SQL module index](index.md)

@@ -7,6 +7,10 @@ the backends do not have identical capabilities. Use this matrix as a quick
 check before choosing a workflow or expecting a generated plan to look the same
 across engines.
 
+Use [sql.format_support_matrix](functions/format_support_matrix.md) for a text
+table and [sql.support_matrix_rows](functions/support_matrix_rows.md) when code
+needs structured backend capability rows.
+
 | Backend | Parser dialect | Transactions | Analyze | Distributed DDL | Write modes |
 | --- | --- | --- | --- | --- | --- |
 | `gp` | `postgres` | yes | yes | no | `append`, `replace`, `truncate_insert` |

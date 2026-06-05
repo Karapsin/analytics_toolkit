@@ -5,12 +5,17 @@
 Parallel workflows group independent SQL tasks and run them with controlled
 concurrency. They are useful for fan-out reads, independent refreshes, and
 multi-step jobs where some steps can proceed while others wait on database I/O.
+Use [sql.async_sql](functions/async_sql.md) or
+[sql.parallel_sql](functions/parallel_sql.md) for these batches.
 
 ## Task Batches
 
 Task specs describe the operation type and the same arguments that would be
-passed to the matching synchronous helper. Named tasks make result dictionaries
-stable and easier to inspect.
+passed to the matching synchronous helper, such as
+[sql.read](functions/read.md), [sql.execute](functions/execute.md),
+[sql.execute_read](functions/execute_read.md),
+[sql.load_df](functions/load_df.md), or [sql.transfer](functions/transfer.md).
+Named tasks make result dictionaries stable and easier to inspect.
 
 Use fail-fast behavior when one failed task invalidates the batch. Disable it
 when partial results are acceptable and failures should be reported per task.

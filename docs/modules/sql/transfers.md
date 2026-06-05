@@ -4,7 +4,8 @@
 
 Transfers move rows from a source SQL query to a target table. They are the
 right workflow when the source data is already in a database and Python should
-coordinate extraction, batching, type mapping, and target writes.
+coordinate extraction, batching, type mapping, and target writes. The public
+entrypoint is [sql.transfer](functions/transfer.md).
 
 The transfer flow has four conceptual steps:
 
@@ -12,6 +13,12 @@ The transfer flow has four conceptual steps:
 2. Inspect source query metadata when target creation or type casts need it.
 3. Stream source rows in batches.
 4. Insert staged rows and finalize the target table.
+
+Use [sql.read](functions/read.md) instead when the goal is only to return a
+source query as a dataframe. Use [sql.load_df](functions/load_df.md) when
+Python already owns the rows. Use
+[sql.create_table_from_sql](functions/create_table_from_sql.md) when the source
+query schema should create a target table before any optional insert.
 
 ## Batching
 

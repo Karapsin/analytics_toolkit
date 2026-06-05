@@ -4,7 +4,10 @@
 
 Partition workflows cover two separate jobs: creating partition structures and
 removing partition values. The exact SQL differs by backend, so the important
-concept is the table shape being managed.
+concept is the table shape being managed. Use
+[sql.gp_create_many_partitions](functions/gp_create_many_partitions.md) for
+Greenplum creation and
+[sql.drop_many_partitions](functions/drop_many_partitions.md) for removal.
 
 ## Greenplum Creation
 
@@ -13,8 +16,10 @@ weeks, months, or years. Range partition boundaries are generated in input
 order. Week inputs should be Mondays, month inputs first-of-month dates, and
 year inputs January 1 dates.
 
-Render partition DDL without opening a connection when reviewing table changes
-or preparing a SQL change script.
+Render partition DDL with
+[sql.build_gp_create_many_partitions_sqls](functions/build_gp_create_many_partitions_sqls.md)
+without opening a connection when reviewing table changes or preparing a SQL
+change script.
 
 ## Partition Removal
 

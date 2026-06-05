@@ -4,7 +4,10 @@
 
 Metadata helpers answer questions about visible tables, resolved table names,
 columns, optional row counts, and native DDL. They are useful before writes,
-inside validation steps, and when documenting existing database objects.
+inside validation steps, and when documenting existing database objects. Use
+[sql.show_tables](functions/show_tables.md) for listings,
+[sql.table_info](functions/table_info.md) for one table, and
+[sql.extract_ddl](functions/extract_ddl.md) for native DDL.
 
 ## Table Listings
 

@@ -4,21 +4,27 @@
 
 Table creation can start from an in-memory dataframe or from a source SQL query.
 Choose dataframe-based creation when Python owns the rows. Choose query-based
-creation when database metadata should define the target columns.
+creation when database metadata should define the target columns. The main
+entrypoints are [sql.create_sql_table](functions/create_sql_table.md) and
+[sql.create_table_from_sql](functions/create_table_from_sql.md).
 
 ## DataFrame-Based Creation
 
 Dataframe-based creation infers backend-native column types from pandas data.
 This works well for straightforward numeric, string, date, and timestamp data.
 Use `table_schema` when precision, scale, nullability, or binary/text handling
-must be explicit.
+must be explicit. [sql.build_create_table_sql](functions/build_create_table_sql.md)
+and [sql.build_create_table_sqls](functions/build_create_table_sqls.md) render
+DDL without executing it.
 
 ## Query-Based Creation
 
 Query-based creation reads the source query's native column metadata and maps it
 to the target backend. It can create an empty target table or create and insert
 the query result. Cross-backend inserts delegate to the transfer workflow after
-the target is created.
+the target is created with [sql.transfer](functions/transfer.md). If Python
+already owns the rows, [sql.load_df](functions/load_df.md) is usually the
+simpler workflow.
 
 ## Backend Shape
 
