@@ -517,8 +517,8 @@ query = read_file(
 
 ### `time_print(message, *, level="info", enabled=True, operation=None, connection=None, backend=None, phase=None, stream=None)`
 
-Prints a message with a timestamp. The legacy `time_print("message")` call keeps
-the existing output format.
+Prints a message with a timestamp. Calling `time_print("message")` uses the
+timestamp-only output format.
 
 Inputs:
 

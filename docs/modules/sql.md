@@ -806,9 +806,8 @@ The connection key is used as the Airflow connection ID by default. Use
 }
 ```
 
-Airflow-source entries support resolver objects for old wrapper patterns such
-as `extra.get("http_scheme", "https")`. Use
-`{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
+Airflow-source entries support resolver objects for optional connection extras.
+Use `{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
 `extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
 
@@ -836,8 +835,6 @@ database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`, `verify`,
 ClickHouse uses the fields listed above from connection extras and defaults
 Airflow-source connections to `send_receive_timeout=6000` and
 `settings={"connect_timeout": "500"}` when those fields are not provided.
-See [Airflow SQL Manual](../AIRFLOW_SQL_MANUAL.md) for old-vs-new
-DAG migration examples.
 
 Validate connection files from Python or the CLI:
 
@@ -861,22 +858,6 @@ analytics-toolkit sql support-matrix
 | `gp` | `postgres` | yes | yes | no | `append`, `replace`, `truncate_insert` |
 | `trino` | `trino` | no | yes | no | `append`, `replace`, `truncate_insert` |
 | `ch` | `clickhouse` | no | no | yes | `append`, `replace`, `truncate_insert` |
-
-## Migration From Env Vars
-
-Previous env-based configuration is no longer read. Move values into
-`.connections`:
-
-- `GP_HOST`, `GP_PORT`, `GP_USER`, `GP_PASSWORD`, `GP_DATABASE` -> a connection
-  with `"type": "gp"` and fields `host`, `port`, `user`, `password`, `database`
-- `TRINO_HOST`, `TRINO_PORT`, `TRINO_USER`, `TRINO_PASSWORD`, `TRINO_CATALOG`,
-  `TRINO_SCHEMA`, `TRINO_AUTH_MODE`, `TRINO_HTTP_SCHEME`, `TRINO_VERIFY`,
-  `TRINO_USE_KEYCHAIN_CERTS`, `TRINO_KEYCHAIN_CERT_NAMES` -> a connection with
-  `"type": "trino"` and matching lower-case fields
-- `TRINO_INSERT_CHUNK_SIZE` -> Trino connection field `insert_chunk_size`
-- `CH_HOST`, `CH_PORT`, `CH_USER`, `CH_PASSWORD`, `CH_DATABASE`, `CH_SECURE` ->
-  a connection with `"type": "ch"` and matching lower-case fields
-- `SQL_CONNECTIONS` -> the complete `.connections` file content
 
 ## Internal Layout
 

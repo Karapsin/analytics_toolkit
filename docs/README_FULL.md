@@ -83,10 +83,10 @@ include `type` as one of `gp`, `trino`, or `ch`.
 }
 ```
 
-Legacy variables such as `GP_HOST`, `TRINO_HOST`, `CH_HOST`, `SQL_CONNECTIONS`,
-and `TRINO_INSERT_CHUNK_SIZE` are not read. Move connection settings into
-`.connections`; Trino insert chunk sizing is the Trino connection field
-`insert_chunk_size`.
+Connection settings live in `.connections`. Environment variables such as
+`GP_HOST`, `TRINO_HOST`, `CH_HOST`, `SQL_CONNECTIONS`, and
+`TRINO_INSERT_CHUNK_SIZE` are not supported; Trino insert chunk sizing is the
+Trino connection field `insert_chunk_size`.
 
 If a Trino connection sets `use_keychain_certs=true`, the generated CA bundle is
 written to:

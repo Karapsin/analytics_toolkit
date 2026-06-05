@@ -25,7 +25,8 @@ Generated from package version bumps and recent commit history.
 ## 1.3.6.0 - 2026-06-03
 
 - Extended `time_print` with level filtering, structured context, stream
-  routing, scoped context, and injectable clocks while preserving legacy output.
+  routing, scoped context, and injectable clocks while keeping the timestamp-only
+  output format.
 - Added public `time_print` configuration helpers through
   `analytics_toolkit.general`.
 - Added structured context to central SQL operation/timing logs and warning
