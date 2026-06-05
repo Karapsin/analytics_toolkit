@@ -10,19 +10,24 @@ ch_drop_table(db_key: 'str', table: 'str', *, ch_cluster: 'str | None' = '{clust
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `table`: Table name to inspect, modify, or use for partition operations.
-- `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
-- `shard_table`: Explicit ClickHouse shard table name to drop with a distributed table.
-- `wait_for_absence`: Whether ClickHouse drop should wait until target tables disappear from metadata.
-- `wait_timeout_seconds`: Maximum wait time for ClickHouse table absence.
-- `wait_poll_interval_seconds`: Polling interval while waiting for ClickHouse table absence.
-- `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
-- `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
 - `dry_run`: When `True`, return a plan without mutating the database.
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
+- `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
+- `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
+- `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
+- `shard_table`: Explicit ClickHouse shard table name to drop with a distributed table.
+- `wait_for_absence`: Whether ClickHouse drop should wait until target tables disappear from metadata.
+- `wait_timeout_seconds`: Maximum wait time for ClickHouse table absence.
+- `wait_poll_interval_seconds`: Polling interval while waiting for ClickHouse table absence.
 
 ## Usage
 

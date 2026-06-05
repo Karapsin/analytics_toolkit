@@ -10,8 +10,14 @@ airflow_connection_config(connection_id: 'str', backend: 'BackendName | str | No
 
 ## Inputs
 
+### General Inputs
+
 - `connection_id`: Airflow connection ID to read.
 - `backend`: Backend name to use for an Airflow Connection; when omitted, infer it from Airflow metadata.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

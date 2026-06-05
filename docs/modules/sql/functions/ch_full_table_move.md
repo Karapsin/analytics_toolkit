@@ -10,9 +10,18 @@ ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partiti
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `move_table`: Source ClickHouse table to move.
 - `to_table`: Target table name.
+- `dry_run`: When `True`, return a plan without mutating the database.
+- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
 - `partition_by`: Backend-specific partitioning columns or expression for created tables.
 - `order_by`: Backend-specific ordering or sorting columns for created tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
@@ -20,10 +29,6 @@ ch_full_table_move(db_key: 'str', move_table: 'str', to_table: 'str', *, partiti
 - `sharding_key`: ClickHouse sharding expression for distributed table creation.
 - `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
 - `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 
 ## Usage
 

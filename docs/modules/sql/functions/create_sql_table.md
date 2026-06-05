@@ -10,25 +10,30 @@ create_sql_table(connection_type: 'str', connection: 'Any', table_name: 'str', b
 
 ## Inputs
 
+### General Inputs
+
 - `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `connection`: Open backend connection object used by the table creation helper.
 - `table_name`: Target or source table name, depending on the helper.
 - `batch`: Dataframe whose columns are used to infer table DDL.
+- `dry_run`: When `True`, return a plan without mutating the database.
+- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
+- `table_schema`: Explicit backend-native column type mapping for created tables.
 - `column_types`: Optional backend-native column type mapping used by table DDL builders.
-- `gp_distributed_by_key`: Greenplum distribution key columns for created target tables.
 - `partition_by`: Backend-specific partitioning columns or expression for created tables.
 - `order_by`: Backend-specific ordering or sorting columns for created tables.
+- `gp_distributed_by_key`: Greenplum distribution key columns for created target tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
 - `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
 - `ch_sharding_key`: ClickHouse sharding expression used for generated distributed table DDL.
 - `ch_distributed_table`: Whether the rendered ClickHouse DDL should include a `Distributed` table.
 - `only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
 - `ch_replace_table`: Whether rendered ClickHouse DDL should use replace-style table creation.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `table_schema`: Explicit backend-native column type mapping for created tables.
 
 ## Usage
 

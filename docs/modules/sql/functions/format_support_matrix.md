@@ -10,7 +10,13 @@ format_support_matrix() -> 'str'
 
 ## Inputs
 
+### General Inputs
+
 No inputs.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

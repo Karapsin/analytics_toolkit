@@ -10,31 +10,36 @@ load_df(connection_type: 'str', destination_table: 'str', df: 'pd.DataFrame', ap
 
 ## Inputs
 
+### General Inputs
+
 - `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `destination_table`: Target table name for dataframe loading.
 - `df`: Dataframe to load.
 - `append`: Historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied.
 - `write_mode`: Explicit write behavior: append, replace, truncate_insert, or reserved upsert.
-- `gp_distributed_by_key`: Greenplum distribution key columns for created target tables.
 - `key_columns`: Columns used to validate staged rows against an existing target before final insert.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
-- `trino_insert_chunk_size`: Number of rows per Trino parameterized multi-row insert statement.
+- `dry_run`: When `True`, return a plan without mutating the database.
+- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
+
+### Backend-Specific Inputs
+
+- `table_schema`: Explicit backend-native column type mapping for created tables.
 - `partition_by`: Backend-specific partitioning columns or expression for created tables.
 - `order_by`: Backend-specific ordering or sorting columns for created tables.
+- `gp_distributed_by_key`: Greenplum distribution key columns for created target tables.
+- `gp_insert_chunk_size`: Greenplum dataframe insert page size.
+- `trino_insert_chunk_size`: Number of rows per Trino parameterized multi-row insert statement.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
 - `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
 - `sharding_key`: ClickHouse sharding expression for distributed table creation.
 - `only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
 - `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
 - `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `gp_insert_chunk_size`: Greenplum dataframe insert page size.
-- `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
-- `table_schema`: Explicit backend-native column type mapping for created tables.
 
 ## Usage
 

@@ -10,7 +10,13 @@ support_matrix_rows() -> 'list[dict[str, str]]'
 
 ## Inputs
 
+### General Inputs
+
 No inputs.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

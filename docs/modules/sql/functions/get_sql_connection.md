@@ -10,7 +10,13 @@ get_sql_connection(connection_key: 'str') -> 'Any'
 
 ## Inputs
 
+### General Inputs
+
 - `connection_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

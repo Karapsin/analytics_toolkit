@@ -10,8 +10,14 @@ use_airflow_connections(connection_backends: 'Mapping[str, BackendName | str] | 
 
 ## Inputs
 
+### General Inputs
+
 - `connection_backends`: Optional mapping of Airflow connection IDs to backend names for the temporary routing context.
 - `default_backend`: Backend used by Airflow routing when a connection ID is not explicitly mapped.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

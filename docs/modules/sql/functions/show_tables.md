@@ -10,10 +10,15 @@ show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None'
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
+- `table_name`: Target or source table name, depending on the helper.
 - `schema`: Schema/database filter for table listing.
 - `conditions`: Backend-native metadata predicate appended to the table-listing query.
-- `table_name`: Target or source table name, depending on the helper.
+
+### Backend-Specific Inputs
+
 - `ch_distributed_table_stats`: Whether ClickHouse table listings should resolve distributed shard statistics.
 
 ## Usage

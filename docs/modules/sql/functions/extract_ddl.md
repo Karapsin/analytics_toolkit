@@ -10,8 +10,14 @@ extract_ddl(db_key: 'str', tables: 'str | Sequence[str]') -> 'str'
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `tables`: One table name or a sequence of table names for DDL extraction.
+
+### Backend-Specific Inputs
+
+None.
 
 ## Usage
 

@@ -10,9 +10,19 @@ ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `table_name`: Target or source table name, depending on the helper.
 - `query`: SQL text to execute or read.
+- `dry_run`: When `True`, return a plan without mutating the database.
+- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
+- `table_schema`: Explicit backend-native column type mapping for created tables.
 - `partition_by`: Backend-specific partitioning columns or expression for created tables.
 - `order_by`: Backend-specific ordering or sorting columns for created tables.
 - `ch_engine`: ClickHouse engine to use for created local shard tables.
@@ -21,11 +31,6 @@ ch_create_table_as(db_key: 'str', table_name: 'str', query: 'str', *, partition_
 - `only_shard`: For ClickHouse, create or mutate only the local table instead of a distributed/shard pair.
 - `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
 - `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `table_schema`: Explicit backend-native column type mapping for created tables.
 
 ## Usage
 

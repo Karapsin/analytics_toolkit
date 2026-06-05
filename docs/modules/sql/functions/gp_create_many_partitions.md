@@ -10,8 +10,19 @@ gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[M
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `table`: Table name to inspect, modify, or use for partition operations.
+- `retry_cnt`: Number of operation retries with fresh connections.
+- `timeout_increment`: Delay increment used between operation retries.
+- `dry_run`: When `True`, return a plan without mutating the database.
+- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
 - `intervals`: Explicit Greenplum partition interval definitions.
 - `values`: List partition values used to create Greenplum list partitions.
 - `days`: Day values used to create Greenplum range partitions.
@@ -19,12 +30,6 @@ gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[M
 - `months`: Month-start values used to create Greenplum range partitions.
 - `years`: January 1 year-start values used to create Greenplum range partitions.
 - `name_template`: Template used to build generated Greenplum partition names.
-- `retry_cnt`: Number of operation retries with fresh connections.
-- `timeout_increment`: Delay increment used between operation retries.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 
 ## Usage
 

@@ -10,17 +10,22 @@ drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str
 
 ## Inputs
 
+### General Inputs
+
 - `db_key`: Connection key or alias from `.connections`.
 - `table`: Table name to inspect, modify, or use for partition operations.
 - `partition_keys_list`: Partition values to remove from the target table.
-- `partition_column`: Partition column used by backends that need it for partition removal.
-- `gp_truncate`: For Greenplum partition removal, truncate matching partitions instead of dropping them.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `dry_run`: When `True`, return a plan without mutating the database.
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
+- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+
+### Backend-Specific Inputs
+
+- `gp_truncate`: For Greenplum partition removal, truncate matching partitions instead of dropping them.
+- `partition_column`: Partition column used by backends that need it for partition removal.
 
 ## Usage
 
