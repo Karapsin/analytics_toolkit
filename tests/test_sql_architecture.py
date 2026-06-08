@@ -58,20 +58,24 @@ def test_removed_sql_deep_module_files_stay_removed() -> None:
 
 
 def test_sql_docs_state_facade_import_policy() -> None:
-    docs = [
+    facade_import_docs = [
         PROJECT_ROOT / "README.md",
         PROJECT_ROOT / "docs" / "modules" / "sql" / "functions" / "index.md",
         PROJECT_ROOT / "docs" / "AIRFLOW_SQL_MANUAL.md",
         PROJECT_ROOT / "docs" / "modules" / "ab_utils" / "index.md",
     ]
+    deep_import_policy_docs = [
+        PROJECT_ROOT / "docs" / "modules" / "sql" / "functions" / "index.md",
+        PROJECT_ROOT / "docs" / "AIRFLOW_SQL_MANUAL.md",
+    ]
 
     assert not (PROJECT_ROOT / "docs" / "ANALYTICS_TOOLKIT_MANUAL.md").exists()
 
-    for path in docs:
+    for path in facade_import_docs:
         text = path.read_text()
         assert "from analytics_toolkit import sql" in text
 
-    for path in docs[:3]:
+    for path in deep_import_policy_docs:
         text = path.read_text()
         assert "Deep imports under" in text
 

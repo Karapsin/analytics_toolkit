@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.6 - 2026-06-08
+
+- Expanded the PyPI README with concise SQL transfer, AB metric, and date
+  helper examples linked to module and function documentation.
+
 ## 1.3.7.5 - 2026-06-06
 
 - Moved release validation Python logic into organized helper modules and kept
