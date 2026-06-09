@@ -592,6 +592,14 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
     assert len(async_calls) == 1
     sql_tasks, sql_kwargs = async_calls[0]
     assert sql_kwargs == {"concurrency": 2, "fail_fast": False, "progress": False}
+    forbidden_sql_task_fields = {
+        "connection",
+        "connection_type",
+        "connection_key",
+        "backend",
+    }
+    assert all("db_key" in task for task in sql_tasks)
+    assert all(forbidden_sql_task_fields.isdisjoint(task) for task in sql_tasks)
     assert sql_tasks == [
         {
             "name": "with_pre:sql",

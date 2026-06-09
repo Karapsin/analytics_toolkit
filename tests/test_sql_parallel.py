@@ -18,6 +18,31 @@ def named_tasks(tasks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"name": name, **spec} for name, spec in tasks.items()]
 
 
+def sql_task_spec(task_type: str) -> dict[str, Any]:
+    if task_type == "read":
+        return {"type": "read", "db_key": "gp", "query": "select 1"}
+    if task_type == "execute":
+        return {"type": "execute", "db_key": "gp", "query": "select 1"}
+    if task_type == "execute_read":
+        return {"type": "execute_read", "db_key": "gp", "query": "select 1"}
+    if task_type == "load_df":
+        return {
+            "type": "load_df",
+            "db_key": "gp",
+            "destination_table": "sandbox.target",
+            "df": pd.DataFrame({"id": [1]}),
+        }
+    if task_type == "transfer":
+        return {
+            "type": "transfer",
+            "from_db": "gp",
+            "to_db": "trino",
+            "from_sql": "select 1",
+            "to_table": "sandbox.target",
+        }
+    raise ValueError(f"Unsupported task type for test: {task_type}")
+
+
 def test_parallel_sql_is_exported() -> None:
     assert sql_module.parallel_sql is parallel_module.parallel_sql
 
@@ -32,26 +57,110 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
     transfer_result = 4
     df = pd.DataFrame({"id": [1]})
 
-    def record(task_type: str, result: Any):
-        def fake_operation(**kwargs: Any) -> Any:
-            calls.append((task_type, kwargs))
-            return result
+    def fake_read_sql(
+        *,
+        db_key: str,
+        query: str,
+        print_queries: bool = False,
+    ) -> pd.DataFrame:
+        calls.append(
+            (
+                "read",
+                {
+                    "db_key": db_key,
+                    "query": query,
+                    "print_queries": print_queries,
+                },
+            )
+        )
+        return read_result
 
-        return fake_operation
+    def fake_execute_sql(
+        *,
+        db_key: str,
+        query: str,
+        gp_break_query: bool = False,
+        progress: bool = False,
+    ) -> None:
+        calls.append(
+            (
+                "execute",
+                {
+                    "db_key": db_key,
+                    "query": query,
+                    "gp_break_query": gp_break_query,
+                    "progress": progress,
+                },
+            )
+        )
 
-    monkeypatch.setattr(parallel_module, "read_sql", record("read", read_result))
-    monkeypatch.setattr(parallel_module, "execute_sql", record("execute", None))
-    monkeypatch.setattr(
-        parallel_module,
-        "execute_read",
-        record("execute_read", execute_read_result),
-    )
-    monkeypatch.setattr(parallel_module, "load_df", record("load_df", load_result))
-    monkeypatch.setattr(
-        parallel_module,
-        "transfer_table",
-        record("transfer", transfer_result),
-    )
+    def fake_execute_read(
+        *,
+        db_key: str,
+        query: str,
+        progress: bool = False,
+    ) -> pd.DataFrame:
+        calls.append(
+            (
+                "execute_read",
+                {"db_key": db_key, "query": query, "progress": progress},
+            )
+        )
+        return execute_read_result
+
+    def fake_load_df(
+        *,
+        db_key: str,
+        destination_table: str,
+        df: pd.DataFrame,
+        append: bool = False,
+        order_by: Any = None,
+        progress: bool = False,
+    ) -> int:
+        calls.append(
+            (
+                "load_df",
+                {
+                    "db_key": db_key,
+                    "destination_table": destination_table,
+                    "df": df,
+                    "append": append,
+                    "order_by": order_by,
+                    "progress": progress,
+                },
+            )
+        )
+        return load_result
+
+    def fake_transfer_table(
+        *,
+        from_db: str,
+        to_db: str,
+        from_sql: str,
+        to_table: str,
+        batch_size: int = 100000,
+        progress: bool = False,
+    ) -> int:
+        calls.append(
+            (
+                "transfer",
+                {
+                    "from_db": from_db,
+                    "to_db": to_db,
+                    "from_sql": from_sql,
+                    "to_table": to_table,
+                    "batch_size": batch_size,
+                    "progress": progress,
+                },
+            )
+        )
+        return transfer_result
+
+    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
+    monkeypatch.setattr(parallel_module, "execute_read", fake_execute_read)
+    monkeypatch.setattr(parallel_module, "load_df", fake_load_df)
+    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
 
     result = parallel_module.parallel_sql(
         named_tasks(
@@ -141,6 +250,28 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
         "batch_size": 10,
         "progress": False,
     }
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    ["read", "execute", "execute_read", "load_df", "transfer"],
+)
+@pytest.mark.parametrize(
+    "forbidden_field",
+    ["connection", "connection_type", "connection_key", "backend"],
+)
+def test_parallel_sql_rejects_removed_connection_task_arguments(
+    task_type: str,
+    forbidden_field: str,
+) -> None:
+    task = sql_task_spec(task_type)
+    task[forbidden_field] = "gp"
+
+    with pytest.raises(
+        ValueError,
+        match=rf"unsupported SQL task argument.*{forbidden_field}",
+    ):
+        parallel_module.parallel_sql([task], concurrency=1, progress=False)
 
 
 def test_parallel_sql_start_comment_prefixes_sql_fields(

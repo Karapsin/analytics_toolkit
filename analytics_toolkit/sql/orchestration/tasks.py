@@ -12,6 +12,9 @@ _SUPPORTED_TASK_TYPES = frozenset(
 )
 _PIPELINE_TASK_TYPE = "custom_sql_pipeline"
 _PROGRESS_TASK_TYPES = frozenset({"execute", "execute_read", "load_df", "transfer"})
+_FORBIDDEN_TASK_ARGUMENTS = frozenset(
+    {"connection", "connection_type", "connection_key", "backend"}
+)
 _START_COMMENT_SQL_FIELDS = {
     "read": "query",
     "execute": "query",
@@ -139,6 +142,7 @@ def _validate_task_spec(
     if task_type == _PIPELINE_TASK_TYPE:
         kwargs = _validate_pipeline_task(name, kwargs)
     else:
+        _validate_public_task_argument_names(name, task_type, kwargs)
         effective_start_comment = default_start_comment
         if "start_comment" in kwargs:
             effective_start_comment = _validate_start_comment(
@@ -147,6 +151,23 @@ def _validate_task_spec(
             )
         kwargs = _apply_start_comment(task_type, kwargs, effective_start_comment)
     return name, task_type, kwargs
+
+
+def _validate_public_task_argument_names(
+    name: str,
+    task_type: str,
+    kwargs: Mapping[str, Any],
+) -> None:
+    forbidden_fields = sorted(_FORBIDDEN_TASK_ARGUMENTS.intersection(kwargs))
+    if not forbidden_fields:
+        return
+
+    fields = ", ".join(forbidden_fields)
+    replacement = "from_db and to_db" if task_type == "transfer" else "db_key"
+    raise ValueError(
+        f"Task {name!r} ({task_type}) has unsupported SQL task argument(s): "
+        f"{fields}. Use {replacement} instead."
+    )
 
 
 def _validate_start_comment(field_name: str, value: Any) -> str | None:
