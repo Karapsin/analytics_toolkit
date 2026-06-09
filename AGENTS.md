@@ -63,7 +63,7 @@ If RAG dependencies are missing and dependency installation is allowed, install 
 
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
-- After every non-documentation repository change, bump the package version in `pyproject.toml`. Documentation-only changes must not bump the package version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
+- After every non-documentation repository change, bump the package version in `pyproject.toml` and update `docs/CHANGELOG.md` in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
 - When adding, removing, or renaming files under `docs/modules/<module>/`, update `docs/modules/README.md`, that module folder's `index.md`, and any affected function index navigation in the same change.
@@ -93,7 +93,7 @@ If RAG dependencies are missing and dependency installation is allowed, install 
 When the user asks to update, publish, or release the package on PyPI, run the complete publishing workflow unless they explicitly ask for a narrower action:
 
 - Use `release_routines/pypi_release.sh` for the full publishing workflow. It runs TestPyPI publishing and artifact verification first, then real PyPI publishing and artifact verification. Do not call the internal scripts under `release_routines/scripts/` unless the user explicitly asks for a narrower release action or the top-level script itself is blocked.
-- If the release only changes documentation or PyPI README content, bump the package version for the release artifact even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
+- If the release only changes documentation or PyPI README content, bump the package version for the release artifact and update `docs/CHANGELOG.md` even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
 - Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
 - Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
 - Publish the same production package/version to real PyPI through the GitHub release workflow.
