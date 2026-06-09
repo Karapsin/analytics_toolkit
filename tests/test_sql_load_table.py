@@ -455,7 +455,7 @@ def test_batch_insert_sql_builders_preserve_backend_shapes() -> None:
     )
 
 
-def test_build_create_table_sql_uses_float64_for_decimal_clickhouse_columns() -> None:
+def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_columns() -> None:
     batch = pd.DataFrame(
         {
             "amount": [Decimal("1.20"), Decimal("2.50"), None],
@@ -463,32 +463,26 @@ def test_build_create_table_sql_uses_float64_for_decimal_clickhouse_columns() ->
         }
     )
 
-    sql = create_sql_table_module.build_create_table_sql(
+    sql = create_sql_table_module.create_sql_table(
         db_key="ch",
         table_name="schema.stage_table",
         df=batch,
+        only_generate_sql=True,
     )
 
     assert "`amount` Nullable(Float64)" in sql
     assert "`label` Nullable(String)" in sql
 
 
-def test_build_create_table_sql_uses_explicit_column_types() -> None:
-    batch = pd.DataFrame(
-        {
-            "amount": ["1.20"],
-            "created_at": ["2024-01-01"],
-        }
-    )
-
-    sql = create_sql_table_module.build_create_table_sql(
+def test_create_sql_table_only_generate_sql_uses_table_schema() -> None:
+    sql = create_sql_table_module.create_sql_table(
         db_key="gp",
         table_name="schema.stage_table",
-        df=batch,
-        column_types={
+        table_schema={
             "amount": "NUMERIC(12, 2)",
             "created_at": "TIMESTAMP",
         },
+        only_generate_sql=True,
     )
 
     assert '"amount" NUMERIC(12, 2)' in sql

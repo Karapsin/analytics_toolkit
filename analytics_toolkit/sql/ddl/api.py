@@ -7,7 +7,7 @@ import pandas as pd
 
 from ..backend_adapters import get_backend_adapter
 from ..connection.config import get_connection_config, resolve_connection_backend
-from ..connection.errors import SqlOperationContext, sql_preview
+from ..connection.errors import InvalidSqlInputError, SqlOperationContext, sql_preview
 from ..connection.get_sql_connection import get_sql_connection
 from ..execution.operation_runner import (
     run_connection_operation,
@@ -27,7 +27,6 @@ from .models import CreateSqlTableOptions
 from .schema import (
     _build_column_definitions,
     _build_expected_ch_column_types,
-    _resolve_create_column_types,
     normalize_table_schema,
 )
 
@@ -38,7 +37,10 @@ def create_sql_table(
     table_name: str,
     df: pd.DataFrame | None = None,
     *,
-    column_types: Mapping[str, str] | None = None,
+    sql: str | None = None,
+    source_db: str | None = None,
+    insert_data: bool = False,
+    drop_target_if_exists: bool = False,
     gp_distributed_by_key: list[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
@@ -52,10 +54,40 @@ def create_sql_table(
     timeout_increment: int | float = 5,
     dry_run: bool = False,
     return_sql: bool = False,
+    only_generate_sql: bool = False,
     query_label: str | None = None,
     return_metadata: bool = False,
     table_schema: Mapping[str, str] | None = None,
-) -> SqlPlan | SqlOperationResult | None:
+) -> str | SqlPlan | SqlOperationResult | int | None:
+    _validate_create_schema_sources(
+        df=df,
+        sql=sql,
+        table_schema=table_schema,
+    )
+    if sql is not None:
+        return _create_sql_table_from_sql_source(
+            db_key=db_key,
+            table_name=table_name,
+            sql=sql,
+            source_db=source_db,
+            insert_data=insert_data,
+            drop_target_if_exists=drop_target_if_exists,
+            gp_distributed_by_key=gp_distributed_by_key,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_only_shard=ch_only_shard,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            dry_run=dry_run,
+            return_sql=return_sql,
+            only_generate_sql=only_generate_sql,
+            query_label=query_label,
+            return_metadata=return_metadata,
+        )
+
     config = get_connection_config(db_key)
     validate_retry_options(retry_cnt, timeout_increment)
     options = _build_create_table_options(
@@ -63,7 +95,6 @@ def create_sql_table(
         backend=config.backend,
         table_name=table_name,
         df=df,
-        column_types=column_types,
         table_schema=table_schema,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,
@@ -83,6 +114,8 @@ def create_sql_table(
     create_sqls = _build_create_sql_table_sqls(options, option_owner="db_key")
     metadata, plan = _build_create_table_plan(options, create_sqls)
 
+    if only_generate_sql:
+        return _format_sql_statements(create_sqls)
     if options.dry_run or options.return_sql:
         return plan
 
@@ -124,49 +157,201 @@ def create_sql_table(
     return None
 
 
-@timed_public_sql_function
-def build_create_table_sql(
+def _validate_create_schema_sources(
+    *,
+    df: pd.DataFrame | None,
+    sql: str | None,
+    table_schema: Mapping[str, str] | None,
+) -> None:
+    provided = [
+        source
+        for source, value in (
+            ("df", df),
+            ("sql", sql),
+            ("table_schema", table_schema),
+        )
+        if value is not None
+    ]
+    if len(provided) != 1:
+        raise InvalidSqlInputError(
+            "Exactly one schema source must be provided: df, sql, or table_schema."
+        )
+
+
+def _create_sql_table_from_sql_source(
+    *,
     db_key: str,
     table_name: str,
-    df: pd.DataFrame | None = None,
-    *,
-    column_types: Mapping[str, str] | None = None,
-    gp_distributed_by_key: list[str] | None = None,
-    partition_by: Sequence[str] | str | None = None,
-    order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
-    ch_distributed_table: bool = False,
-    ch_only_shard: bool = False,
-    ch_replace_table: bool = False,
-    query_label: str | None = None,
-    table_schema: Mapping[str, str] | None = None,
-) -> str:
-    config = get_connection_config(db_key)
-    options = _build_create_table_options(
-        connection_key=config.connection_key,
-        backend=config.backend,
-        table_name=table_name,
-        df=df,
-        column_types=column_types,
-        table_schema=table_schema,
+    sql: str,
+    source_db: str | None,
+    insert_data: bool,
+    drop_target_if_exists: bool,
+    gp_distributed_by_key: list[str] | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    ch_only_shard: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    dry_run: bool,
+    return_sql: bool,
+    only_generate_sql: bool,
+    query_label: str | None,
+    return_metadata: bool,
+) -> str | int | SqlPlan | SqlOperationResult | None:
+    if only_generate_sql:
+        return _generate_create_sql_table_from_query_sql(
+            source_db=source_db or db_key,
+            table_db=db_key,
+            table_name=table_name,
+            sql=sql,
+            gp_distributed_by_key=gp_distributed_by_key,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_only_shard=ch_only_shard,
+            query_label=query_label,
+        )
+
+    from ..dml.table.create_table_from_sql import create_table_from_sql
+
+    return create_table_from_sql(
+        source_db or db_key,
+        table_name,
+        sql,
+        table_db=db_key,
+        insert_data=insert_data,
+        drop_target_if_exists=drop_target_if_exists,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=ch_distributed_table,
         ch_only_shard=ch_only_shard,
-        ch_replace_table=ch_replace_table,
-        dry_run=False,
-        return_sql=False,
+        dry_run=dry_run,
+        return_sql=return_sql,
+        return_metadata=return_metadata,
         query_label=query_label,
-        return_metadata=False,
+    )
+
+
+def _generate_create_sql_table_from_query_sql(
+    *,
+    source_db: str,
+    table_db: str,
+    table_name: str,
+    sql: str,
+    gp_distributed_by_key: list[str] | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    ch_only_shard: bool,
+    query_label: str | None,
+) -> str:
+    from ..clickhouse.options import (
+        normalize_ch_columns_or_expression,
+        normalize_ch_string,
+        validate_ch_columns_in_columns,
+        validate_ch_options_not_used,
+    )
+    from ..dml.table.create_table_from_sql import (
+        _normalize_only_shard,
+        _normalize_single_query,
+        _validate_source_columns,
+    )
+    from ..dml.table.table_validation import (
+        normalize_key_columns,
+        validate_key_columns_in_columns,
+    )
+    from ..dml.transfer.schema import (
+        inspect_source_query_schema,
+        map_source_schema_to_target,
+    )
+    from ..execution.labels import apply_query_label
+
+    source_config = get_connection_config(source_db)
+    target_config = get_connection_config(table_db)
+    source_sql = _normalize_single_query(sql)
+    gp_distribution = normalize_key_columns(gp_distributed_by_key)
+    partition = normalize_ch_columns_or_expression(partition_by, "partition_by")
+    order = normalize_ch_columns_or_expression(order_by, "order_by")
+    ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
+    ch_cluster_name = normalize_ch_string(ch_cluster, "ch_cluster")
+    ch_sharding_key_name = normalize_ch_string(ch_sharding_key, "ch_sharding_key")
+    only_shard = _normalize_only_shard(ch_only_shard)
+
+    if gp_distribution and target_config.backend != "gp":
+        raise ValueError(
+            "gp_distributed_by_key can only be used when db_key has type 'gp'."
+        )
+    validate_ch_options_not_used(
+        target_backend=target_config.backend,
+        option_owner="db_key",
+        partition_by=partition,
+        order_by=order,
+        ch_engine=ch_engine_name,
+        ch_cluster=ch_cluster_name,
+        ch_sharding_key=ch_sharding_key_name,
+        ch_only_shard=only_shard,
+    )
+
+    source_connection = get_sql_connection(source_config.connection_key)
+    try:
+        source_schema = inspect_source_query_schema(
+            source_config.backend,
+            source_connection,
+            apply_query_label(source_sql, query_label),
+        )
+    finally:
+        source_connection.close()
+
+    source_columns = [column.name for column in source_schema]
+    _validate_source_columns(source_columns)
+    validate_key_columns_in_columns(gp_distribution, source_columns)
+    validate_ch_columns_in_columns(
+        partition,
+        source_columns,
+        "partition_by",
+        data_name="source query",
+    )
+    validate_ch_columns_in_columns(
+        order,
+        source_columns,
+        "order_by",
+        data_name="source query",
+    )
+    target_column_types = map_source_schema_to_target(
+        source_schema,
+        target_config.backend,
+    )
+    create_sqls = _build_create_table_sqls(
+        target_config.backend,
+        table_name,
+        pd.DataFrame(columns=source_columns),
+        table_schema=target_column_types,
+        gp_distributed_by_key=gp_distribution,
+        partition_by=partition,
+        order_by=order,
+        ch_engine=ch_engine_name,
+        ch_cluster=ch_cluster_name,
+        ch_sharding_key=ch_sharding_key_name,
+        ch_distributed_table=target_config.backend == "ch" and not only_shard,
+        ch_only_shard=only_shard,
+        query_label=query_label,
         option_owner="db_key",
     )
-    return ";\n".join(_build_create_sql_table_sqls(options, option_owner="db_key"))
+    return _format_sql_statements(create_sqls)
+
+
+def _format_sql_statements(sqls: Sequence[str]) -> str:
+    return ";\n".join(statement.rstrip(";") for statement in sqls)
 
 
 def _create_sql_table_with_connection(
@@ -176,7 +361,6 @@ def _create_sql_table_with_connection(
     df: pd.DataFrame | None = None,
     *,
     connection_key: str | None = None,
-    column_types: Mapping[str, str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
@@ -199,7 +383,6 @@ def _create_sql_table_with_connection(
         backend=resolved_backend,
         table_name=table_name,
         df=df,
-        column_types=column_types,
         table_schema=table_schema,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,
@@ -240,7 +423,6 @@ def _build_create_table_options(
     backend: str,
     table_name: str,
     df: pd.DataFrame | None,
-    column_types: Mapping[str, str] | None,
     table_schema: Mapping[str, str] | None,
     gp_distributed_by_key: list[str] | None,
     partition_by: Sequence[str] | str | None,
@@ -269,16 +451,7 @@ def _build_create_table_options(
         backend=backend,
         table_name=table_name,
         df=create_df,
-        column_types=column_types,
-        table_schema=(
-            _resolve_create_column_types(
-                table_schema=normalized_schema,
-                column_types=column_types,
-                columns=create_df.columns,
-            )
-            if normalized_schema is not None
-            else None
-        ),
+        table_schema=normalized_schema,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,
         order_by=order_by,
@@ -303,13 +476,18 @@ def _resolve_create_dataframe_and_schema(
     if df is None:
         normalized_schema = normalize_table_schema(table_schema)
         if normalized_schema is None:
-            raise ValueError("Either df or table_schema must be provided.")
+            raise InvalidSqlInputError(
+                "Exactly one schema source must be provided: df, sql, or table_schema."
+            )
         return pd.DataFrame(columns=list(normalized_schema)), normalized_schema
 
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
-    normalized_schema = normalize_table_schema(table_schema, columns=df.columns)
-    return df, normalized_schema
+    if table_schema is not None:
+        raise InvalidSqlInputError(
+            "Exactly one schema source must be provided: df, sql, or table_schema."
+        )
+    return df, None
 
 
 def _build_create_sql_table_sqls(
@@ -321,7 +499,6 @@ def _build_create_sql_table_sqls(
         options.backend,
         options.table_name,
         options.df,
-        column_types=options.column_types,
         table_schema=options.table_schema,
         gp_distributed_by_key=options.gp_distributed_by_key,
         partition_by=options.partition_by,
@@ -373,11 +550,7 @@ def _execute_create_sql_table(
     expected_ch_column_types = (
         _build_expected_ch_column_types(
             options.df,
-            _resolve_create_column_types(
-                table_schema=options.table_schema,
-                column_types=options.column_types,
-                columns=options.df.columns,
-            ),
+            options.table_schema,
         )
         if (
             options.backend == "ch"
@@ -433,10 +606,10 @@ def _build_create_table_sqls(
     option_owner: str = "db_key",
 ) -> list[str]:
     _validate_only_shard(backend, ch_only_shard, option_owner)
-    resolved_column_types = _resolve_create_column_types(
-        table_schema=table_schema,
-        column_types=column_types,
-        columns=df.columns,
+    resolved_column_types = (
+        normalize_table_schema(table_schema, columns=df.columns)
+        if table_schema is not None
+        else column_types
     )
     joined_columns = _build_column_definitions(
         backend,

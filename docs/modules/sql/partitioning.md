@@ -17,9 +17,9 @@ order. Week inputs should be Mondays, month inputs first-of-month dates, and
 year inputs January 1 dates.
 
 Render partition DDL with
-[sql.build_gp_create_many_partitions_sqls](functions/build_gp_create_many_partitions_sqls.md)
-without opening a connection when reviewing table changes or preparing a SQL
-change script.
+[sql.gp_create_many_partitions](functions/gp_create_many_partitions.md) and
+`only_generate_sql=True` when reviewing table changes or preparing a SQL change
+script.
 
 ## Partition Removal
 

@@ -12,8 +12,6 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
     from analytics_toolkit import sql
 
     public_names = {
-        "build_create_table_sql",
-        "build_gp_create_many_partitions_sqls",
         "create_sql_table",
         "drop_many_partitions",
         "execute",
@@ -31,7 +29,11 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         assert callable(getattr(sql, name))
 
     removed_public_aliases = {
+        "build_create_table_sql",
         "build_create_table_sqls",
+        "build_gp_create_many_partitions_sqls",
+        "ch_full_table_move",
+        "create_table_from_sql",
         "execute_sql",
         "read_sql",
         "transfer_table",
@@ -76,9 +78,7 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
     from analytics_toolkit import sql
 
     single_db_operations = {
-        "build_create_table_sql",
         "ch_drop_table",
-        "ch_full_table_move",
         "create_sql_table",
         "drop_many_partitions",
         "execute",
@@ -120,6 +120,7 @@ def test_removed_sql_deep_module_files_stay_removed() -> None:
         SQL_ROOT / "table_info.py",
         SQL_ROOT / "types.py",
         SQL_ROOT / "ddl" / "create_sql_table.py",
+        SQL_ROOT / "dml" / "table" / "ch_full_table_move.py",
         SQL_ROOT / "dml" / "table" / "table_ops.py",
         SQL_ROOT / "orchestration" / "async_api.py",
     ]
@@ -184,7 +185,6 @@ def test_sql_modules_stay_below_architecture_size_threshold() -> None:
     allowed_large_modules = {
         SQL_ROOT / "connection" / "config.py",
         SQL_ROOT / "dml" / "load" / "load_df.py",
-        SQL_ROOT / "dml" / "table" / "ch_full_table_move.py",
     }
 
     oversized: list[str] = []

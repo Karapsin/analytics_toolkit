@@ -31,68 +31,59 @@ def test_gp_create_many_partitions_is_public_and_timed() -> None:
         dml_table_module.gp_create_many_partitions
         is table_ops_module.gp_create_many_partitions
     )
-    assert (
-        sql_module.build_gp_create_many_partitions_sqls
-        is table_ops_module.build_gp_create_many_partitions_sqls
-    )
-    assert (
-        dml_module.build_gp_create_many_partitions_sqls
-        is table_ops_module.build_gp_create_many_partitions_sqls
-    )
     assert "gp_create_many_partitions" in sql_module.__all__
-    assert "build_gp_create_many_partitions_sqls" in sql_module.__all__
     assert "gp_create_many_partitions" in dml_module.__all__
-    assert "build_gp_create_many_partitions_sqls" in dml_module.__all__
     assert "gp_create_many_partitions" in dml_table_module.__all__
-    assert "build_gp_create_many_partitions_sqls" in dml_table_module.__all__
     assert "gp_create_many_partitions" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
-    assert (
-        "build_gp_create_many_partitions_sqls"
-        in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
-    )
     assert getattr(sql_module.gp_create_many_partitions, "__sql_public_timing__", False)
-    assert getattr(
-        sql_module.build_gp_create_many_partitions_sqls,
-        "__sql_public_timing__",
-        False,
-    )
+    assert "build_gp_create_many_partitions_sqls" not in sql_module.__all__
+    assert not hasattr(sql_module, "build_gp_create_many_partitions_sqls")
 
 
-def test_build_gp_create_many_partitions_sqls_renders_period_ranges() -> None:
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+def test_gp_create_many_partitions_only_generate_sql_renders_period_ranges() -> None:
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         days=["2026-05-01", "2026-05-02"],
-    ) == [
+        only_generate_sql=True,
+    ) == (
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_05_01 "
-        "START ('2026-05-01') INCLUSIVE END ('2026-05-02') EXCLUSIVE",
+        "START ('2026-05-01') INCLUSIVE END ('2026-05-02') EXCLUSIVE;\n"
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_05_02 "
-        "START ('2026-05-02') INCLUSIVE END ('2026-05-03') EXCLUSIVE",
-    ]
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+        "START ('2026-05-02') INCLUSIVE END ('2026-05-03') EXCLUSIVE"
+    )
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         weeks=["2026-05-04"],
-    ) == [
+        only_generate_sql=True,
+    ) == (
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_05_04 "
         "START ('2026-05-04') INCLUSIVE END ('2026-05-11') EXCLUSIVE"
-    ]
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+    )
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         months=["2026-12-01"],
-    ) == [
+        only_generate_sql=True,
+    ) == (
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_12_01 "
         "START ('2026-12-01') INCLUSIVE END ('2027-01-01') EXCLUSIVE"
-    ]
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+    )
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         years=["2026-01-01"],
-    ) == [
+        only_generate_sql=True,
+    ) == (
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_01_01 "
         "START ('2026-01-01') INCLUSIVE END ('2027-01-01') EXCLUSIVE"
-    ]
+    )
 
 
-def test_build_gp_create_many_partitions_sqls_renders_intervals_and_values() -> None:
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+def test_gp_create_many_partitions_only_generate_sql_renders_intervals_and_values() -> None:
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         intervals=[
             {"start": "2026-05-01", "end": "2026-05-02"},
@@ -103,34 +94,39 @@ def test_build_gp_create_many_partitions_sqls_renders_intervals_and_values() -> 
             },
         ],
         name_template="part_{}",
-    ) == [
+        only_generate_sql=True,
+    ) == (
         "ALTER TABLE sandbox.events ADD PARTITION part_2026_05_01 "
-        "START ('2026-05-01') INCLUSIVE END ('2026-05-02') EXCLUSIVE",
+        "START ('2026-05-01') INCLUSIVE END ('2026-05-02') EXCLUSIVE;\n"
         "ALTER TABLE sandbox.events ADD PARTITION custom_p_20260502 "
-        "START ('2026-05-02') INCLUSIVE END ('2026-05-03') EXCLUSIVE",
-    ]
-    assert table_ops_module.build_gp_create_many_partitions_sqls(
+        "START ('2026-05-02') INCLUSIVE END ('2026-05-03') EXCLUSIVE"
+    )
+    assert table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events_by_country",
         values=["RU", "Cote d'Ivoire"],
-    ) == [
-        "ALTER TABLE sandbox.events_by_country ADD PARTITION p_RU VALUES ('RU')",
+        only_generate_sql=True,
+    ) == (
+        "ALTER TABLE sandbox.events_by_country ADD PARTITION p_RU VALUES ('RU');\n"
         "ALTER TABLE sandbox.events_by_country ADD PARTITION p_Cote_d_Ivoire "
-        "VALUES ('Cote d''Ivoire')",
-    ]
+        "VALUES ('Cote d''Ivoire')"
+    )
 
 
-def test_build_gp_create_many_partitions_sqls_applies_query_label() -> None:
-    sqls = table_ops_module.build_gp_create_many_partitions_sqls(
+def test_gp_create_many_partitions_only_generate_sql_applies_query_label() -> None:
+    generated_sql = table_ops_module.gp_create_many_partitions(
+        "gp",
         "sandbox.events",
         days=["2026-05-01"],
         query_label="create daily partitions",
+        only_generate_sql=True,
     )
 
-    assert sqls == [
+    assert generated_sql == (
         "/* analytics_toolkit query_label=create daily partitions */\n"
         "ALTER TABLE sandbox.events ADD PARTITION p_2026_05_01 "
         "START ('2026-05-01') INCLUSIVE END ('2026-05-02') EXCLUSIVE"
-    ]
+    )
 
 
 def test_gp_create_many_partitions_dry_run_returns_plan_without_connection(
@@ -280,19 +276,27 @@ def test_gp_create_many_partitions_rejects_non_gp_alias() -> None:
 
 def test_gp_create_many_partitions_validates_exactly_one_input() -> None:
     with pytest.raises(InvalidSqlInputError, match="Exactly one"):
-        table_ops_module.build_gp_create_many_partitions_sqls("sandbox.events")
+        table_ops_module.gp_create_many_partitions(
+            "gp",
+            "sandbox.events",
+            only_generate_sql=True,
+        )
 
     with pytest.raises(InvalidSqlInputError, match="Exactly one"):
-        table_ops_module.build_gp_create_many_partitions_sqls(
+        table_ops_module.gp_create_many_partitions(
+            "gp",
             "sandbox.events",
             days=["2026-05-01"],
             months=["2026-05-01"],
+            only_generate_sql=True,
         )
 
     with pytest.raises(InvalidSqlInputError, match="non-empty sequence"):
-        table_ops_module.build_gp_create_many_partitions_sqls(
+        table_ops_module.gp_create_many_partitions(
+            "gp",
             "sandbox.events",
             days=[],
+            only_generate_sql=True,
         )
 
 
@@ -310,8 +314,10 @@ def test_gp_create_many_partitions_validates_period_starts(
     match: str,
 ) -> None:
     with pytest.raises(InvalidSqlInputError, match=match):
-        table_ops_module.build_gp_create_many_partitions_sqls(
+        table_ops_module.gp_create_many_partitions(
+            "gp",
             "sandbox.events",
+            only_generate_sql=True,
             **{argument: values},
         )
 
@@ -354,7 +360,12 @@ def test_gp_create_many_partitions_validates_invalid_inputs(
     table = kwargs.pop("table", "sandbox.events")
 
     with pytest.raises(InvalidSqlInputError, match=match):
-        table_ops_module.build_gp_create_many_partitions_sqls(table, **kwargs)
+        table_ops_module.gp_create_many_partitions(
+            "gp",
+            table,
+            only_generate_sql=True,
+            **kwargs,
+        )
 
 
 class _FailingOnceGpCursor(FakeDbapiCursor):

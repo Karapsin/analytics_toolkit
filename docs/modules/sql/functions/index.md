@@ -16,9 +16,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [execute_read](execute_read.md)
 - [load_df](load_df.md)
 - [transfer](transfer.md)
-- [create_table_from_sql](create_table_from_sql.md)
 - [create_sql_table](create_sql_table.md)
-- [build_create_table_sql](build_create_table_sql.md)
 - [table_info](table_info.md)
 - [show_tables](show_tables.md)
 - [drop_many_partitions](drop_many_partitions.md)
@@ -38,10 +36,8 @@ section, the helpers most likely to be used in normal workflows appear first.
 ## Backend-Specific Functions
 
 - [gp_create_many_partitions](gp_create_many_partitions.md)
-- [build_gp_create_many_partitions_sqls](build_gp_create_many_partitions_sqls.md)
 - [gp_vacuum](gp_vacuum.md)
 - [gp_cancel_all_running_queries](gp_cancel_all_running_queries.md)
 - [ch_drop_table](ch_drop_table.md)
-- [ch_full_table_move](ch_full_table_move.md)
 
 [SQL module index](../index.md)

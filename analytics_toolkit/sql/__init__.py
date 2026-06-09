@@ -1,5 +1,4 @@
 from .ddl.api import (
-    build_create_table_sql,
     create_sql_table,
 )
 from .ddl.extract_ddl import extract_ddl
@@ -36,10 +35,7 @@ from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.gp_cancel import gp_cancel_all_running_queries
 from .dml.table.ch_drop_table import ch_drop_table
-from .dml.table.ch_full_table_move import ch_full_table_move
-from .dml.table.create_table_from_sql import create_table_from_sql
 from .dml.table import (
-    build_gp_create_many_partitions_sqls,
     drop_many_partitions,
     gp_create_many_partitions,
     gp_vacuum,
@@ -54,12 +50,8 @@ from .dml.transfer.flow.api import transfer_table as transfer
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "parallel_sql",
-    "build_create_table_sql",
-    "build_gp_create_many_partitions_sqls",
     "ch_drop_table",
-    "ch_full_table_move",
     "create_sql_table",
-    "create_table_from_sql",
     "extract_ddl",
     "execute_read",
     "execute",
@@ -91,17 +83,13 @@ __all__ = [
     "TableName",
     "airflow_connection_config",
     "ch_drop_table",
-    "ch_full_table_move",
     "execute",
     "execute_read",
     "extract_ddl",
     "format_plan",
     "format_support_matrix",
     "generate_dummy_connections",
-    "build_gp_create_many_partitions_sqls",
-    "build_create_table_sql",
     "create_sql_table",
-    "create_table_from_sql",
     "drop_many_partitions",
     "get_sql_connection",
     "gp_create_many_partitions",

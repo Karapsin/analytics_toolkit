@@ -44,15 +44,15 @@ def create_stage_table(
         create_kwargs: dict[str, Any] = {}
         if query_label is not None:
             create_kwargs["query_label"] = query_label
-        if table_schema is not None:
-            create_kwargs["table_schema"] = table_schema
+        create_schema = table_schema or column_types
+        if create_schema is not None:
+            create_kwargs["table_schema"] = create_schema
         _create_sql_table_with_connection(
             connection_type,
             connection,
             stage_table,
-            batch,
+            None if create_schema is not None else batch,
             connection_key=connection_key or connection_type,
-            column_types=column_types,
             gp_distributed_by_key=gp_distributed_by_key,
             **create_kwargs,
         )

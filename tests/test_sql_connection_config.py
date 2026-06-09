@@ -13,6 +13,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
@@ -1721,11 +1723,12 @@ def test_backend_specific_validation_uses_alias_backend(
 
 
 def test_create_table_sql_accepts_connection_alias() -> None:
-    sql = create_sql_table_module.build_create_table_sql(
+    sql = create_sql_table_module.create_sql_table(
         db_key="gp_sandbox",
         table_name="schema.target",
         df=pd.DataFrame({"id": [1], "value": ["x"]}),
         gp_distributed_by_key=["id"],
+        only_generate_sql=True,
     )
 
     assert '"id" BIGINT' in sql
@@ -1733,24 +1736,22 @@ def test_create_table_sql_accepts_connection_alias() -> None:
 
 
 def test_create_table_sql_accepts_table_schema_override() -> None:
-    batch = pd.DataFrame({"id": [1], "amount": [10.5]})
-
-    gp_sql = create_sql_table_module.build_create_table_sql(
+    gp_sql = create_sql_table_module.create_sql_table(
         db_key="gp",
         table_name="schema.target",
-        df=batch,
         table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
+        only_generate_sql=True,
     )
-    trino_sql = create_sql_table_module.build_create_table_sql(
+    trino_sql = create_sql_table_module.create_sql_table(
         db_key="trino",
         table_name="schema.target",
-        df=batch,
         table_schema={"id": "VARCHAR", "amount": "DECIMAL(10, 2)"},
+        only_generate_sql=True,
     )
     ch_sqls = create_sql_table_module._build_create_table_sqls(
         backend="ch",
         table_name="schema.target",
-        df=batch,
+        df=pd.DataFrame(columns=["id", "amount"]),
         table_schema={"id": "String", "amount": "Decimal(10, 2)"},
         ch_distributed_table=True,
     )
@@ -1764,12 +1765,13 @@ def test_create_table_sql_accepts_table_schema_override() -> None:
 
 
 def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None:
-    sql = create_sql_table_module.build_create_table_sql(
+    sql = create_sql_table_module.create_sql_table(
         db_key="trino",
         table_name="schema.target",
         df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
         partition_by=["dt"],
         order_by=["dt", "id"],
+        only_generate_sql=True,
     )
 
     assert "format = 'PARQUET'" in sql
@@ -1779,31 +1781,31 @@ def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None
 
 
 def test_gp_create_table_sql_accepts_partition_column_and_rejects_order() -> None:
-    sql = create_sql_table_module.build_create_table_sql(
+    sql = create_sql_table_module.create_sql_table(
         db_key="gp",
         table_name="schema.target",
         df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
         gp_distributed_by_key=["id"],
         partition_by="dt",
+        only_generate_sql=True,
     )
 
     assert 'DISTRIBUTED BY ("id")' in sql
     assert 'PARTITION BY RANGE ("dt")' in sql
 
     with pytest.raises(ValueError, match="order_by is not supported"):
-        create_sql_table_module.build_create_table_sql(
+        create_sql_table_module.create_sql_table(
             db_key="gp",
             table_name="schema.target",
             df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
             order_by=["id"],
+            only_generate_sql=True,
         )
 
 
 @pytest.mark.parametrize(
     ("table_schema", "match"),
     [
-        ({"id": "BIGINT"}, "missing SQL type"),
-        ({"id": "BIGINT", "amount": "DOUBLE", "extra": "TEXT"}, "not present"),
         ({"id": "BIGINT", "amount": " "}, "must not be empty"),
     ],
 )
@@ -1812,32 +1814,41 @@ def test_create_table_sql_validates_table_schema(
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        create_sql_table_module.build_create_table_sql(
+        create_sql_table_module.create_sql_table(
             db_key="gp",
             table_name="schema.target",
-            df=pd.DataFrame({"id": [1], "amount": [10.5]}),
             table_schema=table_schema,
+            only_generate_sql=True,
         )
 
 
 def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
     with pytest.raises(TypeError, match="table_schema"):
-        create_sql_table_module.build_create_table_sql(
+        create_sql_table_module.create_sql_table(
             db_key="gp",
             table_name="schema.target",
-            df=pd.DataFrame({"id": [1]}),
             table_schema=[("id", "BIGINT")],
+            only_generate_sql=True,
         )
 
 
-def test_create_table_sql_rejects_conflicting_schema_aliases() -> None:
-    with pytest.raises(ValueError, match="table_schema and column_types"):
-        create_sql_table_module.build_create_table_sql(
+def test_create_table_sql_rejects_multiple_schema_sources() -> None:
+    with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
+        create_sql_table_module.create_sql_table(
             db_key="gp",
             table_name="schema.target",
             df=pd.DataFrame({"id": [1]}),
-            column_types={"id": "BIGINT"},
             table_schema={"id": "TEXT"},
+            only_generate_sql=True,
+        )
+
+    with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
+        create_sql_table_module.create_sql_table(
+            db_key="gp",
+            table_name="schema.target",
+            sql="select 1 as id",
+            table_schema={"id": "BIGINT"},
+            only_generate_sql=True,
         )
 
 

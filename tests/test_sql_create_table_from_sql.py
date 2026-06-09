@@ -151,8 +151,9 @@ SOURCE_DESCRIPTION = [
 ]
 
 
-def test_create_table_from_sql_is_exported() -> None:
-    assert sql_module.create_table_from_sql is create_module.create_table_from_sql
+def test_create_table_from_sql_is_not_public() -> None:
+    assert "create_table_from_sql" not in sql_module.__all__
+    assert not hasattr(sql_module, "create_table_from_sql")
 
 
 def test_schema_only_creation_uses_native_metadata_types(monkeypatch) -> None:

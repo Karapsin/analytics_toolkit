@@ -260,7 +260,6 @@ def create_table_from_sql(
                     options.table_schema,
                     source_columns,
                 )
-            schema_batch = pd.DataFrame(columns=source_columns)
             target_exists_before_drop = (
                 table_exists(
                     target_config.backend,
@@ -342,7 +341,7 @@ def create_table_from_sql(
                 target_config.backend,
                 target_connection,
                 target_table,
-                schema_batch,
+                None,
                 connection_key=target_config.connection_key,
                 **create_kwargs,
             )

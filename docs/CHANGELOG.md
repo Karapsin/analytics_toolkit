@@ -4,6 +4,14 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.17 - 2026-06-09
+
+- Merged SQL table creation into `sql.create_sql_table()` with dataframe,
+  source SQL, or manual `table_schema` schema sources and `only_generate_sql`.
+- Removed public `sql.build_create_table_sql()`, `sql.create_table_from_sql()`,
+  `sql.ch_full_table_move()`, and `sql.build_gp_create_many_partitions_sqls()`.
+- Added `only_generate_sql` to `sql.gp_create_many_partitions()`.
+
 ## 1.3.7.16 - 2026-06-09
 
 - Removed public RAG package extras and `analytics-toolkit docs` CLI commands.

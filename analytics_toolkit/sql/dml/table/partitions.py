@@ -51,6 +51,7 @@ class _GpCreateManyPartitionsOptions:
     timeout_increment: int | float = 5
     dry_run: bool = False
     return_sql: bool = False
+    only_generate_sql: bool = False
     return_metadata: bool = False
     query_label: str | None = None
 
@@ -86,8 +87,7 @@ def build_drop_many_partitions_sqls(
         )
     ]
 
-@timed_public_sql_function
-def build_gp_create_many_partitions_sqls(
+def _build_gp_create_many_partitions_sqls(
     table: str,
     *,
     intervals: Sequence[Mapping[str, Any]] | None = None,
@@ -134,8 +134,9 @@ def gp_create_many_partitions(
     query_label: str | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
+    only_generate_sql: bool = False,
     return_metadata: bool = False,
-) -> SqlPlan | SqlOperationResult | None:
+) -> str | SqlPlan | SqlOperationResult | None:
     options = _build_gp_create_many_partitions_options(
         db_key=db_key,
         table=table,
@@ -151,9 +152,12 @@ def gp_create_many_partitions(
         query_label=query_label,
         dry_run=dry_run,
         return_sql=return_sql,
+        only_generate_sql=only_generate_sql,
         return_metadata=return_metadata,
     )
     plan = build_gp_create_many_partitions_plan(options)
+    if options.only_generate_sql:
+        return _format_sql_statements(plan.sqls)
     if options.dry_run or options.return_sql:
         return plan
 
@@ -295,7 +299,7 @@ def drop_many_partitions(
 def build_gp_create_many_partitions_plan(
     options: _GpCreateManyPartitionsOptions,
 ) -> SqlPlan:
-    sqls = build_gp_create_many_partitions_sqls(
+    sqls = _build_gp_create_many_partitions_sqls(
         options.target_table,
         intervals=options.intervals,
         values=options.values,
@@ -352,6 +356,7 @@ def _build_gp_create_many_partitions_options(
     query_label: str | None,
     dry_run: bool,
     return_sql: bool,
+    only_generate_sql: bool,
     return_metadata: bool,
 ) -> _GpCreateManyPartitionsOptions:
     config = get_connection_config(db_key)
@@ -387,9 +392,13 @@ def _build_gp_create_many_partitions_options(
         timeout_increment=timeout_increment,
         dry_run=dry_run,
         return_sql=return_sql,
+        only_generate_sql=only_generate_sql,
         return_metadata=return_metadata,
         query_label=query_label,
     )
+
+def _format_sql_statements(sqls: Sequence[str]) -> str:
+    return ";\n".join(statement.rstrip(";") for statement in sqls)
 
 def build_drop_many_partitions_plan(
     options: DropManyPartitionsOptions,

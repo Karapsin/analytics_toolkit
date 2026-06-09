@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pandas as pd
@@ -12,7 +12,6 @@ class CreateSqlTableOptions:
     backend: str
     table_name: str
     df: pd.DataFrame
-    column_types: Mapping[str, str] | None = None
     table_schema: dict[str, str] | None = None
     gp_distributed_by_key: list[str] | None = None
     partition_by: Sequence[str] | str | None = None

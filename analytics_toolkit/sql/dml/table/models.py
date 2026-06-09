@@ -88,22 +88,3 @@ class ChDropTableOptions:
     return_sql: bool = False
     return_metadata: bool = False
     query_label: str | None = None
-
-
-@dataclass(frozen=True)
-class ChFullTableMoveOptions:
-    connection_key: str
-    backend: str
-    source_table: str
-    target_table: str
-    partition_by: str | None = None
-    order_by: str | None = None
-    ch_engine: str | None = None
-    ch_cluster: str | None = "{cluster}"
-    ch_sharding_key: str | None = None
-    ch_retry_per_host_drops: bool = True
-    ch_retry_per_host_drops_concurrency: int | None = 5
-    dry_run: bool = False
-    return_sql: bool = False
-    return_metadata: bool = False
-    query_label: str | None = None

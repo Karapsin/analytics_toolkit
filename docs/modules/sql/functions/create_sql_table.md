@@ -2,10 +2,11 @@
 
 # create_sql_table
 
-Create a SQL table from dataframe column metadata or an explicit schema.
+Create a SQL table from exactly one schema source: a dataframe, a source SQL
+query, or an explicit table schema.
 
 ```python
-create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, column_types: 'Mapping[str, str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, sql: 'str | None' = None, source_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'str | int | SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -14,17 +15,21 @@ create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = N
 
 - `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `table_name`: Target or source table name, depending on the helper.
-- `df`: Optional dataframe whose columns are used to infer table DDL.
-- `table_schema`: Explicit backend-native column type mapping for created tables; required when `df` is omitted.
+- `df`: Dataframe whose columns are used to infer table DDL.
+- `sql`: Source SQL query whose metadata defines the target columns.
+- `table_schema`: Explicit backend-native column type mapping for created tables.
+- `source_db`: Source connection key for `sql`; defaults to `db_key`.
+- `insert_data`: When `sql` is provided, also insert the query result after creating the table.
+- `drop_target_if_exists`: Drop an existing target before SQL-source creation.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
 - `dry_run`: When `True`, return a plan without mutating the database.
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `only_generate_sql`: When `True`, return generated SQL as a formatted string instead of a plan or mutation.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `partition_by`: Partitioning columns or expression for created tables, interpreted according to the target backend.
 - `order_by`: Ordering or sorting columns or expression for created tables, interpreted according to the target backend.
-- `column_types`: Optional backend-native column type mapping used by table DDL builders.
 
 ### Backend-Specific Inputs
 
@@ -60,8 +65,32 @@ sql.create_sql_table(
 )
 ```
 
+```python
+from analytics_toolkit import sql
+
+ddl = sql.create_sql_table(
+    db_key="gp",
+    table_name="sandbox.scores",
+    table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
+    only_generate_sql=True,
+)
+```
+
+```python
+from analytics_toolkit import sql
+
+sql.create_sql_table(
+    db_key="gp",
+    table_name="sandbox.scores",
+    sql="select user_id, score from sandbox.source_scores",
+    source_db="trino",
+)
+```
+
 ## Notes
 
 - The public helper opens and closes its own connection and retries the whole create operation.
+- Pass exactly one of `df`, `sql`, or `table_schema`.
+- `only_generate_sql=True` with `sql` inspects source query metadata but does not create, drop, or insert data.
 
 [SQL functions index](index.md)

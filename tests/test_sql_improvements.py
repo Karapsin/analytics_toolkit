@@ -30,14 +30,8 @@ transfer_api_module = importlib.import_module(
 ddl_create_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.api"
 )
-create_table_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.create_table_from_sql"
-)
 ch_ctas_module = importlib.import_module(
     "analytics_toolkit.sql.dml.table.ch_create_table_as"
-)
-ch_move_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.ch_full_table_move"
 )
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.execution.operation_runner"
@@ -186,9 +180,7 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
     "function_name",
     [
         "ch_drop_table",
-        "ch_full_table_move",
         "create_sql_table",
-        "create_table_from_sql",
         "drop_many_partitions",
         "execute",
         "gp_create_many_partitions",
@@ -1174,17 +1166,20 @@ def test_create_sql_table_logs_generated_sql_preview(monkeypatch, capsys) -> Non
     assert connection.executed[0].startswith("CREATE TABLE sandbox.created_table")
 
 
-def test_build_create_table_sql_accepts_schema_without_dataframe(monkeypatch) -> None:
+def test_create_sql_table_only_generate_sql_accepts_schema_without_dataframe(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         ddl_create_table_module,
         "get_sql_connection",
         lambda _key: pytest.fail("connection should not be opened"),
     )
 
-    ddl = ddl_create_table_module.build_create_table_sql(
+    ddl = ddl_create_table_module.create_sql_table(
         db_key="gp",
         table_name="sandbox.schema_only",
         table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
+        only_generate_sql=True,
     )
 
     assert "CREATE TABLE sandbox.schema_only" in ddl
@@ -1354,12 +1349,12 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
 
-def test_create_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> None:
-    plan = create_table_module.create_table_from_sql(
-        "gp",
+def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> None:
+    plan = ddl_create_table_module.create_sql_table(
+        "ch",
         "analytics.events",
-        "select id from source_table",
-        table_db="ch",
+        sql="select id from source_table",
+        source_db="gp",
         drop_target_if_exists=True,
         insert_data=True,
         dry_run=True,
@@ -1378,16 +1373,15 @@ def test_create_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> No
     assert plan.sqls[3] == "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics"
 
 
-def test_create_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target() -> None:
-    plan = create_table_module.create_table_from_sql(
-        "gp",
+def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target() -> None:
+    plan = ddl_create_table_module.create_sql_table(
+        "ch",
         "analytics.events",
-        "select dt, id from source_table",
-        table_db="ch",
+        sql="select dt, id from source_table",
+        source_db="gp",
         drop_target_if_exists=True,
         insert_data=True,
         dry_run=True,
-        table_schema={"dt": "Date", "id": "UInt64"},
         ch_only_shard=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
@@ -1402,9 +1396,7 @@ def test_create_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target()
         "insert_data",
     ]
     assert plan.sqls[1] == "DROP TABLE IF EXISTS analytics.events"
-    assert "ENGINE = ReplicatedMergeTree" in plan.sqls[2]
-    assert "PARTITION BY `dt`" in plan.sqls[2]
-    assert "ORDER BY (`dt`, `id`)" in plan.sqls[2]
+    assert plan.sqls[2] == "CREATE TABLE analytics.events (<source query schema>)"
     assert "_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER" not in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
@@ -1450,31 +1442,6 @@ def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:
     assert "_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER" not in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
-
-
-def test_ch_full_table_move_dry_run_marks_inspection_required(monkeypatch) -> None:
-    monkeypatch.setattr(
-        ch_move_module,
-        "get_sql_connection",
-        lambda key: pytest.fail("connection should not be opened"),
-    )
-
-    plan = ch_move_module.ch_full_table_move(
-        "ch",
-        "default.source_events",
-        "default.target_events",
-        ch_cluster=None,
-        dry_run=True,
-        query_label="move-plan",
-    )
-
-    assert plan.operation == "ch_full_table_move"
-    assert plan.options["inspection_required"] is True
-    assert plan.statements[0].phase == "inspect"
-    assert "SHOW CREATE TABLE default.source_events" == plan.sqls[0]
-    assert "CREATE TABLE IF NOT EXISTS default.target_events_shard" in plan.sqls[6]
-    assert any(statement.phase == "insert_target" for statement in plan.statements)
-    assert sum("query_label=move-plan" in sql for sql in plan.sqls) == 9
 
 
 def test_validate_connections_and_cli_output(capsys) -> None:

@@ -5,7 +5,7 @@
 Create multiple Greenplum range or list partitions in input order.
 
 ```python
-gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mapping[str, Any]] | None' = None, values: 'Sequence[str] | None' = None, days: 'Sequence[str] | None' = None, weeks: 'Sequence[str] | None' = None, months: 'Sequence[str] | None' = None, years: 'Sequence[str] | None' = None, name_template: 'str' = 'p_{}', retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mapping[str, Any]] | None' = None, values: 'Sequence[str] | None' = None, days: 'Sequence[str] | None' = None, weeks: 'Sequence[str] | None' = None, months: 'Sequence[str] | None' = None, years: 'Sequence[str] | None' = None, name_template: 'str' = 'p_{}', retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'str | SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -16,6 +16,7 @@ gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[M
 - `timeout_increment`: Delay increment used between operation retries.
 - `dry_run`: When `True`, return a plan without mutating the database.
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
+- `only_generate_sql`: When `True`, return generated partition DDL as a formatted string.
 - `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
 - `intervals`: Explicit Greenplum partition interval definitions.
@@ -35,6 +36,17 @@ sql.gp_create_many_partitions(
     "gp",
     "sandbox.events",
     days=["2026-06-01", "2026-06-02"],
+)
+```
+
+```python
+from analytics_toolkit import sql
+
+ddl = sql.gp_create_many_partitions(
+    "gp",
+    "sandbox.events",
+    days=["2026-06-01", "2026-06-02"],
+    only_generate_sql=True,
 )
 ```
 

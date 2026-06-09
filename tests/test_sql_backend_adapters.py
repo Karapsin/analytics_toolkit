@@ -58,9 +58,7 @@ def test_sql_public_api_exports_are_stable() -> None:
     public_names = {
         "async_sql",
         "ch_drop_table",
-        "ch_full_table_move",
         "create_sql_table",
-        "create_table_from_sql",
         "execute",
         "execute_read",
         "get_sql_connection",
@@ -90,6 +88,10 @@ def test_sql_public_api_exports_are_stable() -> None:
     assert "SqlTableInfo" in sql_module.__all__
     assert "ch_create_table_as" not in sql_module.__all__
     assert not hasattr(sql_module, "ch_create_table_as")
+    assert "ch_full_table_move" not in sql_module.__all__
+    assert not hasattr(sql_module, "ch_full_table_move")
+    assert "create_table_from_sql" not in sql_module.__all__
+    assert not hasattr(sql_module, "create_table_from_sql")
     assert "execute_sql" not in sql_module.__all__
     assert "read_sql" not in sql_module.__all__
     assert "transfer_table" not in sql_module.__all__
