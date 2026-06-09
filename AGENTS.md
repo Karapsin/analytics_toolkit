@@ -46,7 +46,7 @@ Run `release_routines/pre_commit_checks.sh` before every commit. Do not commit u
 
 Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
 
-## RAG Context Workflow
+## Agent-Only RAG Context Workflow
 
 For any repository-related work, use the local docs RAG workflow before normal
 repository search or file inspection. This includes implementation, reviews,
@@ -55,21 +55,28 @@ and answers about project conventions. Skip RAG only for clearly non-repository
 requests, such as simple shell/time/status commands unrelated to project
 behavior.
 
+RAG is intentionally an agent-only repository workflow, not a public
+`analytics-toolkit` package feature. Keep docs retrieval tooling under
+`agent_tools/`, keep it runnable from a checkout, and do not add public CLI
+commands, package extras, vector-store dependencies, hosted LLM SDKs, Ollama,
+or embedding-model dependencies for it.
+
 ```bash
-analytics-toolkit docs index
-analytics-toolkit docs search "<topic or function name>" --top-k 5
+python agent_tools/docs_assistant.py index
+python agent_tools/docs_assistant.py search "<topic or function name>" --top-k 5
 ```
 
-Use `analytics-toolkit docs ask --no-llm "<specific question>"` when a grounded summary is more useful than raw search snippets. Keep retrieved context focused; rebuilding `.rag_index/` is local work and does not itself consume LLM context tokens, but reading retrieved output does.
+Use `python agent_tools/docs_assistant.py ask --no-llm "<specific question>"`
+when a grounded summary is more useful than raw search snippets. Keep retrieved
+context focused; rebuilding `.rag_index/` is local work and does not itself
+consume LLM context tokens, but reading retrieved output does.
 
 Treat normal repository search, file inspection, and tests as secondary context
-after the RAG pass, not as substitutes for it. If RAG dependencies are missing
-and dependency installation is allowed, install `analytics-toolkit[rag-all]`. If
-RAG is unavailable, blocked, or returns no useful context after rebuilding,
-explicitly report that fallback was needed, then use normal repository search
-and file inspection. When fallback was needed because docs were missing or
-unclear, finish by proposing the specific documentation update that would make
-future RAG retrieval unambiguous.
+after the RAG pass, not as substitutes for it. If RAG is unavailable, blocked,
+or returns no useful context after rebuilding, explicitly report that fallback
+was needed, then use normal repository search and file inspection. When fallback
+was needed because docs were missing or unclear, finish by proposing the
+specific documentation update that would make future RAG retrieval unambiguous.
 
 ## General Rules
 

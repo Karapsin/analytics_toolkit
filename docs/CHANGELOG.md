@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.16 - 2026-06-09
+
+- Removed public RAG package extras and `analytics-toolkit docs` CLI commands.
+- Replaced public docs retrieval with stdlib-only, agent-only repository tooling
+  under `agent_tools/`.
+
 ## 1.3.7.15 - 2026-06-09
 
 - Changed `sql.create_table_from_sql()` to insert data by default, reuse the
