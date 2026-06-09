@@ -634,6 +634,97 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
     }
 
 
+def test_parallel_compute_metrics_from_sql_applies_metric_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_df = pd.DataFrame({"user_id": [1]})
+    override_df = pd.DataFrame({"user_id": [2]})
+    async_calls: list[tuple[list[dict[str, Any]], dict[str, Any]]] = []
+    compute_calls: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        async_calls.append((tasks, kwargs))
+        return {
+            "default:sql": default_df,
+            "override:sql": override_df,
+        }
+
+    def fake_parallel_compute_metrics(
+        tasks: dict[str, dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        compute_calls.append((tasks, kwargs))
+        return {
+            "default": pd.DataFrame({"task": ["default"]}),
+            "override": pd.DataFrame({"task": ["override"]}),
+        }
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+    monkeypatch.setattr(
+        parallel_module,
+        "parallel_compute_metrics",
+        fake_parallel_compute_metrics,
+    )
+
+    result = parallel_module.parallel_compute_metrics_from_sql(
+        {
+            "default": {
+                "sql": "select * from default_task",
+                "labels": {"segment": "default"},
+            },
+            "override": {
+                "sql": "select * from override_task",
+                "outliers_quantile": 0.995,
+                "test_vs_test": True,
+            },
+        },
+        db="analytics_prod",
+        concurrency=2,
+        progress=False,
+        group="variant",
+        test_vs_test=False,
+        bootstrap_progress=False,
+        outliers_quantile=0.999,
+    )
+
+    assert list(result) == ["default", "override"]
+    assert len(async_calls) == 1
+    assert async_calls[0][1] == {
+        "concurrency": 2,
+        "fail_fast": True,
+        "progress": False,
+    }
+    assert len(compute_calls) == 1
+    metric_tasks, metric_kwargs = compute_calls[0]
+    assert metric_kwargs == {
+        "concurrency": 2,
+        "fail_fast": True,
+        "progress": False,
+    }
+
+    default_task = dict(metric_tasks["default"])
+    assert default_task.pop("df") is default_df
+    assert default_task == {
+        "group": "variant",
+        "test_vs_test": False,
+        "bootstrap_progress": False,
+        "outliers_quantile": 0.999,
+        "labels": {"segment": "default"},
+    }
+
+    override_task = dict(metric_tasks["override"])
+    assert override_task.pop("df") is override_df
+    assert override_task == {
+        "group": "variant",
+        "test_vs_test": True,
+        "bootstrap_progress": False,
+        "outliers_quantile": 0.995,
+    }
+
+
 def test_parallel_compute_metrics_from_sql_passes_concurrency_caps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1088,6 +1179,29 @@ def test_parallel_compute_metrics_from_sql_rejects_non_string_start_comment() ->
             db="analytics_prod",
             start_comment=1,
             progress=False,
+        )
+
+
+def test_parallel_compute_metrics_from_sql_rejects_unknown_metric_default() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'not_a_metric'"):
+        parallel_module.parallel_compute_metrics_from_sql(
+            {"task": {"sql": "select 1"}},
+            db="analytics_prod",
+            progress=False,
+            not_a_metric=True,
+        )
+
+
+@pytest.mark.parametrize("field", ["df", "pre_exp_df", "pre_exp_metrics_df"])
+def test_parallel_compute_metrics_from_sql_rejects_top_level_dataframe_defaults(
+    field: str,
+) -> None:
+    with pytest.raises(ValueError, match="SQL-backed dataframe"):
+        parallel_module.parallel_compute_metrics_from_sql(
+            {"task": {"sql": "select 1"}},
+            db="analytics_prod",
+            progress=False,
+            **{field: pd.DataFrame()},
         )
 
 

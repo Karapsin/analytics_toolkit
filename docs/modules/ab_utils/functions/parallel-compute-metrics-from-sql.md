@@ -15,6 +15,7 @@ parallel_compute_metrics_from_sql(
     soft_concurrency_cap=None,
     hard_concurrency_cap=10,
     progress=False,
+    **metric_defaults,
 )
 ```
 
@@ -28,6 +29,9 @@ parallel_compute_metrics_from_sql(
 - `soft_concurrency_cap`: Optional throttle below requested concurrency.
 - `hard_concurrency_cap`: Maximum allowed effective concurrency.
 - `progress`: Whether to show progress output.
+- `metric_defaults`: Any non-dataframe `compute_test_metrics` inputs to apply to
+  every task, such as `group`, `test_vs_test`, `ratio_metrics`,
+  `bootstrap_progress`, `outliers_quantile`, or `outliers_policy`.
 
 ## Usage
 
@@ -44,12 +48,15 @@ result = parallel_compute_metrics_from_sql(
     },
     db="analytics_prod",
     concurrency=2,
+    outliers_quantile=0.999,
+    test_vs_test=False,
 )
 ```
 
 ## Notes
 
 - Task-level `start_comment` overrides the top-level value.
+- Task-level metric inputs override `metric_defaults`.
 - Failures include the metrics task name and related SQL text.
 
 [All AB functions](index.md)

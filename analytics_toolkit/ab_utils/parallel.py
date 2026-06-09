@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import inspect
 from collections.abc import Mapping
 from contextlib import ExitStack
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -20,6 +21,9 @@ from .api import compute_test_metrics
 async_sql = sql_facade.async_sql
 
 _SQL_DATAFRAME_FIELDS = frozenset({"df", "pre_exp_df", "pre_exp_metrics_df"})
+_COMPUTE_TEST_METRICS_FIELDS = frozenset(
+    inspect.signature(compute_test_metrics).parameters
+)
 _DEFAULT_HARD_CONCURRENCY_CAP = 10
 _CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
     contextvars.ContextVar("analytics_toolkit_ab_parallel_concurrency", default=None)
@@ -127,9 +131,11 @@ def parallel_compute_metrics_from_sql(
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
     progress: bool = False,
+    **metric_defaults: Any,
 ) -> dict[str, pd.DataFrame | str]:
     """Load SQL-backed task dataframes, then run ``parallel_compute_metrics``."""
     _validate_start_comment("start_comment", start_comment)
+    metric_defaults = _validate_metric_defaults(metric_defaults)
     task_defs = _validate_sql_tasks(tasks)
     _validate_concurrency(concurrency)
     _validate_optional_soft_concurrency_cap(soft_concurrency_cap)
@@ -191,7 +197,8 @@ def parallel_compute_metrics_from_sql(
             sql_failures[name] = df_result
             continue
 
-        metric_kwargs = dict(kwargs)
+        metric_kwargs = dict(metric_defaults)
+        metric_kwargs.update(kwargs)
         metric_kwargs["df"] = df_result
         if pre_exp_sql is not None:
             pre_exp_df_result = sql_results[_sql_read_task_name(name, "pre_exp_sql")]
@@ -422,6 +429,38 @@ def _validate_sql_task_spec(
 
     _validate_labels(name, kwargs.get("labels"))
     return name, kwargs, sql, pre_exp_sql, start_comment
+
+
+def _validate_metric_defaults(metric_defaults: Mapping[str, Any]) -> dict[str, Any]:
+    if not metric_defaults:
+        return {}
+
+    dataframe_fields = sorted(_SQL_DATAFRAME_FIELDS.intersection(metric_defaults))
+    if dataframe_fields:
+        fields = ", ".join(dataframe_fields)
+        raise ValueError(
+            "parallel_compute_metrics_from_sql top-level metric defaults cannot "
+            f"define SQL-backed dataframe field(s): {fields}."
+        )
+
+    supported_fields = _COMPUTE_TEST_METRICS_FIELDS - {
+        "df",
+        "pre_exp_metrics_df",
+    }
+    unexpected_fields = sorted(set(metric_defaults) - supported_fields)
+    if unexpected_fields:
+        quoted_fields = ", ".join(repr(field) for field in unexpected_fields)
+        if len(unexpected_fields) == 1:
+            raise TypeError(
+                "parallel_compute_metrics_from_sql() got an unexpected keyword "
+                f"argument {quoted_fields}"
+            )
+        raise TypeError(
+            "parallel_compute_metrics_from_sql() got unexpected keyword "
+            f"arguments: {quoted_fields}"
+        )
+
+    return dict(metric_defaults)
 
 
 def _make_sql_read_task(
