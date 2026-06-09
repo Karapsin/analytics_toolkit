@@ -12,6 +12,7 @@ import pytest
 ab_utils_module = importlib.import_module("analytics_toolkit.ab_utils")
 metrics_module = importlib.import_module("analytics_toolkit.ab_utils.metrics")
 parallel_module = importlib.import_module("analytics_toolkit.ab_utils.parallel")
+async_sql_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 
 
 def test_parallel_compute_metrics_is_exported() -> None:
@@ -595,19 +596,19 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
         {
             "name": "with_pre:sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from experiment_1",
         },
         {
             "name": "with_pre:pre_exp_sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from pre_experiment_1",
         },
         {
             "name": "without_pre:sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from experiment_2",
         },
     ]
@@ -632,6 +633,48 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
         "labels": {"segment": "segment2"},
         "multiple_comparisons_adjustment": True,
     }
+
+
+def test_parallel_compute_metrics_from_sql_uses_db_key_for_async_read_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    experiment_df = pd.DataFrame({"user_id": [1]})
+    metric_df = pd.DataFrame({"task": ["segment"]})
+    read_calls: list[dict[str, str]] = []
+    compute_calls: list[dict[str, dict[str, Any]]] = []
+
+    def fake_read_sql(*, db_key: str, query: str) -> pd.DataFrame:
+        read_calls.append({"db_key": db_key, "query": query})
+        return experiment_df
+
+    def fake_parallel_compute_metrics(
+        tasks: dict[str, dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        del kwargs
+        compute_calls.append(tasks)
+        return {"segment": metric_df}
+
+    monkeypatch.setattr(async_sql_module, "read_sql", fake_read_sql)
+    monkeypatch.setattr(
+        parallel_module,
+        "parallel_compute_metrics",
+        fake_parallel_compute_metrics,
+    )
+
+    result = parallel_module.parallel_compute_metrics_from_sql(
+        {"segment": {"sql": "select * from experiment"}},
+        db="analytics_prod",
+        concurrency=1,
+        progress=False,
+    )
+
+    pd.testing.assert_frame_equal(result["segment"], metric_df)
+    assert read_calls == [
+        {"db_key": "analytics_prod", "query": "select * from experiment"}
+    ]
+    assert len(compute_calls) == 1
+    assert compute_calls[0]["segment"]["df"] is experiment_df
 
 
 def test_parallel_compute_metrics_from_sql_applies_metric_defaults(
@@ -857,27 +900,27 @@ def test_parallel_compute_metrics_from_sql_passes_start_comments(
         {
             "name": "default:sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from default_task",
         },
         {
             "name": "override:sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from override_task",
             "start_comment": "-- task comment",
         },
         {
             "name": "override:pre_exp_sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from override_pre_task",
             "start_comment": "-- task comment",
         },
         {
             "name": "blank:sql",
             "type": "read",
-            "connection_type": "analytics_prod",
+            "db_key": "analytics_prod",
             "query": "select * from blank_task",
             "start_comment": "",
         },

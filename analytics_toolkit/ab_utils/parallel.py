@@ -474,7 +474,7 @@ def _make_sql_read_task(
     task = {
         "name": _sql_read_task_name(name, field),
         "type": "read",
-        "connection_type": db,
+        "db_key": db,
         "query": query,
     }
     if start_comment is not _MISSING:
