@@ -41,6 +41,36 @@ def _compute_cuped_p_value(
     return p_value
 
 
+def _prepare_cuped_context(
+    df: pd.DataFrame,
+    pre_exp_metrics_df: pd.DataFrame,
+    user_id_column: str,
+    metric_definition: dict[str, object],
+    outlier_context: dict[str, object] | None = None,
+    pre_outlier_context: dict[str, object] | None = None,
+) -> dict[str, object]:
+    exp_values, exp_error = _build_metric_values_by_user(
+        df=df,
+        user_id_column=user_id_column,
+        metric_definition=metric_definition,
+        value_column="metric_exp",
+        outlier_context=outlier_context,
+    )
+    pre_values, pre_error = _build_metric_values_by_user(
+        df=pre_exp_metrics_df,
+        user_id_column=user_id_column,
+        metric_definition=metric_definition,
+        value_column="metric_pre",
+        outlier_context=pre_outlier_context,
+    )
+    return {
+        "exp_values": exp_values.set_index(user_id_column) if exp_error is None else None,
+        "pre_values": pre_values.set_index(user_id_column) if pre_error is None else None,
+        "exp_error": exp_error,
+        "pre_error": pre_error,
+    }
+
+
 def _compute_cuped_statistics(
     df: pd.DataFrame,
     pre_exp_metrics_df: pd.DataFrame,
@@ -51,19 +81,28 @@ def _compute_cuped_statistics(
     metric_definition: dict[str, object],
     outlier_context: dict[str, object] | None = None,
     pre_outlier_context: dict[str, object] | None = None,
+    prepared_cuped_context: dict[str, object] | None = None,
 ) -> tuple[float, float]:
-    cuped_frame, reason = _build_cuped_frame(
-        df=df,
-        pre_exp_metrics_df=pre_exp_metrics_df,
-        user_id_column=user_id_column,
-        group_column=group_column,
-        baseline_group=baseline_group,
-        test_group=test_group,
-        metric_definition=metric_definition,
-        outlier_context=outlier_context,
-        pre_outlier_context=pre_outlier_context,
-    )
     metric_name = str(metric_definition["metric_key"])
+    if prepared_cuped_context is None:
+        cuped_frame, reason = _build_cuped_frame(
+            df=df,
+            pre_exp_metrics_df=pre_exp_metrics_df,
+            user_id_column=user_id_column,
+            group_column=group_column,
+            baseline_group=baseline_group,
+            test_group=test_group,
+            metric_definition=metric_definition,
+            outlier_context=outlier_context,
+            pre_outlier_context=pre_outlier_context,
+        )
+    else:
+        cuped_frame, reason = _build_cuped_frame_from_prepared_context(
+            comparison_frame=prepared_cuped_context["comparison_frame"],
+            user_id_column=user_id_column,
+            prepared_cuped_context=prepared_cuped_context,
+        )
+
     if reason is not None:
         warnings.warn(
             (
@@ -91,6 +130,26 @@ def _compute_cuped_statistics(
         )
         return math.nan, math.nan
     return p_value, standard_error
+
+
+def _build_cuped_frame_from_prepared_context(
+    comparison_frame: pd.DataFrame,
+    user_id_column: str,
+    prepared_cuped_context: dict[str, object],
+) -> tuple[pd.DataFrame | None, str | None]:
+    exp_values = prepared_cuped_context.get("exp_values")
+    if exp_values is None:
+        return None, f"experiment metric values are unavailable: {prepared_cuped_context.get('exp_error')}"
+    pre_values = prepared_cuped_context.get("pre_values")
+    if pre_values is None:
+        return None, f"pre-experiment metric values are unavailable: {prepared_cuped_context.get('pre_error')}"
+
+    cuped_frame = comparison_frame.copy()
+    cuped_frame = cuped_frame.join(exp_values, on=user_id_column).join(pre_values, on=user_id_column)
+    cuped_frame = cuped_frame.dropna(subset=["metric_exp", "metric_pre"]).reset_index(drop=True)
+    if cuped_frame.empty:
+        return None, "no overlapping non-missing experiment/pre-experiment observations"
+    return cuped_frame, None
 
 
 def _build_cuped_frame(

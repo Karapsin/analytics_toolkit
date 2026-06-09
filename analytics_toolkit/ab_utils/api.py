@@ -6,10 +6,15 @@ from analytics_toolkit.general import time_print
 
 from .bootstrap import _apply_multiple_comparisons_adjustment
 from .constants import DEFAULT_ALPHA, DEFAULT_POWER
-from .cuped import _compute_cuped_statistics
+from .cuped import _compute_cuped_statistics, _prepare_cuped_context
 from .outliers import _build_outlier_context
 from .ratio import _normalize_ratio_metrics
-from .rows import _build_comparisons, _build_metric_definitions, _build_metric_row
+from .rows import (
+    _build_comparisons,
+    _build_metric_definitions,
+    _build_metric_row,
+    _prepare_metric_context,
+)
 from .stats import _compute_mde_from_standard_error, _safe_relative
 from .validation import (
     _validate_input_columns,
@@ -105,6 +110,15 @@ def compute_test_metrics(
     ratio_specs = _normalize_ratio_metrics(df, ratio_metrics, reserved_columns={group, user_id})
     comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
     metric_definitions = _build_metric_definitions(metric_columns, ratio_specs)
+    group_values = df[group].to_numpy()
+    group_masks = {group_name: group_values == group_name for group_name in group_names}
+    comparison_frames = {
+        (test_group, baseline_group): df.loc[
+            group_masks[test_group] | group_masks[baseline_group],
+            [user_id, group],
+        ].copy()
+        for test_group, baseline_group in comparisons
+    }
     time_print(
         "compute_test_metrics: setup complete "
         f"groups={len(group_names)} comparisons={len(comparisons)} "
@@ -129,6 +143,26 @@ def compute_test_metrics(
             )
     time_print("compute_test_metrics: outlier contexts complete")
 
+    prepared_metric_contexts: dict[str, dict[str, object]] = {}
+    prepared_cuped_contexts: dict[str, dict[str, object]] = {}
+    for metric_definition in metric_definitions:
+        metric_key = str(metric_definition["metric_key"])
+        outlier_context = metric_definition.get("_outlier_context")
+        prepared_metric_contexts[metric_key] = _prepare_metric_context(
+            df=df,
+            metric_definition=metric_definition,
+            outlier_context=outlier_context,
+        )
+        if pre_exp_metrics_df is not None:
+            prepared_cuped_contexts[metric_key] = _prepare_cuped_context(
+                df=df,
+                pre_exp_metrics_df=pre_exp_metrics_df,
+                user_id_column=user_id,
+                metric_definition=metric_definition,
+                outlier_context=outlier_context,
+                pre_outlier_context=metric_definition.get("_pre_outlier_context"),
+            )
+
     rows: list[dict[str, object]] = []
     for test_group, baseline_group in comparisons:
         time_print(f"compute_test_metrics: comparison {test_group} vs {baseline_group}")
@@ -146,6 +180,8 @@ def compute_test_metrics(
                 mde_alpha=mde_alpha,
                 mde_power=mde_power,
                 outlier_context=outlier_context,
+                prepared_metric_context=prepared_metric_contexts.get(metric_name),
+                group_masks=group_masks,
             )
             row["_comparison_key"] = (test_group, baseline_group)
             if pre_exp_metrics_df is not None:
@@ -160,6 +196,10 @@ def compute_test_metrics(
                     metric_definition=metric_definition,
                     outlier_context=outlier_context,
                     pre_outlier_context=metric_definition.get("_pre_outlier_context"),
+                    prepared_cuped_context={
+                        **prepared_cuped_contexts[metric_name],
+                        "comparison_frame": comparison_frames[(test_group, baseline_group)],
+                    },
                 )
                 row["mde_abs CUPED"] = _compute_mde_from_standard_error(
                     standard_error=row["s.e. CUPED"],

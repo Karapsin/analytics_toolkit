@@ -22,17 +22,21 @@ from analytics_toolkit.ab_utils.metrics import (
     _apply_outliers_to_values,
     _build_comparisons,
     _build_metric_definitions,
+    _build_metric_row,
     _build_outlier_contexts,
     _build_ratio_valid_mask,
     _compute_agg_ratio_diff_standard_error,
     _compute_agg_ratio_group_stats,
     _compute_agg_ratio_variance,
+    _compute_cuped_statistics,
     _compute_cuped_statistics_from_frame,
     _compute_mde_from_standard_error,
     _compute_studentized_statistic,
     _compute_ttest_stat_and_p_value,
     _get_numeric_metric_series,
     _normalize_ratio_metrics,
+    _prepare_cuped_context,
+    _prepare_metric_context,
 )
 
 
@@ -66,6 +70,163 @@ def _build_sample_metrics_df() -> pd.DataFrame:
             "impressions": [10, 8, 0, 4, 14, 10, 12, 16, 8, 10, 6, 8],
         }
     )
+
+
+def test_prepared_metric_context_matches_legacy_rows_and_cuped() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 10)),
+            "group_name": [
+                "control",
+                "control",
+                "control",
+                "test_a",
+                "test_a",
+                "test_a",
+                "test_b",
+                "test_b",
+                "test_b",
+            ],
+            "orders": [10, 11, 12, 13, 14, 15, 16, 17, 18],
+            "clicks": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "impressions": [10, 10, 10, 10, 10, 10, 10, 10, 10],
+        }
+    )
+    pre_df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 10)),
+            "group_name": [
+                "control",
+                "control",
+                "control",
+                "test_a",
+                "test_a",
+                "test_a",
+                "test_b",
+                "test_b",
+                "test_b",
+            ],
+            "orders": [8, 9, 11, 12, 13, 14, 15, 16, 17],
+            "clicks": [1, 1, 2, 3, 4, 5, 6, 7, 8],
+            "impressions": [9, 10, 10, 10, 10, 11, 10, 10, 10],
+        }
+    )
+    ratio_metrics = [
+        {"name": "ctr_user", "numerator": "clicks", "denominator": "impressions", "level": "user"},
+        {"name": "ctr_agg", "numerator": "clicks", "denominator": "impressions", "level": "agg"},
+    ]
+    metric_columns = ["orders"]
+    metric_definitions = _build_metric_definitions(
+        metric_columns,
+        _normalize_ratio_metrics(
+            df,
+            ratio_metrics,
+            reserved_columns={"group_name", "user_id"},
+        ),
+    )
+    group_values = df["group_name"].to_numpy()
+    group_masks = {
+        group_name: group_values == group_name
+        for group_name in df["group_name"].drop_duplicates().tolist()
+    }
+    comparisons = _build_comparisons(
+        df["group_name"].drop_duplicates().tolist(),
+        "control",
+        test_vs_test=True,
+    )
+    outlier_contexts = _build_outlier_contexts(
+        df=df,
+        metric_definitions=metric_definitions,
+        outliers_quantile=0.9,
+        outliers_policy="truncate",
+    )
+    pre_outlier_contexts = _build_outlier_contexts(
+        df=pre_df,
+        metric_definitions=metric_definitions,
+        outliers_quantile=0.9,
+        outliers_policy="truncate",
+        allow_missing=True,
+    )
+
+    for metric_definition in metric_definitions:
+        metric_key = str(metric_definition["metric_key"])
+        prepared_metric_context = _prepare_metric_context(
+            df=df,
+            metric_definition=metric_definition,
+            outlier_context=outlier_contexts[metric_key],
+        )
+        prepared_cuped_context = _prepare_cuped_context(
+            df=df,
+            pre_exp_metrics_df=pre_df,
+            user_id_column="user_id",
+            metric_definition=metric_definition,
+            outlier_context=outlier_contexts[metric_key],
+            pre_outlier_context=pre_outlier_contexts.get(metric_key),
+        )
+
+        for test_group, baseline_group in comparisons:
+            legacy_row = _build_metric_row(
+                df=df,
+                group_column="group_name",
+                baseline_group=baseline_group,
+                test_group=test_group,
+                metric_definition=metric_definition,
+                mde_alpha=DEFAULT_ALPHA,
+                mde_power=DEFAULT_POWER,
+                outlier_context=outlier_contexts[metric_key],
+            )
+            prepared_row = _build_metric_row(
+                df=df,
+                group_column="group_name",
+                baseline_group=baseline_group,
+                test_group=test_group,
+                metric_definition=metric_definition,
+                mde_alpha=DEFAULT_ALPHA,
+                mde_power=DEFAULT_POWER,
+                outlier_context=outlier_contexts[metric_key],
+                prepared_metric_context=prepared_metric_context,
+                group_masks=group_masks,
+            )
+            pd.testing.assert_series_equal(
+                pd.Series(prepared_row).sort_index(),
+                pd.Series(legacy_row).sort_index(),
+                check_dtype=False,
+            )
+
+            comparison_frame = df.loc[
+                group_masks[test_group] | group_masks[baseline_group],
+                ["user_id", "group_name"],
+            ].copy()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UserWarning)
+                legacy_cuped = _compute_cuped_statistics(
+                    df=df,
+                    pre_exp_metrics_df=pre_df,
+                    group_column="group_name",
+                    user_id_column="user_id",
+                    baseline_group=baseline_group,
+                    test_group=test_group,
+                    metric_definition=metric_definition,
+                    outlier_context=outlier_contexts[metric_key],
+                    pre_outlier_context=pre_outlier_contexts.get(metric_key),
+                )
+                prepared_cuped = _compute_cuped_statistics(
+                    df=df,
+                    pre_exp_metrics_df=pre_df,
+                    group_column="group_name",
+                    user_id_column="user_id",
+                    baseline_group=baseline_group,
+                    test_group=test_group,
+                    metric_definition=metric_definition,
+                    outlier_context=outlier_contexts[metric_key],
+                    pre_outlier_context=pre_outlier_contexts.get(metric_key),
+                    prepared_cuped_context={
+                        **prepared_cuped_context,
+                        "comparison_frame": comparison_frame,
+                    },
+                )
+            assert prepared_cuped[0] == pytest.approx(legacy_cuped[0], nan_ok=True)
+            assert prepared_cuped[1] == pytest.approx(legacy_cuped[1], nan_ok=True)
 
 
 def _manual_cuped_statistics_from_frame(

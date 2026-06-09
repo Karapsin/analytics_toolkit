@@ -29,6 +29,7 @@ from .cuped import (
     _compute_cuped_p_value_from_frame,
     _compute_cuped_statistics,
     _compute_cuped_statistics_from_frame,
+    _prepare_cuped_context,
 )
 from .outliers import (
     _apply_outliers_to_agg_ratio_components,
@@ -59,6 +60,7 @@ from .rows import (
     _build_metric_definitions,
     _build_metric_row,
     _build_ratio_metric_row,
+    _prepare_metric_context,
 )
 from .stats import (
     _both_present,
@@ -110,6 +112,8 @@ __all__ = [
     "_build_ratio_valid_mask",
     "_build_ratio_valid_mask_from_arrays",
     "_build_value_outlier_mask",
+    "_prepare_cuped_context",
+    "_prepare_metric_context",
     "_compute_agg_ratio_diff_standard_error",
     "_compute_agg_ratio_group_stats",
     "_compute_agg_ratio_group_stats_arrays",

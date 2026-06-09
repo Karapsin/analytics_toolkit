@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import combinations
 import math
 
+import numpy as np
 import pandas as pd
 
 from .constants import DEFAULT_ALPHA, DEFAULT_POWER
@@ -71,6 +72,75 @@ def _build_metric_definitions(
     return metric_definitions
 
 
+def _prepare_metric_context(
+    df: pd.DataFrame,
+    metric_definition: dict[str, object],
+    outlier_context: dict[str, object] | None = None,
+) -> dict[str, object]:
+    if outlier_context is None:
+        outlier_context = metric_definition.get("_outlier_context")
+
+    if metric_definition["kind"] == "mean":
+        metric_values = _get_numeric_metric_series(df, str(metric_definition["column"]))
+        metric_values, outlier_mask = _apply_outliers_to_values(
+            metric_values,
+            outlier_context,
+        )
+        return {
+            "kind": "mean",
+            "metric_key": str(metric_definition["metric_key"]),
+            "column": str(metric_definition["column"]),
+            "values": metric_values.to_numpy(dtype=float),
+            "outlier_mask": outlier_mask.to_numpy(dtype=bool),
+            "outlier_context": outlier_context,
+        }
+
+    ratio_spec = dict(metric_definition["ratio_spec"])
+    numerator = _get_numeric_metric_series(df, ratio_spec["numerator"])
+    denominator = _get_numeric_metric_series(df, ratio_spec["denominator"])
+    if ratio_spec["level"] == "user":
+        valid_mask = _build_ratio_valid_mask(
+            numerator=numerator,
+            denominator=denominator,
+            level=ratio_spec["level"],
+        )
+        values = pd.Series(np.nan, index=df.index, dtype=float)
+        values.loc[valid_mask] = numerator.loc[valid_mask] / denominator.loc[valid_mask]
+        values, outlier_mask = _apply_outliers_to_values(
+            values,
+            outlier_context,
+        )
+        return {
+            "kind": "ratio",
+            "metric_key": str(metric_definition["metric_key"]),
+            "ratio_spec": ratio_spec,
+            "values": values.to_numpy(dtype=float),
+            "outlier_mask": outlier_mask.to_numpy(dtype=bool),
+            "outlier_context": outlier_context,
+        }
+
+    numerator, denominator, outlier_mask = _apply_outliers_to_agg_ratio_components(
+        numerator=numerator,
+        denominator=denominator,
+        outlier_context=outlier_context,
+    )
+    valid_mask = _build_ratio_valid_mask(
+        numerator=numerator,
+        denominator=denominator,
+        level=ratio_spec["level"],
+    )
+    return {
+        "kind": "ratio",
+        "metric_key": str(metric_definition["metric_key"]),
+        "ratio_spec": ratio_spec,
+        "numerator": numerator.to_numpy(dtype=float),
+        "denominator": denominator.to_numpy(dtype=float),
+        "valid_mask": valid_mask.to_numpy(dtype=bool),
+        "outlier_mask": outlier_mask.to_numpy(dtype=bool),
+        "outlier_context": outlier_context,
+    }
+
+
 def _build_metric_row(
     df: pd.DataFrame,
     group_column: str,
@@ -80,7 +150,22 @@ def _build_metric_row(
     mde_alpha: float,
     mde_power: float,
     outlier_context: dict[str, object] | None = None,
+    prepared_metric_context: dict[str, object] | None = None,
+    group_masks: dict[str, np.ndarray] | None = None,
 ) -> dict[str, object]:
+    if prepared_metric_context is not None:
+        return _build_metric_row_from_prepared_context(
+            df=df,
+            group_column=group_column,
+            baseline_group=baseline_group,
+            test_group=test_group,
+            metric_definition=metric_definition,
+            prepared_metric_context=prepared_metric_context,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+            group_masks=group_masks,
+        )
+
     if outlier_context is None:
         outlier_context = metric_definition.get("_outlier_context")
     if metric_definition["kind"] == "mean":
@@ -121,6 +206,121 @@ def _build_metric_row(
         mde_power=mde_power,
         outlier_context=outlier_context,
     )
+
+
+def _build_metric_row_from_prepared_context(
+    df: pd.DataFrame,
+    group_column: str,
+    baseline_group: str,
+    test_group: str,
+    metric_definition: dict[str, object],
+    prepared_metric_context: dict[str, object],
+    mde_alpha: float,
+    mde_power: float,
+    group_masks: dict[str, np.ndarray] | None = None,
+) -> dict[str, object]:
+    if group_masks is None:
+        group_values = df[group_column].to_numpy()
+        group_masks = {
+            baseline_group: group_values == baseline_group,
+            test_group: group_values == test_group,
+        }
+
+    baseline_mask = np.asarray(group_masks[baseline_group], dtype=bool)
+    test_mask = np.asarray(group_masks[test_group], dtype=bool)
+
+    if prepared_metric_context["kind"] == "mean":
+        metric_name = str(prepared_metric_context["metric_key"])
+        metric_values = np.asarray(prepared_metric_context["values"], dtype=float)
+        outlier_mask = np.asarray(prepared_metric_context["outlier_mask"], dtype=bool)
+        baseline_values = pd.Series(metric_values[baseline_mask]).dropna()
+        test_values = pd.Series(metric_values[test_mask]).dropna()
+        return _build_mean_metric_row(
+            metric_name=metric_name,
+            metric_key=metric_name,
+            baseline_values=baseline_values,
+            test_values=test_values,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+            outliers_cutoff=_get_outlier_cutoff(prepared_metric_context.get("outlier_context")),
+            outliers_n_control=int(outlier_mask[baseline_mask].sum()),
+            outliers_n_test=int(outlier_mask[test_mask].sum()),
+        )
+
+    ratio_spec = dict(metric_definition["ratio_spec"])
+    metric_key = str(prepared_metric_context["metric_key"])
+    if ratio_spec["level"] == "user":
+        metric_values = np.asarray(prepared_metric_context["values"], dtype=float)
+        outlier_mask = np.asarray(prepared_metric_context["outlier_mask"], dtype=bool)
+        baseline_values = pd.Series(metric_values[baseline_mask]).dropna()
+        test_values = pd.Series(metric_values[test_mask]).dropna()
+        return _build_mean_metric_row(
+            metric_name=metric_key,
+            metric_key=metric_key,
+            baseline_values=baseline_values,
+            test_values=test_values,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+            outliers_cutoff=_get_outlier_cutoff(prepared_metric_context.get("outlier_context")),
+            outliers_n_control=int(outlier_mask[baseline_mask].sum()),
+            outliers_n_test=int(outlier_mask[test_mask].sum()),
+        )
+
+    numerator = np.asarray(prepared_metric_context["numerator"], dtype=float)
+    denominator = np.asarray(prepared_metric_context["denominator"], dtype=float)
+    valid_mask = np.asarray(prepared_metric_context["valid_mask"], dtype=bool)
+    outlier_mask = np.asarray(prepared_metric_context["outlier_mask"], dtype=bool)
+    baseline_valid_mask = baseline_mask & valid_mask
+    test_valid_mask = test_mask & valid_mask
+    baseline_frame = pd.DataFrame(
+        {"numerator": numerator[baseline_valid_mask], "denominator": denominator[baseline_valid_mask]}
+    )
+    test_frame = pd.DataFrame(
+        {"numerator": numerator[test_valid_mask], "denominator": denominator[test_valid_mask]}
+    )
+    outliers_n_control = int(outlier_mask[baseline_mask].sum())
+    outliers_n_test = int(outlier_mask[test_mask].sum())
+    baseline_stats = _compute_agg_ratio_group_stats(baseline_frame)
+    test_stats = _compute_agg_ratio_group_stats(test_frame)
+
+    delta_abs = math.nan
+    if _both_present(test_stats["ratio"], baseline_stats["ratio"]):
+        delta_abs = test_stats["ratio"] - baseline_stats["ratio"]
+
+    baseline_variance = _compute_agg_ratio_variance(baseline_frame, baseline_stats["ratio"])
+    test_variance = _compute_agg_ratio_variance(test_frame, test_stats["ratio"])
+    se_diff = math.nan
+    if not math.isnan(baseline_variance) and not math.isnan(test_variance):
+        se_diff = math.sqrt(baseline_variance + test_variance)
+    p_value = _compute_normal_p_value(delta_abs=delta_abs, standard_error=se_diff)
+    mde_abs = _compute_mde_from_standard_error(
+        standard_error=se_diff,
+        alpha=mde_alpha,
+        power=mde_power,
+    )
+
+    return {
+        "metric_name": metric_key,
+        "n0": int(baseline_stats["n"]),
+        "n1": int(test_stats["n"]),
+        "outliers_cutoff": _get_outlier_cutoff(prepared_metric_context.get("outlier_context")),
+        "outliers_n_control": outliers_n_control,
+        "outliers_n_test": outliers_n_test,
+        "metric_control": baseline_stats["ratio"],
+        "metric_test": test_stats["ratio"],
+        "variance_control": baseline_variance,
+        "variance_test": test_variance,
+        "delta_abs": delta_abs,
+        "delta_relative": _safe_relative(delta_abs, baseline_stats["ratio"]),
+        "mde_abs": mde_abs,
+        "mde_relative": _safe_relative(mde_abs, baseline_stats["ratio"]),
+        "s.e.": se_diff,
+        "p-value": p_value,
+        "s.e. bootstrap": math.nan,
+        "bootstrap_adj_p": math.nan,
+        "_metric_key": metric_key,
+        "_test_stat": _compute_studentized_statistic(delta_abs, se_diff),
+    }
 
 
 def _build_mean_metric_row(
