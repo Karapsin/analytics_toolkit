@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "analytics-toolkit"
-version = "1.3.7.8"
+version = "1.3.7.9"
 description = "Shared Python utilities for SQL, Excel, and date helpers."
 readme = "README.md"
 requires-python = ">=3.8,<3.15"
@@ -63,6 +63,19 @@ rag = [
   "ollama>=0.4,<1",
   "rank-bm25>=0.2.2,<1",
   "sentence-transformers>=3,<6; python_version >= '3.9'",
+]
+rag-openai = ["openai>=1,<3"]
+rag-anthropic = ["anthropic>=0.40,<2"]
+rag-gemini = ["google-genai>=1,<2"]
+rag-all = [
+  "chromadb>=0.5,<2; python_version >= '3.9'",
+  "markdown-it-py>=3,<5",
+  "ollama>=0.4,<1",
+  "rank-bm25>=0.2.2,<1",
+  "sentence-transformers>=3,<6; python_version >= '3.9'",
+  "openai>=1,<3",
+  "anthropic>=0.40,<2",
+  "google-genai>=1,<2",
 ]
 
 [project.scripts]

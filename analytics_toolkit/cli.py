@@ -44,9 +44,33 @@ def _build_parser() -> argparse.ArgumentParser:
     docs_index_parser.add_argument("--root", default=".")
     docs_index_parser.add_argument("--index-dir", default=".rag_index")
     docs_index_parser.add_argument(
+        "--embedding-provider",
+        default="sentence-transformers",
+        help=(
+            "Embedding provider: sentence-transformers, ollama, openai, "
+            "gemini, or openai-compatible."
+        ),
+    )
+    docs_index_parser.add_argument(
         "--embedding-model",
-        default="BAAI/bge-small-en-v1.5",
-        help="SentenceTransformer model used when dense retrieval is enabled.",
+        default=None,
+        help="Embedding model. Defaults depend on --embedding-provider.",
+    )
+    docs_index_parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help="Environment variable holding the embedding provider API key.",
+    )
+    docs_index_parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Embedding provider base URL for compatible/local endpoints.",
+    )
+    docs_index_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Embedding provider request timeout in seconds.",
     )
     docs_index_parser.add_argument(
         "--no-dense",
@@ -59,13 +83,46 @@ def _build_parser() -> argparse.ArgumentParser:
     docs_search_parser.add_argument("question")
     docs_search_parser.add_argument("--index-dir", default=".rag_index")
     docs_search_parser.add_argument("--top-k", type=int, default=5)
+    docs_search_parser.add_argument("--embedding-provider", default=None)
+    docs_search_parser.add_argument("--embedding-model", default=None)
+    docs_search_parser.add_argument("--api-key-env", default=None)
+    docs_search_parser.add_argument("--base-url", default=None)
+    docs_search_parser.add_argument("--timeout", type=float, default=None)
     docs_search_parser.set_defaults(handler=_handle_docs_search)
 
     docs_ask_parser = docs_subparsers.add_parser("ask")
     docs_ask_parser.add_argument("question")
     docs_ask_parser.add_argument("--index-dir", default=".rag_index")
     docs_ask_parser.add_argument("--top-k", type=int, default=5)
-    docs_ask_parser.add_argument("--model", default="llama3.1")
+    docs_ask_parser.add_argument(
+        "--llm-provider",
+        default="ollama",
+        help=(
+            "Generation provider: ollama, openai, anthropic, gemini, "
+            "or openai-compatible."
+        ),
+    )
+    docs_ask_parser.add_argument(
+        "--model",
+        default=None,
+        help="Generation model. Defaults to llama3.1 for Ollama; required for hosted providers.",
+    )
+    docs_ask_parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help="Environment variable holding the generation provider API key.",
+    )
+    docs_ask_parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Generation provider base URL for compatible/local endpoints.",
+    )
+    docs_ask_parser.add_argument("--timeout", type=float, default=None)
+    docs_ask_parser.add_argument("--embedding-provider", default=None)
+    docs_ask_parser.add_argument("--embedding-model", default=None)
+    docs_ask_parser.add_argument("--embedding-api-key-env", default=None)
+    docs_ask_parser.add_argument("--embedding-base-url", default=None)
+    docs_ask_parser.add_argument("--embedding-timeout", type=float, default=None)
     docs_ask_parser.add_argument(
         "--no-llm",
         action="store_true",
@@ -98,13 +155,22 @@ def _handle_sql_support_matrix(args: argparse.Namespace) -> int:
 
 def _handle_docs_index(args: argparse.Namespace) -> int:
     from .rag_docs import build_docs_index
+    from .rag_docs.providers import RagProviderError
 
-    result = build_docs_index(
-        root=args.root,
-        index_dir=args.index_dir,
-        dense=not args.no_dense,
-        embedding_model=args.embedding_model,
-    )
+    try:
+        result = build_docs_index(
+            root=args.root,
+            index_dir=args.index_dir,
+            dense=not args.no_dense,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            api_key_env=args.api_key_env,
+            base_url=args.base_url,
+            timeout=args.timeout,
+        )
+    except RagProviderError as exc:
+        print(f"Docs index failed: {exc}", file=sys.stderr)
+        return 1
     print(
         "Indexed "
         f"{result.chunk_count} chunks from {result.file_count} files into "
@@ -117,6 +183,7 @@ def _handle_docs_index(args: argparse.Namespace) -> int:
 
 def _handle_docs_search(args: argparse.Namespace) -> int:
     from .rag_docs import search_docs
+    from .rag_docs.providers import RagProviderError
     from .rag_docs.text import snippet
 
     try:
@@ -124,9 +191,17 @@ def _handle_docs_search(args: argparse.Namespace) -> int:
             args.question,
             index_dir=args.index_dir,
             top_k=args.top_k,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            api_key_env=args.api_key_env,
+            base_url=args.base_url,
+            timeout=args.timeout,
         )
     except FileNotFoundError as exc:
         print(f"Docs index not found: {exc}", file=sys.stderr)
+        return 1
+    except (RagProviderError, ValueError) as exc:
+        print(f"Docs search failed: {exc}", file=sys.stderr)
         return 1
 
     if not results:
@@ -147,17 +222,30 @@ def _handle_docs_search(args: argparse.Namespace) -> int:
 
 def _handle_docs_ask(args: argparse.Namespace) -> int:
     from .rag_docs import ask_docs
+    from .rag_docs.providers import RagProviderError
 
     try:
         answer = ask_docs(
             args.question,
             index_dir=args.index_dir,
             top_k=args.top_k,
+            llm_provider=args.llm_provider,
             model=args.model,
+            api_key_env=args.api_key_env,
+            base_url=args.base_url,
+            timeout=args.timeout,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            embedding_api_key_env=args.embedding_api_key_env,
+            embedding_base_url=args.embedding_base_url,
+            embedding_timeout=args.embedding_timeout,
             use_llm=not args.no_llm,
         )
     except FileNotFoundError as exc:
         print(f"Docs index not found: {exc}", file=sys.stderr)
+        return 1
+    except (RagProviderError, ValueError) as exc:
+        print(f"Docs ask failed: {exc}", file=sys.stderr)
         return 1
 
     print(answer.answer)

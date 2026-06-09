@@ -12,6 +12,11 @@ from .indexing import (
     load_manifest,
 )
 from .models import DocChunk, SearchResult
+from .providers import (
+    RagProviderError,
+    build_embedding_provider,
+    normalize_embedding_provider,
+)
 from .text import normalize_identifier, tokenize
 
 
@@ -20,6 +25,11 @@ def search_docs(
     index_dir: str | Path = DEFAULT_INDEX_DIR,
     *,
     top_k: int = 5,
+    embedding_provider: str | None = None,
+    embedding_model: str | None = None,
+    api_key_env: str | None = None,
+    base_url: str | None = None,
+    timeout: float | None = None,
 ) -> list[SearchResult]:
     """Search the local docs index with hybrid lexical and dense retrieval."""
 
@@ -30,7 +40,16 @@ def search_docs(
         return []
 
     lexical_scores = _lexical_scores(question, chunks)
-    dense_scores = _dense_scores(question, chunks, index_dir)
+    dense_scores = _dense_scores(
+        question,
+        chunks,
+        index_dir,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        api_key_env=api_key_env,
+        base_url=base_url,
+        timeout=timeout,
+    )
     combined: list[SearchResult] = []
     for chunk in chunks:
         lexical_score = lexical_scores.get(chunk.id, 0.0)
@@ -121,36 +140,65 @@ def _dense_scores(
     question: str,
     chunks: list[DocChunk],
     index_dir: str | Path,
+    *,
+    embedding_provider: str | None,
+    embedding_model: str | None,
+    api_key_env: str | None,
+    base_url: str | None,
+    timeout: float | None,
 ) -> dict[str, float]:
     manifest = load_manifest(index_dir)
     if not manifest.get("dense_enabled"):
         return {}
     try:
         import chromadb
-        from sentence_transformers import SentenceTransformer
     except ImportError:
         return {}
 
-    embedding_model = str(manifest.get("embedding_model") or "")
-    if not embedding_model:
+    manifest_provider = str(manifest.get("embedding_provider") or "")
+    manifest_model = str(manifest.get("embedding_model") or "")
+    manifest_base_url = _optional_string(manifest.get("embedding_base_url"))
+    requested_provider = normalize_embedding_provider(embedding_provider or manifest_provider)
+    requested_model = str(embedding_model or manifest_model)
+    requested_base_url = _optional_string(base_url) or manifest_base_url
+
+    if not manifest_provider or not manifest_model:
         return {}
-    collection_name = str(manifest.get("collection_name") or DEFAULT_COLLECTION_NAME)
-    try:
-        model = SentenceTransformer(embedding_model)
-        query_embedding = model.encode(
-            [question],
-            normalize_embeddings=True,
-            show_progress_bar=False,
+    if requested_provider != manifest_provider:
+        raise ValueError(
+            "Dense index was built with embedding provider "
+            f"{manifest_provider!r}, not {requested_provider!r}. Rebuild the docs index."
         )
-        if hasattr(query_embedding, "tolist"):
-            query_embedding = query_embedding.tolist()
+    if requested_model != manifest_model:
+        raise ValueError(
+            "Dense index was built with embedding model "
+            f"{manifest_model!r}, not {requested_model!r}. Rebuild the docs index."
+        )
+    if base_url and base_url != manifest_base_url:
+        raise ValueError(
+            "Dense index was built with a different embedding base URL. "
+            "Rebuild the docs index."
+        )
+
+    try:
+        provider = build_embedding_provider(
+            requested_provider,
+            model=requested_model,
+            api_key_env=api_key_env,
+            base_url=requested_base_url,
+            timeout=timeout,
+        )
+        query_embedding = [provider.embed_query(question)]
         client = chromadb.PersistentClient(path=str(Path(index_dir) / "chroma"))
+        collection_name = str(manifest.get("collection_name") or DEFAULT_COLLECTION_NAME)
         collection = client.get_collection(collection_name)
         result = collection.query(
             query_embeddings=query_embedding,
             n_results=min(len(chunks), max(20, len(chunks))),
             include=["distances"],
         )
+    except RagProviderError:
+        raise
     except Exception:
         return {}
 
@@ -230,3 +278,10 @@ def _normalize(values: list[float]) -> list[float]:
     if max_value <= 0:
         return [0.0 for _ in values]
     return [value / max_value for value in values]
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

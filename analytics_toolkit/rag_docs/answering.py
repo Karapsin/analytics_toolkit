@@ -5,11 +5,15 @@ from pathlib import Path
 
 from .indexing import DEFAULT_INDEX_DIR
 from .models import SearchResult
+from .providers import (
+    DEFAULT_OLLAMA_CHAT_MODEL,
+    build_generation_provider,
+)
 from .retrieval import search_docs
 from .text import snippet
 
 
-DEFAULT_OLLAMA_MODEL = "llama3.1"
+DEFAULT_OLLAMA_MODEL = DEFAULT_OLLAMA_CHAT_MODEL
 
 
 @dataclass(frozen=True)
@@ -29,12 +33,32 @@ def ask_docs(
     index_dir: str | Path = DEFAULT_INDEX_DIR,
     *,
     top_k: int = 5,
-    model: str = DEFAULT_OLLAMA_MODEL,
+    llm_provider: str = "ollama",
+    model: str | None = None,
+    api_key_env: str | None = None,
+    base_url: str | None = None,
+    timeout: float | None = None,
+    embedding_provider: str | None = None,
+    embedding_model: str | None = None,
+    embedding_api_key_env: str | None = None,
+    embedding_base_url: str | None = None,
+    embedding_timeout: float | None = None,
     use_llm: bool = True,
 ) -> AnswerResult:
     """Answer a docs question from retrieved local context."""
 
-    results = tuple(search_docs(question, index_dir, top_k=top_k))
+    results = tuple(
+        search_docs(
+            question,
+            index_dir,
+            top_k=top_k,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            api_key_env=embedding_api_key_env,
+            base_url=embedding_base_url,
+            timeout=embedding_timeout,
+        )
+    )
     if not results:
         return AnswerResult(
             answer=(
@@ -50,7 +74,15 @@ def ask_docs(
     if use_llm:
         try:
             return AnswerResult(
-                answer=_generate_with_ollama(question, context, model),
+                answer=_generate_with_provider(
+                    question,
+                    context,
+                    llm_provider=llm_provider,
+                    model=model,
+                    api_key_env=api_key_env,
+                    base_url=base_url,
+                    timeout=timeout,
+                ),
                 results=results,
                 used_llm=True,
             )
@@ -59,7 +91,7 @@ def ask_docs(
                 answer=_fallback_answer(results),
                 results=results,
                 used_llm=False,
-                llm_message=f"Ollama generation unavailable: {exc}",
+                llm_message=f"{llm_provider} generation unavailable: {exc}",
             )
 
     return AnswerResult(
@@ -70,35 +102,24 @@ def ask_docs(
     )
 
 
-def _generate_with_ollama(question: str, context: str, model: str) -> str:
-    try:
-        import ollama
-    except ImportError as exc:
-        raise RuntimeError("install analytics-toolkit[rag] to enable Ollama generation") from exc
-
-    response = ollama.chat(
+def _generate_with_provider(
+    question: str,
+    context: str,
+    *,
+    llm_provider: str,
+    model: str | None,
+    api_key_env: str | None,
+    base_url: str | None,
+    timeout: float | None,
+) -> str:
+    provider = build_generation_provider(
+        llm_provider,
         model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Answer only from the provided analytics_toolkit documentation "
-                    "context. If the context is insufficient, say that the docs do "
-                    "not contain enough information. Cite sources with bracketed "
-                    "numbers like [1]."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Question:\n{question}\n\nDocumentation context:\n{context}",
-            },
-        ],
+        api_key_env=api_key_env,
+        base_url=base_url,
+        timeout=timeout,
     )
-    message = response.get("message", {})
-    content = message.get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("Ollama returned an empty response")
-    return content.strip()
+    return provider.answer(question, context)
 
 
 def _format_context(results: tuple[SearchResult, ...]) -> str:
