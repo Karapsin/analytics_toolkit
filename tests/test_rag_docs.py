@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import analytics_toolkit.cli as cli_module
 from analytics_toolkit.cli import main
 from analytics_toolkit.rag_docs import (
     ask_docs,
@@ -174,6 +175,21 @@ def test_docs_cli_indexes_and_answers_with_sources(
     assert "Most relevant passages" in ask_output
     assert "Sources:" in ask_output
     assert "docs/modules/sql/configuration.md:L" in ask_output
+
+
+def test_cli_prefers_local_package_path_for_console_namespace_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shadow_package = tmp_path / "site-packages" / "analytics_toolkit"
+    shadow_package.mkdir(parents=True)
+    package = types.SimpleNamespace(__path__=[str(shadow_package)])
+    monkeypatch.setitem(sys.modules, "analytics_toolkit", package)
+
+    cli_module._prefer_local_package_path()
+
+    assert Path(package.__path__[0]).resolve() == Path(cli_module.__file__).parent
+    assert package.__path__[1:] == [str(shadow_package)]
 
 
 def test_openai_embedding_provider_builds_dense_local_index(

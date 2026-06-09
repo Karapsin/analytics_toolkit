@@ -5,6 +5,30 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+
+def _prefer_local_package_path() -> None:
+    package = sys.modules.get(__package__)
+    package_path = getattr(package, "__path__", None)
+    if package_path is None:
+        return
+
+    local_path = str(Path(__file__).resolve().parent)
+    existing_paths = [str(path) for path in package_path]
+    package.__path__ = [
+        local_path,
+        *[path for path in existing_paths if not _same_path(path, local_path)],
+    ]
+
+
+def _same_path(left: str, right: str) -> bool:
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except OSError:
+        return left == right
+
+
+_prefer_local_package_path()
+
 from .sql import format_support_matrix
 from .sql.connection import validate_connections
 
