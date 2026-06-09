@@ -51,6 +51,7 @@ from .maintenance import (
 from .models import CreateTableFromSqlOptions
 from .table_validation import normalize_key_columns, validate_key_columns_in_columns
 from analytics_toolkit.general import time_print
+from .ch_create_table_as import ch_create_table_as
 
 
 def transfer_table(**kwargs: Any) -> int:
@@ -66,7 +67,7 @@ def create_table_from_sql(
     sql: str,
     *,
     table_db: str | None = None,
-    insert_data: bool = False,
+    insert_data: bool = True,
     drop_target_if_exists: bool = False,
     gp_distributed_by_key: list[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -150,6 +151,34 @@ def create_table_from_sql(
         return_metadata=return_metadata,
         query_label=query_label,
     )
+
+    if (
+        options.source_backend == "ch"
+        and options.target_backend == "ch"
+        and options.source_key == options.target_key
+    ):
+        return ch_create_table_as(
+            options.target_key,
+            options.target_table,
+            options.source_sql,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
+            ch_engine=options.ch_engine,
+            ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
+            ch_only_shard=options.ch_only_shard,
+            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+            ch_retry_per_host_drops_concurrency=(
+                options.ch_retry_per_host_drops_concurrency
+            ),
+            insert_data=options.insert_data,
+            drop_target_if_exists=options.drop_target_if_exists,
+            dry_run=options.dry_run,
+            return_sql=options.return_sql,
+            query_label=options.query_label,
+            return_metadata=options.return_metadata,
+            table_schema=options.table_schema,
+        )
 
     if options.dry_run or options.return_sql:
         return _build_create_table_from_sql_plan(

@@ -18,7 +18,6 @@ Common planned workflows include [sql.load_df](functions/load_df.md),
 [sql.create_table_from_sql](functions/create_table_from_sql.md), and
 [sql.drop_many_partitions](functions/drop_many_partitions.md). ClickHouse table
 plans can also come from
-[sql.ch_create_table_as](functions/ch_create_table_as.md),
 [sql.ch_drop_table](functions/ch_drop_table.md), and
 [sql.ch_full_table_move](functions/ch_full_table_move.md).
 

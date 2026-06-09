@@ -77,7 +77,6 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
 
     single_db_operations = {
         "build_create_table_sql",
-        "ch_create_table_as",
         "ch_drop_table",
         "ch_full_table_move",
         "create_sql_table",

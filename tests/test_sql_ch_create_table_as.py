@@ -148,7 +148,8 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> FakeClickHouseClient:
 
 
 def test_ch_create_table_as_is_exported() -> None:
-    assert sql_module.ch_create_table_as is ch_ctas_module.ch_create_table_as
+    assert "ch_create_table_as" not in sql_module.__all__
+    assert not hasattr(sql_module, "ch_create_table_as")
 
 
 def test_ch_create_table_as_creates_pair_and_inserts_query(
@@ -262,6 +263,52 @@ def test_ch_create_table_as_dry_run_uses_table_schema() -> None:
     assert "`dt` Date" in create_sql
     assert "`id` UInt64" in create_sql
     assert "`amount` Decimal(18, 4)" in create_sql
+
+
+def test_ch_create_table_as_skips_insert_when_insert_data_false(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        insert_data=False,
+    )
+
+    assert len(fake_client.commands) == 8
+    assert not any(command.startswith("INSERT INTO ") for command in fake_client.commands)
+
+
+def test_ch_create_table_as_skips_drop_when_drop_target_if_exists_false(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        drop_target_if_exists=False,
+        table_schema={"dt": "Date", "id": "UInt64", "amount": "Decimal(18, 4)"},
+    )
+
+    assert not any(command.startswith("DROP TABLE") for command in fake_client.commands)
+    assert fake_client.commands[0].startswith(
+        f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}"
+    )
+    assert fake_client.commands[-1] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
+
+
+def test_ch_create_table_as_dry_run_omits_insert_when_insert_data_false() -> None:
+    plan = ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        dry_run=True,
+        insert_data=False,
+        table_schema={"dt": "Date", "id": "UInt64", "amount": "Decimal(18, 4)"},
+    )
+
+    assert "insert_target" not in [statement.phase for statement in plan.statements]
+    assert not any(sql.startswith("INSERT INTO ") for sql in plan.sqls)
 
 
 def test_ch_create_table_as_quotes_cluster_macro(

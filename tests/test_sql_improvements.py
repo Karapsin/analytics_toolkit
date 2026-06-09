@@ -185,7 +185,6 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
 @pytest.mark.parametrize(
     "function_name",
     [
-        "ch_create_table_as",
         "ch_drop_table",
         "ch_full_table_move",
         "create_sql_table",

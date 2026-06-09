@@ -41,7 +41,6 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [build_gp_create_many_partitions_sqls](build_gp_create_many_partitions_sqls.md)
 - [gp_vacuum](gp_vacuum.md)
 - [gp_cancel_all_running_queries](gp_cancel_all_running_queries.md)
-- [ch_create_table_as](ch_create_table_as.md)
 - [ch_drop_table](ch_drop_table.md)
 - [ch_full_table_move](ch_full_table_move.md)
 

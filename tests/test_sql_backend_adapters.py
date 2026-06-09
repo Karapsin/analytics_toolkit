@@ -57,7 +57,6 @@ class RecordingClickHouseClient:
 def test_sql_public_api_exports_are_stable() -> None:
     public_names = {
         "async_sql",
-        "ch_create_table_as",
         "ch_drop_table",
         "ch_full_table_move",
         "create_sql_table",
@@ -89,6 +88,8 @@ def test_sql_public_api_exports_are_stable() -> None:
     ]
     assert "format_plan" in sql_module.__all__
     assert "SqlTableInfo" in sql_module.__all__
+    assert "ch_create_table_as" not in sql_module.__all__
+    assert not hasattr(sql_module, "ch_create_table_as")
     assert "execute_sql" not in sql_module.__all__
     assert "read_sql" not in sql_module.__all__
     assert "transfer_table" not in sql_module.__all__

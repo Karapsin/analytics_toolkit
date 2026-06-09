@@ -4,6 +4,14 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.15 - 2026-06-09
+
+- Changed `sql.create_table_from_sql()` to insert data by default, reuse the
+  internal ClickHouse CTAS flow for same-alias ClickHouse queries, and keep
+  ClickHouse schema-only creation available with `insert_data=False`.
+- Removed `sql.ch_create_table_as()` from the public SQL facade and function
+  documentation.
+
 ## 1.3.7.6 - 2026-06-08
 
 - Expanded the PyPI README with concise SQL transfer, AB metric, and date

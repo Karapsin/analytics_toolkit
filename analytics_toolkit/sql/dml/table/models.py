@@ -13,7 +13,7 @@ class CreateTableFromSqlOptions:
     target_table: str
     source_sql: str
     table_schema: dict[str, str] | None = None
-    insert_data: bool = False
+    insert_data: bool = True
     drop_target_if_exists: bool = False
     gp_distributed_by_key: list[str] | None = None
     partition_by: Sequence[str] | str | None = None
@@ -55,6 +55,8 @@ class ChCreateTableAsOptions:
     target_table: str
     query_sql: str
     table_schema: dict[str, str] | None = None
+    insert_data: bool = True
+    drop_target_if_exists: bool = True
     partition_by: Sequence[str] | str | None = None
     order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"

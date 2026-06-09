@@ -35,7 +35,6 @@ from .connection.get_sql_connection import get_sql_connection, with_sql_connecti
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.gp_cancel import gp_cancel_all_running_queries
-from .dml.table.ch_create_table_as import ch_create_table_as
 from .dml.table.ch_drop_table import ch_drop_table
 from .dml.table.ch_full_table_move import ch_full_table_move
 from .dml.table.create_table_from_sql import create_table_from_sql
@@ -57,7 +56,6 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "parallel_sql",
     "build_create_table_sql",
     "build_gp_create_many_partitions_sqls",
-    "ch_create_table_as",
     "ch_drop_table",
     "ch_full_table_move",
     "create_sql_table",
@@ -92,7 +90,6 @@ __all__ = [
     "SqlText",
     "TableName",
     "airflow_connection_config",
-    "ch_create_table_as",
     "ch_drop_table",
     "ch_full_table_move",
     "execute",

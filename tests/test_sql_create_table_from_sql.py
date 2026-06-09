@@ -167,6 +167,7 @@ def test_schema_only_creation_uses_native_metadata_types(monkeypatch) -> None:
         "gp",
         "sandbox.target_table",
         "select id, amount from source_table;",
+        insert_data=False,
     )
 
     assert result is None
@@ -225,6 +226,7 @@ def test_create_table_from_sql_dry_run_uses_table_schema() -> None:
         "gp",
         "sandbox.target_table",
         "select id, amount from source_table",
+        insert_data=False,
         dry_run=True,
         table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
     )
@@ -258,6 +260,7 @@ def test_schema_only_creation_falls_back_for_gp_unbounded_numeric(
         "gp",
         "sandbox.target_table",
         "select quantity from source_table;",
+        insert_data=False,
     )
 
     assert any(
@@ -285,6 +288,7 @@ def test_schema_only_creation_preserves_gp_bytea_columns(monkeypatch) -> None:
         "gp",
         "sandbox.target_table",
         "select cheque_pk, quantity from source_table;",
+        insert_data=False,
     )
 
     assert any(
@@ -321,6 +325,7 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
         "analytics.events",
         "select id, dt, amount from source_table",
         table_db="ch",
+        insert_data=False,
         partition_by=["dt"],
         order_by=["dt", "id"],
         ch_sharding_key="cityHash64(id)",
@@ -375,6 +380,7 @@ def test_drop_target_if_exists_drops_trino_target_before_create(monkeypatch) -> 
         "sandbox.created_table",
         "select id, name from source_table",
         table_db="trino",
+        insert_data=False,
         drop_target_if_exists=True,
     )
 
@@ -405,6 +411,7 @@ def test_drop_target_if_exists_drops_clickhouse_distributed_pair(monkeypatch) ->
         "analytics.events",
         "select id, amount from source_table",
         table_db="ch",
+        insert_data=False,
         drop_target_if_exists=True,
     )
 
@@ -443,6 +450,76 @@ def test_insert_data_same_backend_emits_typed_insert_and_returns_rowcount(
         'CAST("amount" AS NUMERIC(12, 2)) AS "amount" '
         "FROM (select id, amount from source_table) AS source_query"
     )
+
+
+def test_create_table_from_sql_inserts_by_default(monkeypatch) -> None:
+    connection = FakeDbapiConnection(
+        description=SOURCE_DESCRIPTION,
+        insert_rowcount=4,
+    )
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+
+    inserted_rows = create_module.create_table_from_sql(
+        "gp",
+        "sandbox.target_table",
+        "select id, amount from source_table",
+    )
+
+    assert inserted_rows == 4
+    assert connection.executed[-1].startswith("INSERT INTO sandbox.target_table")
+
+
+def test_create_table_from_sql_same_clickhouse_delegates_to_internal_ctas(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_ch_create_table_as(*args: object, **kwargs: object) -> object:
+        calls.append({"args": args, **kwargs})
+        return "delegated"
+
+    monkeypatch.setattr(create_module, "ch_create_table_as", fake_ch_create_table_as)
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: pytest.fail("connection should not be opened"),
+    )
+
+    result = create_module.create_table_from_sql(
+        "ch",
+        "analytics.events",
+        "select id, amount from source_table;",
+        order_by=["id"],
+        insert_data=False,
+        drop_target_if_exists=False,
+        table_schema={"id": "UInt64", "amount": "Float64"},
+    )
+
+    assert result == "delegated"
+    assert calls == [
+        {
+            "args": ("ch", "analytics.events", "select id, amount from source_table"),
+            "partition_by": None,
+            "order_by": ["id"],
+            "ch_engine": "ReplicatedMergeTree",
+            "ch_cluster": "{cluster}",
+            "ch_sharding_key": "rand()",
+            "ch_only_shard": False,
+            "ch_retry_per_host_drops": True,
+            "ch_retry_per_host_drops_concurrency": 5,
+            "insert_data": False,
+            "drop_target_if_exists": False,
+            "dry_run": False,
+            "return_sql": False,
+            "query_label": None,
+            "return_metadata": False,
+            "table_schema": {"id": "UInt64", "amount": "Float64"},
+        }
+    ]
 
 
 def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
@@ -499,6 +576,44 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
         command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
         for command in target.commands
     )
+
+
+def test_cross_backend_clickhouse_insert_false_creates_pair_without_transfer(
+    monkeypatch,
+) -> None:
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    target = FakeClickHouseClient()
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(
+        create_module,
+        "transfer_table",
+        lambda **kwargs: pytest.fail("transfer should not be called"),
+    )
+
+    result = create_module.create_table_from_sql(
+        "gp",
+        "analytics.events",
+        "select id, amount from source_table",
+        table_db="ch",
+        insert_data=False,
+        order_by=["id"],
+    )
+
+    assert result is None
+    assert len(target.commands) == 4
+    assert any(
+        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+        for command in target.commands
+    )
+    assert not any(command.startswith("INSERT INTO ") for command in target.commands)
 
 
 def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(

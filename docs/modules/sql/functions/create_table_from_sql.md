@@ -2,10 +2,10 @@
 
 # create_table_from_sql
 
-Create a target table from a source SQL query schema, optionally inserting the query result.
+Create a target table from a source SQL query schema and insert the query result by default.
 
 ```python
-create_table_from_sql(source_db: 'str', table_name: 'str', sql: 'str', *, table_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, table_schema: 'dict[str, str] | None' = None) -> 'int | None | SqlPlan | SqlOperationResult'
+create_table_from_sql(source_db: 'str', table_name: 'str', sql: 'str', *, table_db: 'str | None' = None, insert_data: 'bool' = True, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, table_schema: 'dict[str, str] | None' = None) -> 'int | None | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -16,7 +16,7 @@ create_table_from_sql(source_db: 'str', table_name: 'str', sql: 'str', *, table_
 - `table_db`: Connection key or alias used to create the target table; defaults to `source_db`.
 - `table_name`: Target or source table name, depending on the helper.
 - `sql`: Source SQL text used for table creation from query metadata.
-- `insert_data`: Whether to insert the source query result after creating a table from SQL metadata.
+- `insert_data`: Whether to insert the source query result after creating a table from SQL metadata; defaults to `True`.
 - `drop_target_if_exists`: Whether to drop an existing target before creating it.
 - `dry_run`: When `True`, return a plan without mutating the database.
 - `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
@@ -50,5 +50,11 @@ plan = sql.create_table_from_sql(
 )
 print(sql.format_plan(plan))
 ```
+
+## Notes
+
+For ClickHouse targets, the helper creates the managed shard and distributed
+table pair unless `ch_only_shard=True`. When `insert_data=False`, the target
+table structure is created but the source query result is not inserted.
 
 [SQL functions index](index.md)
