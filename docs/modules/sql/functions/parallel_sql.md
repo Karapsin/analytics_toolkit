@@ -24,8 +24,8 @@ parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fa
 from analytics_toolkit import sql
 
 tasks = [
-    {"name": "orders", "type": "read", "connection_type": "gp", "query": "select * from sandbox.orders limit 10"},
-    {"name": "events", "type": "read", "connection_type": "trino", "query": "select * from sandbox.events limit 10"},
+    {"name": "orders", "type": "read", "db_key": "gp", "query": "select * from sandbox.orders limit 10"},
+    {"name": "events", "type": "read", "db_key": "trino", "query": "select * from sandbox.events limit 10"},
 ]
 
 result = sql.parallel_sql(tasks, concurrency=2)

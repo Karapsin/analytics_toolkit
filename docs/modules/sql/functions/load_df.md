@@ -5,14 +5,14 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(connection_type: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'list[str] | None' = None, key_columns: 'list[str] | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'list[str] | None' = None, key_columns: 'list[str] | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
 
 ### General Inputs
 
-- `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
+- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `destination_table`: Target table name for dataframe loading.
 - `df`: Dataframe to load.
 - `append`: Historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied.
@@ -49,9 +49,9 @@ from analytics_toolkit import sql
 
 scores = pd.DataFrame({"user_id": [1, 2], "score": [10.5, 12.0]})
 rows = sql.load_df(
-    "gp",
-    "sandbox.scores",
-    scores,
+    db_key="gp",
+    destination_table="sandbox.scores",
+    df=scores,
     write_mode="truncate_insert",
 )
 ```

@@ -5,12 +5,12 @@
 Decorate a function so it receives a managed SQL connection.
 
 ```python
-with_sql_connection(connection_key: 'str') -> 'Callable[..., Any]'
+with_sql_connection(db_key: 'str') -> 'Callable[..., Any]'
 ```
 
 ## Inputs
 
-- `connection_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
+- `db_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
 
 ## Usage
 

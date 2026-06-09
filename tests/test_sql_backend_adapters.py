@@ -62,14 +62,14 @@ def test_sql_public_api_exports_are_stable() -> None:
         "ch_full_table_move",
         "create_sql_table",
         "create_table_from_sql",
+        "execute",
         "execute_read",
-        "execute_sql",
         "get_sql_connection",
         "load_df",
         "parallel_sql",
-        "read_sql",
+        "read",
         "table_info",
-        "transfer_table",
+        "transfer",
     }
 
     for name in public_names:
@@ -77,11 +77,11 @@ def test_sql_public_api_exports_are_stable() -> None:
         assert callable(getattr(sql_module, name))
 
     assert list(inspect.signature(sql_module.load_df).parameters)[:3] == [
-        "connection_type",
+        "db_key",
         "destination_table",
         "df",
     ]
-    assert list(inspect.signature(sql_module.transfer_table).parameters)[:4] == [
+    assert list(inspect.signature(sql_module.transfer).parameters)[:4] == [
         "from_db",
         "to_db",
         "from_sql",
@@ -89,15 +89,21 @@ def test_sql_public_api_exports_are_stable() -> None:
     ]
     assert "format_plan" in sql_module.__all__
     assert "SqlTableInfo" in sql_module.__all__
+    assert "execute_sql" not in sql_module.__all__
+    assert "read_sql" not in sql_module.__all__
+    assert "transfer_table" not in sql_module.__all__
 
 
 def test_sql_public_api_functions_are_timed() -> None:
     for name in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES:
         assert getattr(getattr(sql_module, name), "__sql_public_timing__", False)
 
-    assert sql_module.execute is sql_module.execute_sql
-    assert sql_module.read is sql_module.read_sql
-    assert sql_module.transfer is sql_module.transfer_table
+    assert callable(sql_module.execute)
+    assert callable(sql_module.read)
+    assert callable(sql_module.transfer)
+    assert not hasattr(sql_module, "execute_sql")
+    assert not hasattr(sql_module, "read_sql")
+    assert not hasattr(sql_module, "transfer_table")
 
 
 def test_table_ops_compatibility_helpers_remain_importable() -> None:

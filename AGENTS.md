@@ -93,15 +93,17 @@ When the user asks to update, publish, or release the package on PyPI, run the c
 
 ## SQL Module Contracts
 
-- Public SQL APIs accept connection keys/aliases from `.connections`; callers should not need to pass backend names separately.
+- Public SQL APIs accept configured DB keys from `.connections`; callers should not need to pass raw backend names or open connection objects.
+- Single-DB public SQL functions should name that argument `db_key`.
+- Multi-DB public SQL functions may use directional key names such as `from_db`, `to_db`, `source_db`, and `table_db`.
 - User-facing SQL imports should use `from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`. Deep imports under `analytics_toolkit.sql.*` are internal and may change. Do not restore removed root implementation paths.
 - Public SQL input names that work only for one backend must use the backend prefix: `gp_`, `trino_`, or `ch_`. Do not keep unprefixed compatibility aliases for those backend-only inputs unless the user explicitly asks for compatibility.
 - Each `.connections` value must include `type` as `gp`, `trino`, or `ch`. Backend dispatch comes from this `type`, while reconnect/retry/log messages keep using the alias key.
 - Env-based SQL config such as `SQL_CONNECTIONS`, `GP_HOST`, `TRINO_HOST`, `CH_HOST`, `TRINO_INSERT_CHUNK_SIZE`, and config-file override env vars is intentionally unsupported. Do not restore fallback support.
-- Keep public names such as `connection_type`, `from_db`, and `to_db` compatible even when they now represent aliases.
+- Keep public directional names such as `from_db`, `to_db`, `source_db`, and `table_db` compatible even when they now represent aliases.
 - A Trino target may define `insert_chunk_size` in its connection config. Explicit function arguments override config; config overrides the internal default.
-- `read_sql`, `execute_sql`, `load_df`, and `transfer_table` retry the whole public operation with fresh connections. Preserve Greenplum rollback behavior on errors.
-- `transfer_table` and `load_df` separate key and backend in option models. Same-backend aliases are valid as long as the alias keys differ.
+- `sql.read`, `sql.execute`, `load_df`, and `sql.transfer` retry the whole public operation with fresh connections. Preserve Greenplum rollback behavior on errors.
+- `transfer` and `load_df` separate key and backend in option models. Same-backend aliases are valid as long as the alias keys differ.
 - ClickHouse load/transfer creates and manages a shard table plus a `Distributed` table. Preserve local and cluster DDL/drop/truncate behavior.
 - Key validation uses normalized unique key lists and null-safe joins for staged-vs-target overlap checks.
 - Trino table metadata helpers need the alias key so unqualified names can use that connection's catalog/schema.

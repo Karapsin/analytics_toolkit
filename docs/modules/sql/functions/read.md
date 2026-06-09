@@ -5,12 +5,12 @@
 Run one SQL query through a configured connection and return a pandas dataframe.
 
 ```python
-read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False) -> 'pd.DataFrame | SqlOperationResult'
+read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False) -> 'pd.DataFrame | SqlOperationResult'
 ```
 
 ## Inputs
 
-- `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
+- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `query`: SQL text to execute or read.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
@@ -24,8 +24,8 @@ read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, retry_
 from analytics_toolkit import sql
 
 orders = sql.read(
-    "gp",
-    "select order_id, user_id, amount from sandbox.orders limit 100",
+    db_key="gp",
+    query="select order_id, user_id, amount from sandbox.orders limit 100",
 )
 ```
 

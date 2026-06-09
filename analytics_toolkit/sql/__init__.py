@@ -1,6 +1,5 @@
 from .ddl.api import (
     build_create_table_sql,
-    build_create_table_sqls,
     create_sql_table,
 )
 from .ddl.extract_ddl import extract_ddl
@@ -23,7 +22,7 @@ from .metadata.show_tables import show_tables
 from .metadata.table_info import SqlTableInfo, table_info
 from .core.types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
 from .dml.io.execute_read import execute_read
-from .dml.io.execute_sql import execute_sql, execute_sql as execute
+from .dml.io.execute_sql import execute_sql as execute
 from .connection.config import (
     ConnectionValidationResult,
     airflow_connection_config,
@@ -34,7 +33,7 @@ from .connection.config import (
 from .connection.errors import SqlOperationContext, SqlOperationError
 from .connection.get_sql_connection import get_sql_connection, with_sql_connection
 from .dml.load.load_df import load_df
-from .dml.io.read_sql import read_sql, read_sql as read
+from .dml.io.read_sql import read_sql as read
 from .dml.io.gp_cancel import gp_cancel_all_running_queries
 from .dml.table.ch_create_table_as import ch_create_table_as
 from .dml.table.ch_drop_table import ch_drop_table
@@ -51,13 +50,12 @@ from analytics_toolkit.general import (
     set_time_print_sink,
     time_print,
 )
-from .dml.transfer.flow.api import transfer_table, transfer_table as transfer
+from .dml.transfer.flow.api import transfer_table as transfer
 
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "parallel_sql",
     "build_create_table_sql",
-    "build_create_table_sqls",
     "build_gp_create_many_partitions_sqls",
     "ch_create_table_as",
     "ch_drop_table",
@@ -66,7 +64,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "create_table_from_sql",
     "extract_ddl",
     "execute_read",
-    "execute_sql",
+    "execute",
     "format_support_matrix",
     "get_sql_connection",
     "drop_many_partitions",
@@ -74,18 +72,14 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",
-    "read_sql",
+    "read",
     "show_tables",
     "support_matrix_rows",
     "table_info",
-    "transfer_table",
+    "transfer",
     "validate_connections",
     "with_sql_connection",
 )
-
-execute = execute_sql
-read = read_sql
-transfer = transfer_table
 
 __all__ = [
     "async_sql",
@@ -103,14 +97,12 @@ __all__ = [
     "ch_full_table_move",
     "execute",
     "execute_read",
-    "execute_sql",
     "extract_ddl",
     "format_plan",
     "format_support_matrix",
     "generate_dummy_connections",
     "build_gp_create_many_partitions_sqls",
     "build_create_table_sql",
-    "build_create_table_sqls",
     "create_sql_table",
     "create_table_from_sql",
     "drop_many_partitions",
@@ -120,7 +112,6 @@ __all__ = [
     "gp_vacuum",
     "load_df",
     "read",
-    "read_sql",
     "show_tables",
     "SqlOperationMetadata",
     "SqlOperationResult",
@@ -132,7 +123,6 @@ __all__ = [
     "table_info",
     "time_print",
     "transfer",
-    "transfer_table",
     "support_matrix_rows",
     "get_time_print_sink",
     "set_time_print_sink",

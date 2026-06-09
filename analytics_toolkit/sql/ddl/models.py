@@ -2,18 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import pandas as pd
 
 
 @dataclass(frozen=True)
 class CreateSqlTableOptions:
-    connection_type: str
+    connection_key: str
     backend: str
-    connection: Any
     table_name: str
-    batch: pd.DataFrame
+    df: pd.DataFrame
     column_types: Mapping[str, str] | None = None
     table_schema: dict[str, str] | None = None
     gp_distributed_by_key: list[str] | None = None

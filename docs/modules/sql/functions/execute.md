@@ -5,14 +5,14 @@
 Run one or more SQL statements through a configured connection without returning a dataframe.
 
 ```python
-execute(connection_type: 'str', query: 'str', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False) -> 'Any'
+execute(db_key: 'str', query: 'str', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False) -> 'Any'
 ```
 
 ## Inputs
 
 ### General Inputs
 
-- `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
+- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `query`: SQL text to execute or read.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
@@ -34,8 +34,8 @@ execute(connection_type: 'str', query: 'str', print_queries: 'bool' = False, gp_
 from analytics_toolkit import sql
 
 sql.execute(
-    "gp",
-    "insert into sandbox.order_summary select order_date, count(*) from sandbox.orders group by order_date",
+    db_key="gp",
+    query="insert into sandbox.order_summary select order_date, count(*) from sandbox.orders group by order_date",
 )
 ```
 

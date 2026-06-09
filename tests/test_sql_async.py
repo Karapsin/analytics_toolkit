@@ -80,25 +80,25 @@ def test_async_sql_dispatches_supported_task_types_and_preserves_order(
         {
             "read_users": {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select * from users",
                 "print_queries": False,
             },
             "refresh_table": {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "truncate table sandbox.target",
                 "gp_break_query": True,
                 "gp_commit_each_statement": True,
             },
             "prepare_and_read": {
                 "type": "execute_read",
-                "connection_type": "trino",
+                "db_key": "trino",
                 "query": "create table tmp as select 1; select * from tmp",
             },
             "load_batch": {
                 "type": "load_df",
-                "connection_type": "ch",
+                "db_key": "ch",
                 "destination_table": "sandbox.batch",
                 "df": df,
                 "append": True,
@@ -133,26 +133,26 @@ def test_async_sql_dispatches_supported_task_types_and_preserves_order(
 
     calls_by_type = {task_type: kwargs for task_type, kwargs in calls}
     assert calls_by_type["read"] == {
-        "connection_type": "gp",
+        "db_key": "gp",
         "query": "select * from users",
         "print_queries": False,
     }
     assert calls_by_type["execute"] == {
-        "connection_type": "gp",
+        "db_key": "gp",
         "query": "truncate table sandbox.target",
         "gp_break_query": True,
         "gp_commit_each_statement": True,
         "progress": False,
     }
     assert calls_by_type["execute_read"] == {
-        "connection_type": "trino",
+        "db_key": "trino",
         "query": "create table tmp as select 1; select * from tmp",
         "progress": False,
     }
     load_kwargs = calls_by_type["load_df"]
     assert load_kwargs["df"] is df
     assert {key: value for key, value in load_kwargs.items() if key != "df"} == {
-        "connection_type": "ch",
+        "db_key": "ch",
         "destination_table": "sandbox.batch",
         "append": True,
         "order_by": ["id"],
@@ -199,21 +199,21 @@ def test_async_sql_suppresses_builtin_inner_progress(
     execute_spec = {
         "name": "refresh",
         "type": "execute",
-        "connection_type": "ch",
+        "db_key": "ch",
         "query": "select 1; select 2",
         "progress": True,
     }
     execute_read_spec = {
         "name": "prepare",
         "type": "execute_read",
-        "connection_type": "ch",
+        "db_key": "ch",
         "query": "select 1; select 2",
         "progress": True,
     }
     load_spec = {
         "name": "load_batch",
         "type": "load_df",
-        "connection_type": "gp",
+        "db_key": "gp",
         "destination_table": "sandbox.batch",
         "df": df,
         "progress": True,
@@ -280,17 +280,17 @@ def test_async_sql_start_comment_prefixes_sql_fields(
             {
                 "read_users": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select * from users",
                 },
                 "refresh_table": {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "truncate table sandbox.target",
                 },
                 "prepare_and_read": {
                     "type": "execute_read",
-                    "connection_type": "trino",
+                    "db_key": "trino",
                     "query": "create table tmp as select 1; select * from tmp",
                 },
                 "copy_table": {
@@ -328,11 +328,11 @@ def test_async_sql_rejects_removed_random_sleep_seconds(
 ) -> None:
     def fake_execute_read(
         *,
-        connection_type: str,
+        db_key: str,
         query: str,
         progress: bool = False,
     ) -> pd.DataFrame:
-        return pd.DataFrame({"query": [query], "connection_type": [connection_type]})
+        return pd.DataFrame({"query": [query], "db_key": [db_key]})
 
     monkeypatch.setattr(async_module, "execute_read", fake_execute_read)
 
@@ -341,7 +341,7 @@ def test_async_sql_rejects_removed_random_sleep_seconds(
             [
                 {
                     "type": "execute_read",
-                    "connection_type": "trino",
+                    "db_key": "trino",
                     "query": "select 1",
                     "random_sleep_seconds": None,
                 }
@@ -364,24 +364,24 @@ def test_async_sql_task_start_comment_overrides_default(
             {
                 "default": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select default",
                 },
                 "override": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select override",
                     "start_comment": "  -- task override  ",
                 },
                 "blank": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select blank",
                     "start_comment": "   ",
                 },
                 "none": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select none",
                     "start_comment": None,
                 },
@@ -414,7 +414,7 @@ def test_async_sql_blank_and_none_start_comment_are_noops(
         [
             {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select 1",
             }
         ],
@@ -440,7 +440,7 @@ def test_async_sql_rejects_non_string_top_level_start_comment(
             [
                 {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select 1",
                 }
             ],
@@ -457,7 +457,7 @@ def test_async_sql_rejects_non_string_task_start_comment(
             [
                 {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select 1",
                     "start_comment": start_comment,
                 }
@@ -485,7 +485,7 @@ def test_async_sql_start_comment_does_not_change_load_df_or_pipeline(
             {
                 "load_batch": {
                     "type": "load_df",
-                    "connection_type": "ch",
+                    "db_key": "ch",
                     "destination_table": "sandbox.batch",
                     "df": df,
                     "start_comment": "-- ignored",
@@ -506,7 +506,7 @@ def test_async_sql_start_comment_does_not_change_load_df_or_pipeline(
     load_kwargs = load_calls[0]
     assert load_kwargs["df"] is df
     assert {key: value for key, value in load_kwargs.items() if key != "df"} == {
-        "connection_type": "ch",
+        "db_key": "ch",
         "destination_table": "sandbox.batch",
         "progress": False,
     }
@@ -527,12 +527,12 @@ def test_async_sql_uses_generated_names_for_unnamed_task_sequence(
         [
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 1",
             },
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 2",
             },
         ],
@@ -546,12 +546,12 @@ def test_async_sql_uses_generated_names_for_unnamed_task_sequence(
     }
     assert calls == [
         {
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "insert into target select 1",
             "progress": False,
         },
         {
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "insert into target select 2",
             "progress": False,
         },
@@ -571,7 +571,7 @@ def test_async_sql_runs_from_inside_existing_event_loop(
             [
                 {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "insert into target select 1",
                 }
             ],
@@ -607,12 +607,12 @@ def test_async_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> None
         [
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 1",
             },
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 2",
             },
         ],
@@ -659,7 +659,7 @@ def test_async_sql_concurrency_limits_active_tasks(
         {
             f"read_{index}": {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": f"select {index}",
             }
             for index in range(6)
@@ -729,12 +729,12 @@ def test_async_sql_pipeline_can_run_nested_sync_async_sql(
                 {
                     "a": {
                         "type": "read",
-                        "connection_type": "gp",
+                        "db_key": "gp",
                         "query": f"{context.task_name}:a",
                     },
                     "b": {
                         "type": "read",
-                        "connection_type": "gp",
+                        "db_key": "gp",
                         "query": f"{context.task_name}:b",
                     },
                 }
@@ -778,7 +778,7 @@ def test_async_sql_soft_cap_limits_top_level_worker_execution(
         {
             f"read_{index}": {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": f"select {index}",
             }
             for index in range(6)
@@ -795,7 +795,7 @@ def test_async_sql_hard_cap_rejects_unthrottled_effective_concurrency() -> None:
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": f"select {index}",
         }
         for index in range(11)
@@ -833,7 +833,7 @@ def test_async_sql_lower_soft_cap_avoids_hard_cap_error(
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": f"select {index}",
         }
         for index in range(11)
@@ -910,12 +910,12 @@ def test_async_sql_fail_fast_raises_first_exception(
         {
             "broken": {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select broken",
             },
             "also_broken": {
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select also_broken",
             },
         }
@@ -985,17 +985,17 @@ def test_async_sql_fail_fast_false_returns_exceptions(
             {
                 "ok": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select ok",
                 },
                 "broken": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select broken",
                 },
                 "write_ok": {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "truncate table sandbox.target",
                 },
             }
@@ -1024,7 +1024,7 @@ def test_async_sql_fail_fast_false_prints_failed_task_query(
             {
                 "name": "broken",
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select * from broken_table",
             }
         ],
@@ -1045,7 +1045,7 @@ def test_async_sql_fail_fast_false_prints_failed_task_query(
         ({}, TypeError),
         ([{"name": "", "type": "read"}], ValueError),
         ([{"type": "read"}, "read"], TypeError),
-        ([{"connection_type": "gp"}], ValueError),
+        ([{"db_key": "gp"}], ValueError),
         ([{"type": "unknown"}], ValueError),
         ([{"type": ["read"]}], ValueError),
     ],
@@ -1063,7 +1063,7 @@ def test_async_sql_validates_concurrency(concurrency: Any) -> None:
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "select 1",
         }
     ]
@@ -1079,7 +1079,7 @@ def test_async_sql_validates_soft_concurrency_cap(
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "select 1",
         }
     ]
@@ -1098,7 +1098,7 @@ def test_async_sql_validates_hard_concurrency_cap(
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "select 1",
         }
     ]
@@ -1115,7 +1115,7 @@ def test_async_sql_validates_progress(progress: Any) -> None:
     tasks = [
         {
             "type": "read",
-            "connection_type": "gp",
+            "db_key": "gp",
             "query": "select 1",
         }
     ]
@@ -1154,7 +1154,7 @@ def test_async_sql_validates_pipeline_extra_fields() -> None:
                     "name": "pipeline",
                     "type": "custom_sql_pipeline",
                     "steps": [lambda context: None],
-                    "connection_type": "gp",
+                    "db_key": "gp",
                 }
             ]
         )

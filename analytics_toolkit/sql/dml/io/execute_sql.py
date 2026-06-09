@@ -134,7 +134,7 @@ def _execute_ch(
 
 @timed_public_sql_function
 def execute_sql(
-    connection_type: str,
+    db_key: str,
     query: str,
     print_queries: bool = False,
     gp_break_query: bool = False,
@@ -148,7 +148,7 @@ def execute_sql(
     progress: bool = False,
 ) -> Any:
     options = _build_execute_sql_options(
-        connection_type=connection_type,
+        db_key=db_key,
         query=query,
         print_queries=print_queries,
         gp_break_query=gp_break_query,
@@ -224,7 +224,7 @@ def execute_sql(
 
 def _build_execute_sql_options(
     *,
-    connection_type: str,
+    db_key: str,
     query: str,
     print_queries: bool,
     gp_break_query: bool,
@@ -237,7 +237,7 @@ def _build_execute_sql_options(
     return_metadata: bool,
     progress: bool,
 ) -> ExecuteSqlOptions:
-    config = get_connection_config(connection_type)
+    config = get_connection_config(db_key)
     connection_key = config.connection_key
     backend = config.backend
     sql = query.strip()

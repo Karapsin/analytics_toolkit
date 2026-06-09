@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 
@@ -12,23 +13,95 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
 
     public_names = {
         "build_create_table_sql",
-        "build_create_table_sqls",
         "build_gp_create_many_partitions_sqls",
         "create_sql_table",
         "drop_many_partitions",
-        "execute_sql",
+        "execute",
         "generate_dummy_connections",
         "gp_create_many_partitions",
         "load_df",
-        "read_sql",
+        "read",
         "show_tables",
         "table_info",
-        "transfer_table",
+        "transfer",
     }
 
     for name in public_names:
         assert name in sql.__all__
         assert callable(getattr(sql, name))
+
+    removed_public_aliases = {
+        "build_create_table_sqls",
+        "execute_sql",
+        "read_sql",
+        "transfer_table",
+    }
+    for name in removed_public_aliases:
+        assert name not in sql.__all__
+        assert not hasattr(sql, name)
+
+
+def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:
+    from analytics_toolkit import sql
+
+    forbidden_params = {"connection", "connection_type", "connection_key", "backend"}
+    allowlist = {
+        "airflow_connection_config",
+        "format_plan",
+        "format_support_matrix",
+        "generate_dummy_connections",
+        "get_time_print_sink",
+        "set_time_print_sink",
+        "support_matrix_rows",
+        "time_print",
+        "use_airflow_connections",
+        "validate_connections",
+    }
+    offenders: list[str] = []
+    for name in sql.__all__:
+        if name in allowlist:
+            continue
+        exported = getattr(sql, name)
+        if not inspect.isfunction(exported):
+            continue
+        params = set(inspect.signature(exported).parameters)
+        exposed = sorted(params & forbidden_params)
+        if exposed:
+            offenders.append(f"{name}: {', '.join(exposed)}")
+
+    assert offenders == []
+
+
+def test_single_db_sql_public_operations_use_db_key() -> None:
+    from analytics_toolkit import sql
+
+    single_db_operations = {
+        "build_create_table_sql",
+        "ch_create_table_as",
+        "ch_drop_table",
+        "ch_full_table_move",
+        "create_sql_table",
+        "drop_many_partitions",
+        "execute",
+        "execute_read",
+        "extract_ddl",
+        "get_sql_connection",
+        "gp_cancel_all_running_queries",
+        "gp_create_many_partitions",
+        "gp_vacuum",
+        "load_df",
+        "read",
+        "show_tables",
+        "table_info",
+        "with_sql_connection",
+    }
+    missing = [
+        name
+        for name in sorted(single_db_operations)
+        if "db_key" not in inspect.signature(getattr(sql, name)).parameters
+    ]
+
+    assert missing == []
 
 
 def test_removed_sql_deep_module_files_stay_removed() -> None:

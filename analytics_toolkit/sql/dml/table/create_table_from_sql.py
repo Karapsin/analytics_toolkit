@@ -22,8 +22,8 @@ from ...connection.errors import (
 )
 from ...connection.get_sql_connection import get_sql_connection
 from ...ddl.api import (
-    build_create_table_sqls,
-    create_sql_table,
+    _build_create_table_sqls,
+    _create_sql_table_with_connection,
 )
 from ...ddl.schema import (
     normalize_table_schema,
@@ -309,11 +309,12 @@ def create_table_from_sql(
             if order is not None:
                 create_kwargs["order_by"] = order
 
-            create_sql_table(
+            _create_sql_table_with_connection(
                 target_config.backend,
                 target_connection,
                 target_table,
                 schema_batch,
+                connection_key=target_config.connection_key,
                 **create_kwargs,
             )
 
@@ -466,7 +467,7 @@ def _build_create_table_from_sql_plan(
     else:
         add_create_table_steps(
             plan,
-            build_create_table_sqls(
+            _build_create_table_sqls(
                 target_backend,
                 target_table,
                 pd.DataFrame(columns=list(table_schema)),

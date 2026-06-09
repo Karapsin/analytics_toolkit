@@ -86,7 +86,7 @@ def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
 
 @timed_public_sql_function
 def read_sql(
-    connection_type: str,
+    db_key: str,
     query: str,
     print_queries: bool = False,
     retry_cnt: int = 5,
@@ -95,7 +95,7 @@ def read_sql(
     return_metadata: bool = False,
 ) -> pd.DataFrame | SqlOperationResult:
     return _read_sql_impl(
-        connection_type=connection_type,
+        db_key=db_key,
         query=query,
         print_queries=print_queries,
         retry_cnt=retry_cnt,
@@ -106,7 +106,7 @@ def read_sql(
 
 
 def read_sql_with_metadata(
-    connection_type: str,
+    db_key: str,
     query: str,
     print_queries: bool = False,
     retry_cnt: int = 5,
@@ -114,7 +114,7 @@ def read_sql_with_metadata(
     query_label: str | None = None,
 ) -> SqlOperationResult:
     return _read_sql_impl(
-        connection_type=connection_type,
+        db_key=db_key,
         query=query,
         print_queries=print_queries,
         retry_cnt=retry_cnt,
@@ -125,7 +125,7 @@ def read_sql_with_metadata(
 
 
 def _read_sql_impl(
-    connection_type: str,
+    db_key: str,
     query: str,
     *,
     print_queries: bool,
@@ -135,7 +135,7 @@ def _read_sql_impl(
     return_metadata: bool,
 ) -> pd.DataFrame | SqlOperationResult:
     options = _build_read_sql_options(
-        connection_type=connection_type,
+        db_key=db_key,
         query=query,
         print_queries=print_queries,
         retry_cnt=retry_cnt,
@@ -200,7 +200,7 @@ def _read_sql_impl(
 
 def _build_read_sql_options(
     *,
-    connection_type: str,
+    db_key: str,
     query: str,
     print_queries: bool,
     retry_cnt: int,
@@ -208,7 +208,7 @@ def _build_read_sql_options(
     query_label: str | None,
     return_metadata: bool,
 ) -> ReadSqlOptions:
-    config = get_connection_config(connection_type)
+    config = get_connection_config(db_key)
     connection_key = config.connection_key
     backend = config.backend
     sql = query.strip()

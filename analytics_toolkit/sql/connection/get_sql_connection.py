@@ -18,8 +18,8 @@ from analytics_toolkit.general import time_print
 
 
 @timed_public_sql_function
-def get_sql_connection(connection_key: str) -> Any:
-    config = get_connection_config(connection_key)
+def get_sql_connection(db_key: str) -> Any:
+    config = get_connection_config(db_key)
     time_print(
         "Opening connection",
         connection=config.connection_key,
@@ -58,11 +58,11 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
 
 
 @timed_public_sql_function
-def with_sql_connection(connection_key: str) -> Callable[..., Any]:
+def with_sql_connection(db_key: str) -> Callable[..., Any]:
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            config = get_connection_config(connection_key)
+            config = get_connection_config(db_key)
             connection = get_sql_connection(config.connection_key)
             try:
                 return func(connection, *args, **kwargs)

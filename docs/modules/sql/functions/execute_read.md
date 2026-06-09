@@ -5,14 +5,14 @@
 Run setup SQL statements, then read the final SQL statement into a dataframe on the same connection.
 
 ```python
-execute_read(connection_type: 'str', query: 'str', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False) -> 'pd.DataFrame | SqlOperationResult'
+execute_read(db_key: 'str', query: 'str', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False) -> 'pd.DataFrame | SqlOperationResult'
 ```
 
 ## Inputs
 
 ### General Inputs
 
-- `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
+- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `query`: SQL text to execute or read.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
@@ -32,8 +32,8 @@ execute_read(connection_type: 'str', query: 'str', print_queries: 'bool' = False
 from analytics_toolkit import sql
 
 result = sql.execute_read(
-    "gp",
-    """
+    db_key="gp",
+    query="""
     analyze sandbox.orders;
     select order_date, count(*) as orders
     from sandbox.orders

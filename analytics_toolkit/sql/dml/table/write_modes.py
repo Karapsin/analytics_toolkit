@@ -7,7 +7,7 @@ import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import resolve_connection_backend
-from ...ddl.api import create_sql_table
+from ...ddl.api import _create_sql_table_with_connection
 from ...execution.plans import SqlOperationMetadata, SqlPlan
 from analytics_toolkit.general import time_print
 from ._basic_ops import (
@@ -230,6 +230,7 @@ def finalize_stage_table(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             query_label=query_label,
+            connection_key=connection_key,
             ch_replace_table=(
                 original_target_exists
                 and replace_target_table
@@ -254,11 +255,12 @@ def finalize_stage_table(
             create_kwargs["partition_by"] = partition_by
         if order_by is not None:
             create_kwargs["order_by"] = order_by
-        create_sql_table(
+        _create_sql_table_with_connection(
             backend,
             connection,
             target_table,
             sample_batch,
+            connection_key=connection_key or backend,
             column_types=target_column_types,
             gp_distributed_by_key=gp_distributed_by_key,
             query_label=query_label,
@@ -290,6 +292,7 @@ def _ensure_ch_distributed_target_pair(
     ch_cluster: str,
     ch_sharding_key: str,
     query_label: str | None,
+    connection_key: str | None,
     ch_replace_table: bool = False,
     ch_only_shard: bool = False,
 ) -> None:
@@ -305,11 +308,12 @@ def _ensure_ch_distributed_target_pair(
             create_batch = pd.DataFrame(columns=list(existing_column_types))
             create_column_types = existing_column_types
 
-    create_sql_table(
+    _create_sql_table_with_connection(
         connection_type,
         connection,
         target_table,
         create_batch,
+        connection_key=connection_key or connection_type,
         column_types=create_column_types,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,

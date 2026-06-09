@@ -58,24 +58,24 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
             {
                 "read_users": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select * from users",
                     "print_queries": False,
                 },
                 "refresh_table": {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "truncate table sandbox.target",
                     "gp_break_query": True,
                 },
                 "prepare_and_read": {
                     "type": "execute_read",
-                    "connection_type": "trino",
+                    "db_key": "trino",
                     "query": "create table tmp as select 1; select * from tmp",
                 },
                 "load_batch": {
                     "type": "load_df",
-                    "connection_type": "ch",
+                    "db_key": "ch",
                     "destination_table": "sandbox.batch",
                     "df": df,
                     "append": True,
@@ -109,25 +109,25 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
 
     calls_by_type = {task_type: kwargs for task_type, kwargs in calls}
     assert calls_by_type["read"] == {
-        "connection_type": "gp",
+        "db_key": "gp",
         "query": "select * from users",
         "print_queries": False,
     }
     assert calls_by_type["execute"] == {
-        "connection_type": "gp",
+        "db_key": "gp",
         "query": "truncate table sandbox.target",
         "gp_break_query": True,
         "progress": False,
     }
     assert calls_by_type["execute_read"] == {
-        "connection_type": "trino",
+        "db_key": "trino",
         "query": "create table tmp as select 1; select * from tmp",
         "progress": False,
     }
     load_kwargs = calls_by_type["load_df"]
     assert load_kwargs["df"] is df
     assert {key: value for key, value in load_kwargs.items() if key != "df"} == {
-        "connection_type": "ch",
+        "db_key": "ch",
         "destination_table": "sandbox.batch",
         "append": True,
         "order_by": ["id"],
@@ -168,17 +168,17 @@ def test_parallel_sql_start_comment_prefixes_sql_fields(
             {
                 "read_users": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select * from users",
                 },
                 "refresh_table": {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "truncate table sandbox.target",
                 },
                 "prepare_and_read": {
                     "type": "execute_read",
-                    "connection_type": "trino",
+                    "db_key": "trino",
                     "query": "create table tmp as select 1; select * from tmp",
                 },
                 "copy_table": {
@@ -217,12 +217,12 @@ def test_parallel_sql_uses_generated_names_for_unnamed_task_sequence(
         [
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 1",
             },
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 2",
             },
         ],
@@ -260,7 +260,7 @@ def test_parallel_sql_concurrency_limits_active_top_level_work(
             {
                 f"read_{index}": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": f"select {index}",
                 }
                 for index in range(6)
@@ -297,7 +297,7 @@ def test_parallel_sql_soft_cap_limits_actual_worker_execution(
             {
                 f"read_{index}": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": f"select {index}",
                 }
                 for index in range(6)
@@ -368,7 +368,7 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
                 {
                     f"read_{index}": {
                         "type": "read",
-                        "connection_type": "gp",
+                        "db_key": "gp",
                         "query": f"{context.task_name}:{index}",
                     }
                     for index in range(6)
@@ -403,7 +403,7 @@ def test_parallel_sql_hard_cap_rejects_excessive_nested_concurrency() -> None:
             [
                 {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select 1",
                 }
             ],
@@ -515,12 +515,12 @@ def test_parallel_sql_fail_fast_raises_first_exception(
                 {
                     "broken": {
                         "type": "read",
-                        "connection_type": "gp",
+                        "db_key": "gp",
                         "query": "select broken",
                     },
                     "also_broken": {
                         "type": "read",
-                        "connection_type": "gp",
+                        "db_key": "gp",
                         "query": "select also_broken",
                     },
                 }
@@ -591,17 +591,17 @@ def test_parallel_sql_fail_fast_false_returns_exceptions(
             {
                 "ok": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select ok",
                 },
                 "broken": {
                     "type": "read",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "select broken",
                 },
                 "write_ok": {
                     "type": "execute",
-                    "connection_type": "gp",
+                    "db_key": "gp",
                     "query": "truncate table sandbox.target",
                 },
             }
@@ -631,7 +631,7 @@ def test_parallel_sql_fail_fast_false_prints_failed_task_query(
             {
                 "name": "broken",
                 "type": "read",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "select * from broken_table",
             }
         ],
@@ -671,12 +671,12 @@ def test_parallel_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> N
         [
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 1",
             },
             {
                 "type": "execute",
-                "connection_type": "gp",
+                "db_key": "gp",
                 "query": "insert into target select 2",
             },
         ],
@@ -707,7 +707,7 @@ def test_parallel_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> N
         ({}, TypeError),
         ([{"name": "", "type": "read"}], ValueError),
         ([{"type": "read"}, "read"], TypeError),
-        ([{"connection_type": "gp"}], ValueError),
+        ([{"db_key": "gp"}], ValueError),
         ([{"type": "unknown"}], ValueError),
         ([{"type": ["read"]}], ValueError),
     ],
@@ -724,7 +724,7 @@ def test_parallel_sql_validates_task_input(
 def test_parallel_sql_validates_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="concurrency"):
         parallel_module.parallel_sql(
-            [{"type": "read", "connection_type": "gp", "query": "select 1"}],
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
             concurrency=concurrency,
         )
 
@@ -735,7 +735,7 @@ def test_parallel_sql_validates_soft_concurrency_cap(
 ) -> None:
     with pytest.raises(ValueError, match="soft_concurrency_cap"):
         parallel_module.parallel_sql(
-            [{"type": "read", "connection_type": "gp", "query": "select 1"}],
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
             soft_concurrency_cap=soft_concurrency_cap,
         )
 
@@ -746,7 +746,7 @@ def test_parallel_sql_validates_hard_concurrency_cap(
 ) -> None:
     with pytest.raises(ValueError, match="hard_concurrency_cap"):
         parallel_module.parallel_sql(
-            [{"type": "read", "connection_type": "gp", "query": "select 1"}],
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
             hard_concurrency_cap=hard_concurrency_cap,
         )
 
@@ -755,6 +755,6 @@ def test_parallel_sql_validates_hard_concurrency_cap(
 def test_parallel_sql_validates_progress(progress: Any) -> None:
     with pytest.raises(ValueError, match="progress"):
         parallel_module.parallel_sql(
-            [{"type": "read", "connection_type": "gp", "query": "select 1"}],
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
             progress=progress,
         )

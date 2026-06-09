@@ -2,21 +2,21 @@
 
 # build_create_table_sql
 
-Render the primary `CREATE TABLE` statement for a dataframe and backend.
+Render the primary `CREATE TABLE` statement for a dataframe or explicit schema.
 
 ```python
-build_create_table_sql(connection_type: 'str', table_name: 'str', batch: 'pd.DataFrame', column_types: 'Mapping[str, str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, query_label: 'str | None' = None, table_schema: 'Mapping[str, str] | None' = None) -> 'str'
+build_create_table_sql(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, column_types: 'Mapping[str, str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, query_label: 'str | None' = None, table_schema: 'Mapping[str, str] | None' = None) -> 'str'
 ```
 
 ## Inputs
 
 ### General Inputs
 
-- `connection_type`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
+- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
 - `table_name`: Target or source table name, depending on the helper.
-- `batch`: Dataframe whose columns are used to infer table DDL.
+- `df`: Optional dataframe whose columns are used to infer table DDL.
+- `table_schema`: Explicit backend-native column type mapping for created tables; required when `df` is omitted.
 - `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `table_schema`: Explicit backend-native column type mapping for created tables.
 - `partition_by`: Partitioning columns or expression for created tables, interpreted according to the target backend.
 - `order_by`: Ordering or sorting columns or expression for created tables, interpreted according to the target backend.
 - `column_types`: Optional backend-native column type mapping used by table DDL builders.
@@ -37,9 +37,23 @@ build_create_table_sql(connection_type: 'str', table_name: 'str', batch: 'pd.Dat
 import pandas as pd
 from analytics_toolkit import sql
 
-batch = pd.DataFrame({"user_id": [1], "score": [10.5]})
-ddl = sql.build_create_table_sql("gp", "sandbox.scores", batch)
+df = pd.DataFrame({"user_id": [1], "score": [10.5]})
+ddl = sql.build_create_table_sql(
+    db_key="gp",
+    table_name="sandbox.scores",
+    df=df,
+)
 print(ddl)
+```
+
+```python
+from analytics_toolkit import sql
+
+ddl = sql.build_create_table_sql(
+    db_key="gp",
+    table_name="sandbox.scores",
+    table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
+)
 ```
 
 ## Notes

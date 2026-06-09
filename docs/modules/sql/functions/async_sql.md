@@ -24,8 +24,8 @@ async_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_
 from analytics_toolkit import sql
 
 tasks = [
-    {"name": "orders", "type": "read", "connection_type": "gp", "query": "select * from sandbox.orders limit 10"},
-    {"name": "refresh", "type": "execute", "connection_type": "gp", "query": "analyze sandbox.orders"},
+    {"name": "orders", "type": "read", "db_key": "gp", "query": "select * from sandbox.orders limit 10"},
+    {"name": "refresh", "type": "execute", "db_key": "gp", "query": "analyze sandbox.orders"},
 ]
 
 result = sql.async_sql(tasks, concurrency=2)

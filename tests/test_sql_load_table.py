@@ -190,7 +190,11 @@ def test_load_df_updates_progress_bar(monkeypatch) -> None:
     monkeypatch.setattr(load_df_module, "tqdm", FakeTqdm)
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: client)
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(load_df_module, "create_sql_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
 
@@ -237,7 +241,11 @@ def test_load_df_progress_false_disables_bar(monkeypatch) -> None:
     monkeypatch.setattr(load_df_module, "tqdm", FakeTqdm)
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: client)
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(load_df_module, "create_sql_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
 
@@ -456,9 +464,9 @@ def test_build_create_table_sql_uses_float64_for_decimal_clickhouse_columns() ->
     )
 
     sql = create_sql_table_module.build_create_table_sql(
-        connection_type="ch",
+        db_key="ch",
         table_name="schema.stage_table",
-        batch=batch,
+        df=batch,
     )
 
     assert "`amount` Nullable(Float64)" in sql
@@ -474,9 +482,9 @@ def test_build_create_table_sql_uses_explicit_column_types() -> None:
     )
 
     sql = create_sql_table_module.build_create_table_sql(
-        connection_type="gp",
+        db_key="gp",
         table_name="schema.stage_table",
-        batch=batch,
+        df=batch,
         column_types={
             "amount": "NUMERIC(12, 2)",
             "created_at": "TIMESTAMP",
@@ -501,10 +509,10 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
         }
     )
 
-    sqls = create_sql_table_module.build_create_table_sqls(
-        connection_type="ch",
+    sqls = create_sql_table_module._build_create_table_sqls(
+        backend="ch",
         table_name=TEST_CH_TABLE,
-        batch=batch,
+        df=batch,
         ch_distributed_table=True,
         partition_by=["month_date"],
         order_by=["month_date", "min_month_use"],
@@ -554,10 +562,10 @@ def test_build_create_table_sqls_clickhouse_only_shard_creates_local_target() ->
         }
     )
 
-    sqls = create_sql_table_module.build_create_table_sqls(
-        connection_type="ch",
+    sqls = create_sql_table_module._build_create_table_sqls(
+        backend="ch",
         table_name=TEST_CH_TABLE,
-        batch=batch,
+        df=batch,
         ch_distributed_table=True,
         ch_only_shard=True,
         partition_by=["month_date"],

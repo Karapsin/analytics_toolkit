@@ -19,8 +19,8 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...ddl.api import (
-    build_create_table_sqls,
-    create_sql_table,
+    _build_create_table_sqls,
+    _create_sql_table_with_connection,
 )
 from ...ddl.identifiers import column_list_sql
 from ...ddl.schema import (
@@ -74,7 +74,7 @@ from ..table.table_validation import (
 
 @timed_public_sql_function
 def load_df(
-    connection_type: str,
+    db_key: str,
     destination_table: str,
     df: pd.DataFrame,
     append: bool = False,
@@ -106,7 +106,7 @@ def load_df(
     _validate_progress(progress)
 
     options = _build_load_options(
-        connection_type=connection_type,
+        db_key=db_key,
         destination_table=destination_table,
         append=append,
         write_mode=write_mode,
@@ -233,7 +233,7 @@ def load_df(
 
 
 def _build_load_options(
-    connection_type: str,
+    db_key: str,
     destination_table: str,
     append: bool,
     write_mode: str | None,
@@ -252,7 +252,7 @@ def _build_load_options(
     gp_insert_chunk_size: int | None = None,
     table_schema: dict[str, str] | None = None,
 ) -> LoadOptions:
-    config = get_connection_config(connection_type)
+    config = get_connection_config(db_key)
     configured_trino_insert_chunk_size = (
         config.insert_chunk_size if isinstance(config, TrinoConfig) else None
     )
@@ -302,12 +302,12 @@ def _build_load_options(
         raise ValueError("destination_table must not be empty.")
     if options.gp_distributed_by_key and options.connection_backend != "gp":
         raise ValueError(
-            "gp_distributed_by_key can only be used when connection_type has type 'gp'."
+            "gp_distributed_by_key can only be used when db_key has type 'gp'."
         )
     if options.gp_insert_chunk_size is not None:
         if options.connection_backend != "gp":
             raise ValueError(
-                "gp_insert_chunk_size can only be used when connection_type has type 'gp'."
+                "gp_insert_chunk_size can only be used when db_key has type 'gp'."
             )
         if options.gp_insert_chunk_size <= 0:
             raise ValueError("gp_insert_chunk_size must be a positive integer.")
@@ -315,7 +315,7 @@ def _build_load_options(
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
     validate_ch_options_not_used(
         target_backend=options.connection_backend,
-        option_owner="connection_type",
+        option_owner="db_key",
         partition_by=options.partition_by,
         order_by=options.order_by,
         ch_engine=options.ch_engine,
@@ -482,11 +482,12 @@ def _create_load_target_table(
         create_kwargs["table_schema"] = options.table_schema
 
     if distributed:
-        create_sql_table(
+        _create_sql_table_with_connection(
             options.connection_backend,
             connection,
             options.destination_table,
             df,
+            connection_key=options.connection_key,
             gp_distributed_by_key=options.gp_distributed_by_key,
             partition_by=options.partition_by,
             order_by=options.order_by,
@@ -503,11 +504,12 @@ def _create_load_target_table(
         return
 
     if options.connection_backend == "ch" and options.ch_only_shard:
-        create_sql_table(
+        _create_sql_table_with_connection(
             options.connection_backend,
             connection,
             options.destination_table,
             df,
+            connection_key=options.connection_key,
             column_types=None,
             gp_distributed_by_key=options.gp_distributed_by_key,
             partition_by=options.partition_by,
@@ -527,11 +529,12 @@ def _create_load_target_table(
     if options.order_by is not None:
         create_kwargs["order_by"] = options.order_by
 
-    create_sql_table(
+    _create_sql_table_with_connection(
         options.connection_backend,
         connection,
         options.destination_table,
         df,
+        connection_key=options.connection_key,
         gp_distributed_by_key=options.gp_distributed_by_key,
         **create_kwargs,
     )
@@ -653,7 +656,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     if options.write_mode in {"replace", "truncate_insert"} or options.connection_backend == "ch":
         add_create_table_steps(
             plan,
-            build_create_table_sqls(
+            _build_create_table_sqls(
                 options.connection_backend,
                 options.destination_table,
                 df,
@@ -685,7 +688,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
         metadata.stage_table = stage_table
         add_create_table_steps(
             plan,
-            build_create_table_sqls(
+            _build_create_table_sqls(
                 options.connection_backend,
                 stage_table,
                 df,

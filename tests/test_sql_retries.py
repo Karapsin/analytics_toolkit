@@ -575,9 +575,12 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
         connection_type: str,
         connection: FakeConnection,
         table_name: str,
-        batch: pd.DataFrame,
+        df: pd.DataFrame,
+        *,
+        connection_key: str | None = None,
         gp_distributed_by_key: list[str] | None = None,
     ) -> None:
+        del connection_type, table_name, df, connection_key, gp_distributed_by_key
         events.append(("create", connection.name))
 
     def fake_insert_table_batch(*args, **kwargs) -> int:
@@ -592,7 +595,11 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     def fake_analyze_table(connection_type: str, connection: FakeConnection, table_name: str) -> None:
         events.append(("analyze", connection.name))
 
-    monkeypatch.setattr(load_df_module, "create_sql_table", fake_create_sql_table)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        fake_create_sql_table,
+    )
     monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
     monkeypatch.setattr(load_df_module, "analyze_table", fake_analyze_table)
 

@@ -5,12 +5,12 @@
 Open a backend connection for a configured connection key.
 
 ```python
-get_sql_connection(connection_key: 'str') -> 'Any'
+get_sql_connection(db_key: 'str') -> 'Any'
 ```
 
 ## Inputs
 
-- `connection_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
+- `db_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
 
 ## Usage
 

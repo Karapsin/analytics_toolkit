@@ -20,7 +20,7 @@ _GP_CANCEL_RESULT_COLUMNS = ["pid", "cancel_query", "cancelled"]
 
 @timed_public_sql_function
 def gp_cancel_all_running_queries(
-    connection_key: str = "gp",
+    db_key: str = "gp",
     concurrency: int = 1,
     print_queries: bool = False,
     retry_cnt: int = 5,
@@ -28,7 +28,7 @@ def gp_cancel_all_running_queries(
     query_label: str | None = None,
 ) -> pd.DataFrame:
     _validate_concurrency(concurrency)
-    config = get_connection_config(connection_key)
+    config = get_connection_config(db_key)
     if config.backend != "gp":
         raise UnsupportedConnectionTypeError(
             "gp_cancel_all_running_queries requires a gp connection, "

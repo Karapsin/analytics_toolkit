@@ -86,9 +86,9 @@ def gp_vacuum(
     analyze: bool = False,
     full: bool = False,
     verbose: bool = True,
-    connection_key: str = "gp",
+    db_key: str = "gp",
 ) -> None:
-    config = get_connection_config(connection_key)
+    config = get_connection_config(db_key)
     if config.backend != "gp":
         raise UnsupportedConnectionTypeError(
             f"gp_vacuum requires a gp connection, got '{config.backend}'."

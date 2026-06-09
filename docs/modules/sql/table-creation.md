@@ -5,7 +5,8 @@
 Table creation can start from an in-memory dataframe or from a source SQL query.
 Choose dataframe-based creation when Python owns the rows. Choose query-based
 creation when database metadata should define the target columns. The main
-entrypoints are [sql.create_sql_table](functions/create_sql_table.md) and
+entrypoints are [sql.create_sql_table](functions/create_sql_table.md),
+[sql.build_create_table_sql](functions/build_create_table_sql.md), and
 [sql.create_table_from_sql](functions/create_table_from_sql.md).
 
 ## DataFrame-Based Creation
@@ -14,8 +15,8 @@ Dataframe-based creation infers backend-native column types from pandas data.
 This works well for straightforward numeric, string, date, and timestamp data.
 Use `table_schema` when precision, scale, nullability, or binary/text handling
 must be explicit. [sql.build_create_table_sql](functions/build_create_table_sql.md)
-and [sql.build_create_table_sqls](functions/build_create_table_sqls.md) render
-DDL without executing it.
+renders DDL without executing it, and both builder and creator can use
+`table_schema` without a dataframe when the column types are already known.
 
 ## Query-Based Creation
 

@@ -48,8 +48,11 @@ def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 builtins.__import__ = guarded_import
 sql = importlib.import_module("analytics_toolkit.sql")
-assert sql.read is sql.read_sql
-assert sql.execute is sql.execute_sql
+assert callable(sql.read)
+assert callable(sql.execute)
+assert not hasattr(sql, "read_sql")
+assert not hasattr(sql, "execute_sql")
+assert not hasattr(sql, "transfer_table")
 assert callable(sql.airflow_query_label)
 """
     env = dict(os.environ)
@@ -1719,9 +1722,9 @@ def test_backend_specific_validation_uses_alias_backend(
 
 def test_create_table_sql_accepts_connection_alias() -> None:
     sql = create_sql_table_module.build_create_table_sql(
-        connection_type="gp_sandbox",
+        db_key="gp_sandbox",
         table_name="schema.target",
-        batch=pd.DataFrame({"id": [1], "value": ["x"]}),
+        df=pd.DataFrame({"id": [1], "value": ["x"]}),
         gp_distributed_by_key=["id"],
     )
 
@@ -1733,21 +1736,21 @@ def test_create_table_sql_accepts_table_schema_override() -> None:
     batch = pd.DataFrame({"id": [1], "amount": [10.5]})
 
     gp_sql = create_sql_table_module.build_create_table_sql(
-        connection_type="gp",
+        db_key="gp",
         table_name="schema.target",
-        batch=batch,
+        df=batch,
         table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
     )
     trino_sql = create_sql_table_module.build_create_table_sql(
-        connection_type="trino",
+        db_key="trino",
         table_name="schema.target",
-        batch=batch,
+        df=batch,
         table_schema={"id": "VARCHAR", "amount": "DECIMAL(10, 2)"},
     )
-    ch_sqls = create_sql_table_module.build_create_table_sqls(
-        connection_type="ch",
+    ch_sqls = create_sql_table_module._build_create_table_sqls(
+        backend="ch",
         table_name="schema.target",
-        batch=batch,
+        df=batch,
         table_schema={"id": "String", "amount": "Decimal(10, 2)"},
         ch_distributed_table=True,
     )
@@ -1762,9 +1765,9 @@ def test_create_table_sql_accepts_table_schema_override() -> None:
 
 def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None:
     sql = create_sql_table_module.build_create_table_sql(
-        connection_type="trino",
+        db_key="trino",
         table_name="schema.target",
-        batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+        df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
         partition_by=["dt"],
         order_by=["dt", "id"],
     )
@@ -1777,9 +1780,9 @@ def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None
 
 def test_gp_create_table_sql_accepts_partition_column_and_rejects_order() -> None:
     sql = create_sql_table_module.build_create_table_sql(
-        connection_type="gp",
+        db_key="gp",
         table_name="schema.target",
-        batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+        df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
         gp_distributed_by_key=["id"],
         partition_by="dt",
     )
@@ -1789,9 +1792,9 @@ def test_gp_create_table_sql_accepts_partition_column_and_rejects_order() -> Non
 
     with pytest.raises(ValueError, match="order_by is not supported"):
         create_sql_table_module.build_create_table_sql(
-            connection_type="gp",
+            db_key="gp",
             table_name="schema.target",
-            batch=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
+            df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
             order_by=["id"],
         )
 
@@ -1810,9 +1813,9 @@ def test_create_table_sql_validates_table_schema(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         create_sql_table_module.build_create_table_sql(
-            connection_type="gp",
+            db_key="gp",
             table_name="schema.target",
-            batch=pd.DataFrame({"id": [1], "amount": [10.5]}),
+            df=pd.DataFrame({"id": [1], "amount": [10.5]}),
             table_schema=table_schema,
         )
 
@@ -1820,9 +1823,9 @@ def test_create_table_sql_validates_table_schema(
 def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
     with pytest.raises(TypeError, match="table_schema"):
         create_sql_table_module.build_create_table_sql(
-            connection_type="gp",
+            db_key="gp",
             table_name="schema.target",
-            batch=pd.DataFrame({"id": [1]}),
+            df=pd.DataFrame({"id": [1]}),
             table_schema=[("id", "BIGINT")],
         )
 
@@ -1830,9 +1833,9 @@ def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
 def test_create_table_sql_rejects_conflicting_schema_aliases() -> None:
     with pytest.raises(ValueError, match="table_schema and column_types"):
         create_sql_table_module.build_create_table_sql(
-            connection_type="gp",
+            db_key="gp",
             table_name="schema.target",
-            batch=pd.DataFrame({"id": [1]}),
+            df=pd.DataFrame({"id": [1]}),
             column_types={"id": "BIGINT"},
             table_schema={"id": "TEXT"},
         )

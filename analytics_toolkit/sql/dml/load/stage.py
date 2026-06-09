@@ -9,7 +9,7 @@ from sqlglot import exp, parse_one
 
 from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
-from ...ddl.api import create_sql_table
+from ...ddl.api import _create_sql_table_with_connection
 from ..table._basic_ops import table_exists
 
 
@@ -46,11 +46,12 @@ def create_stage_table(
             create_kwargs["query_label"] = query_label
         if table_schema is not None:
             create_kwargs["table_schema"] = table_schema
-        create_sql_table(
+        _create_sql_table_with_connection(
             connection_type,
             connection,
             stage_table,
             batch,
+            connection_key=connection_key or connection_type,
             column_types=column_types,
             gp_distributed_by_key=gp_distributed_by_key,
             **create_kwargs,

@@ -191,10 +191,10 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
         "create_sql_table",
         "create_table_from_sql",
         "drop_many_partitions",
-        "execute_sql",
+        "execute",
         "gp_create_many_partitions",
         "load_df",
-        "transfer_table",
+        "transfer",
     ],
 )
 def test_public_mutating_sql_helpers_accept_dry_run_plan_options(
@@ -211,10 +211,10 @@ def test_public_mutating_sql_helpers_accept_dry_run_plan_options(
     [
         "async_sql",
         "execute_read",
-        "execute_sql",
+        "execute",
         "load_df",
         "parallel_sql",
-        "transfer_table",
+        "transfer",
     ],
 )
 def test_public_sql_progress_defaults_to_false(function_name: str) -> None:
@@ -736,7 +736,7 @@ def test_load_df_passes_table_schema_to_create_sql_table(monkeypatch) -> None:
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         load_df_module,
-        "create_sql_table",
+        "_create_sql_table_with_connection",
         lambda *args, **kwargs: create_calls.append(kwargs),
     )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
@@ -764,7 +764,11 @@ def test_load_df_return_metadata_preserves_rows_default_path(monkeypatch) -> Non
 
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(load_df_module, "create_sql_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
     monkeypatch.setattr(load_df_module, "count_table_rows", lambda *args, **kwargs: 5)
@@ -805,7 +809,7 @@ def test_load_df_rejects_invalid_gp_insert_chunk_size() -> None:
             dry_run=True,
         )
 
-    with pytest.raises(ValueError, match="connection_type has type 'gp'"):
+    with pytest.raises(ValueError, match="db_key has type 'gp'"):
         load_df_module.load_df(
             "trino",
             "sandbox.target",
@@ -1149,20 +1153,98 @@ def test_transfer_table_logs_source_sql_preview(monkeypatch, capsys) -> None:
     assert "Finished SQL statement:\nselect id from source_table" in output
 
 
-def test_create_sql_table_logs_generated_sql_preview(capsys) -> None:
+def test_create_sql_table_logs_generated_sql_preview(monkeypatch, capsys) -> None:
     connection = FakeDbapiConnection()
+    monkeypatch.setattr(
+        ddl_create_table_module,
+        "get_sql_connection",
+        lambda _key: connection,
+    )
 
     ddl_create_table_module.create_sql_table(
-        "gp",
-        connection,
-        "sandbox.created_table",
-        pd.DataFrame({"id": [1]}),
+        db_key="gp",
+        table_name="sandbox.created_table",
+        df=pd.DataFrame({"id": [1]}),
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     output = capsys.readouterr().out
     assert "[create_sql_table] [gp/gp] [create_target] Finished SQL in " in output
     assert "Finished SQL statement:\nCREATE TABLE sandbox.created_table" in output
     assert connection.executed[0].startswith("CREATE TABLE sandbox.created_table")
+
+
+def test_build_create_table_sql_accepts_schema_without_dataframe(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ddl_create_table_module,
+        "get_sql_connection",
+        lambda _key: pytest.fail("connection should not be opened"),
+    )
+
+    ddl = ddl_create_table_module.build_create_table_sql(
+        db_key="gp",
+        table_name="sandbox.schema_only",
+        table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
+    )
+
+    assert "CREATE TABLE sandbox.schema_only" in ddl
+    assert '"user_id" BIGINT' in ddl
+    assert '"score" DOUBLE PRECISION' in ddl
+
+
+def test_create_sql_table_accepts_schema_without_dataframe(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    opened_keys: list[str] = []
+
+    def fake_get_sql_connection(db_key: str) -> FakeDbapiConnection:
+        opened_keys.append(db_key)
+        return connection
+
+    monkeypatch.setattr(
+        ddl_create_table_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
+
+    ddl_create_table_module.create_sql_table(
+        db_key="gp_sandbox",
+        table_name="sandbox.schema_only",
+        table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert opened_keys == ["gp_sandbox"]
+    assert connection.executed[0].startswith("CREATE TABLE sandbox.schema_only")
+    assert '"user_id" BIGINT' in connection.executed[0]
+    assert connection.close_calls == 1
+
+
+def test_create_sql_table_dry_run_and_return_sql_do_not_open_connection(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ddl_create_table_module,
+        "get_sql_connection",
+        lambda _key: pytest.fail("connection should not be opened"),
+    )
+
+    dry_run_plan = ddl_create_table_module.create_sql_table(
+        db_key="gp",
+        table_name="sandbox.schema_only",
+        table_schema={"id": "BIGINT"},
+        dry_run=True,
+    )
+    return_sql_plan = ddl_create_table_module.create_sql_table(
+        db_key="gp",
+        table_name="sandbox.schema_only",
+        table_schema={"id": "BIGINT"},
+        return_sql=True,
+    )
+
+    assert dry_run_plan.sqls == return_sql_plan.sqls
+    assert dry_run_plan.sqls[0].startswith("CREATE TABLE sandbox.schema_only")
 
 
 def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> None:

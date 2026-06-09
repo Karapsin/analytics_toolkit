@@ -38,7 +38,7 @@ from ....execution.plan_steps import (
     add_insert_from_stage_step,
     add_load_stage_step,
 )
-from ....ddl.api import build_create_table_sqls
+from ....ddl.api import _build_create_table_sqls
 from ....ddl.schema import normalize_table_schema
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
@@ -522,7 +522,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     else:
         add_create_table_steps(
             plan,
-            build_create_table_sqls(
+            _build_create_table_sqls(
                 options.to_db_backend,
                 stage_table,
                 pd.DataFrame(columns=list(options.table_schema)),
@@ -584,7 +584,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     else:
         add_create_table_steps(
             plan,
-            build_create_table_sqls(
+            _build_create_table_sqls(
                 options.to_db_backend,
                 options.target_table,
                 pd.DataFrame(columns=list(options.table_schema)),

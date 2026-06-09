@@ -19,7 +19,6 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [create_table_from_sql](create_table_from_sql.md)
 - [create_sql_table](create_sql_table.md)
 - [build_create_table_sql](build_create_table_sql.md)
-- [build_create_table_sqls](build_create_table_sqls.md)
 - [table_info](table_info.md)
 - [show_tables](show_tables.md)
 - [drop_many_partitions](drop_many_partitions.md)
