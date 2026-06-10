@@ -61,6 +61,20 @@ rows = sql.transfer(
 )
 ```
 
+Aliases can point to the same backend type, so Greenplum-to-Greenplum transfers
+work the same way.
+
+```python
+rows = sql.transfer(
+    from_db="gp_sales",
+    to_db="gp_finance",
+    from_sql="select user_id, order_id, amount from mart.sales_orders",
+    to_table="finance.sales_orders_copy",
+    write_mode="replace",
+    batch_size=50_000,
+)
+```
+
 - `sql.read`: run a query and return a dataframe.
 - `sql.execute`: run DDL or DML without returning a dataframe.
 - `sql.execute_read`: run setup SQL and return the final result as a dataframe.
