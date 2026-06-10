@@ -1,11 +1,11 @@
 [SQL functions index](index.md)
 
-# gp_create_many_partitions
+# gp_create_partitions
 
 Create multiple Greenplum range or list partitions in input order.
 
 ```python
-gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mapping[str, Any]] | None' = None, values: 'Sequence[str] | None' = None, days: 'Sequence[str] | None' = None, weeks: 'Sequence[str] | None' = None, months: 'Sequence[str] | None' = None, years: 'Sequence[str] | None' = None, name_template: 'str' = 'p_{}', retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'str | SqlPlan | SqlOperationResult | None'
+gp_create_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mapping[str, Any]] | None' = None, values: 'Sequence[str] | None' = None, days: 'Sequence[str] | None' = None, weeks: 'Sequence[str] | None' = None, months: 'Sequence[str] | None' = None, years: 'Sequence[str] | None' = None, name_template: 'str' = 'p_{}', retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'str | SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -32,7 +32,7 @@ gp_create_many_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[M
 ```python
 from analytics_toolkit import sql
 
-sql.gp_create_many_partitions(
+sql.gp_create_partitions(
     "gp",
     "sandbox.events",
     days=["2026-06-01", "2026-06-02"],
@@ -42,7 +42,7 @@ sql.gp_create_many_partitions(
 ```python
 from analytics_toolkit import sql
 
-ddl = sql.gp_create_many_partitions(
+ddl = sql.gp_create_partitions(
     "gp",
     "sandbox.events",
     days=["2026-06-01", "2026-06-02"],

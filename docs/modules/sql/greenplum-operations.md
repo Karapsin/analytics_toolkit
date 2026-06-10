@@ -28,7 +28,7 @@ child partitions are managed separately through the partitioning workflow.
 These defaults apply to table creation and write workflows such as
 [sql.create_sql_table](functions/create_sql_table.md),
 [sql.load_df](functions/load_df.md), and [sql.transfer](functions/transfer.md).
-Use [sql.gp_create_many_partitions](functions/gp_create_many_partitions.md) for
+Use [sql.gp_create_partitions](functions/gp_create_partitions.md) for
 Greenplum child partitions.
 
 [SQL module index](index.md)

@@ -33,7 +33,7 @@ from .dml.io.cancel_queries import cancel_queries
 from .dml.table import (
     drop_tables,
     drop_paritions,
-    gp_create_many_partitions,
+    gp_create_partitions,
     gp_vacuum,
 )
 from analytics_toolkit.general import (
@@ -53,7 +53,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "execute",
     "drop_tables",
     "drop_paritions",
-    "gp_create_many_partitions",
+    "gp_create_partitions",
     "gp_vacuum",
     "load_df",
     "read",
@@ -82,7 +82,7 @@ __all__ = [
     "create_sql_table",
     "drop_tables",
     "drop_paritions",
-    "gp_create_many_partitions",
+    "gp_create_partitions",
     "gp_vacuum",
     "load_df",
     "read",

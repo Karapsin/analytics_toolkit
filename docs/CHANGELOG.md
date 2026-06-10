@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.1 - 2026-06-10
+
+- Renamed the public Greenplum partition creation helper from
+  `sql.gp_create_many_partitions()` to `sql.gp_create_partitions()`.
+- Removed the old `gp_create_many_partitions` facade export and function
+  documentation page.
+
 ## 1.3.8.0 - 2026-06-10
 
 - Replaced the public Greenplum-only `sql.gp_cancel_all_running_queries()`

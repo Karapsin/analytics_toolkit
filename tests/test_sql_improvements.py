@@ -183,7 +183,7 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
         "drop_tables",
         "create_sql_table",
         "execute",
-        "gp_create_many_partitions",
+        "gp_create_partitions",
         "load_df",
         "transfer",
     ],

@@ -31,7 +31,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 
 ## Backend-Specific Functions
 
-- [gp_create_many_partitions](gp_create_many_partitions.md)
+- [gp_create_partitions](gp_create_partitions.md)
 - [gp_vacuum](gp_vacuum.md)
 
 [SQL module index](../index.md)

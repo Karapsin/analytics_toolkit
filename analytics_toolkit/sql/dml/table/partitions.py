@@ -36,7 +36,7 @@ class _GpPartitionDefinition:
     value: str | None = None
 
 @dataclass(frozen=True)
-class _GpCreateManyPartitionsOptions:
+class _GpCreatePartitionsOptions:
     connection_key: str
     backend: str
     target_table: str
@@ -87,7 +87,7 @@ def build_drop_many_partitions_sqls(
         )
     ]
 
-def _build_gp_create_many_partitions_sqls(
+def _build_gp_create_partitions_sqls(
     table: str,
     *,
     intervals: Sequence[Mapping[str, Any]] | None = None,
@@ -118,7 +118,7 @@ def _build_gp_create_many_partitions_sqls(
     ]
 
 @timed_public_sql_function
-def gp_create_many_partitions(
+def gp_create_partitions(
     db_key: str,
     table: str,
     *,
@@ -137,7 +137,7 @@ def gp_create_many_partitions(
     only_generate_sql: bool = False,
     return_metadata: bool = False,
 ) -> str | SqlPlan | SqlOperationResult | None:
-    options = _build_gp_create_many_partitions_options(
+    options = _build_gp_create_partitions_options(
         db_key=db_key,
         table=table,
         intervals=intervals,
@@ -155,7 +155,7 @@ def gp_create_many_partitions(
         only_generate_sql=only_generate_sql,
         return_metadata=return_metadata,
     )
-    plan = build_gp_create_many_partitions_plan(options)
+    plan = build_gp_create_partitions_plan(options)
     if options.only_generate_sql:
         return _format_sql_statements(plan.sqls)
     if options.dry_run or options.return_sql:
@@ -171,7 +171,7 @@ def gp_create_many_partitions(
     def operation(connection_ref: dict[str, Any], attempt: int) -> None:
         with tracked_sql_operation(
             metadata=metadata,
-            operation_name="gp_create_many_partitions",
+            operation_name="gp_create_partitions",
             alias=options.connection_key,
             backend=options.backend,
             phase="create_partitions",
@@ -187,7 +187,7 @@ def gp_create_many_partitions(
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
-            operation="gp_create_many_partitions",
+            operation="gp_create_partitions",
             alias=options.connection_key,
             backend=options.backend,
             phase="create_partitions",
@@ -296,10 +296,10 @@ def drop_paritions(
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
     return None
 
-def build_gp_create_many_partitions_plan(
-    options: _GpCreateManyPartitionsOptions,
+def build_gp_create_partitions_plan(
+    options: _GpCreatePartitionsOptions,
 ) -> SqlPlan:
-    sqls = _build_gp_create_many_partitions_sqls(
+    sqls = _build_gp_create_partitions_sqls(
         options.target_table,
         intervals=options.intervals,
         values=options.values,
@@ -311,7 +311,7 @@ def build_gp_create_many_partitions_plan(
         query_label=options.query_label,
     )
     plan = SqlPlan(
-        operation="gp_create_many_partitions",
+        operation="gp_create_partitions",
         target_alias=options.connection_key,
         target_backend=options.backend,
         target_table=options.target_table,
@@ -340,7 +340,7 @@ def build_gp_create_many_partitions_plan(
     )
     return plan
 
-def _build_gp_create_many_partitions_options(
+def _build_gp_create_partitions_options(
     *,
     db_key: str,
     table: str,
@@ -358,11 +358,11 @@ def _build_gp_create_many_partitions_options(
     return_sql: bool,
     only_generate_sql: bool,
     return_metadata: bool,
-) -> _GpCreateManyPartitionsOptions:
+) -> _GpCreatePartitionsOptions:
     config = get_connection_config(db_key)
     if config.backend != "gp":
         raise UnsupportedConnectionTypeError(
-            "gp_create_many_partitions requires a gp connection, "
+            "gp_create_partitions requires a gp connection, "
             f"got '{config.backend}'."
         )
     validate_retry_options(retry_cnt, timeout_increment)
@@ -377,7 +377,7 @@ def _build_gp_create_many_partitions_options(
         years=years,
         name_template=name_template,
     )
-    return _GpCreateManyPartitionsOptions(
+    return _GpCreatePartitionsOptions(
         connection_key=config.connection_key,
         backend=config.backend,
         target_table=target_table,
