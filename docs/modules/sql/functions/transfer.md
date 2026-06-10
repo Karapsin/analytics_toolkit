@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, clean_transfer_staging_schema: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -35,7 +35,6 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `timeout_increment` - delay increment used between operation retries
 - `full_retry_cnt` - number of retries for the whole transfer flow after a transfer-level failure
 - `full_timeout_increment` - delay increment used between full transfer retries
-- `clean_transfer_staging_schema` - when true, drop matching staged transfer tables for the target user before and after each transfer
 - `dry_run` - when `True`, return a plan without mutating the database
 - `return_sql` - when `True`, return a `SqlPlan` instead of mutating a database
 - `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
@@ -90,8 +89,10 @@ rows
 - If you set `target_batch_memory_mb`, memory-based adaptation is used and
   takes precedence.
 - `transfer_staging_schema` configured on the target connection keeps staging
-  tables inside that schema and enables scoped cleanup before and after each
-  transfer.
+  tables inside that schema. When configured, stale and overlapping staging tables
+  for the target user are cleaned before and after each transfer.
+- `sql.cleanup_stale_stage_tables()` is the public helper for explicit cleanup of
+  user-scoped staging tables.
 - Optional `min_batch_seconds`, `max_batch_seconds`, `min_batch_memory_mb`, and
   `max_batch_memory_mb` clamp their corresponding active target constraints
   when those targets are enabled.

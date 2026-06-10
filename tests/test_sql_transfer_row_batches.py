@@ -5,6 +5,7 @@ import warnings
 import sys
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -19,6 +20,9 @@ finalize_module = importlib.import_module(
 )
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
+)
+staging_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.staging"
 )
 transfer_api_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.api"
@@ -198,11 +202,16 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
         events.append("create_stage_state")
         return models_module.TransferStageState(target_exists=False)
 
-    def fake_cleanup_transfer_staging_schema(
-        options: models_module.TransferOptions,
+    def fake_cleanup_stale_stage_tables_with_connection(
+        db_key: str,
+        target_table: str,
         connection_ref: dict[str, Any],
         read_retry_cnt: int,
+        stage_tables: list[str] | None = None,
+        timeout_increment: int | float = 5,
+        query_label: str | None = None,
     ) -> None:
+        del db_key, target_table, stage_tables, timeout_increment, query_label
         events.append(
             "cleanup_start"
             if not cleanup_calls
@@ -235,8 +244,8 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
     monkeypatch.setattr(attempt_module, "create_stage_state", fake_create_stage_state)
     monkeypatch.setattr(
         attempt_module,
-        "cleanup_transfer_staging_schema",
-        fake_cleanup_transfer_staging_schema,
+        "cleanup_stale_stage_tables_with_connection",
+        fake_cleanup_stale_stage_tables_with_connection,
     )
     monkeypatch.setattr(
         attempt_module,
@@ -273,7 +282,7 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
     ]
 
 
-def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
+def test_run_transfer_attempt_calls_cleanup_when_staging_schema_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -285,7 +294,7 @@ def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
         to_db_backend="gp",
         from_db_key="source_db",
         from_db_backend="gp",
-        clean_transfer_staging_schema=False,
+        transfer_staging_schema=None,
     )
 
     def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
@@ -313,14 +322,20 @@ def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
     def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
         events.append("cleanup_stage")
 
-    matching_calls: list[str] = []
+    cleanup_calls: list[tuple[str, int]] = []
 
-    def fake_find_matching_transfer_stage_tables(*_args: Any, **_kwargs: Any) -> list[str]:
-        matching_calls.append("find_matching")
-        return ["target_table__stage__abcd"]
-
-    def fake_drop_table_with_retry(*_args: Any, **_kwargs: Any) -> None:
-        events.append("drop_table")
+    def fake_cleanup_stale_stage_tables_with_connection(
+        db_key: str,
+        target_table: str,
+        connection_ref: dict[str, Any],
+        read_retry_cnt: int,
+        stage_tables: list[str] | None = None,
+        timeout_increment: int | float = 5,
+        query_label: str | None = None,
+    ) -> None:
+        del target_table, stage_tables, timeout_increment, query_label
+        events.append("cleanup_start" if not cleanup_calls else "cleanup_finish")
+        cleanup_calls.append((connection_ref["connection"].name, read_retry_cnt))
 
     def fake_close_connection_ref(
         _connection_ref: dict[str, Any],
@@ -344,19 +359,9 @@ def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
     )
     monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
     monkeypatch.setattr(
-        finalize_module,
-        "_find_matching_transfer_stage_tables",
-        fake_find_matching_transfer_stage_tables,
-    )
-    monkeypatch.setattr(
-        finalize_module,
-        "drop_table_with_retry",
-        fake_drop_table_with_retry,
-    )
-    monkeypatch.setattr(
         attempt_module,
-        "cleanup_transfer_staging_schema",
-        finalize_module.cleanup_transfer_staging_schema,
+        "cleanup_stale_stage_tables_with_connection",
+        fake_cleanup_stale_stage_tables_with_connection,
     )
     monkeypatch.setattr(attempt_module, "close_connection_ref", fake_close_connection_ref)
 
@@ -367,31 +372,43 @@ def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
     )
 
     assert total_rows == 7
-    assert matching_calls == []
     assert events == [
         "create_stage_state",
+        "cleanup_start",
         "inspect_source_query_schema",
         "load_stage_batches",
         "finalize_loaded_stage",
         "cleanup_stage",
+        "cleanup_finish",
         "close:source",
         "close:target",
     ]
+    assert cleanup_calls == [("target", 3), ("target", 3)]
 
 
-def test_cleanup_transfer_staging_schema_warns_once_when_staging_schema_missing() -> None:
-    options = make_progress_options(to_db_backend="gp", to_db_key="target_db", transfer_staging_schema=None)
+def test_cleanup_stale_stage_tables_warns_once_when_staging_schema_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = SimpleNamespace(
+        connection_key="staging_warning_db",
+        backend="gp",
+        transfer_staging_schema=None,
+        user="target_user",
+    )
     connection_ref: dict[str, Any] = {"connection": FakeTransferConnection("target")}
+    monkeypatch.setattr(staging_module, "get_connection_config", lambda db_key: config)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        finalize_module.cleanup_transfer_staging_schema(
-            options=options,
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="staging_warning_db",
+            target_table="schema.target",
             connection_ref=connection_ref,
             read_retry_cnt=1,
         )
-        finalize_module.cleanup_transfer_staging_schema(
-            options=options,
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="staging_warning_db",
+            target_table="schema.target",
             connection_ref=connection_ref,
             read_retry_cnt=1,
         )
@@ -402,6 +419,100 @@ def test_cleanup_transfer_staging_schema_warns_once_when_staging_schema_missing(
         "but transfer_staging_schema is not configured for the target connection"
         in str(caught[0].message)
     )
+
+
+def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    query_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="transfer_schema",
+            user="target user",
+        ),
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "_query_gp_stage_tables",
+        lambda transfer_staging_schema, table_prefix, connection: query_calls.append(
+            (transfer_staging_schema, table_prefix)
+        )
+        or [
+            "target__analytics_toolkit_target_user__stage__match",
+            "other__analytics_toolkit_target_user__stage__ignore",
+        ],
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="gp",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+    )
+
+    assert discovered == ["transfer_schema.target__analytics_toolkit_target_user__stage__match"]
+    assert query_calls == [("transfer_schema", "target__analytics_toolkit_target_user__stage__%")]
+
+
+def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    query_called = 0
+
+    def fake_query_gp_stage_tables(
+        transfer_staging_schema: str,
+        table_prefix: str,
+        connection: Any,
+    ) -> list[str]:
+        nonlocal query_called
+        query_called += 1
+        del transfer_staging_schema, table_prefix, connection
+        raise AssertionError("query should not be used for explicit stage tables")
+
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="transfer_schema",
+            user="target_user",
+        ),
+    )
+    monkeypatch.setattr(staging_module, "_query_gp_stage_tables", fake_query_gp_stage_tables)
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="gp",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        stage_tables=[
+            "analytics.target__analytics_toolkit_target_user__stage__explicit",
+            "target__analytics_toolkit_target_user__stage__implicit",
+        ],
+    )
+
+    assert discovered == [
+        "analytics.target__analytics_toolkit_target_user__stage__explicit",
+        "transfer_schema.target__analytics_toolkit_target_user__stage__implicit",
+    ]
+    assert query_called == 0
 
 
 def test_transfer_options_progress_defaults_to_false() -> None:

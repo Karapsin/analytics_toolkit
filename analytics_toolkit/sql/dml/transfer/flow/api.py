@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-import re
 import math
 from numbers import Real
 
@@ -47,6 +46,7 @@ from ...load.stage import build_stage_table_name
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from .attempt import run_transfer_attempt
+from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import TransferOptions
 from ..runtime.retry import run_with_retry
 
@@ -88,7 +88,6 @@ def transfer_table(
     ch_sharding_key: str = "rand()",
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
-    clean_transfer_staging_schema: bool = True,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -130,7 +129,6 @@ def transfer_table(
         ch_sharding_key=ch_sharding_key,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
-        clean_transfer_staging_schema=clean_transfer_staging_schema,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -272,7 +270,6 @@ def build_transfer_options(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
-    clean_transfer_staging_schema: bool = True,
 ) -> TransferOptions:
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
@@ -372,7 +369,6 @@ def build_transfer_options(
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "ch_sharding_key"),
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
-        clean_transfer_staging_schema=clean_transfer_staging_schema,
         transfer_staging_schema=to_config.transfer_staging_schema,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         query_label=query_label,
@@ -395,8 +391,6 @@ def build_transfer_options(
         raise ValueError("full_timeout_increment must be non-negative.")
     if not isinstance(options.target_rows_per_second, bool):
         raise ValueError("target_rows_per_second must be a boolean.")
-    if not isinstance(options.clean_transfer_staging_schema, bool):
-        raise ValueError("clean_transfer_staging_schema must be a boolean.")
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
     if options.gp_distributed_by_key is not None and options.to_db_backend != "gp":
@@ -710,7 +704,6 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
-            "clean_transfer_staging_schema": options.clean_transfer_staging_schema,
             "estimate_total_rows": options.estimate_total_rows,
         },
         metadata=SqlOperationMetadata(stage_table=stage_table),
@@ -866,12 +859,6 @@ def _dry_run_stage_table_name(options: TransferOptions) -> str:
         )
     except Exception:
         return f"{options.target_table}__stage__dryrun"
-
-
-def _sanitize_transfer_staging_username(value: str) -> str:
-    username = re.sub(r"[^0-9A-Za-z_]+", "_", value.strip())
-    username = re.sub(r"_+", "_", username).strip("_")
-    return username or "user"
 
 
 def _best_effort_transfer_target_count(options: TransferOptions) -> int | None:

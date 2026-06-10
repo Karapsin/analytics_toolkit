@@ -250,10 +250,8 @@ class TransferOptions:
     query_label: str | None = None
     progress: bool = False
     estimate_total_rows: bool = False
-    clean_transfer_staging_schema: bool = True
     transfer_staging_schema: str | None = None
     transfer_staging_username: str | None = None
-    _warned_transfer_staging_schema_cleanup: bool = False
 
 
 @dataclass

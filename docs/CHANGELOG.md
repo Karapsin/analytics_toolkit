@@ -4,6 +4,19 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.14 - 2026-06-10
+
+- Added `sql.cleanup_stale_stage_tables()`, a staged-table cleanup helper that
+  discovers or accepts explicit stage tables and drops them with retry semantics.
+- Made transfer staging cleanup always run when `transfer_staging_schema` is
+  configured on the target connection.
+- Removed `clean_transfer_staging_schema` from `sql.transfer` options so cleanup is
+  always enabled by connection configuration.
+
+## 1.3.8.12 - 2026-06-10
+
+- Extracted staging-table cleanup into shared helpers used by DataFrame load and
+  transfer staged flows.
 
 ## 1.3.8.11 - 2026-06-10
 

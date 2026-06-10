@@ -22,6 +22,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [show_tables](show_tables.md) - list backend tables
 - [drop_tables](drop_tables.md) - drop one or more tables
 - [drop_partitions](drop_partitions.md) - drop table partition values
+- [cleanup_stale_stage_tables](cleanup_stale_stage_tables.md) - drop stale transfer stage tables for a target table
 - [extract_ddl](extract_ddl.md) - return native table DDL
 - [format_plan](format_plan.md) - render a dry-run SQL plan
 - [async_sql](async_sql.md) - run SQL task specs concurrently

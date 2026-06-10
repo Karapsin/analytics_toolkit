@@ -11,7 +11,6 @@ from ...load.load_sql_table import insert_rows_batch
 from .estimate import estimate_source_rows
 from .finalize import (
     cleanup_stage,
-    cleanup_transfer_staging_schema,
     finalize_loaded_stage,
 )
 from ..runtime.models import (
@@ -25,6 +24,7 @@ from ..io.source import iter_source_batches
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from ....execution.operation_runner import _format_duration
 from .stage import create_stage_state, initialize_stage_for_first_batch
+from ..staging import cleanup_stale_stage_tables_with_connection
 
 _TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT = (
     "{desc}: {n_pretty}{unit} [{elapsed}, {rate_fmt}{postfix}]"
@@ -50,10 +50,13 @@ def run_transfer_attempt(
     stage_state = create_stage_state(options, connection_refs)
 
     try:
-        cleanup_transfer_staging_schema(
-            options=options,
+        cleanup_stale_stage_tables_with_connection(
+            db_key=options.to_db_key,
+            target_table=options.target_table,
             connection_ref=connection_refs.target,
             read_retry_cnt=read_retry_cnt,
+            timeout_increment=options.timeout_increment,
+            query_label=options.query_label,
         )
         source_schema = inspect_source_query_schema(
             options.from_db_backend,
@@ -96,10 +99,13 @@ def run_transfer_attempt(
                 stage_state=stage_state,
                 read_retry_cnt=read_retry_cnt,
             )
-            cleanup_transfer_staging_schema(
-                options=options,
+            cleanup_stale_stage_tables_with_connection(
+                db_key=options.to_db_key,
+                target_table=options.target_table,
                 connection_ref=connection_refs.target,
                 read_retry_cnt=read_retry_cnt,
+                timeout_increment=options.timeout_increment,
+                query_label=options.query_label,
             )
         except Exception as exc:
             cleanup_error = exc

@@ -5,6 +5,7 @@ import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -301,6 +302,162 @@ def test_load_df_validates_progress(progress: object) -> None:
             dry_run=True,
             progress=progress,
         )
+
+
+def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    connection = FakeConnection()
+    config = SimpleNamespace(
+        connection_key="gp",
+        backend="gp",
+        user="target_user",
+        transfer_staging_schema="transfer_schema",
+        insert_chunk_size=None,
+    )
+    cleanups: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(load_df_module, "get_connection_config", lambda key: config)
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **kwargs: f"{kwargs['target_table']}__stage__ok")
+    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "insert_table_batch",
+        lambda connection_type, connection_ref, table_name, batch, **kwargs: len(batch),
+    )
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_stage_table_with_retry",
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
+            (connection_type, connection_key, table_name),
+        ),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_cleanup_load",
+        lambda connection_ref, options, state: (
+            load_df_module.cleanup_stage_table_with_retry(
+                options.connection_backend,
+                options.connection_key,
+                connection_ref,
+                state.overlap_stage_table,
+                retry_fn=load_df_module.run_with_retry,
+                retry_cnt=1,
+                timeout_increment=0,
+                rollback_fn=load_df_module.rollback_quietly,
+                replace_connection_fn=load_df_module.replace_connection,
+                query_label=options.query_label,
+            )
+            if state is not None and state.overlap_stage_table is not None
+            else None
+        ),
+    )
+
+    inserted_rows = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        pd.DataFrame({"id": [1, 2], "value": [10, 20]}),
+        append=True,
+        key_columns=["id"],
+        progress=False,
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert inserted_rows == 2
+    assert cleanups == [("gp", "gp", "sandbox.target__stage__ok")]
+
+
+def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    connection = FakeConnection()
+    config = SimpleNamespace(
+        connection_key="gp",
+        backend="gp",
+        user="target_user",
+        transfer_staging_schema="transfer_schema",
+        insert_chunk_size=None,
+    )
+    cleanups: list[tuple[str, str, str]] = []
+
+    def fake_insert_table_batch(*args, **kwargs) -> int:
+        del args, kwargs
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(load_df_module, "get_connection_config", lambda key: config)
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **kwargs: f"{kwargs['target_table']}__stage__err")
+    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_stage_table_with_retry",
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
+            (connection_type, connection_key, table_name),
+        ),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_cleanup_load",
+        lambda connection_ref, options, state: (
+            load_df_module.cleanup_stage_table_with_retry(
+                options.connection_backend,
+                options.connection_key,
+                connection_ref,
+                state.overlap_stage_table,
+                retry_fn=load_df_module.run_with_retry,
+                retry_cnt=1,
+                timeout_increment=0,
+                rollback_fn=load_df_module.rollback_quietly,
+                replace_connection_fn=load_df_module.replace_connection,
+                query_label=options.query_label,
+            )
+            if state is not None and state.overlap_stage_table is not None
+            else None
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="insert failed"):
+        load_df_module.load_df(
+            "gp",
+            "sandbox.target",
+            pd.DataFrame({"id": [1, 2], "value": [10, 20]}),
+            append=True,
+            key_columns=["id"],
+            progress=False,
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+
+    assert cleanups == [("gp", "gp", "sandbox.target__stage__err")]
 
 
 def test_insert_rows_batch_gp_uses_row_tuples_and_normalizes_nulls(monkeypatch) -> None:

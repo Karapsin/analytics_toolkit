@@ -42,6 +42,7 @@ from analytics_toolkit.general import (
     time_print,
 )
 from .dml.transfer.flow.api import transfer_table as transfer
+from .dml.transfer.staging import cleanup_stale_stage_tables
 
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
@@ -59,6 +60,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "read",
     "show_tables",
     "table_info",
+    "cleanup_stale_stage_tables",
     "transfer",
     "validate_connections",
 )
@@ -95,6 +97,7 @@ __all__ = [
     "SqlStatement",
     "SqlTableInfo",
     "table_info",
+    "cleanup_stale_stage_tables",
     "time_print",
     "transfer",
     "get_time_print_sink",

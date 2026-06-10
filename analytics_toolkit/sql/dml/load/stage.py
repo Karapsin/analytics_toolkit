@@ -10,6 +10,7 @@ from sqlglot import exp, parse_one
 from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
 from ...ddl.api import _create_sql_table_with_connection
+from ..table.maintenance import drop_table, drop_table_with_retry
 from ..table._basic_ops import table_exists
 
 
@@ -68,6 +69,52 @@ def create_stage_table(
     raise RuntimeError(
         "Could not generate a unique stage table name after "
         f"{STAGE_TABLE_NAME_MAX_ATTEMPTS} attempts."
+    )
+
+
+def cleanup_stage_table(
+    connection_type: str,
+    connection: Any,
+    stage_table: str,
+    *,
+    query_label: str | None = None,
+    if_exists: bool = True,
+) -> None:
+    drop_table(
+        connection_type,
+        connection,
+        stage_table,
+        query_label=query_label,
+        if_exists=if_exists,
+    )
+
+
+def cleanup_stage_table_with_retry(
+    connection_type: str,
+    connection_key: str,
+    connection_ref: dict[str, Any],
+    stage_table: str,
+    *,
+    retry_fn: Any,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    rollback_fn: Any,
+    replace_connection_fn: Any,
+    query_label: str | None = None,
+    if_exists: bool = True,
+) -> None:
+    drop_table_with_retry(
+        connection_type,
+        connection_key,
+        connection_ref,
+        stage_table,
+        retry_fn=retry_fn,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        rollback_fn=rollback_fn,
+        replace_connection_fn=replace_connection_fn,
+        query_label=query_label,
+        if_exists=if_exists,
     )
 
 

@@ -46,11 +46,12 @@ from ...execution.plan_steps import (
     add_load_stage_step,
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ..transfer.runtime.retry import run_with_retry
+from ..transfer.runtime.retry import rollback_quietly, replace_connection, run_with_retry
+from ..transfer.staging import _sanitize_transfer_staging_username
 from analytics_toolkit.general import time_print
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
-from .stage import create_stage_table
+from .stage import cleanup_stage_table_with_retry, create_stage_table
 from ..table._basic_ops import (
     count_table_rows,
     insert_from_table,
@@ -59,7 +60,6 @@ from ..table._basic_ops import (
 )
 from ..table.maintenance import (
     analyze_table,
-    drop_table,
 )
 from ..table.write_modes import (
     apply_target_write_mode,
@@ -284,6 +284,8 @@ def _build_load_options(
         ch_retry_per_host_drops=retry_per_host_drops,
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
+        transfer_staging_schema=config.transfer_staging_schema,
+        transfer_staging_username=_sanitize_transfer_staging_username(config.user),
     )
 
     if not options.destination_table:
@@ -807,6 +809,8 @@ def _load_dataframe(
             gp_distributed_by_key=options.gp_distributed_by_key,
             connection_key=options.connection_key,
             query_label=options.query_label,
+            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_username=options.transfer_staging_username,
             **stage_create_kwargs,
         )
         insert_table_batch(
@@ -897,16 +901,22 @@ def _cleanup_load(
 ) -> None:
     if state is not None and state.overlap_stage_table is not None:
         try:
-            drop_table(
+            cleanup_stage_table_with_retry(
                 options.connection_backend,
-                connection_ref["connection"],
+                options.connection_key,
+                connection_ref,
                 state.overlap_stage_table,
+                retry_fn=run_with_retry,
+                retry_cnt=options.retry_cnt,
+                timeout_increment=options.timeout_increment,
+                rollback_fn=rollback_quietly,
+                replace_connection_fn=replace_connection,
                 query_label=options.query_label,
             )
         except Exception:
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
-    )
+            )
     time_print(
         "Closing connection",
         connection=options.connection_key,
