@@ -43,6 +43,7 @@ DEFAULT_SQL_CONNECTIONS = {
         "user": "user",
         "password": "password",
         "database": "default",
+        "transfer_staging_schema": "analytics_toolkit_transfer",
     },
 }
 
