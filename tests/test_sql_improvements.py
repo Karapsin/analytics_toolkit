@@ -1074,6 +1074,9 @@ def test_execute_read_rejects_removed_random_sleep_seconds() -> None:
 
 
 def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
+    signature = inspect.signature(sql_module.transfer)
+
+    assert "replace_target_table" not in signature.parameters
     plan = transfer_api_module.transfer_table(
         from_db="gp",
         to_db="trino",
@@ -1093,6 +1096,17 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     assert plan.statements[0].phase == "read_source"
     assert "query_label=copy-target" in plan.statements[0].sql
     assert plan.statements[-1].phase == "drop_stage"
+
+
+def test_transfer_rejects_removed_replace_target_table_argument() -> None:
+    with pytest.raises(TypeError, match="replace_target_table"):
+        transfer_api_module.transfer_table(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            replace_target_table=True,
+        )
 
 
 def test_transfer_table_dry_run_uses_table_schema() -> None:
