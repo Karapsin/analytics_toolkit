@@ -12,6 +12,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from analytics_toolkit.general import time_print
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
@@ -45,6 +47,71 @@ def sql_task_spec(task_type: str) -> dict[str, Any]:
             "to_table": "sandbox.target",
         }
     raise ValueError(f"Unsupported task type for test: {task_type}")
+
+
+def test_async_sql_task_context_task_id_is_included_in_task_output(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected_rows = pd.DataFrame({"id": [1]})
+
+    def fake_read_sql(
+        *,
+        db_key: str,
+        query: str,
+        print_queries: bool = False,
+    ) -> pd.DataFrame:
+        time_print("task output from read_sql")
+        return expected_rows
+
+    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+
+    result = async_module.async_sql(
+        [
+            {
+                "name": "copy_table",
+                "type": "read",
+                "db_key": "gp",
+                "query": "select * from source limit 1",
+            }
+        ],
+        concurrency=1,
+    )
+
+    assert list(result) == ["copy_table"]
+    pd.testing.assert_frame_equal(result["copy_table"], expected_rows)
+    assert "[task_id=copy_table]" in capsys.readouterr().out
+
+
+def test_async_sql_task_context_task_id_is_included_for_failed_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_read_sql(
+        *,
+        db_key: str,
+        query: str,
+        print_queries: bool = False,
+    ) -> pd.DataFrame:
+        time_print("task output before failure")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        async_module.async_sql(
+            [
+                {
+                    "name": "copy_table",
+                    "type": "read",
+                    "db_key": "gp",
+                    "query": "select * from source limit 1",
+                }
+            ],
+            concurrency=1,
+        )
+
+    assert "[task_id=copy_table]" in capsys.readouterr().out
 
 
 def test_async_sql_is_exported() -> None:

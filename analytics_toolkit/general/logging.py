@@ -29,6 +29,7 @@ class _TimePrintContext:
     connection: str | None = None
     backend: str | None = None
     phase: str | None = None
+    task_id: str | None = None
 
 
 _time_print_context: ContextVar[_TimePrintContext] = ContextVar(
@@ -46,6 +47,7 @@ def time_print(
     connection: str | None = None,
     backend: str | None = None,
     phase: str | None = None,
+    task_id: str | None = None,
     stream: str | TextIO | None = None,
 ) -> None:
     """Print a timestamped message with optional filtering and context."""
@@ -64,6 +66,7 @@ def time_print(
         connection=_normalize_context_part(connection) or context.connection,
         backend=_normalize_context_part(backend) or context.backend,
         phase=_normalize_context_part(phase) or context.phase,
+        task_id=_normalize_context_part(task_id) or context.task_id,
     )
     formatted_message = _format_time_print_message(
         formatted_time,
@@ -125,6 +128,7 @@ def time_print_context(
     connection: str | None = None,
     backend: str | None = None,
     phase: str | None = None,
+    task_id: str | None = None,
 ) -> Iterator[None]:
     """Temporarily add structured context to ``time_print`` calls."""
 
@@ -135,6 +139,7 @@ def time_print_context(
             connection=_normalize_context_part(connection) or current.connection,
             backend=_normalize_context_part(backend) or current.backend,
             phase=_normalize_context_part(phase) or current.phase,
+            task_id=_normalize_context_part(task_id) or current.task_id,
         )
     )
     try:
@@ -197,6 +202,8 @@ def _format_context_parts(context: _TimePrintContext) -> list[str]:
         parts.append(f"[{context.backend}]")
     if context.phase is not None:
         parts.append(f"[{context.phase}]")
+    if context.task_id is not None:
+        parts.append(f"[task_id={context.task_id}]")
     return parts
 
 

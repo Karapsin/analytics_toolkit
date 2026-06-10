@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.9 - 2026-06-10
+
+- Added ordered `time_print` context extensibility with a first-class `task_id`
+  context field and wired `task_id` propagation through top-level `async_sql` and
+  `parallel_sql` task dispatch paths.
+
 ## 1.3.8.8 - 2026-06-10
 
 - Fixed throughput smoothing regression so windowed row/sec averaging is now

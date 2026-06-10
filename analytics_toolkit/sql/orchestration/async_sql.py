@@ -19,6 +19,7 @@ from ..dml.load.load_df import load_df
 from ..dml.transfer.flow.api import transfer_table
 from ..execution.operation_runner import timed_public_sql_function
 from .pipeline import _PipelineContext, _is_async_callable
+from analytics_toolkit.general import time_print_context
 from .tasks import (
     _PIPELINE_TASK_TYPE,
     _PROGRESS_TASK_TYPES,
@@ -124,12 +125,13 @@ async def _async_sql_impl(
         task_type: str,
         kwargs: dict[str, Any],
     ) -> tuple[int, Any]:
-        try:
-            return index, await run_task(name, task_type, kwargs)
-        except BaseException as exc:
-            _annotate_task_exception(exc, name, task_type, kwargs)
-            _log_failed_sql_task(name, task_type, kwargs, exc)
-            raise
+        with time_print_context(task_id=name):
+            try:
+                return index, await run_task(name, task_type, kwargs)
+            except BaseException as exc:
+                _annotate_task_exception(exc, name, task_type, kwargs)
+                _log_failed_sql_task(name, task_type, kwargs, exc)
+                raise
 
     try:
         async_tasks = [

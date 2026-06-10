@@ -52,6 +52,7 @@ def test_time_print_keyword_only_options_have_compatible_defaults() -> None:
         "connection",
         "backend",
         "phase",
+        "task_id",
         "stream",
     ]
     for parameter_name in [
@@ -61,6 +62,7 @@ def test_time_print_keyword_only_options_have_compatible_defaults() -> None:
         "connection",
         "backend",
         "phase",
+        "task_id",
         "stream",
     ]:
         parameter = signature.parameters[parameter_name]
@@ -73,6 +75,7 @@ def test_time_print_keyword_only_options_have_compatible_defaults() -> None:
     assert signature.parameters["connection"].default is None
     assert signature.parameters["backend"].default is None
     assert signature.parameters["phase"].default is None
+    assert signature.parameters["task_id"].default is None
     assert signature.parameters["stream"].default is None
 
 
@@ -241,6 +244,39 @@ def test_time_print_context_nests_and_explicit_kwargs_override(
         "[2026-06-03 18:00:00] [transfer_table] [trino_prod] [read] reading",
         "[2026-06-03 18:00:00] [load_df] [trino_prod/ch] [write] creating",
     ]
+
+
+def test_time_print_context_includes_task_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with time_print_context(task_id="orchestrator"):
+        time_print("running")
+
+    assert (
+        capsys.readouterr().out
+        == "[2026-06-03 18:00:00] [task_id=orchestrator] running\n"
+    )
+
+
+def test_time_print_context_prefix_order_is_stable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with time_print_context(
+        operation="operation_alpha",
+        connection="analytics_conn",
+        backend="gp",
+        phase="read",
+        task_id="copy_table",
+    ):
+        time_print("processing")
+
+    assert (
+        capsys.readouterr().out
+        == (
+            "[2026-06-03 18:00:00] [operation_alpha] [analytics_conn/gp] "
+            "[read] [task_id=copy_table] processing\n"
+        )
+    )
 
 
 def test_time_print_public_reexports_are_preserved() -> None:
