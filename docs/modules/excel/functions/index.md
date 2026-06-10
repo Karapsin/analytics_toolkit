@@ -7,7 +7,7 @@ helpers are listed in likely workflow order.
 
 ## General Functions
 
-- [pivot_and_break_table](pivot-and-break-table.md)
-- [break_table](break-table.md)
+- [pivot_and_break_table](pivot-and-break-table.md): Pivot and write grouped Excel tables.
+- [break_table](break-table.md): Write grouped Excel tables without pivoting.
 
 [Excel helpers index](../index.md)
