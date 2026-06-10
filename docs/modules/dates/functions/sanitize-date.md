@@ -10,7 +10,7 @@ sanitize_date(dt)
 
 ## Inputs
 
-- `dt`: Input date as an ISO string, `date`, or `datetime`.
+- `dt` - input date as an ISO string, `date`, or `datetime`
 
 ## Usage
 

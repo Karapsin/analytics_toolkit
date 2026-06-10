@@ -12,24 +12,24 @@ drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = Fals
 
 ### General Inputs
 
-- `db_key`: Connection key or alias from `.connections`.
-- `table`: Table name or list of table names to drop in input order.
-- `if_exists`: When `True`, generate `DROP TABLE IF EXISTS`; otherwise generate plain `DROP TABLE`.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `db_key` - connection key or alias from `.connections`
+- `table` - table name or list of table names to drop in input order
+- `if_exists` - when `True`, generate `DROP TABLE IF EXISTS`; otherwise generate plain `DROP TABLE`
+- `dry_run` - when `True`, return a plan without mutating the database
+- `return_sql` - when `True`, return a `SqlPlan` instead of mutating a database
+- `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
+- `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
 
 ### Backend-Specific Inputs
 
-- `ch_cluster`: ClickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported.
-- `ch_drop_distributed`: Whether ClickHouse distributed tables should be dropped.
-- `ch_drop_shard`: Whether ClickHouse shard tables should be dropped.
-- `ch_retry_per_host_drops`: Whether ClickHouse replace/drop flows may retry direct local drops on affected hosts.
-- `ch_retry_per_host_drops_concurrency`: Maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default.
-- `ch_wait_for_absence`: Whether ClickHouse drop should wait until target tables disappear from metadata.
-- `ch_wait_timeout_seconds`: Maximum wait time for ClickHouse table absence.
-- `ch_wait_poll_interval_seconds`: Polling interval while waiting for ClickHouse table absence.
+- `ch_cluster` - clickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_drop_distributed` - whether ClickHouse distributed tables should be dropped
+- `ch_drop_shard` - whether ClickHouse shard tables should be dropped
+- `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts
+- `ch_retry_per_host_drops_concurrency` - maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default
+- `ch_wait_for_absence` - whether ClickHouse drop should wait until target tables disappear from metadata
+- `ch_wait_timeout_seconds` - maximum wait time for ClickHouse table absence
+- `ch_wait_poll_interval_seconds` - polling interval while waiting for ClickHouse table absence
 
 ## Usage
 

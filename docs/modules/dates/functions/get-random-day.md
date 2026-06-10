@@ -10,9 +10,9 @@ get_random_day(start_dt, end_dt, output_string=True)
 
 ## Inputs
 
-- `start_dt`: Earliest possible date as an ISO string, `date`, or `datetime`.
-- `end_dt`: Latest possible date as an ISO string, `date`, or `datetime`.
-- `output_string`: When `True`, return an ISO string; when `False`, return a midnight `datetime`.
+- `start_dt` - earliest possible date as an ISO string, `date`, or `datetime`
+- `end_dt` - latest possible date as an ISO string, `date`, or `datetime`
+- `output_string` - when `True`, return an ISO string; when `False`, return a midnight `datetime`
 
 ## Usage
 

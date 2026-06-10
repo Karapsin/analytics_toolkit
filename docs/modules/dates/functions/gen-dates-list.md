@@ -10,10 +10,10 @@ gen_dates_list(start_dt, end_dt, interval="days", output_string=True)
 
 ## Inputs
 
-- `start_dt`: First date in the requested range as an ISO string, `date`, or `datetime`.
-- `end_dt`: Last date in the requested range as an ISO string, `date`, or `datetime`.
-- `interval`: `"day"`/`"days"`, `"week"`/`"weeks"`, `"month"`/`"months"`, or `"quarter"`/`"quarters"`.
-- `output_string`: When `True`, return ISO strings; when `False`, return midnight `datetime` values.
+- `start_dt` - first date in the requested range as an ISO string, `date`, or `datetime`
+- `end_dt` - last date in the requested range as an ISO string, `date`, or `datetime`
+- `interval` - `"day"`/`"days"`, `"week"`/`"weeks"`, `"month"`/`"months"`, or `"quarter"`/`"quarters"`
+- `output_string` - when `True`, return ISO strings; when `False`, return midnight `datetime` values
 
 ## Usage
 

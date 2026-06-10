@@ -21,17 +21,17 @@ pivot_and_break_table(
 
 ## Inputs
 
-- `df`: One dataframe or a sequence of dataframes.
-- `rows`: Single column used as pivot row labels. When `value` is a sequence or omitted, this is the synthetic metric-name column.
-- `output`: Excel workbook path.
-- `value`: Value column or columns. If omitted, value columns are inferred.
-- `columns`: Optional pivot column.
-- `break_by`: Optional column used to split tables within each sheet.
-- `sheet_by`: Optional column used to split output into sheets.
-- `append`: Whether to append sheets to an existing workbook.
-- `enforce_same_row_order`: Whether later dataframe tables follow the first
-  dataframe's row-label order.
-- `prettify`: Whether to apply row-level numeric display formats.
+- `df` - one dataframe or a sequence of dataframes
+- `rows` - single column used as pivot row labels. When `value` is a sequence or omitted, this is the synthetic metric-name column
+- `output` - workbook path for Excel output
+- `value` - value column or columns. If omitted, value columns are inferred
+- `columns` - optional pivot column
+- `break_by` - optional column used to split tables within each sheet
+- `sheet_by` - optional column used to split output into sheets
+- `append` - whether to append sheets to an existing workbook
+- `enforce_same_row_order` - whether later dataframe tables follow the first
+  dataframe's row-label order
+- `prettify` - whether to apply row-level numeric display formats
 
 ## Usage
 

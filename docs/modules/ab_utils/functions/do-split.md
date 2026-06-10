@@ -23,17 +23,17 @@ do_split(
 
 ## Inputs
 
-- `df`: Source dataframe with users to split.
-- `split_col`: User id column used for deterministic assignment.
-- `target_sample_size`: Optional total sample size.
-- `test_groups_num`: Number of test groups.
-- `test_group_ratios`: Optional ratios for `[control, test_1, ...]`.
-- `stratification_cols`: Optional column or columns for exact stratification.
-- `mandatory_users_df`: Optional dataframe of users that must be included.
-- `mandatory_users_group`: Forced group behavior for mandatory users.
-- `compensate_mandatory_users`: Whether final group quotas include mandatory users.
-- `random_state`: Random seed.
-- `group_col`: Output group label column.
+- `df` - source dataframe with users to split
+- `split_col` - user id column used for deterministic assignment
+- `target_sample_size` - optional total sample size
+- `test_groups_num` - number of test groups
+- `test_group_ratios` - optional ratios for `[control, test_1, ...]`
+- `stratification_cols` - optional column or columns for exact stratification
+- `mandatory_users_df` - optional dataframe of users that must be included
+- `mandatory_users_group` - forced group behavior for mandatory users
+- `compensate_mandatory_users` - whether final group quotas include mandatory users
+- `random_state` - random seed
+- `group_col` - output group label column
 
 ## Usage
 

@@ -10,9 +10,9 @@ last_day(dt, period="month", output_string=True)
 
 ## Inputs
 
-- `dt`: Input date as an ISO string, `date`, or `datetime`.
-- `period`: `"week"`, `"month"`, or `"quarter"`.
-- `output_string`: When `True`, return an ISO string; when `False`, return a midnight `datetime`.
+- `dt` - input date as an ISO string, `date`, or `datetime`
+- `period` - `"week"`, `"month"`, or `"quarter"`
+- `output_string` - when `True`, return an ISO string; when `False`, return a midnight `datetime`
 
 ## Usage
 

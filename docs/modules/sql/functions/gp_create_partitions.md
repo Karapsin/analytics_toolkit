@@ -10,22 +10,22 @@ gp_create_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mappin
 
 ## Inputs
 
-- `db_key`: Connection key or alias from `.connections`.
-- `table`: Table name to inspect, modify, or use for partition operations.
-- `retry_cnt`: Number of operation retries with fresh connections.
-- `timeout_increment`: Delay increment used between operation retries.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `only_generate_sql`: When `True`, return generated partition DDL as a formatted string.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `intervals`: Explicit Greenplum partition interval definitions.
-- `values`: List partition values used to create Greenplum list partitions.
-- `days`: Day values used to create Greenplum range partitions.
-- `weeks`: Monday week-start values used to create Greenplum range partitions.
-- `months`: Month-start values used to create Greenplum range partitions.
-- `years`: January 1 year-start values used to create Greenplum range partitions.
-- `name_template`: Template used to build generated Greenplum partition names.
+- `db_key` - connection key or alias from `.connections`
+- `table` - table name to inspect, modify, or use for partition operations
+- `retry_cnt` - number of operation retries with fresh connections
+- `timeout_increment` - delay increment used between operation retries
+- `dry_run` - when `True`, return a plan without mutating the database
+- `return_sql` - when `True`, return a `SqlPlan` instead of mutating a database
+- `only_generate_sql` - when `True`, return generated partition DDL as a formatted string
+- `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
+- `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
+- `intervals` - explicit Greenplum partition interval definitions
+- `values` - list partition values used to create Greenplum list partitions
+- `days` - day values used to create Greenplum range partitions
+- `weeks` - monday week-start values used to create Greenplum range partitions
+- `months` - month-start values used to create Greenplum range partitions
+- `years` - january 1 year-start values used to create Greenplum range partitions
+- `name_template` - template used to build generated Greenplum partition names
 
 ## Usage
 

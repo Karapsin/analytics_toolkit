@@ -10,9 +10,9 @@ add_quarters(dt, n, output_string=True)
 
 ## Inputs
 
-- `dt`: Input date as an ISO string, `date`, or `datetime`.
-- `n`: Number of quarters to add. Use a negative value to subtract.
-- `output_string`: When `True`, return an ISO string; when `False`, return a midnight `datetime`.
+- `dt` - input date as an ISO string, `date`, or `datetime`
+- `n` - number of quarters to add. Use a negative value to subtract
+- `output_string` - when `True`, return an ISO string; when `False`, return a midnight `datetime`
 
 ## Usage
 

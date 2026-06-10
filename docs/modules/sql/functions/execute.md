@@ -12,21 +12,21 @@ execute(db_key: 'str', query: 'str', print_queries: 'bool' = False, gp_break_que
 
 ### General Inputs
 
-- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
-- `query`: SQL text to execute or read.
-- `retry_cnt`: Number of operation retries with fresh connections.
-- `timeout_increment`: Delay increment used between operation retries.
-- `dry_run`: When `True`, return a plan without mutating the database.
-- `return_sql`: When `True`, return a `SqlPlan` instead of mutating a database.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `print_queries`: Whether to print SQL text before execution.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
-- `progress`: Whether to show progress bars for supported multi-step or row-loading operations.
+- `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
+- `query` - text of SQL to execute or read
+- `retry_cnt` - number of operation retries with fresh connections
+- `timeout_increment` - delay increment used between operation retries
+- `dry_run` - when `True`, return a plan without mutating the database
+- `return_sql` - when `True`, return a `SqlPlan` instead of mutating a database
+- `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
+- `print_queries` - whether to print SQL text before execution
+- `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
+- `progress` - whether to show progress bars for supported multi-step or row-loading operations
 
 ### Backend-Specific Inputs
 
-- `gp_break_query`: For Greenplum, whether to split and execute multi-statement SQL statement by statement.
-- `gp_commit_each_statement`: For Greenplum split execution, whether to commit after each statement.
+- `gp_break_query` - for Greenplum, whether to split and execute multi-statement SQL statement by statement
+- `gp_commit_each_statement` - for Greenplum split execution, whether to commit after each statement
 
 ## Usage
 

@@ -21,17 +21,17 @@ parallel_compute_metrics_from_sql(
 
 ## Inputs
 
-- `tasks`: Mapping of task names to SQL-backed metric task dictionaries.
-- `db`: SQL connection alias used for task reads.
-- `concurrency`: Requested SQL loading and metric task fan-out.
-- `fail_fast`: Whether to stop after the first failed task.
-- `start_comment`: Optional SQL comment prepended to task reads.
-- `soft_concurrency_cap`: Optional throttle below requested concurrency.
-- `hard_concurrency_cap`: Maximum allowed effective concurrency.
-- `progress`: Whether to show progress output.
-- `metric_defaults`: Any non-dataframe `compute_test_metrics` inputs to apply to
+- `tasks` - mapping of task names to SQL-backed metric task dictionaries
+- `db` - connection alias used for SQL task reads
+- `concurrency` - requested SQL loading and metric task fan-out
+- `fail_fast` - whether to stop after the first failed task
+- `start_comment` - optional SQL comment prepended to task reads
+- `soft_concurrency_cap` - optional throttle below requested concurrency
+- `hard_concurrency_cap` - maximum allowed effective concurrency
+- `progress` - whether to show progress output
+- `metric_defaults` - any non-dataframe `compute_test_metrics` inputs to apply to
   every task, such as `group`, `test_vs_test`, `ratio_metrics`,
-  `bootstrap_progress`, `outliers_quantile`, or `outliers_policy`.
+  `bootstrap_progress`, `outliers_quantile`, or `outliers_policy`
 
 ## Usage
 

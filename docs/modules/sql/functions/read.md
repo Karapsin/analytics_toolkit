@@ -10,13 +10,13 @@ read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int
 
 ## Inputs
 
-- `db_key`: Connection key or alias from `.connections`; backend dispatch is selected from that entry.
-- `query`: SQL text to execute or read.
-- `retry_cnt`: Number of operation retries with fresh connections.
-- `timeout_increment`: Delay increment used between operation retries.
-- `return_metadata`: When `True`, return `SqlOperationResult` instead of the historical bare value.
-- `print_queries`: Whether to print SQL text before execution.
-- `query_label`: Safe label added to generated SQL comments, plans, metadata, and logs.
+- `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
+- `query` - text of SQL to execute or read
+- `retry_cnt` - number of operation retries with fresh connections
+- `timeout_increment` - delay increment used between operation retries
+- `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
+- `print_queries` - whether to print SQL text before execution
+- `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
 
 ## Usage
 

@@ -10,14 +10,14 @@ cancel_queries(db_key: 'str', query_ids: 'int | str | Sequence[int | str] | None
 
 ## Inputs
 
-- `db_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
-- `query_ids`: One query id or a sequence of query ids to cancel. For Greenplum, ids are backend PIDs from `pg_stat_activity`.
-- `cancel_all`: Set to `True` to cancel current-user running queries for the configured connection. Do not provide `query_ids` at the same time.
-- `concurrency`: Maximum requested cancellation concurrency.
-- `print_queries`: Print generated cancellation SQL before execution.
-- `retry_cnt`: Number of operation retries with fresh connections.
-- `timeout_increment`: Delay increment used between operation retry attempts.
-- `query_label`: Optional label added to SQL comments for observability.
+- `db_key` - connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active
+- `query_ids` - one query id or a sequence of query ids to cancel. For Greenplum, ids are backend PIDs from `pg_stat_activity`
+- `cancel_all` - set to `True` to cancel current-user running queries for the configured connection. Do not provide `query_ids` at the same time
+- `concurrency` - maximum requested cancellation concurrency
+- `print_queries` - print generated cancellation SQL before execution
+- `retry_cnt` - number of operation retries with fresh connections
+- `timeout_increment` - delay increment used between operation retry attempts
+- `query_label` - optional label added to SQL comments for observability
 
 ## Usage
 

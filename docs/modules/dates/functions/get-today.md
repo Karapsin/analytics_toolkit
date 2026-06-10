@@ -10,7 +10,7 @@ get_today(output_string=True)
 
 ## Inputs
 
-- `output_string`: When `True`, return an ISO string; when `False`, return a midnight `datetime`.
+- `output_string` - when `True`, return an ISO string; when `False`, return a midnight `datetime`
 
 ## Usage
 

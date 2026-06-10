@@ -28,22 +28,22 @@ compute_test_metrics(
 
 ## Inputs
 
-- `df`: Experiment dataframe with one row per user.
-- `group`: Column containing experiment group labels.
-- `control`: Label of the control group.
-- `user_id`: Unique user id column.
-- `ratio_metrics`: Optional ratio metric specifications.
-- `test_vs_test`: Whether to compare test groups against each other.
-- `pre_exp_metrics_df`: Optional pre-experiment dataframe for CUPED outputs.
-- `mde_alpha`: Significance level used for MDE calculation.
-- `mde_power`: Statistical power used for MDE calculation.
-- `multiple_comparisons_adjustment`: Whether to add bootstrap-adjusted outputs.
-- `multiple_comparisons_adjustment_resamples`: Bootstrap resample count.
-- `bootstrap_random_state`: Bootstrap random seed, or `None`.
-- `bootstrap_n_jobs`: Number of bootstrap workers.
-- `bootstrap_progress`: Whether to show bootstrap progress.
-- `outliers_quantile`: Upper-tail cutoff quantile.
-- `outliers_policy`: `"truncate"` or `"drop"`.
+- `df` - experiment dataframe with one row per user
+- `group` - column containing experiment group labels
+- `control` - label of the control group
+- `user_id` - unique user id column
+- `ratio_metrics` - optional ratio metric specifications
+- `test_vs_test` - whether to compare test groups against each other
+- `pre_exp_metrics_df` - optional pre-experiment dataframe for CUPED outputs
+- `mde_alpha` - significance level used for MDE calculation
+- `mde_power` - statistical power used for MDE calculation
+- `multiple_comparisons_adjustment` - whether to add bootstrap-adjusted outputs
+- `multiple_comparisons_adjustment_resamples` - bootstrap resample count
+- `bootstrap_random_state` - bootstrap random seed, or `None`
+- `bootstrap_n_jobs` - number of bootstrap workers
+- `bootstrap_progress` - whether to show bootstrap progress
+- `outliers_quantile` - upper-tail cutoff quantile
+- `outliers_policy` - `"truncate"` or `"drop"`
 
 ## Usage
 

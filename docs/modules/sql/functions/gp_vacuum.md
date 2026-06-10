@@ -10,11 +10,11 @@ gp_vacuum(table_name: 'str', analyze: 'bool' = False, full: 'bool' = False, verb
 
 ## Inputs
 
-- `db_key`: Connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active.
-- `table_name`: Target or source table name, depending on the helper.
-- `analyze`: Whether to include `ANALYZE` in the Greenplum vacuum command.
-- `full`: Whether Greenplum vacuum should use `FULL`.
-- `verbose`: Whether Greenplum vacuum should include `VERBOSE`.
+- `db_key` - connection key or alias from `.connections`, or an Airflow connection ID when Airflow routing is active
+- `table_name` - target or source table name, depending on the helper
+- `analyze` - whether to include `ANALYZE` in the Greenplum vacuum command
+- `full` - whether Greenplum vacuum should use `FULL`
+- `verbose` - whether Greenplum vacuum should include `VERBOSE`
 
 ## Usage
 

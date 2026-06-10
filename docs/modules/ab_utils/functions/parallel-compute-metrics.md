@@ -18,12 +18,12 @@ parallel_compute_metrics(
 
 ## Inputs
 
-- `tasks`: Mapping of task names to metric task dictionaries.
-- `concurrency`: Requested task fan-out.
-- `fail_fast`: Whether to stop after the first failed task.
-- `soft_concurrency_cap`: Optional throttle below requested concurrency.
-- `hard_concurrency_cap`: Maximum allowed effective concurrency.
-- `progress`: Whether to show progress output.
+- `tasks` - mapping of task names to metric task dictionaries
+- `concurrency` - requested task fan-out
+- `fail_fast` - whether to stop after the first failed task
+- `soft_concurrency_cap` - optional throttle below requested concurrency
+- `hard_concurrency_cap` - maximum allowed effective concurrency
+- `progress` - whether to show progress output
 
 ## Usage
 

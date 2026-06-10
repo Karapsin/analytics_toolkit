@@ -18,13 +18,13 @@ format_ab_metrics(
 
 ## Inputs
 
-- `df`: Output dataframe from `compute_test_metrics`.
-- `label_cols`: Columns that identify separate report sections.
-- `output_type`: Output column family or families to include.
-- `significance_alpha`: Optional p-value threshold for significant outputs.
-- `significance_p_value`: P-value source for significance checks.
-- `allow_repeated_groups`: Groups that may repeat inside the same labels.
-- `keep_simple_group_names`: Whether simple comparison output uses only group names.
+- `df` - output dataframe from `compute_test_metrics`
+- `label_cols` - columns that identify separate report sections
+- `output_type` - output column family or families to include
+- `significance_alpha` - optional p-value threshold for significant outputs
+- `significance_p_value` - p-value source for significance checks
+- `allow_repeated_groups` - groups that may repeat inside the same labels
+- `keep_simple_group_names` - whether simple comparison output uses only group names
 
 ## Usage
 

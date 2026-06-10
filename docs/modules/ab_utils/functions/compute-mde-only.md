@@ -23,17 +23,17 @@ compute_mde_only(
 
 ## Inputs
 
-- `df`: Historical one-row-per-user dataframe.
-- `n0`: Planned control group size.
-- `n1`: Planned test group size.
-- `metric_columns`: Mean metric columns to include.
-- `ratio_metrics`: Optional ratio metric specifications.
-- `options`: Optional `MdePlanningOptions` bundle.
-- `user_id`: Optional unique user id column.
-- `mde_alpha`: Significance level used for MDE calculation.
-- `mde_power`: Statistical power used for MDE calculation.
-- `outliers_quantile`: Upper-tail cutoff quantile.
-- `outliers_policy`: `"truncate"` or `"drop"`.
+- `df` - historical one-row-per-user dataframe
+- `n0` - planned control group size
+- `n1` - planned test group size
+- `metric_columns` - mean metric columns to include
+- `ratio_metrics` - optional ratio metric specifications
+- `options` - optional `MdePlanningOptions` bundle
+- `user_id` - optional unique user id column
+- `mde_alpha` - significance level used for MDE calculation
+- `mde_power` - statistical power used for MDE calculation
+- `outliers_quantile` - upper-tail cutoff quantile
+- `outliers_policy` - `"truncate"` or `"drop"`
 
 ## Usage
 

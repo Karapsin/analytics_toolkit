@@ -17,12 +17,12 @@ break_table(
 
 ## Inputs
 
-- `df`: One dataframe or a sequence of dataframes.
-- `output`: Excel workbook path.
-- `break_by`: Optional column used to split tables within each sheet.
-- `sheet_by`: Optional column used to split output into sheets.
-- `append`: Whether to append sheets to an existing workbook.
-- `prettify`: Whether to apply row-level numeric display formats.
+- `df` - one dataframe or a sequence of dataframes
+- `output` - workbook path for Excel output
+- `break_by` - optional column used to split tables within each sheet
+- `sheet_by` - optional column used to split output into sheets
+- `append` - whether to append sheets to an existing workbook
+- `prettify` - whether to apply row-level numeric display formats
 
 ## Usage
 

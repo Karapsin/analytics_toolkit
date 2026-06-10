@@ -12,14 +12,14 @@ show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None'
 
 ### General Inputs
 
-- `db_key`: Connection key or alias from `.connections`.
-- `table_name`: Target or source table name, depending on the helper.
-- `schema`: Schema/database filter for table listing.
-- `conditions`: Backend-native metadata predicate appended to the table-listing query.
+- `db_key` - connection key or alias from `.connections`
+- `table_name` - target or source table name, depending on the helper
+- `schema` - schema/database filter for table listing
+- `conditions` - backend-native metadata predicate appended to the table-listing query
 
 ### Backend-Specific Inputs
 
-- `ch_distributed_table_stats`: Whether ClickHouse table listings should resolve distributed shard statistics.
+- `ch_distributed_table_stats` - whether ClickHouse table listings should resolve distributed shard statistics
 
 ## Usage
 

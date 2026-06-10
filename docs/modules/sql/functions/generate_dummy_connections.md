@@ -11,7 +11,7 @@ generate_dummy_connections(airflow: 'bool' = False) -> 'Path'
 
 ## Inputs
 
-- `airflow`: When `True`, generate Airflow routing metadata instead of direct connection placeholders.
+- `airflow` - when `True`, generate Airflow routing metadata instead of direct connection placeholders
 
 ## Usage
 

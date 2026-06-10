@@ -10,9 +10,9 @@ format_plan(plan: 'SqlPlan', *, include_sql: 'bool' = True, max_sql_chars: 'int'
 
 ## Inputs
 
-- `plan`: `SqlPlan` returned by a dry-run or `return_sql=True` call.
-- `include_sql`: Whether formatted plan output should include SQL text.
-- `max_sql_chars`: Maximum SQL text length to include per statement in formatted plan output.
+- `plan` - `SqlPlan` returned by a dry-run or `return_sql=True` call
+- `include_sql` - whether formatted plan output should include SQL text
+- `max_sql_chars` - maximum SQL text length to include per statement in formatted plan output
 
 ## Usage
 
