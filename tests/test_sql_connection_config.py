@@ -1861,3 +1861,156 @@ def test_legacy_trino_insert_chunk_size_env_is_ignored(monkeypatch) -> None:
         load_sql_table_module._get_trino_insert_chunk_size(None, "trino")
         == load_sql_table_module.DEFAULT_TRINO_INSERT_CHUNK_SIZE
     )
+
+
+@pytest.mark.parametrize(
+    ("backend", "raw_config"),
+    [
+        (
+            "gp",
+            {
+                "type": "gp",
+                "host": "gp.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+                "transfer_staging_schema": "transfer_gp",
+            },
+        ),
+        (
+            "trino",
+            {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "password": "password",
+                "catalog": "iceberg",
+                "schema": "sandbox",
+                "transfer_staging_schema": "transfer_trino",
+            },
+        ),
+        (
+            "ch",
+            {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "database": "default",
+                "transfer_staging_schema": "transfer_ch",
+            },
+        ),
+    ],
+)
+def test_direct_connections_file_supports_transfer_staging_schema(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+    backend: str,
+    raw_config: dict[str, object],
+) -> None:
+    alias = f"{backend}_with_staging"
+    write_sql_connections({alias: raw_config})
+
+    config = config_module.get_connection_config(alias)
+    assert config.transfer_staging_schema == f"transfer_{backend}"
+
+
+@pytest.mark.parametrize(
+    ("backend", "raw_config"),
+    [
+        (
+            "gp",
+            {
+                "type": "gp",
+                "host": "gp.example",
+                "user": "user",
+                "password": "password",
+                "database": "db",
+            },
+        ),
+        (
+            "trino",
+            {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "password": "password",
+                "catalog": "iceberg",
+                "schema": "sandbox",
+            },
+        ),
+        (
+            "ch",
+            {
+                "type": "ch",
+                "host": "ch.example",
+                "user": "user",
+                "password": "password",
+                "database": "default",
+            },
+        ),
+    ],
+)
+def test_direct_connections_without_transfer_staging_schema_keep_default_behavior(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+    backend: str,
+    raw_config: dict[str, object],
+) -> None:
+    alias = f"{backend}_without_staging"
+    write_sql_connections({alias: raw_config})
+
+    config = config_module.get_connection_config(alias)
+    assert config.transfer_staging_schema is None
+
+
+def test_airflow_connections_file_supports_transfer_staging_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "airflow_gp": {"type": "gp", "transfer_staging_schema": "airflow_transfer_gp"},
+                "airflow_trino": {
+                    "type": "trino",
+                    "transfer_staging_schema": "airflow_transfer_trino",
+                },
+                "airflow_ch": {"type": "ch", "transfer_staging_schema": "airflow_transfer_ch"},
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "airflow_gp": FakeAirflowConnection(
+                conn_type="postgres",
+                host="air-gp.example",
+                login="air-user",
+                password="air-password",
+                schema="air_db",
+            ),
+            "airflow_trino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                login="air-user",
+                password="air-password",
+            ),
+            "airflow_ch": FakeAirflowConnection(
+                conn_type="clickhouse",
+                host="air-ch.example",
+                login="ch-user",
+                password="ch-password",
+                schema="default",
+            ),
+        },
+    )
+
+    assert config_module.get_connection_config("airflow_gp").transfer_staging_schema == (
+        "airflow_transfer_gp"
+    )
+    assert config_module.get_connection_config("airflow_trino").transfer_staging_schema == (
+        "airflow_transfer_trino"
+    )
+    assert config_module.get_connection_config("airflow_ch").transfer_staging_schema == (
+        "airflow_transfer_ch"
+    )

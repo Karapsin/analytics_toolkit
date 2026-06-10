@@ -76,6 +76,8 @@ def initialize_stage_for_first_batch(
         gp_distributed_by_key=options.gp_distributed_by_key,
         connection_key=options.to_db_key,
         query_label=options.query_label,
+        transfer_staging_schema=options.transfer_staging_schema,
+        transfer_staging_username=options.transfer_staging_username,
     )
     stage_state.stage_table_created = True
     if options.to_db_backend == "trino" and stage_state.stage_column_types is None:

@@ -10,7 +10,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 schema_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.schema")
-stage_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.stage")
+stage_module = importlib.import_module("analytics_toolkit.sql.dml.load.stage")
+transfer_stage_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.stage"
+)
 runtime_models = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.models"
 )
@@ -105,6 +108,28 @@ def test_map_source_schema_to_target_falls_back_for_invalid_decimal_bounds() -> 
     }
 
 
+def test_build_stage_table_name_uses_transfer_staging_schema_and_username() -> None:
+    stage_name = stage_module.build_stage_table_name(
+        "gp",
+        "sales.target",
+        transfer_staging_schema="transfer_schema",
+        transfer_staging_username="loader",
+        random_suffix="abcd",
+    )
+
+    assert stage_name == "transfer_schema.target__analytics_toolkit_loader__stage__abcd"
+
+
+def test_build_stage_table_name_keeps_legacy_naming_without_transfer_schema() -> None:
+    stage_name = stage_module.build_stage_table_name(
+        "gp",
+        "sales.target",
+        random_suffix="abcd",
+    )
+
+    assert stage_name == "sales.target__stage__abcd"
+
+
 def test_refine_clickhouse_nullability_from_rows() -> None:
     result = schema_module.refine_ch_column_types_nullability_from_rows(
         {
@@ -135,7 +160,11 @@ def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
         captured.update(kwargs)
         return "target__stage"
 
-    monkeypatch.setattr(stage_module, "create_stage_table", fake_create_stage_table)
+    monkeypatch.setattr(
+        transfer_stage_module,
+        "create_stage_table",
+        fake_create_stage_table,
+    )
 
     options = runtime_models.TransferOptions(
         from_db_key="gp",
@@ -151,7 +180,7 @@ def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
         stage_column_types={"id": "Nullable(Int64)"},
     )
 
-    stage_module.initialize_stage_for_first_batch(
+    transfer_stage_module.initialize_stage_for_first_batch(
         options=options,
         connection_refs=runtime_models.TransferConnectionRefs(
             target={"connection": object()},

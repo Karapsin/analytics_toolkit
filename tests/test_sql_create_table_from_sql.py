@@ -562,7 +562,7 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
             "to_db": "ch",
             "from_sql": "select id, amount from source_table",
             "to_table": "analytics.events",
-            "replace_target_table": False,
+            "write_mode": "append",
             "gp_distributed_by_key": None,
             "trino_insert_chunk_size": 500,
             "partition_by": None,

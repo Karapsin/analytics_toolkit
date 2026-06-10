@@ -4,6 +4,23 @@
 
 Generated from package version bumps and recent commit history.
 
+
+## 1.3.8.11 - 2026-06-10
+
+- Removed the `replace_target_table` argument from `sql.transfer`; write behavior now uses `write_mode` exclusively.
+- Updated transfer docs and delegation paths to remove legacy compatibility input usage for transfer replacements.
+
+## 1.3.8.10 - 2026-06-10
+
+- Added `transfer_staging_schema` support to connection configuration for all SQL
+  backends so transfers can create staging tables in a backend-specific schema.
+- Changed transfer staging names to include the target user marker with
+  `__analytics_toolkit_<user>__stage__<suffix>` when a transfer staging schema
+  is configured.
+- Added transfer schema cleanup lifecycle hooks that drop matching staging tables for
+  the transfer user before transfer initialization and after finalization, while
+  warning once when cleanup is enabled but staging schema is not configured.
+
 ## 1.3.8.9 - 2026-06-10
 
 - Added ordered `time_print` context extensibility with a first-class `task_id`

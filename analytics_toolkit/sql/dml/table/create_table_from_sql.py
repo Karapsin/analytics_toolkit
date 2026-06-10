@@ -378,7 +378,7 @@ def create_table_from_sql(
             "to_db": target_config.connection_key,
             "from_sql": source_sql,
             "to_table": target_table,
-            "replace_target_table": False,
+            "write_mode": "append",
             "gp_distributed_by_key": gp_distribution,
             "trino_insert_chunk_size": trino_insert_chunk_size,
             "partition_by": partition,

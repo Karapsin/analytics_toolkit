@@ -25,6 +25,7 @@ for an Airflow-source file. The helper never overwrites an existing
     "user": "user",
     "password": "password",
     "database": "db",
+    "transfer_staging_schema": "transfer_schema",
     "connect_timeout": 30,
     "keepalives_idle": 60,
     "keepalives_interval": 10,
@@ -46,6 +47,7 @@ for an Airflow-source file. The helper never overwrites an existing
     "password": "password",
     "catalog": "iceberg",
     "schema": "sandbox",
+    "transfer_staging_schema": "transfer_schema",
     "http_scheme": "https",
     "ca_certs": "trino-ca.pem",
     "insert_chunk_size": 1000
@@ -58,6 +60,7 @@ for an Airflow-source file. The helper never overwrites an existing
     "password": "password",
     "database": "default",
     "secure": true,
+    "transfer_staging_schema": "transfer_schema",
     "ca_certs": "clickhouse-ca.pem",
     "send_receive_timeout": 6000,
     "settings": {"connect_timeout": "500"}
@@ -92,13 +95,22 @@ connection timeout with TCP keepalives enabled. When `ca_certs` is set and
 `sslmode` is omitted, Greenplum uses `sslmode="verify-full"`.
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
-`insert_chunk_size`, `request_timeout`, and `source` fields.
+`insert_chunk_size`, `request_timeout`, `source`, and
+`transfer_staging_schema` fields.
+
+When `transfer_staging_schema` is set, transfer staging tables for that
+connection are created under that schema and transfer cleanup scans only
+staging tables matching the target transfer user marker.
 
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
 `interface`, `query_limit`, `query_retries`, and `client_name` fields.
 `ca_certs_variable` resolves an Airflow Variable lazily when the connection is
 opened, which keeps the certificate path in Airflow instead of the file.
+
+All backends support optional `transfer_staging_schema` for transfer staging tables.
+When omitted, transfer staging defaults to per-connection legacy naming in the
+target table namespace.
 
 For Greenplum, Trino, and ClickHouse, `ca_certs` accepts one certificate file
 name/path or a list of certificate file names/paths. A bare name such as

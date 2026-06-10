@@ -60,6 +60,7 @@ class TrinoConfig:
     insert_chunk_size: int | None
     request_timeout: int | None
     source: str | None
+    transfer_staging_schema: str | None
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class GpConfig:
     ca_certs: list[str]
     ssl_cert: str | None
     ssl_key: str | None
+    transfer_staging_schema: str | None
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,7 @@ class ChConfig:
     query_limit: int | None
     query_retries: int | None
     client_name: str | None
+    transfer_staging_schema: str | None
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]
@@ -211,6 +214,11 @@ def _build_connection_config(
                 )
                 or "true"
             ),
+            transfer_staging_schema=_optional_string(
+                raw_config,
+                connection_key,
+                "transfer_staging_schema",
+            ),
             ca_certs=_optional_string_or_string_list(
                 raw_config,
                 connection_key,
@@ -280,6 +288,11 @@ def _build_connection_config(
             ca_certs=ca_certs,
             ssl_cert=_optional_string(raw_config, connection_key, "ssl_cert"),
             ssl_key=_optional_string(raw_config, connection_key, "ssl_key"),
+            transfer_staging_schema=_optional_string(
+                raw_config,
+                connection_key,
+                "transfer_staging_schema",
+            ),
         )
     if backend == "ch":
         _reject_removed_fields(
@@ -338,6 +351,11 @@ def _build_connection_config(
                 "query_retries",
             ),
             client_name=_optional_string(raw_config, connection_key, "client_name"),
+            transfer_staging_schema=_optional_string(
+                raw_config,
+                connection_key,
+                "transfer_staging_schema",
+            ),
         )
 
     raise UnsupportedConnectionTypeError(
@@ -801,6 +819,7 @@ def _get_airflow_raw_connection_config_and_extras(
                 "keepalives_interval",
                 "keepalives_count",
                 "sslmode",
+                "transfer_staging_schema",
                 "ca_certs",
                 "ssl_cert",
                 "ssl_key",
@@ -813,6 +832,7 @@ def _get_airflow_raw_connection_config_and_extras(
             [
                 "catalog",
                 "schema",
+                "transfer_staging_schema",
                 "auth_mode",
                 "http_scheme",
                 "verify",
@@ -835,6 +855,7 @@ def _get_airflow_raw_connection_config_and_extras(
                 "secure",
                 "verify",
                 "ca_certs",
+                "transfer_staging_schema",
                 "ca_certs_variable",
                 "connect_timeout",
                 "send_receive_timeout",

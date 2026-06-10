@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 attempt_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.attempt"
+)
+finalize_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.finalize"
 )
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
@@ -101,6 +105,15 @@ class StaticClickHouseClient:
         return StaticClickHouseResult(self.rows)
 
 
+class FakeTransferConnection:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
 class RenderingFakeTqdm:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -155,6 +168,240 @@ def make_progress_options(**overrides: Any) -> Any:
     }
     values.update(overrides)
     return models_module.TransferOptions(**values)
+
+
+def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    cleanup_calls: list[tuple[str, int]] = []
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+
+    options = make_progress_options(
+        transfer_staging_schema="transfer_schema",
+        transfer_staging_username="target_user",
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="gp",
+    )
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        if connection_key == "source_db":
+            return source_conn
+        if connection_key == "target_db":
+            return target_conn
+        raise AssertionError(f"unexpected connection key: {connection_key}")
+
+    def fake_create_stage_state(*_args: Any, **_kwargs: Any) -> models_module.TransferStageState:
+        events.append("create_stage_state")
+        return models_module.TransferStageState(target_exists=False)
+
+    def fake_cleanup_transfer_staging_schema(
+        options: models_module.TransferOptions,
+        connection_ref: dict[str, Any],
+        read_retry_cnt: int,
+    ) -> None:
+        events.append(
+            "cleanup_start"
+            if not cleanup_calls
+            else "cleanup_finish"
+        )
+        cleanup_calls.append((connection_ref["connection"].name, read_retry_cnt))
+
+    def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
+        events.append("inspect_source_query_schema")
+        return []
+
+    def fake_load_stage_batches(*_args: Any, **_kwargs: Any) -> int:
+        events.append("load_stage_batches")
+        return 7
+
+    def fake_finalize_loaded_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("finalize_loaded_stage")
+
+    def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("cleanup_stage")
+
+    def fake_close_connection_ref(
+        _connection_ref: dict[str, Any],
+        _connection_type: str,
+        role: str,
+    ) -> None:
+        events.append(f"close:{role}")
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "create_stage_state", fake_create_stage_state)
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_transfer_staging_schema",
+        fake_cleanup_transfer_staging_schema,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        fake_inspect_source_query_schema,
+    )
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        fake_finalize_loaded_stage,
+    )
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
+    monkeypatch.setattr(attempt_module, "close_connection_ref", fake_close_connection_ref)
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=3,
+        insert_retry_cnt=2,
+    )
+
+    assert total_rows == 7
+    assert cleanup_calls == [("target", 3), ("target", 3)]
+    assert events == [
+        "create_stage_state",
+        "cleanup_start",
+        "inspect_source_query_schema",
+        "load_stage_batches",
+        "finalize_loaded_stage",
+        "cleanup_stage",
+        "cleanup_finish",
+        "close:source",
+        "close:target",
+    ]
+
+
+def test_run_transfer_attempt_skips_staging_schema_cleanup_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="gp",
+        clean_transfer_staging_schema=False,
+    )
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        if connection_key == "source_db":
+            return source_conn
+        if connection_key == "target_db":
+            return target_conn
+        raise AssertionError(f"unexpected connection key: {connection_key}")
+
+    def fake_create_stage_state(*_args: Any, **_kwargs: Any) -> models_module.TransferStageState:
+        events.append("create_stage_state")
+        return models_module.TransferStageState(target_exists=False)
+
+    def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
+        events.append("inspect_source_query_schema")
+        return []
+
+    def fake_load_stage_batches(*_args: Any, **_kwargs: Any) -> int:
+        events.append("load_stage_batches")
+        return 7
+
+    def fake_finalize_loaded_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("finalize_loaded_stage")
+
+    def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("cleanup_stage")
+
+    matching_calls: list[str] = []
+
+    def fake_find_matching_transfer_stage_tables(*_args: Any, **_kwargs: Any) -> list[str]:
+        matching_calls.append("find_matching")
+        return ["target_table__stage__abcd"]
+
+    def fake_drop_table_with_retry(*_args: Any, **_kwargs: Any) -> None:
+        events.append("drop_table")
+
+    def fake_close_connection_ref(
+        _connection_ref: dict[str, Any],
+        _connection_type: str,
+        role: str,
+    ) -> None:
+        events.append(f"close:{role}")
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "create_stage_state", fake_create_stage_state)
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        fake_inspect_source_query_schema,
+    )
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        fake_finalize_loaded_stage,
+    )
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
+    monkeypatch.setattr(
+        finalize_module,
+        "_find_matching_transfer_stage_tables",
+        fake_find_matching_transfer_stage_tables,
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "drop_table_with_retry",
+        fake_drop_table_with_retry,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_transfer_staging_schema",
+        finalize_module.cleanup_transfer_staging_schema,
+    )
+    monkeypatch.setattr(attempt_module, "close_connection_ref", fake_close_connection_ref)
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=3,
+        insert_retry_cnt=2,
+    )
+
+    assert total_rows == 7
+    assert matching_calls == []
+    assert events == [
+        "create_stage_state",
+        "inspect_source_query_schema",
+        "load_stage_batches",
+        "finalize_loaded_stage",
+        "cleanup_stage",
+        "close:source",
+        "close:target",
+    ]
+
+
+def test_cleanup_transfer_staging_schema_warns_once_when_staging_schema_missing() -> None:
+    options = make_progress_options(to_db_backend="gp", to_db_key="target_db", transfer_staging_schema=None)
+    connection_ref: dict[str, Any] = {"connection": FakeTransferConnection("target")}
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        finalize_module.cleanup_transfer_staging_schema(
+            options=options,
+            connection_ref=connection_ref,
+            read_retry_cnt=1,
+        )
+        finalize_module.cleanup_transfer_staging_schema(
+            options=options,
+            connection_ref=connection_ref,
+            read_retry_cnt=1,
+        )
+
+    assert len(caught) == 1
+    assert (
+        "clean_transfer_staging_schema is enabled, "
+        "but transfer_staging_schema is not configured for the target connection"
+        in str(caught[0].message)
+    )
 
 
 def test_transfer_options_progress_defaults_to_false() -> None:

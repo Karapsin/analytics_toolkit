@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
 import math
 from numbers import Real
 
@@ -59,7 +60,6 @@ def transfer_table(
     to_db: str,
     from_sql: str,
     to_table: str,
-    replace_target_table: bool = True,
     write_mode: str | None = None,
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
@@ -88,6 +88,7 @@ def transfer_table(
     ch_sharding_key: str = "rand()",
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
+    clean_transfer_staging_schema: bool = True,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -101,7 +102,6 @@ def transfer_table(
         to_db=to_db,
         from_sql=from_sql,
         to_table=to_table,
-        replace_target_table=replace_target_table,
         write_mode=write_mode,
         batch_size=batch_size,
         adaptive_batch_size=adaptive_batch_size,
@@ -130,6 +130,7 @@ def transfer_table(
         ch_sharding_key=ch_sharding_key,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
+        clean_transfer_staging_schema=clean_transfer_staging_schema,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -239,7 +240,6 @@ def build_transfer_options(
     to_db: str,
     from_sql: str,
     to_table: str,
-    replace_target_table: bool = True,
     write_mode: str | None = None,
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
@@ -272,6 +272,7 @@ def build_transfer_options(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
+    clean_transfer_staging_schema: bool = True,
 ) -> TransferOptions:
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
@@ -280,7 +281,6 @@ def build_transfer_options(
     )
     resolved_write_mode = _resolve_transfer_write_mode(
         to_config.backend,
-        replace_target_table=replace_target_table,
         write_mode=write_mode,
     )
     resolved_target_rows_per_second = _resolve_target_adaptation_mode(
@@ -372,6 +372,9 @@ def build_transfer_options(
         ch_sharding_key=normalize_ch_string(ch_sharding_key, "ch_sharding_key"),
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
+        clean_transfer_staging_schema=clean_transfer_staging_schema,
+        transfer_staging_schema=to_config.transfer_staging_schema,
+        transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -392,6 +395,8 @@ def build_transfer_options(
         raise ValueError("full_timeout_increment must be non-negative.")
     if not isinstance(options.target_rows_per_second, bool):
         raise ValueError("target_rows_per_second must be a boolean.")
+    if not isinstance(options.clean_transfer_staging_schema, bool):
+        raise ValueError("clean_transfer_staging_schema must be a boolean.")
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
     if options.gp_distributed_by_key is not None and options.to_db_backend != "gp":
@@ -650,19 +655,11 @@ def _resolve_positive_number(
 def _resolve_transfer_write_mode(
     to_db_backend: str,
     *,
-    replace_target_table: bool,
     write_mode: str | None,
 ) -> str:
     if write_mode is None:
-        return "replace" if replace_target_table else "append"
-
-    normalized = validate_write_mode(to_db_backend, write_mode)
-    if not replace_target_table and normalized != "append":
-        raise ValueError(
-            "replace_target_table=False cannot be combined with write_mode "
-            "other than 'append'."
-        )
-    return normalized
+        return "replace"
+    return validate_write_mode(to_db_backend, write_mode)
 
 
 def _validate_progress(progress: bool) -> None:
@@ -713,6 +710,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
+            "clean_transfer_staging_schema": options.clean_transfer_staging_schema,
             "estimate_total_rows": options.estimate_total_rows,
         },
         metadata=SqlOperationMetadata(stage_table=stage_table),
@@ -859,12 +857,21 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
 
 def _dry_run_stage_table_name(options: TransferOptions) -> str:
     try:
-        return build_stage_table_name(options.to_db_backend, options.target_table).rsplit(
-            "__stage__",
-            1,
-        )[0] + "__stage__dryrun"
+        return build_stage_table_name(
+            options.to_db_backend,
+            options.target_table,
+            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_username=options.transfer_staging_username,
+            random_suffix="dryrun",
+        )
     except Exception:
         return f"{options.target_table}__stage__dryrun"
+
+
+def _sanitize_transfer_staging_username(value: str) -> str:
+    username = re.sub(r"[^0-9A-Za-z_]+", "_", value.strip())
+    username = re.sub(r"_+", "_", username).strip("_")
+    return username or "user"
 
 
 def _best_effort_transfer_target_count(options: TransferOptions) -> int | None:

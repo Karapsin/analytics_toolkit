@@ -26,9 +26,16 @@ def create_stage_table(
     gp_distributed_by_key: list[str] | None = None,
     connection_key: str | None = None,
     query_label: str | None = None,
+    transfer_staging_schema: str | None = None,
+    transfer_staging_username: str | None = None,
 ) -> str:
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
-        stage_table = build_stage_table_name(connection_type, target_table)
+        stage_table = build_stage_table_name(
+            connection_type,
+            target_table,
+            transfer_staging_schema=transfer_staging_schema,
+            transfer_staging_username=transfer_staging_username,
+        )
         if table_exists(
             connection_type,
             connection,
@@ -64,21 +71,81 @@ def create_stage_table(
     )
 
 
-def build_stage_table_name(connection_type: str, table_name: str) -> str:
+def build_stage_table_name(
+    connection_type: str,
+    table_name: str,
+    transfer_staging_schema: str | None = None,
+    transfer_staging_username: str | None = None,
+    random_suffix: str | None = None,
+) -> str:
     dialect = sqlglot_dialect(connection_type)
     table = parse_one(table_name, read=dialect, into=exp.Table)
     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
         raise ValueError(f"Invalid target table name: {table_name}")
 
-    stage_suffix = uuid.uuid4().hex[:8]
-    base_identifier = table.this.this
-    stage_identifier = exp.to_identifier(
-        f"{base_identifier}__stage__{stage_suffix}",
-        quoted=bool(table.this.args.get("quoted")),
+    if transfer_staging_schema is not None:
+        staging_schema_table = parse_one(
+            f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
+            read=dialect,
+            into=exp.Table,
+        )
+        if (
+            not isinstance(staging_schema_table, exp.Table)
+            or not isinstance(staging_schema_table.this, exp.Identifier)
+        ):
+            raise ValueError(
+                f"Invalid transfer_staging_schema for {connection_type}: "
+                f"{transfer_staging_schema}"
+            )
+        table.set("catalog", staging_schema_table.args.get("catalog"))
+        table.set("db", staging_schema_table.args.get("db") or staging_schema_table.this)
+
+    stage_suffix = random_suffix or uuid.uuid4().hex[:8]
+    stage_identifier = _build_stage_identifier(
+        table,
+        transfer_staging_username,
+        stage_suffix,
     )
     stage_table = table.copy()
     stage_table.set("this", stage_identifier)
     return stage_table.sql(dialect=dialect)
+
+
+def build_stage_table_prefix(
+    connection_type: str,
+    table_name: str,
+    transfer_staging_username: str | None,
+) -> str:
+    dialect = sqlglot_dialect(connection_type)
+    table = parse_one(table_name, read=dialect, into=exp.Table)
+    if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
+        raise ValueError(f"Invalid target table name: {table_name}")
+
+    base_identifier = table.this.this
+    if transfer_staging_username:
+        return (
+            f"{base_identifier}__analytics_toolkit_"
+            f"{transfer_staging_username}__stage__"
+        )
+    return f"{base_identifier}__stage__"
+
+
+def _build_stage_identifier(
+    table: exp.Table,
+    transfer_staging_username: str | None,
+    stage_suffix: str,
+) -> exp.Identifier:
+    if transfer_staging_username:
+        identifier = (
+            f"{table.this.this}__analytics_toolkit_{transfer_staging_username}"
+            f"__stage__{stage_suffix}"
+        )
+    else:
+        identifier = f"{table.this.this}__stage__{stage_suffix}"
+    return exp.to_identifier(
+        identifier,
+        quoted=bool(table.this.args.get("quoted")),
+    )
 
 
 def sqlglot_dialect(connection_type: str) -> str:

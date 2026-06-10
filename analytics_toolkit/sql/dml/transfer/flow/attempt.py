@@ -9,7 +9,11 @@ from ....ddl.schema import validate_table_schema_columns
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import insert_rows_batch
 from .estimate import estimate_source_rows
-from .finalize import cleanup_stage, finalize_loaded_stage
+from .finalize import (
+    cleanup_stage,
+    cleanup_transfer_staging_schema,
+    finalize_loaded_stage,
+)
 from ..runtime.models import (
     AdaptiveBatchSizer,
     TransferConnectionRefs,
@@ -46,6 +50,11 @@ def run_transfer_attempt(
     stage_state = create_stage_state(options, connection_refs)
 
     try:
+        cleanup_transfer_staging_schema(
+            options=options,
+            connection_ref=connection_refs.target,
+            read_retry_cnt=read_retry_cnt,
+        )
         source_schema = inspect_source_query_schema(
             options.from_db_backend,
             connection_refs.source["connection"],
@@ -85,6 +94,11 @@ def run_transfer_attempt(
                 options=options,
                 connection_refs=connection_refs,
                 stage_state=stage_state,
+                read_retry_cnt=read_retry_cnt,
+            )
+            cleanup_transfer_staging_schema(
+                options=options,
+                connection_ref=connection_refs.target,
                 read_retry_cnt=read_retry_cnt,
             )
         except Exception as exc:
