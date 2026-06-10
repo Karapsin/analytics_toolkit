@@ -4,6 +4,14 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.19 - 2026-06-10
+
+- Replaced the public ClickHouse-only `sql.ch_drop_table()` helper with
+  `sql.drop_tables()`.
+- Added list input support, ClickHouse shard/distributed drop flags, and an
+  `if_exists` switch to `sql.drop_tables()`.
+- Renamed the public partition helper to `sql.drop_paritions()`.
+
 ## 1.3.7.18 - 2026-06-10
 
 - Removed `sql.format_support_matrix`, `sql.support_matrix_rows`,

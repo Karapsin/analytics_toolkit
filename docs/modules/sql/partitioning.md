@@ -7,7 +7,7 @@ removing partition values. The exact SQL differs by backend, so the important
 concept is the table shape being managed. Use
 [sql.gp_create_many_partitions](functions/gp_create_many_partitions.md) for
 Greenplum creation and
-[sql.drop_many_partitions](functions/drop_many_partitions.md) for removal.
+[sql.drop_paritions](functions/drop_paritions.md) for removal.
 
 ## Greenplum Creation
 

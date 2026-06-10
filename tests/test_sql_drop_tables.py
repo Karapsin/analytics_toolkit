@@ -9,15 +9,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-ch_drop_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.ch_drop_table"
+drop_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.table.drop_tables"
 )
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
-from analytics_toolkit.sql.connection.errors import UnsupportedConnectionTypeError
+from tests.sql_fakes import FakeDbapiConnection
 
 
 TARGET_TABLE = "analytics.events"
+TARGET_TABLE_2 = "analytics.events_archive"
 TARGET_SHARD_TABLE = "analytics.events_shard"
 
 
@@ -48,88 +49,105 @@ class FakeClickHouseClient:
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> FakeClickHouseClient:
     client = FakeClickHouseClient()
     monkeypatch.setattr(
-        ch_drop_module,
+        drop_module,
         "get_sql_connection",
         lambda connection_key: client,
     )
     return client
 
 
-def test_ch_drop_table_is_exported() -> None:
-    assert sql_module.ch_drop_table is ch_drop_module.ch_drop_table
+def test_drop_tables_is_exported() -> None:
+    assert sql_module.drop_tables is drop_module.drop_tables
 
 
-def test_ch_drop_table_dry_run_builds_default_pair_drop_sqls(
+def test_drop_tables_dry_run_builds_default_pair_drop_sqls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        ch_drop_module,
+        drop_module,
         "get_sql_connection",
         lambda key: pytest.fail("connection should not be opened"),
     )
 
-    plan = ch_drop_module.ch_drop_table(
+    plan = drop_module.drop_tables(
         "ch",
         TARGET_TABLE,
         ch_cluster="analytics",
         dry_run=True,
     )
 
-    assert plan.operation == "ch_drop_table"
+    assert plan.operation == "drop_tables"
     assert plan.target_alias == "ch"
     assert plan.target_backend == "ch"
     assert plan.target_table == TARGET_TABLE
-    assert plan.options["ch_shard_table"] == TARGET_SHARD_TABLE
+    assert plan.options["if_exists"] is False
     assert plan.options["ch_cluster"] == "analytics"
     assert plan.metadata.statement_count == 4
     assert [statement.phase for statement in plan.statements] == [
-        "drop_table",
-        "drop_table",
-        "drop_table",
-        "drop_table",
+        "drop_tables",
+        "drop_tables",
+        "drop_tables",
+        "drop_tables",
     ]
     assert plan.sqls == [
-        "DROP TABLE IF EXISTS analytics.events",
-        "DROP TABLE IF EXISTS analytics.events_shard",
-        "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
-        "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
+        "DROP TABLE analytics.events",
+        "DROP TABLE analytics.events_shard",
+        "DROP TABLE analytics.events ON CLUSTER analytics",
+        "DROP TABLE analytics.events_shard ON CLUSTER analytics",
     ]
 
 
-def test_ch_drop_table_dry_run_can_skip_cluster_and_override_shard() -> None:
-    plan = ch_drop_module.ch_drop_table(
+def test_drop_tables_dry_run_can_drop_only_distributed_table() -> None:
+    plan = drop_module.drop_tables(
         "ch",
         TARGET_TABLE,
         ch_cluster=None,
-        ch_shard_table="analytics.events_local",
+        ch_drop_shard=False,
+        if_exists=True,
         return_sql=True,
     )
 
-    assert plan.options["ch_shard_table"] == "analytics.events_local"
     assert plan.options["ch_cluster"] is None
-    assert plan.metadata.statement_count == 2
+    assert plan.options["ch_drop_shard"] is False
+    assert plan.options["if_exists"] is True
+    assert plan.metadata.statement_count == 1
     assert plan.sqls == [
         "DROP TABLE IF EXISTS analytics.events",
-        "DROP TABLE IF EXISTS analytics.events_local",
     ]
 
 
-def test_ch_drop_table_dry_run_accepts_shard_table_as_target() -> None:
-    plan = ch_drop_module.ch_drop_table(
+def test_drop_tables_dry_run_accepts_shard_table_as_target() -> None:
+    plan = drop_module.drop_tables(
         "ch",
         TARGET_SHARD_TABLE,
         dry_run=True,
     )
 
-    assert plan.options["ch_only_shard"] is True
-    assert plan.options["ch_shard_table"] == TARGET_SHARD_TABLE
-    assert plan.options["ch_cluster"] is None
     assert plan.metadata.statement_count == 1
-    assert plan.sqls == ["DROP TABLE IF EXISTS analytics.events_shard"]
+    assert plan.sqls == ["DROP TABLE analytics.events_shard"]
 
 
-def test_ch_drop_table_dry_run_applies_query_label() -> None:
-    plan = ch_drop_module.ch_drop_table(
+def test_drop_tables_dry_run_accepts_list_of_tables() -> None:
+    plan = drop_module.drop_tables(
+        "ch",
+        [TARGET_TABLE, TARGET_TABLE_2],
+        ch_cluster=None,
+        if_exists=True,
+        dry_run=True,
+    )
+
+    assert plan.options["tables"] == [TARGET_TABLE, TARGET_TABLE_2]
+    assert plan.metadata.statement_count == 4
+    assert plan.sqls == [
+        "DROP TABLE IF EXISTS analytics.events",
+        "DROP TABLE IF EXISTS analytics.events_shard",
+        "DROP TABLE IF EXISTS analytics.events_archive",
+        "DROP TABLE IF EXISTS analytics.events_archive_shard",
+    ]
+
+
+def test_drop_tables_dry_run_applies_query_label() -> None:
+    plan = drop_module.drop_tables(
         "ch",
         TARGET_TABLE,
         dry_run=True,
@@ -144,13 +162,14 @@ def test_ch_drop_table_dry_run_applies_query_label() -> None:
     )
 
 
-def test_ch_drop_table_executes_pair_drop_sqls(
+def test_drop_tables_executes_pair_drop_sqls(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    ch_drop_module.ch_drop_table(
+    drop_module.drop_tables(
         "ch",
         TARGET_TABLE,
         ch_cluster="{cluster}",
+        if_exists=True,
     )
 
     assert fake_client.commands == [
@@ -171,33 +190,37 @@ def test_ch_drop_table_executes_pair_drop_sqls(
     assert fake_client.close_calls == 1
 
 
-def test_ch_drop_table_executes_shard_table_target_as_single_local_drop(
+def test_drop_tables_executes_shard_table_target_as_single_local_drop(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    ch_drop_module.ch_drop_table(
+    drop_module.drop_tables(
         "ch",
         TARGET_SHARD_TABLE,
+        if_exists=True,
     )
 
-    assert fake_client.commands == ["DROP TABLE IF EXISTS analytics.events_shard"]
+    assert fake_client.commands == [
+        "DROP TABLE IF EXISTS analytics.events_shard",
+    ]
     assert fake_client.command_settings == [None]
     assert fake_client.queries == []
     assert fake_client.close_calls == 1
 
 
-def test_ch_drop_table_return_metadata_tracks_operation(
+def test_drop_tables_return_metadata_tracks_operation(
     fake_client: FakeClickHouseClient,
 ) -> None:
-    result = ch_drop_module.ch_drop_table(
+    result = drop_module.drop_tables(
         "ch",
         TARGET_TABLE,
         ch_cluster=None,
+        if_exists=True,
         return_metadata=True,
         query_label="drop-meta",
     )
 
     assert result.rows is None
-    assert result.plan.operation == "ch_drop_table"
+    assert result.plan.operation == "drop_tables"
     assert result.metadata.statement_count == 2
     assert result.metadata.elapsed_seconds >= 0
     assert result.metadata.operation_status == "success"
@@ -210,6 +233,35 @@ def test_ch_drop_table_return_metadata_tracks_operation(
     ]
 
 
-def test_ch_drop_table_rejects_non_clickhouse_alias() -> None:
-    with pytest.raises(UnsupportedConnectionTypeError, match="requires a ch connection"):
-        ch_drop_module.ch_drop_table("gp", TARGET_TABLE)
+def test_drop_tables_dry_run_accepts_non_clickhouse_alias() -> None:
+    plan = drop_module.drop_tables(
+        "gp",
+        "public.events",
+        dry_run=True,
+    )
+
+    assert plan.operation == "drop_tables"
+    assert plan.target_backend == "gp"
+    assert plan.options["if_exists"] is False
+    assert plan.sqls == ["DROP TABLE public.events"]
+
+
+def test_drop_tables_executes_non_clickhouse_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = FakeDbapiConnection()
+    monkeypatch.setattr(
+        drop_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+
+    result = drop_module.drop_tables(
+        "gp",
+        "public.events",
+        if_exists=True,
+    )
+
+    assert result is None
+    assert connection.executed == ["DROP TABLE IF EXISTS public.events"]
+    assert connection.close_calls == 1

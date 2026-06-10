@@ -1,6 +1,6 @@
 """Shared table operations and validation helpers used by load and transfer flows."""
 
-from .ch_drop_table import build_ch_drop_table_plan, ch_drop_table
+from .drop_tables import drop_tables
 from .models import (
     ChCreateTableAsOptions,
     ChDropTableOptions,
@@ -19,8 +19,6 @@ from .api import (
     build_insert_from_query_sql,
     build_insert_from_table_sql,
     count_table_rows,
-    drop_many_partitions,
-    drop_table,
     drop_table_with_retry,
     finalize_stage_table,
     get_table_column_types,
@@ -37,6 +35,7 @@ from .table_validation import (
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
 )
+from .partitions import drop_paritions
 
 __all__ = [
     "analyze_table",
@@ -47,17 +46,15 @@ __all__ = [
     "build_drop_many_partitions_sqls",
     "build_drop_table_sql",
     "ChCreateTableAsOptions",
-    "ch_drop_table",
-    "build_ch_drop_table_plan",
     "ChDropTableOptions",
     "clear_target_table",
     "build_insert_from_query_sql",
     "build_insert_from_table_sql",
     "count_table_rows",
     "CreateTableFromSqlOptions",
-    "drop_many_partitions",
+    "drop_paritions",
     "DropManyPartitionsOptions",
-    "drop_table",
+    "drop_tables",
     "drop_table_with_retry",
     "finalize_stage_table",
     "get_table_column_types",

@@ -179,9 +179,9 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
 @pytest.mark.parametrize(
     "function_name",
     [
-        "ch_drop_table",
+        "drop_paritions",
+        "drop_tables",
         "create_sql_table",
-        "drop_many_partitions",
         "execute",
         "gp_create_many_partitions",
         "load_df",
@@ -350,10 +350,10 @@ def test_execute_dry_run_public_timing_uses_optional_time_print_kwargs(
     assert "[execute_sql] [timing] Finished SQL function in " in output
 
 
-def test_ch_drop_table_dry_run_public_timing_uses_optional_time_print_kwargs(
+def test_drop_tables_dry_run_public_timing_uses_optional_time_print_kwargs(
     capsys,
 ) -> None:
-    plan = sql_module.ch_drop_table(
+    plan = sql_module.drop_tables(
         "ch",
         "sandbox.events",
         dry_run=True,
@@ -361,8 +361,8 @@ def test_ch_drop_table_dry_run_public_timing_uses_optional_time_print_kwargs(
 
     output = capsys.readouterr().out
     assert isinstance(plan, plans_module.SqlPlan)
-    assert plan.operation == "ch_drop_table"
-    assert "[ch_drop_table] [timing] Finished SQL function in " in output
+    assert plan.operation == "drop_tables"
+    assert "[drop_tables] [timing] Finished SQL function in " in output
 
 
 def test_table_info_gp_reads_columns_and_skips_row_count_by_default(

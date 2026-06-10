@@ -1,11 +1,11 @@
 [SQL functions index](index.md)
 
-# drop_many_partitions
+# drop_paritions
 
-Drop or truncate several partition values from one target table.
+Drop partition values from one table using the configured backend.
 
 ```python
-drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+drop_paritions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -13,7 +13,7 @@ drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str
 ### General Inputs
 
 - `db_key`: Connection key or alias from `.connections`.
-- `table`: Table name to inspect, modify, or use for partition operations.
+- `table`: Target table name for the partition removal.
 - `partition_keys_list`: Partition values to remove from the target table.
 - `retry_cnt`: Number of operation retries with fresh connections.
 - `timeout_increment`: Delay increment used between operation retries.
@@ -32,7 +32,7 @@ drop_many_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str
 ```python
 from analytics_toolkit import sql
 
-plan = sql.drop_many_partitions(
+plan = sql.drop_paritions(
     "gp",
     "sandbox.events",
     ["2026-06-01", "2026-06-02"],

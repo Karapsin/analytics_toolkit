@@ -29,6 +29,6 @@ Replace flows verify that old distributed and shard tables disappear before
 recreate. If a host keeps stale metadata, per-host cleanup can retry local drops
 on affected hosts before the replacement continues.
 
-[sql.ch_drop_table](functions/ch_drop_table.md) removes managed table pairs.
+[sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
 
 [SQL module index](index.md)

@@ -30,9 +30,9 @@ from .connection.get_sql_connection import get_sql_connection
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.gp_cancel import gp_cancel_all_running_queries
-from .dml.table.ch_drop_table import ch_drop_table
 from .dml.table import (
-    drop_many_partitions,
+    drop_tables,
+    drop_paritions,
     gp_create_many_partitions,
     gp_vacuum,
 )
@@ -46,12 +46,12 @@ from .dml.transfer.flow.api import transfer_table as transfer
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "parallel_sql",
-    "ch_drop_table",
     "create_sql_table",
     "extract_ddl",
     "execute_read",
     "execute",
-    "drop_many_partitions",
+    "drop_tables",
+    "drop_paritions",
     "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
     "gp_vacuum",
@@ -73,14 +73,14 @@ __all__ = [
     "SqlTaskType",
     "SqlText",
     "TableName",
-    "ch_drop_table",
     "execute",
     "execute_read",
     "extract_ddl",
     "format_plan",
     "generate_dummy_connections",
     "create_sql_table",
-    "drop_many_partitions",
+    "drop_tables",
+    "drop_paritions",
     "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
     "gp_vacuum",

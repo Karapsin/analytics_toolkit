@@ -19,7 +19,8 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [create_sql_table](create_sql_table.md)
 - [table_info](table_info.md)
 - [show_tables](show_tables.md)
-- [drop_many_partitions](drop_many_partitions.md)
+- [drop_tables](drop_tables.md)
+- [drop_paritions](drop_paritions.md)
 - [extract_ddl](extract_ddl.md)
 - [format_plan](format_plan.md)
 - [async_sql](async_sql.md)
@@ -32,6 +33,5 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [gp_create_many_partitions](gp_create_many_partitions.md)
 - [gp_vacuum](gp_vacuum.md)
 - [gp_cancel_all_running_queries](gp_cancel_all_running_queries.md)
-- [ch_drop_table](ch_drop_table.md)
 
 [SQL module index](../index.md)

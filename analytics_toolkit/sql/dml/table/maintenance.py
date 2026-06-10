@@ -141,13 +141,20 @@ def drop_table_with_retry(
     rollback_fn: Any,
     replace_connection_fn: Any,
     query_label: str | None = None,
+    if_exists: bool = True,
 ) -> None:
     backend = resolve_connection_backend(connection_backend)
 
     def operation(attempt: int) -> None:
         connection = connection_ref["connection"]
         try:
-            drop_table(backend, connection, table_name, query_label=query_label)
+            drop_table(
+                backend,
+                connection,
+                table_name,
+                query_label=query_label,
+                if_exists=if_exists,
+            )
             return None
         except Exception:
             if backend == "gp":
@@ -168,6 +175,7 @@ def drop_table(
     table_name: str,
     ch_cluster: str | None = None,
     query_label: str | None = None,
+    if_exists: bool = True,
     dry_run: bool = False,
     return_sql: bool = False,
     wait_for_absence: bool = False,
@@ -177,6 +185,7 @@ def drop_table(
         sql = build_drop_table_sql(
             backend,
             table_name,
+            if_exists=if_exists,
             ch_cluster=ch_cluster,
             query_label=query_label,
         )
@@ -201,6 +210,7 @@ def drop_table(
     get_backend_adapter(backend).drop_table(
         connection,
         table_name,
+        if_exists=if_exists,
         ch_cluster=ch_cluster,
         query_label=query_label,
     )

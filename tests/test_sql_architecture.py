@@ -13,7 +13,8 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
 
     public_names = {
         "create_sql_table",
-        "drop_many_partitions",
+        "drop_paritions",
+        "drop_tables",
         "execute",
         "generate_dummy_connections",
         "gp_create_many_partitions",
@@ -33,8 +34,11 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         "build_create_table_sqls",
         "build_gp_create_many_partitions_sqls",
         "ch_full_table_move",
+        "ch_drop_table",
         "create_table_from_sql",
         "execute_sql",
+        "drop_many_partitions",
+        "drop_table",
         "read_sql",
         "transfer_table",
     }
@@ -74,9 +78,9 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
     from analytics_toolkit import sql
 
     single_db_operations = {
-        "ch_drop_table",
         "create_sql_table",
-        "drop_many_partitions",
+        "drop_paritions",
+        "drop_tables",
         "execute",
         "execute_read",
         "extract_ddl",

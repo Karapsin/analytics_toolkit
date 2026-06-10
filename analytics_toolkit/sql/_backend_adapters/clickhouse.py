@@ -67,11 +67,13 @@ class ClickHouseAdapter(BackendAdapter):
         self,
         table_name: str,
         *,
+        if_exists: bool = True,
         ch_cluster: str | None = None,
         query_label: str | None = None,
     ) -> str:
+        prefix = "DROP TABLE IF EXISTS" if if_exists else "DROP TABLE"
         return apply_query_label(
-            f"DROP TABLE IF EXISTS {table_name}{ch_cluster_clause(ch_cluster)}",
+            f"{prefix} {table_name}{ch_cluster_clause(ch_cluster)}",
             query_label,
         )
 

@@ -79,6 +79,7 @@ class ChDropTableOptions:
     ch_shard_table: str
     ch_only_shard: bool = False
     ch_cluster: str | None = "{cluster}"
+    if_exists: bool = True
     ch_wait_for_absence: bool = False
     ch_wait_timeout_seconds: int = 300
     ch_wait_poll_interval_seconds: float = 1

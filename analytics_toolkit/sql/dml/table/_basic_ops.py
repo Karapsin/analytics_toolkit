@@ -50,11 +50,14 @@ def build_clear_table_sqls(
 def build_drop_table_sql(
     connection_type: str,
     table_name: str,
+    *,
+    if_exists: bool = True,
     ch_cluster: str | None = None,
     query_label: str | None = None,
 ) -> str:
     return get_backend_adapter(connection_type).drop_table_sql(
         table_name,
+        if_exists=if_exists,
         ch_cluster=ch_cluster,
         query_label=query_label,
     )
@@ -64,11 +67,13 @@ def build_drop_ch_distributed_table_pair_sqls(
     table_name: str,
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
+    if_exists: bool = True,
 ) -> list[str]:
     return _build_ch_pair_drop_sqls(
         table_name,
         ch_cluster=ch_cluster,
         query_label=query_label,
+        if_exists=if_exists,
     )
 
 

@@ -85,17 +85,20 @@ class BackendAdapter:
         self,
         table_name: str,
         *,
+        if_exists: bool = True,
         ch_cluster: str | None = None,
         query_label: str | None = None,
     ) -> str:
         del ch_cluster
-        return apply_query_label(f"DROP TABLE IF EXISTS {table_name}", query_label)
+        prefix = "DROP TABLE IF EXISTS" if if_exists else "DROP TABLE"
+        return apply_query_label(f"{prefix} {table_name}", query_label)
 
     def drop_table(
         self,
         connection: Any,
         table_name: str,
         *,
+        if_exists: bool = True,
         ch_cluster: str | None = None,
         query_label: str | None = None,
     ) -> None:
@@ -103,6 +106,7 @@ class BackendAdapter:
             connection,
             self.drop_table_sql(
                 table_name,
+                if_exists=if_exists,
                 ch_cluster=ch_cluster,
                 query_label=query_label,
             ),

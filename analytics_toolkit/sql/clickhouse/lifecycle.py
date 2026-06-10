@@ -46,11 +46,20 @@ def build_drop_ch_distributed_table_pair_sqls(
     *,
     shard_table: str | None = None,
     query_label: str | None = None,
+    if_exists: bool = True,
 ) -> list[str]:
     pair = ch_distributed_table_pair(table_name, shard_table)
     sqls = [
-        _build_drop_ch_table_sql(pair.distributed_table, query_label=query_label),
-        _build_drop_ch_table_sql(pair.shard_table, query_label=query_label),
+        _build_drop_ch_table_sql(
+            pair.distributed_table,
+            query_label=query_label,
+            if_exists=if_exists,
+        ),
+        _build_drop_ch_table_sql(
+            pair.shard_table,
+            query_label=query_label,
+            if_exists=if_exists,
+        ),
     ]
     if ch_cluster is not None:
         sqls.extend(
@@ -59,11 +68,13 @@ def build_drop_ch_distributed_table_pair_sqls(
                     pair.distributed_table,
                     ch_cluster=ch_cluster,
                     query_label=query_label,
+                    if_exists=if_exists,
                 ),
                 _build_drop_ch_table_sql(
                     pair.shard_table,
                     ch_cluster=ch_cluster,
                     query_label=query_label,
+                    if_exists=if_exists,
                 ),
             ]
         )
@@ -75,14 +86,22 @@ def build_drop_ch_table_sqls(
     ch_cluster: str | None = "{cluster}",
     *,
     query_label: str | None = None,
+    if_exists: bool = True,
 ) -> list[str]:
-    sqls = [_build_drop_ch_table_sql(table_name, query_label=query_label)]
+    sqls = [
+        _build_drop_ch_table_sql(
+            table_name,
+            query_label=query_label,
+            if_exists=if_exists,
+        )
+    ]
     if ch_cluster is not None:
         sqls.append(
             _build_drop_ch_table_sql(
                 table_name,
                 ch_cluster=ch_cluster,
                 query_label=query_label,
+                if_exists=if_exists,
             )
         )
     return sqls
@@ -95,6 +114,7 @@ def drop_ch_distributed_table_pair(
     *,
     shard_table: str | None = None,
     query_label: str | None = None,
+    if_exists: bool = True,
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
@@ -110,6 +130,7 @@ def drop_ch_distributed_table_pair(
             ch_cluster=ch_cluster,
             shard_table=pair.shard_table,
             query_label=query_label,
+            if_exists=if_exists,
         ),
     )
     if wait_for_absence:
@@ -165,6 +186,7 @@ def drop_ch_table(
     ch_cluster: str | None = "{cluster}",
     *,
     query_label: str | None = None,
+    if_exists: bool = True,
     wait_for_absence: bool = False,
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
@@ -175,6 +197,7 @@ def drop_ch_table(
             table_name,
             ch_cluster=ch_cluster,
             query_label=query_label,
+            if_exists=if_exists,
         ),
     )
     if not wait_for_absence:
@@ -306,9 +329,11 @@ def _build_drop_ch_table_sql(
     *,
     ch_cluster: str | None = None,
     query_label: str | None = None,
+    if_exists: bool = True,
 ) -> str:
+    prefix = "DROP TABLE IF EXISTS" if if_exists else "DROP TABLE"
     return apply_query_label(
-        f"DROP TABLE IF EXISTS {table_name}{ch_cluster_clause(ch_cluster)}",
+        f"{prefix} {table_name}{ch_cluster_clause(ch_cluster)}",
         query_label,
     )
 
