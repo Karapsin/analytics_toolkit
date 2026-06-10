@@ -50,6 +50,9 @@ from ..runtime.models import TransferOptions
 from ..runtime.retry import run_with_retry
 
 
+_DEFAULT_TARGET_BATCH_SECONDS = 10.0
+
+
 @timed_public_sql_function
 def transfer_table(
     from_db: str,
@@ -63,7 +66,7 @@ def transfer_table(
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
     target_rows_per_second: bool = True,
-    target_batch_seconds: float = 10.0,
+    target_batch_seconds: float | None = None,
     target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
@@ -231,7 +234,7 @@ def build_transfer_options(
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
     target_rows_per_second: bool = True,
-    target_batch_seconds: float = 10.0,
+    target_batch_seconds: float | None = None,
     target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
@@ -261,6 +264,12 @@ def build_transfer_options(
         to_config.backend,
         replace_target_table=replace_target_table,
         write_mode=write_mode,
+    )
+    resolved_target_rows_per_second = _resolve_target_adaptation_mode(
+        adaptive_batch_size=adaptive_batch_size,
+        target_rows_per_second=target_rows_per_second,
+        target_batch_seconds=target_batch_seconds,
+        target_batch_memory_mb=target_batch_memory_mb,
     )
     (
         resolved_target_batch_memory_mb,
@@ -293,7 +302,7 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=resolved_min_batch_size,
         max_batch_size=resolved_max_batch_size,
-        target_rows_per_second=target_rows_per_second,
+        target_rows_per_second=resolved_target_rows_per_second,
         target_batch_seconds=resolved_target_batch_seconds,
         target_batch_memory_mb=resolved_target_batch_memory_mb,
         target_batch_memory_bytes=resolved_target_batch_memory_bytes,
@@ -359,12 +368,46 @@ def build_transfer_options(
     return options
 
 
+def _resolve_target_adaptation_mode(
+    *,
+    adaptive_batch_size: bool,
+    target_rows_per_second: bool,
+    target_batch_seconds: float | None,
+    target_batch_memory_mb: float | None,
+) -> bool:
+    if not isinstance(target_rows_per_second, bool):
+        raise ValueError("target_rows_per_second must be a boolean.")
+    if not adaptive_batch_size:
+        return target_rows_per_second
+
+    explicit_targets: list[str] = []
+    if target_rows_per_second is False:
+        explicit_targets.append("target_rows_per_second")
+    if target_batch_seconds is not None:
+        explicit_targets.append("target_batch_seconds")
+    if target_batch_memory_mb is not None:
+        explicit_targets.append("target_batch_memory_mb")
+
+    if len(explicit_targets) > 1:
+        raise ValueError(
+            "Only one transfer batch target may be configured. "
+            "Set at most one of target_rows_per_second, target_batch_seconds, "
+            "or target_batch_memory_mb."
+        )
+
+    if target_batch_memory_mb is not None:
+        return False
+    if target_batch_seconds is not None:
+        return False
+    return target_rows_per_second
+
+
 def _resolve_adaptive_batch_bounds(
     *,
     batch_size: int,
     min_batch_size: int,
     max_batch_size: int | None,
-    target_batch_seconds: float,
+    target_batch_seconds: float | None,
     adaptive_batch_size: bool,
     unlimited_default_max: bool = False,
 ) -> tuple[int, int | None, float]:
@@ -376,6 +419,8 @@ def _resolve_adaptive_batch_bounds(
         raise ValueError("min_batch_size must be a positive integer.")
     if max_batch_size is not None and max_batch_size <= 0:
         raise ValueError("max_batch_size must be a positive integer.")
+    if target_batch_seconds is None:
+        target_batch_seconds = _DEFAULT_TARGET_BATCH_SECONDS
     try:
         resolved_target_batch_seconds = float(target_batch_seconds)
     except (TypeError, ValueError) as exc:

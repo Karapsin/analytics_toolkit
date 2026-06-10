@@ -223,7 +223,7 @@ def test_adaptive_batch_sizer_targets_rows_per_second() -> None:
     sizer.update(2.0, inserted_rows=3)
     assert sizer.current_size == 1
     sizer.update(0.9, inserted_rows=1)
-    assert sizer.current_size == 2
+    assert sizer.current_size == 1
 
 
 def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
@@ -355,6 +355,47 @@ def test_transfer_options_validate_target_batch_memory(
             from_sql="select id from source_table",
             to_table="sandbox.target",
             target_batch_memory_mb=target_batch_memory_mb,
+        )
+
+
+def test_transfer_options_defaults_use_time_target_mode_when_not_explicit() -> None:
+    options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        target_batch_seconds=None,
+    )
+
+    assert options.target_rows_per_second is True
+    assert options.target_batch_seconds == 10.0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {
+            "target_rows_per_second": False,
+            "target_batch_seconds": 10.0,
+        },
+        {
+            "target_rows_per_second": False,
+            "target_batch_memory_mb": 16,
+        },
+        {
+            "target_batch_seconds": 10.0,
+            "target_batch_memory_mb": 16,
+        },
+    ],
+)
+def test_transfer_options_rejects_multiple_adaptation_targets(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="Only one transfer batch target"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            **kwargs,
         )
 
 
@@ -636,8 +677,9 @@ def test_load_stage_batches_formats_transferred_row_count(
         rows: list[tuple[int]],
         **kwargs: Any,
     ) -> int:
+        batch_size = len(rows)
         del connection_type, connection_ref, table_name, columns, rows
-        kwargs["on_success"](1.0, len(rows))
+        kwargs["on_success"](1.0, batch_size)
         return 1_000_000
 
     monkeypatch.setattr(

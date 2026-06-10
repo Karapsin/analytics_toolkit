@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.5 - 2026-06-10
+
+- Added single explicit transfer adaptation target validation.
+- `target_batch_seconds` and `target_batch_memory_mb` now conflict with
+  `target_rows_per_second` so at most one mode can be configured explicitly.
+
 ## 1.3.8.4 - 2026-06-10
 
 - Added throughput-first transfer batch adaptation via
