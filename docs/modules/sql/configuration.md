@@ -171,19 +171,4 @@ sql.transfer(
 )
 ```
 
-[sql.airflow_connection_config](functions/airflow_connection_config.md) maps
-one Airflow Connection to the same config objects used by `.connections`. If
-`backend` is omitted, the package infers it from Airflow `conn_type` or extra
-`type` / `backend`. Greenplum and ClickHouse use the Airflow `schema` field as
-the database. Trino uses `catalog`, `schema`, `auth_mode`, `http_scheme`,
-`verify`, `ca_certs`, `insert_chunk_size`, `request_timeout`, and `source` from
-connection extras. Greenplum uses SSL fields from connection extras. ClickHouse
-uses the fields listed above from connection extras and defaults
-Airflow-source connections to `send_receive_timeout=6000` and
-`settings={"connect_timeout": "500"}` when those fields are not provided.
-
-Use [sql.use_airflow_connections](functions/use_airflow_connections.md) when
-Python code should temporarily resolve configured connection IDs through
-Airflow instead of a local `.connections` file.
-
 [SQL module index](index.md)

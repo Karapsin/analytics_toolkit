@@ -6,8 +6,6 @@ from .orchestration.async_sql import async_sql
 from .orchestration.parallel_sql import parallel_sql
 from .core.capabilities import (
     BACKEND_CAPABILITIES,
-    format_support_matrix,
-    support_matrix_rows,
 )
 from .execution.plans import (
     SqlOperationMetadata,
@@ -24,13 +22,11 @@ from .dml.io.execute_read import execute_read
 from .dml.io.execute_sql import execute_sql as execute
 from .connection.config import (
     ConnectionValidationResult,
-    airflow_connection_config,
     generate_dummy_connections,
-    use_airflow_connections,
     validate_connections,
 )
 from .connection.errors import SqlOperationContext, SqlOperationError
-from .connection.get_sql_connection import get_sql_connection, with_sql_connection
+from .connection.get_sql_connection import get_sql_connection
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.gp_cancel import gp_cancel_all_running_queries
@@ -55,8 +51,6 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "extract_ddl",
     "execute_read",
     "execute",
-    "format_support_matrix",
-    "get_sql_connection",
     "drop_many_partitions",
     "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
@@ -64,11 +58,9 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "load_df",
     "read",
     "show_tables",
-    "support_matrix_rows",
     "table_info",
     "transfer",
     "validate_connections",
-    "with_sql_connection",
 )
 
 __all__ = [
@@ -81,17 +73,14 @@ __all__ = [
     "SqlTaskType",
     "SqlText",
     "TableName",
-    "airflow_connection_config",
     "ch_drop_table",
     "execute",
     "execute_read",
     "extract_ddl",
     "format_plan",
-    "format_support_matrix",
     "generate_dummy_connections",
     "create_sql_table",
     "drop_many_partitions",
-    "get_sql_connection",
     "gp_create_many_partitions",
     "gp_cancel_all_running_queries",
     "gp_vacuum",
@@ -108,10 +97,7 @@ __all__ = [
     "table_info",
     "time_print",
     "transfer",
-    "support_matrix_rows",
     "get_time_print_sink",
     "set_time_print_sink",
-    "use_airflow_connections",
     "validate_connections",
-    "with_sql_connection",
 ]

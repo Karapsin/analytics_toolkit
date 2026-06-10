@@ -26,12 +26,6 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [parallel_sql](parallel_sql.md)
 - [validate_connections](validate_connections.md)
 - [generate_dummy_connections](generate_dummy_connections.md)
-- [get_sql_connection](get_sql_connection.md)
-- [with_sql_connection](with_sql_connection.md)
-- [airflow_connection_config](airflow_connection_config.md)
-- [use_airflow_connections](use_airflow_connections.md)
-- [format_support_matrix](format_support_matrix.md)
-- [support_matrix_rows](support_matrix_rows.md)
 
 ## Backend-Specific Functions
 

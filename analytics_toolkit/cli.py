@@ -29,7 +29,7 @@ def _same_path(left: str, right: str) -> bool:
 
 _prefer_local_package_path()
 
-from .sql import format_support_matrix
+from .sql.core.capabilities import format_support_matrix
 from .sql.connection import validate_connections
 
 

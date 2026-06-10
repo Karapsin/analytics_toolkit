@@ -3,14 +3,12 @@ from .config import (
     ConnectionValidationResult,
     GpConfig,
     TrinoConfig,
-    airflow_connection_config,
     generate_dummy_connections,
     get_connection_backend,
     get_connection_config,
     get_connections_file_path,
     load_sql_connections,
     resolve_connection_backend,
-    use_airflow_connections,
     validate_connections,
 )
 from .errors import (
@@ -21,7 +19,7 @@ from .errors import (
     SqlUtilsError,
     UnsupportedConnectionTypeError,
 )
-from .get_sql_connection import get_sql_connection, with_sql_connection
+from .get_sql_connection import get_sql_connection
 from .protocols import ClickHouseClient, ClickHouseResult, DbApiConnection, DbApiCursor
 from analytics_toolkit.general import time_print
 
@@ -36,7 +34,6 @@ __all__ = [
     "SqlUtilsError",
     "TrinoConfig",
     "UnsupportedConnectionTypeError",
-    "airflow_connection_config",
     "generate_dummy_connections",
     "get_connection_backend",
     "get_connection_config",
@@ -49,7 +46,5 @@ __all__ = [
     "load_sql_connections",
     "resolve_connection_backend",
     "time_print",
-    "use_airflow_connections",
     "validate_connections",
-    "with_sql_connection",
 ]

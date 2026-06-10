@@ -4,6 +4,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.7.18 - 2026-06-10
+
+- Removed `sql.format_support_matrix`, `sql.support_matrix_rows`,
+  `sql.airflow_connection_config`, `sql.use_airflow_connections`, and
+  `sql.with_sql_connection` from the public SQL facade API.
+- Kept `get_sql_connection` internal for SQL execution/load/transfer call paths.
+- Removed facade-level function documentation pages for those non-public helpers and
+  updated SQL support matrix/configuration docs to avoid facade references.
+
 ## 1.3.7.17 - 2026-06-09
 
 - Merged SQL table creation into `sql.create_sql_table()` with dataframe,

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .config import (
     ChConfig,
@@ -58,28 +57,6 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
 
 
 @timed_public_sql_function
-def with_sql_connection(db_key: str) -> Callable[..., Any]:
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            config = get_connection_config(db_key)
-            connection = get_sql_connection(config.connection_key)
-            try:
-                return func(connection, *args, **kwargs)
-            finally:
-                time_print(
-                    "Closing connection",
-                    connection=config.connection_key,
-                    backend=config.backend,
-                    phase="close",
-                )
-                connection.close()
-
-        return wrapper
-
-    return decorator
-
-
 def _get_trino_connection(config: TrinoConfig) -> Any:
     try:
         import trino

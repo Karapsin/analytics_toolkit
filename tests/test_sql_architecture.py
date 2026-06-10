@@ -48,15 +48,11 @@ def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> N
 
     forbidden_params = {"connection", "connection_type", "connection_key", "backend"}
     allowlist = {
-        "airflow_connection_config",
         "format_plan",
-        "format_support_matrix",
         "generate_dummy_connections",
         "get_time_print_sink",
         "set_time_print_sink",
-        "support_matrix_rows",
         "time_print",
-        "use_airflow_connections",
         "validate_connections",
     }
     offenders: list[str] = []
@@ -84,7 +80,6 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
         "execute",
         "execute_read",
         "extract_ddl",
-        "get_sql_connection",
         "gp_cancel_all_running_queries",
         "gp_create_many_partitions",
         "gp_vacuum",
@@ -92,7 +87,6 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
         "read",
         "show_tables",
         "table_info",
-        "with_sql_connection",
     }
     missing = [
         name
