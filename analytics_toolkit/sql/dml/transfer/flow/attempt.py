@@ -124,6 +124,7 @@ def load_stage_batches(
         current_size=options.batch_size,
         min_size=options.min_batch_size,
         max_size=options.max_batch_size,
+        optimize_by_rows_per_second=options.target_rows_per_second,
         target_seconds=options.target_batch_seconds,
         target_memory_bytes=options.target_batch_memory_bytes,
     )
@@ -157,9 +158,13 @@ def load_stage_batches(
                 else None
             )
 
-            def update_batch_sizer(duration_seconds: float) -> None:
+            def update_batch_sizer(
+                duration_seconds: float,
+                inserted_rows: int,
+            ) -> None:
                 batch_sizer.update(
                     duration_seconds,
+                    inserted_rows=inserted_rows,
                     memory_bytes=batch_memory_bytes,
                 )
 

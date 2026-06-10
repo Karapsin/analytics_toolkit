@@ -82,12 +82,15 @@ class AdaptiveBatchSizer:
     min_size: int
     max_size: int | None
     target_seconds: float
+    optimize_by_rows_per_second: bool = True
+    previous_rows_per_second: float | None = None
     target_memory_bytes: int | None = None
 
     def update(
         self,
         duration_seconds: float,
         *,
+        inserted_rows: int | None = None,
         memory_bytes: int | None = None,
     ) -> None:
         if not self.enabled:
@@ -99,6 +102,12 @@ class AdaptiveBatchSizer:
             self._update_for_memory(memory_bytes)
             return
 
+        if self.optimize_by_rows_per_second:
+            if inserted_rows is None or inserted_rows <= 0:
+                return
+            self._update_for_rows_per_second(duration_seconds, inserted_rows)
+            return
+
         if duration_seconds < self.target_seconds / 2:
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
             self.current_size = self._cap_size(grown_size)
@@ -107,6 +116,27 @@ class AdaptiveBatchSizer:
         if duration_seconds > self.target_seconds * 2:
             shrunk_size = max(1, int(self.current_size * 0.5))
             self.current_size = max(shrunk_size, self.min_size)
+
+    def _update_for_rows_per_second(
+        self,
+        duration_seconds: float,
+        inserted_rows: int,
+    ) -> None:
+        if duration_seconds <= 0:
+            return
+
+        rows_per_second = inserted_rows / duration_seconds
+        previous_rows_per_second = self.previous_rows_per_second
+        self.previous_rows_per_second = rows_per_second
+        if previous_rows_per_second is None:
+            return
+        if rows_per_second < previous_rows_per_second:
+            shrunk_size = max(1, int(self.current_size * 0.5))
+            self.current_size = max(shrunk_size, self.min_size)
+            return
+        if rows_per_second > previous_rows_per_second:
+            grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
+            self.current_size = self._cap_size(grown_size)
 
     def _update_for_memory(self, memory_bytes: int) -> None:
         target_memory_bytes = self.target_memory_bytes
@@ -154,6 +184,7 @@ class TransferOptions:
     min_batch_size: int = 1_000
     max_batch_size: int | None = 400_000
     target_batch_seconds: float = 10.0
+    target_rows_per_second: bool = True
     target_batch_memory_mb: float | None = None
     target_batch_memory_bytes: int | None = None
     partition_by: list[str] | str | None = None

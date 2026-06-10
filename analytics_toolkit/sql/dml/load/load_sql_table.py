@@ -146,7 +146,7 @@ def insert_rows_batch(
     trino_insert_chunk_size: int | None = None,
     gp_insert_chunk_size: int | None = None,
     query_label: str | None = None,
-    on_success: Callable[[float], None] | None = None,
+    on_success: Callable[[float, int], None] | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
@@ -199,7 +199,7 @@ def insert_rows_batch(
             raise
 
         if on_success is not None:
-            on_success(duration_seconds)
+            on_success(duration_seconds, len(normalized_rows))
         return len(normalized_rows)
 
     return retry_fn(

@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.4 - 2026-06-10
+
+- Added throughput-first transfer batch adaptation via
+  `target_rows_per_second=True` and switched it on by default.
+- Kept `target_batch_seconds` as the fallback adaptive control for users that
+  explicitly disable throughput optimization.
+
 ## 1.3.8.3 - 2026-06-10
 
 - Corrected the public SQL partition removal helper name to

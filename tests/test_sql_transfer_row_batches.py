@@ -177,6 +177,7 @@ def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> Non
         current_size=1_000,
         min_size=500,
         max_size=2_000,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
     )
 
@@ -198,10 +199,31 @@ def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> Non
         current_size=1_000,
         min_size=500,
         max_size=2_000,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
     )
     disabled.update(1.0)
     assert disabled.current_size == 1_000
+
+
+def test_adaptive_batch_sizer_targets_rows_per_second() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=2,
+        min_size=1,
+        max_size=8,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+    )
+
+    sizer.update(1.0, inserted_rows=2)
+    assert sizer.current_size == 2
+    sizer.update(0.5, inserted_rows=2)
+    assert sizer.current_size == 3
+    sizer.update(2.0, inserted_rows=3)
+    assert sizer.current_size == 1
+    sizer.update(0.9, inserted_rows=1)
+    assert sizer.current_size == 2
 
 
 def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
@@ -210,6 +232,7 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
         current_size=100,
         min_size=10,
         max_size=200,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
         target_memory_bytes=1_000,
     )
@@ -226,6 +249,7 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
         current_size=100,
         min_size=10,
         max_size=None,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
         target_memory_bytes=1_000,
     )
@@ -239,6 +263,7 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
         current_size=100,
         min_size=10,
         max_size=200,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
         target_memory_bytes=1_000,
     )
@@ -250,6 +275,7 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
         current_size=100,
         min_size=10,
         max_size=200,
+        optimize_by_rows_per_second=False,
         target_seconds=10.0,
         target_memory_bytes=1_000,
     )
@@ -353,6 +379,7 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
         adaptive_batch_size=True,
         min_batch_size=1,
         max_batch_size=4,
+        target_rows_per_second=False,
         target_batch_seconds=10.0,
     )
     inserted_batch_sizes: list[int] = []
@@ -380,7 +407,7 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
         assert columns == ["id"]
         assert not isinstance(rows, pd.DataFrame)
         inserted_batch_sizes.append(len(rows))
-        kwargs["on_success"](next(insert_durations))
+        kwargs["on_success"](next(insert_durations), len(rows))
         return len(rows)
 
     monkeypatch.setattr(
@@ -424,6 +451,7 @@ def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:
         adaptive_batch_size=True,
         min_batch_size=1,
         max_batch_size=4,
+        target_rows_per_second=False,
         target_batch_seconds=10.0,
         target_batch_memory_mb=1,
         target_batch_memory_bytes=100,
@@ -456,7 +484,7 @@ def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:
         del connection_type, connection_ref, table_name
         assert columns == ["id"]
         inserted_batch_sizes.append(len(rows))
-        kwargs["on_success"](30.0)
+        kwargs["on_success"](30.0, len(rows))
         return len(rows)
 
     monkeypatch.setattr(
@@ -543,7 +571,7 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
     ) -> int:
         del connection_type, connection_ref, table_name, columns
         kwargs["on_progress"](len(rows))
-        kwargs["on_success"](1.0)
+        kwargs["on_success"](1.0, len(rows))
         return len(rows)
 
     monkeypatch.setattr(attempt_module, "tqdm", FakeTqdm)
@@ -609,7 +637,7 @@ def test_load_stage_batches_formats_transferred_row_count(
         **kwargs: Any,
     ) -> int:
         del connection_type, connection_ref, table_name, columns, rows
-        kwargs["on_success"](1.0)
+        kwargs["on_success"](1.0, len(rows))
         return 1_000_000
 
     monkeypatch.setattr(

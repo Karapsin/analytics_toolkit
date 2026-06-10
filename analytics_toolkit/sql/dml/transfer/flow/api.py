@@ -62,6 +62,7 @@ def transfer_table(
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
+    target_rows_per_second: bool = True,
     target_batch_seconds: float = 10.0,
     target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
@@ -97,6 +98,7 @@ def transfer_table(
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
+        target_rows_per_second=target_rows_per_second,
         target_batch_seconds=target_batch_seconds,
         target_batch_memory_mb=target_batch_memory_mb,
         retry_cnt=retry_cnt,
@@ -228,6 +230,7 @@ def build_transfer_options(
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
+    target_rows_per_second: bool = True,
     target_batch_seconds: float = 10.0,
     target_batch_memory_mb: float | None = None,
     retry_cnt: int = 5,
@@ -290,6 +293,7 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=resolved_min_batch_size,
         max_batch_size=resolved_max_batch_size,
+        target_rows_per_second=target_rows_per_second,
         target_batch_seconds=resolved_target_batch_seconds,
         target_batch_memory_mb=resolved_target_batch_memory_mb,
         target_batch_memory_bytes=resolved_target_batch_memory_bytes,
@@ -332,6 +336,8 @@ def build_transfer_options(
         raise ValueError("full_retry_cnt must be at least 1.")
     if options.full_timeout_increment < 0:
         raise ValueError("full_timeout_increment must be non-negative.")
+    if not isinstance(options.target_rows_per_second, bool):
+        raise ValueError("target_rows_per_second must be a boolean.")
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
     if options.gp_distributed_by_key is not None and options.to_db_backend != "gp":
