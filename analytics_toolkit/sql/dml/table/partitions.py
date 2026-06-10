@@ -213,7 +213,7 @@ def gp_create_partitions(
     return None
 
 @timed_public_sql_function
-def drop_paritions(
+def drop_partitions(
     db_key: str,
     table: str,
     partition_keys_list: list[str],
@@ -255,7 +255,7 @@ def drop_paritions(
     def operation(connection_ref: dict[str, Any], attempt: int) -> None:
         with tracked_sql_operation(
             metadata=metadata,
-            operation_name="drop_paritions",
+            operation_name="drop_partitions",
             alias=options.connection_key,
             backend=options.backend,
             phase="drop_partitions",
@@ -271,7 +271,7 @@ def drop_paritions(
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
-            operation="drop_paritions",
+            operation="drop_partitions",
             alias=options.connection_key,
             backend=options.backend,
             phase="drop_partitions",
@@ -413,7 +413,7 @@ def build_drop_many_partitions_plan(
         query_label=options.query_label,
     )
     plan = SqlPlan(
-        operation="drop_paritions",
+        operation="drop_partitions",
         target_alias=options.connection_key,
         target_backend=options.backend,
         target_table=options.target_table,

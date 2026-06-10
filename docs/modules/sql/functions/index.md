@@ -21,7 +21,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [table_info](table_info.md) - inspect table existence and metadata
 - [show_tables](show_tables.md) - list backend tables
 - [drop_tables](drop_tables.md) - drop one or more tables
-- [drop_paritions](drop_paritions.md) - drop table partition values
+- [drop_partitions](drop_partitions.md) - drop table partition values
 - [extract_ddl](extract_ddl.md) - return native table DDL
 - [format_plan](format_plan.md) - render a dry-run SQL plan
 - [async_sql](async_sql.md) - run SQL task specs concurrently

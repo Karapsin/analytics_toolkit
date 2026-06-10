@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.3 - 2026-06-10
+
+- Corrected the public SQL partition removal helper name to
+  `sql.drop_partitions()`.
+- Removed the misspelled `sql.drop_paritions()` public export.
+
 ## 1.3.8.2 - 2026-06-10
 
 - Removed the public ClickHouse per-host drop concurrency SQL input from load,
@@ -33,7 +39,7 @@ Generated from package version bumps and recent commit history.
   `sql.drop_tables()`.
 - Added list input support, ClickHouse shard/distributed drop flags, and an
   `if_exists` switch to `sql.drop_tables()`.
-- Renamed the public partition helper to `sql.drop_paritions()`.
+- Renamed the public partition helper to `sql.drop_partitions()`.
 
 ## 1.3.7.18 - 2026-06-10
 

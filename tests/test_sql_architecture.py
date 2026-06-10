@@ -14,7 +14,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
     public_names = {
         "cancel_queries",
         "create_sql_table",
-        "drop_paritions",
+        "drop_partitions",
         "drop_tables",
         "execute",
         "generate_dummy_connections",
@@ -38,6 +38,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         "ch_drop_table",
         "create_table_from_sql",
         "execute_sql",
+        "drop_paritions",
         "drop_many_partitions",
         "drop_table",
         "gp_cancel_all_running_queries",
@@ -83,7 +84,7 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
     single_db_operations = {
         "create_sql_table",
         "cancel_queries",
-        "drop_paritions",
+        "drop_partitions",
         "drop_tables",
         "execute",
         "execute_read",

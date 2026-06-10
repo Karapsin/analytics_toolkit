@@ -35,7 +35,7 @@ from .table_validation import (
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
 )
-from .partitions import drop_paritions
+from .partitions import drop_partitions
 
 __all__ = [
     "analyze_table",
@@ -52,7 +52,7 @@ __all__ = [
     "build_insert_from_table_sql",
     "count_table_rows",
     "CreateTableFromSqlOptions",
-    "drop_paritions",
+    "drop_partitions",
     "DropManyPartitionsOptions",
     "drop_tables",
     "drop_table_with_retry",

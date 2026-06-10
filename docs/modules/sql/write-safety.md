@@ -16,7 +16,7 @@ notable options.
 Common planned workflows include [sql.load_df](functions/load_df.md),
 [sql.transfer](functions/transfer.md),
 [sql.create_sql_table](functions/create_sql_table.md), and
-[sql.drop_paritions](functions/drop_paritions.md). ClickHouse table plans can
+[sql.drop_partitions](functions/drop_partitions.md). ClickHouse table plans can
 also come from [sql.drop_tables](functions/drop_tables.md).
 
 Operations that require live inspection for exact SQL may include placeholder

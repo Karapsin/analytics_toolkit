@@ -16,14 +16,18 @@ dml_table_module = importlib.import_module("analytics_toolkit.sql.dml.table")
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.partitions")
 
 
-def test_drop_paritions_is_public_and_timed() -> None:
-    assert sql_module.drop_paritions is table_ops_module.drop_paritions
-    assert dml_table_module.drop_paritions is table_ops_module.drop_paritions
-    assert "drop_paritions" in sql_module.__all__
-    assert "drop_paritions" in dml_table_module.__all__
+def test_drop_partitions_is_public_and_timed() -> None:
+    assert sql_module.drop_partitions is table_ops_module.drop_partitions
+    assert dml_table_module.drop_partitions is table_ops_module.drop_partitions
+    assert "drop_partitions" in sql_module.__all__
+    assert "drop_partitions" in dml_table_module.__all__
     assert "build_drop_many_partitions_sqls" in dml_table_module.__all__
-    assert "drop_paritions" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
-    assert getattr(sql_module.drop_paritions, "__sql_public_timing__", False)
+    assert "drop_partitions" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
+    assert getattr(sql_module.drop_partitions, "__sql_public_timing__", False)
+    assert "drop_paritions" not in sql_module.__all__
+    assert not hasattr(sql_module, "drop_paritions")
+    assert "drop_paritions" not in dml_table_module.__all__
+    assert not hasattr(dml_table_module, "drop_paritions")
 
 
 def test_build_drop_many_partitions_sqls_renders_backend_sql() -> None:
@@ -67,7 +71,7 @@ def test_build_drop_many_partitions_sqls_renders_backend_sql() -> None:
     ]
 
 
-def test_drop_paritions_executes_greenplum_in_order_and_commits(
+def test_drop_partitions_executes_greenplum_in_order_and_commits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = FakeDbapiConnection()
@@ -77,7 +81,7 @@ def test_drop_paritions_executes_greenplum_in_order_and_commits(
         lambda key: connection,
     )
 
-    result = table_ops_module.drop_paritions(
+    result = table_ops_module.drop_partitions(
         "gp",
         "sandbox.events",
         ["2025-05-01", "2025-05-02"],
@@ -93,7 +97,7 @@ def test_drop_paritions_executes_greenplum_in_order_and_commits(
     assert connection.close_calls == 1
 
 
-def test_drop_paritions_executes_trino_delete_without_commit(
+def test_drop_partitions_executes_trino_delete_without_commit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = FakeDbapiConnection()
@@ -103,7 +107,7 @@ def test_drop_paritions_executes_trino_delete_without_commit(
         lambda key: connection,
     )
 
-    table_ops_module.drop_paritions(
+    table_ops_module.drop_partitions(
         "trino",
         "sandbox.events",
         ["2025-05-01", "2025-05-02"],
@@ -118,7 +122,7 @@ def test_drop_paritions_executes_trino_delete_without_commit(
     assert connection.close_calls == 1
 
 
-def test_drop_paritions_executes_clickhouse_shard_drops(
+def test_drop_partitions_executes_clickhouse_shard_drops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = FakeClickHouseClient()
@@ -128,7 +132,7 @@ def test_drop_paritions_executes_clickhouse_shard_drops(
         lambda key: connection,
     )
 
-    table_ops_module.drop_paritions(
+    table_ops_module.drop_partitions(
         "ch",
         "sandbox.events",
         ["2025-05-01", "2025-05-02"],
@@ -143,7 +147,7 @@ def test_drop_paritions_executes_clickhouse_shard_drops(
     assert connection.close_calls == 1
 
 
-def test_drop_paritions_dry_run_returns_plan_without_connection(
+def test_drop_partitions_dry_run_returns_plan_without_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -152,21 +156,21 @@ def test_drop_paritions_dry_run_returns_plan_without_connection(
         lambda key: pytest.fail("connection should not be opened"),
     )
 
-    plan = table_ops_module.drop_paritions(
+    plan = table_ops_module.drop_partitions(
         "gp",
         "sandbox.events",
         ["2025-05-01"],
         dry_run=True,
     )
 
-    assert plan.operation == "drop_paritions"
+    assert plan.operation == "drop_partitions"
     assert plan.metadata.statement_count == 1
     assert plan.sqls == ["ALTER TABLE sandbox.events DROP PARTITION FOR ('2025-05-01')"]
 
 
-def test_drop_paritions_validates_required_inputs() -> None:
+def test_drop_partitions_validates_required_inputs() -> None:
     with pytest.raises(InvalidSqlInputError):
-        table_ops_module.drop_paritions(
+        table_ops_module.drop_partitions(
             "gp",
             "sandbox.events",
             [],
@@ -178,14 +182,14 @@ def test_drop_paritions_validates_required_inputs() -> None:
             [],
         )
     with pytest.raises(InvalidSqlInputError):
-        table_ops_module.drop_paritions(
+        table_ops_module.drop_partitions(
             "gp",
             "sandbox.events",
             ["2025-05-01"],
             trino_partition_column="dt",
         )
     with pytest.raises(UnsupportedConnectionTypeError):
-        table_ops_module.drop_paritions(
+        table_ops_module.drop_partitions(
             "unknown",
             "sandbox.events",
             ["2025-05-01"],

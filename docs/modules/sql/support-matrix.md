@@ -37,7 +37,7 @@ by any backend.
 | read, execute, and execute-read workflows | yes | yes | yes |
 | dataframe loading and SQL transfers | yes | yes | yes |
 | table creation, dropping, metadata, and DDL extraction | yes | yes | yes |
-| partition removal with [sql.drop_paritions](functions/drop_paritions.md) | yes | yes | yes |
+| partition removal with [sql.drop_partitions](functions/drop_partitions.md) | yes | yes | yes |
 | Greenplum partition creation and vacuum helpers | yes | no | no |
 | ClickHouse shard/distributed table management | no | no | yes |
 

@@ -3,7 +3,7 @@ from .io.execute_sql import execute_sql
 from .io.read_sql import read_sql
 from .load.load_df import build_load_df_plan, load_df
 from .table import (
-    drop_paritions,
+    drop_partitions,
     gp_create_partitions,
     gp_vacuum,
 )
@@ -13,7 +13,7 @@ __all__ = [
     "build_load_df_plan",
     "build_transfer_table_plan",
     "cancel_queries",
-    "drop_paritions",
+    "drop_partitions",
     "execute_sql",
     "gp_create_partitions",
     "gp_vacuum",

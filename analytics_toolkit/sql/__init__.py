@@ -32,7 +32,7 @@ from .dml.io.read_sql import read_sql as read
 from .dml.io.cancel_queries import cancel_queries
 from .dml.table import (
     drop_tables,
-    drop_paritions,
+    drop_partitions,
     gp_create_partitions,
     gp_vacuum,
 )
@@ -52,7 +52,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "execute_read",
     "execute",
     "drop_tables",
-    "drop_paritions",
+    "drop_partitions",
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",
@@ -81,7 +81,7 @@ __all__ = [
     "generate_dummy_connections",
     "create_sql_table",
     "drop_tables",
-    "drop_paritions",
+    "drop_partitions",
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",

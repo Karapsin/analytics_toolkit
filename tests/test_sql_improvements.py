@@ -179,7 +179,7 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
 @pytest.mark.parametrize(
     "function_name",
     [
-        "drop_paritions",
+        "drop_partitions",
         "drop_tables",
         "create_sql_table",
         "execute",

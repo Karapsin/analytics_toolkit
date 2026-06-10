@@ -1,11 +1,11 @@
 [SQL functions index](index.md)
 
-# drop_paritions
+# drop_partitions
 
 Drop partition values from one table using the configured backend.
 
 ```python
-drop_paritions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+drop_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -32,7 +32,7 @@ drop_paritions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', tr
 ```python
 from analytics_toolkit import sql
 
-plan = sql.drop_paritions(
+plan = sql.drop_partitions(
     "gp",
     "sandbox.events",
     ["2026-06-01", "2026-06-02"],
@@ -44,7 +44,7 @@ print(sql.format_plan(plan))
 Output example:
 
 ```text
-SQL plan: drop_paritions
+SQL plan: drop_partitions
 - gp: ALTER TABLE sandbox.events DROP PARTITION ...
 ```
 

@@ -47,7 +47,7 @@ from .partitions import (
     build_drop_many_partitions_plan,
     build_drop_many_partitions_sqls,
     build_gp_create_partitions_plan,
-    drop_paritions,
+    drop_partitions,
     gp_create_partitions,
 )
 from .write_modes import (
