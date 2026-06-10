@@ -33,10 +33,10 @@ create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = N
 
 ### Backend-Specific Inputs
 
-- `gp_distributed_by_key` - greenplum distribution key columns for created target tables
-- `ch_engine` - clickHouse engine to use for created local shard tables
-- `ch_cluster` - clickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported
-- `ch_sharding_key` - clickHouse sharding expression used for generated distributed table DDL
+- `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
+- `ch_engine` - engine to use for created ClickHouse local shard tables
+- `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_sharding_key` - sharding expression used for generated ClickHouse distributed table DDL
 - `ch_distributed_table` - whether the rendered ClickHouse DDL should include a `Distributed` table
 - `ch_only_shard` - for ClickHouse, create or mutate only the local table instead of a distributed/shard pair
 - `ch_replace_table` - whether rendered ClickHouse DDL should use replace-style table creation

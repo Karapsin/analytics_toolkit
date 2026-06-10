@@ -22,9 +22,9 @@ gp_create_partitions(db_key: 'str', table: 'str', *, intervals: 'Sequence[Mappin
 - `intervals` - explicit Greenplum partition interval definitions
 - `values` - list partition values used to create Greenplum list partitions
 - `days` - day values used to create Greenplum range partitions
-- `weeks` - monday week-start values used to create Greenplum range partitions
+- `weeks` - week-start Monday values used to create Greenplum range partitions
 - `months` - month-start values used to create Greenplum range partitions
-- `years` - january 1 year-start values used to create Greenplum range partitions
+- `years` - year-start January 1 values used to create Greenplum range partitions
 - `name_template` - template used to build generated Greenplum partition names
 
 ## Usage

@@ -22,7 +22,7 @@ drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = Fals
 
 ### Backend-Specific Inputs
 
-- `ch_cluster` - clickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
 - `ch_drop_distributed` - whether ClickHouse distributed tables should be dropped
 - `ch_drop_shard` - whether ClickHouse shard tables should be dropped
 - `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts

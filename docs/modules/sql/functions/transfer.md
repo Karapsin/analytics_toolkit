@@ -41,11 +41,11 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', replace
 
 ### Backend-Specific Inputs
 
-- `gp_distributed_by_key` - greenplum distribution key columns for created target tables
+- `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
-- `ch_engine` - clickHouse engine to use for created local shard tables
-- `ch_cluster` - clickHouse cluster name or macro for distributed/shard DDL; `None` skips cluster DDL where supported
-- `ch_sharding_key` - clickHouse sharding expression for distributed table creation
+- `ch_engine` - engine to use for created ClickHouse local shard tables
+- `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_sharding_key` - sharding expression for ClickHouse distributed table creation
 - `ch_only_shard` - for ClickHouse, create or mutate only the local table instead of a distributed/shard pair
 - `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts
 - `ch_retry_per_host_drops_concurrency` - maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default
