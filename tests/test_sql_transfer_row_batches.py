@@ -938,7 +938,8 @@ def test_load_stage_batches_formats_transferred_row_count(
     assert (
         "[gp_sandbox/gp] "
         "Transferred batch of 1_000_000 row(s) "
-        "to sandbox.target__stage__abcd1234"
+        "to sandbox.target__stage__abcd1234 in 1 second "
+        "(1,000,000.00 row/s); total transferred 1_000_000 row(s)"
     ) in output
 
 

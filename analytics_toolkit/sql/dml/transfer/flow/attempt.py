@@ -19,6 +19,7 @@ from ..runtime.models import (
 from ..runtime.retry import close_connection_ref, run_with_retry
 from ..io.source import iter_source_batches
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
+from ....execution.operation_runner import _format_duration
 from .stage import create_stage_state, initialize_stage_for_first_batch
 
 _TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT = (
@@ -164,10 +165,14 @@ def load_stage_batches(
                 else None
             )
 
+            current_batch_duration_seconds = 0.0
+
             def update_batch_sizer(
                 duration_seconds: float,
                 inserted_rows: int,
             ) -> None:
+                nonlocal current_batch_duration_seconds
+                current_batch_duration_seconds = duration_seconds
                 batch_sizer.update(
                     duration_seconds,
                     inserted_rows=inserted_rows,
@@ -191,10 +196,23 @@ def load_stage_batches(
             )
             progress_tracker.complete_batch(inserted_rows)
             total_rows += inserted_rows
+            rows_per_second = (
+                inserted_rows / current_batch_duration_seconds
+                if current_batch_duration_seconds > 0
+                else None
+            )
+            rows_per_second_text = (
+                f"{rows_per_second:,.2f}"
+                if rows_per_second is not None
+                else "N/A"
+            )
             time_print(
                 f"Transferred batch of "
                 f"{_format_transfer_progress_count(inserted_rows)} row(s) "
-                f"to {stage_state.stage_table}",
+                f"to {stage_state.stage_table} in "
+                f"{_format_duration(current_batch_duration_seconds)} "
+                f"({rows_per_second_text} row/s); total transferred "
+                f"{_format_transfer_progress_count(total_rows)} row(s)",
                 connection=options.to_db_key,
                 backend=options.to_db_backend,
             )

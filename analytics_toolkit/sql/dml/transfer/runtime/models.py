@@ -145,8 +145,8 @@ class AdaptiveBatchSizer:
         smoothed_rows_per_second = (
             sum(self.rows_per_second_samples) / len(self.rows_per_second_samples)
         )
-        self.previous_rows_per_second = smoothed_rows_per_second
         if previous_rows_per_second is None:
+            self.previous_rows_per_second = smoothed_rows_per_second
             return
 
         if smoothed_rows_per_second < previous_rows_per_second * (
@@ -154,12 +154,12 @@ class AdaptiveBatchSizer:
         ):
             shrunk_size = max(1, int(self.current_size * 0.5))
             self.current_size = max(shrunk_size, self.min_size)
-            return
-        if smoothed_rows_per_second > previous_rows_per_second * (
+        elif smoothed_rows_per_second > previous_rows_per_second * (
             1.0 + self.target_rows_per_second_deadband
         ):
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
             self.current_size = self._cap_size(grown_size)
+        self.previous_rows_per_second = smoothed_rows_per_second
 
     def _update_for_memory(self, memory_bytes: int) -> None:
         target_memory_bytes = self._resolve_target_memory_bytes()

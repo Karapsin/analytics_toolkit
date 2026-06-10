@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.8 - 2026-06-10
+
+- Fixed throughput smoothing regression so windowed row/sec averaging is now
+  compared against the previous smoothed throughput before applying deadband.
+- Added per-batch transfer logging for batch duration, rows/second, and cumulative
+  rows to the staged transfer progress output.
+
 ## 1.3.8.7 - 2026-06-10
 
 - Added smoothed adaptive throughput control for transfer batching:
