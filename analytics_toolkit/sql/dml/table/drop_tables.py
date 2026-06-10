@@ -10,7 +10,6 @@ from ...clickhouse.lifecycle import (
     drop_ch_distributed_table_pair,
     drop_ch_table,
 )
-from ...clickhouse.options import resolve_ch_retry_per_host_drops_concurrency
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import (
     get_ch_connection_for_host,
@@ -38,7 +37,6 @@ def drop_tables(
     ch_wait_timeout_seconds: int = 300,
     ch_wait_poll_interval_seconds: float = 1,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -62,14 +60,6 @@ def drop_tables(
         ch_wait_timeout_seconds=ch_wait_timeout_seconds,
         ch_wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
         ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
-        ch_retry_per_host_drops_concurrency=(
-            resolve_ch_retry_per_host_drops_concurrency(
-                ch_retry_per_host_drops=bool(ch_retry_per_host_drops),
-                ch_retry_per_host_drops_concurrency=(
-                    ch_retry_per_host_drops_concurrency
-                ),
-            )
-        ),
         dry_run=dry_run,
         return_sql=return_sql,
         return_metadata=return_metadata,
@@ -110,9 +100,6 @@ def drop_tables(
                         options.ch_wait_poll_interval_seconds
                     ),
                     ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                    ch_retry_per_host_drops_concurrency=(
-                        options.ch_retry_per_host_drops_concurrency
-                    ),
                     ch_drop_shard=bool(ch_drop_shard),
                     ch_drop_distributed=bool(ch_drop_distributed),
                     if_exists=bool(if_exists),
@@ -169,9 +156,6 @@ def build_drop_table_plan(
                 options.ch_wait_poll_interval_seconds
             ),
             "ch_retry_per_host_drops": options.ch_retry_per_host_drops,
-            "ch_retry_per_host_drops_concurrency": (
-                options.ch_retry_per_host_drops_concurrency
-            ),
         },
         metadata=SqlOperationMetadata(
             statement_count=statement_count,
@@ -288,7 +272,6 @@ def _drop_single_table(
     ch_wait_timeout_seconds: int,
     ch_wait_poll_interval_seconds: float,
     ch_retry_per_host_drops: bool,
-    ch_retry_per_host_drops_concurrency: int | None,
     ch_drop_shard: bool,
     ch_drop_distributed: bool,
     if_exists: bool,
@@ -353,9 +336,6 @@ def _drop_single_table(
             wait_timeout_seconds=ch_wait_timeout_seconds,
             wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
-            ch_retry_per_host_drops_concurrency=(
-                ch_retry_per_host_drops_concurrency
-            ),
             per_host_connection_factory=(
                 lambda host: get_ch_connection_for_host(
                     connection_key,

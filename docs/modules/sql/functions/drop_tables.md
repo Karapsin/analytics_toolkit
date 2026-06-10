@@ -5,7 +5,7 @@
 Drop one table or a list of tables using the configured backend.
 
 ```python
-drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = False, ch_cluster: 'str | None' = '{cluster}', ch_drop_shard: 'bool' = True, ch_drop_distributed: 'bool' = True, ch_wait_for_absence: 'bool' = False, ch_wait_timeout_seconds: 'int' = 300, ch_wait_poll_interval_seconds: 'float' = 1, ch_retry_per_host_drops: 'bool' = True, ch_retry_per_host_drops_concurrency: 'int | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = False, ch_cluster: 'str | None' = '{cluster}', ch_drop_shard: 'bool' = True, ch_drop_distributed: 'bool' = True, ch_wait_for_absence: 'bool' = False, ch_wait_timeout_seconds: 'int' = 300, ch_wait_poll_interval_seconds: 'float' = 1, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -26,7 +26,6 @@ drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = Fals
 - `ch_drop_distributed` - whether ClickHouse distributed tables should be dropped
 - `ch_drop_shard` - whether ClickHouse shard tables should be dropped
 - `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts
-- `ch_retry_per_host_drops_concurrency` - maximum concurrent ClickHouse per-host cleanup connections; `None` uses the helper default
 - `ch_wait_for_absence` - whether ClickHouse drop should wait until target tables disappear from metadata
 - `ch_wait_timeout_seconds` - maximum wait time for ClickHouse table absence
 - `ch_wait_poll_interval_seconds` - polling interval while waiting for ClickHouse table absence

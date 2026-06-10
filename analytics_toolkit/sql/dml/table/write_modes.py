@@ -81,7 +81,6 @@ def apply_target_write_mode(
     query_label: str | None = None,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
     ch_only_shard: bool = False,
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
@@ -135,7 +134,6 @@ def apply_target_write_mode(
             wait_for_absence=True,
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
-            ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         )
         return False
 
@@ -187,7 +185,6 @@ def finalize_stage_table(
     query_label: str | None = None,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
     ch_only_shard: bool = False,
 ) -> None:
     backend = resolve_connection_backend(connection_type)
@@ -210,7 +207,6 @@ def finalize_stage_table(
             query_label=query_label,
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
-            ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
             ch_only_shard=ch_only_shard,
         )
 

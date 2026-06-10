@@ -238,7 +238,6 @@ def drop_ch_distributed_table_pair(
     wait_poll_interval_seconds: float = 1,
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
 ) -> None:
     per_host_connection_factory = (
         (lambda host: get_ch_connection_for_host(connection_key, host))
@@ -254,7 +253,6 @@ def drop_ch_distributed_table_pair(
         wait_timeout_seconds=wait_timeout_seconds,
         wait_poll_interval_seconds=wait_poll_interval_seconds,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
-        ch_retry_per_host_drops_concurrency=ch_retry_per_host_drops_concurrency,
         per_host_connection_factory=per_host_connection_factory,
     )
 

@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.2 - 2026-06-10
+
+- Removed the public ClickHouse per-host drop concurrency SQL input from load,
+  transfer, and drop flows.
+- Kept ClickHouse per-host drop retry controlled by `ch_retry_per_host_drops`,
+  using the internal default worker count.
+
 ## 1.3.8.1 - 2026-06-10
 
 - Renamed the public Greenplum partition creation helper from

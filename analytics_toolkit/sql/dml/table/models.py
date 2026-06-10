@@ -23,7 +23,6 @@ class CreateTableFromSqlOptions:
     ch_sharding_key: str = "rand()"
     ch_only_shard: bool = False
     ch_retry_per_host_drops: bool = True
-    ch_retry_per_host_drops_concurrency: int | None = 5
     trino_insert_chunk_size: int | None = None
     dry_run: bool = False
     return_sql: bool = False
@@ -64,7 +63,6 @@ class ChCreateTableAsOptions:
     ch_sharding_key: str = "rand()"
     ch_only_shard: bool = False
     ch_retry_per_host_drops: bool = True
-    ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
     return_sql: bool = False
     return_metadata: bool = False
@@ -84,7 +82,6 @@ class ChDropTableOptions:
     ch_wait_timeout_seconds: int = 300
     ch_wait_poll_interval_seconds: float = 1
     ch_retry_per_host_drops: bool = True
-    ch_retry_per_host_drops_concurrency: int | None = 5
     dry_run: bool = False
     return_sql: bool = False
     return_metadata: bool = False

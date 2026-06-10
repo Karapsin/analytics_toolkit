@@ -610,7 +610,6 @@ def test_clickhouse_lifecycle_retries_per_host_drops_concurrently() -> None:
         wait_timeout_seconds=0,
         wait_poll_interval_seconds=0,
         ch_retry_per_host_drops=True,
-        ch_retry_per_host_drops_concurrency=2,
         per_host_connection_factory=host_factory,
     )
 

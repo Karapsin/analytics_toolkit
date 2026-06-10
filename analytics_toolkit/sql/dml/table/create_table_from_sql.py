@@ -9,7 +9,6 @@ import sqlparse
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
-    resolve_ch_retry_per_host_drops_concurrency,
     validate_ch_columns_in_columns,
     validate_ch_options_not_used,
 )
@@ -77,7 +76,6 @@ def create_table_from_sql(
     ch_sharding_key: str = "rand()",
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
     trino_insert_chunk_size: int | None = None,
     dry_run: bool = False,
     return_sql: bool = False,
@@ -137,14 +135,6 @@ def create_table_from_sql(
         ch_sharding_key=ch_sharding_key,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=retry_per_host_drops,
-        ch_retry_per_host_drops_concurrency=(
-            resolve_ch_retry_per_host_drops_concurrency(
-                ch_retry_per_host_drops=retry_per_host_drops,
-                ch_retry_per_host_drops_concurrency=(
-                    ch_retry_per_host_drops_concurrency
-                ),
-            )
-        ),
         trino_insert_chunk_size=trino_insert_chunk_size,
         dry_run=dry_run,
         return_sql=return_sql,
@@ -168,9 +158,6 @@ def create_table_from_sql(
             ch_sharding_key=options.ch_sharding_key,
             ch_only_shard=options.ch_only_shard,
             ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-            ch_retry_per_host_drops_concurrency=(
-                options.ch_retry_per_host_drops_concurrency
-            ),
             insert_data=options.insert_data,
             drop_target_if_exists=options.drop_target_if_exists,
             dry_run=options.dry_run,
@@ -297,9 +284,6 @@ def create_table_from_sql(
                             wait_for_absence=True,
                             connection_key=target_config.connection_key,
                             ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                            ch_retry_per_host_drops_concurrency=(
-                                options.ch_retry_per_host_drops_concurrency
-                            ),
                         )
                 else:
                     time_print(

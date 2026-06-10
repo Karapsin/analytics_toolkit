@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..backend_adapters import ch_cluster_clause, get_backend_adapter
-from .options import resolve_ch_retry_per_host_drops_concurrency
+from .options import DEFAULT_CH_PER_HOST_DROP_WORKERS
 from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
@@ -119,7 +119,6 @@ def drop_ch_distributed_table_pair(
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
     ch_retry_per_host_drops: bool = True,
-    ch_retry_per_host_drops_concurrency: int | None = None,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
     pair = ch_distributed_table_pair(table_name, shard_table)
@@ -157,18 +156,12 @@ def drop_ch_distributed_table_pair(
                     "ClickHouse connection factory."
                 ) from exc
 
-        retry_drop_concurrency = resolve_ch_retry_per_host_drops_concurrency(
-            ch_retry_per_host_drops=ch_retry_per_host_drops,
-            ch_retry_per_host_drops_concurrency=(
-                ch_retry_per_host_drops_concurrency
-            ),
-        )
         _drop_ch_distributed_table_pair_on_cluster_hosts(
             connection,
             pair,
             ch_cluster=ch_cluster,
             query_label=query_label,
-            ch_retry_per_host_drops_concurrency=retry_drop_concurrency or 1,
+            per_host_drop_workers=DEFAULT_CH_PER_HOST_DROP_WORKERS,
             per_host_connection_factory=per_host_connection_factory,
         )
         _wait_for_ch_distributed_table_pair_absence(
@@ -362,7 +355,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
     *,
     ch_cluster: str,
     query_label: str | None,
-    ch_retry_per_host_drops_concurrency: int,
+    per_host_drop_workers: int,
     per_host_connection_factory: Callable[[str], Any],
 ) -> None:
     configured_hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
@@ -378,7 +371,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             f"ClickHouse hosts for cluster {ch_cluster!r}."
         )
 
-    max_workers = min(ch_retry_per_host_drops_concurrency, len(hosts))
+    max_workers = min(per_host_drop_workers, len(hosts))
     error_by_host: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_host = {

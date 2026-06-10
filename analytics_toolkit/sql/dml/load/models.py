@@ -22,7 +22,6 @@ class LoadOptions:
     ch_sharding_key: str = "rand()"
     ch_only_shard: bool = False
     ch_retry_per_host_drops: bool = True
-    ch_retry_per_host_drops_concurrency: int | None = 5
     query_label: str | None = None
 
 

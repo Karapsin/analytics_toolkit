@@ -85,9 +85,6 @@ def finalize_loaded_stage(
         query_label=options.query_label,
         connection_key=options.to_db_key,
         ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-        ch_retry_per_host_drops_concurrency=(
-            options.ch_retry_per_host_drops_concurrency
-        ),
     )
     analyze_table(
         connection_type=options.to_db_backend,

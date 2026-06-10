@@ -511,7 +511,6 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_internal_ctas(
             "ch_sharding_key": "rand()",
             "ch_only_shard": False,
             "ch_retry_per_host_drops": True,
-            "ch_retry_per_host_drops_concurrency": 5,
             "insert_data": False,
             "drop_target_if_exists": False,
             "dry_run": False,
