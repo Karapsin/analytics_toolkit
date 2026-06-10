@@ -29,7 +29,7 @@ from .connection.errors import SqlOperationContext, SqlOperationError
 from .connection.get_sql_connection import get_sql_connection
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
-from .dml.io.gp_cancel import gp_cancel_all_running_queries
+from .dml.io.cancel_queries import cancel_queries
 from .dml.table import (
     drop_tables,
     drop_paritions,
@@ -46,6 +46,7 @@ from .dml.transfer.flow.api import transfer_table as transfer
 _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "parallel_sql",
+    "cancel_queries",
     "create_sql_table",
     "extract_ddl",
     "execute_read",
@@ -53,7 +54,6 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "drop_tables",
     "drop_paritions",
     "gp_create_many_partitions",
-    "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",
     "read",
@@ -69,6 +69,7 @@ __all__ = [
     "BACKEND_CAPABILITIES",
     "ConnectionValidationResult",
     "BackendName",
+    "cancel_queries",
     "ConnectionKey",
     "SqlTaskType",
     "SqlText",
@@ -82,7 +83,6 @@ __all__ = [
     "drop_tables",
     "drop_paritions",
     "gp_create_many_partitions",
-    "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",
     "read",

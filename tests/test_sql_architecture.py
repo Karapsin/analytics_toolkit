@@ -12,6 +12,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
     from analytics_toolkit import sql
 
     public_names = {
+        "cancel_queries",
         "create_sql_table",
         "drop_paritions",
         "drop_tables",
@@ -39,6 +40,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         "execute_sql",
         "drop_many_partitions",
         "drop_table",
+        "gp_cancel_all_running_queries",
         "read_sql",
         "transfer_table",
     }
@@ -79,12 +81,12 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
 
     single_db_operations = {
         "create_sql_table",
+        "cancel_queries",
         "drop_paritions",
         "drop_tables",
         "execute",
         "execute_read",
         "extract_ddl",
-        "gp_cancel_all_running_queries",
         "gp_create_many_partitions",
         "gp_vacuum",
         "load_df",

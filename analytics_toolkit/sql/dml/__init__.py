@@ -1,5 +1,5 @@
+from .io.cancel_queries import cancel_queries
 from .io.execute_sql import execute_sql
-from .io.gp_cancel import gp_cancel_all_running_queries
 from .io.read_sql import read_sql
 from .load.load_df import build_load_df_plan, load_df
 from .table import (
@@ -12,10 +12,10 @@ from .transfer.flow.api import build_transfer_table_plan, transfer_table
 __all__ = [
     "build_load_df_plan",
     "build_transfer_table_plan",
+    "cancel_queries",
     "drop_paritions",
     "execute_sql",
     "gp_create_many_partitions",
-    "gp_cancel_all_running_queries",
     "gp_vacuum",
     "load_df",
     "read_sql",

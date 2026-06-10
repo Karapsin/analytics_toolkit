@@ -4,8 +4,8 @@
 
 Greenplum-specific operations cover maintenance and table-shape defaults that
 are not portable to every backend. The maintenance helpers are
-[sql.gp_vacuum](functions/gp_vacuum.md) and
-[sql.gp_cancel_all_running_queries](functions/gp_cancel_all_running_queries.md).
+[sql.gp_vacuum](functions/gp_vacuum.md). Query cancellation is available through
+the cross-backend [sql.cancel_queries](functions/cancel_queries.md) helper.
 
 ## Maintenance
 
@@ -14,8 +14,9 @@ maintenance jobs where the caller controls when table cleanup or analyze work
 happens.
 
 Current-user query cancellation reads active backend sessions, excludes the
-caller session, and issues cancellations with optional concurrency. Use it for
-operational cleanup, not as normal flow control.
+caller session, and issues cancellations with optional concurrency. For
+Greenplum, pass backend PIDs from `pg_stat_activity` as query ids. Use
+`sql.cancel_queries` for operational cleanup, not as normal flow control.
 
 ## Table Defaults
 

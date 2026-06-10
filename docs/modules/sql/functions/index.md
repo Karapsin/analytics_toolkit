@@ -14,6 +14,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [read](read.md)
 - [execute](execute.md)
 - [execute_read](execute_read.md)
+- [cancel_queries](cancel_queries.md)
 - [load_df](load_df.md)
 - [transfer](transfer.md)
 - [create_sql_table](create_sql_table.md)
@@ -32,6 +33,5 @@ section, the helpers most likely to be used in normal workflows appear first.
 
 - [gp_create_many_partitions](gp_create_many_partitions.md)
 - [gp_vacuum](gp_vacuum.md)
-- [gp_cancel_all_running_queries](gp_cancel_all_running_queries.md)
 
 [SQL module index](../index.md)

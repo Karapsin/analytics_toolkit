@@ -4,6 +4,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.0 - 2026-06-10
+
+- Replaced the public Greenplum-only `sql.gp_cancel_all_running_queries()`
+  helper with cross-backend `sql.cancel_queries()`.
+- Added explicit query id and current-user `cancel_all=True` cancellation for
+  Greenplum, Trino, and ClickHouse.
+- Rejected `trino_partition_column` on non-Trino partition drops before opening
+  a database connection.
+
 ## 1.3.7.19 - 2026-06-10
 
 - Replaced the public ClickHouse-only `sql.ch_drop_table()` helper with

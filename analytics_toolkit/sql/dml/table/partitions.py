@@ -808,6 +808,10 @@ def _validate_drop_many_partitions_options(
         raise InvalidSqlInputError(
             "trino_partition_column is required for Trino partition deletes."
         )
+    if backend != "trino" and trino_partition_column is not None:
+        raise InvalidSqlInputError(
+            "trino_partition_column is only supported for Trino partition deletes."
+        )
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
