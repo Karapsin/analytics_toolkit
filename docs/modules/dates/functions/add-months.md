@@ -23,6 +23,16 @@ next_month = add_months("2026-04-10", 1)
 previous_month = add_months("2026-04-10", -1)
 ```
 
+Output example:
+
+```python
+next_month
+# '2026-05-01'
+
+previous_month
+# '2026-03-01'
+```
+
 ## Notes
 
 - The calculation starts from the beginning of the input date's month.

@@ -87,6 +87,13 @@ sql.create_sql_table(
 )
 ```
 
+Output example:
+
+```python
+ddl
+# 'CREATE TABLE sandbox.scores (...);'
+```
+
 ## Notes
 
 - The public helper opens and closes its own connection and retries the whole create operation.

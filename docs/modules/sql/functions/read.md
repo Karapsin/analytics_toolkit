@@ -29,6 +29,15 @@ orders = sql.read(
 )
 ```
 
+Output example:
+
+```python
+orders.head()
+#    order_id  user_id  amount
+# 0      1001       42   19.90
+# 1      1002       51   35.00
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.

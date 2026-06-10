@@ -23,4 +23,14 @@ info = sql.table_info("gp", "sandbox.orders", include_row_count=True)
 print(info.exists, info.row_count)
 ```
 
+Output example:
+
+```python
+info.exists, info.row_count
+# (True, 125000)
+
+info.columns[:3]
+# ['order_id', 'user_id', 'amount']
+```
+
 [SQL functions index](index.md)

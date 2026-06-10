@@ -23,4 +23,14 @@ next_day = add_days("2026-04-10", 1)
 previous_day = add_days("2026-04-10", -1)
 ```
 
+Output example:
+
+```python
+next_day
+# '2026-04-11'
+
+previous_day
+# '2026-04-09'
+```
+
 [All date functions](index.md)

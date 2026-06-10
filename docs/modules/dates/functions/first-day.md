@@ -23,4 +23,14 @@ month_start = first_day("2026-04-10")
 week_start = first_day("2026-04-10", period="week")
 ```
 
+Output example:
+
+```python
+month_start
+# '2026-04-01'
+
+week_start
+# '2026-04-06'
+```
+
 [All date functions](index.md)

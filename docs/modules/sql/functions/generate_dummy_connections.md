@@ -18,9 +18,16 @@ generate_dummy_connections(airflow: 'bool' = False) -> 'Path'
 ```python
 from analytics_toolkit import sql
 
-sql.generate_dummy_connections()
+path = sql.generate_dummy_connections()
 # For Airflow DAG routing metadata:
 # sql.generate_dummy_connections(airflow=True)
+```
+
+Output example:
+
+```python
+path
+# Path('.connections')
 ```
 
 ## Notes

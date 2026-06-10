@@ -30,4 +30,13 @@ tables = sql.show_tables("gp", schema="sandbox", table_name=["orders", "events"]
 print(tables)
 ```
 
+Output example:
+
+```python
+tables[["schema", "table_name"]]
+#      schema table_name
+# 0   sandbox    orders
+# 1   sandbox    events
+```
+
 [SQL functions index](index.md)

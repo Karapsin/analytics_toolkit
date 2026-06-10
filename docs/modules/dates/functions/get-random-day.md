@@ -22,6 +22,13 @@ from analytics_toolkit.dates import get_random_day
 sample_day = get_random_day("2026-04-01", "2026-04-30")
 ```
 
+Output example:
+
+```python
+sample_day
+# '2026-04-18'
+```
+
 ## Notes
 
 - The range is inclusive.

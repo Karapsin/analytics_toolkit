@@ -20,4 +20,11 @@ from analytics_toolkit.dates import sanitize_date
 partition_value = sanitize_date("2026-05-18")
 ```
 
+Output example:
+
+```python
+partition_value
+# '20260518'
+```
+
 [All date functions](index.md)

@@ -20,4 +20,11 @@ from analytics_toolkit.dates import get_today
 today = get_today()
 ```
 
+Output example:
+
+```python
+today
+# '2026-06-10'
+```
+
 [All date functions](index.md)

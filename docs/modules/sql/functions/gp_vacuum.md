@@ -24,6 +24,12 @@ from analytics_toolkit import sql
 sql.gp_vacuum("sandbox.orders", analyze=True)
 ```
 
+Output example:
+
+```python
+# Returns None after VACUUM finishes.
+```
+
 ## Notes
 
 - Runs outside a transaction block.

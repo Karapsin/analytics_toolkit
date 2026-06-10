@@ -62,6 +62,15 @@ result = compute_test_metrics(
 )
 ```
 
+Output example:
+
+```python
+result[["metric", "metric_type", "group A", "group B", "p-value"]]
+#   metric metric_type  group A  group B  p-value
+# 0 orders        mean  control   test_1    0.041
+# 1    ctr       ratio  control   test_1    0.018
+```
+
 ## Notes
 
 - All numeric columns not used as `group`, `user_id`, or ratio components are

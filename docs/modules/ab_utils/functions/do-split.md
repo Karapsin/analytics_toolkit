@@ -50,6 +50,16 @@ split_df = do_split(
 )
 ```
 
+Output example:
+
+```python
+split_df[["user_id", "group_name"]].head()
+#    user_id group_name
+# 0        1    control
+# 1        2     test_1
+# 2        3     test_2
+```
+
 ## Notes
 
 - Output groups are named `control`, `test_1`, ..., `test_N`.

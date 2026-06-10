@@ -22,4 +22,12 @@ ddl = sql.extract_ddl("trino", ["sandbox.orders", "sandbox.order_summary"])
 print(ddl)
 ```
 
+Output example:
+
+```sql
+CREATE TABLE sandbox.orders (...);
+
+CREATE TABLE sandbox.order_summary (...);
+```
+
 [SQL functions index](index.md)

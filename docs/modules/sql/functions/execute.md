@@ -39,6 +39,12 @@ sql.execute(
 )
 ```
 
+Output example:
+
+```python
+# Returns None after the statement completes.
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.

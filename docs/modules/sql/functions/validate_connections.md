@@ -22,4 +22,11 @@ for result in sql.validate_connections(["gp", "trino"]):
     print(result.connection_key, result.valid, result.error)
 ```
 
+Output example:
+
+```text
+gp True None
+trino True None
+```
+
 [SQL functions index](index.md)

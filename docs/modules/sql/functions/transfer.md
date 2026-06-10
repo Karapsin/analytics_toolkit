@@ -64,6 +64,13 @@ rows = sql.transfer(
 )
 ```
 
+Output example:
+
+```python
+rows
+# 125000
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.

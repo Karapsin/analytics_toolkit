@@ -37,6 +37,17 @@ tables = break_table(
 )
 ```
 
+Output example:
+
+```python
+tables.keys()
+# dict_keys(['2026-06-01', '2026-06-02'])
+
+tables["2026-06-01"][0].head()
+#   report_date segment  metric  value
+# 0  2026-06-01     new  orders    120
+```
+
 ## Notes
 
 - Use this helper when your dataframe already has the desired table shape.

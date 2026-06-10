@@ -29,4 +29,12 @@ plan = sql.transfer(
 print(sql.format_plan(plan, max_sql_chars=120))
 ```
 
+Output example:
+
+```text
+SQL plan: transfer
+- trino: select * from sandbox.orders
+- gp: CREATE TABLE sandbox.orders_copy (...)
+```
+
 [SQL functions index](index.md)

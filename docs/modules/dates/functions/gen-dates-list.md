@@ -24,6 +24,16 @@ days = gen_dates_list("2026-04-01", "2026-04-10")
 months = gen_dates_list("2026-01-15", "2026-06-20", interval="months")
 ```
 
+Output example:
+
+```python
+days
+# ['2026-04-01', '2026-04-02', ..., '2026-04-10']
+
+months
+# ['2026-01-01', '2026-02-01', ..., '2026-06-01']
+```
+
 ## Notes
 
 - Weekly, monthly, and quarterly ranges are truncated to period starts and warn

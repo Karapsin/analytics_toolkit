@@ -23,6 +23,16 @@ next_quarter = add_quarters("2026-04-10", 1)
 previous_quarter = add_quarters("2026-04-10", -1)
 ```
 
+Output example:
+
+```python
+next_quarter
+# '2026-07-01'
+
+previous_quarter
+# '2026-01-01'
+```
+
 ## Notes
 
 - The calculation starts from the beginning of the input date's quarter.

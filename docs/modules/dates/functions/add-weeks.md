@@ -23,6 +23,16 @@ next_week = add_weeks("2026-04-10", 1)
 previous_week = add_weeks("2026-04-10", -1)
 ```
 
+Output example:
+
+```python
+next_week
+# '2026-04-13'
+
+previous_week
+# '2026-03-30'
+```
+
 ## Notes
 
 - The calculation starts from the beginning of the input date's week.

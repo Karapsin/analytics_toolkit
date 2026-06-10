@@ -56,6 +56,13 @@ rows = sql.load_df(
 )
 ```
 
+Output example:
+
+```python
+rows
+# 2
+```
+
 ## Notes
 
 - `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.

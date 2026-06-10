@@ -47,6 +47,17 @@ result = parallel_compute_metrics(
 )
 ```
 
+Output example:
+
+```python
+result.keys()
+# dict_keys(['segment_a', 'segment_b'])
+
+result["segment_a"][["metric", "group A", "group B", "p-value"]].head()
+#   metric  group A group B  p-value
+# 0 orders  control  test_1    0.041
+```
+
 ## Notes
 
 - Successful tasks return dataframes.

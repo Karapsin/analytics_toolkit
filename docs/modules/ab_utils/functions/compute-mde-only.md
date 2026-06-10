@@ -56,6 +56,16 @@ planning = compute_mde_only(
 )
 ```
 
+Output example:
+
+```python
+planning[["metric", "baseline", "mde_absolute", "mde_relative"]]
+#       metric  baseline  mde_absolute  mde_relative
+# 0     orders      0.42          0.01          0.024
+# 1        gmv     18.70          0.42          0.022
+# 2   ctr_user      0.08          0.01          0.125
+```
+
 ## Notes
 
 - Pass either `n0` and `n1` directly or through `MdePlanningOptions`.

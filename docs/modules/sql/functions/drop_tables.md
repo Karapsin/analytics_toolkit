@@ -45,6 +45,14 @@ plan = sql.drop_tables(
 print(sql.format_plan(plan))
 ```
 
+Output example:
+
+```text
+SQL plan: drop_tables
+- ch: DROP TABLE IF EXISTS sandbox.events_daily
+- ch: DROP TABLE IF EXISTS sandbox.events_archive
+```
+
 ## Notes
 
 - ClickHouse-specific flags control whether the distributed table, shard table, or both are dropped.

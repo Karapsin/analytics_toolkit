@@ -32,6 +32,17 @@ result = sql.async_sql(tasks, concurrency=2)
 orders = result["orders"]
 ```
 
+Output example:
+
+```python
+result.keys()
+# dict_keys(['orders', 'refresh'])
+
+orders.head()
+#    order_id  user_id  amount
+# 0      1001       42   19.90
+```
+
 ## Notes
 
 - The function itself is synchronous from the caller perspective; it returns a result dictionary.

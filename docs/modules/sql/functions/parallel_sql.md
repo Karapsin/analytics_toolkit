@@ -31,6 +31,17 @@ tasks = [
 result = sql.parallel_sql(tasks, concurrency=2)
 ```
 
+Output example:
+
+```python
+result.keys()
+# dict_keys(['orders', 'events'])
+
+result["orders"].head()
+#    order_id  user_id  amount
+# 0      1001       42   19.90
+```
+
 ## Notes
 
 - Use the same task specification shape as `async_sql`.

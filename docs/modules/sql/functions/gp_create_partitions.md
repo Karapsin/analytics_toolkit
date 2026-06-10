@@ -50,6 +50,13 @@ ddl = sql.gp_create_partitions(
 )
 ```
 
+Output example:
+
+```python
+ddl
+# 'ALTER TABLE sandbox.events ADD PARTITION p_20260601 ...;'
+```
+
 ## Notes
 
 - Exactly one of `intervals`, `values`, `days`, `weeks`, `months`, or `years` must be passed.

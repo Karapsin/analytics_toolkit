@@ -31,6 +31,14 @@ cancelled_all = sql.cancel_queries("gp", cancel_all=True, concurrency=4)
 print(cancelled_all)
 ```
 
+Output example:
+
+```python
+cancelled[["backend", "query_id", "cancelled"]]
+#   backend                   query_id  cancelled
+# 0   trino  20260610_120000_00001_abcd1       True
+```
+
 ## Notes
 
 - Exactly one cancellation mode is required: provide `query_ids` or set `cancel_all=True`.

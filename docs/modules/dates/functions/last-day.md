@@ -23,4 +23,14 @@ month_end = last_day("2026-04-10")
 quarter_end = last_day("2026-04-10", period="quarter")
 ```
 
+Output example:
+
+```python
+month_end
+# '2026-04-30'
+
+quarter_end
+# '2026-06-30'
+```
+
 [All date functions](index.md)

@@ -40,6 +40,15 @@ formatted = format_ab_metrics(
 )
 ```
 
+Output example:
+
+```python
+formatted.head()
+#   segment metric  control  test_1 p-value test_1 delta_relative_significant test_1
+# 0     all orders     0.42    0.45             0.041                            7.1%
+# 1     all    ctr     0.08    0.09             0.018                           12.5%
+```
+
 ## Notes
 
 - With the default `output_type`, output contains metric values by experiment

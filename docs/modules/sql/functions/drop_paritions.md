@@ -41,6 +41,13 @@ plan = sql.drop_paritions(
 print(sql.format_plan(plan))
 ```
 
+Output example:
+
+```text
+SQL plan: drop_paritions
+- gp: ALTER TABLE sandbox.events DROP PARTITION ...
+```
+
 ## Notes
 
 - Greenplum, Trino, and ClickHouse use different generated SQL for partition removal.

@@ -50,6 +50,18 @@ tables = pivot_and_break_table(
 )
 ```
 
+Output example:
+
+```python
+tables.keys()
+# dict_keys(['2026-06-01', '2026-06-02'])
+
+tables["2026-06-01"][0].head()
+# ab_group   metric  control  test_1
+# 0          orders      120     133
+# 1             ctr     0.08    0.09
+```
+
 ## Notes
 
 - Returned dataframes and raw Excel cell values are unchanged by `prettify`.

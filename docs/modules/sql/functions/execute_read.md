@@ -42,6 +42,15 @@ result = sql.execute_read(
 )
 ```
 
+Output example:
+
+```python
+result.head()
+#    order_date  orders
+# 0  2026-06-01    1204
+# 1  2026-06-02    1187
+```
+
 ## Notes
 
 - Every statement except the last is executed first; the last statement is read into a dataframe.
