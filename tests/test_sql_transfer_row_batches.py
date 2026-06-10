@@ -226,6 +226,75 @@ def test_adaptive_batch_sizer_targets_rows_per_second() -> None:
     assert sizer.current_size == 1
 
 
+def test_adaptive_batch_sizer_targets_rows_per_second_with_smoothing() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=10,
+        min_size=1,
+        max_size=20,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=5,
+        target_rows_per_second_deadband=0.15,
+    )
+
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(1.0, inserted_rows=100)
+    assert sizer.current_size == 10
+
+    sizer.update(1.0, inserted_rows=112)
+    assert sizer.current_size == 10
+
+    sizer.update(1.0, inserted_rows=200)
+    assert sizer.current_size == 15
+
+
+def test_adaptive_batch_sizer_window_one_preserves_previous_rows_per_second_logic() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=2,
+        min_size=1,
+        max_size=8,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        target_rows_per_second_deadband=0.0,
+    )
+
+    sizer.update(1.0, inserted_rows=2)
+    assert sizer.current_size == 2
+    sizer.update(0.5, inserted_rows=2)
+    assert sizer.current_size == 3
+    sizer.update(2.0, inserted_rows=3)
+    assert sizer.current_size == 1
+    sizer.update(0.9, inserted_rows=1)
+    assert sizer.current_size == 1
+
+
+def test_adaptive_batch_sizer_respects_batch_seconds_bounds() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=2,
+        min_size=1,
+        max_size=8,
+        optimize_by_rows_per_second=False,
+        target_seconds=10.0,
+        min_target_seconds=20.0,
+        max_target_seconds=40.0,
+    )
+
+    sizer.update(9.9)
+    assert sizer.current_size == 3
+    sizer.update(10.0)
+    assert sizer.current_size == 3
+    sizer.update(35.0)
+    assert sizer.current_size == 3
+    sizer.update(50.0)
+    assert sizer.current_size == 1
+
+
 def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
     sizer = models_module.AdaptiveBatchSizer(
         enabled=True,
@@ -283,6 +352,22 @@ def test_adaptive_batch_sizer_can_target_memory_instead_of_time() -> None:
     assert disabled.current_size == 100
 
 
+def test_adaptive_batch_sizer_respects_batch_memory_bounds() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        optimize_by_rows_per_second=False,
+        target_seconds=10.0,
+        target_memory_bytes=100,
+        min_target_memory_bytes=50,
+        max_target_memory_bytes=50,
+    )
+    sizer.update(1.0, memory_bytes=75)
+    assert sizer.current_size == 66
+
+
 def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
     options = transfer_api_module.build_transfer_options(
         from_db="gp",
@@ -294,6 +379,19 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
 
     assert options.min_batch_size == 100
     assert options.max_batch_size == 400
+    assert options.target_rows_per_second_window == 5
+    assert options.target_rows_per_second_deadband == 0.15
+
+    custom_window_options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        target_rows_per_second_window=3,
+        target_rows_per_second_deadband=0.05,
+    )
+    assert custom_window_options.target_rows_per_second_window == 3
+    assert custom_window_options.target_rows_per_second_deadband == 0.05
 
     memory_options = transfer_api_module.build_transfer_options(
         from_db="gp",
@@ -340,6 +438,33 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
             max_batch_size=99,
         )
 
+    bounded_time_options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        batch_size=100,
+        target_batch_seconds=10,
+        min_batch_seconds=15.0,
+        max_batch_seconds=30.0,
+    )
+    assert bounded_time_options.target_batch_seconds == 15.0
+    assert bounded_time_options.min_batch_seconds == 15.0
+    assert bounded_time_options.max_batch_seconds == 30.0
+
+    bounded_memory_options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        target_batch_memory_mb=64,
+        min_batch_memory_mb=32,
+        max_batch_memory_mb=512,
+    )
+    assert bounded_memory_options.target_batch_memory_mb == 64.0
+    assert bounded_memory_options.min_batch_memory_mb == 32.0
+    assert bounded_memory_options.max_batch_memory_mb == 512.0
+
 
 @pytest.mark.parametrize(
     "target_batch_memory_mb",
@@ -355,6 +480,117 @@ def test_transfer_options_validate_target_batch_memory(
             from_sql="select id from source_table",
             to_table="sandbox.target",
             target_batch_memory_mb=target_batch_memory_mb,
+        )
+
+
+@pytest.mark.parametrize(
+    "min_batch_seconds,max_batch_seconds",
+    [
+        (0, None),
+        (None, 0),
+        (True, None),
+        ("10", None),
+    ],
+)
+def test_transfer_options_validate_batch_seconds_bounds(
+    min_batch_seconds: Any,
+    max_batch_seconds: Any,
+) -> None:
+    match = "min_batch_seconds" if min_batch_seconds is not None else "max_batch_seconds"
+    with pytest.raises(ValueError, match=match):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            min_batch_seconds=min_batch_seconds,
+            max_batch_seconds=max_batch_seconds,
+        )
+
+
+@pytest.mark.parametrize(
+    "min_batch_memory_mb,max_batch_memory_mb",
+    [
+        (0, None),
+        (None, 0),
+        (True, None),
+        ("16", None),
+    ],
+)
+def test_transfer_options_validate_batch_memory_bounds(
+    min_batch_memory_mb: Any,
+    max_batch_memory_mb: Any,
+) -> None:
+    match = (
+        "min_batch_memory_mb" if min_batch_memory_mb is not None else "max_batch_memory_mb"
+    )
+    with pytest.raises(ValueError, match=match):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            min_batch_memory_mb=min_batch_memory_mb,
+            max_batch_memory_mb=max_batch_memory_mb,
+        )
+
+
+@pytest.mark.parametrize(
+    "target_rows_per_second_window",
+    [0, -1, 1.2, True, "5", None],
+)
+def test_transfer_options_validate_rows_per_second_window(
+    target_rows_per_second_window: Any,
+) -> None:
+    with pytest.raises(ValueError, match="target_rows_per_second_window"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            target_rows_per_second_window=target_rows_per_second_window,
+        )
+
+
+@pytest.mark.parametrize(
+    "target_rows_per_second_deadband",
+    [-0.1, float("nan"), float("inf"), True, "0.1"],
+)
+def test_transfer_options_validate_rows_per_second_deadband(
+    target_rows_per_second_deadband: Any,
+) -> None:
+    with pytest.raises(ValueError, match="target_rows_per_second_deadband"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            target_rows_per_second_deadband=target_rows_per_second_deadband,
+        )
+
+
+def test_transfer_options_rejects_inverted_batch_seconds_bounds() -> None:
+    with pytest.raises(ValueError, match="min_batch_seconds"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            min_batch_seconds=20.0,
+            max_batch_seconds=10.0,
+        )
+
+
+def test_transfer_options_rejects_inverted_batch_memory_bounds() -> None:
+    with pytest.raises(ValueError, match="min_batch_memory_mb"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            min_batch_memory_mb=64,
+            max_batch_memory_mb=32,
+            target_batch_memory_mb=64,
         )
 
 
@@ -1029,8 +1265,22 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
     )
 
     assert plan.options["estimate_total_rows"] is True
+    assert plan.options["target_rows_per_second_window"] == 5
+    assert plan.options["target_rows_per_second_deadband"] == 0.15
     assert plan.options["target_batch_memory_mb"] == 32.0
     assert plan.options["max_batch_size"] is None
+
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        dry_run=True,
+        target_rows_per_second_window=3,
+        target_rows_per_second_deadband=0.05,
+    )
+    assert plan.options["target_rows_per_second_window"] == 3
+    assert plan.options["target_rows_per_second_deadband"] == 0.05
 
 
 @pytest.mark.parametrize(

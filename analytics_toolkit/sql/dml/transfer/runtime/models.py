@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
+from collections import deque
 from typing import Any
 
 import pandas as pd
@@ -82,9 +83,21 @@ class AdaptiveBatchSizer:
     min_size: int
     max_size: int | None
     target_seconds: float
+    min_target_seconds: float | None = None
+    max_target_seconds: float | None = None
     optimize_by_rows_per_second: bool = True
+    target_rows_per_second_window: int = 5
+    target_rows_per_second_deadband: float = 0.15
+    rows_per_second_samples: deque[float] = field(default_factory=deque, init=False)
     previous_rows_per_second: float | None = None
     target_memory_bytes: int | None = None
+    min_target_memory_bytes: int | None = None
+    max_target_memory_bytes: int | None = None
+
+    def __post_init__(self) -> None:
+        self.rows_per_second_samples = deque(
+            maxlen=self.target_rows_per_second_window,
+        )
 
     def update(
         self,
@@ -108,12 +121,13 @@ class AdaptiveBatchSizer:
             self._update_for_rows_per_second(duration_seconds, inserted_rows)
             return
 
-        if duration_seconds < self.target_seconds / 2:
+        target_seconds = self._resolve_target_seconds()
+        if duration_seconds < target_seconds / 2:
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
             self.current_size = self._cap_size(grown_size)
             return
 
-        if duration_seconds > self.target_seconds * 2:
+        if duration_seconds > target_seconds * 2:
             shrunk_size = max(1, int(self.current_size * 0.5))
             self.current_size = max(shrunk_size, self.min_size)
 
@@ -126,20 +140,29 @@ class AdaptiveBatchSizer:
             return
 
         rows_per_second = inserted_rows / duration_seconds
+        self.rows_per_second_samples.append(rows_per_second)
         previous_rows_per_second = self.previous_rows_per_second
-        self.previous_rows_per_second = rows_per_second
+        smoothed_rows_per_second = (
+            sum(self.rows_per_second_samples) / len(self.rows_per_second_samples)
+        )
+        self.previous_rows_per_second = smoothed_rows_per_second
         if previous_rows_per_second is None:
             return
-        if rows_per_second < previous_rows_per_second:
+
+        if smoothed_rows_per_second < previous_rows_per_second * (
+            1.0 - self.target_rows_per_second_deadband
+        ):
             shrunk_size = max(1, int(self.current_size * 0.5))
             self.current_size = max(shrunk_size, self.min_size)
             return
-        if rows_per_second > previous_rows_per_second:
+        if smoothed_rows_per_second > previous_rows_per_second * (
+            1.0 + self.target_rows_per_second_deadband
+        ):
             grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
             self.current_size = self._cap_size(grown_size)
 
     def _update_for_memory(self, memory_bytes: int) -> None:
-        target_memory_bytes = self.target_memory_bytes
+        target_memory_bytes = self._resolve_target_memory_bytes()
         if target_memory_bytes is None:
             return
 
@@ -154,6 +177,28 @@ class AdaptiveBatchSizer:
             if shrunk_size >= self.current_size:
                 shrunk_size = self.current_size - 1
             self.current_size = max(shrunk_size, self.min_size)
+
+    def _resolve_target_memory_bytes(self) -> int | None:
+        target_memory_bytes = self.target_memory_bytes
+        if target_memory_bytes is None:
+            return None
+        min_target_memory_bytes = self.min_target_memory_bytes
+        if min_target_memory_bytes is not None and target_memory_bytes < min_target_memory_bytes:
+            target_memory_bytes = min_target_memory_bytes
+        max_target_memory_bytes = self.max_target_memory_bytes
+        if max_target_memory_bytes is not None and target_memory_bytes > max_target_memory_bytes:
+            target_memory_bytes = max_target_memory_bytes
+        return target_memory_bytes
+
+    def _resolve_target_seconds(self) -> float:
+        target_seconds = self.target_seconds
+        min_target_seconds = self.min_target_seconds
+        if min_target_seconds is not None and target_seconds < min_target_seconds:
+            target_seconds = min_target_seconds
+        max_target_seconds = self.max_target_seconds
+        if max_target_seconds is not None and target_seconds > max_target_seconds:
+            target_seconds = max_target_seconds
+        return target_seconds
 
     def _cap_size(self, size: int) -> int:
         if self.max_size is None:
@@ -184,9 +229,17 @@ class TransferOptions:
     min_batch_size: int = 1_000
     max_batch_size: int | None = 400_000
     target_batch_seconds: float = 10.0
+    min_batch_seconds: float | None = None
+    max_batch_seconds: float | None = None
     target_rows_per_second: bool = True
+    target_rows_per_second_window: int = 5
+    target_rows_per_second_deadband: float = 0.15
     target_batch_memory_mb: float | None = None
     target_batch_memory_bytes: int | None = None
+    min_batch_memory_mb: float | None = None
+    min_batch_memory_bytes: int | None = None
+    max_batch_memory_mb: float | None = None
+    max_batch_memory_bytes: int | None = None
     partition_by: list[str] | str | None = None
     order_by: list[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"

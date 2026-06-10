@@ -124,9 +124,15 @@ def load_stage_batches(
         current_size=options.batch_size,
         min_size=options.min_batch_size,
         max_size=options.max_batch_size,
+        min_target_seconds=options.min_batch_seconds,
+        max_target_seconds=options.max_batch_seconds,
         optimize_by_rows_per_second=options.target_rows_per_second,
         target_seconds=options.target_batch_seconds,
+        target_rows_per_second_window=options.target_rows_per_second_window,
+        target_rows_per_second_deadband=options.target_rows_per_second_deadband,
         target_memory_bytes=options.target_batch_memory_bytes,
+        min_target_memory_bytes=options.min_batch_memory_bytes,
+        max_target_memory_bytes=options.max_batch_memory_bytes,
     )
     try:
         for batch in iter_source_batches(

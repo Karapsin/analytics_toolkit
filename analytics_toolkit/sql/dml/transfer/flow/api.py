@@ -67,7 +67,13 @@ def transfer_table(
     max_batch_size: int | None = None,
     target_rows_per_second: bool = True,
     target_batch_seconds: float | None = None,
+    min_batch_seconds: float | None = None,
+    max_batch_seconds: float | None = None,
     target_batch_memory_mb: float | None = None,
+    min_batch_memory_mb: float | None = None,
+    max_batch_memory_mb: float | None = None,
+    target_rows_per_second_window: int = 5,
+    target_rows_per_second_deadband: float = 0.15,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
@@ -103,7 +109,13 @@ def transfer_table(
         max_batch_size=max_batch_size,
         target_rows_per_second=target_rows_per_second,
         target_batch_seconds=target_batch_seconds,
+        min_batch_seconds=min_batch_seconds,
+        max_batch_seconds=max_batch_seconds,
         target_batch_memory_mb=target_batch_memory_mb,
+        min_batch_memory_mb=min_batch_memory_mb,
+        max_batch_memory_mb=max_batch_memory_mb,
+        target_rows_per_second_window=target_rows_per_second_window,
+        target_rows_per_second_deadband=target_rows_per_second_deadband,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
@@ -235,7 +247,13 @@ def build_transfer_options(
     max_batch_size: int | None = None,
     target_rows_per_second: bool = True,
     target_batch_seconds: float | None = None,
+    min_batch_seconds: float | None = None,
+    max_batch_seconds: float | None = None,
     target_batch_memory_mb: float | None = None,
+    min_batch_memory_mb: float | None = None,
+    max_batch_memory_mb: float | None = None,
+    target_rows_per_second_window: int = 5,
+    target_rows_per_second_deadband: float = 0.15,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
@@ -276,16 +294,35 @@ def build_transfer_options(
         resolved_target_batch_memory_bytes,
     ) = _resolve_target_batch_memory(target_batch_memory_mb)
     (
+        resolved_min_batch_memory_mb,
+        resolved_min_batch_memory_bytes,
+        resolved_max_batch_memory_mb,
+        resolved_max_batch_memory_bytes,
+    ) = _resolve_target_batch_memory_limits(
+        min_batch_memory_mb=min_batch_memory_mb,
+        max_batch_memory_mb=max_batch_memory_mb,
+    )
+    (
         resolved_min_batch_size,
         resolved_max_batch_size,
         resolved_target_batch_seconds,
+        resolved_min_batch_seconds,
+        resolved_max_batch_seconds,
     ) = _resolve_adaptive_batch_bounds(
         batch_size=batch_size,
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
         target_batch_seconds=target_batch_seconds,
+        min_batch_seconds=min_batch_seconds,
+        max_batch_seconds=max_batch_seconds,
         adaptive_batch_size=adaptive_batch_size,
         unlimited_default_max=resolved_target_batch_memory_bytes is not None,
+    )
+    resolved_target_rows_per_second_window = _resolve_target_rows_per_second_window(
+        target_rows_per_second_window,
+    )
+    resolved_target_rows_per_second_deadband = (
+        _resolve_target_rows_per_second_deadband(target_rows_per_second_deadband)
     )
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = TransferOptions(
@@ -304,8 +341,16 @@ def build_transfer_options(
         max_batch_size=resolved_max_batch_size,
         target_rows_per_second=resolved_target_rows_per_second,
         target_batch_seconds=resolved_target_batch_seconds,
+        min_batch_seconds=resolved_min_batch_seconds,
+        max_batch_seconds=resolved_max_batch_seconds,
         target_batch_memory_mb=resolved_target_batch_memory_mb,
         target_batch_memory_bytes=resolved_target_batch_memory_bytes,
+        min_batch_memory_mb=resolved_min_batch_memory_mb,
+        min_batch_memory_bytes=resolved_min_batch_memory_bytes,
+        max_batch_memory_mb=resolved_max_batch_memory_mb,
+        max_batch_memory_bytes=resolved_max_batch_memory_bytes,
+        target_rows_per_second_window=resolved_target_rows_per_second_window,
+        target_rows_per_second_deadband=resolved_target_rows_per_second_deadband,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
@@ -408,9 +453,11 @@ def _resolve_adaptive_batch_bounds(
     min_batch_size: int,
     max_batch_size: int | None,
     target_batch_seconds: float | None,
+    min_batch_seconds: float | None,
+    max_batch_seconds: float | None,
     adaptive_batch_size: bool,
     unlimited_default_max: bool = False,
-) -> tuple[int, int | None, float]:
+) -> tuple[int, int | None, float, float | None, float | None]:
     if not isinstance(adaptive_batch_size, bool):
         raise ValueError("adaptive_batch_size must be a boolean.")
     if batch_size <= 0:
@@ -427,6 +474,35 @@ def _resolve_adaptive_batch_bounds(
         raise ValueError("target_batch_seconds must be positive.") from exc
     if resolved_target_batch_seconds <= 0:
         raise ValueError("target_batch_seconds must be positive.")
+
+    resolved_min_batch_seconds = _resolve_positive_number(
+        min_batch_seconds,
+        "min_batch_seconds",
+    )
+    resolved_max_batch_seconds = _resolve_positive_number(
+        max_batch_seconds,
+        "max_batch_seconds",
+    )
+
+    if (
+        resolved_min_batch_seconds is not None
+        and resolved_max_batch_seconds is not None
+        and resolved_min_batch_seconds > resolved_max_batch_seconds
+    ):
+        raise ValueError(
+            "min_batch_seconds must be less than or equal to max_batch_seconds."
+        )
+
+    if resolved_min_batch_seconds is not None:
+        resolved_target_batch_seconds = max(
+            resolved_target_batch_seconds,
+            resolved_min_batch_seconds,
+        )
+    if resolved_max_batch_seconds is not None:
+        resolved_target_batch_seconds = min(
+            resolved_target_batch_seconds,
+            resolved_max_batch_seconds,
+        )
 
     resolved_min_batch_size = min_batch_size
     if resolved_min_batch_size > batch_size and min_batch_size == 1_000:
@@ -451,6 +527,8 @@ def _resolve_adaptive_batch_bounds(
         resolved_min_batch_size,
         resolved_max_batch_size,
         resolved_target_batch_seconds,
+        resolved_min_batch_seconds,
+        resolved_max_batch_seconds,
     )
 
 
@@ -476,6 +554,97 @@ def _resolve_target_batch_memory(
         resolved_target_batch_memory_mb,
         max(1, int(resolved_target_batch_memory_mb * 1024 * 1024)),
     )
+
+
+def _resolve_target_batch_memory_limits(
+    *,
+    min_batch_memory_mb: float | None,
+    max_batch_memory_mb: float | None,
+) -> tuple[float | None, int | None, float | None, int | None]:
+    resolved_min_batch_memory_mb = _resolve_positive_number(
+        min_batch_memory_mb,
+        "min_batch_memory_mb",
+    )
+    resolved_max_batch_memory_mb = _resolve_positive_number(
+        max_batch_memory_mb,
+        "max_batch_memory_mb",
+    )
+
+    if (
+        resolved_min_batch_memory_mb is not None
+        and resolved_max_batch_memory_mb is not None
+        and resolved_min_batch_memory_mb > resolved_max_batch_memory_mb
+    ):
+        raise ValueError(
+            "min_batch_memory_mb must be less than or equal to max_batch_memory_mb."
+        )
+
+    resolved_min_batch_memory_bytes = (
+        None
+        if resolved_min_batch_memory_mb is None
+        else max(1, int(resolved_min_batch_memory_mb * 1024 * 1024))
+    )
+    resolved_max_batch_memory_bytes = (
+        None
+        if resolved_max_batch_memory_mb is None
+        else max(1, int(resolved_max_batch_memory_mb * 1024 * 1024))
+    )
+    return (
+        resolved_min_batch_memory_mb,
+        resolved_min_batch_memory_bytes,
+        resolved_max_batch_memory_mb,
+        resolved_max_batch_memory_bytes,
+    )
+
+
+def _resolve_target_rows_per_second_window(
+    target_rows_per_second_window: int,
+) -> int:
+    if isinstance(target_rows_per_second_window, bool) or not isinstance(
+        target_rows_per_second_window,
+        int,
+    ):
+        raise ValueError("target_rows_per_second_window must be a positive integer.")
+    if target_rows_per_second_window < 1:
+        raise ValueError("target_rows_per_second_window must be a positive integer.")
+    return target_rows_per_second_window
+
+
+def _resolve_target_rows_per_second_deadband(
+    target_rows_per_second_deadband: float,
+) -> float:
+    if isinstance(target_rows_per_second_deadband, bool) or not isinstance(
+        target_rows_per_second_deadband,
+        Real,
+    ):
+        raise ValueError(
+            "target_rows_per_second_deadband must be a finite non-negative number."
+        )
+    resolved_target_rows_per_second_deadband = float(
+        target_rows_per_second_deadband,
+    )
+    if (
+        not math.isfinite(resolved_target_rows_per_second_deadband)
+        or resolved_target_rows_per_second_deadband < 0
+    ):
+        raise ValueError(
+            "target_rows_per_second_deadband must be a finite non-negative number."
+        )
+    return resolved_target_rows_per_second_deadband
+
+
+def _resolve_positive_number(
+    value: float | None,
+    label: str,
+) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{label} must be a positive number.")
+    resolved = float(value)
+    if not math.isfinite(resolved) or resolved <= 0:
+        raise ValueError(f"{label} must be a positive number.")
+    return resolved
 
 
 def _resolve_transfer_write_mode(
@@ -527,7 +696,13 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "min_batch_size": options.min_batch_size,
             "max_batch_size": options.max_batch_size,
             "target_batch_seconds": options.target_batch_seconds,
+            "min_batch_seconds": options.min_batch_seconds,
+            "max_batch_seconds": options.max_batch_seconds,
             "target_batch_memory_mb": options.target_batch_memory_mb,
+            "min_batch_memory_mb": options.min_batch_memory_mb,
+            "max_batch_memory_mb": options.max_batch_memory_mb,
+            "target_rows_per_second_window": options.target_rows_per_second_window,
+            "target_rows_per_second_deadband": options.target_rows_per_second_deadband,
             "key_columns": options.key_columns,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,

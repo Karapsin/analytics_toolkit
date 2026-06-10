@@ -4,6 +4,20 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.7 - 2026-06-10
+
+- Added smoothed adaptive throughput control for transfer batching:
+  `target_rows_per_second_window` and `target_rows_per_second_deadband`.
+  Throughput adaptation now uses an average over the most recent batches with
+  configurable deadband before growing/shrinking batch size.
+
+## 1.3.8.6 - 2026-06-10
+
+- Added optional transfer constraints `min_batch_seconds`, `max_batch_seconds`,
+  `min_batch_memory_mb`, and `max_batch_memory_mb` for adaptive target tuning.
+- Constrained adaptive time/memory targets are now propagated into runtime
+  transfer batch sizing decisions and dry-run option output.
+
 ## 1.3.8.5 - 2026-06-10
 
 - Added single explicit transfer adaptation target validation.
