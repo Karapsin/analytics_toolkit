@@ -188,7 +188,10 @@ weeks = gen_dates_list("2026-03-01", "2026-03-31", interval="week")
 ```
 
 Date lists are useful for batch SQL jobs where the same query runs once per
-period. For example, keep this template in `queries/load_daily_order_metrics.sql`:
+period. Use `gen_dates_list(..., interval="months")` for monthly fan-out jobs;
+because the helper includes `end_dt`, pass the last month start when the SQL
+window uses a half-open upper bound. For example, keep this template in
+`queries/load_daily_order_metrics.sql`:
 
 ```sql
 insert into sandbox.daily_order_metrics (dt, order_count, revenue)

@@ -18,10 +18,16 @@ gen_dates_list(start_dt, end_dt, interval="days", output_string=True)
 ## Usage
 
 ```python
-from analytics_toolkit.dates import gen_dates_list
+from analytics_toolkit.dates import add_months, gen_dates_list
 
 days = gen_dates_list("2026-04-01", "2026-04-10")
 months = gen_dates_list("2026-01-15", "2026-06-20", interval="months")
+
+sql_month_starts = gen_dates_list(
+    "2025-11-01",
+    add_months("2026-03-01", -1),
+    interval="months",
+)
 ```
 
 Output example:
@@ -32,10 +38,19 @@ days
 
 months
 # ['2026-01-01', '2026-02-01', ..., '2026-06-01']
+
+sql_month_starts
+# ['2025-11-01', '2025-12-01', '2026-01-01', '2026-02-01']
 ```
 
 ## Notes
 
+- Use `gen_dates_list` when a batch job needs one task per daily, weekly,
+  monthly, or quarterly period.
+- `end_dt` is included in the returned sequence.
+- For half-open SQL ranges such as `[start_dt, end_dt)`, pass the last period
+  start as `end_dt`. For monthly ranges, combine `gen_dates_list` with
+  `add_months(exclusive_end_dt, -1)`.
 - Weekly, monthly, and quarterly ranges are truncated to period starts and warn
   when either bound is adjusted.
 
