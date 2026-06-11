@@ -23,15 +23,20 @@ source query schema should create a target table before any optional insert.
 ## Batching
 
 `batch_size` is the initial fetch and insert size. Adaptive batching is enabled
-by default and adjusts later batches from successful insert latency. Use memory
-targeting when row width varies enough that a fixed row count is a poor proxy
-for process memory.
+by default and adjusts later batches from successful insert latency. The default
+rows-per-second mode probes a smaller batch first; when that does not improve
+throughput, it restores the accepted size and probes larger batches. Larger
+batches with equivalent throughput are accepted until a later probe worsens and
+rolls back. Use `adaptive_batch_size_step` to control each relative probe size.
+Use memory targeting when row width varies enough that a fixed row count is a
+poor proxy for process memory.
 
 For Greenplum targets, `gp_insert_chunk_size` is the initial `execute_values`
 page size inside each transfer insert batch when adaptive batching is enabled.
 If omitted, Greenplum transfer inserts start at `10_000` rows per page and then
-adapt from measured rows per second. Set `adaptive_batch_size=False` to keep an
-explicit `gp_insert_chunk_size` fixed.
+adapt from measured rows per second with the same `adaptive_batch_size_step`.
+Set `adaptive_batch_size=False` to keep an explicit `gp_insert_chunk_size`
+fixed.
 
 Progress totals are approximate unless a reliable total is known. Row estimates
 come from backend planners and should be treated as progress hints, not counts.

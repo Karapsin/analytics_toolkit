@@ -135,6 +135,7 @@ def load_stage_batches(
         target_seconds=options.target_batch_seconds,
         target_rows_per_second_window=options.target_rows_per_second_window,
         target_rows_per_second_deadband=options.target_rows_per_second_deadband,
+        adaptive_batch_size_step=options.adaptive_batch_size_step,
         target_memory_bytes=options.target_batch_memory_bytes,
         min_target_memory_bytes=options.min_batch_memory_bytes,
         max_target_memory_bytes=options.max_batch_memory_bytes,

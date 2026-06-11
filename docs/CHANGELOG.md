@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.4 - 2026-06-15
+
+- Added `adaptive_batch_size_step` to `sql.transfer` and changed
+  rows-per-second adaptation to probe smaller and larger batch sizes before
+  accepting or rolling back transfer and Greenplum insert page sizes.
+
 ## 1.3.9.3 - 2026-06-15
 
 - Made Greenplum `sql.transfer` stage insert page size adapt from the

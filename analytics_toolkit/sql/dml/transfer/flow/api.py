@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-import math
-from numbers import Real
 
 import pandas as pd
 
@@ -46,12 +44,18 @@ from ...load.stage import build_stage_table_name
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from .attempt import run_transfer_attempt
+from .options import (
+    resolve_adaptive_batch_bounds,
+    resolve_adaptive_batch_size_step,
+    resolve_target_adaptation_mode,
+    resolve_target_batch_memory,
+    resolve_target_batch_memory_limits,
+    resolve_target_rows_per_second_deadband,
+    resolve_target_rows_per_second_window,
+)
 from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
 from ..runtime.retry import run_with_retry
-
-
-_DEFAULT_TARGET_BATCH_SECONDS = 10.0
 
 
 @timed_public_sql_function
@@ -65,6 +69,7 @@ def transfer_table(
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
+    adaptive_batch_size_step: float = 0.1,
     target_rows_per_second: bool = True,
     target_batch_seconds: float | None = None,
     min_batch_seconds: float | None = None,
@@ -107,6 +112,7 @@ def transfer_table(
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
+        adaptive_batch_size_step=adaptive_batch_size_step,
         target_rows_per_second=target_rows_per_second,
         target_batch_seconds=target_batch_seconds,
         min_batch_seconds=min_batch_seconds,
@@ -245,6 +251,7 @@ def build_transfer_options(
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
     max_batch_size: int | None = None,
+    adaptive_batch_size_step: float = 0.1,
     target_rows_per_second: bool = True,
     target_batch_seconds: float | None = None,
     min_batch_seconds: float | None = None,
@@ -283,7 +290,7 @@ def build_transfer_options(
         to_config.backend,
         write_mode=write_mode,
     )
-    resolved_target_rows_per_second = _resolve_target_adaptation_mode(
+    resolved_target_rows_per_second = resolve_target_adaptation_mode(
         adaptive_batch_size=adaptive_batch_size,
         target_rows_per_second=target_rows_per_second,
         target_batch_seconds=target_batch_seconds,
@@ -292,13 +299,13 @@ def build_transfer_options(
     (
         resolved_target_batch_memory_mb,
         resolved_target_batch_memory_bytes,
-    ) = _resolve_target_batch_memory(target_batch_memory_mb)
+    ) = resolve_target_batch_memory(target_batch_memory_mb)
     (
         resolved_min_batch_memory_mb,
         resolved_min_batch_memory_bytes,
         resolved_max_batch_memory_mb,
         resolved_max_batch_memory_bytes,
-    ) = _resolve_target_batch_memory_limits(
+    ) = resolve_target_batch_memory_limits(
         min_batch_memory_mb=min_batch_memory_mb,
         max_batch_memory_mb=max_batch_memory_mb,
     )
@@ -308,7 +315,7 @@ def build_transfer_options(
         resolved_target_batch_seconds,
         resolved_min_batch_seconds,
         resolved_max_batch_seconds,
-    ) = _resolve_adaptive_batch_bounds(
+    ) = resolve_adaptive_batch_bounds(
         batch_size=batch_size,
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
@@ -318,11 +325,14 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         unlimited_default_max=resolved_target_batch_memory_bytes is not None,
     )
-    resolved_target_rows_per_second_window = _resolve_target_rows_per_second_window(
+    resolved_target_rows_per_second_window = resolve_target_rows_per_second_window(
         target_rows_per_second_window,
     )
     resolved_target_rows_per_second_deadband = (
-        _resolve_target_rows_per_second_deadband(target_rows_per_second_deadband)
+        resolve_target_rows_per_second_deadband(target_rows_per_second_deadband)
+    )
+    resolved_adaptive_batch_size_step = resolve_adaptive_batch_size_step(
+        adaptive_batch_size_step,
     )
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     options = TransferOptions(
@@ -339,6 +349,7 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=resolved_min_batch_size,
         max_batch_size=resolved_max_batch_size,
+        adaptive_batch_size_step=resolved_adaptive_batch_size_step,
         target_rows_per_second=resolved_target_rows_per_second,
         target_batch_seconds=resolved_target_batch_seconds,
         min_batch_seconds=resolved_min_batch_seconds,
@@ -423,240 +434,6 @@ def build_transfer_options(
     return options
 
 
-def _resolve_target_adaptation_mode(
-    *,
-    adaptive_batch_size: bool,
-    target_rows_per_second: bool,
-    target_batch_seconds: float | None,
-    target_batch_memory_mb: float | None,
-) -> bool:
-    if not isinstance(target_rows_per_second, bool):
-        raise ValueError("target_rows_per_second must be a boolean.")
-    if not adaptive_batch_size:
-        return target_rows_per_second
-
-    explicit_targets: list[str] = []
-    if target_rows_per_second is False:
-        explicit_targets.append("target_rows_per_second")
-    if target_batch_seconds is not None:
-        explicit_targets.append("target_batch_seconds")
-    if target_batch_memory_mb is not None:
-        explicit_targets.append("target_batch_memory_mb")
-
-    if len(explicit_targets) > 1:
-        raise ValueError(
-            "Only one transfer batch target may be configured. "
-            "Set at most one of target_rows_per_second, target_batch_seconds, "
-            "or target_batch_memory_mb."
-        )
-
-    if target_batch_memory_mb is not None:
-        return False
-    if target_batch_seconds is not None:
-        return False
-    return target_rows_per_second
-
-
-def _resolve_adaptive_batch_bounds(
-    *,
-    batch_size: int,
-    min_batch_size: int,
-    max_batch_size: int | None,
-    target_batch_seconds: float | None,
-    min_batch_seconds: float | None,
-    max_batch_seconds: float | None,
-    adaptive_batch_size: bool,
-    unlimited_default_max: bool = False,
-) -> tuple[int, int | None, float, float | None, float | None]:
-    if not isinstance(adaptive_batch_size, bool):
-        raise ValueError("adaptive_batch_size must be a boolean.")
-    if batch_size <= 0:
-        raise ValueError("batch_size must be a positive integer.")
-    if min_batch_size <= 0:
-        raise ValueError("min_batch_size must be a positive integer.")
-    if max_batch_size is not None and max_batch_size <= 0:
-        raise ValueError("max_batch_size must be a positive integer.")
-    if target_batch_seconds is None:
-        target_batch_seconds = _DEFAULT_TARGET_BATCH_SECONDS
-    try:
-        resolved_target_batch_seconds = float(target_batch_seconds)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("target_batch_seconds must be positive.") from exc
-    if resolved_target_batch_seconds <= 0:
-        raise ValueError("target_batch_seconds must be positive.")
-
-    resolved_min_batch_seconds = _resolve_positive_number(
-        min_batch_seconds,
-        "min_batch_seconds",
-    )
-    resolved_max_batch_seconds = _resolve_positive_number(
-        max_batch_seconds,
-        "max_batch_seconds",
-    )
-
-    if (
-        resolved_min_batch_seconds is not None
-        and resolved_max_batch_seconds is not None
-        and resolved_min_batch_seconds > resolved_max_batch_seconds
-    ):
-        raise ValueError(
-            "min_batch_seconds must be less than or equal to max_batch_seconds."
-        )
-
-    if resolved_min_batch_seconds is not None:
-        resolved_target_batch_seconds = max(
-            resolved_target_batch_seconds,
-            resolved_min_batch_seconds,
-        )
-    if resolved_max_batch_seconds is not None:
-        resolved_target_batch_seconds = min(
-            resolved_target_batch_seconds,
-            resolved_max_batch_seconds,
-        )
-
-    resolved_min_batch_size = min_batch_size
-    if resolved_min_batch_size > batch_size and min_batch_size == 1_000:
-        resolved_min_batch_size = batch_size
-
-    if max_batch_size is None and unlimited_default_max:
-        resolved_max_batch_size = None
-    else:
-        resolved_max_batch_size = (
-            batch_size * 4 if max_batch_size is None else max_batch_size
-        )
-    if resolved_min_batch_size > batch_size:
-        raise ValueError("min_batch_size must be less than or equal to batch_size.")
-    if resolved_max_batch_size is not None and batch_size > resolved_max_batch_size:
-        raise ValueError("max_batch_size must be greater than or equal to batch_size.")
-    if (
-        resolved_max_batch_size is not None
-        and resolved_min_batch_size > resolved_max_batch_size
-    ):
-        raise ValueError("min_batch_size must be less than or equal to max_batch_size.")
-    return (
-        resolved_min_batch_size,
-        resolved_max_batch_size,
-        resolved_target_batch_seconds,
-        resolved_min_batch_seconds,
-        resolved_max_batch_seconds,
-    )
-
-
-def _resolve_target_batch_memory(
-    target_batch_memory_mb: float | None,
-) -> tuple[float | None, int | None]:
-    if target_batch_memory_mb is None:
-        return None, None
-    if isinstance(target_batch_memory_mb, bool) or not isinstance(
-        target_batch_memory_mb,
-        Real,
-    ):
-        raise ValueError("target_batch_memory_mb must be a positive number.")
-
-    resolved_target_batch_memory_mb = float(target_batch_memory_mb)
-    if (
-        not math.isfinite(resolved_target_batch_memory_mb)
-        or resolved_target_batch_memory_mb <= 0
-    ):
-        raise ValueError("target_batch_memory_mb must be a positive number.")
-
-    return (
-        resolved_target_batch_memory_mb,
-        max(1, int(resolved_target_batch_memory_mb * 1024 * 1024)),
-    )
-
-
-def _resolve_target_batch_memory_limits(
-    *,
-    min_batch_memory_mb: float | None,
-    max_batch_memory_mb: float | None,
-) -> tuple[float | None, int | None, float | None, int | None]:
-    resolved_min_batch_memory_mb = _resolve_positive_number(
-        min_batch_memory_mb,
-        "min_batch_memory_mb",
-    )
-    resolved_max_batch_memory_mb = _resolve_positive_number(
-        max_batch_memory_mb,
-        "max_batch_memory_mb",
-    )
-
-    if (
-        resolved_min_batch_memory_mb is not None
-        and resolved_max_batch_memory_mb is not None
-        and resolved_min_batch_memory_mb > resolved_max_batch_memory_mb
-    ):
-        raise ValueError(
-            "min_batch_memory_mb must be less than or equal to max_batch_memory_mb."
-        )
-
-    resolved_min_batch_memory_bytes = (
-        None
-        if resolved_min_batch_memory_mb is None
-        else max(1, int(resolved_min_batch_memory_mb * 1024 * 1024))
-    )
-    resolved_max_batch_memory_bytes = (
-        None
-        if resolved_max_batch_memory_mb is None
-        else max(1, int(resolved_max_batch_memory_mb * 1024 * 1024))
-    )
-    return (
-        resolved_min_batch_memory_mb,
-        resolved_min_batch_memory_bytes,
-        resolved_max_batch_memory_mb,
-        resolved_max_batch_memory_bytes,
-    )
-
-
-def _resolve_target_rows_per_second_window(
-    target_rows_per_second_window: int,
-) -> int:
-    if isinstance(target_rows_per_second_window, bool) or not isinstance(
-        target_rows_per_second_window,
-        int,
-    ):
-        raise ValueError("target_rows_per_second_window must be a positive integer.")
-    if target_rows_per_second_window < 1:
-        raise ValueError("target_rows_per_second_window must be a positive integer.")
-    return target_rows_per_second_window
-
-
-def _resolve_target_rows_per_second_deadband(
-    target_rows_per_second_deadband: float,
-) -> float:
-    if isinstance(target_rows_per_second_deadband, bool) or not isinstance(
-        target_rows_per_second_deadband,
-        Real,
-    ):
-        raise ValueError(
-            "target_rows_per_second_deadband must be a finite non-negative number."
-        )
-    resolved_target_rows_per_second_deadband = float(
-        target_rows_per_second_deadband,
-    )
-    if (
-        not math.isfinite(resolved_target_rows_per_second_deadband)
-        or resolved_target_rows_per_second_deadband < 0
-    ):
-        raise ValueError(
-            "target_rows_per_second_deadband must be a finite non-negative number."
-        )
-    return resolved_target_rows_per_second_deadband
-
-
-def _resolve_positive_number(
-    value: float | None,
-    label: str,
-) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise ValueError(f"{label} must be a positive number.")
-    resolved = float(value)
-    if not math.isfinite(resolved) or resolved <= 0:
-        raise ValueError(f"{label} must be a positive number.")
-    return resolved
-
-
 def _resolve_transfer_write_mode(
     to_db_backend: str,
     *,
@@ -697,6 +474,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "adaptive_batch_size": options.adaptive_batch_size,
             "min_batch_size": options.min_batch_size,
             "max_batch_size": options.max_batch_size,
+            "adaptive_batch_size_step": options.adaptive_batch_size_step,
             "target_batch_seconds": options.target_batch_seconds,
             "min_batch_seconds": options.min_batch_seconds,
             "max_batch_seconds": options.max_batch_seconds,

@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -21,6 +21,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `adaptive_batch_size` - whether transfer batch size should adapt after successful inserts
 - `min_batch_size` - minimum adaptive transfer batch size
 - `max_batch_size` - maximum adaptive transfer batch size; `None` leaves the default behavior in place
+- `adaptive_batch_size_step` - relative rows-per-second probe step used to shrink or grow adaptive row counts
 - `target_rows_per_second` - optimize batch size by transfer throughput (`rows / second`) when `True`
 - `target_rows_per_second_window` - number of recent successful throughput samples to average for throughput adaptation decisions
 - `target_rows_per_second_deadband` - minimum relative throughput change needed to trigger throughput adaptation
@@ -86,6 +87,9 @@ rows
   are mutually exclusive adaptation controls: set at most one per call.
 - Throughput-driven adaptation is default via
   `target_rows_per_second=True` (or omitted).
+- Rows-per-second adaptation probes smaller batches first, then larger batches
+  when smaller batches do not improve throughput. `adaptive_batch_size_step`
+  controls each probe as a fraction of the current accepted size.
 - If you set `target_batch_seconds`, `target_rows_per_second` is disabled.
 - If you set `target_batch_memory_mb`, memory-based adaptation is used and
   takes precedence.
@@ -99,7 +103,8 @@ rows
   when those targets are enabled.
 - For Greenplum targets, `gp_insert_chunk_size` controls the initial
   `execute_values` page size when adaptive batching is enabled. If omitted, the
-  initial page size is `10_000`; set `adaptive_batch_size=False` to keep the
-  page size fixed.
+  initial page size is `10_000`; rows-per-second page adaptation uses the same
+  `adaptive_batch_size_step`. Set `adaptive_batch_size=False` to keep the page
+  size fixed.
 
 [SQL functions index](index.md)

@@ -90,8 +90,15 @@ class AdaptiveBatchSizer:
     optimize_by_rows_per_second: bool = True
     target_rows_per_second_window: int = 5
     target_rows_per_second_deadband: float = 0.15
+    adaptive_batch_size_step: float = 0.1
     rows_per_second_samples: deque[float] = field(default_factory=deque, init=False)
     previous_rows_per_second: float | None = None
+    baseline_size: int | None = None
+    baseline_rows_per_second: float | None = None
+    probe_direction: str | None = None
+    is_experimental_size: bool = False
+    noop_probe_size: int | None = None
+    noop_probe_direction: str | None = None
     target_memory_bytes: int | None = None
     min_target_memory_bytes: int | None = None
     max_target_memory_bytes: int | None = None
@@ -149,19 +156,95 @@ class AdaptiveBatchSizer:
         )
         if previous_rows_per_second is None:
             self.previous_rows_per_second = smoothed_rows_per_second
+            self.baseline_size = self.current_size
+            self.baseline_rows_per_second = smoothed_rows_per_second
+            self._try_schedule_rows_per_second_probe("shrink")
             return
 
-        if smoothed_rows_per_second < previous_rows_per_second * (
+        baseline_rows_per_second = self.baseline_rows_per_second
+        if baseline_rows_per_second is None or not self.is_experimental_size:
+            self.baseline_size = self.current_size
+            self.baseline_rows_per_second = smoothed_rows_per_second
+            self._try_schedule_rows_per_second_probe("shrink")
+            self.previous_rows_per_second = smoothed_rows_per_second
+            return
+
+        comparison = self._compare_rows_per_second(
+            smoothed_rows_per_second,
+            baseline_rows_per_second,
+        )
+        if self.probe_direction == "shrink":
+            if comparison == "better":
+                self._accept_rows_per_second_probe(smoothed_rows_per_second)
+                self._try_schedule_rows_per_second_probe("shrink")
+            else:
+                self._restore_rows_per_second_baseline()
+                self._try_schedule_rows_per_second_probe("grow")
+        elif self.probe_direction == "grow":
+            if comparison == "worse":
+                self._restore_rows_per_second_baseline()
+                self.probe_direction = None
+                self.is_experimental_size = False
+            else:
+                self._accept_rows_per_second_probe(smoothed_rows_per_second)
+                self._try_schedule_rows_per_second_probe("grow")
+        self.previous_rows_per_second = smoothed_rows_per_second
+
+    def _compare_rows_per_second(
+        self,
+        rows_per_second: float,
+        baseline_rows_per_second: float,
+    ) -> str:
+        if rows_per_second < baseline_rows_per_second * (
             1.0 - self.target_rows_per_second_deadband
         ):
-            shrunk_size = max(1, int(self.current_size * 0.5))
-            self.current_size = max(shrunk_size, self.min_size)
-        elif smoothed_rows_per_second > previous_rows_per_second * (
+            return "worse"
+        if rows_per_second > baseline_rows_per_second * (
             1.0 + self.target_rows_per_second_deadband
         ):
-            grown_size = max(self.current_size + 1, (self.current_size * 3 + 1) // 2)
-            self.current_size = self._cap_size(grown_size)
-        self.previous_rows_per_second = smoothed_rows_per_second
+            return "better"
+        return "equivalent"
+
+    def _accept_rows_per_second_probe(self, rows_per_second: float) -> None:
+        self.baseline_size = self.current_size
+        self.baseline_rows_per_second = rows_per_second
+        self.probe_direction = None
+        self.is_experimental_size = False
+
+    def _restore_rows_per_second_baseline(self) -> None:
+        if self.baseline_size is not None:
+            self.current_size = self.baseline_size
+        self.probe_direction = None
+        self.is_experimental_size = False
+
+    def _try_schedule_rows_per_second_probe(self, direction: str) -> bool:
+        baseline_size = self.baseline_size
+        if baseline_size is None:
+            return False
+        if (
+            self.noop_probe_size == baseline_size
+            and self.noop_probe_direction == direction
+        ):
+            return False
+
+        step_delta = max(1, int(baseline_size * self.adaptive_batch_size_step))
+        if direction == "shrink":
+            probe_size = max(self.min_size, baseline_size - step_delta)
+        else:
+            probe_size = self._cap_size(baseline_size + step_delta)
+
+        if probe_size == baseline_size:
+            self.probe_direction = None
+            self.is_experimental_size = False
+            self.current_size = baseline_size
+            self.noop_probe_size = baseline_size
+            self.noop_probe_direction = direction
+            return False
+
+        self.current_size = probe_size
+        self.probe_direction = direction
+        self.is_experimental_size = True
+        return True
 
     def _update_for_memory(self, memory_bytes: int) -> None:
         target_memory_bytes = self._resolve_target_memory_bytes()
@@ -219,6 +302,7 @@ def make_gp_insert_chunk_sizer(options: TransferOptions) -> AdaptiveBatchSizer:
         optimize_by_rows_per_second=True,
         target_rows_per_second_window=options.target_rows_per_second_window,
         target_rows_per_second_deadband=options.target_rows_per_second_deadband,
+        adaptive_batch_size_step=options.adaptive_batch_size_step,
     )
 
 
@@ -251,6 +335,7 @@ class TransferOptions:
     target_rows_per_second: bool = True
     target_rows_per_second_window: int = 5
     target_rows_per_second_deadband: float = 0.15
+    adaptive_batch_size_step: float = 0.1
     target_batch_memory_mb: float | None = None
     target_batch_memory_bytes: int | None = None
     min_batch_memory_mb: float | None = None

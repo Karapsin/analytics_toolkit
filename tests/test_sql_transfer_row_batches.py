@@ -646,71 +646,165 @@ def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> Non
     assert disabled.current_size == 1_000
 
 
-def test_adaptive_batch_sizer_targets_rows_per_second() -> None:
+def test_adaptive_batch_sizer_first_rows_per_second_sample_schedules_shrink() -> None:
     sizer = models_module.AdaptiveBatchSizer(
         enabled=True,
-        current_size=2,
+        current_size=100,
         min_size=1,
-        max_size=8,
-        target_seconds=10.0,
-        optimize_by_rows_per_second=True,
-    )
-
-    sizer.update(1.0, inserted_rows=2)
-    assert sizer.current_size == 2
-    sizer.update(0.5, inserted_rows=2)
-    assert sizer.current_size == 3
-    sizer.update(2.0, inserted_rows=3)
-    assert sizer.current_size == 1
-    sizer.update(0.9, inserted_rows=1)
-    assert sizer.current_size == 1
-
-
-def test_adaptive_batch_sizer_targets_rows_per_second_with_smoothing() -> None:
-    sizer = models_module.AdaptiveBatchSizer(
-        enabled=True,
-        current_size=10,
-        min_size=1,
-        max_size=20,
-        target_seconds=10.0,
-        optimize_by_rows_per_second=True,
-        target_rows_per_second_window=5,
-        target_rows_per_second_deadband=0.15,
-    )
-
-    sizer.update(1.0, inserted_rows=100)
-    sizer.update(1.0, inserted_rows=100)
-    sizer.update(1.0, inserted_rows=100)
-    sizer.update(1.0, inserted_rows=100)
-    assert sizer.current_size == 10
-
-    sizer.update(1.0, inserted_rows=112)
-    assert sizer.current_size == 10
-
-    sizer.update(1.0, inserted_rows=200)
-    assert sizer.current_size == 15
-
-
-def test_adaptive_batch_sizer_window_one_preserves_previous_rows_per_second_logic() -> None:
-    sizer = models_module.AdaptiveBatchSizer(
-        enabled=True,
-        current_size=2,
-        min_size=1,
-        max_size=8,
+        max_size=200,
         target_seconds=10.0,
         optimize_by_rows_per_second=True,
         target_rows_per_second_window=1,
-        target_rows_per_second_deadband=0.0,
+        target_rows_per_second_deadband=0.1,
     )
 
-    sizer.update(1.0, inserted_rows=2)
-    assert sizer.current_size == 2
-    sizer.update(0.5, inserted_rows=2)
-    assert sizer.current_size == 3
-    sizer.update(2.0, inserted_rows=3)
-    assert sizer.current_size == 1
-    sizer.update(0.9, inserted_rows=1)
-    assert sizer.current_size == 1
+    sizer.update(1.0, inserted_rows=100)
+
+    assert sizer.current_size == 90
+    assert sizer.baseline_size == 100
+    assert sizer.baseline_rows_per_second == 100.0
+    assert sizer.probe_direction == "shrink"
+    assert sizer.is_experimental_size is True
+
+
+def test_adaptive_batch_sizer_shrink_equivalent_restores_and_switches_to_grow() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=1,
+        max_size=200,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        target_rows_per_second_deadband=0.1,
+    )
+
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(0.9, inserted_rows=90)
+
+    assert sizer.current_size == 110
+    assert sizer.baseline_size == 100
+    assert sizer.baseline_rows_per_second == 100.0
+    assert sizer.probe_direction == "grow"
+    assert sizer.is_experimental_size is True
+
+
+def test_adaptive_batch_sizer_grow_equivalent_accepts_and_continues_growing() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=1,
+        max_size=200,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        target_rows_per_second_deadband=0.1,
+    )
+
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(0.9, inserted_rows=90)
+    sizer.update(1.1, inserted_rows=110)
+
+    assert sizer.current_size == 121
+    assert sizer.baseline_size == 110
+    assert sizer.baseline_rows_per_second == pytest.approx(100.0)
+    assert sizer.probe_direction == "grow"
+    assert sizer.is_experimental_size is True
+
+
+def test_adaptive_batch_sizer_grow_worse_rolls_back_to_last_good_size() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=1,
+        max_size=200,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        target_rows_per_second_deadband=0.1,
+    )
+
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(0.9, inserted_rows=90)
+    sizer.update(1.1, inserted_rows=110)
+    sizer.update(121 / 80, inserted_rows=121)
+
+    assert sizer.current_size == 110
+    assert sizer.baseline_size == 110
+    assert sizer.baseline_rows_per_second == pytest.approx(100.0)
+    assert sizer.probe_direction is None
+    assert sizer.is_experimental_size is False
+
+
+def test_adaptive_batch_sizer_shrink_better_accepts_smaller_size() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=1,
+        max_size=200,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        target_rows_per_second_deadband=0.1,
+    )
+
+    sizer.update(1.0, inserted_rows=100)
+    sizer.update(0.75, inserted_rows=90)
+
+    assert sizer.current_size == 81
+    assert sizer.baseline_size == 90
+    assert sizer.baseline_rows_per_second == 120.0
+    assert sizer.probe_direction == "shrink"
+    assert sizer.is_experimental_size is True
+
+
+def test_adaptive_batch_sizer_rows_per_second_respects_caps_and_small_deltas() -> None:
+    small = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=5,
+        min_size=1,
+        max_size=10,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        adaptive_batch_size_step=0.1,
+    )
+    small.update(1.0, inserted_rows=5)
+    assert small.current_size == 4
+
+    min_capped = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=10,
+        min_size=10,
+        max_size=20,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        adaptive_batch_size_step=0.5,
+    )
+    min_capped.update(1.0, inserted_rows=10)
+    assert min_capped.current_size == 10
+    assert min_capped.is_experimental_size is False
+    assert min_capped.noop_probe_size == 10
+    assert min_capped.noop_probe_direction == "shrink"
+    min_capped.update(1.0, inserted_rows=10)
+    assert min_capped.current_size == 10
+    assert min_capped.is_experimental_size is False
+
+    max_capped = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=10,
+        min_size=9,
+        max_size=10,
+        target_seconds=10.0,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=1,
+        adaptive_batch_size_step=0.5,
+    )
+    max_capped.update(1.0, inserted_rows=10)
+    max_capped.update(0.9, inserted_rows=9)
+    assert max_capped.current_size == 10
+    assert max_capped.is_experimental_size is False
+    assert max_capped.noop_probe_size == 10
+    assert max_capped.noop_probe_direction == "grow"
 
 
 def test_adaptive_batch_sizer_respects_batch_seconds_bounds() -> None:
@@ -819,6 +913,7 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
 
     assert options.min_batch_size == 100
     assert options.max_batch_size == 400
+    assert options.adaptive_batch_size_step == 0.1
     assert options.target_rows_per_second_window == 5
     assert options.target_rows_per_second_deadband == 0.15
 
@@ -827,9 +922,11 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
         to_db="trino",
         from_sql="select id from source_table",
         to_table="sandbox.target",
+        adaptive_batch_size_step=0.25,
         target_rows_per_second_window=3,
         target_rows_per_second_deadband=0.05,
     )
+    assert custom_window_options.adaptive_batch_size_step == 0.25
     assert custom_window_options.target_rows_per_second_window == 3
     assert custom_window_options.target_rows_per_second_deadband == 0.05
 
@@ -1040,6 +1137,23 @@ def test_transfer_options_validate_rows_per_second_deadband(
         )
 
 
+@pytest.mark.parametrize(
+    "adaptive_batch_size_step",
+    [0, -0.1, 1, 1.1, float("nan"), float("inf"), True, "0.1"],
+)
+def test_transfer_options_validate_adaptive_batch_size_step(
+    adaptive_batch_size_step: Any,
+) -> None:
+    with pytest.raises(ValueError, match="adaptive_batch_size_step"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            adaptive_batch_size_step=adaptive_batch_size_step,
+        )
+
+
 def test_transfer_options_rejects_inverted_batch_seconds_bounds() -> None:
     with pytest.raises(ValueError, match="min_batch_seconds"):
         transfer_api_module.build_transfer_options(
@@ -1178,6 +1292,79 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
     assert total_rows == 10
     assert inserted_batch_sizes == [2, 3, 4, 1]
     assert source.cursor_obj.fetch_sizes == [2, 3, 4, 2, 1]
+
+
+def test_load_stage_batches_uses_configured_step_for_transfer_and_gp_sizers(
+    monkeypatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(row_id,) for row_id in range(180)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="trino",
+        from_db_backend="trino",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=100,
+        adaptive_batch_size=True,
+        min_batch_size=1,
+        max_batch_size=200,
+        adaptive_batch_size_step=0.2,
+        gp_insert_chunk_size=2_000,
+    )
+    observed_page_sizes: list[int] = []
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_gp_insert_page_success"](1.0, 2_000)
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 180
+    assert source.cursor_obj.fetch_sizes[:2] == [100, 80]
+    assert observed_page_sizes[:2] == [2_000, 1_600]
 
 
 def test_load_stage_batches_starts_adaptive_gp_insert_pages_at_default(
@@ -2008,6 +2195,7 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
     )
 
     assert plan.options["estimate_total_rows"] is True
+    assert plan.options["adaptive_batch_size_step"] == 0.1
     assert plan.options["target_rows_per_second_window"] == 5
     assert plan.options["target_rows_per_second_deadband"] == 0.15
     assert plan.options["target_batch_memory_mb"] == 32.0
@@ -2024,10 +2212,12 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
         dry_run=True,
         target_rows_per_second_window=3,
         target_rows_per_second_deadband=0.05,
+        adaptive_batch_size_step=0.25,
         gp_insert_chunk_size=50_000,
     )
     assert plan.options["target_rows_per_second_window"] == 3
     assert plan.options["target_rows_per_second_deadband"] == 0.05
+    assert plan.options["adaptive_batch_size_step"] == 0.25
     assert plan.options["gp_insert_chunk_size"] == 50_000
     assert plan.options["adaptive_gp_insert_chunk_size"] is True
     assert plan.options["initial_gp_insert_chunk_size"] == 50_000
