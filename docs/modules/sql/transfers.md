@@ -14,6 +14,14 @@ The transfer flow has four conceptual steps:
 3. Stream source rows in batches.
 4. Insert staged rows and finalize the target table.
 
+Use `write_mode` to choose finalization behavior:
+
+- `append` inserts staged rows into the existing target.
+- `replace` recreates or clears the target before inserting staged rows.
+- `truncate_insert` clears the existing target shape before inserting staged rows.
+- `upsert` requires `key_columns`, rejects duplicate staged keys, and replaces
+  matching target keys before inserting staged rows.
+
 Use [sql.read](functions/read.md) instead when the goal is only to return a
 source query as a dataframe. Use [sql.load_df](functions/load_df.md) when
 Python already owns the rows. Use
@@ -55,5 +63,11 @@ Transfers prefer native source metadata over pandas-inferred batch types. When
 the target already exists, final stage-to-target inserts cast staged values to
 the target column types. Use `table_schema` when the target type must be
 explicit and portable inference is not enough.
+
+Upsert finalization is backend-specific. Trino uses native `MERGE`, so
+connector-specific `MERGE` support is enforced by Trino at runtime. Greenplum
+uses staged delete-and-insert. ClickHouse uses lightweight `DELETE` against the
+local shard for distributed targets, then inserts through the distributed
+target; it does not use `ReplacingMergeTree`.
 
 [SQL module index](index.md)

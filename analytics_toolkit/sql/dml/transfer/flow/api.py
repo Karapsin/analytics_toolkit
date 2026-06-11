@@ -43,6 +43,7 @@ from ...load.load_sql_table import AmbiguousTableLoadError
 from ...load.stage import build_stage_table_name
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
+from ...table.write_modes import build_upsert_stage_sqls
 from .attempt import run_transfer_attempt
 from .options import (
     resolve_adaptive_batch_bounds,
@@ -397,6 +398,8 @@ def build_transfer_options(
         raise ValueError("from_sql must not be empty.")
     if not options.target_table:
         raise ValueError("to_table must not be empty.")
+    if options.write_mode == "upsert" and not options.key_columns:
+        raise ValueError("key_columns are required for write_mode='upsert'.")
     if options.batch_size <= 0:
         raise ValueError("batch_size must be a positive integer.")
     validate_retry_options(options.retry_cnt, options.timeout_increment)
@@ -575,52 +578,76 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             ch_cluster=options.ch_cluster,
             ch_only_shard=options.ch_only_shard,
         )
-    if options.table_schema is None:
-        add_create_table_placeholder_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            table_name=options.target_table,
-            query_label=options.query_label,
+    if options.write_mode == "upsert":
+        columns = (
+            list(options.table_schema)
+            if options.table_schema is not None
+            else list(options.key_columns or [])
         )
-    else:
-        add_create_table_steps(
-            plan,
-            _build_create_table_sqls(
+        plan.extend(
+            build_upsert_stage_sqls(
                 options.to_db_backend,
                 options.target_table,
-                pd.DataFrame(columns=list(options.table_schema)),
-                table_schema=options.table_schema,
-                gp_distributed_by_key=options.gp_distributed_by_key,
-                partition_by=options.partition_by,
-                order_by=options.order_by,
-                ch_engine=options.ch_engine,
+                stage_table,
+                columns=columns,
+                key_columns=options.key_columns or [],
+                column_types=options.table_schema,
                 ch_cluster=options.ch_cluster,
-                ch_sharding_key=options.ch_sharding_key,
-                ch_distributed_table=(
-                    options.to_db_backend == "ch" and not options.ch_only_shard
-                ),
                 ch_only_shard=options.ch_only_shard,
-                ch_replace_table=(
-                    options.to_db_backend == "ch"
-                    and options.write_mode == "replace"
-                    and not options.ch_only_shard
-                ),
                 query_label=options.query_label,
             ),
             alias=options.to_db_key,
             backend=options.to_db_backend,
-            table_name=options.target_table,
+            phase="upsert_target",
+            target_table=options.target_table,
         )
-    add_insert_from_stage_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        target_table=options.target_table,
-        stage_table=stage_table,
-        phase="insert_target",
-        query_label=options.query_label,
-    )
+    else:
+        if options.table_schema is None:
+            add_create_table_placeholder_step(
+                plan,
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                table_name=options.target_table,
+                query_label=options.query_label,
+            )
+        else:
+            add_create_table_steps(
+                plan,
+                _build_create_table_sqls(
+                    options.to_db_backend,
+                    options.target_table,
+                    pd.DataFrame(columns=list(options.table_schema)),
+                    table_schema=options.table_schema,
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                    partition_by=options.partition_by,
+                    order_by=options.order_by,
+                    ch_engine=options.ch_engine,
+                    ch_cluster=options.ch_cluster,
+                    ch_sharding_key=options.ch_sharding_key,
+                    ch_distributed_table=(
+                        options.to_db_backend == "ch" and not options.ch_only_shard
+                    ),
+                    ch_only_shard=options.ch_only_shard,
+                    ch_replace_table=(
+                        options.to_db_backend == "ch"
+                        and options.write_mode == "replace"
+                        and not options.ch_only_shard
+                    ),
+                    query_label=options.query_label,
+                ),
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                table_name=options.target_table,
+            )
+        add_insert_from_stage_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            target_table=options.target_table,
+            stage_table=stage_table,
+            phase="insert_target",
+            query_label=options.query_label,
+        )
     add_analyze_step(
         plan,
         alias=options.to_db_key,

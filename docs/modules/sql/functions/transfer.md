@@ -16,7 +16,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `to_db` - target connection key or alias
 - `from_sql` - source SQL query used by a transfer
 - `to_table` - target table name
-- `write_mode` - explicit write behavior: append, replace, or truncate_insert. `upsert` is reserved and currently unsupported
+- `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
 - `batch_size` - initial number of rows fetched and inserted per transfer batch
 - `adaptive_batch_size` - whether transfer batch size should adapt after successful inserts
 - `min_batch_size` - minimum adaptive transfer batch size
@@ -31,7 +31,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `target_batch_memory_mb` - approximate in-process memory target used for adaptive transfer batches
 - `min_batch_memory_mb` - minimum allowed value for memory-based adaptive targets when enabled
 - `max_batch_memory_mb` - maximum allowed value for memory-based adaptive targets when enabled
-- `key_columns` - columns used to validate staged rows against an existing target before final insert
+- `key_columns` - key columns used to validate staged rows and required when `write_mode="upsert"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `full_retry_cnt` - number of retries for the whole transfer flow after a transfer-level failure
@@ -82,6 +82,11 @@ rows
 
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
+- `write_mode="upsert"` stages source rows, rejects duplicate staged keys, and
+  replaces matching target keys before inserting staged rows. Trino uses native
+  `MERGE`; connector support for `MERGE` is checked by Trino at runtime.
+  Greenplum uses staged delete-and-insert. ClickHouse uses lightweight
+  `DELETE` plus insert and does not require `ReplacingMergeTree`.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 - `target_rows_per_second`, `target_batch_seconds`, and `target_batch_memory_mb`
   are mutually exclusive adaptation controls: set at most one per call.

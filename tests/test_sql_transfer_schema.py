@@ -14,6 +14,9 @@ stage_module = importlib.import_module("analytics_toolkit.sql.dml.load.stage")
 transfer_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.stage"
 )
+transfer_finalize_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.finalize"
+)
 runtime_models = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.models"
 )
@@ -265,3 +268,59 @@ def test_existing_target_insert_types_reject_missing_columns() -> None:
         assert "missing" in str(exc)
     else:
         raise AssertionError("Expected missing target column to raise.")
+
+
+def test_transfer_upsert_duplicate_stage_keys_raise_before_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = runtime_models.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id, value from source_table",
+        target_table="sandbox.target",
+        write_mode="upsert",
+        key_columns=["id"],
+    )
+    stage_state = runtime_models.TransferStageState(
+        target_exists=True,
+        stage_table="sandbox.target__stage",
+        stage_table_created=True,
+        first_non_empty_batch=runtime_models.RowBatch(
+            columns=["id", "value"],
+            rows=[(1, 10)],
+        ).to_dataframe(include_rows=True),
+        stage_column_types={"id": "BIGINT", "value": "INTEGER"},
+    )
+    finalized = False
+
+    def fake_validate_stage_uniqueness(*args: object, **kwargs: object) -> None:
+        raise ValueError("Duplicate key values found in staged data")
+
+    def fake_finalize_stage_table(*args: object, **kwargs: object) -> None:
+        nonlocal finalized
+        finalized = True
+
+    monkeypatch.setattr(
+        transfer_finalize_module,
+        "validate_stage_uniqueness",
+        fake_validate_stage_uniqueness,
+    )
+    monkeypatch.setattr(
+        transfer_finalize_module,
+        "finalize_stage_table",
+        fake_finalize_stage_table,
+    )
+
+    with pytest.raises(ValueError, match="Duplicate key"):
+        transfer_finalize_module.finalize_loaded_stage(
+            options=options,
+            connection_refs=runtime_models.TransferConnectionRefs(
+                target={"connection": object()},
+            ),
+            stage_state=stage_state,
+            total_rows=1,
+        )
+
+    assert finalized is False

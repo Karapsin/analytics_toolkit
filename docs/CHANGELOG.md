@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.5 - 2026-06-15
+
+- Added `write_mode="upsert"` for `sql.load_df()` and `sql.transfer()` with
+  required `key_columns`, duplicate staged-key validation, Trino `MERGE`,
+  Greenplum delete-and-insert finalization, and ClickHouse lightweight
+  delete-and-insert finalization.
+
 ## 1.3.9.4 - 2026-06-15
 
 - Added `adaptive_batch_size_step` to `sql.transfer` and changed

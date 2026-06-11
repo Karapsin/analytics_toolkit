@@ -12,6 +12,8 @@ Use `write_mode` when the intended mutation matters:
 - `append` keeps existing rows and inserts the dataframe rows.
 - `replace` recreates or clears the target using the historical replace path.
 - `truncate_insert` keeps the existing table shape, clears rows, then inserts.
+- `upsert` stages rows and replaces target rows with matching `key_columns`
+  before inserting the staged rows.
 
 The older `append` flag still works, but `write_mode` is clearer in shared code.
 Do not mix both unless you are preserving compatibility with an existing call.
@@ -28,6 +30,10 @@ creation step independently from loading rows.
 before final insertion. Use it when duplicate keys in append-like flows would be
 more expensive to fix after the load finishes.
 
+For `write_mode="upsert"`, `key_columns` is required. Incoming rows are staged
+first and duplicate staged keys raise before finalization. If the target table
+does not exist, the load creates it and inserts the dataframe rows normally.
+
 ## Backend Notes
 
 Greenplum dataframe inserts use chunked `execute_values` statements. Tune the
@@ -35,11 +41,17 @@ insert chunk size for very wide rows or constrained VMEM environments.
 
 Trino sends parameterized multi-row insert statements. A connection-level insert
 chunk size can be set in `.connections`, and call-level settings can override
-it.
+it. Trino upsert uses native `MERGE`; connector-specific `MERGE` limitations
+surface as backend errors.
 
 ClickHouse targets normally create and maintain a distributed/shard table pair.
 Use `ch_only_shard=True` only when the target should intentionally be a local
-ClickHouse table.
+ClickHouse table. ClickHouse upsert uses lightweight `DELETE` against the shard
+or local target followed by insert through the target table; it does not use
+`ReplacingMergeTree`.
+
+Greenplum upsert deletes matching keys from the target using the stage table
+and then inserts the staged rows.
 
 ## Progress and Results
 

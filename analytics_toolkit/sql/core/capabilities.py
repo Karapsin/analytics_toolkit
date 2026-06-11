@@ -41,7 +41,9 @@ BACKEND_CAPABILITIES: dict[BackendName, BackendCapability] = {
         drop_semantics="DROP TABLE IF EXISTS",
         create_semantics="CREATE TABLE with append-only columnar storage",
         type_family="postgres",
-        supported_write_modes=frozenset({"append", "replace", "truncate_insert"}),
+        supported_write_modes=frozenset(
+            {"append", "replace", "truncate_insert", "upsert"}
+        ),
     ),
     "trino": BackendCapability(
         name="trino",
@@ -56,7 +58,9 @@ BACKEND_CAPABILITIES: dict[BackendName, BackendCapability] = {
         drop_semantics="DROP TABLE IF EXISTS",
         create_semantics="CREATE TABLE WITH parquet/object-store layout",
         type_family="trino",
-        supported_write_modes=frozenset({"append", "replace", "truncate_insert"}),
+        supported_write_modes=frozenset(
+            {"append", "replace", "truncate_insert", "upsert"}
+        ),
     ),
     "ch": BackendCapability(
         name="ch",
@@ -71,7 +75,9 @@ BACKEND_CAPABILITIES: dict[BackendName, BackendCapability] = {
         drop_semantics="DROP TABLE IF EXISTS plus distributed pair when requested",
         create_semantics="MergeTree or shard plus Distributed pair",
         type_family="clickhouse",
-        supported_write_modes=frozenset({"append", "replace", "truncate_insert"}),
+        supported_write_modes=frozenset(
+            {"append", "replace", "truncate_insert", "upsert"}
+        ),
     ),
 }
 

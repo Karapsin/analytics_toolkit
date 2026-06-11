@@ -460,6 +460,103 @@ def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
     assert cleanups == [("gp", "gp", "sandbox.target__stage__err")]
 
 
+def test_load_df_upsert_empty_existing_target_returns_zero(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+
+    result = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        pd.DataFrame({"id": []}),
+        write_mode="upsert",
+        key_columns=["id"],
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert result == 0
+    assert connection.executed == []
+
+
+def test_load_df_upsert_missing_target_creates_and_inserts(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    create_calls: list[str] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda connection_type, connection, table_name, *args, **kwargs: create_calls.append(
+            table_name
+        ),
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+
+    result = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+        write_mode="upsert",
+        key_columns=["id"],
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert result == 2
+    assert create_calls == ["sandbox.target"]
+
+
+def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
+    monkeypatch,
+) -> None:
+    connection = FakeDbapiConnection()
+    cleanups: list[str] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "create_stage_table",
+        lambda **kwargs: "sandbox.target__stage__upsert",
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "upsert_stage_table",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("merge failed")),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_stage_table_with_retry",
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
+            table_name
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        load_df_module.load_df(
+            "gp",
+            "sandbox.target",
+            pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+            write_mode="upsert",
+            key_columns=["id"],
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+
+    assert cleanups == ["sandbox.target__stage__upsert"]
+
+
 def test_insert_rows_batch_gp_uses_row_tuples_and_normalizes_nulls(monkeypatch) -> None:
     connection = FakeDbapiConnection()
     captured: dict[str, object] = {}
@@ -1269,4 +1366,138 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
         f"CAST(`users` AS Nullable(Int64)) AS `users` "
         f"FROM {TEST_CH_STAGE_TABLE}"
+    )
+
+
+def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
+    connection = FakeDbapiConnection()
+    batch = pd.DataFrame({"id": [1], "sub_id": [None], "score": [10]})
+
+    table_ops_module.finalize_stage_table(
+        connection_type="gp",
+        connection=connection,
+        stage_table="sandbox.target__stage",
+        target_table="sandbox.target",
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        write_mode="upsert",
+        key_columns=["id", "sub_id"],
+        insert_column_types={"id": "BIGINT", "sub_id": "BIGINT", "score": "INTEGER"},
+    )
+
+    assert connection.executed[0] == (
+        "DELETE FROM sandbox.target AS target_dst\n"
+        "USING sandbox.target__stage AS stage_src\n"
+        'WHERE (target_dst."id" = stage_src."id" '
+        'OR (target_dst."id" IS NULL AND stage_src."id" IS NULL)) '
+        'AND (target_dst."sub_id" = stage_src."sub_id" '
+        'OR (target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL))'
+    )
+    assert connection.executed[1].startswith(
+        'INSERT INTO sandbox.target ("id", "sub_id", "score") '
+    )
+
+
+def test_finalize_stage_table_trino_upsert_uses_merge() -> None:
+    connection = FakeDbapiConnection()
+    batch = pd.DataFrame({"id": [1], "score": [10]})
+
+    table_ops_module.finalize_stage_table(
+        connection_type="trino",
+        connection=connection,
+        stage_table="sandbox.target__stage",
+        target_table="sandbox.target",
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        write_mode="upsert",
+        key_columns=["id"],
+        insert_column_types={"id": "BIGINT", "score": "INTEGER"},
+    )
+
+    assert connection.executed == [
+        'MERGE INTO sandbox.target AS target_dst\n'
+        'USING sandbox.target__stage AS stage_src\n'
+        'ON (target_dst."id" = stage_src."id" '
+        'OR (target_dst."id" IS NULL AND stage_src."id" IS NULL))\n'
+        'WHEN MATCHED THEN UPDATE SET\n'
+        '  "id" = stage_src."id",\n'
+        '  "score" = stage_src."score"\n'
+        'WHEN NOT MATCHED THEN INSERT ("id", "score")\n'
+        '  VALUES (stage_src."id", stage_src."score")'
+    ]
+
+
+def test_finalize_stage_table_clickhouse_upsert_deletes_shard_then_inserts() -> None:
+    client = FakeClickHouseClient()
+    batch = pd.DataFrame({"id": [1], "score": [10]})
+
+    table_ops_module.finalize_stage_table(
+        connection_type="ch",
+        connection=client,
+        stage_table=TEST_CH_STAGE_TABLE,
+        target_table=TEST_CH_TABLE,
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        write_mode="upsert",
+        key_columns=["id"],
+        insert_column_types={"id": "UInt64", "score": "Int64"},
+        ch_cluster="core",
+    )
+
+    delete_sql = next(sql for sql in client.commands if sql.startswith("DELETE FROM"))
+    assert delete_sql.startswith(f"DELETE FROM {TEST_CH_SHARD_TABLE} ON CLUSTER core")
+    assert "tuple(isNull(`id`), ifNull(toString(`id`), ''))" in delete_sql
+    assert client.commands[-1].startswith(
+        f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) "
+    )
+
+
+def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> None:
+    client = FakeClickHouseClient()
+    batch = pd.DataFrame({"id": [1], "score": [10]})
+
+    table_ops_module.finalize_stage_table(
+        connection_type="ch",
+        connection=client,
+        stage_table=TEST_CH_STAGE_TABLE,
+        target_table=TEST_CH_TABLE,
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        write_mode="upsert",
+        key_columns=["id"],
+        insert_column_types={"id": "UInt64", "score": "Int64"},
+        ch_cluster="core",
+        ch_only_shard=True,
+    )
+
+    delete_sql = next(sql for sql in client.commands if sql.startswith("DELETE FROM"))
+    assert delete_sql.startswith(f"DELETE FROM {TEST_CH_TABLE}\n")
+    assert "ON CLUSTER" not in delete_sql
+
+
+def test_finalize_stage_table_upsert_missing_target_creates_and_inserts() -> None:
+    connection = FakeDbapiConnection()
+    batch = pd.DataFrame({"id": [1], "score": [10]})
+
+    table_ops_module.finalize_stage_table(
+        connection_type="gp",
+        connection=connection,
+        stage_table="sandbox.target__stage",
+        target_table="sandbox.target",
+        replace_target_table=True,
+        target_exists=False,
+        sample_batch=batch,
+        write_mode="upsert",
+        key_columns=["id"],
+        insert_column_types={"id": "BIGINT", "score": "INTEGER"},
+        target_column_types={"id": "BIGINT", "score": "INTEGER"},
+    )
+
+    assert connection.executed[0].startswith("CREATE TABLE sandbox.target")
+    assert connection.executed[1].startswith(
+        'INSERT INTO sandbox.target ("id", "score") '
     )

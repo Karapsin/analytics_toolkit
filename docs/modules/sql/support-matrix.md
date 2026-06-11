@@ -23,12 +23,14 @@ checks, use `from analytics_toolkit import sql` and inspect
 
 | Backend | Create behavior | Drop behavior | Truncate behavior | Write modes |
 | --- | --- | --- | --- | --- |
-| `gp` | append-only columnar `CREATE TABLE` defaults | `DROP TABLE IF EXISTS` | `TRUNCATE TABLE` | `append`, `replace`, `truncate_insert` |
-| `trino` | `CREATE TABLE` with Parquet/object-store layout | `DROP TABLE IF EXISTS` | `DELETE FROM` | `append`, `replace`, `truncate_insert` |
-| `ch` | `MergeTree` shard plus optional `Distributed` pair | `DROP TABLE IF EXISTS`, plus distributed pair handling when requested | `TRUNCATE TABLE IF EXISTS` | `append`, `replace`, `truncate_insert` |
+| `gp` | append-only columnar `CREATE TABLE` defaults | `DROP TABLE IF EXISTS` | `TRUNCATE TABLE` | `append`, `replace`, `truncate_insert`, `upsert` |
+| `trino` | `CREATE TABLE` with Parquet/object-store layout | `DROP TABLE IF EXISTS` | `DELETE FROM` | `append`, `replace`, `truncate_insert`, `upsert` |
+| `ch` | `MergeTree` shard plus optional `Distributed` pair | `DROP TABLE IF EXISTS`, plus distributed pair handling when requested | `TRUNCATE TABLE IF EXISTS` | `append`, `replace`, `truncate_insert`, `upsert` |
 
-`upsert` is reserved by the write-mode validator but is not currently supported
-by any backend.
+`upsert` requires `key_columns`. Trino uses native `MERGE`, subject to
+connector support at runtime. Greenplum uses staged delete-and-insert.
+ClickHouse uses lightweight `DELETE` plus insert and does not require
+`ReplacingMergeTree`.
 
 ## Public Helper Coverage
 

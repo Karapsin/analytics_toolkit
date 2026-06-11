@@ -25,6 +25,8 @@ class LoadOptions:
     query_label: str | None = None
     transfer_staging_schema: str | None = None
     transfer_staging_username: str | None = None
+    retry_cnt: int = 5
+    timeout_increment: int | float = 5
 
 
 @dataclass

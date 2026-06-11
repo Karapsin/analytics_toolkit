@@ -16,8 +16,8 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `destination_table` - target table name for dataframe loading
 - `df` - dataframe to load
 - `append` - historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied
-- `write_mode` - explicit write behavior: append, replace, or truncate_insert. `upsert` is reserved and currently unsupported
-- `key_columns` - columns used to validate staged rows against an existing target before final insert
+- `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
+- `key_columns` - key columns used to validate staged rows and required when `write_mode="upsert"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `dry_run` - when `True`, return a plan without mutating the database
@@ -65,6 +65,12 @@ rows
 ## Notes
 
 - `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
+- `write_mode="upsert"` stages incoming rows, rejects duplicate staged keys,
+  and then replaces matching target keys before inserting staged rows.
+- Upsert requires `key_columns`. Trino uses native `MERGE`; connector support
+  for `MERGE` is checked by Trino at runtime. Greenplum uses staged
+  delete-and-insert. ClickHouse uses lightweight `DELETE` plus insert and does
+  not require `ReplacingMergeTree`.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 
 [SQL functions index](index.md)

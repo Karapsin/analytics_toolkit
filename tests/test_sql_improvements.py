@@ -118,9 +118,13 @@ def test_backend_support_matrix_includes_write_modes() -> None:
     rows = capabilities_module.support_matrix_rows()
 
     assert {row["backend"] for row in rows} == {"gp", "trino", "ch"}
-    gp_row = next(row for row in rows if row["backend"] == "gp")
-    assert "truncate_insert" in gp_row["write_modes"]
-    assert "upsert" not in gp_row["write_modes"]
+    for row in rows:
+        assert "truncate_insert" in row["write_modes"]
+        assert "upsert" in row["write_modes"]
+        assert capabilities_module.validate_write_mode(
+            row["backend"],
+            "upsert",
+        ) == "upsert"
 
 
 def test_table_identifier_preserves_qualified_parts_and_quotes() -> None:
@@ -719,6 +723,92 @@ def test_load_df_dry_run_uses_table_schema() -> None:
     assert '"score" NUMERIC(8, 2)' in create_sql
 
 
+def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
+    df = pd.DataFrame(
+        {
+            "id": [1],
+            "sub_id": [None],
+            "score": [10],
+        }
+    )
+
+    gp_plan = load_df_module.load_df(
+        "gp",
+        "sandbox.scores",
+        df,
+        write_mode="upsert",
+        key_columns=["id", "sub_id"],
+        dry_run=True,
+    )
+    assert any("DELETE FROM sandbox.scores AS target_dst" in sql for sql in gp_plan.sqls)
+    assert any("USING sandbox.scores__stage__dry_run AS stage_src" in sql for sql in gp_plan.sqls)
+    assert any(
+        'target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL' in sql
+        for sql in gp_plan.sqls
+    )
+    assert any("INSERT INTO sandbox.scores SELECT * FROM" in sql for sql in gp_plan.sqls)
+
+    trino_plan = load_df_module.load_df(
+        "trino",
+        "sandbox.scores",
+        df,
+        write_mode="upsert",
+        key_columns=["id"],
+        dry_run=True,
+    )
+    assert any(sql.startswith("MERGE INTO sandbox.scores") for sql in trino_plan.sqls)
+    assert any("WHEN NOT MATCHED THEN INSERT" in sql for sql in trino_plan.sqls)
+
+
+def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
+    gp_plan = transfer_api_module.transfer_table(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select id, score from source_table",
+        to_table="sandbox.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        table_schema={"id": "BIGINT", "score": "INTEGER"},
+        dry_run=True,
+    )
+    assert any("DELETE FROM sandbox.scores AS target_dst" in sql for sql in gp_plan.sqls)
+    assert any(
+        'INSERT INTO sandbox.scores ("id", "score") SELECT CAST("id" AS BIGINT)'
+        in sql
+        for sql in gp_plan.sqls
+    )
+
+    trino_plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id, score from source_table",
+        to_table="sandbox.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        table_schema={"id": "BIGINT", "score": "INTEGER"},
+        dry_run=True,
+    )
+    assert any(sql.startswith("MERGE INTO sandbox.scores") for sql in trino_plan.sqls)
+
+    ch_plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="ch",
+        from_sql="select id, score from source_table",
+        to_table="analytics.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        table_schema={"id": "UInt64", "score": "Int64"},
+        ch_cluster="analytics",
+        dry_run=True,
+    )
+    assert any(
+        "DELETE FROM analytics.scores_shard ON CLUSTER analytics" in sql
+        for sql in ch_plan.sqls
+    )
+    assert any("tuple(isNull(`id`), ifNull(toString(`id`), ''))" in sql for sql in ch_plan.sqls)
+    assert any("INSERT INTO analytics.scores" in sql for sql in ch_plan.sqls)
+
+
 def test_load_df_passes_table_schema_to_create_sql_table(monkeypatch) -> None:
     connection = FakeDbapiConnection()
     create_calls: list[dict[str, object]] = []
@@ -779,12 +869,24 @@ def test_load_df_return_metadata_preserves_rows_default_path(monkeypatch) -> Non
     assert result.metadata.final_target_rows == 5
 
 
-def test_unsupported_upsert_mode_is_rejected() -> None:
-    with pytest.raises(ValueError, match="does not support"):
+def test_load_df_upsert_requires_key_columns() -> None:
+    with pytest.raises(ValueError, match="key_columns"):
         load_df_module.load_df(
             "gp",
             "sandbox.target",
             pd.DataFrame({"id": [1]}),
+            write_mode="upsert",
+            dry_run=True,
+        )
+
+
+def test_transfer_upsert_requires_key_columns() -> None:
+    with pytest.raises(ValueError, match="key_columns"):
+        transfer_api_module.transfer_table(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
             write_mode="upsert",
             dry_run=True,
         )

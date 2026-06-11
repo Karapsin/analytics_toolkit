@@ -41,19 +41,22 @@ def finalize_loaded_stage(
         stage_table=stage_state.stage_table,
         key_columns=options.key_columns,
     )
-    validate_stage_target_key_overlap(
-        connection_type=options.to_db_backend,
-        connection=connection_refs.target["connection"],
-        stage_table=stage_state.stage_table,
-        target_table=options.target_table,
-        key_columns=options.key_columns,
-        target_exists=stage_state.target_exists,
-        replace_target_table=options.replace_target_table,
-    )
+    if options.write_mode != "upsert":
+        validate_stage_target_key_overlap(
+            connection_type=options.to_db_backend,
+            connection=connection_refs.target["connection"],
+            stage_table=stage_state.stage_table,
+            target_table=options.target_table,
+            key_columns=options.key_columns,
+            target_exists=stage_state.target_exists,
+            replace_target_table=options.replace_target_table,
+        )
     if stage_state.stage_column_types is None:
         stage_state.insert_column_types = None
         target_column_types = None
-    elif stage_state.target_exists and not options.replace_target_table:
+    elif stage_state.target_exists and (
+        not options.replace_target_table or options.write_mode == "upsert"
+    ):
         stage_state.insert_column_types = get_existing_target_insert_types(
             options.to_db_backend,
             connection_refs.target["connection"],
@@ -77,6 +80,7 @@ def finalize_loaded_stage(
         target_column_types=target_column_types,
         insert_column_types=stage_state.insert_column_types,
         write_mode=options.write_mode,
+        key_columns=options.key_columns,
         gp_distributed_by_key=options.gp_distributed_by_key,
         partition_by=options.partition_by,
         order_by=options.order_by,
@@ -101,6 +105,11 @@ def finalize_empty_transfer(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
 ) -> None:
+    if options.write_mode == "upsert":
+        if stage_state.target_exists:
+            return
+        raise ValueError("Cannot create target table from an empty result set.")
+
     if options.replace_target_table:
         if not stage_state.target_exists:
             raise ValueError("Cannot create target table from an empty result set.")
