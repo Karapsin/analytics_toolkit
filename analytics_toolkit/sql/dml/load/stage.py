@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -15,6 +16,8 @@ from ..table._basic_ops import table_exists
 
 
 STAGE_TABLE_NAME_MAX_ATTEMPTS = 10
+STAGE_TABLE_RANDOM_SUFFIX_LENGTH = 8
+GP_IDENTIFIER_MAX_BYTES = 63
 
 
 def create_stage_table(
@@ -149,6 +152,7 @@ def build_stage_table_name(
 
     stage_suffix = random_suffix or uuid.uuid4().hex[:8]
     stage_identifier = _build_stage_identifier(
+        connection_type,
         table,
         transfer_staging_username,
         stage_suffix,
@@ -168,7 +172,12 @@ def build_stage_table_prefix(
     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
         raise ValueError(f"Invalid target table name: {table_name}")
 
-    base_identifier = table.this.this
+    base_identifier = _stage_base_identifier(
+        connection_type,
+        str(table.this.this),
+        transfer_staging_username,
+        stage_suffix="x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH,
+    )
     if transfer_staging_username:
         return (
             f"{base_identifier}__analytics_toolkit_"
@@ -178,21 +187,71 @@ def build_stage_table_prefix(
 
 
 def _build_stage_identifier(
+    connection_type: str,
     table: exp.Table,
     transfer_staging_username: str | None,
     stage_suffix: str,
 ) -> exp.Identifier:
+    base_identifier = _stage_base_identifier(
+        connection_type,
+        str(table.this.this),
+        transfer_staging_username,
+        stage_suffix=stage_suffix,
+    )
     if transfer_staging_username:
         identifier = (
-            f"{table.this.this}__analytics_toolkit_{transfer_staging_username}"
+            f"{base_identifier}__analytics_toolkit_{transfer_staging_username}"
             f"__stage__{stage_suffix}"
         )
     else:
-        identifier = f"{table.this.this}__stage__{stage_suffix}"
+        identifier = f"{base_identifier}__stage__{stage_suffix}"
     return exp.to_identifier(
         identifier,
         quoted=bool(table.this.args.get("quoted")),
     )
+
+
+def _stage_base_identifier(
+    connection_type: str,
+    base_identifier: str,
+    transfer_staging_username: str | None,
+    stage_suffix: str,
+) -> str:
+    if connection_type != "gp":
+        return base_identifier
+
+    marker = (
+        f"__analytics_toolkit_{transfer_staging_username}__stage__"
+        if transfer_staging_username
+        else "__stage__"
+    )
+    max_base_bytes = GP_IDENTIFIER_MAX_BYTES - len(marker.encode()) - len(
+        stage_suffix.encode()
+    )
+    if max_base_bytes <= 0:
+        raise ValueError("Stage table marker is too long for Greenplum identifiers.")
+    return _fit_identifier_bytes(base_identifier, max_base_bytes)
+
+
+def _fit_identifier_bytes(identifier: str, max_bytes: int) -> str:
+    if len(identifier.encode()) <= max_bytes:
+        return identifier
+
+    digest = hashlib.sha1(identifier.encode()).hexdigest()[:8]
+    digest_suffix = f"_{digest}"
+    digest_bytes = len(digest_suffix.encode())
+    if digest_bytes >= max_bytes:
+        return digest[:max_bytes]
+
+    prefix = _truncate_identifier_bytes(identifier, max_bytes - digest_bytes)
+    return f"{prefix}{digest_suffix}"
+
+
+def _truncate_identifier_bytes(identifier: str, max_bytes: int) -> str:
+    encoded = identifier.encode()
+    if len(encoded) <= max_bytes:
+        return identifier
+    return encoded[:max_bytes].decode(errors="ignore")
 
 
 def sqlglot_dialect(connection_type: str) -> str:

@@ -6,6 +6,7 @@ from typing import Any
 from typing import Sequence
 
 from ...connection.config import get_connection_config
+from ...connection.errors import InvalidSqlInputError
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function
 from ..load.stage import build_stage_table_prefix, cleanup_stage_table_with_retry
@@ -230,21 +231,25 @@ def _is_fully_qualified_stage_table_name(
 def _qualify_staging_table_name(
     db_key: str,
     transfer_backend: str,
-    transfer_staging_schema: str,
+    transfer_staging_schema: str | None,
     table_name: str,
 ) -> str:
     if _is_fully_qualified_stage_table_name(table_name):
         return table_name.strip()
+    if transfer_staging_schema is None:
+        raise InvalidSqlInputError(
+            "Unqualified stage table names require transfer_staging_schema."
+        )
 
     if transfer_backend == "ch":
         return f"{transfer_staging_schema}.{table_name}"
 
     if transfer_backend == "trino":
-        _, schema_name, _ = split_trino_table_name(
+        catalog_name, schema_name, _ = split_trino_table_name(
             f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
             connection_key=db_key,
         )
-        return f"{schema_name}.{table_name}"
+        return f"{catalog_name}.{schema_name}.{table_name}"
 
     return f"{transfer_staging_schema}.{table_name}"
 

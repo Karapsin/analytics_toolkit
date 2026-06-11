@@ -14,7 +14,7 @@ cleanup_stale_stage_tables(db_key: 'str', target_table: 'str', stage_tables: 'Se
 
 - `db_key` - connection key or alias that owns the staging tables
 - `target_table` - target table name whose staging tables should be cleaned
-- `stage_tables` - explicit fully-qualified or unqualified stage table names to drop; empty to use discovery
+- `stage_tables` - explicit fully-qualified or unqualified stage table names to drop; `None` uses discovery and an empty sequence drops nothing
 - `read_retry_cnt` - number of retries for staging-table discovery and drops
 - `timeout_increment` - delay increment used between cleanup retries
 - `query_label` - safe label added to generated SQL comments and logs
@@ -43,6 +43,10 @@ sql.cleanup_stale_stage_tables(
 ## Notes
 
 - Uses `transfer_staging_schema` and target user metadata from `.connections` to find stage tables.
+- Passing `stage_tables=None` discovers matching stale stage tables; passing `[]`
+  drops nothing; passing explicit names drops only those requested tables.
+- Unqualified explicit names are resolved inside `transfer_staging_schema`; fully
+  qualified explicit names are used unchanged.
 - Discovery and drops use retry behavior with `read_retry_cnt` and `timeout_increment`.
 - If staging cleanup cannot run because `transfer_staging_schema` is not configured, a one-time warning is emitted per process.
 

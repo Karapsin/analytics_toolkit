@@ -120,6 +120,39 @@ def test_build_stage_table_name_uses_transfer_staging_schema_and_username() -> N
     assert stage_name == "transfer_schema.target__analytics_toolkit_loader__stage__abcd"
 
 
+def test_build_stage_table_name_keeps_gp_identifier_within_limit() -> None:
+    stage_name = stage_module.build_stage_table_name(
+        "gp",
+        "sales.karapsin_temp_users_po",
+        transfer_staging_schema="transfer_schema",
+        transfer_staging_username="karapsin_de",
+        random_suffix="4f99601c",
+    )
+
+    stage_identifier = stage_name.split(".")[-1]
+    assert len(stage_identifier.encode()) <= stage_module.GP_IDENTIFIER_MAX_BYTES
+    assert stage_identifier.endswith("__stage__4f99601c")
+    assert stage_identifier.startswith("karap")
+    assert not stage_identifier.startswith("karapsin_temp_users_po__")
+
+
+def test_build_stage_table_name_keeps_gp_identifier_within_limit_without_username() -> None:
+    stage_name = stage_module.build_stage_table_name(
+        "gp",
+        "sales.very_long_target_table_name_for_monthly_analytics_exports",
+        transfer_staging_schema="transfer_schema",
+        random_suffix="4f99601c",
+    )
+
+    stage_identifier = stage_name.split(".")[-1]
+    assert len(stage_identifier.encode()) <= stage_module.GP_IDENTIFIER_MAX_BYTES
+    assert stage_identifier.endswith("__stage__4f99601c")
+    assert "__analytics_toolkit_" not in stage_identifier
+    assert not stage_identifier.startswith(
+        "very_long_target_table_name_for_monthly_analytics_exports__"
+    )
+
+
 def test_build_stage_table_name_keeps_legacy_naming_without_transfer_schema() -> None:
     stage_name = stage_module.build_stage_table_name(
         "gp",

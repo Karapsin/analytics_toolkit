@@ -4,6 +4,16 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.15 - 2026-06-11
+
+- Fixed Greenplum transfer staging names so generated table identifiers stay
+  within the backend identifier limit while preserving the random stage suffix.
+- Stopped `sql.transfer` from running broad stale-stage discovery cleanup; a
+  transfer now drops only the stage table created by its own attempt.
+- Tightened explicit `sql.cleanup_stale_stage_tables()` qualification so
+  unqualified stage names require `transfer_staging_schema` and Trino preserves
+  catalog-qualified staging schemas.
+
 ## 1.3.8.14 - 2026-06-10
 
 - Added `sql.cleanup_stale_stage_tables()`, a staged-table cleanup helper that

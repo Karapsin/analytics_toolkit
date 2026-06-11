@@ -174,11 +174,10 @@ def make_progress_options(**overrides: Any) -> Any:
     return models_module.TransferOptions(**values)
 
 
-def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
+def test_run_transfer_attempt_cleans_only_current_stage_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
-    cleanup_calls: list[tuple[str, int]] = []
     source_conn = FakeTransferConnection("source")
     target_conn = FakeTransferConnection("target")
 
@@ -202,23 +201,6 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
         events.append("create_stage_state")
         return models_module.TransferStageState(target_exists=False)
 
-    def fake_cleanup_stale_stage_tables_with_connection(
-        db_key: str,
-        target_table: str,
-        connection_ref: dict[str, Any],
-        read_retry_cnt: int,
-        stage_tables: list[str] | None = None,
-        timeout_increment: int | float = 5,
-        query_label: str | None = None,
-    ) -> None:
-        del db_key, target_table, stage_tables, timeout_increment, query_label
-        events.append(
-            "cleanup_start"
-            if not cleanup_calls
-            else "cleanup_finish"
-        )
-        cleanup_calls.append((connection_ref["connection"].name, read_retry_cnt))
-
     def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
         events.append("inspect_source_query_schema")
         return []
@@ -233,6 +215,9 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
     def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
         events.append("cleanup_stage")
 
+    def fake_cleanup_stale_stage_tables_with_connection(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("transfer must not run stale stage discovery cleanup")
+
     def fake_close_connection_ref(
         _connection_ref: dict[str, Any],
         _connection_type: str,
@@ -246,6 +231,7 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
         attempt_module,
         "cleanup_stale_stage_tables_with_connection",
         fake_cleanup_stale_stage_tables_with_connection,
+        raising=False,
     )
     monkeypatch.setattr(
         attempt_module,
@@ -268,21 +254,18 @@ def test_run_transfer_attempt_cleans_staging_schema_on_start_and_finish(
     )
 
     assert total_rows == 7
-    assert cleanup_calls == [("target", 3), ("target", 3)]
     assert events == [
         "create_stage_state",
-        "cleanup_start",
         "inspect_source_query_schema",
         "load_stage_batches",
         "finalize_loaded_stage",
         "cleanup_stage",
-        "cleanup_finish",
         "close:source",
         "close:target",
     ]
 
 
-def test_run_transfer_attempt_calls_cleanup_when_staging_schema_is_missing(
+def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -322,20 +305,8 @@ def test_run_transfer_attempt_calls_cleanup_when_staging_schema_is_missing(
     def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
         events.append("cleanup_stage")
 
-    cleanup_calls: list[tuple[str, int]] = []
-
-    def fake_cleanup_stale_stage_tables_with_connection(
-        db_key: str,
-        target_table: str,
-        connection_ref: dict[str, Any],
-        read_retry_cnt: int,
-        stage_tables: list[str] | None = None,
-        timeout_increment: int | float = 5,
-        query_label: str | None = None,
-    ) -> None:
-        del target_table, stage_tables, timeout_increment, query_label
-        events.append("cleanup_start" if not cleanup_calls else "cleanup_finish")
-        cleanup_calls.append((connection_ref["connection"].name, read_retry_cnt))
+    def fake_cleanup_stale_stage_tables_with_connection(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("transfer must not run stale stage discovery cleanup")
 
     def fake_close_connection_ref(
         _connection_ref: dict[str, Any],
@@ -362,6 +333,7 @@ def test_run_transfer_attempt_calls_cleanup_when_staging_schema_is_missing(
         attempt_module,
         "cleanup_stale_stage_tables_with_connection",
         fake_cleanup_stale_stage_tables_with_connection,
+        raising=False,
     )
     monkeypatch.setattr(attempt_module, "close_connection_ref", fake_close_connection_ref)
 
@@ -374,16 +346,13 @@ def test_run_transfer_attempt_calls_cleanup_when_staging_schema_is_missing(
     assert total_rows == 7
     assert events == [
         "create_stage_state",
-        "cleanup_start",
         "inspect_source_query_schema",
         "load_stage_batches",
         "finalize_loaded_stage",
         "cleanup_stage",
-        "cleanup_finish",
         "close:source",
         "close:target",
     ]
-    assert cleanup_calls == [("target", 3), ("target", 3)]
 
 
 def test_cleanup_stale_stage_tables_warns_once_when_staging_schema_missing(
@@ -513,6 +482,119 @@ def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discover
         "transfer_schema.target__analytics_toolkit_target_user__stage__implicit",
     ]
     assert query_called == 0
+
+
+def test_cleanup_stale_stage_tables_empty_explicit_list_drops_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_called = 0
+    query_called = 0
+
+    def fake_query_gp_stage_tables(
+        transfer_staging_schema: str,
+        table_prefix: str,
+        connection: Any,
+    ) -> list[str]:
+        nonlocal query_called
+        query_called += 1
+        del transfer_staging_schema, table_prefix, connection
+        return ["target__analytics_toolkit_target_user__stage__stale"]
+
+    def fake_cleanup_stage_table_with_retry(*_args: Any, **_kwargs: Any) -> None:
+        nonlocal cleanup_called
+        cleanup_called += 1
+
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="transfer_schema",
+            user="target_user",
+        ),
+    )
+    monkeypatch.setattr(staging_module, "_query_gp_stage_tables", fake_query_gp_stage_tables)
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        fake_cleanup_stage_table_with_retry,
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="gp",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        stage_tables=[],
+    )
+
+    assert cleanup_called == 0
+    assert query_called == 0
+
+
+def test_cleanup_stale_stage_tables_rejects_unqualified_explicit_without_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema=None,
+            user="target_user",
+        ),
+    )
+
+    with pytest.raises(
+        staging_module.InvalidSqlInputError,
+        match="Unqualified stage table names require transfer_staging_schema",
+    ):
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="gp",
+            target_table="analytics.target",
+            connection_ref={"connection": object()},
+            read_retry_cnt=3,
+            stage_tables=["target__analytics_toolkit_target_user__stage__implicit"],
+        )
+
+
+def test_cleanup_stale_stage_tables_preserves_trino_catalog_schema_for_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="trino",
+            transfer_staging_schema="hive.scratch",
+            user="target_user",
+        ),
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="trino",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        stage_tables=[
+            "stage_x",
+            "iceberg.scratch.stage_y",
+        ],
+    )
+
+    assert discovered == [
+        "hive.scratch.stage_x",
+        "iceberg.scratch.stage_y",
+    ]
 
 
 def test_transfer_options_progress_defaults_to_false() -> None:
