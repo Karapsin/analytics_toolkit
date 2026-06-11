@@ -80,6 +80,7 @@ def transfer_table(
     full_timeout_increment: int | float = 60 * 10,
     key_columns: list[str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
+    gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
@@ -121,6 +122,7 @@ def transfer_table(
         full_timeout_increment=full_timeout_increment,
         key_columns=key_columns,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=trino_insert_chunk_size,
         partition_by=partition_by,
         order_by=order_by,
@@ -258,6 +260,7 @@ def build_transfer_options(
     full_timeout_increment: int | float = 60 * 10,
     key_columns: list[str] | None = None,
     gp_distributed_by_key: list[str] | None = None,
+    gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
@@ -354,6 +357,7 @@ def build_transfer_options(
         full_timeout_increment=full_timeout_increment,
         key_columns=normalize_key_columns(key_columns),
         gp_distributed_by_key=normalize_key_columns(gp_distributed_by_key),
+        gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=(
             trino_insert_chunk_size
             if trino_insert_chunk_size is not None
@@ -397,6 +401,13 @@ def build_transfer_options(
         raise ValueError(
             "gp_distributed_by_key can only be used when to_db has type 'gp'."
         )
+    if options.gp_insert_chunk_size is not None:
+        if options.to_db_backend != "gp":
+            raise ValueError(
+                "gp_insert_chunk_size can only be used when to_db has type 'gp'."
+            )
+        if options.gp_insert_chunk_size <= 0:
+            raise ValueError("gp_insert_chunk_size must be a positive integer.")
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
     validate_ch_options_not_used(
@@ -696,6 +707,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "target_rows_per_second_deadband": options.target_rows_per_second_deadband,
             "key_columns": options.key_columns,
             "gp_distributed_by_key": options.gp_distributed_by_key,
+            "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "table_schema": options.table_schema,
             "partition_by": options.partition_by,

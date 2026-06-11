@@ -906,6 +906,37 @@ def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
     assert bounded_memory_options.max_batch_memory_mb == 512.0
 
 
+@pytest.mark.parametrize("gp_insert_chunk_size", [0, -1])
+def test_transfer_options_rejects_invalid_gp_insert_chunk_size(
+    gp_insert_chunk_size: int,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="gp_insert_chunk_size must be a positive integer",
+    ):
+        transfer_api_module.build_transfer_options(
+            from_db="trino",
+            to_db="gp",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            gp_insert_chunk_size=gp_insert_chunk_size,
+        )
+
+
+def test_transfer_options_rejects_gp_insert_chunk_size_for_non_gp_target() -> None:
+    with pytest.raises(
+        ValueError,
+        match="gp_insert_chunk_size can only be used when to_db has type 'gp'",
+    ):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            gp_insert_chunk_size=10_000,
+        )
+
+
 @pytest.mark.parametrize(
     "target_batch_memory_mb",
     [0, -1, True, "64", float("nan"), float("inf")],
@@ -1098,6 +1129,7 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
         max_batch_size=4,
         target_rows_per_second=False,
         target_batch_seconds=10.0,
+        gp_insert_chunk_size=50_000,
     )
     inserted_batch_sizes: list[int] = []
     insert_durations = iter([1.0, 1.0, 30.0, 30.0])
@@ -1123,6 +1155,7 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
         del connection_type, connection_ref, table_name
         assert columns == ["id"]
         assert not isinstance(rows, pd.DataFrame)
+        assert kwargs["gp_insert_chunk_size"] == 50_000
         inserted_batch_sizes.append(len(rows))
         kwargs["on_success"](next(insert_durations), len(rows))
         return len(rows)
@@ -1710,18 +1743,21 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
     assert plan.options["target_rows_per_second_deadband"] == 0.15
     assert plan.options["target_batch_memory_mb"] == 32.0
     assert plan.options["max_batch_size"] is None
+    assert plan.options["gp_insert_chunk_size"] is None
 
     plan = transfer_api_module.transfer_table(
-        from_db="gp",
-        to_db="trino",
+        from_db="trino",
+        to_db="gp",
         from_sql="select id from source_table",
         to_table="sandbox.target",
         dry_run=True,
         target_rows_per_second_window=3,
         target_rows_per_second_deadband=0.05,
+        gp_insert_chunk_size=50_000,
     )
     assert plan.options["target_rows_per_second_window"] == 3
     assert plan.options["target_rows_per_second_deadband"] == 0.05
+    assert plan.options["gp_insert_chunk_size"] == 50_000
 
 
 @pytest.mark.parametrize(

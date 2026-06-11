@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.16 - 2026-06-11
+
+- Added `gp_insert_chunk_size` to `sql.transfer` so Greenplum stage inserts can
+  tune `execute_values` page sizes.
+
 ## 1.3.8.15 - 2026-06-11
 
 - Fixed Greenplum transfer staging names so generated table identifiers stay
