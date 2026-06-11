@@ -47,7 +47,7 @@ from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from .attempt import run_transfer_attempt
 from ..staging import _sanitize_transfer_staging_username
-from ..runtime.models import TransferOptions
+from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
 from ..runtime.retry import run_with_retry
 
 
@@ -708,6 +708,13 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "key_columns": options.key_columns,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
+            "adaptive_gp_insert_chunk_size": options.to_db_backend == "gp"
+            and options.adaptive_batch_size,
+            "initial_gp_insert_chunk_size": (
+                (options.gp_insert_chunk_size or DEFAULT_GP_INSERT_CHUNK_SIZE)
+                if options.to_db_backend == "gp"
+                else None
+            ),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "table_schema": options.table_schema,
             "partition_by": options.partition_by,

@@ -27,6 +27,12 @@ by default and adjusts later batches from successful insert latency. Use memory
 targeting when row width varies enough that a fixed row count is a poor proxy
 for process memory.
 
+For Greenplum targets, `gp_insert_chunk_size` is the initial `execute_values`
+page size inside each transfer insert batch when adaptive batching is enabled.
+If omitted, Greenplum transfer inserts start at `10_000` rows per page and then
+adapt from measured rows per second. Set `adaptive_batch_size=False` to keep an
+explicit `gp_insert_chunk_size` fixed.
+
 Progress totals are approximate unless a reliable total is known. Row estimates
 come from backend planners and should be treated as progress hints, not counts.
 

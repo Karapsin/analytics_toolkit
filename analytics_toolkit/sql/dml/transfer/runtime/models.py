@@ -7,6 +7,8 @@ from typing import Any
 
 import pandas as pd
 
+DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
+
 
 @dataclass(frozen=True)
 class RowBatch:
@@ -204,6 +206,20 @@ class AdaptiveBatchSizer:
         if self.max_size is None:
             return size
         return min(size, self.max_size)
+
+
+def make_gp_insert_chunk_sizer(options: TransferOptions) -> AdaptiveBatchSizer:
+    initial_size = options.gp_insert_chunk_size or DEFAULT_GP_INSERT_CHUNK_SIZE
+    return AdaptiveBatchSizer(
+        enabled=options.adaptive_batch_size,
+        current_size=initial_size,
+        min_size=min(1_000, initial_size),
+        max_size=max(100_000, initial_size * 4),
+        target_seconds=options.target_batch_seconds,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=options.target_rows_per_second_window,
+        target_rows_per_second_deadband=options.target_rows_per_second_deadband,
+    )
 
 
 @dataclass(frozen=True)

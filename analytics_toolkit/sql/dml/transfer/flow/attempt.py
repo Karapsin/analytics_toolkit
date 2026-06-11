@@ -18,6 +18,7 @@ from ..runtime.models import (
     TransferConnectionRefs,
     TransferOptions,
     TransferStageState,
+    make_gp_insert_chunk_sizer,
 )
 from ..runtime.retry import close_connection_ref, run_with_retry
 from ..io.source import iter_source_batches
@@ -138,6 +139,11 @@ def load_stage_batches(
         min_target_memory_bytes=options.min_batch_memory_bytes,
         max_target_memory_bytes=options.max_batch_memory_bytes,
     )
+    gp_insert_chunk_sizer = (
+        make_gp_insert_chunk_sizer(options)
+        if options.to_db_backend == "gp"
+        else None
+    )
     try:
         for batch in iter_source_batches(
             options.from_db_key,
@@ -182,6 +188,17 @@ def load_stage_batches(
                     memory_bytes=batch_memory_bytes,
                 )
 
+            def update_gp_insert_chunk_sizer(
+                duration_seconds: float,
+                inserted_rows: int,
+            ) -> None:
+                if gp_insert_chunk_sizer is None:
+                    return
+                gp_insert_chunk_sizer.update(
+                    duration_seconds,
+                    inserted_rows=inserted_rows,
+                )
+
             inserted_rows = insert_rows_batch(
                 options.to_db_backend,
                 connection_refs.target,
@@ -197,6 +214,16 @@ def load_stage_batches(
                 query_label=options.query_label,
                 on_success=update_batch_sizer,
                 on_progress=progress_tracker.update,
+                gp_insert_page_size_getter=(
+                    (lambda: gp_insert_chunk_sizer.current_size)
+                    if gp_insert_chunk_sizer is not None
+                    else None
+                ),
+                on_gp_insert_page_success=(
+                    update_gp_insert_chunk_sizer
+                    if gp_insert_chunk_sizer is not None
+                    else None
+                ),
             )
             progress_tracker.complete_batch(inserted_rows)
             total_rows += inserted_rows

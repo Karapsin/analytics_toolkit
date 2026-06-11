@@ -521,10 +521,97 @@ def test_insert_rows_batch_gp_honors_insert_chunk_size(monkeypatch) -> None:
     assert inserted_rows == 3
     assert captured_calls == [
         {"rows": [(1,), (2,)], "page_size": 2},
-        {"rows": [(3,)], "page_size": 2},
+        {"rows": [(3,)], "page_size": 1},
     ]
     assert progress_updates == [2, 1]
     assert connection.commit_calls == 1
+
+
+def test_insert_gp_rows_can_change_page_size_between_calls(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    captured_calls: list[dict[str, object]] = []
+    page_sizes = iter([2, 3, 10])
+
+    def fake_execute_values(cursor, sql, rows, page_size):
+        del cursor, sql
+        captured_calls.append(
+            {
+                "rows": list(rows),
+                "page_size": page_size,
+            }
+        )
+
+    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+
+    load_sql_table_module._insert_gp_rows(
+        connection=connection,
+        table_name="schema.stage_table",
+        columns=["id"],
+        rows=[(1,), (2,), (3,), (4,), (5,), (6,)],
+        page_size_getter=lambda: next(page_sizes),
+    )
+
+    assert captured_calls == [
+        {"rows": [(1,), (2,)], "page_size": 2},
+        {"rows": [(3,), (4,), (5,)], "page_size": 3},
+        {"rows": [(6,)], "page_size": 1},
+    ]
+    assert connection.commit_calls == 1
+
+
+def test_insert_gp_rows_reports_per_page_success(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    page_successes: list[tuple[float, int]] = []
+    progress_updates: list[int] = []
+    perf_values = iter([1.0, 1.25, 2.0, 2.75])
+
+    def fake_execute_values(cursor, sql, rows, page_size):
+        del cursor, sql, rows, page_size
+
+    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(
+        load_sql_table_module.time,
+        "perf_counter",
+        lambda: next(perf_values),
+    )
+
+    load_sql_table_module._insert_gp_rows(
+        connection=connection,
+        table_name="schema.stage_table",
+        columns=["id"],
+        rows=[(1,), (2,), (3,)],
+        gp_insert_chunk_size=2,
+        on_progress=progress_updates.append,
+        on_page_success=lambda duration, rows: page_successes.append(
+            (duration, rows)
+        ),
+    )
+
+    assert progress_updates == [2, 1]
+    assert page_successes == [(0.25, 2), (0.75, 1)]
+    assert connection.commit_calls == 1
+
+
+def test_insert_gp_rows_rolls_back_on_error(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+
+    def fake_execute_values(cursor, sql, rows, page_size):
+        del cursor, sql, rows, page_size
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+
+    with pytest.raises(RuntimeError, match="insert failed"):
+        load_sql_table_module._insert_gp_rows(
+            connection=connection,
+            table_name="schema.stage_table",
+            columns=["id"],
+            rows=[(1,), (2,)],
+            gp_insert_chunk_size=2,
+        )
+
+    assert connection.rollback_calls == 1
+    assert connection.commit_calls == 0
 
 
 def test_insert_rows_batch_trino_normalizes_values_and_splits_chunks() -> None:

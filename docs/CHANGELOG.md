@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.3 - 2026-06-15
+
+- Made Greenplum `sql.transfer` stage insert page size adapt from the
+  `gp_insert_chunk_size` initial value when adaptive batching is enabled.
+
 ## 1.3.9.2 - 2026-06-12
 
 - Changed `analytics_toolkit.sql_format` join conditions so `ON` starts two

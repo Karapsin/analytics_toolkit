@@ -64,6 +64,8 @@ RowInsertBackend = Callable[
         str,
         Optional[str],
         Optional[Callable[[int], None]],
+        Optional[Callable[[], int]],
+        Optional[Callable[[float, int], None]],
     ],
     None,
 ]
@@ -148,6 +150,8 @@ def insert_rows_batch(
     query_label: str | None = None,
     on_success: Callable[[float, int], None] | None = None,
     on_progress: Callable[[int], None] | None = None,
+    gp_insert_page_size_getter: Callable[[], int] | None = None,
+    on_gp_insert_page_success: Callable[[float, int], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
     row_tuples = [tuple(row) for row in rows]
@@ -173,6 +177,8 @@ def insert_rows_batch(
                 connection_type=connection_type,
                 query_label=query_label,
                 on_progress=on_progress,
+                gp_insert_page_size_getter=gp_insert_page_size_getter,
+                on_gp_insert_page_success=on_gp_insert_page_success,
             )
             duration_seconds = time.perf_counter() - started_at
         except Exception as exc:
@@ -250,20 +256,38 @@ def _insert_gp_rows(
     gp_insert_chunk_size: int | None = None,
     query_label: str | None = None,
     on_progress: Callable[[int], None] | None = None,
+    page_size_getter: Callable[[], int] | None = None,
+    on_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
     row_tuples = [tuple(row) for row in rows]
     if not row_tuples:
         return
 
     sql = build_gp_batch_insert_sql(table_name, columns, query_label=query_label)
-    page_size = min(_get_gp_insert_chunk_size(gp_insert_chunk_size), len(row_tuples))
 
     cursor = connection.cursor()
     try:
-        for row_chunk in _chunk_sequence(row_tuples, page_size):
+        next_index = 0
+        while next_index < len(row_tuples):
+            remaining_rows = len(row_tuples) - next_index
+            configured_page_size = (
+                page_size_getter()
+                if page_size_getter is not None
+                else gp_insert_chunk_size
+            )
+            page_size = min(
+                _get_gp_insert_chunk_size(configured_page_size),
+                remaining_rows,
+            )
+            row_chunk = row_tuples[next_index:next_index + page_size]
+            started_at = time.perf_counter()
             execute_values(cursor, sql, row_chunk, page_size=page_size)
+            duration_seconds = time.perf_counter() - started_at
             if on_progress is not None:
                 on_progress(len(row_chunk))
+            if on_page_success is not None:
+                on_page_success(duration_seconds, len(row_chunk))
+            next_index += page_size
         connection.commit()
     except Exception:
         connection.rollback()
@@ -470,6 +494,8 @@ def _insert_gp_rows_backend(
     connection_type: str,
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
+    gp_insert_page_size_getter: Callable[[], int] | None,
+    on_gp_insert_page_success: Callable[[float, int], None] | None,
 ) -> None:
     del target_column_types, trino_insert_chunk_size, connection_type
     _insert_gp_rows(
@@ -480,6 +506,8 @@ def _insert_gp_rows_backend(
         gp_insert_chunk_size=gp_insert_chunk_size,
         query_label=query_label,
         on_progress=on_progress,
+        page_size_getter=gp_insert_page_size_getter,
+        on_page_success=on_gp_insert_page_success,
     )
 
 
@@ -494,8 +522,10 @@ def _insert_trino_rows_backend(
     connection_type: str,
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
+    gp_insert_page_size_getter: Callable[[], int] | None,
+    on_gp_insert_page_success: Callable[[float, int], None] | None,
 ) -> None:
-    del gp_insert_chunk_size
+    del gp_insert_chunk_size, gp_insert_page_size_getter, on_gp_insert_page_success
     _insert_trino_rows(
         connection,
         table_name,
@@ -520,8 +550,11 @@ def _insert_ch_rows_backend(
     connection_type: str,
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
+    gp_insert_page_size_getter: Callable[[], int] | None,
+    on_gp_insert_page_success: Callable[[float, int], None] | None,
 ) -> None:
     del trino_insert_chunk_size, gp_insert_chunk_size, connection_type, query_label
+    del gp_insert_page_size_getter, on_gp_insert_page_success
     _insert_ch_rows(
         connection,
         table_name,
@@ -587,6 +620,8 @@ def _insert_rows_backend(
     connection_type: str,
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
+    gp_insert_page_size_getter: Callable[[], int] | None = None,
+    on_gp_insert_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
     insert_backend = _ROW_INSERT_BACKENDS.get(backend)
     if insert_backend is None:
@@ -602,6 +637,8 @@ def _insert_rows_backend(
         connection_type,
         query_label,
         on_progress,
+        gp_insert_page_size_getter,
+        on_gp_insert_page_success,
     )
 
 

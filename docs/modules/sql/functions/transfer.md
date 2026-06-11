@@ -48,7 +48,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 ### Backend-Specific Inputs
 
 - `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
-- `gp_insert_chunk_size` - dataframe/row insert page size for Greenplum transfer stage inserts
+- `gp_insert_chunk_size` - initial Greenplum transfer stage insert page size; omitted values start at `10_000`
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
 - `ch_engine` - engine to use for created ClickHouse local shard tables
 - `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
@@ -97,7 +97,9 @@ rows
 - Optional `min_batch_seconds`, `max_batch_seconds`, `min_batch_memory_mb`, and
   `max_batch_memory_mb` clamp their corresponding active target constraints
   when those targets are enabled.
-- Larger `gp_insert_chunk_size` values can reduce Greenplum insert round trips,
-  but benchmark them against your target cluster and row shape.
+- For Greenplum targets, `gp_insert_chunk_size` controls the initial
+  `execute_values` page size when adaptive batching is enabled. If omitted, the
+  initial page size is `10_000`; set `adaptive_batch_size=False` to keep the
+  page size fixed.
 
 [SQL functions index](index.md)

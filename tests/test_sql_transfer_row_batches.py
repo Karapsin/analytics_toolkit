@@ -1180,6 +1180,275 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
     assert source.cursor_obj.fetch_sizes == [2, 3, 4, 2, 1]
 
 
+def test_load_stage_batches_starts_adaptive_gp_insert_pages_at_default(
+    monkeypatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,), (2,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="trino",
+        from_db_backend="trino",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=True,
+    )
+    observed_page_sizes: list[int] = []
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_gp_insert_page_success"](1.0, len(rows))
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 2
+    assert observed_page_sizes == [10_000]
+
+
+def test_load_stage_batches_starts_adaptive_gp_insert_pages_at_explicit_size(
+    monkeypatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,), (2,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="trino",
+        from_db_backend="trino",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=True,
+        gp_insert_chunk_size=100_000,
+    )
+    observed_page_sizes: list[int] = []
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_gp_insert_page_success"](1.0, len(rows))
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 2
+    assert observed_page_sizes == [100_000]
+
+
+def test_load_stage_batches_keeps_gp_insert_pages_fixed_when_adaptive_disabled(
+    monkeypatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,), (2,), (3,), (4,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="trino",
+        from_db_backend="trino",
+        to_db_key="gp_sandbox",
+        to_db_backend="gp",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=False,
+        gp_insert_chunk_size=100_000,
+    )
+    observed_page_sizes: list[int] = []
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_gp_insert_page_success"](0.1, len(rows))
+        observed_page_sizes.append(kwargs["gp_insert_page_size_getter"]())
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 4
+    assert observed_page_sizes == [100_000, 100_000, 100_000, 100_000]
+
+
+def test_load_stage_batches_skips_gp_insert_page_sizer_for_non_gp_target(
+    monkeypatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,), (2,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="trino",
+        to_db_backend="trino",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=True,
+    )
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        assert kwargs["gp_insert_page_size_getter"] is None
+        assert kwargs["on_gp_insert_page_success"] is None
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 2
+
+
 def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:
     source = RecordingSourceConnection(rows=[(row_id,) for row_id in range(10)])
     connection_refs = models_module.TransferConnectionRefs(
@@ -1744,6 +2013,8 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
     assert plan.options["target_batch_memory_mb"] == 32.0
     assert plan.options["max_batch_size"] is None
     assert plan.options["gp_insert_chunk_size"] is None
+    assert plan.options["adaptive_gp_insert_chunk_size"] is False
+    assert plan.options["initial_gp_insert_chunk_size"] is None
 
     plan = transfer_api_module.transfer_table(
         from_db="trino",
@@ -1758,6 +2029,19 @@ def test_transfer_dry_run_includes_estimate_total_rows_option() -> None:
     assert plan.options["target_rows_per_second_window"] == 3
     assert plan.options["target_rows_per_second_deadband"] == 0.05
     assert plan.options["gp_insert_chunk_size"] == 50_000
+    assert plan.options["adaptive_gp_insert_chunk_size"] is True
+    assert plan.options["initial_gp_insert_chunk_size"] == 50_000
+
+    plan = transfer_api_module.transfer_table(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        dry_run=True,
+    )
+    assert plan.options["gp_insert_chunk_size"] is None
+    assert plan.options["adaptive_gp_insert_chunk_size"] is True
+    assert plan.options["initial_gp_insert_chunk_size"] == 10_000
 
 
 @pytest.mark.parametrize(
