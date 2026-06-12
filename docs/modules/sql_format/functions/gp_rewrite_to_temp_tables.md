@@ -5,7 +5,7 @@
 Rewrite SELECT CTEs and subqueries into a Greenplum temp-table script.
 
 ```python
-gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", keyword_case="lower", indent=4) -> str
+gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4) -> str
 ```
 
 ## Inputs
@@ -13,6 +13,8 @@ gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", keyword
 - `sql` - SQL text containing exactly one SELECT statement
 - `dialect` - optional sqlglot dialect; use `postgres`, `trino`, `clickhouse`, or `None`
 - `temp_prefix` - prefix for generated temp table names such as `tmp_1`
+- `group_by_format` - `ordinal` uses SELECT-list positions when a GROUP BY item can be matched; `expressions` preserves expression-based output
+- `order_by_format` - `ordinal` uses SELECT-list positions when an ORDER BY item can be matched and preserves sort modifiers; `expressions` preserves expression-based output
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
 
@@ -42,8 +44,7 @@ create temporary table customer_orders as (
         user_id,
         SUM(amount) as revenue
     from orders
-    group by
-        user_id
+    group by 1
 ) distributed by (user_id);
 analyze customer_orders;
 
@@ -61,6 +62,7 @@ join users as u
 - Derived-table subqueries use their table alias as the temp table name
 - Scalar and predicate SELECT subqueries use generated names such as `tmp_1`
 - Temp tables use `distributed by` when equality join keys can be inferred, otherwise `distributed randomly`
+- Grouping and sorting clauses use compact ordinals by default; pass `"expressions"` modes to preserve expression output
 - Empty SQL, multi-statement SQL, non-SELECT SQL, invalid prefixes, name collisions, correlated subqueries, and unsafe partial rewrites raise `ValueError`
 
 [Functions index](index.md)

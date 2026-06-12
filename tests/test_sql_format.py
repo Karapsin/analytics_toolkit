@@ -18,8 +18,143 @@ def test_format_sql_basic_pretty_output() -> None:
         "    a,\n"
         "    b\n"
         "from t\n"
+        "order by 2 desc"
+    )
+
+
+def test_format_sql_defaults_group_by_to_ordinals() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select a,b,count(*) from t group by a,b")
+        == "select\n"
+        "    a,\n"
+        "    b,\n"
+        "    COUNT(*)\n"
+        "from t\n"
+        "group by 1, 2"
+    )
+
+
+def test_format_sql_defaults_order_by_to_ordinals_with_direction() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select a,b from t order by a,b desc")
+        == "select\n"
+        "    a,\n"
+        "    b\n"
+        "from t\n"
+        "order by 1, 2 desc"
+    )
+
+
+def test_format_sql_can_preserve_expression_group_and_order_output() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select a,b from t group by a,b order by a,b desc",
+            group_by_format="expressions",
+            order_by_format="expressions",
+        )
+        == "select\n"
+        "    a,\n"
+        "    b\n"
+        "from t\n"
+        "group by\n"
+        "    a,\n"
+        "    b\n"
         "order by\n"
+        "    a,\n"
         "    b desc"
+    )
+
+
+def test_format_sql_matches_group_by_expression_and_order_by_alias() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select a + 1 as day, sum(x) as sx "
+            "from t group by a + 1 order by sx desc"
+        )
+        == "select\n"
+        "    a + 1 as day,\n"
+        "    SUM(x) as sx\n"
+        "from t\n"
+        "group by 1\n"
+        "order by 2 desc"
+    )
+
+
+def test_format_sql_matches_group_by_alias_and_order_by_expression() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select a + 1 as day, count(*) as n "
+            "from t group by day order by a + 1"
+        )
+        == "select\n"
+        "    a + 1 as day,\n"
+        "    COUNT(*) as n\n"
+        "from t\n"
+        "group by 1\n"
+        "order by 1"
+    )
+
+
+def test_format_sql_keeps_existing_group_and_order_ordinals() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select a,b from t group by 1 order by 2 desc")
+        == "select\n"
+        "    a,\n"
+        "    b\n"
+        "from t\n"
+        "group by 1\n"
+        "order by 2 desc"
+    )
+
+
+def test_format_sql_preserves_unmatched_group_and_order_expressions() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select a from t group by b order by c desc")
+        == "select\n"
+        "    a\n"
+        "from t\n"
+        "group by b\n"
+        "order by c desc"
+    )
+
+
+def test_format_sql_rejects_invalid_group_and_order_format_values() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    with pytest.raises(ValueError, match="group_by_format"):
+        format_sql("select 1", group_by_format="compact")
+    with pytest.raises(ValueError, match="order_by_format"):
+        format_sql("select 1", order_by_format="compact")
+
+
+def test_format_sql_uppercase_keyword_case_compacts_ordinal_clauses() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select a,b from t group by a,b order by a desc",
+            keyword_case="upper",
+        )
+        == "SELECT\n"
+        "    a,\n"
+        "    b\n"
+        "FROM t\n"
+        "GROUP BY 1, 2\n"
+        "ORDER BY 1 DESC"
     )
 
 
@@ -222,8 +357,7 @@ def test_rewrite_with_ctes_extracts_derived_select() -> None:
         "        user_id,\n"
         "        SUM(amount) as revenue\n"
         "    from orders\n"
-        "    group by\n"
-        "        user_id\n"
+        "    group by 1\n"
         ")\n"
         "select\n"
         "    s.user_id,\n"
@@ -231,6 +365,36 @@ def test_rewrite_with_ctes_extracts_derived_select() -> None:
         "from cte_1 as s\n"
         "where\n"
         "    s.revenue > 100"
+    )
+
+
+def test_rewrite_with_ctes_propagates_group_and_order_format_options() -> None:
+    from analytics_toolkit.sql_format import rewrite_with_ctes
+
+    assert (
+        rewrite_with_ctes(
+            "select s.user_id, s.revenue "
+            "from ("
+            "select user_id, sum(amount) as revenue "
+            "from orders group by user_id order by revenue desc"
+            ") s",
+            group_by_format="expressions",
+            order_by_format="expressions",
+        )
+        == "with cte_1 as (\n"
+        "    select\n"
+        "        user_id,\n"
+        "        SUM(amount) as revenue\n"
+        "    from orders\n"
+        "    group by\n"
+        "        user_id\n"
+        "    order by\n"
+        "        revenue desc\n"
+        ")\n"
+        "select\n"
+        "    s.user_id,\n"
+        "    s.revenue\n"
+        "from cte_1 as s"
     )
 
 
@@ -272,8 +436,7 @@ def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
         "        user_id,\n"
         "        SUM(amount) as revenue\n"
         "    from orders\n"
-        "    group by\n"
-        "        user_id\n"
+        "    group by 1\n"
         ") distributed by (user_id);\n"
         "analyze customer_orders;\n"
         "\n"
@@ -305,8 +468,44 @@ def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
         "        user_id,\n"
         "        SUM(amount) as revenue\n"
         "    from orders\n"
+        "    group by 1\n"
+        ") distributed by (user_id);\n"
+        "analyze s;\n"
+        "\n"
+        "select\n"
+        "    u.id,\n"
+        "    s.revenue\n"
+        "from s\n"
+        "join users as u\n"
+        "    on s.user_id = u.id"
+    )
+
+
+def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    assert (
+        gp_rewrite_to_temp_tables(
+            "select u.id, s.revenue "
+            "from ("
+            "select user_id, sum(amount) as revenue "
+            "from orders group by user_id order by revenue desc"
+            ") s "
+            "join users u on s.user_id = u.id",
+            group_by_format="expressions",
+            order_by_format="expressions",
+        )
+        == "drop table if exists s;\n"
+        "\n"
+        "create temporary table s as (\n"
+        "    select\n"
+        "        user_id,\n"
+        "        SUM(amount) as revenue\n"
+        "    from orders\n"
         "    group by\n"
         "        user_id\n"
+        "    order by\n"
+        "        revenue desc\n"
         ") distributed by (user_id);\n"
         "analyze s;\n"
         "\n"

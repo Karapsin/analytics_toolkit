@@ -5,7 +5,7 @@
 Rewrite supported derived-table SELECT subqueries into named CTEs.
 
 ```python
-rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", keyword_case="lower", indent=4) -> str
+rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4) -> str
 ```
 
 ## Inputs
@@ -14,6 +14,8 @@ rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", keywo
 - `dialect` - optional sqlglot dialect; use `postgres`, `trino`, `clickhouse`, or `None`
 - `strategy` - rewrite strategy; `auto` is the supported v1 strategy
 - `cte_prefix` - prefix for generated CTE names such as `cte_1`
+- `group_by_format` - `ordinal` uses SELECT-list positions when a GROUP BY item can be matched; `expressions` preserves expression-based output
+- `order_by_format` - `ordinal` uses SELECT-list positions when an ORDER BY item can be matched and preserves sort modifiers; `expressions` preserves expression-based output
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
 
@@ -46,5 +48,6 @@ from cte_1 as s
 - v1 extracts SELECT subqueries in `FROM` and `JOIN` positions only
 - Queries with scalar subqueries, unsupported nested derived subqueries, or no extractable subquery raise `ValueError`
 - Predicate, join, projection, grouping, sorting, and limit order are preserved by the AST rewrite
+- Grouping and sorting clauses use compact ordinals by default; pass `"expressions"` modes to preserve expression output
 
 [Functions index](index.md)

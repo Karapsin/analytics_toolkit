@@ -12,10 +12,12 @@ from sqlglot.tokens import Tokenizer
 
 
 _SUPPORTED_DIALECTS = {"postgres", "trino", "clickhouse"}
+_SUPPORTED_GROUP_ORDER_FORMATS = {"expressions", "ordinal"}
 _SUPPORTED_KEYWORD_CASES = {"upper", "lower", "capitalize"}
 _SUPPORTED_WHERE_ANCHORS = {"1=1", "true", "first_condition", "preserve"}
 _SUPPORTED_REWRITE_STRATEGIES = {"auto"}
 _CTE_PREFIX_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ORDINAL_RE = re.compile(r"^[0-9]+$")
 _CASE_PRESERVED_TOKEN_TYPES = {
     "BIT_STRING",
     "BYTE_STRING",
@@ -44,12 +46,26 @@ class _GpTempTable:
     query: exp.Select
 
 
+@dataclass(frozen=True)
+class _SelectOrdinalMapping:
+    expression_positions: dict[str, int]
+    alias_positions: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _ClauseCompactionTarget:
+    clause: str
+    items_sql: str
+
+
 def format_sql(
     sql: str,
     *,
     dialect: str | None = None,
     leading_commas: bool = False,
     where_anchor: str = "1=1",
+    group_by_format: str = "ordinal",
+    order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
 ) -> str:
@@ -59,6 +75,14 @@ def format_sql(
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
     normalized_where_anchor = _validate_where_anchor(where_anchor)
+    normalized_group_by_format = _validate_group_order_format(
+        group_by_format,
+        label="group_by_format",
+    )
+    normalized_order_by_format = _validate_group_order_format(
+        order_by_format,
+        label="order_by_format",
+    )
     statement = _split_one_statement(sql, operation="format_sql")
     expression = _parse_expression(
         statement.sql,
@@ -74,6 +98,8 @@ def format_sql(
         dialect=normalized_dialect,
         leading_commas=leading_commas,
         where_anchor=normalized_where_anchor,
+        group_by_format=normalized_group_by_format,
+        order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         operation="format_sql",
@@ -87,6 +113,8 @@ def rewrite_with_ctes(
     dialect: str | None = None,
     strategy: str = "auto",
     cte_prefix: str = "cte",
+    group_by_format: str = "ordinal",
+    order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
 ) -> str:
@@ -95,6 +123,14 @@ def rewrite_with_ctes(
     normalized_dialect = _validate_dialect(dialect)
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
+    normalized_group_by_format = _validate_group_order_format(
+        group_by_format,
+        label="group_by_format",
+    )
+    normalized_order_by_format = _validate_group_order_format(
+        order_by_format,
+        label="order_by_format",
+    )
     _validate_rewrite_strategy(strategy)
     _validate_cte_prefix(cte_prefix)
     statement = _split_one_statement(sql, operation="rewrite_with_ctes")
@@ -114,6 +150,8 @@ def rewrite_with_ctes(
         dialect=normalized_dialect,
         leading_commas=False,
         where_anchor=None,
+        group_by_format=normalized_group_by_format,
+        order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         operation="rewrite_with_ctes",
@@ -131,6 +169,8 @@ def gp_rewrite_to_temp_tables(
     *,
     dialect: str | None = "postgres",
     temp_prefix: str = "tmp",
+    group_by_format: str = "ordinal",
+    order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
 ) -> str:
@@ -139,6 +179,14 @@ def gp_rewrite_to_temp_tables(
     normalized_dialect = _validate_dialect(dialect)
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
+    normalized_group_by_format = _validate_group_order_format(
+        group_by_format,
+        label="group_by_format",
+    )
+    normalized_order_by_format = _validate_group_order_format(
+        order_by_format,
+        label="order_by_format",
+    )
     _validate_temp_prefix(temp_prefix)
     statement = _split_one_statement(sql, operation="gp_rewrite_to_temp_tables")
     expression = _parse_expression(
@@ -152,6 +200,8 @@ def gp_rewrite_to_temp_tables(
     planner = _GpTempTablePlanner(
         dialect=normalized_dialect,
         temp_prefix=temp_prefix,
+        group_by_format=normalized_group_by_format,
+        order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
     )
@@ -168,6 +218,8 @@ def gp_rewrite_to_temp_tables(
         dialect=normalized_dialect,
         leading_commas=False,
         where_anchor=None,
+        group_by_format=normalized_group_by_format,
+        order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         operation="gp_rewrite_to_temp_tables",
@@ -215,6 +267,16 @@ def _validate_where_anchor(where_anchor: str) -> str:
     if normalized not in _SUPPORTED_WHERE_ANCHORS:
         supported = ", ".join(sorted(_SUPPORTED_WHERE_ANCHORS))
         raise ValueError(f"where_anchor must be one of: {supported}.")
+    return normalized
+
+
+def _validate_group_order_format(value: str, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string.")
+    normalized = value.strip().lower()
+    if normalized not in _SUPPORTED_GROUP_ORDER_FORMATS:
+        supported = ", ".join(sorted(_SUPPORTED_GROUP_ORDER_FORMATS))
+        raise ValueError(f"{label} must be one of: {supported}.")
     return normalized
 
 
@@ -283,12 +345,20 @@ def _render_expression(
     dialect: str | None,
     leading_commas: bool,
     where_anchor: str | None,
+    group_by_format: str,
+    order_by_format: str,
     keyword_case: str,
     indent: int,
     operation: str,
 ) -> str:
+    expression_to_render, compaction_targets = _prepare_group_order_rendering(
+        expression,
+        dialect=dialect,
+        group_by_format=group_by_format,
+        order_by_format=order_by_format,
+    )
     try:
-        rendered = expression.sql(
+        rendered = expression_to_render.sql(
             dialect=dialect,
             pretty=True,
             pad=indent,
@@ -302,7 +372,309 @@ def _render_expression(
         rendered = _normalize_leading_comma_indentation(rendered, indent)
     if where_anchor in {"1=1", "true"}:
         rendered = _normalize_where_anchor_layout(rendered, where_anchor)
+    if compaction_targets:
+        rendered = _compact_targeted_clause_layout(rendered, compaction_targets)
     return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
+
+
+def _prepare_group_order_rendering(
+    expression: exp.Expression,
+    *,
+    dialect: str | None,
+    group_by_format: str,
+    order_by_format: str,
+) -> tuple[exp.Expression, list[_ClauseCompactionTarget]]:
+    if group_by_format == "expressions" and order_by_format == "expressions":
+        return expression, []
+
+    expression_copy = expression.copy()
+    for select in expression_copy.find_all(exp.Select):
+        mapping = _select_ordinal_mapping(select, dialect=dialect)
+        if group_by_format == "ordinal":
+            _replace_group_by_items(select, mapping=mapping, dialect=dialect)
+        if order_by_format == "ordinal":
+            _replace_order_by_items(select, mapping=mapping, dialect=dialect)
+
+    return expression_copy, _clause_compaction_targets(
+        expression_copy,
+        dialect=dialect,
+        group_by_format=group_by_format,
+        order_by_format=order_by_format,
+    )
+
+
+def _select_ordinal_mapping(
+    select: exp.Select,
+    *,
+    dialect: str | None,
+) -> _SelectOrdinalMapping:
+    expression_positions: dict[str, int] = {}
+    alias_candidates: dict[str, int | None] = {}
+    for position, projection in enumerate(select.expressions, start=1):
+        expression = (
+            projection.this if isinstance(projection, exp.Alias) else projection
+        )
+        expression_key = _expression_match_key(expression, dialect=dialect)
+        if expression_key is not None and expression_key not in expression_positions:
+            expression_positions[expression_key] = position
+
+        alias_key = _projection_alias_key(projection)
+        if alias_key is None:
+            continue
+        if alias_key in alias_candidates and alias_candidates[alias_key] != position:
+            alias_candidates[alias_key] = None
+        else:
+            alias_candidates[alias_key] = position
+
+    return _SelectOrdinalMapping(
+        expression_positions=expression_positions,
+        alias_positions={
+            alias_key: position
+            for alias_key, position in alias_candidates.items()
+            if position is not None
+        },
+    )
+
+
+def _projection_alias_key(projection: exp.Expression) -> str | None:
+    if not isinstance(projection, exp.Alias):
+        return None
+    alias = projection.alias
+    if not alias:
+        return None
+    return alias.casefold()
+
+
+def _expression_match_key(
+    expression: exp.Expression,
+    *,
+    dialect: str | None,
+) -> str | None:
+    try:
+        return expression.sql(
+            dialect=dialect,
+            unsupported_level=ErrorLevel.RAISE,
+        )
+    except SqlglotError as exc:
+        raise ValueError(
+            f"Could not render SQL expression for matching: {exc}"
+        ) from exc
+
+
+def _replace_group_by_items(
+    select: exp.Select,
+    *,
+    mapping: _SelectOrdinalMapping,
+    dialect: str | None,
+) -> None:
+    group = select.args.get("group")
+    if group is None:
+        return
+
+    replaced_expressions: list[exp.Expression] = []
+    for expression in group.expressions:
+        position = _select_position_for_clause_expression(
+            expression,
+            mapping=mapping,
+            dialect=dialect,
+        )
+        replaced_expressions.append(
+            exp.Literal.number(position) if position is not None else expression
+        )
+    group.set("expressions", replaced_expressions)
+
+
+def _replace_order_by_items(
+    select: exp.Select,
+    *,
+    mapping: _SelectOrdinalMapping,
+    dialect: str | None,
+) -> None:
+    order = select.args.get("order")
+    if order is None:
+        return
+
+    for order_item in order.expressions:
+        if isinstance(order_item, exp.Ordered):
+            expression = order_item.this
+            position = _select_position_for_clause_expression(
+                expression,
+                mapping=mapping,
+                dialect=dialect,
+            )
+            if position is not None:
+                order_item.set("this", exp.Literal.number(position))
+            continue
+
+        position = _select_position_for_clause_expression(
+            order_item,
+            mapping=mapping,
+            dialect=dialect,
+        )
+        if position is not None:
+            order_item.replace(exp.Literal.number(position))
+
+
+def _select_position_for_clause_expression(
+    expression: exp.Expression,
+    *,
+    mapping: _SelectOrdinalMapping,
+    dialect: str | None,
+) -> int | None:
+    if _is_numeric_ordinal(expression):
+        return None
+
+    expression_key = _expression_match_key(expression, dialect=dialect)
+    if expression_key in mapping.expression_positions:
+        return mapping.expression_positions[expression_key]
+
+    alias_key = _bare_identifier_key(expression)
+    if alias_key is None:
+        return None
+    return mapping.alias_positions.get(alias_key)
+
+
+def _is_numeric_ordinal(expression: exp.Expression) -> bool:
+    return (
+        isinstance(expression, exp.Literal)
+        and not expression.is_string
+        and _ORDINAL_RE.match(str(expression.this)) is not None
+    )
+
+
+def _bare_identifier_key(expression: exp.Expression) -> str | None:
+    if isinstance(expression, exp.Column) and not expression.table:
+        return expression.name.casefold()
+    if isinstance(expression, exp.Identifier):
+        return str(expression.this).casefold()
+    return None
+
+
+def _clause_compaction_targets(
+    expression: exp.Expression,
+    *,
+    dialect: str | None,
+    group_by_format: str,
+    order_by_format: str,
+) -> list[_ClauseCompactionTarget]:
+    targets: list[_ClauseCompactionTarget] = []
+    for select in expression.find_all(exp.Select):
+        group = select.args.get("group")
+        if group_by_format == "ordinal" and group is not None:
+            targets.append(
+                _ClauseCompactionTarget(
+                    clause="GROUP BY",
+                    items_sql=_render_clause_items(group.expressions, dialect=dialect),
+                )
+            )
+
+        order = select.args.get("order")
+        if order_by_format == "ordinal" and order is not None:
+            targets.append(
+                _ClauseCompactionTarget(
+                    clause="ORDER BY",
+                    items_sql=_render_clause_items(order.expressions, dialect=dialect),
+                )
+            )
+    return targets
+
+
+def _render_clause_items(
+    expressions: list[exp.Expression],
+    *,
+    dialect: str | None,
+) -> str:
+    return ", ".join(
+        expression.sql(dialect=dialect, unsupported_level=ErrorLevel.RAISE)
+        for expression in expressions
+    )
+
+
+def _compact_targeted_clause_layout(
+    sql: str,
+    targets: list[_ClauseCompactionTarget],
+) -> str:
+    remaining: dict[tuple[str, str], int] = {}
+    for target in targets:
+        key = (target.clause, _normalize_compact_clause_sql(target.items_sql))
+        remaining[key] = remaining.get(key, 0) + 1
+
+    lines = sql.splitlines()
+    compacted_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        clause = _compactable_clause(line)
+        if clause is None:
+            compacted_lines.append(line)
+            index += 1
+            continue
+
+        clause_indent = len(line) - len(line.lstrip(" "))
+        item_lines: list[str] = []
+        next_index = index + 1
+        while next_index < len(lines):
+            next_line = lines[next_index]
+            if not next_line.strip():
+                break
+            next_indent = len(next_line) - len(next_line.lstrip(" "))
+            if next_indent <= clause_indent:
+                break
+            item_lines.append(next_line)
+            next_index += 1
+
+        if not item_lines:
+            compacted_lines.append(line)
+            index += 1
+            continue
+
+        items_sql = _compact_clause_item_lines(item_lines)
+        target_key = (clause, _normalize_compact_clause_sql(items_sql))
+        if remaining.get(target_key, 0) <= 0:
+            compacted_lines.append(line)
+            index += 1
+            continue
+
+        remaining[target_key] -= 1
+        prefix = line[:clause_indent]
+        compacted_lines.append(f"{prefix}{clause} {items_sql}")
+        index = next_index
+
+    return "\n".join(compacted_lines)
+
+
+def _compactable_clause(line: str) -> str | None:
+    stripped = line.strip().upper()
+    if stripped in {"GROUP BY", "ORDER BY"}:
+        return stripped
+    return None
+
+
+def _compact_clause_item_lines(lines: list[str]) -> str:
+    items: list[str] = []
+    current = ""
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(","):
+            if current:
+                items.append(current.strip())
+            current = stripped[1:].strip()
+        elif current:
+            current = f"{current} {stripped}"
+        else:
+            current = stripped
+
+        if current.endswith(","):
+            items.append(current[:-1].strip())
+            current = ""
+
+    if current:
+        items.append(current.strip())
+    return ", ".join(item for item in items if item)
+
+
+def _normalize_compact_clause_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql.strip())
 
 
 def _with_semicolon_policy(sql: str, has_trailing_semicolon: bool) -> str:
@@ -506,11 +878,15 @@ class _GpTempTablePlanner:
         *,
         dialect: str | None,
         temp_prefix: str,
+        group_by_format: str,
+        order_by_format: str,
         keyword_case: str,
         indent: int,
     ) -> None:
         self.dialect = dialect
         self.temp_prefix = temp_prefix
+        self.group_by_format = group_by_format
+        self.order_by_format = order_by_format
         self.keyword_case = keyword_case
         self.indent = indent
         self.temp_tables: list[_GpTempTable] = []
@@ -742,6 +1118,8 @@ class _GpTempTablePlanner:
             dialect=self.dialect,
             leading_commas=False,
             where_anchor=None,
+            group_by_format=self.group_by_format,
+            order_by_format=self.order_by_format,
             keyword_case=self.keyword_case,
             indent=self.indent,
             operation="gp_rewrite_to_temp_tables",

@@ -5,7 +5,7 @@
 Format exactly one SQL statement without opening a database connection.
 
 ```python
-format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", keyword_case="lower", indent=4) -> str
+format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4) -> str
 ```
 
 ## Inputs
@@ -14,6 +14,8 @@ format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", keywo
 - `dialect` - optional sqlglot dialect; use `postgres`, `trino`, `clickhouse`, or `None`
 - `leading_commas` - whether projection and grouping lists should use leading commas
 - `where_anchor` - WHERE normalization mode: `1=1`, `true`, `first_condition`, or `preserve`
+- `group_by_format` - `ordinal` uses SELECT-list positions when a GROUP BY item can be matched; `expressions` preserves expression-based output
+- `order_by_format` - `ordinal` uses SELECT-list positions when an ORDER BY item can be matched and preserves sort modifiers; `expressions` preserves expression-based output
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
 
@@ -45,5 +47,7 @@ where 1=1
 - Empty SQL, multi-statement SQL, and SQL that cannot be parsed are rejected with `ValueError`
 - Trailing semicolons are preserved only when the single input statement ends with one
 - `where_anchor="preserve"` leaves parsed WHERE conditions unchanged instead of adding or removing anchors
+- Existing numeric `GROUP BY` and `ORDER BY` ordinals are preserved
+- Unmatched grouping or sorting items stay as rendered expressions instead of being guessed
 
 [Functions index](index.md)
