@@ -374,6 +374,7 @@ def _render_expression(
         rendered = _normalize_where_anchor_layout(rendered, where_anchor)
     if compaction_targets:
         rendered = _compact_targeted_clause_layout(rendered, compaction_targets)
+    rendered = _normalize_join_condition_layout(rendered)
     return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
 
 
@@ -1141,7 +1142,6 @@ class _GpTempTablePlanner:
                     f"{self._keyword('if')} {self._keyword('exists')} "
                     f"{temp_table.name};"
                 ),
-                "",
                 (
                     f"{self._keyword('create')} {self._keyword('temporary')} "
                     f"{self._keyword('table')} {temp_table.name} "
@@ -1343,6 +1343,97 @@ def _normalize_leading_comma_indentation(sql: str, indent: int) -> str:
         if next_line.startswith(doubled_prefix):
             lines[next_index] = expected_prefix + next_line[len(doubled_prefix) :]
     return "\n".join(lines)
+
+
+def _normalize_join_condition_layout(sql: str) -> str:
+    normalized_lines: list[str] = []
+    for line in sql.splitlines():
+        stripped = line.lstrip(" ")
+        previous_line = _previous_non_empty_line(
+            normalized_lines,
+            len(normalized_lines),
+        )
+
+        if _starts_join_condition(stripped):
+            if previous_line is None or not _is_join_line(previous_line.strip()):
+                normalized_lines.append(line)
+                continue
+
+            join_prefix = previous_line[
+                : len(previous_line) - len(previous_line.lstrip(" "))
+            ]
+            normalized_lines.extend(
+                f"{join_prefix}{condition_line}"
+                for condition_line in _split_join_condition_line(stripped)
+            )
+            continue
+
+        if not _starts_join_and_condition(stripped):
+            normalized_lines.append(line)
+            continue
+        if previous_line is None:
+            normalized_lines.append(line)
+            continue
+        previous_stripped = previous_line.lstrip(" ")
+        if not (
+            _starts_join_condition(previous_stripped)
+            or _starts_join_and_condition(previous_stripped)
+        ):
+            normalized_lines.append(line)
+            continue
+
+        on_prefix = previous_line[
+            : len(previous_line) - len(previous_line.lstrip(" "))
+        ]
+        normalized_lines.append(f"{on_prefix}{stripped}")
+    return "\n".join(normalized_lines)
+
+
+def _split_join_condition_line(stripped_line: str) -> list[str]:
+    if not stripped_line.upper().startswith("ON "):
+        return [stripped_line]
+
+    condition_text = stripped_line[len("ON ") :].strip()
+    if not condition_text:
+        return [stripped_line]
+
+    conditions = _split_top_level_and_conditions(condition_text)
+    if len(conditions) <= 1:
+        return [stripped_line]
+    return [
+        f"{stripped_line[:2]} {conditions[0]}",
+        *(f"AND {condition}" for condition in conditions[1:]),
+    ]
+
+
+def _starts_join_condition(stripped_line: str) -> bool:
+    upper_line = stripped_line.upper()
+    return upper_line == "ON" or upper_line.startswith("ON ")
+
+
+def _starts_join_and_condition(stripped_line: str) -> bool:
+    upper_line = stripped_line.upper()
+    return upper_line == "AND" or upper_line.startswith("AND ")
+
+
+def _previous_non_empty_line(lines: list[str], index: int) -> str | None:
+    previous_index = index - 1
+    while previous_index >= 0:
+        if lines[previous_index].strip():
+            return lines[previous_index]
+        previous_index -= 1
+    return None
+
+
+def _is_join_line(stripped_line: str) -> bool:
+    return re.match(
+        r"^(?:"
+        r"(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?|"
+        r"INNER|CROSS|SEMI|ANTI|ASOF|NATURAL"
+        r")?\s*JOIN\b",
+        stripped_line,
+        flags=re.IGNORECASE,
+    ) is not None
 
 
 def _normalize_where_anchor_layout(sql: str, where_anchor: str) -> str:

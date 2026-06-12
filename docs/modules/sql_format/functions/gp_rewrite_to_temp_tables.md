@@ -38,7 +38,6 @@ Output example:
 
 ```sql
 drop table if exists customer_orders;
-
 create temporary table customer_orders as (
     select
         user_id,
@@ -53,7 +52,7 @@ select
     customer_orders.revenue
 from customer_orders
 join users as u
-    on customer_orders.user_id = u.id
+on customer_orders.user_id = u.id
 ```
 
 ## Notes

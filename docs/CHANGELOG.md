@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.1 - 2026-06-12
+
+- Changed `analytics_toolkit.sql_format` join rendering so join `ON` and `AND`
+  lines align with `JOIN` lines, and removed the extra spacer between generated
+  Greenplum temp-table `DROP` and `CREATE` statements.
+
 ## 1.3.9.0 - 2026-06-12
 
 - Added `group_by_format` and `order_by_format` controls to

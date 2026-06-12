@@ -22,6 +22,24 @@ def test_format_sql_basic_pretty_output() -> None:
     )
 
 
+def test_format_sql_aligns_join_condition_with_join_keyword() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select * from a "
+            "join b on a.id = b.id "
+            "and a.kind = b.kind"
+        )
+        == "select\n"
+        "    *\n"
+        "from a\n"
+        "join b\n"
+        "on a.id = b.id\n"
+        "and a.kind = b.kind"
+    )
+
+
 def test_format_sql_defaults_group_by_to_ordinals() -> None:
     from analytics_toolkit.sql_format import format_sql
 
@@ -430,7 +448,6 @@ def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
             "on customer_orders.user_id = u.id"
         )
         == "drop table if exists customer_orders;\n"
-        "\n"
         "create temporary table customer_orders as (\n"
         "    select\n"
         "        user_id,\n"
@@ -445,7 +462,7 @@ def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
         "    customer_orders.revenue\n"
         "from customer_orders\n"
         "join users as u\n"
-        "    on customer_orders.user_id = u.id"
+        "on customer_orders.user_id = u.id"
     )
 
 
@@ -462,7 +479,6 @@ def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
             "join users u on s.user_id = u.id"
         )
         == "drop table if exists s;\n"
-        "\n"
         "create temporary table s as (\n"
         "    select\n"
         "        user_id,\n"
@@ -477,7 +493,7 @@ def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
         "    s.revenue\n"
         "from s\n"
         "join users as u\n"
-        "    on s.user_id = u.id"
+        "on s.user_id = u.id"
     )
 
 
@@ -496,7 +512,6 @@ def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
             order_by_format="expressions",
         )
         == "drop table if exists s;\n"
-        "\n"
         "create temporary table s as (\n"
         "    select\n"
         "        user_id,\n"
@@ -514,7 +529,7 @@ def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
         "    s.revenue\n"
         "from s\n"
         "join users as u\n"
-        "    on s.user_id = u.id"
+        "on s.user_id = u.id"
     )
 
 
@@ -551,7 +566,6 @@ def test_gp_rewrite_to_temp_tables_generates_names_for_scalar_and_predicate_subq
 
     assert rewritten.startswith(
         "drop table if exists tmp_1;\n"
-        "\n"
         "create temporary table tmp_1 as (\n"
     )
     assert ") distributed randomly;\nanalyze tmp_1;" in rewritten
@@ -568,7 +582,6 @@ def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
             keyword_case="upper",
         )
         == "DROP TABLE IF EXISTS s;\n"
-        "\n"
         "CREATE TEMPORARY TABLE s AS (\n"
         "    SELECT\n"
         "        user_id\n"
@@ -580,7 +593,7 @@ def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
         "    *\n"
         "FROM s\n"
         "JOIN users AS u\n"
-        "    ON s.user_id = u.id"
+        "ON s.user_id = u.id"
     )
 
 
