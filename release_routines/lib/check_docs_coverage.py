@@ -10,6 +10,7 @@ MODULES = {
     "dates": "analytics_toolkit.dates",
     "excel": "analytics_toolkit.excel",
     "sql": "analytics_toolkit.sql",
+    "sql_format": "analytics_toolkit.sql_format",
 }
 
 CANONICAL_DOC_NAMES = {
@@ -23,7 +24,7 @@ CANONICAL_DOC_NAMES = {
 
 def doc_stem(module_key: str, name: str) -> str:
     canonical_name = CANONICAL_DOC_NAMES.get(module_key, {}).get(name, name)
-    if module_key == "sql":
+    if module_key in {"sql", "sql_format"}:
         return canonical_name
     return canonical_name.replace("_", "-")
 

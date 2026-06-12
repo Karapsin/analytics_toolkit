@@ -5,6 +5,10 @@
 SQL utilities for reading, executing, loading, and transferring data through
 configured Greenplum, Trino, and ClickHouse connections.
 
+SQL text formatting and CTE rewrites live in
+[analytics_toolkit.sql_format](../sql_format/index.md). The `sql` module stays
+focused on configured database operations.
+
 These pages explain concepts and workflows. Use the
 [All SQL functions](functions/index.md) reference when you need exact signatures
 and input defaults.

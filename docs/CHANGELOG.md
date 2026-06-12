@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.17 - 2026-06-12
+
+- Added `analytics_toolkit.sql_format` with deterministic SQL formatting and
+  conservative derived SELECT subquery rewrites into CTEs.
+- Added SQL formatting module documentation and focused tests for formatting,
+  dialect parsing, WHERE anchors, and CTE rewrite failures.
+
 ## 1.3.8.16 - 2026-06-11
 
 - Added `gp_insert_chunk_size` to `sql.transfer` so Greenplum stage inserts can
