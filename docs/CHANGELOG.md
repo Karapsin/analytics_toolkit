@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.2 - 2026-06-12
+
+- Changed `analytics_toolkit.sql_format` join conditions so `ON` starts two
+  spaces after the `JOIN` indentation and join `AND` lines place `nd` directly
+  under `ON`.
+
 ## 1.3.9.1 - 2026-06-12
 
 - Changed `analytics_toolkit.sql_format` join rendering so join `ON` and `AND`

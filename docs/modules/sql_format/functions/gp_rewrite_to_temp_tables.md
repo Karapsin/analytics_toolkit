@@ -52,7 +52,7 @@ select
     customer_orders.revenue
 from customer_orders
 join users as u
-on customer_orders.user_id = u.id
+  on customer_orders.user_id = u.id
 ```
 
 ## Notes

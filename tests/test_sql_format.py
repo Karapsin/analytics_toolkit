@@ -35,8 +35,8 @@ def test_format_sql_aligns_join_condition_with_join_keyword() -> None:
         "    *\n"
         "from a\n"
         "join b\n"
-        "on a.id = b.id\n"
-        "and a.kind = b.kind"
+        "  on a.id = b.id\n"
+        " and a.kind = b.kind"
     )
 
 
@@ -462,7 +462,7 @@ def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
         "    customer_orders.revenue\n"
         "from customer_orders\n"
         "join users as u\n"
-        "on customer_orders.user_id = u.id"
+        "  on customer_orders.user_id = u.id"
     )
 
 
@@ -493,7 +493,7 @@ def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
         "    s.revenue\n"
         "from s\n"
         "join users as u\n"
-        "on s.user_id = u.id"
+        "  on s.user_id = u.id"
     )
 
 
@@ -529,7 +529,7 @@ def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
         "    s.revenue\n"
         "from s\n"
         "join users as u\n"
-        "on s.user_id = u.id"
+        "  on s.user_id = u.id"
     )
 
 
@@ -593,7 +593,7 @@ def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
         "    *\n"
         "FROM s\n"
         "JOIN users AS u\n"
-        "ON s.user_id = u.id"
+        "  ON s.user_id = u.id"
     )
 
 

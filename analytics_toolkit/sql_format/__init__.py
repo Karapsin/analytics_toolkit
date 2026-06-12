@@ -1362,10 +1362,15 @@ def _normalize_join_condition_layout(sql: str) -> str:
             join_prefix = previous_line[
                 : len(previous_line) - len(previous_line.lstrip(" "))
             ]
-            normalized_lines.extend(
-                f"{join_prefix}{condition_line}"
-                for condition_line in _split_join_condition_line(stripped)
-            )
+            condition_prefix = f"{join_prefix}  "
+            and_prefix = f"{join_prefix} "
+            for condition_line in _split_join_condition_line(stripped):
+                prefix = (
+                    and_prefix
+                    if _starts_join_and_condition(condition_line)
+                    else condition_prefix
+                )
+                normalized_lines.append(f"{prefix}{condition_line}")
             continue
 
         if not _starts_join_and_condition(stripped):
@@ -1382,10 +1387,12 @@ def _normalize_join_condition_layout(sql: str) -> str:
             normalized_lines.append(line)
             continue
 
-        on_prefix = previous_line[
+        previous_prefix = previous_line[
             : len(previous_line) - len(previous_line.lstrip(" "))
         ]
-        normalized_lines.append(f"{on_prefix}{stripped}")
+        if _starts_join_condition(previous_stripped):
+            previous_prefix = previous_prefix[:-1]
+        normalized_lines.append(f"{previous_prefix}{stripped}")
     return "\n".join(normalized_lines)
 
 
