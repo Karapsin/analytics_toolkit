@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.18 - 2026-06-12
+
+- Changed `sql_format.format_sql` WHERE anchor formatting so `WHERE 1=1`
+  stays on one line and following `AND` conditions align below the anchor.
+
 ## 1.3.8.17 - 2026-06-12
 
 - Added `analytics_toolkit.sql_format` with deterministic SQL formatting and

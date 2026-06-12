@@ -67,6 +67,7 @@ def format_sql(
         expression,
         dialect=normalized_dialect,
         leading_commas=leading_commas,
+        where_anchor=normalized_where_anchor,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         operation="format_sql",
@@ -106,6 +107,7 @@ def rewrite_with_ctes(
         expression,
         dialect=normalized_dialect,
         leading_commas=False,
+        where_anchor=None,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         operation="rewrite_with_ctes",
@@ -202,6 +204,7 @@ def _render_expression(
     *,
     dialect: str | None,
     leading_commas: bool,
+    where_anchor: str | None,
     keyword_case: str,
     indent: int,
     operation: str,
@@ -219,6 +222,8 @@ def _render_expression(
         raise ValueError(f"{operation} could not render SQL: {exc}") from exc
     if leading_commas:
         rendered = _normalize_leading_comma_indentation(rendered, indent)
+    if where_anchor in {"1=1", "true"}:
+        rendered = _normalize_where_anchor_layout(rendered, where_anchor)
     return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
 
 
@@ -464,6 +469,93 @@ def _normalize_leading_comma_indentation(sql: str, indent: int) -> str:
         if next_line.startswith(doubled_prefix):
             lines[next_index] = expected_prefix + next_line[len(doubled_prefix) :]
     return "\n".join(lines)
+
+
+def _normalize_where_anchor_layout(sql: str, where_anchor: str) -> str:
+    anchor_sql = "1 = 1" if where_anchor == "1=1" else "TRUE"
+    display_anchor = "1=1" if where_anchor == "1=1" else "TRUE"
+    lines = sql.splitlines()
+    normalized_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.strip().upper() != "WHERE" or index + 1 >= len(lines):
+            normalized_lines.append(line)
+            index += 1
+            continue
+
+        condition_line = lines[index + 1]
+        condition_text = condition_line.strip()
+        if condition_text != anchor_sql and not condition_text.startswith(
+            f"{anchor_sql} AND "
+        ):
+            normalized_lines.append(line)
+            index += 1
+            continue
+
+        prefix = line[: len(line) - len(line.lstrip(" "))]
+        and_prefix = " " * (len(prefix) + len("WHERE "))
+        normalized_lines.append(f"{prefix}WHERE {display_anchor}")
+        for condition in _split_anchor_and_conditions(condition_text, anchor_sql):
+            normalized_lines.append(f"{and_prefix}AND {condition}")
+        index += 2
+    return "\n".join(normalized_lines)
+
+
+def _split_anchor_and_conditions(condition_text: str, anchor_sql: str) -> list[str]:
+    remaining = condition_text[len(anchor_sql) :].strip()
+    if not remaining:
+        return []
+    if not remaining.startswith("AND "):
+        return [remaining]
+    return _split_top_level_and_conditions(remaining[len("AND ") :])
+
+
+def _split_top_level_and_conditions(condition_text: str) -> list[str]:
+    conditions: list[str] = []
+    start = 0
+    depth = 0
+    quote_end: str | None = None
+    index = 0
+    while index < len(condition_text):
+        character = condition_text[index]
+        if quote_end is not None:
+            if character == quote_end:
+                if quote_end == "'" and _is_escaped_single_quote(
+                    condition_text,
+                    index,
+                ):
+                    index += 2
+                    continue
+                quote_end = None
+            index += 1
+            continue
+
+        if character in {"'", '"', "`"}:
+            quote_end = character
+            index += 1
+            continue
+        if character == "[":
+            quote_end = "]"
+            index += 1
+            continue
+        if character == "(":
+            depth += 1
+        elif character == ")" and depth > 0:
+            depth -= 1
+        elif depth == 0 and condition_text[index : index + 5].upper() == " AND ":
+            conditions.append(condition_text[start:index].strip())
+            index += 5
+            start = index
+            continue
+        index += 1
+
+    conditions.append(condition_text[start:].strip())
+    return [condition for condition in conditions if condition]
+
+
+def _is_escaped_single_quote(text: str, index: int) -> bool:
+    return index + 1 < len(text) and text[index + 1] == "'"
 
 
 __all__ = ["format_sql", "rewrite_with_ctes"]

@@ -31,8 +31,8 @@ def test_format_sql_adds_default_where_anchor() -> None:
         == "SELECT\n"
         "    *\n"
         "FROM t\n"
-        "WHERE\n"
-        "    1 = 1 AND x = 1"
+        "WHERE 1=1\n"
+        "      AND x = 1"
     )
 
 
@@ -58,10 +58,10 @@ def test_format_sql_supports_trailing_and_leading_commas() -> None:
 @pytest.mark.parametrize(
     ("where_anchor", "expected_where"),
     [
-        ("1=1", "    1 = 1 AND x = 1"),
-        ("true", "    TRUE AND x = 1"),
-        ("first_condition", "    x = 1"),
-        ("preserve", "    1 = 1 AND x = 1"),
+        ("1=1", "WHERE 1=1\n      AND x = 1"),
+        ("true", "WHERE TRUE\n      AND x = 1"),
+        ("first_condition", "WHERE\n    x = 1"),
+        ("preserve", "WHERE\n    1 = 1 AND x = 1"),
     ],
 )
 def test_format_sql_where_anchor_modes(
@@ -78,8 +78,68 @@ def test_format_sql_where_anchor_modes(
         == "SELECT\n"
         "    *\n"
         "FROM t\n"
-        "WHERE\n"
         f"{expected_where}"
+    )
+
+
+def test_format_sql_aligns_multiple_and_conditions_under_anchor() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select * from t where x=1 and y=2 and label = 'A AND B'")
+        == "SELECT\n"
+        "    *\n"
+        "FROM t\n"
+        "WHERE 1=1\n"
+        "      AND x = 1\n"
+        "      AND y = 2\n"
+        "      AND label = 'A AND B'"
+    )
+
+
+@pytest.mark.parametrize(
+    ("keyword_case", "expected_sql"),
+    [
+        (
+            "lower",
+            "select\n"
+            "    *\n"
+            "from t\n"
+            "where 1=1\n"
+            "      and x = 1",
+        ),
+        (
+            "capitalize",
+            "Select\n"
+            "    *\n"
+            "From t\n"
+            "Where 1=1\n"
+            "      And x = 1",
+        ),
+    ],
+)
+def test_format_sql_applies_keyword_case_to_aligned_where_anchor(
+    keyword_case: str,
+    expected_sql: str,
+) -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select * from t where x=1", keyword_case=keyword_case)
+        == expected_sql
+    )
+
+
+def test_format_sql_preserves_semicolon_with_aligned_where_anchor() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select * from t where x=1;")
+        == "SELECT\n"
+        "    *\n"
+        "FROM t\n"
+        "WHERE 1=1\n"
+        "      AND x = 1;"
     )
 
 

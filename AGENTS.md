@@ -87,6 +87,19 @@ was needed, then use normal repository search and file inspection. When fallback
 was needed because docs were missing or unclear, finish by proposing the
 specific documentation update that would make future RAG retrieval unambiguous.
 
+## Reusable Local Virtualenv
+
+After the mandatory startup sync and RAG pass, create a reusable project
+virtualenv at `.venv/` when Python tooling is needed and `.venv/` is absent:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install -e . pytest tox
+```
+
+Use `.venv/bin/python` or place `.venv/bin` first on `PATH` for focused tests and
+release checks. `.venv/` must stay ignored by Git and must not be committed.
+
 ## Global Rules
 
 - Prefer small, local changes that follow existing module patterns.

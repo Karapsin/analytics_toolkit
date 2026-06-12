@@ -36,8 +36,8 @@ SELECT
     user_id,
     amount
 FROM orders
-WHERE
-    1 = 1 AND amount > 100
+WHERE 1=1
+      AND amount > 100
 ```
 
 ## Notes
