@@ -4,6 +4,19 @@
 
 These instructions apply to the whole repository.
 
+## Mandatory Startup Sync
+
+Before any repository-related action, run:
+
+```bash
+git pull origin main
+```
+
+This pull must happen before RAG indexing/search, file inspection, tests, or
+edits. If it fails because of local changes, merge conflicts, authentication,
+network issues, or divergent history, stop and report the blocker instead of
+continuing with stale code.
+
 ## Project Overview
 
 `analytics_toolkit` is a Python 3.11+ utility package with five public areas:
