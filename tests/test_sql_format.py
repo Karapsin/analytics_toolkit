@@ -6,7 +6,7 @@ import pytest
 def test_sql_format_is_importable_from_root_package() -> None:
     from analytics_toolkit import sql_format
 
-    assert sql_format.format_sql("select 1") == "SELECT\n    1"
+    assert sql_format.format_sql("select 1") == "select\n    1"
 
 
 def test_format_sql_basic_pretty_output() -> None:
@@ -14,12 +14,12 @@ def test_format_sql_basic_pretty_output() -> None:
 
     assert (
         format_sql("select a,b from t order by b desc")
-        == "SELECT\n"
+        == "select\n"
         "    a,\n"
         "    b\n"
-        "FROM t\n"
-        "ORDER BY\n"
-        "    b DESC"
+        "from t\n"
+        "order by\n"
+        "    b desc"
     )
 
 
@@ -28,11 +28,11 @@ def test_format_sql_adds_default_where_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1")
-        == "SELECT\n"
+        == "select\n"
         "    *\n"
-        "FROM t\n"
-        "WHERE 1=1\n"
-        "      AND x = 1"
+        "from t\n"
+        "where 1=1\n"
+        "      and x = 1"
     )
 
 
@@ -41,27 +41,27 @@ def test_format_sql_supports_trailing_and_leading_commas() -> None:
 
     assert (
         format_sql("select a,b from t", leading_commas=False)
-        == "SELECT\n"
+        == "select\n"
         "    a,\n"
         "    b\n"
-        "FROM t"
+        "from t"
     )
     assert (
         format_sql("select a,b from t", leading_commas=True)
-        == "SELECT\n"
+        == "select\n"
         "    a\n"
         "    , b\n"
-        "FROM t"
+        "from t"
     )
 
 
 @pytest.mark.parametrize(
     ("where_anchor", "expected_where"),
     [
-        ("1=1", "WHERE 1=1\n      AND x = 1"),
-        ("true", "WHERE TRUE\n      AND x = 1"),
-        ("first_condition", "WHERE\n    x = 1"),
-        ("preserve", "WHERE\n    1 = 1 AND x = 1"),
+        ("1=1", "where 1=1\n      and x = 1"),
+        ("true", "where true\n      and x = 1"),
+        ("first_condition", "where\n    x = 1"),
+        ("preserve", "where\n    1 = 1 and x = 1"),
     ],
 )
 def test_format_sql_where_anchor_modes(
@@ -75,9 +75,9 @@ def test_format_sql_where_anchor_modes(
             "select * from t where 1=1 and x=1",
             where_anchor=where_anchor,
         )
-        == "SELECT\n"
+        == "select\n"
         "    *\n"
-        "FROM t\n"
+        "from t\n"
         f"{expected_where}"
     )
 
@@ -87,19 +87,27 @@ def test_format_sql_aligns_multiple_and_conditions_under_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1 and y=2 and label = 'A AND B'")
-        == "SELECT\n"
+        == "select\n"
         "    *\n"
-        "FROM t\n"
-        "WHERE 1=1\n"
-        "      AND x = 1\n"
-        "      AND y = 2\n"
-        "      AND label = 'A AND B'"
+        "from t\n"
+        "where 1=1\n"
+        "      and x = 1\n"
+        "      and y = 2\n"
+        "      and label = 'A AND B'"
     )
 
 
 @pytest.mark.parametrize(
     ("keyword_case", "expected_sql"),
     [
+        (
+            "upper",
+            "SELECT\n"
+            "    *\n"
+            "FROM t\n"
+            "WHERE 1=1\n"
+            "      AND x = 1",
+        ),
         (
             "lower",
             "select\n"
@@ -135,11 +143,11 @@ def test_format_sql_preserves_semicolon_with_aligned_where_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1;")
-        == "SELECT\n"
+        == "select\n"
         "    *\n"
-        "FROM t\n"
-        "WHERE 1=1\n"
-        "      AND x = 1;"
+        "from t\n"
+        "where 1=1\n"
+        "      and x = 1;"
     )
 
 
@@ -164,7 +172,7 @@ def test_format_sql_rejects_invalid_inputs(sql: str) -> None:
         (
             "postgres",
             "select payload->>'name' as name from events where id::int = 1",
-            ("payload", "CAST(id AS INT) = 1"),
+            ("payload", "CAST(id as int) = 1"),
         ),
         (
             "trino",
@@ -180,7 +188,7 @@ def test_format_sql_rejects_invalid_inputs(sql: str) -> None:
                 "select countIf(x > 0) from events final "
                 "where toDate(ts) = toDate('2026-06-01')"
             ),
-            ("countIf(x > 0)", "FINAL"),
+            ("countIf(x > 0)", "final"),
         ),
     ],
 )
@@ -209,21 +217,205 @@ def test_rewrite_with_ctes_extracts_derived_select() -> None:
             ") s "
             "where s.revenue > 100"
         )
-        == "WITH cte_1 AS (\n"
-        "    SELECT\n"
+        == "with cte_1 as (\n"
+        "    select\n"
         "        user_id,\n"
-        "        SUM(amount) AS revenue\n"
-        "    FROM orders\n"
-        "    GROUP BY\n"
+        "        SUM(amount) as revenue\n"
+        "    from orders\n"
+        "    group by\n"
         "        user_id\n"
         ")\n"
-        "SELECT\n"
+        "select\n"
         "    s.user_id,\n"
         "    s.revenue\n"
-        "FROM cte_1 AS s\n"
-        "WHERE\n"
+        "from cte_1 as s\n"
+        "where\n"
         "    s.revenue > 100"
     )
+
+
+def test_rewrite_with_ctes_supports_uppercase_keyword_case() -> None:
+    from analytics_toolkit.sql_format import rewrite_with_ctes
+
+    assert (
+        rewrite_with_ctes(
+            "select s.user_id from (select user_id from orders) s",
+            keyword_case="upper",
+        )
+        == "WITH cte_1 AS (\n"
+        "    SELECT\n"
+        "        user_id\n"
+        "    FROM orders\n"
+        ")\n"
+        "SELECT\n"
+        "    s.user_id\n"
+        "FROM cte_1 AS s"
+    )
+
+
+def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    assert (
+        gp_rewrite_to_temp_tables(
+            "with customer_orders as ("
+            "select user_id, sum(amount) as revenue from orders group by user_id"
+            ") "
+            "select u.id, customer_orders.revenue "
+            "from customer_orders join users u "
+            "on customer_orders.user_id = u.id"
+        )
+        == "drop table if exists customer_orders;\n"
+        "\n"
+        "create temporary table customer_orders as (\n"
+        "    select\n"
+        "        user_id,\n"
+        "        SUM(amount) as revenue\n"
+        "    from orders\n"
+        "    group by\n"
+        "        user_id\n"
+        ") distributed by (user_id);\n"
+        "analyze customer_orders;\n"
+        "\n"
+        "select\n"
+        "    u.id,\n"
+        "    customer_orders.revenue\n"
+        "from customer_orders\n"
+        "join users as u\n"
+        "    on customer_orders.user_id = u.id"
+    )
+
+
+def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    assert (
+        gp_rewrite_to_temp_tables(
+            "select u.id, s.revenue "
+            "from ("
+            "select user_id, sum(amount) as revenue "
+            "from orders group by user_id"
+            ") s "
+            "join users u on s.user_id = u.id"
+        )
+        == "drop table if exists s;\n"
+        "\n"
+        "create temporary table s as (\n"
+        "    select\n"
+        "        user_id,\n"
+        "        SUM(amount) as revenue\n"
+        "    from orders\n"
+        "    group by\n"
+        "        user_id\n"
+        ") distributed by (user_id);\n"
+        "analyze s;\n"
+        "\n"
+        "select\n"
+        "    u.id,\n"
+        "    s.revenue\n"
+        "from s\n"
+        "join users as u\n"
+        "    on s.user_id = u.id"
+    )
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected_final_predicate"),
+    [
+        (
+            "select * from users where amount > "
+            "(select avg(amount) from orders)",
+            "amount > (\n"
+            "        select\n"
+            "            *\n"
+            "        from tmp_1\n"
+            "    )",
+        ),
+        (
+            "select * from users where id in "
+            "(select user_id from orders)",
+            "id in (\n"
+            "        select\n"
+            "            *\n"
+            "        from tmp_1\n"
+            "    )",
+        ),
+    ],
+)
+def test_gp_rewrite_to_temp_tables_generates_names_for_scalar_and_predicate_subqueries(
+    sql: str,
+    expected_final_predicate: str,
+) -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    rewritten = gp_rewrite_to_temp_tables(sql)
+
+    assert rewritten.startswith(
+        "drop table if exists tmp_1;\n"
+        "\n"
+        "create temporary table tmp_1 as (\n"
+    )
+    assert ") distributed randomly;\nanalyze tmp_1;" in rewritten
+    assert expected_final_predicate in rewritten
+
+
+def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    assert (
+        gp_rewrite_to_temp_tables(
+            "select * from (select user_id from orders) s "
+            "join users u on s.user_id = u.id",
+            keyword_case="upper",
+        )
+        == "DROP TABLE IF EXISTS s;\n"
+        "\n"
+        "CREATE TEMPORARY TABLE s AS (\n"
+        "    SELECT\n"
+        "        user_id\n"
+        "    FROM orders\n"
+        ") DISTRIBUTED BY (user_id);\n"
+        "ANALYZE s;\n"
+        "\n"
+        "SELECT\n"
+        "    *\n"
+        "FROM s\n"
+        "JOIN users AS u\n"
+        "    ON s.user_id = u.id"
+    )
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "",
+        "select 1; select 2",
+        "delete from users",
+        "select * from orders",
+        "with c as (select id from orders), c as (select id from users) "
+        "select * from c",
+        "select * from (select id from orders) s "
+        "join (select id from users) s on s.id = s.id",
+        "select * from users where exists ("
+        "select 1 from orders o where o.user_id = users.id"
+        ")",
+    ],
+)
+def test_gp_rewrite_to_temp_tables_rejects_invalid_or_unsafe_input(sql: str) -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    with pytest.raises(ValueError):
+        gp_rewrite_to_temp_tables(sql)
+
+
+def test_gp_rewrite_to_temp_tables_rejects_invalid_prefix() -> None:
+    from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
+
+    with pytest.raises(ValueError):
+        gp_rewrite_to_temp_tables(
+            "select * from users where id in (select user_id from orders)",
+            temp_prefix="1tmp",
+        )
 
 
 @pytest.mark.parametrize(

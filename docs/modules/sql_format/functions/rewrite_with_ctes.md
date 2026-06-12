@@ -5,7 +5,7 @@
 Rewrite supported derived-table SELECT subqueries into named CTEs.
 
 ```python
-rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", keyword_case="upper", indent=4) -> str
+rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", keyword_case="lower", indent=4) -> str
 ```
 
 ## Inputs
@@ -31,14 +31,14 @@ print(rewritten)
 Output example:
 
 ```sql
-WITH cte_1 AS (
-    SELECT
+with cte_1 as (
+    select
         user_id
-    FROM orders
+    from orders
 )
-SELECT
+select
     s.user_id
-FROM cte_1 AS s
+from cte_1 as s
 ```
 
 ## Notes

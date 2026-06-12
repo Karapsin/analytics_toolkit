@@ -25,17 +25,22 @@ print(
 Output example:
 
 ```sql
-SELECT
+select
     user_id,
     amount
-FROM orders
-WHERE
-    TRUE AND amount > 100
+from orders
+where true
+      and amount > 100
 ```
 
 Use [rewrite_with_ctes](functions/rewrite_with_ctes.md) when a derived-table
 query should be made easier to read before execution elsewhere. The rewrite is
 conservative: unsupported subquery shapes raise `ValueError` instead of
 returning a partial rewrite.
+
+Use [gp_rewrite_to_temp_tables](functions/gp_rewrite_to_temp_tables.md) when a
+Greenplum SELECT should be split into explicit temp-table creation, analyze, and
+final-query steps. The helper keeps the work local to SQL text: it does not
+open a database connection or execute the generated script.
 
 [Module index](index.md)

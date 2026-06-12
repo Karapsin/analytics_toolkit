@@ -38,13 +38,19 @@ class _SingleStatement:
     has_trailing_semicolon: bool
 
 
+@dataclass(frozen=True)
+class _GpTempTable:
+    name: str
+    query: exp.Select
+
+
 def format_sql(
     sql: str,
     *,
     dialect: str | None = None,
     leading_commas: bool = False,
     where_anchor: str = "1=1",
-    keyword_case: str = "upper",
+    keyword_case: str = "lower",
     indent: int = 4,
 ) -> str:
     """Format exactly one SQL statement without opening a database connection."""
@@ -81,7 +87,7 @@ def rewrite_with_ctes(
     dialect: str | None = None,
     strategy: str = "auto",
     cte_prefix: str = "cte",
-    keyword_case: str = "upper",
+    keyword_case: str = "lower",
     indent: int = 4,
 ) -> str:
     """Rewrite derived-table SELECT subqueries into named CTEs."""
@@ -118,6 +124,66 @@ def rewrite_with_ctes(
         operation="rewrite_with_ctes",
     )
     return _with_semicolon_policy(rendered, statement.has_trailing_semicolon)
+
+
+def gp_rewrite_to_temp_tables(
+    sql: str,
+    *,
+    dialect: str | None = "postgres",
+    temp_prefix: str = "tmp",
+    keyword_case: str = "lower",
+    indent: int = 4,
+) -> str:
+    """Rewrite SELECT CTEs and subqueries into Greenplum temp-table SQL."""
+
+    normalized_dialect = _validate_dialect(dialect)
+    normalized_keyword_case = _validate_keyword_case(keyword_case)
+    normalized_indent = _validate_indent(indent)
+    _validate_temp_prefix(temp_prefix)
+    statement = _split_one_statement(sql, operation="gp_rewrite_to_temp_tables")
+    expression = _parse_expression(
+        statement.sql,
+        dialect=normalized_dialect,
+        operation="gp_rewrite_to_temp_tables",
+    )
+    if not isinstance(expression, exp.Select):
+        raise ValueError("gp_rewrite_to_temp_tables expects a SELECT statement.")
+
+    planner = _GpTempTablePlanner(
+        dialect=normalized_dialect,
+        temp_prefix=temp_prefix,
+        keyword_case=normalized_keyword_case,
+        indent=normalized_indent,
+    )
+    planner.rewrite_select(expression)
+    planner.validate_complete_rewrite(expression)
+    if not planner.temp_tables:
+        raise ValueError(
+            "gp_rewrite_to_temp_tables could not find CTEs or SELECT subqueries "
+            "to materialize."
+        )
+
+    rendered_final = _render_expression(
+        expression,
+        dialect=normalized_dialect,
+        leading_commas=False,
+        where_anchor=None,
+        keyword_case=normalized_keyword_case,
+        indent=normalized_indent,
+        operation="gp_rewrite_to_temp_tables",
+    )
+    _parse_expression(
+        rendered_final,
+        dialect=normalized_dialect,
+        operation="gp_rewrite_to_temp_tables",
+    )
+
+    blocks = planner.render_temp_table_blocks(expression)
+    final_sql = _with_semicolon_policy(
+        rendered_final,
+        statement.has_trailing_semicolon,
+    )
+    return "\n\n".join([*blocks, final_sql])
 
 
 def _validate_dialect(dialect: str | None) -> str | None:
@@ -164,6 +230,18 @@ def _validate_cte_prefix(cte_prefix: str) -> None:
         raise ValueError(
             "cte_prefix must be a non-empty unquoted SQL identifier prefix."
         )
+
+
+def _validate_temp_prefix(temp_prefix: str) -> None:
+    if not temp_prefix or not _CTE_PREFIX_RE.match(temp_prefix):
+        raise ValueError(
+            "temp_prefix must be a non-empty unquoted SQL identifier prefix."
+        )
+
+
+def _validate_temp_table_name(name: str, *, label: str) -> None:
+    if not name or not _CTE_PREFIX_RE.match(name):
+        raise ValueError(f"{label} must be a non-empty unquoted SQL identifier.")
 
 
 def _split_one_statement(sql: str, *, operation: str) -> _SingleStatement:
@@ -416,6 +494,424 @@ def _with_arg_name() -> str:
     return "with"
 
 
+def _from_arg_name() -> str:
+    if "from_" in exp.Select.arg_types:
+        return "from_"
+    return "from"
+
+
+class _GpTempTablePlanner:
+    def __init__(
+        self,
+        *,
+        dialect: str | None,
+        temp_prefix: str,
+        keyword_case: str,
+        indent: int,
+    ) -> None:
+        self.dialect = dialect
+        self.temp_prefix = temp_prefix
+        self.keyword_case = keyword_case
+        self.indent = indent
+        self.temp_tables: list[_GpTempTable] = []
+        self._used_temp_names: set[str] = set()
+        self._next_generated_index = 1
+
+    def rewrite_select(self, select: exp.Select) -> None:
+        self._materialize_with_clause(select)
+        self._rewrite_expression_children(select)
+
+    def validate_complete_rewrite(self, expression: exp.Expression) -> None:
+        temp_names = self._temp_name_keys()
+        for select in expression.find_all(exp.Select):
+            if select.args.get(_with_arg_name()) is not None:
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables could not remove every WITH clause."
+                )
+            if id(select) != id(expression) and not _is_temp_reference_select(
+                select,
+                temp_names=temp_names,
+            ):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables could not confidently rewrite all "
+                    "nested SELECT queries."
+                )
+        for subquery in expression.find_all(exp.Subquery):
+            if isinstance(subquery.this, exp.Select) and not _is_temp_reference_select(
+                subquery.this,
+                temp_names=temp_names,
+            ):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables could not confidently rewrite all "
+                    "SELECT subqueries."
+                )
+        for exists in expression.find_all(exp.Exists):
+            if isinstance(exists.this, exp.Select) and not _is_temp_reference_select(
+                exists.this,
+                temp_names=temp_names,
+            ):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables could not confidently rewrite all "
+                    "predicate SELECT subqueries."
+                )
+        for temp_table in self.temp_tables:
+            self._assert_select_is_uncorrelated(temp_table.query)
+
+    def render_temp_table_blocks(self, final_expression: exp.Select) -> list[str]:
+        consumer_expressions = [
+            temp_table.query for temp_table in self.temp_tables
+        ] + [final_expression]
+        blocks: list[str] = []
+        for temp_table in self.temp_tables:
+            distributed_columns = self._distributed_columns(
+                temp_table.name,
+                consumer_expressions=consumer_expressions,
+            )
+            blocks.append(
+                self._render_temp_table_block(
+                    temp_table,
+                    distributed_columns=distributed_columns,
+                )
+            )
+        return blocks
+
+    def _materialize_with_clause(self, select: exp.Select) -> None:
+        with_arg = _with_arg_name()
+        with_expression = select.args.get(with_arg)
+        if with_expression is None:
+            return
+        if with_expression.args.get("recursive"):
+            raise ValueError(
+                "gp_rewrite_to_temp_tables does not support recursive CTEs."
+            )
+
+        for cte in list(with_expression.expressions):
+            if not isinstance(cte, exp.CTE) or not isinstance(cte.this, exp.Select):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables only supports SELECT CTEs."
+                )
+            alias = cte.args.get("alias")
+            if _table_alias_has_columns(alias):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables does not support CTE column aliases."
+                )
+            name = cte.alias_or_name
+            self._reserve_temp_name(name, label="CTE alias")
+            query = cte.this.copy()
+            self.rewrite_select(query)
+            self.temp_tables.append(_GpTempTable(name=name, query=query))
+
+        select.set(with_arg, None)
+
+    def _rewrite_expression_children(self, expression: exp.Expression) -> None:
+        for key, value in list(expression.args.items()):
+            if isinstance(expression, exp.Select) and key == _with_arg_name():
+                continue
+            if isinstance(value, list):
+                for child in list(value):
+                    if isinstance(child, exp.Expression):
+                        self._rewrite_child_expression(child)
+                continue
+            if isinstance(value, exp.Expression):
+                self._rewrite_child_expression(value)
+
+    def _rewrite_child_expression(self, child: exp.Expression) -> None:
+        if isinstance(child, exp.Subquery) and isinstance(child.this, exp.Select):
+            self._materialize_subquery(child)
+            return
+        if isinstance(child, exp.Exists) and isinstance(child.this, exp.Select):
+            self._materialize_exists(child)
+            return
+        if isinstance(child, exp.Select):
+            self._materialize_direct_select(child)
+            return
+        self._rewrite_expression_children(child)
+
+    def _materialize_subquery(self, subquery: exp.Subquery) -> None:
+        query = subquery.this.copy()
+        is_derived = isinstance(subquery.parent, (exp.From, exp.Join))
+        if is_derived:
+            alias = subquery.args.get("alias")
+            if _table_alias_has_columns(alias):
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables does not support derived-table "
+                    "column aliases."
+                )
+            name = subquery.alias_or_name
+            self._reserve_temp_name(name, label="derived-table alias")
+            self.rewrite_select(query)
+            self.temp_tables.append(_GpTempTable(name=name, query=query))
+            subquery.replace(exp.Table(this=exp.to_identifier(name)))
+            return
+
+        name = self._next_generated_temp_name()
+        self.rewrite_select(query)
+        self.temp_tables.append(_GpTempTable(name=name, query=query))
+        subquery.set("this", _temp_reference_select(name))
+
+    def _materialize_exists(self, exists: exp.Exists) -> None:
+        query = exists.this.copy()
+        name = self._next_generated_temp_name()
+        self.rewrite_select(query)
+        self.temp_tables.append(_GpTempTable(name=name, query=query))
+        exists.set("this", _temp_reference_select(name))
+
+    def _materialize_direct_select(self, select: exp.Select) -> None:
+        query = select.copy()
+        name = self._next_generated_temp_name()
+        self.rewrite_select(query)
+        self.temp_tables.append(_GpTempTable(name=name, query=query))
+        select.replace(_temp_reference_select(name))
+
+    def _reserve_temp_name(self, name: str, *, label: str) -> None:
+        _validate_temp_table_name(name, label=label)
+        key = name.casefold()
+        if key in self._used_temp_names:
+            raise ValueError(
+                "gp_rewrite_to_temp_tables found duplicate temp table name "
+                f"{name!r}."
+            )
+        self._used_temp_names.add(key)
+
+    def _next_generated_temp_name(self) -> str:
+        while True:
+            name = f"{self.temp_prefix}_{self._next_generated_index}"
+            self._next_generated_index += 1
+            if name.casefold() not in self._used_temp_names:
+                self._reserve_temp_name(name, label="generated temp table name")
+                return name
+
+    def _temp_name_keys(self) -> set[str]:
+        return {temp_table.name.casefold() for temp_table in self.temp_tables}
+
+    def _assert_select_is_uncorrelated(self, select: exp.Select) -> None:
+        local_names = _local_select_source_names(select)
+        for column in select.find_all(exp.Column):
+            qualifier = column.table
+            if not qualifier:
+                continue
+            if qualifier.casefold() not in local_names:
+                raise ValueError(
+                    "gp_rewrite_to_temp_tables does not support correlated "
+                    "subqueries."
+                )
+
+    def _distributed_columns(
+        self,
+        temp_name: str,
+        *,
+        consumer_expressions: list[exp.Expression],
+    ) -> list[str]:
+        columns: list[str] = []
+        seen: set[str] = set()
+        for consumer_expression in consumer_expressions:
+            consumer_names = _temp_consumer_names(
+                consumer_expression,
+                temp_name=temp_name,
+            )
+            if not consumer_names:
+                continue
+            for join in consumer_expression.find_all(exp.Join):
+                on_expression = join.args.get("on")
+                if on_expression is None:
+                    continue
+                for condition in _flatten_and(on_expression):
+                    if not isinstance(condition, exp.EQ):
+                        continue
+                    column_name = _join_column_for_temp(
+                        condition,
+                        consumer_names=consumer_names,
+                        dialect=self.dialect,
+                    )
+                    if column_name is None:
+                        continue
+                    key = column_name.casefold()
+                    if key not in seen:
+                        seen.add(key)
+                        columns.append(column_name)
+        return columns
+
+    def _render_temp_table_block(
+        self,
+        temp_table: _GpTempTable,
+        *,
+        distributed_columns: list[str],
+    ) -> str:
+        rendered_query = _render_expression(
+            temp_table.query,
+            dialect=self.dialect,
+            leading_commas=False,
+            where_anchor=None,
+            keyword_case=self.keyword_case,
+            indent=self.indent,
+            operation="gp_rewrite_to_temp_tables",
+        )
+        indented_query = _indent_sql(rendered_query, self.indent)
+        if distributed_columns:
+            distribution = (
+                f"{self._keyword('distributed')} {self._keyword('by')} "
+                f"({', '.join(distributed_columns)})"
+            )
+        else:
+            distribution = (
+                f"{self._keyword('distributed')} {self._keyword('randomly')}"
+            )
+        return "\n".join(
+            [
+                (
+                    f"{self._keyword('drop')} {self._keyword('table')} "
+                    f"{self._keyword('if')} {self._keyword('exists')} "
+                    f"{temp_table.name};"
+                ),
+                "",
+                (
+                    f"{self._keyword('create')} {self._keyword('temporary')} "
+                    f"{self._keyword('table')} {temp_table.name} "
+                    f"{self._keyword('as')} ("
+                ),
+                indented_query,
+                f") {distribution};",
+                f"{self._keyword('analyze')} {temp_table.name};",
+            ]
+        )
+
+    def _keyword(self, keyword: str) -> str:
+        if self.keyword_case == "upper":
+            return keyword.upper()
+        if self.keyword_case == "capitalize":
+            return keyword.capitalize()
+        return keyword.lower()
+
+
+def _table_alias_has_columns(alias: exp.Expression | None) -> bool:
+    return isinstance(alias, exp.TableAlias) and bool(alias.args.get("columns"))
+
+
+def _temp_reference_select(name: str) -> exp.Select:
+    return exp.select("*").from_(name)
+
+
+def _is_temp_reference_select(select: exp.Select, *, temp_names: set[str]) -> bool:
+    if select.args.get(_with_arg_name()) is not None:
+        return False
+    if select.args.get("joins"):
+        return False
+    unsupported_args = {
+        "where",
+        "group",
+        "having",
+        "qualify",
+        "order",
+        "limit",
+        "offset",
+        "sample",
+    }
+    if any(select.args.get(arg_name) is not None for arg_name in unsupported_args):
+        return False
+    expressions = select.expressions
+    if len(expressions) != 1 or not isinstance(expressions[0], exp.Star):
+        return False
+    from_expression = select.args.get(_from_arg_name())
+    if from_expression is None or not isinstance(from_expression.this, exp.Table):
+        return False
+    return _table_name_key(from_expression.this) in temp_names
+
+
+def _local_select_source_names(select: exp.Select) -> set[str]:
+    names: set[str] = set()
+    from_expression = select.args.get(_from_arg_name())
+    if from_expression is not None:
+        names.update(_relation_source_names(from_expression.this))
+    for join in select.args.get("joins") or []:
+        names.update(_relation_source_names(join.this))
+    return names
+
+
+def _relation_source_names(relation: exp.Expression | None) -> set[str]:
+    if relation is None:
+        return set()
+    if isinstance(relation, exp.Table):
+        return _table_reference_names(relation)
+    if isinstance(relation, exp.Subquery):
+        alias = relation.alias_or_name
+        return {alias.casefold()} if alias else set()
+    return set()
+
+
+def _temp_consumer_names(
+    expression: exp.Expression,
+    *,
+    temp_name: str,
+) -> set[str]:
+    names: set[str] = set()
+    temp_key = temp_name.casefold()
+    for table in expression.find_all(exp.Table):
+        if _table_name_key(table) != temp_key:
+            continue
+        names.update(_table_reference_names(table))
+    return names
+
+
+def _table_reference_names(table: exp.Table) -> set[str]:
+    names = {_table_name_key(table)}
+    alias = table.alias
+    if alias:
+        names.add(alias.casefold())
+    return names
+
+
+def _table_name_key(table: exp.Table) -> str:
+    return table.name.casefold()
+
+
+def _join_column_for_temp(
+    condition: exp.EQ,
+    *,
+    consumer_names: set[str],
+    dialect: str | None,
+) -> str | None:
+    left_column = _column_name_for_temp(
+        condition.this,
+        consumer_names=consumer_names,
+        dialect=dialect,
+    )
+    right_column = _column_name_for_temp(
+        condition.expression,
+        consumer_names=consumer_names,
+        dialect=dialect,
+    )
+    if left_column and not right_column:
+        return left_column
+    if right_column and not left_column:
+        return right_column
+    return None
+
+
+def _column_name_for_temp(
+    expression: exp.Expression,
+    *,
+    consumer_names: set[str],
+    dialect: str | None,
+) -> str | None:
+    if not isinstance(expression, exp.Column):
+        return None
+    if not expression.table or expression.table.casefold() not in consumer_names:
+        return None
+    column_expression = expression.this
+    try:
+        return column_expression.sql(dialect=dialect)
+    except SqlglotError as exc:
+        raise ValueError(
+            "gp_rewrite_to_temp_tables could not render distribution column: "
+            f"{exc}"
+        ) from exc
+
+
+def _indent_sql(sql: str, indent: int) -> str:
+    prefix = " " * indent
+    return "\n".join(f"{prefix}{line}" for line in sql.splitlines())
+
+
 def _apply_keyword_case(sql: str, keyword_case: str, *, dialect: str | None) -> str:
     if keyword_case == "upper":
         return sql
@@ -558,4 +1054,4 @@ def _is_escaped_single_quote(text: str, index: int) -> bool:
     return index + 1 < len(text) and text[index + 1] == "'"
 
 
-__all__ = ["format_sql", "rewrite_with_ctes"]
+__all__ = ["format_sql", "gp_rewrite_to_temp_tables", "rewrite_with_ctes"]

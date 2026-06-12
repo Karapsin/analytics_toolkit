@@ -2,7 +2,8 @@
 
 # analytics_toolkit.sql_format
 
-SQL text helpers for deterministic formatting and conservative CTE rewrites.
+SQL text helpers for deterministic formatting, conservative CTE rewrites, and
+Greenplum temp-table rewrites.
 
 These helpers do not read `.connections`, open database connections, or execute
 SQL. Use the [All SQL formatting functions](functions/index.md) reference when

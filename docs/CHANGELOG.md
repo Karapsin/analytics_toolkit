@@ -4,6 +4,13 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.8.19 - 2026-06-12
+
+- Changed `analytics_toolkit.sql_format` defaults to lowercase SQL keywords
+  while keeping uppercase available through `keyword_case="upper"`.
+- Added `sql_format.gp_rewrite_to_temp_tables()` for Greenplum temp-table
+  materialization scripts from SELECT CTEs and subqueries.
+
 ## 1.3.8.18 - 2026-06-12
 
 - Changed `sql_format.format_sql` WHERE anchor formatting so `WHERE 1=1`

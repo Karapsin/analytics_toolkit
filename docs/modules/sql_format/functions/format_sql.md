@@ -5,7 +5,7 @@
 Format exactly one SQL statement without opening a database connection.
 
 ```python
-format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", keyword_case="upper", indent=4) -> str
+format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", keyword_case="lower", indent=4) -> str
 ```
 
 ## Inputs
@@ -32,12 +32,12 @@ print(formatted)
 Output example:
 
 ```sql
-SELECT
+select
     user_id,
     amount
-FROM orders
-WHERE 1=1
-      AND amount > 100
+from orders
+where 1=1
+      and amount > 100
 ```
 
 ## Notes
