@@ -35,6 +35,7 @@ def show_tables(
     conditions: str | None = None,
     table_name: str | Sequence[str] | None = None,
     ch_distributed_table_stats: bool = False,
+    trino_catalog: str | None = None,
 ) -> pd.DataFrame:
     """Return backend table metadata with row_count and table_size columns."""
 
@@ -46,12 +47,17 @@ def show_tables(
     schema_filter = _validate_optional_string(schema, "schema")
     table_name_filter = _validate_table_names(table_name, schema_filter)
     conditions_filter = _validate_conditions(conditions)
+    trino_catalog_filter = _validate_optional_string(
+        trino_catalog,
+        "trino_catalog",
+    )
     query = _build_show_tables_query(
         config,
         schema_filter,
         table_name_filter,
         conditions_filter,
         ch_distributed_table_stats=ch_distributed_table_stats,
+        trino_catalog=trino_catalog_filter,
     )
 
     result = cast(pd.DataFrame, read_sql(config.connection_key, query))
@@ -82,8 +88,13 @@ def _build_show_tables_query(
     conditions: str | None,
     *,
     ch_distributed_table_stats: bool = False,
+    trino_catalog: str | None = None,
 ) -> str:
     if config.backend == "ch":
+        if trino_catalog is not None:
+            raise InvalidSqlInputError(
+                "trino_catalog is only supported for Trino connections."
+            )
         return _build_clickhouse_show_tables_query(
             schema,
             table_names,
@@ -91,15 +102,22 @@ def _build_show_tables_query(
             include_distributed_metadata=ch_distributed_table_stats,
         )
     if config.backend == "gp":
+        if trino_catalog is not None:
+            raise InvalidSqlInputError(
+                "trino_catalog is only supported for Trino connections."
+            )
         return _build_gp_show_tables_query(schema, table_names, conditions)
     if config.backend == "trino":
-        if not isinstance(config, TrinoConfig) or not config.catalog:
+        catalog = trino_catalog or (
+            config.catalog if isinstance(config, TrinoConfig) else None
+        )
+        if not catalog:
             raise ValueError(
                 "show_tables for Trino requires "
-                f".connections['{config.connection_key}'].catalog."
+                f"trino_catalog or .connections['{config.connection_key}'].catalog."
             )
         return _build_trino_show_tables_query(
-            config.catalog,
+            catalog,
             schema,
             table_names,
             conditions,

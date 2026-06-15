@@ -391,6 +391,46 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
     )
 
 
+def test_show_tables_trino_catalog_argument_overrides_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables("trino", schema="sandbox", trino_catalog="hive")
+
+    assert calls[0][0] == "trino"
+    assert "FROM hive.information_schema.tables" in calls[0][1]
+    assert "FROM iceberg.information_schema.tables" not in calls[0][1]
+
+
+def test_show_tables_trino_catalog_argument_allows_missing_config_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections,
+) -> None:
+    write_sql_connections(
+        {
+            "trino_no_catalog": {
+                "type": "trino",
+                "host": "trino.example",
+                "port": 8080,
+                "user": "user",
+                "password": "password",
+                "schema": "sandbox",
+            },
+        }
+    )
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables(
+        "trino_no_catalog",
+        schema="sandbox",
+        trino_catalog="iceberg",
+    )
+
+    assert calls[0][0] == "trino_no_catalog"
+    assert "FROM iceberg.information_schema.tables" in calls[0][1]
+
+
 def test_show_tables_returns_expected_columns_for_empty_columnless_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -449,6 +489,8 @@ def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> Non
         {"table_name": ["orders", ""]},
         {"conditions": ""},
         {"conditions": "   "},
+        {"trino_catalog": ""},
+        {"trino_catalog": "   "},
     ],
 )
 def test_show_tables_rejects_empty_schema_table_name_or_conditions(
@@ -503,6 +545,24 @@ def test_show_tables_rejects_invalid_ch_distributed_table_stats(
             "ch",
             ch_distributed_table_stats="yes",
         )
+
+
+@pytest.mark.parametrize("db_key", ["gp", "ch"])
+def test_show_tables_rejects_trino_catalog_for_non_trino(
+    monkeypatch: pytest.MonkeyPatch,
+    db_key: str,
+) -> None:
+    monkeypatch.setattr(
+        show_tables_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pytest.fail("read_sql should not be called"),
+    )
+
+    with pytest.raises(
+        show_tables_module.InvalidSqlInputError,
+        match="trino_catalog is only supported for Trino connections",
+    ):
+        show_tables_module.show_tables(db_key, trino_catalog="iceberg")
 
 
 def test_show_tables_rejects_multi_statement_conditions(

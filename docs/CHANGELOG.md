@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.11 - 2026-06-15
+
+- Added `trino_catalog` to `sql.show_tables()` so Trino table listings can
+  use an explicit catalog when the connection alias does not configure one.
+
 ## 1.3.9.10 - 2026-06-15
 
 - Added CUPED MDE planning columns to `compute_mde` using adjacent
