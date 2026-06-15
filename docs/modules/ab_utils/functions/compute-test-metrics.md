@@ -42,7 +42,7 @@ compute_test_metrics(
 - `bootstrap_random_state` - bootstrap random seed, or `None`
 - `bootstrap_n_jobs` - number of bootstrap workers
 - `bootstrap_progress` - whether to show bootstrap progress
-- `outliers_quantile` - upper-tail cutoff quantile
+- `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
 - `outliers_policy` - `"truncate"` or `"drop"`
 
 ## Usage

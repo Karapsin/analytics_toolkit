@@ -11,7 +11,7 @@ helpers most likely to be used in normal workflows appear first.
 - [compute_test_metrics](compute-test-metrics.md) - compare experiment groups across metrics
 - [format_ab_metrics](format-ab-metrics.md) - reshape metric output for reports
 - [do_split](do-split.md) - assign users to AB groups
-- [compute_mde_only](compute-mde-only.md) - estimate pre-test MDE
+- [compute_mde](compute-mde.md) - estimate MDE planning scenarios
 
 ## Advanced Functions
 

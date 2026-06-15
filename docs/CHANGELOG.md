@@ -4,13 +4,23 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.8 - 2026-06-15
+
+- Renamed the MDE planner public API to `compute_mde` and removed the old export.
+- Changed `compute_mde` to build MDE planning grids across historical date
+  windows and total planned experiment user counts.
+- Added `compute_mde` validation for user-day grain, date windows, control share
+  splits, and explicit-list or min/max/step scenario inputs.
+- Changed AB outlier validation to accept `outliers_quantile=1` for keeping the
+  maximum observed value unmodified.
+
 ## 1.3.9.7 - 2026-06-15
 
-- Changed `compute_mde_only` to require direct `user_id`, `n0`, and `n1`
+- Changed `compute_mde` to require direct `user_id`, `n0`, and `n1`
   inputs instead of the `MdePlanningOptions` bundle.
-- Added `compute_mde_only` validation for missing, null, and duplicate user ids
+- Added `compute_mde` validation for missing, null, and duplicate user ids
   and conflicting mean and ratio metric names.
-- Fixed the `compute_mde_only` documentation examples to show the actual output
+- Fixed the `compute_mde` documentation examples to show the actual output
   column names.
 
 ## 1.3.9.6 - 2026-06-15
@@ -308,7 +318,7 @@ Generated from package version bumps and recent commit history.
 
 ## 1.3.5.0 - 2026-06-03
 
-- Added `compute_mde_only` for pre-test AB planning from historical variance.
+- Added `compute_mde` for pre-test AB planning from historical variance.
 - Added public AB option bundles `RatioMetricSpec` and `MdePlanningOptions`.
 - Added quarter support to date helpers, including `add_quarters` and quarterly
   `gen_dates_list` sequences.

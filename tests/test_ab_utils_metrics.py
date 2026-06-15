@@ -13,7 +13,7 @@ import analytics_toolkit.ab_utils as ab_utils
 import analytics_toolkit.ab_utils.metrics as ab_metrics
 from analytics_toolkit.ab_utils import (
     RatioMetricSpec,
-    compute_mde_only,
+    compute_mde,
     compute_test_metrics,
 )
 from analytics_toolkit.ab_utils.metrics import (
@@ -614,48 +614,119 @@ def test_compute_test_metrics_uses_raw_relative_fields() -> None:
     assert orders_row["delta_relative"] == pytest.approx(expected_delta_abs / expected_control)
 
 
-def test_compute_mde_only_estimates_mean_metric_from_historical_variance() -> None:
+def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
     df = pd.DataFrame(
-        {"user_id": [1, 2, 3, 4, 5], "orders": [10.0, 12.0, 14.0, 16.0, 16.0]}
+        {
+            "user_id": [1, 1, 2, 2, 3, 3],
+            "dt": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-01",
+                    "2024-01-02",
+                ]
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
     )
 
-    result = compute_mde_only(
+    result = compute_mde(
         df,
         user_id="user_id",
-        n0=100,
-        n1=120,
-        outliers_quantile=0.99,
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        control_share=0.6,
+        outliers_quantile=1,
     )
 
     row = _single_metric_row(result, "orders")
-    expected_variance = df["orders"].var(ddof=1)
-    expected_se = math.sqrt((expected_variance / 100) + (expected_variance / 120))
+    user_values = pd.Series([3.0, 7.0, 11.0])
+    expected_variance = float(user_values.var(ddof=1))
+    expected_se = math.sqrt((expected_variance / 6) + (expected_variance / 4))
     expected_mde = _compute_mde_from_standard_error(
         standard_error=expected_se,
         alpha=DEFAULT_ALPHA,
         power=DEFAULT_POWER,
     )
-    assert row["metric_type"] == "mean"
-    assert row["historical_n"] == 5
-    assert row["planned_n0"] == 100
-    assert row["planned_n1"] == 120
-    assert row["metric_baseline"] == pytest.approx(float(df["orders"].mean()))
-    assert row["variance"] == pytest.approx(expected_variance)
-    assert row["s.e."] == pytest.approx(expected_se)
+    assert list(result.columns) == [
+        "metric_name",
+        "avg",
+        "var",
+        "days",
+        "group_size",
+        "control_share",
+        "mde_abs",
+        "mde_relative",
+    ]
+    assert row["avg"] == pytest.approx(float(user_values.mean()))
+    assert row["var"] == pytest.approx(expected_variance)
+    assert row["days"] == 2
+    assert row["group_size"] == 10
+    assert row["control_share"] == pytest.approx(0.6)
     assert row["mde_abs"] == pytest.approx(expected_mde)
-    assert row["mde_relative"] == pytest.approx(expected_mde / float(df["orders"].mean()))
+    assert row["mde_relative"] == pytest.approx(expected_mde / float(user_values.mean()))
 
 
-def test_compute_mde_only_accepts_ratio_spec_dataclass() -> None:
+def test_compute_mde_accepts_explicit_list_grids_sorted_unique() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 2, 3, 4],
-            "clicks": [1.0, 2.0, 3.0, 4.0],
-            "impressions": [10.0, 10.0, 20.0, 20.0],
+            "user_id": [1, 1, 2, 2],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 2),
+            "orders": [1.0, 2.0, 3.0, 4.0],
         }
     )
 
-    result = compute_mde_only(
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[20, 10, 20],
+        exp_days=[2, 1, 1],
+    )
+
+    assert result["days"].tolist() == [1, 1, 2, 2]
+    assert result["group_size"].tolist() == [10, 20, 10, 20]
+
+
+def test_compute_mde_accepts_min_max_step_grids() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 2, 2, 2],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"] * 2),
+            "orders": [1.0, 2.0, 3.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        min_group_size=10,
+        max_group_size=25,
+        group_size_step=10,
+        min_days=1,
+        max_days=3,
+        days_step=2,
+    )
+
+    assert result["days"].tolist() == [1, 1, 3, 3]
+    assert result["group_size"].tolist() == [10, 20, 10, 20]
+
+
+def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 2, 2, 3, 3],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 3),
+            "clicks": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            "impressions": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+        }
+    )
+
+    result = compute_mde(
         df,
         user_id="user_id",
         metric_columns=[],
@@ -667,53 +738,211 @@ def test_compute_mde_only_accepts_ratio_spec_dataclass() -> None:
                 level="user",
             )
         ],
-        n0=50,
-        n1=60,
+        group_sizes=[10],
+        exp_days=[2],
+        outliers_quantile=1,
     )
 
     row = _single_metric_row(result, "ctr_user")
-    ratio_values = df["clicks"] / df["impressions"]
-    expected_variance = ratio_values.var(ddof=1)
-    expected_se = math.sqrt((expected_variance / 50) + (expected_variance / 60))
-    assert row["metric_type"] == "ratio"
-    assert row["historical_n"] == 4
-    assert row["metric_baseline"] == pytest.approx(float(ratio_values.mean()))
-    assert row["variance"] == pytest.approx(expected_variance)
-    assert row["s.e."] == pytest.approx(expected_se)
+    ratio_values = pd.Series([0.1, 0.2, 0.3])
+    assert row["avg"] == pytest.approx(float(ratio_values.mean()))
+    assert row["var"] == pytest.approx(float(ratio_values.var(ddof=1)))
 
 
-def test_compute_mde_only_requires_user_id_argument() -> None:
-    df = pd.DataFrame({"user_id": [1, 2], "orders": [10.0, 12.0]})
+def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 2, 2, 3, 3],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 3),
+            "clicks": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            "impressions": [5.0, 5.0, 5.0, 5.0, 15.0, 15.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=[],
+        ratio_metrics=[
+            RatioMetricSpec(
+                name="ctr_agg",
+                numerator="clicks",
+                denominator="impressions",
+                level="agg",
+            )
+        ],
+        group_sizes=[10],
+        exp_days=[2],
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "ctr_agg")
+    numerator = pd.Series([2.0, 4.0, 6.0])
+    denominator = pd.Series([10.0, 10.0, 30.0])
+    ratio = float(numerator.sum() / denominator.sum())
+    centered = numerator - ratio * denominator
+    expected_variance = float(centered.var(ddof=1)) / float(denominator.mean()) ** 2
+    assert row["avg"] == pytest.approx(ratio)
+    assert row["var"] == pytest.approx(expected_variance)
+
+
+def test_compute_mde_selects_start_and_end_windows() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2] * 4,
+            "dt": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-04",
+                ]
+            ),
+            "orders": [1.0, 3.0, 1.0, 3.0, 10.0, 20.0, 10.0, 20.0],
+        }
+    )
+
+    start_result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        exp_length_policy="start",
+        outliers_quantile=1,
+    )
+    end_result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        exp_length_policy="end",
+        outliers_quantile=1,
+    )
+
+    assert _single_metric_row(start_result, "orders")["avg"] == pytest.approx(4.0)
+    assert _single_metric_row(end_result, "orders")["avg"] == pytest.approx(30.0)
+
+
+def test_compute_mde_selects_seeded_random_window() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2] * 5,
+            "dt": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-04",
+                    "2024-01-05",
+                    "2024-01-05",
+                ]
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        exp_length_policy="random",
+        random_state=42,
+        outliers_quantile=1,
+    )
+
+    expected_offset = int(np.random.default_rng(42).integers(0, 4))
+    selected_dates = pd.date_range("2024-01-01", periods=5)[
+        expected_offset : expected_offset + 2
+    ]
+    expected_values = (
+        df[df["dt"].isin(selected_dates)]
+        .groupby("user_id")["orders"]
+        .sum()
+    )
+    assert _single_metric_row(result, "orders")["avg"] == pytest.approx(
+        float(expected_values.mean())
+    )
+
+
+def test_compute_mde_requires_user_id_argument() -> None:
+    df = pd.DataFrame({"user_id": [1, 2], "dt": ["2024-01-01", "2024-01-01"], "orders": [10.0, 12.0]})
 
     with pytest.raises(TypeError, match="user_id"):
-        compute_mde_only(df, n0=50, n1=60)
+        compute_mde(df, group_sizes=[10], exp_days=[1])
 
 
-def test_compute_mde_only_rejects_missing_user_id_column() -> None:
-    df = pd.DataFrame({"orders": [10.0, 12.0]})
+def test_compute_mde_rejects_invalid_grid_inputs() -> None:
+    df = pd.DataFrame(
+        {"user_id": [1, 2], "dt": ["2024-01-01", "2024-01-01"], "orders": [10.0, 12.0]}
+    )
 
-    with pytest.raises(ValueError, match="Column 'user_id' was not found"):
-        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
+    with pytest.raises(ValueError, match="group_sizes cannot be combined"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            group_sizes=[10],
+            min_group_size=10,
+            exp_days=[1],
+        )
+    with pytest.raises(ValueError, match="Either group_sizes"):
+        compute_mde(df, user_id="user_id", exp_days=[1])
+    with pytest.raises(ValueError, match="exp_days cannot be combined"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            min_days=1,
+        )
+    with pytest.raises(ValueError, match="control_share"):
+        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], control_share=1.0)
+    with pytest.raises(ValueError, match="at least one control and one test user"):
+        compute_mde(df, user_id="user_id", group_sizes=[1], exp_days=[1])
 
 
-def test_compute_mde_only_rejects_missing_user_ids() -> None:
-    df = pd.DataFrame({"user_id": [1, None], "orders": [10.0, 12.0]})
+def test_compute_mde_rejects_invalid_user_day_grain() -> None:
+    missing_user = pd.DataFrame(
+        {"user_id": [1, None], "dt": ["2024-01-01", "2024-01-01"], "orders": [1.0, 2.0]}
+    )
+    missing_date = pd.DataFrame({"user_id": [1, 2], "dt": ["2024-01-01", None], "orders": [1.0, 2.0]})
+    invalid_date = pd.DataFrame(
+        {"user_id": [1, 2], "dt": ["2024-01-01", "not-a-date"], "orders": [1.0, 2.0]}
+    )
+    duplicate_user_day = pd.DataFrame(
+        {
+            "user_id": [1, 1],
+            "dt": ["2024-01-01 01:00:00", "2024-01-01 23:00:00"],
+            "orders": [1.0, 2.0],
+        }
+    )
 
     with pytest.raises(ValueError, match="must not contain missing values"):
-        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
+        compute_mde(missing_user, user_id="user_id", group_sizes=[10], exp_days=[1])
+    with pytest.raises(ValueError, match="must not contain missing values"):
+        compute_mde(missing_date, user_id="user_id", group_sizes=[10], exp_days=[1])
+    with pytest.raises(ValueError, match="datelike"):
+        compute_mde(invalid_date, user_id="user_id", group_sizes=[10], exp_days=[1])
+    with pytest.raises(ValueError, match="unique user-day rows"):
+        compute_mde(duplicate_user_day, user_id="user_id", group_sizes=[10], exp_days=[1])
 
 
-def test_compute_mde_only_rejects_duplicate_user_ids() -> None:
-    df = pd.DataFrame({"user_id": [1, 1], "orders": [10.0, 12.0]})
-
-    with pytest.raises(ValueError, match="must contain unique user ids"):
-        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
-
-
-def test_compute_mde_only_rejects_ratio_name_conflicting_with_mean_metric() -> None:
+def test_compute_mde_rejects_ratio_name_conflicting_with_mean_metric() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 2, 3],
+            "dt": ["2024-01-01", "2024-01-01", "2024-01-01"],
             "ctr": [0.1, 0.2, 0.3],
             "clicks": [1.0, 2.0, 3.0],
             "impressions": [10.0, 10.0, 10.0],
@@ -721,11 +950,11 @@ def test_compute_mde_only_rejects_ratio_name_conflicting_with_mean_metric() -> N
     )
 
     with pytest.raises(ValueError, match="conflicts with a mean metric column"):
-        compute_mde_only(
+        compute_mde(
             df,
             user_id="user_id",
-            n0=50,
-            n1=60,
+            group_sizes=[10],
+            exp_days=[1],
             ratio_metrics=[
                 RatioMetricSpec(
                     name="ctr",
@@ -740,6 +969,10 @@ def test_compute_mde_only_rejects_ratio_name_conflicting_with_mean_metric() -> N
 def test_mde_planning_options_is_no_longer_exported() -> None:
     assert not hasattr(ab_utils, "MdePlanningOptions")
     assert not hasattr(ab_metrics, "MdePlanningOptions")
+    assert not hasattr(ab_utils, "compute_mde_only")
+    assert not hasattr(ab_metrics, "compute_mde_only")
+    assert hasattr(ab_utils, "compute_mde")
+    assert hasattr(ab_metrics, "compute_mde")
 
 
 def test_compute_test_metrics_accepts_ratio_spec_dataclass() -> None:
@@ -1024,8 +1257,11 @@ def test_compute_test_metrics_validates_bootstrap_parameters(
 @pytest.mark.parametrize(
     ("kwargs", "error_type", "message"),
     [
-        ({"outliers_quantile": 0}, ValueError, "outliers_quantile must be strictly between 0 and 1"),
-        ({"outliers_quantile": 1}, ValueError, "outliers_quantile must be strictly between 0 and 1"),
+        (
+            {"outliers_quantile": 0},
+            ValueError,
+            "outliers_quantile must be greater than 0 and less than or equal to 1",
+        ),
         ({"outliers_quantile": True}, TypeError, "outliers_quantile must be numeric"),
         ({"outliers_quantile": "0.9"}, TypeError, "outliers_quantile must be numeric"),
         ({"outliers_policy": "winsorize"}, ValueError, "outliers_policy must be 'truncate' or 'drop'"),
@@ -1041,6 +1277,28 @@ def test_compute_test_metrics_validates_outlier_parameters(
 
     with pytest.raises(error_type, match=message):
         compute_test_metrics(df, **kwargs)
+
+
+def test_compute_test_metrics_accepts_outliers_quantile_one_without_truncation() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3, 4],
+            "group_name": ["control", "control", "test", "test"],
+            "orders": [10.0, 20.0, 30.0, 1000.0],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        test_vs_test=False,
+        outliers_quantile=1,
+    )
+
+    orders_row = _single_metric_row(result, "orders")
+    assert orders_row["outliers_cutoff"] == pytest.approx(1000.0)
+    assert orders_row["outliers_n_control"] == 0
+    assert orders_row["outliers_n_test"] == 0
+    assert orders_row["metric_test"] == pytest.approx(515.0)
 
 
 def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:

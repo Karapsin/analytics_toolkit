@@ -24,8 +24,8 @@ def _validate_outlier_parameters(outliers_quantile: float, outliers_policy: str)
     if isinstance(outliers_quantile, bool) or not isinstance(outliers_quantile, Real):
         raise TypeError("outliers_quantile must be numeric.")
     outliers_quantile_float = float(outliers_quantile)
-    if not math.isfinite(outliers_quantile_float) or not 0 < outliers_quantile_float < 1:
-        raise ValueError("outliers_quantile must be strictly between 0 and 1.")
+    if not math.isfinite(outliers_quantile_float) or not 0 < outliers_quantile_float <= 1:
+        raise ValueError("outliers_quantile must be greater than 0 and less than or equal to 1.")
     if not isinstance(outliers_policy, str):
         raise TypeError("outliers_policy must be a string.")
     normalized_policy = outliers_policy.strip().lower()

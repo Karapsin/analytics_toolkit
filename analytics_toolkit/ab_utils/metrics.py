@@ -3,7 +3,7 @@ from __future__ import annotations
 from .api import compute_test_metrics
 from .formatter import format_ab_metrics
 from .parallel import parallel_compute_metrics, parallel_compute_metrics_from_sql
-from .planning import RatioMetricSpec, compute_mde_only
+from .planning import RatioMetricSpec, compute_mde
 from .bootstrap import (
     _apply_multiple_comparisons_adjustment,
     _compute_bootstrap_family_max_statistics,
@@ -88,7 +88,7 @@ __all__ = [
     "DEFAULT_ALPHA",
     "DEFAULT_POWER",
     "RatioMetricSpec",
-    "compute_mde_only",
+    "compute_mde",
     "compute_test_metrics",
     "format_ab_metrics",
     "parallel_compute_metrics",
