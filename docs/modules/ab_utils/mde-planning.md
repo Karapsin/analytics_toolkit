@@ -4,9 +4,10 @@
 
 For experiment planning without observed groups, use
 [compute_mde](functions/compute-mde.md) on historical user-day data. The helper
-chooses one calendar window for each requested experiment length, aggregates the
-window to one row per user, estimates metric averages and variances, and then
-computes MDE for each requested total experiment size.
+chooses an experiment-like outcome window for each requested experiment length,
+aggregates the window to one row per user, estimates metric averages and
+variances, and then computes MDE for each requested total experiment size. It
+also estimates CUPED MDE from an adjacent pre-experiment window.
 
 ```python
 from analytics_toolkit.ab_utils import (
@@ -31,13 +32,20 @@ planning = compute_mde(
     group_sizes=[50_000, 100_000, 150_000],
     control_share=0.5,
     exp_length_policy="end",
+    pre_exp_days=None,
 )
 ```
 
 The result contains one row per metric, experiment length, and total planned
 experiment size. `group_size` is total experiment users; the control and test
-sizes are derived from `control_share` when computing `mde_abs` and
-`mde_relative`.
+sizes are derived from `control_share` when computing `mde_abs`,
+`mde_relative`, `mde_abs_cuped`, and `mde_relative_cuped`.
+
+By default, CUPED uses a pre-period with the same length as each `exp_days`
+scenario. Pass `pre_exp_days` to use one fixed pre-period length across all
+scenarios. With `exp_length_policy="start"`, the pre-period comes first and the
+outcome window follows it; `"end"` uses the final outcome window with the
+immediately preceding pre-period; `"random"` chooses a contiguous pair.
 
 Use explicit `exp_days` and `group_sizes` lists for irregular scenarios, or use
 `min_days`/`max_days`/`days_step` with

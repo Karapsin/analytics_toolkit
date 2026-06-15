@@ -4,6 +4,12 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.10 - 2026-06-15
+
+- Added CUPED MDE planning columns to `compute_mde` using adjacent
+  pre-experiment and experiment-like historical windows.
+- Added `pre_exp_days` to configure the CUPED covariate window length.
+
 ## 1.3.9.9 - 2026-06-15
 
 - Added a default `user_id="user_id"` argument to `compute_mde`.

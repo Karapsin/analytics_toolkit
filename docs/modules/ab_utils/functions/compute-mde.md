@@ -27,6 +27,7 @@ compute_mde(
     mde_power=0.8,
     outliers_quantile=0.999,
     outliers_policy="truncate",
+    pre_exp_days=None,
 )
 ```
 
@@ -52,6 +53,8 @@ compute_mde(
 - `mde_power` - statistical power used for MDE calculation
 - `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
 - `outliers_policy` - `"truncate"` or `"drop"`
+- `pre_exp_days` - pre-experiment covariate window length for CUPED MDE;
+  `None` uses each `exp_days` value
 
 ## Usage
 
@@ -81,19 +84,31 @@ planning = compute_mde(
 Output example:
 
 ```python
-planning.head()
-#   metric_name    avg     var  days  group_size  control_share  mde_abs  mde_relative
-# 0      orders   2.94   11.20     7       50000            0.5     0.04         0.014
-# 1      orders   2.94   11.20     7      100000            0.5     0.03         0.010
-# 2      orders   2.94   11.20     7      150000            0.5     0.02         0.008
-# 3      orders   5.88   23.10    14       50000            0.5     0.05         0.009
+planning[
+    [
+        "metric_name",
+        "avg",
+        "var",
+        "days",
+        "pre_exp_days",
+        "group_size",
+        "mde_abs",
+        "mde_abs_cuped",
+    ]
+].head()
 ```
 
 ## Notes
 
 - `group_size` is the total planned experiment user count
 - control and test sizes are derived from `floor(group_size * control_share)`
-- metrics are first summed to one row per user inside each selected calendar window
+- metrics are first summed to one row per user inside each selected outcome window
 - ratio metrics use summed user-level numerators and denominators before computing statistics
+- CUPED MDE uses an adjacent pre-period and outcome window:
+  - `"start"` uses the first `pre_exp_days` days as pre-period and the next `days` as outcome
+  - `"end"` uses the last `days` as outcome and the immediately preceding pre-period
+  - `"random"` chooses a seeded contiguous pre-period plus outcome pair
+- `mde_relative_cuped` is `mde_abs_cuped / avg`
+- if a CUPED estimate cannot be built, CUPED columns are `NaN` and a warning is emitted
 
 [All AB functions](index.md)

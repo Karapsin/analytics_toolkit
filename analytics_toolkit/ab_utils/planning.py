@@ -1,21 +1,27 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 import math
 from numbers import Integral, Real
-from collections.abc import Sequence
 from typing import Any
+import warnings
 
 import numpy as np
 import pandas as pd
 
 from .constants import DEFAULT_ALPHA, DEFAULT_POWER
+from .cuped import _build_metric_values_by_user
 from .outliers import (
     _apply_outliers_to_agg_ratio_components,
     _apply_outliers_to_values,
     _build_outlier_context,
 )
-from .ratio import _build_ratio_valid_mask, _compute_agg_ratio_group_stats, _normalize_ratio_metrics
+from .ratio import (
+    _build_ratio_valid_mask,
+    _compute_agg_ratio_group_stats,
+    _normalize_ratio_metrics,
+)
 from .rows import _build_metric_definitions
 from .stats import (
     _compute_mde_from_standard_error,
@@ -63,6 +69,7 @@ def compute_mde(
     mde_power: float = DEFAULT_POWER,
     outliers_quantile: float = 0.999,
     outliers_policy: str = "truncate",
+    pre_exp_days: int | None = None,
 ) -> pd.DataFrame:
     """Estimate MDE scenarios from historical user-day metric variance."""
 
@@ -86,6 +93,7 @@ def compute_mde(
         max_name="max_days",
         step_name="days_step",
     )
+    resolved_pre_exp_days = _validate_optional_pre_exp_days(pre_exp_days)
     resolved_control_share = _validate_control_share(control_share)
     planned_splits = [
         _build_planned_split(
@@ -129,16 +137,18 @@ def compute_mde(
     windows = _select_mde_windows(
         df=prepared_df,
         days_values=resolved_days,
+        pre_exp_days=resolved_pre_exp_days,
         date_column=date_column,
         exp_length_policy=normalized_policy,
         random_state=random_state,
     )
     for metric_definition in metric_definitions:
         for days in resolved_days:
+            window = windows[days]
             window_df = _filter_mde_window(
                 df=prepared_df,
                 date_column=date_column,
-                start_date=windows[days],
+                start_date=window["outcome_start"],
                 days=days,
             )
             user_metric_df = _aggregate_mde_window_to_users(
@@ -157,6 +167,29 @@ def compute_mde(
                 metric_definition=metric_definition,
                 outlier_context=outlier_context,
             )
+            cuped_variance, cuped_reason = _compute_mde_cuped_variance(
+                df=prepared_df,
+                date_column=date_column,
+                user_id=user_id,
+                metric_definition=metric_definition,
+                outcome_user_metric_df=user_metric_df,
+                outcome_outlier_context=outlier_context,
+                pre_start_date=window["pre_start"],
+                pre_days=window["pre_days"],
+                unavailable_reason=window["cuped_unavailable_reason"],
+                outliers_quantile=float(outliers_quantile),
+                outliers_policy=normalized_outliers_policy,
+            )
+            if cuped_reason is not None:
+                warnings.warn(
+                    (
+                        "Could not compute CUPED MDE for metric "
+                        f"{str(metric_definition['metric_key'])!r} "
+                        f"(days={days}, pre_exp_days={window['pre_days']}): "
+                        f"{cuped_reason}."
+                    ),
+                    stacklevel=2,
+                )
             for split in planned_splits:
                 rows.append(
                     _build_mde_planning_row(
@@ -164,10 +197,12 @@ def compute_mde(
                         avg=metric_stats["avg"],
                         variance=metric_stats["var"],
                         days=days,
+                        pre_exp_days=window["pre_days"],
                         group_size=split["group_size"],
                         control_share=resolved_control_share,
                         control_n=split["control_n"],
                         test_n=split["test_n"],
+                        cuped_variance=cuped_variance,
                         mde_alpha=mde_alpha,
                         mde_power=mde_power,
                     )
@@ -180,10 +215,13 @@ def compute_mde(
             "avg",
             "var",
             "days",
+            "pre_exp_days",
             "group_size",
             "control_share",
             "mde_abs",
             "mde_relative",
+            "mde_abs_cuped",
+            "mde_relative_cuped",
         ],
     )
 
@@ -194,10 +232,12 @@ def _build_mde_planning_row(
     avg: float,
     variance: float,
     days: int,
+    pre_exp_days: int,
     group_size: int,
     control_share: float,
     control_n: int,
     test_n: int,
+    cuped_variance: float,
     mde_alpha: float,
     mde_power: float,
 ) -> dict[str, object]:
@@ -209,15 +249,28 @@ def _build_mde_planning_row(
         alpha=mde_alpha,
         power=mde_power,
     )
+    cuped_standard_error = math.nan
+    if not math.isnan(cuped_variance):
+        cuped_standard_error = math.sqrt(
+            (cuped_variance / control_n) + (cuped_variance / test_n)
+        )
+    mde_abs_cuped = _compute_mde_from_standard_error(
+        standard_error=cuped_standard_error,
+        alpha=mde_alpha,
+        power=mde_power,
+    )
     return {
         "metric_name": metric_name,
         "avg": avg,
         "var": variance,
         "days": days,
+        "pre_exp_days": pre_exp_days,
         "group_size": group_size,
         "control_share": control_share,
         "mde_abs": mde_abs,
         "mde_relative": _safe_relative(mde_abs, avg),
+        "mde_abs_cuped": mde_abs_cuped,
+        "mde_relative_cuped": _safe_relative(mde_abs_cuped, avg),
     }
 
 
@@ -275,6 +328,87 @@ def _compute_mde_metric_stats(
         "avg": stats["ratio"],
         "var": _compute_agg_ratio_unit_variance(group_frame, stats["ratio"]),
     }
+
+
+def _compute_mde_cuped_variance(
+    *,
+    df: pd.DataFrame,
+    date_column: str,
+    user_id: str,
+    metric_definition: dict[str, object],
+    outcome_user_metric_df: pd.DataFrame,
+    outcome_outlier_context: dict[str, object] | None,
+    pre_start_date: pd.Timestamp | None,
+    pre_days: int,
+    unavailable_reason: str | None,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> tuple[float, str | None]:
+    if unavailable_reason is not None:
+        return math.nan, unavailable_reason
+    if pre_start_date is None:
+        return math.nan, "pre-experiment window is unavailable"
+
+    pre_window_df = _filter_mde_window(
+        df=df,
+        date_column=date_column,
+        start_date=pre_start_date,
+        days=pre_days,
+    )
+    pre_user_metric_df = _aggregate_mde_window_to_users(
+        df=pre_window_df,
+        metric_definition=metric_definition,
+        user_id=user_id,
+    )
+    pre_outlier_context = _build_outlier_context(
+        df=pre_user_metric_df,
+        metric_definition=metric_definition,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+        allow_missing=True,
+    )
+    exp_values, exp_error = _build_metric_values_by_user(
+        df=outcome_user_metric_df,
+        user_id_column=user_id,
+        metric_definition=metric_definition,
+        value_column="metric_exp",
+        outlier_context=outcome_outlier_context,
+    )
+    if exp_error is not None:
+        return math.nan, f"experiment metric values are unavailable: {exp_error}"
+
+    pre_values, pre_error = _build_metric_values_by_user(
+        df=pre_user_metric_df,
+        user_id_column=user_id,
+        metric_definition=metric_definition,
+        value_column="metric_pre",
+        outlier_context=pre_outlier_context,
+    )
+    if pre_error is not None:
+        return math.nan, f"pre-experiment metric values are unavailable: {pre_error}"
+
+    cuped_frame = exp_values.merge(pre_values, on=user_id, how="inner")
+    cuped_frame = cuped_frame.dropna(subset=["metric_exp", "metric_pre"]).reset_index(
+        drop=True
+    )
+    if cuped_frame.shape[0] < 2:
+        return (
+            math.nan,
+            "not enough overlapping non-missing experiment/pre-experiment observations",
+        )
+
+    metric_exp = cuped_frame["metric_exp"].astype(float)
+    metric_pre = cuped_frame["metric_pre"].astype(float)
+    pre_variance = float(metric_pre.var(ddof=1))
+    if math.isnan(pre_variance) or pre_variance <= 0:
+        return math.nan, "pre-experiment covariate variance is not positive"
+
+    theta = float(metric_exp.cov(metric_pre) / pre_variance)
+    adjusted = metric_exp - theta * (metric_pre - float(metric_pre.mean()))
+    adjusted_variance = _compute_sample_variance(pd.Series(adjusted))
+    if math.isnan(adjusted_variance):
+        return math.nan, "not enough adjusted observations to estimate CUPED variance"
+    return adjusted_variance, None
 
 
 def _compute_agg_ratio_unit_variance(
@@ -385,6 +519,12 @@ def _validate_positive_int(value: object, name: str) -> int:
     return normalized
 
 
+def _validate_optional_pre_exp_days(pre_exp_days: int | None) -> int | None:
+    if pre_exp_days is None:
+        return None
+    return _validate_positive_int(pre_exp_days, "pre_exp_days")
+
+
 def _validate_control_share(control_share: float) -> float:
     if isinstance(control_share, bool) or not isinstance(control_share, Real):
         raise TypeError("control_share must be a finite number between 0 and 1.")
@@ -449,29 +589,57 @@ def _select_mde_windows(
     *,
     df: pd.DataFrame,
     days_values: Sequence[int],
+    pre_exp_days: int | None,
     date_column: str,
     exp_length_policy: str,
     random_state: int | None,
-) -> dict[int, pd.Timestamp]:
+) -> dict[int, dict[str, Any]]:
     min_date = pd.Timestamp(df[date_column].min())
     max_date = pd.Timestamp(df[date_column].max())
     total_days = int((max_date - min_date).days) + 1
     rng = np.random.default_rng(random_state) if exp_length_policy == "random" else None
-    windows: dict[int, pd.Timestamp] = {}
+    windows: dict[int, dict[str, Any]] = {}
     for days in days_values:
-        possible_starts = total_days - days + 1
-        if possible_starts < 1:
+        resolved_pre_days = int(days if pre_exp_days is None else pre_exp_days)
+        possible_outcome_starts = total_days - days + 1
+        if possible_outcome_starts < 1:
             raise ValueError(
                 f"exp_days value {days} exceeds the available historical calendar span "
                 f"of {total_days} day(s)."
             )
-        if exp_length_policy == "start":
-            offset = 0
-        elif exp_length_policy == "end":
-            offset = possible_starts - 1
+        possible_pair_starts = total_days - resolved_pre_days - days + 1
+        cuped_unavailable_reason = None
+        pre_start = None
+        if possible_pair_starts >= 1:
+            if exp_length_policy == "start":
+                pre_offset = 0
+            elif exp_length_policy == "end":
+                pre_offset = possible_pair_starts - 1
+            else:
+                pre_offset = (
+                    int(rng.integers(0, possible_pair_starts)) if rng is not None else 0
+                )
+            outcome_offset = pre_offset + resolved_pre_days
+            pre_start = min_date + pd.Timedelta(days=pre_offset)
         else:
-            offset = int(rng.integers(0, possible_starts)) if rng is not None else 0
-        windows[int(days)] = min_date + pd.Timedelta(days=offset)
+            cuped_unavailable_reason = (
+                "not enough historical calendar days for the requested "
+                "pre-experiment and experiment windows"
+            )
+            if exp_length_policy == "start":
+                outcome_offset = 0
+            elif exp_length_policy == "end":
+                outcome_offset = possible_outcome_starts - 1
+            else:
+                outcome_offset = (
+                    int(rng.integers(0, possible_outcome_starts)) if rng is not None else 0
+                )
+        windows[int(days)] = {
+            "outcome_start": min_date + pd.Timedelta(days=outcome_offset),
+            "pre_start": pre_start,
+            "pre_days": resolved_pre_days,
+            "cuped_unavailable_reason": cuped_unavailable_reason,
+        }
     return windows
 
 

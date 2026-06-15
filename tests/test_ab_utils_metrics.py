@@ -296,6 +296,15 @@ def _assert_cuped_row_matches_frame(
     )
 
 
+def _manual_cuped_adjusted_variance(
+    metric_exp: pd.Series,
+    metric_pre: pd.Series,
+) -> float:
+    theta = float(metric_exp.cov(metric_pre) / metric_pre.var(ddof=1))
+    adjusted = metric_exp - theta * (metric_pre - float(metric_pre.mean()))
+    return float(adjusted.var(ddof=1))
+
+
 def _manual_agg_ratio_linearized_values(
     numerator: pd.Series,
     denominator: pd.Series,
@@ -617,18 +626,37 @@ def test_compute_test_metrics_uses_raw_relative_fields() -> None:
 def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 1, 2, 2, 3, 3],
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
             "dt": pd.to_datetime(
                 [
                     "2024-01-01",
                     "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
                     "2024-01-01",
                     "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
                     "2024-01-01",
                     "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
                 ]
             ),
-            "orders": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "orders": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                3.0,
+                4.0,
+                6.0,
+                8.0,
+                5.0,
+                6.0,
+                10.0,
+                13.0,
+            ],
         }
     )
 
@@ -643,11 +671,24 @@ def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
     )
 
     row = _single_metric_row(result, "orders")
-    user_values = pd.Series([3.0, 7.0, 11.0])
+    pre_values = pd.Series([3.0, 7.0, 11.0])
+    user_values = pd.Series([7.0, 14.0, 23.0])
     expected_variance = float(user_values.var(ddof=1))
     expected_se = math.sqrt((expected_variance / 6) + (expected_variance / 4))
     expected_mde = _compute_mde_from_standard_error(
         standard_error=expected_se,
+        alpha=DEFAULT_ALPHA,
+        power=DEFAULT_POWER,
+    )
+    expected_cuped_variance = _manual_cuped_adjusted_variance(
+        metric_exp=user_values,
+        metric_pre=pre_values,
+    )
+    expected_cuped_se = math.sqrt(
+        (expected_cuped_variance / 6) + (expected_cuped_variance / 4)
+    )
+    expected_cuped_mde = _compute_mde_from_standard_error(
+        standard_error=expected_cuped_se,
         alpha=DEFAULT_ALPHA,
         power=DEFAULT_POWER,
     )
@@ -656,26 +697,36 @@ def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
         "avg",
         "var",
         "days",
+        "pre_exp_days",
         "group_size",
         "control_share",
         "mde_abs",
         "mde_relative",
+        "mde_abs_cuped",
+        "mde_relative_cuped",
     ]
     assert row["avg"] == pytest.approx(float(user_values.mean()))
     assert row["var"] == pytest.approx(expected_variance)
     assert row["days"] == 2
+    assert row["pre_exp_days"] == 2
     assert row["group_size"] == 10
     assert row["control_share"] == pytest.approx(0.6)
     assert row["mde_abs"] == pytest.approx(expected_mde)
     assert row["mde_relative"] == pytest.approx(expected_mde / float(user_values.mean()))
+    assert row["mde_abs_cuped"] == pytest.approx(expected_cuped_mde)
+    assert row["mde_relative_cuped"] == pytest.approx(
+        expected_cuped_mde / float(user_values.mean())
+    )
 
 
 def test_compute_mde_accepts_explicit_list_grids_sorted_unique() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 1, 2, 2],
-            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 2),
-            "orders": [1.0, 2.0, 3.0, 4.0],
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 2
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 6.0],
         }
     )
 
@@ -694,9 +745,32 @@ def test_compute_mde_accepts_explicit_list_grids_sorted_unique() -> None:
 def test_compute_mde_accepts_min_max_step_grids() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 1, 1, 2, 2, 2],
-            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"] * 2),
-            "orders": [1.0, 2.0, 3.0, 2.0, 3.0, 4.0],
+            "user_id": [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2],
+            "dt": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-05",
+                    "2024-01-06",
+                ]
+                * 2
+            ),
+            "orders": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                7.0,
+            ],
         }
     )
 
@@ -719,10 +793,25 @@ def test_compute_mde_accepts_min_max_step_grids() -> None:
 def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 1, 2, 2, 3, 3],
-            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 3),
-            "clicks": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            "impressions": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "clicks": [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                2.0,
+                2.0,
+                5.0,
+                5.0,
+                3.0,
+                3.0,
+            ],
+            "impressions": [10.0] * 12,
         }
     )
 
@@ -747,15 +836,45 @@ def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
     ratio_values = pd.Series([0.1, 0.2, 0.3])
     assert row["avg"] == pytest.approx(float(ratio_values.mean()))
     assert row["var"] == pytest.approx(float(ratio_values.var(ddof=1)))
+    assert not math.isnan(float(row["mde_abs_cuped"]))
+    assert not math.isnan(float(row["mde_relative_cuped"]))
 
 
 def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 1, 2, 2, 3, 3],
-            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 3),
-            "clicks": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            "impressions": [5.0, 5.0, 5.0, 5.0, 15.0, 15.0],
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "clicks": [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                2.0,
+                2.0,
+                5.0,
+                5.0,
+                3.0,
+                3.0,
+            ],
+            "impressions": [
+                10.0,
+                10.0,
+                5.0,
+                5.0,
+                10.0,
+                10.0,
+                5.0,
+                5.0,
+                10.0,
+                10.0,
+                15.0,
+                15.0,
+            ],
         }
     )
 
@@ -784,12 +903,14 @@ def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
     expected_variance = float(centered.var(ddof=1)) / float(denominator.mean()) ** 2
     assert row["avg"] == pytest.approx(ratio)
     assert row["var"] == pytest.approx(expected_variance)
+    assert not math.isnan(float(row["mde_abs_cuped"]))
+    assert not math.isnan(float(row["mde_relative_cuped"]))
 
 
 def test_compute_mde_selects_start_and_end_windows() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 2] * 4,
+            "user_id": [1, 2] * 6,
             "dt": pd.to_datetime(
                 [
                     "2024-01-01",
@@ -800,9 +921,26 @@ def test_compute_mde_selects_start_and_end_windows() -> None:
                     "2024-01-03",
                     "2024-01-04",
                     "2024-01-04",
+                    "2024-01-05",
+                    "2024-01-05",
+                    "2024-01-06",
+                    "2024-01-06",
                 ]
             ),
-            "orders": [1.0, 3.0, 1.0, 3.0, 10.0, 20.0, 10.0, 20.0],
+            "orders": [
+                1.0,
+                3.0,
+                1.0,
+                3.0,
+                10.0,
+                20.0,
+                10.0,
+                20.0,
+                100.0,
+                300.0,
+                100.0,
+                300.0,
+            ],
         }
     )
 
@@ -825,14 +963,14 @@ def test_compute_mde_selects_start_and_end_windows() -> None:
         outliers_quantile=1,
     )
 
-    assert _single_metric_row(start_result, "orders")["avg"] == pytest.approx(4.0)
-    assert _single_metric_row(end_result, "orders")["avg"] == pytest.approx(30.0)
+    assert _single_metric_row(start_result, "orders")["avg"] == pytest.approx(30.0)
+    assert _single_metric_row(end_result, "orders")["avg"] == pytest.approx(400.0)
 
 
 def test_compute_mde_selects_seeded_random_window() -> None:
     df = pd.DataFrame(
         {
-            "user_id": [1, 2] * 5,
+            "user_id": [1, 2] * 6,
             "dt": pd.to_datetime(
                 [
                     "2024-01-01",
@@ -845,9 +983,24 @@ def test_compute_mde_selects_seeded_random_window() -> None:
                     "2024-01-04",
                     "2024-01-05",
                     "2024-01-05",
+                    "2024-01-06",
+                    "2024-01-06",
                 ]
             ),
-            "orders": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            "orders": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                7.0,
+                8.0,
+                9.0,
+                10.0,
+                11.0,
+                12.0,
+            ],
         }
     )
 
@@ -862,8 +1015,8 @@ def test_compute_mde_selects_seeded_random_window() -> None:
         outliers_quantile=1,
     )
 
-    expected_offset = int(np.random.default_rng(42).integers(0, 4))
-    selected_dates = pd.date_range("2024-01-01", periods=5)[
+    expected_offset = int(np.random.default_rng(42).integers(0, 3)) + 2
+    selected_dates = pd.date_range("2024-01-01", periods=6)[
         expected_offset : expected_offset + 2
     ]
     expected_values = (
@@ -876,9 +1029,64 @@ def test_compute_mde_selects_seeded_random_window() -> None:
     )
 
 
+def test_compute_mde_uses_explicit_pre_exp_days_for_cuped_window() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"] * 3),
+            "orders": [1.0, 10.0, 10.0, 3.0, 20.0, 30.0, 6.0, 40.0, 60.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[12],
+        exp_days=[2],
+        pre_exp_days=1,
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "orders")
+    expected_values = pd.Series([20.0, 50.0, 100.0])
+    assert row["pre_exp_days"] == 1
+    assert row["avg"] == pytest.approx(float(expected_values.mean()))
+    assert not math.isnan(float(row["mde_abs_cuped"]))
+
+
+def test_compute_mde_warns_and_returns_nan_when_cuped_window_is_unavailable() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 2, 2],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02"] * 2),
+            "orders": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="Could not compute CUPED MDE"):
+        result = compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[2],
+            outliers_quantile=1,
+        )
+
+    row = _single_metric_row(result, "orders")
+    assert row["avg"] == pytest.approx(5.0)
+    assert math.isnan(float(row["mde_abs_cuped"]))
+    assert math.isnan(float(row["mde_relative_cuped"]))
+
+
 def test_compute_mde_defaults_user_id_argument() -> None:
     df = pd.DataFrame(
-        {"user_id": [1, 2], "dt": ["2024-01-01", "2024-01-01"], "orders": [10.0, 12.0]}
+        {
+            "user_id": [1, 2, 1, 2],
+            "dt": ["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"],
+            "orders": [10.0, 12.0, 14.0, 18.0],
+        }
     )
 
     result = compute_mde(
@@ -890,8 +1098,8 @@ def test_compute_mde_defaults_user_id_argument() -> None:
     )
 
     row = _single_metric_row(result, "orders")
-    assert row["avg"] == pytest.approx(11.0)
-    assert row["var"] == pytest.approx(2.0)
+    assert row["avg"] == pytest.approx(16.0)
+    assert row["var"] == pytest.approx(8.0)
 
 
 def test_compute_mde_rejects_invalid_grid_inputs() -> None:
@@ -921,6 +1129,10 @@ def test_compute_mde_rejects_invalid_grid_inputs() -> None:
         compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], control_share=1.0)
     with pytest.raises(ValueError, match="at least one control and one test user"):
         compute_mde(df, user_id="user_id", group_sizes=[1], exp_days=[1])
+    with pytest.raises(ValueError, match="pre_exp_days"):
+        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=0)
+    with pytest.raises(TypeError, match="pre_exp_days"):
+        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=True)
 
 
 def test_compute_mde_rejects_invalid_user_day_grain() -> None:
