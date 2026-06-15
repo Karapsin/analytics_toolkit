@@ -9,8 +9,9 @@ import pandas as pd
 import pytest
 from scipy.stats import ttest_ind
 
+import analytics_toolkit.ab_utils as ab_utils
+import analytics_toolkit.ab_utils.metrics as ab_metrics
 from analytics_toolkit.ab_utils import (
-    MdePlanningOptions,
     RatioMetricSpec,
     compute_mde_only,
     compute_test_metrics,
@@ -645,7 +646,7 @@ def test_compute_mde_only_estimates_mean_metric_from_historical_variance() -> No
     assert row["mde_relative"] == pytest.approx(expected_mde / float(df["orders"].mean()))
 
 
-def test_compute_mde_only_accepts_ratio_spec_dataclass_and_options() -> None:
+def test_compute_mde_only_accepts_ratio_spec_dataclass() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 2, 3, 4],
@@ -666,7 +667,8 @@ def test_compute_mde_only_accepts_ratio_spec_dataclass_and_options() -> None:
                 level="user",
             )
         ],
-        options=MdePlanningOptions(n0=50, n1=60),
+        n0=50,
+        n1=60,
     )
 
     row = _single_metric_row(result, "ctr_user")
@@ -678,6 +680,66 @@ def test_compute_mde_only_accepts_ratio_spec_dataclass_and_options() -> None:
     assert row["metric_baseline"] == pytest.approx(float(ratio_values.mean()))
     assert row["variance"] == pytest.approx(expected_variance)
     assert row["s.e."] == pytest.approx(expected_se)
+
+
+def test_compute_mde_only_requires_user_id_argument() -> None:
+    df = pd.DataFrame({"user_id": [1, 2], "orders": [10.0, 12.0]})
+
+    with pytest.raises(TypeError, match="user_id"):
+        compute_mde_only(df, n0=50, n1=60)
+
+
+def test_compute_mde_only_rejects_missing_user_id_column() -> None:
+    df = pd.DataFrame({"orders": [10.0, 12.0]})
+
+    with pytest.raises(ValueError, match="Column 'user_id' was not found"):
+        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
+
+
+def test_compute_mde_only_rejects_missing_user_ids() -> None:
+    df = pd.DataFrame({"user_id": [1, None], "orders": [10.0, 12.0]})
+
+    with pytest.raises(ValueError, match="must not contain missing values"):
+        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
+
+
+def test_compute_mde_only_rejects_duplicate_user_ids() -> None:
+    df = pd.DataFrame({"user_id": [1, 1], "orders": [10.0, 12.0]})
+
+    with pytest.raises(ValueError, match="must contain unique user ids"):
+        compute_mde_only(df, user_id="user_id", n0=50, n1=60)
+
+
+def test_compute_mde_only_rejects_ratio_name_conflicting_with_mean_metric() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2, 3],
+            "ctr": [0.1, 0.2, 0.3],
+            "clicks": [1.0, 2.0, 3.0],
+            "impressions": [10.0, 10.0, 10.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="conflicts with a mean metric column"):
+        compute_mde_only(
+            df,
+            user_id="user_id",
+            n0=50,
+            n1=60,
+            ratio_metrics=[
+                RatioMetricSpec(
+                    name="ctr",
+                    numerator="clicks",
+                    denominator="impressions",
+                    level="user",
+                )
+            ],
+        )
+
+
+def test_mde_planning_options_is_no_longer_exported() -> None:
+    assert not hasattr(ab_utils, "MdePlanningOptions")
+    assert not hasattr(ab_metrics, "MdePlanningOptions")
 
 
 def test_compute_test_metrics_accepts_ratio_spec_dataclass() -> None:

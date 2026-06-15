@@ -8,13 +8,15 @@ one-row-per-user dataframe:
 
 ```python
 from analytics_toolkit.ab_utils import (
-    MdePlanningOptions,
     RatioMetricSpec,
     compute_mde_only,
 )
 
 planning = compute_mde_only(
     historical_df,
+    user_id="user_id",
+    n0=50_000,
+    n1=50_000,
     metric_columns=["orders", "gmv"],
     ratio_metrics=[
         RatioMetricSpec(
@@ -24,7 +26,6 @@ planning = compute_mde_only(
             level="user",
         )
     ],
-    options=MdePlanningOptions(n0=50_000, n1=50_000),
 )
 ```
 

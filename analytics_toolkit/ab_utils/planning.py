@@ -40,27 +40,14 @@ class RatioMetricSpec:
         return asdict(self)
 
 
-@dataclass(frozen=True)
-class MdePlanningOptions:
-    """Option bundle for historical-variance MDE planning."""
-
-    n0: int
-    n1: int
-    mde_alpha: float = DEFAULT_ALPHA
-    mde_power: float = DEFAULT_POWER
-    outliers_quantile: float = 0.999
-    outliers_policy: str = "truncate"
-
-
 def compute_mde_only(
     df: pd.DataFrame,
     *,
-    n0: int | None = None,
-    n1: int | None = None,
+    user_id: str,
+    n0: int,
+    n1: int,
     metric_columns: Sequence[str] | None = None,
     ratio_metrics: Sequence[dict[str, object] | RatioMetricSpec] | None = None,
-    user_id: str | None = None,
-    options: MdePlanningOptions | None = None,
     mde_alpha: float = DEFAULT_ALPHA,
     mde_power: float = DEFAULT_POWER,
     outliers_quantile: float = 0.999,
@@ -68,25 +55,16 @@ def compute_mde_only(
 ) -> pd.DataFrame:
     """Estimate pre-test MDE from historical metric variance and planned sizes."""
 
-    if options is not None:
-        if any(value is not None for value in (n0, n1)):
-            raise ValueError("Pass either options or n0/n1, not both.")
-        n0 = options.n0
-        n1 = options.n1
-        mde_alpha = options.mde_alpha
-        mde_power = options.mde_power
-        outliers_quantile = options.outliers_quantile
-        outliers_policy = options.outliers_policy
-
     planned_n0 = _validate_planned_group_size(n0, "n0")
     planned_n1 = _validate_planned_group_size(n1, "n1")
+    _validate_mde_user_id(df=df, user_id=user_id)
     _validate_mde_parameters(mde_alpha=mde_alpha, mde_power=mde_power)
     _validate_outlier_parameters(
         outliers_quantile=outliers_quantile,
         outliers_policy=outliers_policy,
     )
 
-    reserved_columns = {user_id} if user_id is not None else set()
+    reserved_columns = {user_id}
     ratio_specs = _normalize_ratio_metrics(
         df,
         _coerce_ratio_metric_specs(ratio_metrics),
@@ -98,6 +76,7 @@ def compute_mde_only(
         ratio_specs=ratio_specs,
         user_id=user_id,
     )
+    _validate_metric_name_conflicts(mean_metric_columns, ratio_specs)
     if not mean_metric_columns and not ratio_specs:
         raise ValueError("At least one metric column or ratio metric is required.")
 
@@ -246,12 +225,12 @@ def _normalize_metric_columns(
     df: pd.DataFrame,
     metric_columns: Sequence[str] | None,
     ratio_specs: list[dict[str, str]],
-    user_id: str | None,
+    user_id: str,
 ) -> list[str]:
     if metric_columns is not None:
         columns = [str(column) for column in metric_columns]
     else:
-        excluded = {user_id} if user_id is not None else set()
+        excluded = {user_id}
         for ratio_spec in ratio_specs:
             excluded.add(ratio_spec["numerator"])
             excluded.add(ratio_spec["denominator"])
@@ -276,6 +255,28 @@ def _coerce_ratio_metric_specs(
         raw_spec.as_dict() if isinstance(raw_spec, RatioMetricSpec) else dict(raw_spec)
         for raw_spec in ratio_metrics
     ]
+
+
+def _validate_mde_user_id(*, df: pd.DataFrame, user_id: str) -> None:
+    if user_id not in df.columns:
+        raise ValueError(f"Column '{user_id}' was not found.")
+    if df[user_id].isna().any():
+        raise ValueError(f"Column '{user_id}' must not contain missing values.")
+    if df[user_id].duplicated().any():
+        raise ValueError(f"Column '{user_id}' must contain unique user ids.")
+
+
+def _validate_metric_name_conflicts(
+    mean_metric_columns: list[str],
+    ratio_specs: list[dict[str, str]],
+) -> None:
+    mean_metric_names = set(mean_metric_columns)
+    for ratio_spec in ratio_specs:
+        ratio_name = ratio_spec["name"]
+        if ratio_name in mean_metric_names:
+            raise ValueError(
+                f"Ratio metric name '{ratio_name}' conflicts with a mean metric column."
+            )
 
 
 def _validate_planned_group_size(value: int | None, name: str) -> int:

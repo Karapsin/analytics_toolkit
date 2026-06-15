@@ -4,6 +4,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.7 - 2026-06-15
+
+- Changed `compute_mde_only` to require direct `user_id`, `n0`, and `n1`
+  inputs instead of the `MdePlanningOptions` bundle.
+- Added `compute_mde_only` validation for missing, null, and duplicate user ids
+  and conflicting mean and ratio metric names.
+- Fixed the `compute_mde_only` documentation examples to show the actual output
+  column names.
+
 ## 1.3.9.6 - 2026-06-15
 
 - Made upsert finalization use explicit stage-to-target column lists for

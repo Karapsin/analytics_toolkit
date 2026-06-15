@@ -1,7 +1,6 @@
 """Utilities for AB-test related workflows."""
 
 from .metrics import (
-    MdePlanningOptions,
     RatioMetricSpec,
     compute_mde_only,
     compute_test_metrics,
@@ -12,7 +11,6 @@ from .metrics import (
 from .split import do_split
 
 __all__ = [
-    "MdePlanningOptions",
     "RatioMetricSpec",
     "compute_mde_only",
     "compute_test_metrics",
