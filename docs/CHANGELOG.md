@@ -4,6 +4,16 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.6 - 2026-06-15
+
+- Made upsert finalization use explicit stage-to-target column lists for
+  Greenplum and ClickHouse instead of positional `SELECT *`.
+- Changed `sql.load_df(..., write_mode="upsert")` to use existing target column
+  types when the target table already exists.
+- Improved `sql.transfer(..., write_mode="upsert", dry_run=True)` so dry-run
+  plans infer simple source query columns or show an explicit source-column
+  placeholder when inference is not possible.
+
 ## 1.3.9.5 - 2026-06-15
 
 - Added `write_mode="upsert"` for `sql.load_df()` and `sql.transfer()` with

@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pandas as pd
+from sqlglot import exp, parse_one
 
 from ....core.capabilities import validate_write_mode
+from ....core.identifiers import sqlglot_dialect
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
@@ -43,7 +45,10 @@ from ...load.load_sql_table import AmbiguousTableLoadError
 from ...load.stage import build_stage_table_name
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
-from ...table.write_modes import build_upsert_stage_sqls
+from ...table.write_modes import (
+    build_upsert_stage_placeholder_sqls,
+    build_upsert_stage_sqls,
+)
 from .attempt import run_transfer_attempt
 from .options import (
     resolve_adaptive_batch_bounds,
@@ -579,12 +584,8 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             ch_only_shard=options.ch_only_shard,
         )
     if options.write_mode == "upsert":
-        columns = (
-            list(options.table_schema)
-            if options.table_schema is not None
-            else list(options.key_columns or [])
-        )
-        plan.extend(
+        columns = _resolve_dry_run_upsert_columns(options)
+        upsert_sqls = (
             build_upsert_stage_sqls(
                 options.to_db_backend,
                 options.target_table,
@@ -595,7 +596,20 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 ch_cluster=options.ch_cluster,
                 ch_only_shard=options.ch_only_shard,
                 query_label=options.query_label,
-            ),
+            )
+            if columns is not None
+            else build_upsert_stage_placeholder_sqls(
+                options.to_db_backend,
+                options.target_table,
+                stage_table,
+                key_columns=options.key_columns or [],
+                ch_cluster=options.ch_cluster,
+                ch_only_shard=options.ch_only_shard,
+                query_label=options.query_label,
+            )
+        )
+        plan.extend(
+            upsert_sqls,
             alias=options.to_db_key,
             backend=options.to_db_backend,
             phase="upsert_target",
@@ -683,6 +697,42 @@ def _dry_run_stage_table_name(options: TransferOptions) -> str:
         )
     except Exception:
         return f"{options.target_table}__stage__dryrun"
+
+
+def _resolve_dry_run_upsert_columns(options: TransferOptions) -> list[str] | None:
+    if options.table_schema is not None:
+        return list(options.table_schema)
+    return _infer_source_select_columns(
+        options.source_sql,
+        source_backend=options.from_db_backend,
+    )
+
+
+def _infer_source_select_columns(
+    source_sql: str,
+    *,
+    source_backend: str,
+) -> list[str] | None:
+    try:
+        expression = parse_one(
+            source_sql.strip().rstrip(";"),
+            read=sqlglot_dialect(source_backend),
+        )
+    except Exception:
+        return None
+
+    if not isinstance(expression, exp.Select):
+        return None
+
+    columns: list[str] = []
+    for projection in expression.expressions:
+        if isinstance(projection, exp.Star) or projection.find(exp.Star) is not None:
+            return None
+        column_name = projection.alias_or_name
+        if not column_name or column_name == "*":
+            return None
+        columns.append(str(column_name))
+    return columns or None
 
 
 def _best_effort_transfer_target_count(options: TransferOptions) -> int | None:

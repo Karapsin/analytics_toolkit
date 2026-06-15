@@ -55,7 +55,7 @@ from .stage import cleanup_stage_table_with_retry, create_stage_table
 from ..table._basic_ops import (
     count_table_rows,
     insert_from_table,
-    get_trino_table_column_types,
+    get_table_column_types,
     table_exists,
 )
 from ..table.maintenance import (
@@ -555,8 +555,11 @@ def _load_target_column_metadata(
     state: LoadState,
     connection: Any,
 ) -> None:
-    if options.connection_backend == "trino":
-        state.target_column_types = get_trino_table_column_types(
+    if options.connection_backend == "trino" or (
+        options.write_mode == "upsert" and state.original_target_exists
+    ):
+        state.target_column_types = get_table_column_types(
+            options.connection_backend,
             connection,
             options.destination_table,
             connection_key=options.connection_key,

@@ -746,7 +746,12 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
         'target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL' in sql
         for sql in gp_plan.sqls
     )
-    assert any("INSERT INTO sandbox.scores SELECT * FROM" in sql for sql in gp_plan.sqls)
+    assert any(
+        'INSERT INTO sandbox.scores ("id", "sub_id", "score") '
+        'SELECT "id", "sub_id", "score" FROM'
+        in sql
+        for sql in gp_plan.sqls
+    )
 
     trino_plan = load_df_module.load_df(
         "trino",
@@ -807,6 +812,54 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
     )
     assert any("tuple(isNull(`id`), ifNull(toString(`id`), ''))" in sql for sql in ch_plan.sqls)
     assert any("INSERT INTO analytics.scores" in sql for sql in ch_plan.sqls)
+
+
+def test_transfer_upsert_dry_run_infers_source_columns_without_table_schema() -> None:
+    trino_plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id, score from source_table",
+        to_table="sandbox.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        dry_run=True,
+    )
+
+    merge_sql = next(sql for sql in trino_plan.sqls if sql.startswith("MERGE INTO"))
+    assert '"score" = stage_src."score"' in merge_sql
+    assert 'WHEN NOT MATCHED THEN INSERT ("id", "score")' in merge_sql
+
+    gp_plan = transfer_api_module.transfer_table(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select id, score from source_table",
+        to_table="sandbox.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        dry_run=True,
+    )
+
+    assert any(
+        'INSERT INTO sandbox.scores ("id", "score") '
+        'SELECT "id", "score" FROM'
+        in sql
+        for sql in gp_plan.sqls
+    )
+
+
+def test_transfer_upsert_dry_run_uses_placeholder_for_unknown_source_columns() -> None:
+    plan = transfer_api_module.transfer_table(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select * from source_table",
+        to_table="sandbox.scores",
+        write_mode="upsert",
+        key_columns=["id"],
+        dry_run=True,
+    )
+
+    assert any("<source query columns>" in sql for sql in plan.sqls)
+    assert not any('INSERT INTO sandbox.scores ("id")' in sql for sql in plan.sqls)
 
 
 def test_load_df_passes_table_schema_to_create_sql_table(monkeypatch) -> None:

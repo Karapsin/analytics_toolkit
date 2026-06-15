@@ -212,6 +212,7 @@ def build_upsert_stage_sqls(
                 backend,
                 target_table,
                 stage_table,
+                columns=columns,
                 column_types=column_types,
                 query_label=query_label,
             ),
@@ -237,7 +238,79 @@ def build_upsert_stage_sqls(
                 backend,
                 target_table,
                 stage_table,
+                columns=columns,
                 column_types=column_types,
+                query_label=query_label,
+            ),
+        ]
+
+    raise ValueError(f"Unsupported connection type for upsert: {backend}")
+
+
+def build_upsert_stage_placeholder_sqls(
+    connection_type: str,
+    target_table: str,
+    stage_table: str,
+    *,
+    key_columns: Sequence[str],
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+) -> list[str]:
+    backend = resolve_connection_backend(connection_type)
+    if not key_columns:
+        raise ValueError("key_columns are required for write_mode='upsert'.")
+
+    if backend == "trino":
+        return [
+            apply_query_label(
+                _build_trino_merge_placeholder_sql(
+                    target_table,
+                    stage_table,
+                    key_columns=key_columns,
+                ),
+                query_label,
+            )
+        ]
+
+    if backend == "gp":
+        return [
+            apply_query_label(
+                _build_gp_delete_matching_stage_sql(
+                    target_table,
+                    stage_table,
+                    key_columns,
+                ),
+                query_label,
+            ),
+            _build_insert_from_stage_placeholder_sql(
+                backend,
+                target_table,
+                stage_table,
+                query_label=query_label,
+            ),
+        ]
+
+    if backend == "ch":
+        delete_table = (
+            target_table
+            if ch_only_shard
+            else ch_distributed_table_pair(target_table).shard_table
+        )
+        return [
+            apply_query_label(
+                _build_ch_delete_matching_stage_sql(
+                    delete_table,
+                    stage_table,
+                    key_columns,
+                    ch_cluster=None if ch_only_shard else ch_cluster,
+                ),
+                query_label,
+            ),
+            _build_insert_from_stage_placeholder_sql(
+                backend,
+                target_table,
+                stage_table,
                 query_label=query_label,
             ),
         ]
@@ -309,6 +382,28 @@ def _build_trino_merge_sql(
     )
 
 
+def _build_trino_merge_placeholder_sql(
+    target_table: str,
+    stage_table: str,
+    *,
+    key_columns: Sequence[str],
+) -> str:
+    adapter = get_backend_adapter("trino")
+    on_predicates = " AND ".join(
+        adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
+        for column_name in key_columns
+    )
+    return (
+        f"MERGE INTO {target_table} AS target_dst\n"
+        f"USING {stage_table} AS stage_src\n"
+        f"ON {on_predicates}\n"
+        "WHEN MATCHED THEN UPDATE SET\n"
+        "  <source query columns>\n"
+        "WHEN NOT MATCHED THEN INSERT (<source query columns>)\n"
+        "  VALUES (<source query columns>)"
+    )
+
+
 def _build_gp_delete_matching_stage_sql(
     target_table: str,
     stage_table: str,
@@ -362,17 +457,76 @@ def _build_insert_from_stage_sql(
     target_table: str,
     stage_table: str,
     *,
+    columns: Sequence[str],
     column_types: Mapping[str, str] | None,
     query_label: str | None,
 ) -> str:
+    typed_columns = _column_types_for_columns(column_types, columns)
     return apply_query_label(
-        get_backend_adapter(backend).build_insert_from_table_sql(
+        _build_explicit_insert_from_stage_sql(
+            backend,
             target_table,
             stage_table,
-            column_types,
+            columns=columns,
+            column_types=typed_columns,
         ),
         query_label,
     )
+
+
+def _build_explicit_insert_from_stage_sql(
+    backend: str,
+    target_table: str,
+    stage_table: str,
+    *,
+    columns: Sequence[str],
+    column_types: Mapping[str, str] | None,
+) -> str:
+    adapter = get_backend_adapter(backend)
+    if column_types:
+        return adapter.build_insert_from_table_sql(
+            target_table,
+            stage_table,
+            column_types,
+        )
+
+    target_columns = adapter.column_list_sql(columns)
+    selected_columns = ", ".join(adapter.quote_identifier(column) for column in columns)
+    return (
+        f"INSERT INTO {target_table} ({target_columns}) "
+        f"SELECT {selected_columns} FROM {stage_table}"
+    )
+
+
+def _build_insert_from_stage_placeholder_sql(
+    backend: str,
+    target_table: str,
+    stage_table: str,
+    *,
+    query_label: str | None,
+) -> str:
+    del backend
+    return apply_query_label(
+        f"INSERT INTO {target_table} (<source query columns>) "
+        f"SELECT <source query columns> FROM {stage_table}",
+        query_label,
+    )
+
+
+def _column_types_for_columns(
+    column_types: Mapping[str, str] | None,
+    columns: Sequence[str],
+) -> dict[str, str] | None:
+    if column_types is None:
+        return None
+
+    missing_columns = [column for column in columns if column not in column_types]
+    if missing_columns:
+        raise ValueError(
+            "Target table is missing staged column(s): "
+            + ", ".join(missing_columns)
+        )
+    return {column: column_types[column] for column in columns}
 
 
 def finalize_stage_table(

@@ -87,6 +87,9 @@ rows
   `MERGE`; connector support for `MERGE` is checked by Trino at runtime.
   Greenplum uses staged delete-and-insert. ClickHouse uses lightweight
   `DELETE` plus insert and does not require `ReplacingMergeTree`.
+- Upsert dry-run plans use `table_schema` when provided, infer simple source
+  query output columns when possible, and otherwise show an explicit
+  source-column placeholder without opening database connections.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 - `target_rows_per_second`, `target_batch_seconds`, and `target_batch_memory_mb`
   are mutually exclusive adaptation controls: set at most one per call.

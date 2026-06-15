@@ -67,6 +67,9 @@ rows
 - `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
 - `write_mode="upsert"` stages incoming rows, rejects duplicate staged keys,
   and then replaces matching target keys before inserting staged rows.
+- When an upsert target already exists, the existing target schema is used for
+  final insert column types; otherwise the target is created from `table_schema`
+  or inferred dataframe types.
 - Upsert requires `key_columns`. Trino uses native `MERGE`; connector support
   for `MERGE` is checked by Trino at runtime. Greenplum uses staged
   delete-and-insert. ClickHouse uses lightweight `DELETE` plus insert and does

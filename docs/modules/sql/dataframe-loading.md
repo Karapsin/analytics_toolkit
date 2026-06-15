@@ -32,7 +32,9 @@ more expensive to fix after the load finishes.
 
 For `write_mode="upsert"`, `key_columns` is required. Incoming rows are staged
 first and duplicate staged keys raise before finalization. If the target table
-does not exist, the load creates it and inserts the dataframe rows normally.
+already exists, its schema is used for final insert column types. If the target
+table does not exist, the load creates it from `table_schema` or inferred
+dataframe types and inserts the dataframe rows normally.
 
 ## Backend Notes
 

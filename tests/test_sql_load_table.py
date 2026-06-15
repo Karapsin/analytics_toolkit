@@ -557,6 +557,110 @@ def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
     assert cleanups == ["sandbox.target__stage__upsert"]
 
 
+def test_load_df_gp_upsert_existing_target_uses_target_types_and_df_columns(
+    monkeypatch,
+) -> None:
+    connection = FakeDbapiConnection()
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *args, **kwargs: {
+            "score": "INTEGER",
+            "id": "BIGINT",
+            "extra_col": "TEXT",
+        },
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "create_stage_table",
+        lambda **kwargs: "sandbox.target__stage__upsert",
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None)
+
+    result = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+        write_mode="upsert",
+        key_columns=["id"],
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert result == 2
+    assert any(
+        'INSERT INTO sandbox.target ("id", "score") '
+        'SELECT CAST("id" AS BIGINT) AS "id", '
+        'CAST("score" AS INTEGER) AS "score" '
+        "FROM sandbox.target__stage__upsert"
+        in sql
+        for sql in connection.executed
+    )
+
+
+def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_columns(
+    monkeypatch,
+) -> None:
+    client = FakeClickHouseClient()
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: client)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *args, **kwargs: {
+            "score": "Int64",
+            "id": "UInt64",
+            "extra_col": "String",
+        },
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "create_stage_table",
+        lambda **kwargs: "analytics.target__stage__upsert",
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None)
+
+    result = load_df_module.load_df(
+        "ch",
+        "analytics.target",
+        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+        write_mode="upsert",
+        key_columns=["id"],
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert result == 2
+    assert any(
+        "INSERT INTO analytics.target (`id`, `score`) "
+        "SELECT CAST(`id` AS UInt64) AS `id`, "
+        "CAST(`score` AS Int64) AS `score` "
+        "FROM analytics.target__stage__upsert"
+        in sql
+        for sql in client.commands
+    )
+
+
 def test_insert_rows_batch_gp_uses_row_tuples_and_normalizes_nulls(monkeypatch) -> None:
     connection = FakeDbapiConnection()
     captured: dict[str, object] = {}
