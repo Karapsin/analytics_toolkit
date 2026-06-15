@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.9 - 2026-06-15
+
+- Added a default `user_id="user_id"` argument to `compute_mde`.
+
 ## 1.3.9.8 - 2026-06-15
 
 - Renamed the MDE planner public API to `compute_mde` and removed the old export.

@@ -44,7 +44,7 @@ class RatioMetricSpec:
 def compute_mde(
     df: pd.DataFrame,
     *,
-    user_id: str,
+    user_id: str = "user_id",
     metric_columns: Sequence[str] | None = None,
     ratio_metrics: Sequence[dict[str, object] | RatioMetricSpec] | None = None,
     control_share: float = 0.5,

@@ -876,11 +876,22 @@ def test_compute_mde_selects_seeded_random_window() -> None:
     )
 
 
-def test_compute_mde_requires_user_id_argument() -> None:
-    df = pd.DataFrame({"user_id": [1, 2], "dt": ["2024-01-01", "2024-01-01"], "orders": [10.0, 12.0]})
+def test_compute_mde_defaults_user_id_argument() -> None:
+    df = pd.DataFrame(
+        {"user_id": [1, 2], "dt": ["2024-01-01", "2024-01-01"], "orders": [10.0, 12.0]}
+    )
 
-    with pytest.raises(TypeError, match="user_id"):
-        compute_mde(df, group_sizes=[10], exp_days=[1])
+    result = compute_mde(
+        df,
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[1],
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "orders")
+    assert row["avg"] == pytest.approx(11.0)
+    assert row["var"] == pytest.approx(2.0)
 
 
 def test_compute_mde_rejects_invalid_grid_inputs() -> None:

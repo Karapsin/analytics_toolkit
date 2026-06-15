@@ -8,7 +8,7 @@ Estimate MDE planning scenarios from historical user-day data.
 compute_mde(
     df,
     *,
-    user_id,
+    user_id="user_id",
     metric_columns=None,
     ratio_metrics=None,
     control_share=0.5,
