@@ -4,6 +4,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.12 - 2026-06-16
+
+- Extended the agent-only docs RAG index to include `agent_docs/` and
+  `agent_tools/README.md`.
+- Added source metadata, query expansion, source-aware ranking, and stale-index
+  warnings to `agent_tools/docs_assistant.py`.
+- Added regression coverage for agent RAG retrieval while keeping public docs
+  retrieval stable.
+
 ## 1.3.9.11 - 2026-06-15
 
 - Added `trino_catalog` to `sql.show_tables()` so Trino table listings can

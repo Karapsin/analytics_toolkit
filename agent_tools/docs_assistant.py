@@ -16,10 +16,34 @@ from typing import Any, Sequence
 DEFAULT_INDEX_DIR = ".rag_index"
 DEFAULT_MAX_CHARS = 2400
 DEFAULT_OVERLAP_CHARS = 250
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 SIGNATURE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\(", flags=re.MULTILINE)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
+SOURCE_PUBLIC_DOCS = "public_docs"
+SOURCE_AGENT_DOCS = "agent_docs"
+SOURCE_AGENT_TOOLS = "agent_tools"
+AGENT_QUERY_TOKENS = {
+    "agent",
+    "agent_docs",
+    "agent_tools",
+    "development",
+    "docs_assistant",
+    "instruction",
+    "instructions",
+    "pre_commit",
+    "pre_commit_checks",
+    "rag",
+    "release",
+    "retrieval",
+}
+QUERY_EXPANSIONS = {
+    "rag": ("docs_assistant", "retrieval", "index", "search"),
+    "precommit": ("pre_commit", "pre_commit_checks"),
+    "pre_commit": ("pre_commit_checks",),
+    "gp": ("greenplum",),
+    "ch": ("clickhouse",),
+}
 STOPWORDS = {
     "a",
     "an",
@@ -63,6 +87,7 @@ class DocChunk:
     module: str | None = None
     function_name: str | None = None
     is_function_doc: bool = False
+    source_type: str = SOURCE_PUBLIC_DOCS
 
     @property
     def heading(self) -> str:
@@ -83,6 +108,7 @@ class DocChunk:
             "module": self.module,
             "function_name": self.function_name,
             "is_function_doc": self.is_function_doc,
+            "source_type": self.source_type,
         }
 
     @classmethod
@@ -100,6 +126,7 @@ class DocChunk:
             module=_optional_string(value.get("module")),
             function_name=_optional_string(value.get("function_name")),
             is_function_doc=bool(value.get("is_function_doc", False)),
+            source_type=str(value.get("source_type") or SOURCE_PUBLIC_DOCS),
         )
 
 
@@ -154,6 +181,16 @@ def discover_markdown_files(root: str | Path = ".") -> list[Path]:
     if docs_dir.is_dir():
         files.extend(sorted(path for path in docs_dir.rglob("*.md") if path.is_file()))
 
+    agent_docs_dir = root_path / "agent_docs"
+    if agent_docs_dir.is_dir():
+        files.extend(
+            sorted(path for path in agent_docs_dir.rglob("*.md") if path.is_file())
+        )
+
+    agent_tools_readme = root_path / "agent_tools" / "README.md"
+    if agent_tools_readme.is_file():
+        files.append(agent_tools_readme)
+
     return sorted(files, key=lambda path: path.relative_to(root_path).as_posix())
 
 
@@ -174,6 +211,7 @@ def chunk_markdown_file(
     module = _module_from_path(rel_path)
     function_name = _function_name_from_path(rel_path, text)
     is_function_doc = function_name is not None
+    source_type = _source_type_from_path(rel_path)
 
     for section in sections:
         for part_index, part in enumerate(
@@ -192,6 +230,7 @@ def chunk_markdown_file(
                     module=module,
                     function_name=function_name,
                     is_function_doc=is_function_doc,
+                    source_type=source_type,
                 )
             )
     return chunks
@@ -235,6 +274,7 @@ def build_docs_index(
             "chunk_count": len(chunks),
             "retrieval": "lexical",
             "tool": "agent_tools/docs_assistant.py",
+            "source_files": _source_manifest(root_path, files),
         },
     )
     return IndexBuildResult(index_path, len(files), len(chunks))
@@ -441,7 +481,7 @@ def _overlap_tail(previous: str, overlap_chars: int, next_text: str) -> str:
 
 
 def _lexical_scores(question: str, chunks: list[DocChunk]) -> dict[str, float]:
-    query_tokens = tokenize(question)
+    query_tokens = query_tokens_for_search(question)
     if not query_tokens:
         return {}
     corpus_tokens = [tokenize(format_chunk_for_search(chunk)) for chunk in chunks]
@@ -484,7 +524,7 @@ def _fallback_bm25_scores(
 
 def _metadata_boost(question: str, chunk: DocChunk) -> float:
     query_normalized = normalize_identifier(question)
-    query_tokens = set(tokenize(question))
+    query_tokens = set(query_tokens_for_search(question))
     boost = 0.0
     if chunk.function_name:
         function_normalized = normalize_identifier(chunk.function_name)
@@ -498,6 +538,14 @@ def _metadata_boost(question: str, chunk: DocChunk) -> float:
     heading_tokens = set(tokenize(chunk.heading))
     boost += min(0.12, 0.03 * len(query_tokens & path_tokens))
     boost += min(0.12, 0.03 * len(query_tokens & heading_tokens))
+    if query_tokens & AGENT_QUERY_TOKENS:
+        if chunk.source_type == SOURCE_AGENT_TOOLS:
+            boost += 0.50
+        elif chunk.source_type == SOURCE_AGENT_DOCS:
+            boost += 0.42
+    if chunk.source_type in {SOURCE_AGENT_DOCS, SOURCE_AGENT_TOOLS}:
+        source_tokens = set(tokenize(chunk.source_type))
+        boost += min(0.08, 0.04 * len(query_tokens & source_tokens))
     if chunk.is_function_doc and query_tokens & {"signature", "input", "inputs", "function"}:
         boost += 0.10
     if _is_sql_domain_query(query_tokens):
@@ -508,7 +556,7 @@ def _metadata_boost(question: str, chunk: DocChunk) -> float:
             and query_tokens
             & {"configure", "configuration", "connection", "connections", "alias", "aliases"}
         ):
-            boost += 0.35
+            boost += 0.75
     return boost
 
 
@@ -533,6 +581,7 @@ def format_chunk_for_search(chunk: DocChunk) -> str:
     metadata = [
         f"Path: {chunk.path}",
         f"Heading: {chunk.heading}" if chunk.heading else "",
+        f"Source: {chunk.source_type}",
         f"Module: {chunk.module}" if chunk.module else "",
         f"Function: {chunk.function_name}" if chunk.function_name else "",
     ]
@@ -550,6 +599,17 @@ def tokenize(text: str) -> list[str]:
         for part in re.split(r"[._-]+", raw):
             _append_token(tokens, part)
     return tokens
+
+
+def query_tokens_for_search(question: str) -> list[str]:
+    tokens = tokenize(question)
+    expanded = list(tokens)
+    normalized = normalize_identifier(question)
+    if "docs_assistant" in normalized or "docs_assistant" in tokens:
+        _extend_unique(expanded, ("docs_assistant",))
+    for token in tokens:
+        _extend_unique(expanded, QUERY_EXPANSIONS.get(token, ()))
+    return expanded
 
 
 def normalize_identifier(value: str) -> str:
@@ -581,6 +641,14 @@ def _module_from_path(rel_path: str) -> str | None:
     if len(parts) >= 3 and parts[0] == "docs" and parts[1] == "modules":
         return parts[2]
     return None
+
+
+def _source_type_from_path(rel_path: str) -> str:
+    if rel_path.startswith("agent_docs/"):
+        return SOURCE_AGENT_DOCS
+    if rel_path == "agent_tools/README.md":
+        return SOURCE_AGENT_TOOLS
+    return SOURCE_PUBLIC_DOCS
 
 
 def _function_name_from_path(rel_path: str, text: str) -> str | None:
@@ -618,6 +686,71 @@ def _normalize(values: list[float]) -> list[float]:
 def _append_token(tokens: list[str], token: str) -> None:
     if token and token not in STOPWORDS:
         tokens.append(token)
+
+
+def _extend_unique(tokens: list[str], additions: Sequence[str]) -> None:
+    seen = set(tokens)
+    for token in additions:
+        for expanded_token in tokenize(token):
+            if expanded_token not in seen:
+                tokens.append(expanded_token)
+                seen.add(expanded_token)
+
+
+def _source_manifest(root_path: Path, files: list[Path]) -> list[dict[str, object]]:
+    source_files = []
+    for path in files:
+        source_files.append(
+            {
+                "path": path.relative_to(root_path).as_posix(),
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+        )
+    return source_files
+
+
+def index_freshness_warnings(index_dir: str | Path = DEFAULT_INDEX_DIR) -> list[str]:
+    index_path = Path(index_dir)
+    manifest = _read_json(index_path / "manifest.json")
+    warnings: list[str] = []
+    version = int(manifest.get("version", 0))
+    if version != INDEX_VERSION:
+        warnings.append(
+            f"Docs index version is {version}, expected {INDEX_VERSION}; rebuild the index."
+        )
+
+    root = Path(str(manifest.get("root") or "."))
+    source_files = manifest.get("source_files")
+    if not isinstance(source_files, list):
+        warnings.append("Docs index has no source file metadata; rebuild the index.")
+        return warnings
+
+    for source_file in source_files:
+        if not isinstance(source_file, dict):
+            continue
+        rel_path = str(source_file.get("path") or "")
+        if not rel_path:
+            continue
+        indexed_mtime_ns = int(source_file.get("mtime_ns") or 0)
+        source_path = root / rel_path
+        if not source_path.is_file():
+            warnings.append(f"Indexed source file is missing: {rel_path}")
+            continue
+        if source_path.stat().st_mtime_ns > indexed_mtime_ns:
+            warnings.append(f"Docs index is stale: {rel_path} changed after indexing.")
+    return warnings
+
+
+def _warn_if_index_stale(index_dir: str | Path) -> None:
+    try:
+        warnings = index_freshness_warnings(index_dir)
+    except FileNotFoundError:
+        return
+    except ValueError as exc:
+        print(f"Docs index freshness check failed: {exc}", file=sys.stderr)
+        return
+    for warning in warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
 
 
 def _optional_string(value: object) -> str | None:
@@ -711,12 +844,14 @@ def _handle_search(args: argparse.Namespace) -> int:
         print("No relevant documentation chunks found.")
         return 0
 
+    _warn_if_index_stale(args.index_dir)
     for index, result in enumerate(results, start=1):
         chunk = result.chunk
         heading = f" | {chunk.heading}" if chunk.heading else ""
         print(
             f"{index}. score={result.score:.3f} "
-            f"lexical={result.lexical_score:.3f} {chunk.citation}{heading}"
+            f"lexical={result.lexical_score:.3f} "
+            f"source={chunk.source_type} {chunk.citation}{heading}"
         )
         print(f"   {snippet(chunk.text)}")
     return 0
@@ -737,6 +872,7 @@ def _handle_ask(args: argparse.Namespace) -> int:
         print(f"Docs ask failed: {exc}", file=sys.stderr)
         return 1
 
+    _warn_if_index_stale(args.index_dir)
     print(answer.answer)
     if answer.citations:
         print("\nSources:")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -24,12 +25,26 @@ def test_discover_markdown_files_includes_readme_and_docs_only(tmp_path: Path) -
     (root / "README.md").write_text("# Project\n", encoding="utf-8")
     (root / "docs").mkdir()
     (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (root / "agent_docs").mkdir()
+    (root / "agent_docs" / "development.md").write_text(
+        "# Development\n", encoding="utf-8"
+    )
+    (root / "agent_tools").mkdir()
+    (root / "agent_tools" / "README.md").write_text("# Agent Tools\n", encoding="utf-8")
+    (root / "agent_tools" / "internal.md").write_text(
+        "# Internal Tool Notes\n", encoding="utf-8"
+    )
     (root / "analytics_toolkit").mkdir()
     (root / "analytics_toolkit" / "internal.md").write_text("# Internal\n", encoding="utf-8")
 
     files = [path.relative_to(root).as_posix() for path in discover_markdown_files(root)]
 
-    assert files == ["README.md", "docs/guide.md"]
+    assert files == [
+        "README.md",
+        "agent_docs/development.md",
+        "agent_tools/README.md",
+        "docs/guide.md",
+    ]
 
 
 def test_chunk_markdown_file_preserves_heading_and_function_metadata(tmp_path: Path) -> None:
@@ -65,6 +80,7 @@ def test_chunk_markdown_file_preserves_heading_and_function_metadata(tmp_path: P
     assert {chunk.function_name for chunk in chunks} == {"compute_test_metrics"}
     assert all(chunk.module == "ab_utils" for chunk in chunks)
     assert all(chunk.is_function_doc for chunk in chunks)
+    assert {chunk.source_type for chunk in chunks} == {"public_docs"}
 
 
 def test_build_index_and_search_retrieves_function_and_workflow_docs(tmp_path: Path) -> None:
@@ -74,10 +90,19 @@ def test_build_index_and_search_retrieves_function_and_workflow_docs(tmp_path: P
     result = build_docs_index(root=root, index_dir=index_dir)
 
     manifest = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert result.file_count == 4
+    assert result.file_count == 7
     assert result.chunk_count >= 4
     assert manifest["retrieval"] == "lexical"
     assert manifest["tool"] == "agent_tools/docs_assistant.py"
+    assert {source["path"] for source in manifest["source_files"]} == {
+        "README.md",
+        "agent_docs/development.md",
+        "agent_tools/README.md",
+        "docs/CHANGELOG.md",
+        "docs/modules/ab_utils/functions/compute-test-metrics.md",
+        "docs/modules/excel/formatting-and-output.md",
+        "docs/modules/sql/configuration.md",
+    }
 
     metric_results = search_docs(
         "compute_test_metrics ratio metric inputs",
@@ -94,12 +119,34 @@ def test_build_index_and_search_retrieves_function_and_workflow_docs(tmp_path: P
         index_dir=index_dir,
         top_k=1,
     )
+    rag_results = search_docs(
+        "docs_assistant RAG workflow",
+        index_dir=index_dir,
+        top_k=1,
+    )
+    ask_results = search_docs(
+        "how to run no-llm ask",
+        index_dir=index_dir,
+        top_k=1,
+    )
+    precommit_results = search_docs(
+        "development instructions pre commit checks",
+        index_dir=index_dir,
+        top_k=1,
+    )
 
     assert metric_results[0].chunk.path == (
         "docs/modules/ab_utils/functions/compute-test-metrics.md"
     )
+    assert metric_results[0].chunk.source_type == "public_docs"
     assert trino_results[0].chunk.path == "docs/modules/sql/configuration.md"
+    assert trino_results[0].chunk.source_type == "public_docs"
     assert excel_results[0].chunk.path == "docs/modules/excel/formatting-and-output.md"
+    assert rag_results[0].chunk.path == "agent_tools/README.md"
+    assert rag_results[0].chunk.source_type == "agent_tools"
+    assert ask_results[0].chunk.path == "agent_tools/README.md"
+    assert precommit_results[0].chunk.path == "agent_docs/development.md"
+    assert precommit_results[0].chunk.source_type == "agent_docs"
 
 
 def test_ask_docs_without_llm_returns_grounded_passages_and_citations(tmp_path: Path) -> None:
@@ -152,6 +199,7 @@ def test_agent_docs_cli_indexes_searches_and_answers_with_sources(
     ) == 0
     search_output = capsys.readouterr().out
     assert "docs/modules/sql/configuration.md:L" in search_output
+    assert "source=public_docs" in search_output
 
     assert docs_main(
         [
@@ -166,6 +214,62 @@ def test_agent_docs_cli_indexes_searches_and_answers_with_sources(
     assert "Most relevant passages" in ask_output
     assert "Sources:" in ask_output
     assert "docs/modules/sql/configuration.md:L" in ask_output
+
+
+def test_agent_docs_cli_warns_when_index_sources_are_stale(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent_tools.docs_assistant import main as docs_main
+
+    root = _write_sample_docs(tmp_path / "project")
+    index_dir = tmp_path / "rag-index"
+    agent_tools_readme = root / "agent_tools" / "README.md"
+
+    assert docs_main(["index", "--root", str(root), "--index-dir", str(index_dir)]) == 0
+    capsys.readouterr()
+
+    current_mtime_ns = agent_tools_readme.stat().st_mtime_ns
+    agent_tools_readme.write_text(
+        agent_tools_readme.read_text(encoding="utf-8")
+        + "\nSearch commands warn when this file changes.\n",
+        encoding="utf-8",
+    )
+    stale_mtime_ns = current_mtime_ns + 10_000_000_000
+    os.utime(agent_tools_readme, ns=(stale_mtime_ns, stale_mtime_ns))
+
+    assert docs_main(
+        [
+            "search",
+            "docs_assistant RAG workflow",
+            "--index-dir",
+            str(index_dir),
+            "--top-k",
+            "1",
+        ]
+    ) == 0
+    search_output = capsys.readouterr()
+    assert "agent_tools/README.md:L" in search_output.out
+    assert "Warning: Docs index is stale: agent_tools/README.md changed after indexing." in (
+        search_output.err
+    )
+
+    assert docs_main(
+        [
+            "ask",
+            "--no-llm",
+            "how to run no-llm ask",
+            "--index-dir",
+            str(index_dir),
+            "--top-k",
+            "1",
+        ]
+    ) == 0
+    ask_output = capsys.readouterr()
+    assert "agent_tools/README.md:L" in ask_output.out
+    assert "Warning: Docs index is stale: agent_tools/README.md changed after indexing." in (
+        ask_output.err
+    )
 
 
 def test_public_cli_no_longer_exposes_docs_commands(capsys: pytest.CaptureFixture[str]) -> None:
@@ -199,6 +303,53 @@ def _write_sample_docs(root: Path) -> Path:
                 "# analytics_toolkit",
                 "",
                 "Public docs for analytics helpers.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    agent_docs = root / "agent_docs"
+    agent_docs.mkdir()
+    (agent_docs / "development.md").write_text(
+        "\n".join(
+            [
+                "# Development Agent Instructions",
+                "",
+                "Run release_routines/pre_commit_checks.sh before every commit.",
+                "Use pre_commit checks for repository validation.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    agent_tools = root / "agent_tools"
+    agent_tools.mkdir()
+    (agent_tools / "README.md").write_text(
+        "\n".join(
+            [
+                "# Agent Tools",
+                "",
+                "Use docs_assistant.py for local RAG documentation retrieval.",
+                "",
+                "Run `python agent_tools/docs_assistant.py index` before search.",
+                "Run `python agent_tools/docs_assistant.py search \"topic\" --top-k 5`.",
+                "Run `python agent_tools/docs_assistant.py ask --no-llm \"question\"`.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    docs_dir = root / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "CHANGELOG.md").write_text(
+        "\n".join(
+            [
+                "# Changelog",
+                "",
+                "## 1.0.0",
+                "",
+                "- Added trino_catalog to table listings for Trino aliases.",
+                "- Added source metadata to the docs assistant RAG workflow.",
             ]
         ),
         encoding="utf-8",
