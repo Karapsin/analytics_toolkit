@@ -4,6 +4,15 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.13 - 2026-06-16
+
+- Added mandatory agent-only MCP startup tooling for coding agents.
+- Exposed docs RAG, instruction routing, repo health, version/changelog, and
+  focused test recommendation helpers through `agent_tools/mcp_server.py`.
+- Added `agent_tools/mcp_tool.sh` for readable terminal access to the same
+  agent MCP helper functions.
+- Documented the required MCP workflow in `AGENTS.md`.
+
 ## 1.3.9.12 - 2026-06-16
 
 - Extended the agent-only docs RAG index to include `agent_docs/` and

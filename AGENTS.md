@@ -17,6 +17,56 @@ edits. If it fails because of local changes, merge conflicts, authentication,
 network issues, or divergent history, stop and report the blocker instead of
 continuing with stale code.
 
+## Mandatory Agent MCP Tools
+
+Coding agents in this repository must use the repository-local MCP tools for
+startup context, RAG retrieval, routing, repo status, version/changelog checks,
+and test recommendations. If MCP is already available, call
+`prepare_start(task, module=None)` before any repository search, file
+inspection, tests, or edits. `prepare_start` runs `git pull origin main`,
+refreshes `.rag_index/`, returns repo health, and reports the instruction files
+that must be read next.
+
+If MCP is not available, run only the mandatory `git pull origin main` first,
+then set up the local agent-only MCP environment and call `prepare_start` before
+continuing:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt
+```
+
+Use these MCP tools for the corresponding agent workflow steps:
+
+- Startup and required instruction routing: `prepare_start`,
+  `route_agent_context`.
+- RAG workflow: `index_docs`, `search_docs`, `ask_docs`.
+- Repository context: `repo_health`.
+- Version and changelog checks: `next_version`, `changelog_status`.
+- Focused test selection: `recommend_tests`.
+
+For terminal/manual validation of these same agent MCP tool functions, use the
+repository wrapper instead of inline Python:
+
+```bash
+agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
+agent_tools/mcp_tool.sh search-docs "specific topic" --top-k 5
+agent_tools/mcp_tool.sh route-context --task "documentation" --module sql
+agent_tools/mcp_tool.sh repo-health
+agent_tools/mcp_tool.sh next-version
+agent_tools/mcp_tool.sh changelog-status
+agent_tools/mcp_tool.sh recommend-tests --area sql
+```
+
+If MCP setup or `prepare_start` fails because of local changes, merge
+conflicts, authentication, network issues, dependency installation failure,
+divergent history, or another startup blocker, stop and report the blocker
+instead of continuing. MCP tools do not replace required instruction reading,
+version bumps, changelog updates, pre-commit checks, commits, or approval rules.
+Except for `prepare_start` pulling `main` and rebuilding `.rag_index/`, MCP
+tools must not edit tracked files, run tests, commit, push, access databases, or
+read `.connections`.
+
 ## Project Overview
 
 `analytics_toolkit` is a Python 3.11+ utility package with five public areas:
