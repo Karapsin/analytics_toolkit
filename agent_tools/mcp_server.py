@@ -36,6 +36,8 @@ SENSITIVE_LOCAL_PATHS = {
 }
 SENSITIVE_LOCAL_DIRS = {
     ".certs",
+    ".connections",
+    ".env",
     ".mypy_cache",
     ".pytest_cache",
     ".rag_index",
@@ -46,6 +48,11 @@ SENSITIVE_LOCAL_DIRS = {
     "build",
     "dist",
     "htmlcov",
+}
+REQUIRED_VERSION_PATHS = {
+    "pyproject.toml",
+    "README.md",
+    "docs/CHANGELOG.md",
 }
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
@@ -601,7 +608,17 @@ def git_workflow(
             summary="Commit message is required.",
             blockers=[{"phase": "validate", "message": "message is required for commit"}],
         )
-    commit_paths = _validated_commit_paths(paths)
+    path_validation = _validated_commit_paths(root_path, paths)
+    commit_paths = path_validation["paths"]
+    if path_validation["blockers"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit staging paths are not safe.",
+            blockers=path_validation["blockers"],
+            next_actions=["Pass explicit non-sensitive file paths for the current batch."],
+        )
     if not commit_paths:
         return _tool_output(
             "git_workflow",
@@ -615,6 +632,22 @@ def git_workflow(
                 }
             ],
             next_actions=["Pass explicit paths for the current batch, then retry git_workflow(action='commit')."],
+        )
+    version_requirement = _version_bump_requirement(root_path, commit_paths)
+    if version_requirement["missing"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit blocked because non-documentation changes need a version bump.",
+            result={"version_bump_requirement": version_requirement},
+            blockers=[
+                {
+                    "phase": "version_bump",
+                    "message": _version_bump_message(version_requirement["missing"]),
+                }
+            ],
+            next_actions=["Run version_bump(...), include all version metadata paths, then retry the commit."],
         )
     verification = _verify_precommit_success(root_path)
     if not verification["ok"]:
@@ -1425,6 +1458,9 @@ def _missing_mandatory_actions(
     if not instructions_read:
         missing.append("Read required instruction files: " + ", ".join(route["required_files"]))
     if health["dirty"] and not _is_docs_only(change_type):
+        version_requirement = _version_bump_requirement(root)
+        if version_requirement["missing"]:
+            missing.append(_version_bump_message(version_requirement["missing"]))
         if not metadata["ok"]:
             missing.append("Run version_bump(...) so pyproject.toml, README.md, and docs/CHANGELOG.md align.")
         if not _verify_precommit_success(root)["ok"]:
@@ -1443,20 +1479,135 @@ def _working_tree_fingerprint(root: Path) -> str:
     for args in (
         ["rev-parse", "HEAD"],
         ["status", "--short"],
-        ["diff", "--binary"],
-        ["diff", "--cached", "--binary"],
     ):
         result = _run_git(root, args)
         parts.append(result.get("stdout", ""))
         parts.append(result.get("stderr", ""))
+    parts.extend(_tracked_diff_fingerprint_parts(root, staged=False))
+    parts.extend(_tracked_diff_fingerprint_parts(root, staged=True))
     parts.extend(_untracked_file_fingerprint_parts(root))
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
-def _validated_commit_paths(paths: list[str] | None) -> list[str]:
+def _validated_commit_paths(root: Path, paths: list[str] | None) -> dict[str, Any]:
+    blockers: list[dict[str, str]] = []
+    valid_paths: list[str] = []
     if not paths:
-        return []
-    return [path.strip() for path in paths if path.strip()]
+        return {"paths": valid_paths, "blockers": blockers}
+
+    for raw_path in paths:
+        path = raw_path.strip()
+        if not path:
+            continue
+        blocker = _commit_path_blocker(root, path)
+        if blocker is not None:
+            blockers.append(blocker)
+            continue
+        rel_path = Path(path).as_posix().strip("/")
+        if rel_path not in valid_paths:
+            valid_paths.append(rel_path)
+    return {"paths": valid_paths, "blockers": blockers}
+
+
+def _commit_path_blocker(root: Path, rel_path: str) -> dict[str, str] | None:
+    if rel_path in {".", "./"}:
+        return _path_blocker(rel_path, "path must be a file path, not the repository root")
+    if rel_path.startswith(":"):
+        return _path_blocker(rel_path, "git pathspec magic is not allowed")
+    if any(char in rel_path for char in "*?["):
+        return _path_blocker(rel_path, "glob-style pathspecs are not allowed")
+
+    path = Path(rel_path)
+    if path.is_absolute():
+        return _path_blocker(rel_path, "absolute paths are not allowed")
+    if ".." in path.parts:
+        return _path_blocker(rel_path, "paths must not escape the repository")
+
+    normalized = path.as_posix().strip("/")
+    if not normalized:
+        return _path_blocker(rel_path, "path must not be empty")
+    resolved = (root / normalized).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return _path_blocker(rel_path, "paths must stay inside the repository")
+    if resolved == root or resolved.is_dir():
+        return _path_blocker(rel_path, "path must be an explicit file path")
+    if _is_sensitive_local_path(normalized):
+        return _path_blocker(rel_path, "sensitive local paths must never be staged")
+    return None
+
+
+def _path_blocker(rel_path: str, message: str) -> dict[str, str]:
+    return {"phase": "stage", "path": rel_path, "message": message}
+
+
+def _changed_repo_paths(root: Path) -> set[str]:
+    status = _run_git(root, ["status", "--short"])
+    if not status["ok"]:
+        return set()
+    paths: set[str] = set()
+    for line in status["stdout"].splitlines():
+        if len(line) < 4:
+            continue
+        status_code = line[:2]
+        path_text = line[3:].strip()
+        if " -> " in path_text:
+            paths.update(part.strip() for part in path_text.split(" -> ", 1) if part.strip())
+        elif status_code == "??" and path_text.endswith("/"):
+            paths.update(_untracked_paths_under(root, path_text))
+        elif path_text:
+            paths.add(path_text)
+    return paths
+
+
+def _untracked_paths_under(root: Path, rel_path: str) -> set[str]:
+    result = _run_git(root, ["ls-files", "--others", "--exclude-standard", "--", rel_path])
+    if not result["ok"]:
+        return {rel_path}
+    return set(path for path in result["stdout"].splitlines() if path) or {rel_path}
+
+
+def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dict[str, Any]:
+    changed_paths = _changed_repo_paths(root)
+    selected_paths = set(paths or changed_paths)
+    non_documentation_paths = sorted(
+        path
+        for path in selected_paths
+        if not _is_sensitive_local_path(path)
+        and path not in REQUIRED_VERSION_PATHS
+        and not _is_documentation_path(path)
+    )
+    missing = sorted(path for path in REQUIRED_VERSION_PATHS if path not in changed_paths or path not in selected_paths)
+    if not non_documentation_paths:
+        missing = []
+    return {
+        "changed_paths": sorted(changed_paths),
+        "selected_paths": sorted(selected_paths),
+        "non_documentation_paths": non_documentation_paths,
+        "required_paths": sorted(REQUIRED_VERSION_PATHS),
+        "missing": missing,
+    }
+
+
+def _version_bump_message(missing: list[str]) -> str:
+    return (
+        "Run version_bump(...) so non-documentation changes include "
+        + ", ".join(missing)
+        + "."
+    )
+
+
+def _is_documentation_path(rel_path: str) -> bool:
+    normalized = rel_path.replace("\\", "/").strip("/")
+    return (
+        normalized == "README.md"
+        or normalized == "AGENTS.md"
+        or normalized == "agent_tools/README.md"
+        or normalized.startswith("docs/")
+        or normalized.startswith("agent_docs/")
+        or (normalized.endswith(".md") and "/" not in normalized)
+    )
 
 
 def _is_sensitive_local_path(rel_path: str) -> bool:
@@ -1464,9 +1615,32 @@ def _is_sensitive_local_path(rel_path: str) -> bool:
     if not normalized:
         return False
     parts = normalized.split("/")
-    return normalized in SENSITIVE_LOCAL_PATHS or any(
-        part in SENSITIVE_LOCAL_DIRS for part in parts
+    return normalized in SENSITIVE_LOCAL_PATHS or any(_is_sensitive_path_part(part) for part in parts)
+
+
+def _is_sensitive_path_part(part: str) -> bool:
+    return (
+        part in SENSITIVE_LOCAL_PATHS
+        or part in SENSITIVE_LOCAL_DIRS
+        or part.startswith(".env.")
+        or part.startswith(".env-")
     )
+
+
+def _tracked_diff_fingerprint_parts(root: Path, *, staged: bool) -> list[str]:
+    label = "staged-diff" if staged else "working-diff"
+    name_only_args = ["diff", "--cached", "--name-only"] if staged else ["diff", "--name-only"]
+    changed = _run_git(root, name_only_args)
+    parts = [label, changed.get("stderr", "")]
+    for rel_path in sorted(path for path in changed.get("stdout", "").splitlines() if path):
+        if _is_sensitive_local_path(rel_path):
+            parts.append(f"{rel_path}:excluded-sensitive-local-path")
+            continue
+        diff_args = ["diff", "--cached", "--binary", "--", rel_path] if staged else ["diff", "--binary", "--", rel_path]
+        diff = _run_git(root, diff_args)
+        parts.append(diff.get("stdout", ""))
+        parts.append(diff.get("stderr", ""))
+    return parts
 
 
 def _untracked_file_fingerprint_parts(root: Path) -> list[str]:

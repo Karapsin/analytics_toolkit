@@ -434,6 +434,8 @@ def _split_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
         raise ValueError("max_chars must be positive")
     if overlap_chars < 0:
         raise ValueError("overlap_chars must be non-negative")
+    if overlap_chars >= max_chars:
+        raise ValueError("overlap_chars must be smaller than max_chars")
     if len(text) <= max_chars:
         return [text]
 
@@ -725,12 +727,14 @@ def index_freshness_warnings(index_dir: str | Path = DEFAULT_INDEX_DIR) -> list[
         warnings.append("Docs index has no source file metadata; rebuild the index.")
         return warnings
 
+    indexed_paths: set[str] = set()
     for source_file in source_files:
         if not isinstance(source_file, dict):
             continue
         rel_path = str(source_file.get("path") or "")
         if not rel_path:
             continue
+        indexed_paths.add(rel_path)
         indexed_mtime_ns = int(source_file.get("mtime_ns") or 0)
         source_path = root / rel_path
         if not source_path.is_file():
@@ -738,6 +742,12 @@ def index_freshness_warnings(index_dir: str | Path = DEFAULT_INDEX_DIR) -> list[
             continue
         if source_path.stat().st_mtime_ns > indexed_mtime_ns:
             warnings.append(f"Docs index is stale: {rel_path} changed after indexing.")
+    current_paths = {
+        path.relative_to(root).as_posix()
+        for path in discover_markdown_files(root)
+    }
+    for rel_path in sorted(current_paths - indexed_paths):
+        warnings.append(f"Docs index is stale: new source file is not indexed: {rel_path}")
     return warnings
 
 

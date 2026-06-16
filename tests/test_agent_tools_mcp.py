@@ -411,7 +411,7 @@ def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
     result = mcp_server.git_workflow(
         "commit",
         message="Update workflow",
-        paths=["agent_tools/mcp_server.py"],
+        paths=["docs/guide.md"],
         root=str(root),
     )
 
@@ -435,6 +435,228 @@ def test_git_workflow_commit_requires_explicit_paths(
     assert result["ok"] is False
     assert result["blockers"][0]["phase"] == "stage"
     assert "paths are required" in result["blockers"][0]["message"]
+
+
+@pytest.mark.parametrize(
+    ("unsafe_path", "message"),
+    [
+        (".connections", "sensitive local paths"),
+        (".connections/dev.toml", "sensitive local paths"),
+        (".env", "sensitive local paths"),
+        (".env/local", "sensitive local paths"),
+        (".env.local", "sensitive local paths"),
+        ("config/.env.production", "sensitive local paths"),
+        (".certs/client.key", "sensitive local paths"),
+        (str(Path("/tmp/outside.txt")), "absolute paths"),
+        ("../outside.txt", "paths must not escape"),
+        (".", "repository root"),
+        (":(glob)*.py", "pathspec magic"),
+        ("agent_tools/*.py", "glob-style pathspecs"),
+    ],
+)
+def test_git_workflow_blocks_unsafe_commit_paths(
+    unsafe_path: str,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=[unsafe_path],
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "stage"
+    assert message in result["blockers"][0]["message"]
+
+
+def test_commit_path_validation_allows_normal_repo_file(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    agent_tools_dir = root / "agent_tools"
+    agent_tools_dir.mkdir()
+    (agent_tools_dir / "mcp_server.py").write_text("# tool\n", encoding="utf-8")
+
+    result = mcp_server._validated_commit_paths(
+        root,
+        ["agent_tools/mcp_server.py"],
+    )
+
+    assert result == {"paths": ["agent_tools/mcp_server.py"], "blockers": []}
+
+
+def test_workflow_status_requires_version_bump_for_dirty_implementation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    (root / "agent_tools").mkdir()
+    (root / "agent_tools" / "mcp_server.py").write_text("# initial\n", encoding="utf-8")
+    _init_git_repo(root)
+    (root / "agent_tools" / "mcp_server.py").write_text("# changed\n", encoding="utf-8")
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    result = mcp_server.workflow_status(
+        "implementation",
+        module="agent_tools",
+        instructions_read=True,
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["result"]["missing_mandatory_actions"] == [
+        "Run version_bump(...) so non-documentation changes include README.md, docs/CHANGELOG.md, pyproject.toml."
+    ]
+
+
+def test_workflow_status_ignores_sensitive_local_state_for_version_bump(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _init_git_repo(root)
+    (root / ".env.local").write_text("SECRET=1\n", encoding="utf-8")
+    config = root / "config"
+    config.mkdir()
+    (config / ".env.production").write_text("SECRET=2\n", encoding="utf-8")
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    result = mcp_server.workflow_status(
+        "implementation",
+        module="agent_tools",
+        instructions_read=True,
+        root=str(root),
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["missing_mandatory_actions"] == []
+
+
+def test_git_workflow_commit_requires_version_paths_for_implementation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    (root / "agent_tools").mkdir()
+    (root / "agent_tools" / "mcp_server.py").write_text("# initial\n", encoding="utf-8")
+    _init_git_repo(root)
+    (root / "agent_tools" / "mcp_server.py").write_text("# changed\n", encoding="utf-8")
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py"],
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "version_bump"
+    assert result["result"]["version_bump_requirement"]["missing"] == [
+        "README.md",
+        "docs/CHANGELOG.md",
+        "pyproject.toml",
+    ]
+
+
+def test_git_workflow_commit_allows_documentation_only_without_version_bump(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    (root / "docs" / "guide.md").write_text("Initial guide.\n", encoding="utf-8")
+    _init_git_repo(root)
+    (root / "docs" / "guide.md").write_text("Changed guide.\n", encoding="utf-8")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update docs",
+        paths=["docs/guide.md"],
+        root=str(root),
+    )
+
+    assert result["ok"] is True
+    assert commands[-2:] == [
+        "git add -- docs/guide.md",
+        "git commit -m 'Update docs'",
+    ]
+
+
+def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    agent_tools = root / "agent_tools"
+    agent_tools.mkdir()
+    (agent_tools / "README.md").write_text("# Agent Tools\n", encoding="utf-8")
+    _init_git_repo(root)
+    (agent_tools / "README.md").write_text("# Agent Tools\n\nUpdated docs.\n", encoding="utf-8")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update agent tools docs",
+        paths=["agent_tools/README.md"],
+        root=str(root),
+    )
+
+    assert result["ok"] is True
+    assert commands[-2:] == [
+        "git add -- agent_tools/README.md",
+        "git commit -m 'Update agent tools docs'",
+    ]
 
 
 def test_dependency_metadata_status_detects_readme_constraint_mismatch(tmp_path: Path) -> None:
@@ -488,7 +710,15 @@ def test_precommit_fingerprint_excludes_sensitive_untracked_file_contents(
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     (root / ".connections").write_text("secret connection\n", encoding="utf-8")
-    (root / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    connections_dir = root / "project_connections" / ".connections"
+    connections_dir.mkdir(parents=True)
+    (connections_dir / "dev.toml").write_text("nested secret connection\n", encoding="utf-8")
+    (root / ".env").mkdir()
+    (root / ".env" / "local").write_text("SECRET=1\n", encoding="utf-8")
+    (root / ".env.local").write_text("SECRET=2\n", encoding="utf-8")
+    config_dir = root / "config"
+    config_dir.mkdir()
+    (config_dir / ".env.production").write_text("SECRET=3\n", encoding="utf-8")
     certs = root / ".certs"
     certs.mkdir()
     (certs / "client.key").write_text("secret key\n", encoding="utf-8")
@@ -508,7 +738,15 @@ def test_precommit_fingerprint_excludes_sensitive_untracked_file_contents(
         "_run_git",
         lambda root_path, args: {
             "ok": True,
-            "stdout": ".connections\n.env\n.certs/client.key\nnew_agent_note.txt\n",
+            "stdout": (
+                ".connections\n"
+                "project_connections/.connections/dev.toml\n"
+                ".env/local\n"
+                ".env.local\n"
+                "config/.env.production\n"
+                ".certs/client.key\n"
+                "new_agent_note.txt\n"
+            ),
             "stderr": "",
             "returncode": 0,
             "command": "git ls-files --others --exclude-standard",
@@ -522,8 +760,53 @@ def test_precommit_fingerprint_excludes_sensitive_untracked_file_contents(
     assert read_paths == ["new_agent_note.txt"]
     assert "new_agent_note.txt" in "\n".join(parts)
     assert ".connections:excluded-sensitive-local-path" in parts
-    assert ".env:excluded-sensitive-local-path" in parts
+    assert "project_connections/.connections/dev.toml:excluded-sensitive-local-path" in parts
+    assert ".env/local:excluded-sensitive-local-path" in parts
+    assert ".env.local:excluded-sensitive-local-path" in parts
+    assert "config/.env.production:excluded-sensitive-local-path" in parts
     assert ".certs/client.key:excluded-sensitive-local-path" in parts
+
+
+def test_working_tree_fingerprint_excludes_sensitive_tracked_diffs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[list[str]] = []
+
+    def fake_run_git(root_path: Path, args: list[str]) -> dict[str, object]:
+        commands.append(args)
+        if args == ["diff", "--name-only"]:
+            stdout = ".connections/dev.toml\n.env.local\nsafe.txt\n"
+        elif args == ["diff", "--cached", "--name-only"]:
+            stdout = "config/.env.production\nstaged_safe.txt\n"
+        elif args in (
+            ["diff", "--binary", "--", "safe.txt"],
+            ["diff", "--cached", "--binary", "--", "staged_safe.txt"],
+        ):
+            stdout = "safe diff contents\n"
+        elif args == ["ls-files", "--others", "--exclude-standard"]:
+            stdout = ""
+        else:
+            stdout = "ok\n"
+        return {
+            "ok": True,
+            "stdout": stdout,
+            "stderr": "",
+            "returncode": 0,
+            "command": "git " + " ".join(args),
+            "summary": "",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_git", fake_run_git)
+
+    mcp_server._working_tree_fingerprint(root)
+
+    assert ["diff", "--binary", "--", ".connections/dev.toml"] not in commands
+    assert ["diff", "--binary", "--", ".env.local"] not in commands
+    assert ["diff", "--cached", "--binary", "--", "config/.env.production"] not in commands
+    assert ["diff", "--binary", "--", "safe.txt"] in commands
+    assert ["diff", "--cached", "--binary", "--", "staged_safe.txt"] in commands
 
 
 def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_path: Path) -> None:
@@ -531,6 +814,7 @@ def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_pat
     _init_git_repo(root)
     untracked = root / "new_agent_note.txt"
     untracked.write_text("checked contents\n", encoding="utf-8")
+    _write_changed_version_metadata(root, "1.3.9.14")
     fingerprint = mcp_server._working_tree_fingerprint(root)
     mcp_server._record_precommit_success(
         root,
@@ -542,7 +826,12 @@ def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_pat
     result = mcp_server.git_workflow(
         "commit",
         message="Update workflow",
-        paths=["new_agent_note.txt"],
+        paths=[
+            "new_agent_note.txt",
+            "pyproject.toml",
+            "README.md",
+            "docs/CHANGELOG.md",
+        ],
         root=str(root),
     )
 
@@ -560,6 +849,11 @@ def test_git_workflow_commit_and_push_dispatch(
         mcp_server,
         "_verify_precommit_success",
         lambda root_path: {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_version_bump_requirement",
+        lambda root_path, paths=None: {"missing": []},
     )
     monkeypatch.setattr(
         mcp_server,
@@ -971,3 +1265,22 @@ def _write_docs_project(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _write_changed_version_metadata(root: Path, version: str) -> None:
+    pyproject = root / "pyproject.toml"
+    readme = root / "README.md"
+    changelog = root / "docs" / "CHANGELOG.md"
+    pyproject.write_text(
+        pyproject.read_text(encoding="utf-8").replace('version = "1.3.9.13"', f'version = "{version}"'),
+        encoding="utf-8",
+    )
+    readme.write_text(
+        readme.read_text(encoding="utf-8").replace("**Version:** `1.3.9.13`", f"**Version:** `{version}`"),
+        encoding="utf-8",
+    )
+    changelog.write_text(
+        f"# Changelog\n\n## {version} - 2026-06-16\n\n- Updated workflow.\n\n"
+        + changelog.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )

@@ -11,10 +11,12 @@ import pytest
 import analytics_toolkit.cli as cli_module
 from analytics_toolkit.cli import main
 from agent_tools.docs_assistant import (
+    _split_text,
     ask_docs,
     build_docs_index,
     chunk_markdown_file,
     discover_markdown_files,
+    index_freshness_warnings,
     search_docs,
 )
 
@@ -270,6 +272,27 @@ def test_agent_docs_cli_warns_when_index_sources_are_stale(
     assert "Warning: Docs index is stale: agent_tools/README.md changed after indexing." in (
         ask_output.err
     )
+
+
+def test_index_freshness_warns_for_new_and_removed_source_files(tmp_path: Path) -> None:
+    root = _write_sample_docs(tmp_path / "project")
+    index_dir = tmp_path / "rag-index"
+    build_docs_index(root=root, index_dir=index_dir)
+
+    new_doc = root / "agent_docs" / "review.md"
+    new_doc.write_text("# Review\n\nUse focused review loops.\n", encoding="utf-8")
+    removed_doc = root / "docs" / "modules" / "excel" / "formatting-and-output.md"
+    removed_doc.unlink()
+
+    warnings = index_freshness_warnings(index_dir)
+
+    assert "Docs index is stale: new source file is not indexed: agent_docs/review.md" in warnings
+    assert "Indexed source file is missing: docs/modules/excel/formatting-and-output.md" in warnings
+
+
+def test_split_text_rejects_overlap_that_cannot_advance() -> None:
+    with pytest.raises(ValueError, match="overlap_chars must be smaller than max_chars"):
+        _split_text("abcdef", max_chars=3, overlap_chars=3)
 
 
 def test_public_cli_no_longer_exposes_docs_commands(capsys: pytest.CaptureFixture[str]) -> None:

@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.19 - 2026-06-16
+
+- Hardened agent tool workflow safety.
+
 ## 1.3.9.18 - 2026-06-16
 
 - Tightened agent MCP workflow guardrails.
