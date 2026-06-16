@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import inspect
 import math
+import threading
+import time
 from types import SimpleNamespace
+from typing import Any
 import warnings
 
 import numpy as np
@@ -12,6 +15,7 @@ from scipy.stats import ttest_ind
 
 import analytics_toolkit.ab_utils as ab_utils
 import analytics_toolkit.ab_utils.metrics as ab_metrics
+import analytics_toolkit.ab_utils.planning as planning_module
 from analytics_toolkit.ab_utils import (
     RatioMetricSpec,
     compute_mde,
@@ -55,6 +59,10 @@ def test_compute_mde_start_dt_is_required() -> None:
         inspect.signature(compute_mde_from_sql).parameters["start_dt"].default
         is inspect._empty
     )
+
+
+def test_compute_mde_from_sql_concurrency_defaults_to_one() -> None:
+    assert inspect.signature(compute_mde_from_sql).parameters["concurrency"].default == 1
 
 
 def _build_sample_metrics_df() -> pd.DataFrame:
@@ -1400,6 +1408,148 @@ def test_compute_mde_from_sql_applies_where_to_validation_and_windows(
         )
 
     assert len(queries) == 3
+
+
+@pytest.mark.parametrize("concurrency", [0, -1, True, 1.5])
+def test_compute_mde_from_sql_rejects_invalid_concurrency(concurrency: Any) -> None:
+    with pytest.raises(ValueError, match="concurrency"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            concurrency=concurrency,
+        )
+
+
+def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 2, 2, 3, 3],
+            "dt": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-01",
+                    "2024-01-02",
+                ]
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        expected = compute_mde(
+            source_df,
+            user_id="user_id",
+            metric_columns=["orders"],
+            group_sizes=[10, 20],
+            exp_days=[1, 2],
+            start_dt=None,
+            outliers_quantile=1,
+        )
+
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    events: list[str] = []
+    active_aggregates = 0
+    max_active_aggregates = 0
+    lock = threading.Lock()
+    real_executor_cls = planning_module.ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            with lock:
+                assert events == ["validation:stats", "validation:duplicates"]
+                events.append("executor")
+            self._executor = real_executor_cls(*args, **kwargs)
+
+        def __enter__(self) -> Any:
+            self._executor.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> object:
+            return self._executor.__exit__(*args)
+
+        def submit(self, *args: object, **kwargs: object) -> Any:
+            return self._executor.submit(*args, **kwargs)
+
+    def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        nonlocal active_aggregates, max_active_aggregates
+        del kwargs
+        assert db_key == "analytics"
+        if "COUNT(*) AS row_count" in query:
+            with lock:
+                events.append("validation:stats")
+            return pd.DataFrame(
+                {
+                    "row_count": [len(source_df)],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-02")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            with lock:
+                events.append("validation:duplicates")
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+
+        with lock:
+            events.append("aggregate")
+            active_aggregates += 1
+            max_active_aggregates = max(max_active_aggregates, active_aggregates)
+        try:
+            time.sleep(0.02)
+            if 'CAST("dt" AS DATE) < DATE \'2024-01-02\'' in query:
+                return pd.DataFrame({"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]})
+            if 'CAST("dt" AS DATE) < DATE \'2024-01-03\'' in query:
+                return pd.DataFrame({"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]})
+        finally:
+            with lock:
+                active_aggregates -= 1
+        raise AssertionError(f"Unexpected aggregate query:\n{query}")
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: table_info,
+    )
+    monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
+    monkeypatch.setattr(planning_module, "ThreadPoolExecutor", RecordingExecutor)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        result = compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10, 20],
+            exp_days=[1, 2],
+            start_dt=None,
+            outliers_quantile=1,
+            concurrency=2,
+        )
+
+    pd.testing.assert_frame_equal(result, expected)
+    assert max_active_aggregates == 2
+    assert events.count("aggregate") == 4
+    cuped_warnings = [
+        warning
+        for warning in caught
+        if "Could not compute CUPED MDE" in str(warning.message)
+    ]
+    assert len(cuped_warnings) == 2
 
 
 def test_compute_mde_from_sql_rejects_missing_table_or_columns(

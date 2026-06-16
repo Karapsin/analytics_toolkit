@@ -36,6 +36,7 @@ compute_mde_from_sql(
     retry_cnt=5,
     timeout_increment=5,
     query_label=None,
+    concurrency=1,
 )
 ```
 
@@ -51,6 +52,9 @@ compute_mde_from_sql(
 - `ratio_metrics` - optional ratio metric specifications
 - `start_dt` - required first day of the pseudo-experiment outcome window; pass
   `None` explicitly to use the first available historical date after filtering
+- `concurrency` - number of worker threads used for day-size scenario
+  combinations; metadata and validation queries always run once before worker
+  threads start
 - MDE, grid, outlier, CUPED, and aggregation options match
   [compute_mde](compute-mde.md)
 
@@ -87,6 +91,8 @@ planning = compute_mde_from_sql(
 - SQL reads aggregate each selected outcome and pre-period window to one row per
   user, then reuse the same Python MDE, ratio, outlier, and CUPED calculations
   as `compute_mde`.
+- When `concurrency > 1`, each day-size combination is computed independently;
+  this can duplicate SQL window reads across group sizes.
 - `sql_where` is inserted as a SQL predicate; callers are responsible for safe
   predicate construction.
 

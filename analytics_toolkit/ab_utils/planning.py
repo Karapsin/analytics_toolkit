@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 import math
 from numbers import Integral, Real
@@ -236,9 +237,11 @@ def compute_mde_from_sql(
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     query_label: str | None = None,
+    concurrency: int = 1,
 ) -> pd.DataFrame:
     """Estimate MDE scenarios from a SQL historical user-day table."""
 
+    _validate_mde_sql_concurrency(concurrency)
     options = _resolve_mde_options(
         control_share=control_share,
         group_sizes=group_sizes,
@@ -317,6 +320,33 @@ def compute_mde_from_sql(
     )
 
     aggregation_columns = _ordered_mde_aggregation_columns(metric_definitions)
+    normalized_outliers_policy = outliers_policy.strip().lower()
+    if concurrency > 1:
+        return _compute_parallel_sql_mde_rows(
+            concurrency=concurrency,
+            db_key=db_key,
+            backend=table_info.backend,
+            source=source,
+            sql_where=normalized_where,
+            user_id=user_id,
+            date_column=date_column,
+            aggregation_columns=aggregation_columns,
+            aggregation_policies=aggregation_policies,
+            metric_definitions=metric_definitions,
+            days_values=options["days"],
+            planned_splits=options["planned_splits"],
+            control_share=float(options["control_share"]),
+            windows=windows,
+            outliers_quantile=float(outliers_quantile),
+            outliers_policy=normalized_outliers_policy,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+
     outcome_frames: dict[int, pd.DataFrame] = {}
     pre_frames: dict[int, pd.DataFrame | None] = {}
     for days in options["days"]:
@@ -357,7 +387,6 @@ def compute_mde_from_sql(
             )
 
     rows: list[dict[str, object]] = []
-    normalized_outliers_policy = outliers_policy.strip().lower()
     for metric_definition in metric_definitions:
         for days in options["days"]:
             window = windows[days]
@@ -413,6 +442,237 @@ def compute_mde_from_sql(
                 )
 
     return _mde_result_frame(rows)
+
+
+def _compute_parallel_sql_mde_rows(
+    *,
+    concurrency: int,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    aggregation_columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    metric_definitions: Sequence[dict[str, object]],
+    days_values: Sequence[int],
+    planned_splits: Sequence[dict[str, int]],
+    control_share: float,
+    windows: dict[int, dict[str, Any]],
+    outliers_quantile: float,
+    outliers_policy: str,
+    mde_alpha: float,
+    mde_power: float,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> pd.DataFrame:
+    task_specs = [
+        (days_index, split_index, int(days), split)
+        for days_index, days in enumerate(days_values)
+        for split_index, split in enumerate(planned_splits)
+    ]
+    rows_by_task: dict[tuple[int, int], dict[int, dict[str, object]]] = {}
+    cuped_reasons_by_task: dict[tuple[int, int], dict[int, str]] = {}
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_key = {
+            executor.submit(
+                _compute_sql_mde_day_size_rows,
+                db_key=db_key,
+                backend=backend,
+                source=source,
+                sql_where=sql_where,
+                user_id=user_id,
+                date_column=date_column,
+                aggregation_columns=aggregation_columns,
+                aggregation_policies=aggregation_policies,
+                metric_definitions=metric_definitions,
+                days=days,
+                split=split,
+                control_share=control_share,
+                window=windows[days],
+                outliers_quantile=outliers_quantile,
+                outliers_policy=outliers_policy,
+                mde_alpha=mde_alpha,
+                mde_power=mde_power,
+                print_queries=print_queries,
+                retry_cnt=retry_cnt,
+                timeout_increment=timeout_increment,
+                query_label=query_label,
+            ): (days_index, split_index)
+            for days_index, split_index, days, split in task_specs
+        }
+        try:
+            for future in as_completed(future_to_key):
+                key = future_to_key[future]
+                task_rows, cuped_reasons = future.result()
+                rows_by_task[key] = task_rows
+                cuped_reasons_by_task[key] = cuped_reasons
+        except BaseException:
+            for future in future_to_key:
+                future.cancel()
+            raise
+
+    rows: list[dict[str, object]] = []
+    emitted_cuped_warnings: set[tuple[int, int, int, str]] = set()
+    for metric_index, metric_definition in enumerate(metric_definitions):
+        for days_index, days in enumerate(days_values):
+            window = windows[int(days)]
+            for split_index, _split in enumerate(planned_splits):
+                key = (days_index, split_index)
+                cuped_reason = cuped_reasons_by_task[key].get(metric_index)
+                if cuped_reason is not None:
+                    warning_key = (
+                        metric_index,
+                        int(days),
+                        int(window["pre_days"]),
+                        cuped_reason,
+                    )
+                    if warning_key not in emitted_cuped_warnings:
+                        emitted_cuped_warnings.add(warning_key)
+                        _warn_mde_cuped_reason(
+                            metric_definition=metric_definition,
+                            days=int(days),
+                            pre_days=int(window["pre_days"]),
+                            reason=cuped_reason,
+                            stacklevel=3,
+                        )
+                rows.append(rows_by_task[key][metric_index])
+    return _mde_result_frame(rows)
+
+
+def _compute_sql_mde_day_size_rows(
+    *,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    aggregation_columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    metric_definitions: Sequence[dict[str, object]],
+    days: int,
+    split: dict[str, int],
+    control_share: float,
+    window: dict[str, Any],
+    outliers_quantile: float,
+    outliers_policy: str,
+    mde_alpha: float,
+    mde_power: float,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> tuple[dict[int, dict[str, object]], dict[int, str]]:
+    outcome_frame = _read_sql_mde_user_window(
+        db_key=db_key,
+        backend=backend,
+        source=source,
+        sql_where=sql_where,
+        user_id=user_id,
+        date_column=date_column,
+        columns=aggregation_columns,
+        aggregation_policies=aggregation_policies,
+        start_date=window["outcome_start"],
+        days=days,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    pre_frame = None
+    if window["pre_start"] is not None:
+        pre_frame = _read_sql_mde_user_window(
+            db_key=db_key,
+            backend=backend,
+            source=source,
+            sql_where=sql_where,
+            user_id=user_id,
+            date_column=date_column,
+            columns=aggregation_columns,
+            aggregation_policies=aggregation_policies,
+            start_date=window["pre_start"],
+            days=window["pre_days"],
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+
+    rows_by_metric: dict[int, dict[str, object]] = {}
+    cuped_reasons_by_metric: dict[int, str] = {}
+    for metric_index, metric_definition in enumerate(metric_definitions):
+        outlier_context = _build_outlier_context(
+            df=outcome_frame,
+            metric_definition=metric_definition,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+        metric_stats = _compute_mde_metric_stats(
+            df=outcome_frame,
+            metric_definition=metric_definition,
+            outlier_context=outlier_context,
+        )
+        cuped_variance, cuped_reason = _compute_mde_cuped_variance_from_user_frames(
+            user_id=user_id,
+            metric_definition=metric_definition,
+            outcome_user_metric_df=outcome_frame,
+            pre_user_metric_df=pre_frame,
+            outcome_outlier_context=outlier_context,
+            pre_days=window["pre_days"],
+            unavailable_reason=window["cuped_unavailable_reason"],
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+        if cuped_reason is not None:
+            cuped_reasons_by_metric[metric_index] = cuped_reason
+        rows_by_metric[metric_index] = _build_mde_planning_row(
+            metric_name=str(metric_definition["metric_key"]),
+            avg=metric_stats["avg"],
+            variance=metric_stats["var"],
+            days=days,
+            pre_exp_days=window["pre_days"],
+            group_size=split["group_size"],
+            control_share=control_share,
+            control_n=split["control_n"],
+            test_n=split["test_n"],
+            cuped_variance=cuped_variance,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+        )
+    return rows_by_metric, cuped_reasons_by_metric
+
+
+def _validate_mde_sql_concurrency(concurrency: object) -> None:
+    if (
+        not isinstance(concurrency, int)
+        or isinstance(concurrency, bool)
+        or concurrency < 1
+    ):
+        raise ValueError("concurrency must be an integer >= 1.")
+
+
+def _warn_mde_cuped_reason(
+    *,
+    metric_definition: dict[str, object],
+    days: int,
+    pre_days: int,
+    reason: str,
+    stacklevel: int,
+) -> None:
+    warnings.warn(
+        (
+            "Could not compute CUPED MDE for metric "
+            f"{str(metric_definition['metric_key'])!r} "
+            f"(days={days}, pre_exp_days={pre_days}): "
+            f"{reason}."
+        ),
+        stacklevel=stacklevel,
+    )
 
 
 def _mde_result_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
