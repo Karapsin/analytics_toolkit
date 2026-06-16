@@ -4,6 +4,16 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.14 - 2026-06-16
+
+- Consolidated the agent MCP surface into intent-based workflow tools for
+  startup, docs retrieval, status, version bumps, checks, git, and release
+  actions.
+- Updated agent instructions and agent-tools documentation to route normal
+  agent work through MCP instead of direct docs assistant commands.
+- Added regression coverage for the consolidated MCP CLI, status, checks, git,
+  release, and version workflows.
+
 ## 1.3.9.13 - 2026-06-16
 
 - Added mandatory agent-only MCP startup tooling for coding agents.

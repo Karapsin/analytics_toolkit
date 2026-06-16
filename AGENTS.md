@@ -21,11 +21,13 @@ continuing with stale code.
 
 Coding agents in this repository must use the repository-local MCP tools for
 startup context, RAG retrieval, routing, repo status, version/changelog checks,
-and test recommendations. If MCP is already available, call
-`prepare_start(task, module=None)` before any repository search, file
-inspection, tests, or edits. `prepare_start` runs `git pull origin main`,
-refreshes `.rag_index/`, returns repo health, and reports the instruction files
-that must be read next.
+test recommendations, checks, commits, pushes, and release workflow entrypoints.
+If MCP is already available, call
+`prepare_start(task, module=None, root=".", index_dir=".rag_index",
+ensure_project_env=True)` before any repository search, file inspection, tests,
+or edits. `prepare_start` runs `git pull origin main`, prepares the local agent
+and project environment, refreshes `.rag_index/`, returns repo health, and
+reports the instruction files that must be read next.
 
 If MCP is not available, run only the mandatory `git pull origin main` first,
 then set up the local agent-only MCP environment and call `prepare_start` before
@@ -38,34 +40,41 @@ python -m venv .venv
 
 Use these MCP tools for the corresponding agent workflow steps:
 
-- Startup and required instruction routing: `prepare_start`,
-  `route_agent_context`.
-- RAG workflow: `index_docs`, `search_docs`, `ask_docs`.
-- Repository context: `repo_health`.
-- Version and changelog checks: `next_version`, `changelog_status`.
-- Focused test selection: `recommend_tests`.
+- Startup orchestration and required instruction routing: `prepare_start`.
+- RAG retrieval: `docs(query, mode="search"|"ask", top_k=5)`.
+- Repository routing, health, metadata, and recommended checks:
+  `workflow_status`.
+- Version, README version, and changelog updates: `version_bump`.
+- Focused, pre-commit, and release validation checks: `run_checks`.
+- Stage/commit and push workflow: `git_workflow`.
+- Release readiness and PyPI publishing entrypoint: `release_workflow`.
+
+Use `workflow_status(...)` before and after repository changes. Use
+`version_bump(...)`, `run_checks(...)`, `git_workflow(...)`, and
+`release_workflow(...)` for the mandatory repository workflows instead of
+calling the underlying scripts directly, except for the initial bootstrap path
+described above.
 
 For terminal/manual validation of these same agent MCP tool functions, use the
 repository wrapper instead of inline Python:
 
 ```bash
 agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
-agent_tools/mcp_tool.sh search-docs "specific topic" --top-k 5
-agent_tools/mcp_tool.sh route-context --task "documentation" --module sql
-agent_tools/mcp_tool.sh repo-health
-agent_tools/mcp_tool.sh next-version
-agent_tools/mcp_tool.sh changelog-status
-agent_tools/mcp_tool.sh recommend-tests --area sql
+agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
+agent_tools/mcp_tool.sh docs "specific question" --mode ask
+agent_tools/mcp_tool.sh workflow-status --task "documentation" --module sql
+agent_tools/mcp_tool.sh version-bump "Updated SQL docs" --dry-run
+agent_tools/mcp_tool.sh run-checks --area sql --level focused --dry-run
+agent_tools/mcp_tool.sh git-workflow commit --message "Update SQL helpers"
+agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
 If MCP setup or `prepare_start` fails because of local changes, merge
 conflicts, authentication, network issues, dependency installation failure,
-divergent history, or another startup blocker, stop and report the blocker
-instead of continuing. MCP tools do not replace required instruction reading,
-version bumps, changelog updates, pre-commit checks, commits, or approval rules.
-Except for `prepare_start` pulling `main` and rebuilding `.rag_index/`, MCP
-tools must not edit tracked files, run tests, commit, push, access databases, or
-read `.connections`.
+divergent history, or another startup blocker, stop and report the structured
+blocker instead of continuing. MCP tools do not replace required instruction
+reading or approval rules. MCP release and git workflow tools must still honor
+repository safety rules and must not access databases or read `.connections`.
 
 ## Project Overview
 
@@ -120,15 +129,10 @@ RAG is intentionally an agent-only repository workflow, not a public
 commands, package extras, vector-store dependencies, hosted LLM SDKs, Ollama,
 or embedding-model dependencies for it.
 
-```bash
-python agent_tools/docs_assistant.py index
-python agent_tools/docs_assistant.py search "<topic or function name>" --top-k 5
-```
-
-Use `python agent_tools/docs_assistant.py ask --no-llm "<specific question>"`
-when a grounded summary is more useful than raw search snippets. Keep retrieved
-context focused; rebuilding `.rag_index/` is local work and does not itself
-consume LLM context tokens, but reading retrieved output does.
+Use `docs(query, mode="search")` for ranked snippets and
+`docs(query, mode="ask")` for a grounded no-LLM summary with citations. Keep
+retrieved context focused; rebuilding `.rag_index/` is local work and does not
+itself consume LLM context tokens, but reading retrieved output does.
 
 Treat normal repository search, file inspection, and tests as secondary context
 after the RAG pass, not as substitutes for it. If RAG is unavailable, blocked,
@@ -137,28 +141,15 @@ was needed, then use normal repository search and file inspection. When fallback
 was needed because docs were missing or unclear, finish by proposing the
 specific documentation update that would make future RAG retrieval unambiguous.
 
-## Reusable Local Virtualenv
-
-After the mandatory startup sync and RAG pass, create a reusable project
-virtualenv at `.venv/` when Python tooling is needed and `.venv/` is absent:
-
-```bash
-python -m venv .venv
-.venv/bin/python -m pip install -e . pytest tox
-```
-
-Use `.venv/bin/python` or place `.venv/bin` first on `PATH` for focused tests and
-release checks. `.venv/` must stay ignored by Git and must not be committed.
-
 ## Global Rules
 
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
-- After every non-documentation repository change, bump the package version in `pyproject.toml` and update `docs/CHANGELOG.md` in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
+- After every non-documentation repository change, use `version_bump(...)` to bump the package version in `pyproject.toml`, the root README version, and `docs/CHANGELOG.md` in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
 - Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
-- At the end of every non-documentation change, run `release_routines/pre_commit_checks.sh` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
-- Once a coherent batch of changes is done, run `git add . && git commit -m '...'`, replacing `...` with a short description of the changes.
+- At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
+- Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.
