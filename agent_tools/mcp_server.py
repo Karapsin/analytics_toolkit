@@ -198,6 +198,29 @@ RELEASE_CHECK_COMMANDS = [
 ]
 
 
+class _FingerprintError(RuntimeError):
+    def __init__(self, phase: str, result: dict[str, Any]) -> None:
+        self.phase = phase
+        self.result = result
+        summary = (
+            result.get("summary")
+            or result.get("stderr")
+            or result.get("stdout")
+            or "git command failed"
+        )
+        super().__init__(f"Could not fingerprint working tree during {phase}: {summary}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "phase": self.phase,
+            "command": self.result.get("command"),
+            "returncode": self.result.get("returncode"),
+            "stderr": str(self.result.get("stderr", "")).strip(),
+            "stdout": str(self.result.get("stdout", "")).strip(),
+            "message": str(self),
+        }
+
+
 def prepare_start(
     task: str,
     module: str | None = None,
@@ -532,7 +555,19 @@ def run_checks(
 
     result_data: dict[str, Any] = {"planned_commands": planned}
     if level == "precommit":
-        fingerprint = _working_tree_fingerprint(root_path)
+        try:
+            fingerprint = _working_tree_fingerprint(root_path)
+        except _FingerprintError as exc:
+            return _tool_output(
+                "run_checks",
+                input_summary,
+                ok=False,
+                summary="Validation commands completed, but working tree fingerprinting failed.",
+                result=result_data,
+                command_results=command_results,
+                blockers=[exc.to_dict()],
+                next_actions=["Fix the git fingerprinting failure, then rerun run_checks(level='precommit')."],
+            )
         _record_precommit_success(root_path, fingerprint, command_results)
         result_data["precommit_fingerprint"] = fingerprint
 
@@ -741,7 +776,19 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
                     next_actions=["Fix the release validation failure, then rerun release_workflow(action='status')."],
                 )
 
-        fingerprint = _working_tree_fingerprint(root_path)
+        try:
+            fingerprint = _working_tree_fingerprint(root_path)
+        except _FingerprintError as exc:
+            return _tool_output(
+                "release_workflow",
+                input_summary,
+                ok=False,
+                summary="Release validation commands completed, but working tree fingerprinting failed.",
+                result=status,
+                command_results=[*status["command_results"], *command_results],
+                blockers=[exc.to_dict()],
+                next_actions=["Fix the git fingerprinting failure, then rerun release_workflow(action='status')."],
+            )
         _record_release_check_success(root_path, fingerprint, command_results)
         status["release_check_verification"] = _verify_release_check_success(root_path)
         return _tool_output(
@@ -1282,11 +1329,11 @@ def _resource_file(rel_path: str) -> Any:
 
 
 def _resolve_root(root: str) -> Path:
+    if root in {"", "."}:
+        return REPO_ROOT.resolve()
     path = Path(root)
-    if not path.is_absolute() and not (path / "pyproject.toml").is_file():
-        candidate = REPO_ROOT / path
-        if candidate.exists():
-            path = candidate
+    if not path.is_absolute():
+        path = REPO_ROOT / path
     return path.resolve()
 
 
@@ -1480,7 +1527,7 @@ def _working_tree_fingerprint(root: Path) -> str:
         ["rev-parse", "HEAD"],
         ["status", "--short"],
     ):
-        result = _run_git(root, args)
+        result = _require_git_for_fingerprint(root, args)
         parts.append(result.get("stdout", ""))
         parts.append(result.get("stderr", ""))
     parts.extend(_tracked_diff_fingerprint_parts(root, staged=False))
@@ -1630,21 +1677,21 @@ def _is_sensitive_path_part(part: str) -> bool:
 def _tracked_diff_fingerprint_parts(root: Path, *, staged: bool) -> list[str]:
     label = "staged-diff" if staged else "working-diff"
     name_only_args = ["diff", "--cached", "--name-only"] if staged else ["diff", "--name-only"]
-    changed = _run_git(root, name_only_args)
+    changed = _require_git_for_fingerprint(root, name_only_args)
     parts = [label, changed.get("stderr", "")]
     for rel_path in sorted(path for path in changed.get("stdout", "").splitlines() if path):
         if _is_sensitive_local_path(rel_path):
             parts.append(f"{rel_path}:excluded-sensitive-local-path")
             continue
         diff_args = ["diff", "--cached", "--binary", "--", rel_path] if staged else ["diff", "--binary", "--", rel_path]
-        diff = _run_git(root, diff_args)
+        diff = _require_git_for_fingerprint(root, diff_args)
         parts.append(diff.get("stdout", ""))
         parts.append(diff.get("stderr", ""))
     return parts
 
 
 def _untracked_file_fingerprint_parts(root: Path) -> list[str]:
-    result = _run_git(root, ["ls-files", "--others", "--exclude-standard"])
+    result = _require_git_for_fingerprint(root, ["ls-files", "--others", "--exclude-standard"])
     parts = ["untracked-files", result.get("stderr", "")]
     for rel_path in sorted(result.get("stdout", "").splitlines()):
         if not rel_path:
@@ -1661,6 +1708,13 @@ def _untracked_file_fingerprint_parts(root: Path) -> list[str]:
             digest = f"unreadable:{type(exc).__name__}:{exc}"
         parts.append(f"{rel_path}:{digest}")
     return parts
+
+
+def _require_git_for_fingerprint(root: Path, args: list[str]) -> dict[str, Any]:
+    result = _run_git(root, args)
+    if not result["ok"]:
+        raise _FingerprintError("git " + " ".join(args), result)
+    return result
 
 
 def _record_precommit_success(
@@ -1693,7 +1747,14 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return {"ok": False, "message": f"Pre-commit check record is invalid: {exc}"}
-    current = _working_tree_fingerprint(root)
+    try:
+        current = _working_tree_fingerprint(root)
+    except _FingerprintError as exc:
+        return {
+            "ok": False,
+            "message": str(exc),
+            "fingerprint_error": exc.to_dict(),
+        }
     recorded = state.get("fingerprint")
     if recorded != current:
         return {
@@ -1845,7 +1906,14 @@ def _verify_tree_check_success(
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return {"ok": False, "message": f"Check record is invalid: {exc}"}
-    current = _working_tree_fingerprint(root)
+    try:
+        current = _working_tree_fingerprint(root)
+    except _FingerprintError as exc:
+        return {
+            "ok": False,
+            "message": str(exc),
+            "fingerprint_error": exc.to_dict(),
+        }
     recorded = state.get("fingerprint")
     if recorded != current:
         return {

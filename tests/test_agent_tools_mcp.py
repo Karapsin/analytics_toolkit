@@ -71,6 +71,26 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
     ]
 
 
+def test_resolve_root_defaults_to_repo_root_even_when_cwd_has_pyproject(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    monkeypatch.setattr(mcp_server, "REPO_ROOT", repo_root)
+    monkeypatch.chdir(outside)
+
+    assert mcp_server._resolve_root(".") == repo_root.resolve()
+    assert mcp_server._resolve_root("") == repo_root.resolve()
+    assert mcp_server._resolve_root("nested") == (repo_root / "nested").resolve()
+    assert mcp_server._resolve_root(str(outside)) == outside.resolve()
+
+
 def test_prepare_start_stops_on_failed_step(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     calls: list[str] = []
@@ -807,6 +827,45 @@ def test_working_tree_fingerprint_excludes_sensitive_tracked_diffs(
     assert ["diff", "--cached", "--binary", "--", "config/.env.production"] not in commands
     assert ["diff", "--binary", "--", "safe.txt"] in commands
     assert ["diff", "--cached", "--binary", "--", "staged_safe.txt"] in commands
+
+
+def test_check_verification_fails_closed_when_fingerprint_git_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    mcp_server._record_precommit_success(
+        root,
+        "recorded",
+        [{"command": "precommit", "returncode": 0, "summary": "ok"}],
+    )
+    mcp_server._record_release_check_success(
+        root,
+        "recorded",
+        [{"command": "release check", "returncode": 0, "summary": "ok"}],
+    )
+
+    def fake_run_git(root_path: Path, args: list[str]) -> dict[str, object]:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "fatal: not a git repository",
+            "returncode": 128,
+            "command": "git " + " ".join(args),
+            "summary": "fatal: not a git repository",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_git", fake_run_git)
+
+    precommit = mcp_server._verify_precommit_success(root)
+    release = mcp_server._verify_release_check_success(root)
+
+    assert precommit["ok"] is False
+    assert release["ok"] is False
+    assert "Could not fingerprint working tree" in precommit["message"]
+    assert precommit["fingerprint_error"]["returncode"] == 128
+    assert "Could not fingerprint working tree" in release["message"]
+    assert release["fingerprint_error"]["command"] == "git rev-parse HEAD"
 
 
 def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_path: Path) -> None:

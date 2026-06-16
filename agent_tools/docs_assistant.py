@@ -37,6 +37,19 @@ AGENT_QUERY_TOKENS = {
     "release",
     "retrieval",
 }
+AGENT_SPECIFIC_QUERY_TOKENS = {
+    "docs_assistant",
+    "git_workflow",
+    "mcp",
+    "pre_commit",
+    "pre_commit_checks",
+    "prepare_start",
+    "rag",
+    "release_workflow",
+    "run_checks",
+    "version_bump",
+    "workflow_status",
+}
 QUERY_EXPANSIONS = {
     "rag": ("docs_assistant", "retrieval", "index", "search"),
     "precommit": ("pre_commit", "pre_commit_checks"),
@@ -540,11 +553,21 @@ def _metadata_boost(question: str, chunk: DocChunk) -> float:
     heading_tokens = set(tokenize(chunk.heading))
     boost += min(0.12, 0.03 * len(query_tokens & path_tokens))
     boost += min(0.12, 0.03 * len(query_tokens & heading_tokens))
-    if query_tokens & AGENT_QUERY_TOKENS:
+    specific_agent_query = bool(
+        query_tokens & AGENT_SPECIFIC_QUERY_TOKENS
+        or {"pre", "commit"} <= query_tokens
+    )
+    generic_agent_query = bool(query_tokens & AGENT_QUERY_TOKENS)
+    if specific_agent_query:
         if chunk.source_type == SOURCE_AGENT_TOOLS:
-            boost += 0.50
-        elif chunk.source_type == SOURCE_AGENT_DOCS:
             boost += 0.42
+        elif chunk.source_type == SOURCE_AGENT_DOCS:
+            boost += 0.34
+    elif generic_agent_query:
+        if chunk.source_type == SOURCE_AGENT_TOOLS:
+            boost += 0.16
+        elif chunk.source_type == SOURCE_AGENT_DOCS:
+            boost += 0.12
     if chunk.source_type in {SOURCE_AGENT_DOCS, SOURCE_AGENT_TOOLS}:
         source_tokens = set(tokenize(chunk.source_type))
         boost += min(0.08, 0.04 * len(query_tokens & source_tokens))

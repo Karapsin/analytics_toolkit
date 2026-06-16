@@ -136,6 +136,11 @@ def test_build_index_and_search_retrieves_function_and_workflow_docs(tmp_path: P
         index_dir=index_dir,
         top_k=1,
     )
+    broad_public_results = search_docs(
+        "agent instructions compute_test_metrics ratio metric inputs",
+        index_dir=index_dir,
+        top_k=1,
+    )
 
     assert metric_results[0].chunk.path == (
         "docs/modules/ab_utils/functions/compute-test-metrics.md"
@@ -149,6 +154,10 @@ def test_build_index_and_search_retrieves_function_and_workflow_docs(tmp_path: P
     assert ask_results[0].chunk.path == "agent_tools/README.md"
     assert precommit_results[0].chunk.path == "agent_docs/development.md"
     assert precommit_results[0].chunk.source_type == "agent_docs"
+    assert broad_public_results[0].chunk.path == (
+        "docs/modules/ab_utils/functions/compute-test-metrics.md"
+    )
+    assert broad_public_results[0].chunk.source_type == "public_docs"
 
 
 def test_ask_docs_without_llm_returns_grounded_passages_and_citations(tmp_path: Path) -> None:
