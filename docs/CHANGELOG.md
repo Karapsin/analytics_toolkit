@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.18 - 2026-06-16
+
+- Tightened agent MCP workflow guardrails.
+
 ## 1.3.9.17 - 2026-06-16
 
 - Made agent tool commit staging explicit and improved routing status.

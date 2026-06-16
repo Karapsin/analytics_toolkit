@@ -30,6 +30,23 @@ from release_routines.lib.project_metadata import load_project
 DEFAULT_INDEX_DIR = docs_assistant.DEFAULT_INDEX_DIR
 CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
 RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
+SENSITIVE_LOCAL_PATHS = {
+    ".connections",
+    ".env",
+}
+SENSITIVE_LOCAL_DIRS = {
+    ".certs",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".rag_index",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+}
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
@@ -341,12 +358,12 @@ def workflow_status(
         route=route,
         root=root_path,
     )
-    ok = not metadata["blockers"] and not dependency_metadata["blockers"]
+    ok = not metadata["blockers"] and not dependency_metadata["blockers"] and not missing
     return _tool_output(
         "workflow_status",
         input_summary,
         ok=ok,
-        summary="Workflow status collected." if ok else "Workflow status has blockers.",
+        summary="Workflow status collected." if ok else "Workflow status requires action.",
         result={
             "repo_health": health,
             "required_instruction_files": route["required_files"],
@@ -526,7 +543,6 @@ def git_workflow(
     action: str,
     message: str | None = None,
     paths: list[str] | None = None,
-    allow_without_checks: bool = False,
     root: str = ".",
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
@@ -535,7 +551,6 @@ def git_workflow(
         "action": action,
         "message": message,
         "paths": paths,
-        "allow_without_checks": allow_without_checks,
         "root": str(root_path),
     }
     if action not in {"commit", "push"}:
@@ -601,18 +616,17 @@ def git_workflow(
             ],
             next_actions=["Pass explicit paths for the current batch, then retry git_workflow(action='commit')."],
         )
-    if not allow_without_checks:
-        verification = _verify_precommit_success(root_path)
-        if not verification["ok"]:
-            return _tool_output(
-                "git_workflow",
-                input_summary,
-                ok=False,
-                summary="Commit blocked because pre-commit checks are not recorded for this tree.",
-                result={"precommit_verification": verification},
-                blockers=[{"phase": "precommit", "message": verification["message"]}],
-                next_actions=["Run run_checks(level='precommit') before committing."],
-            )
+    verification = _verify_precommit_success(root_path)
+    if not verification["ok"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit blocked because pre-commit checks are not recorded for this tree.",
+            result={"precommit_verification": verification},
+            blockers=[{"phase": "precommit", "message": verification["message"]}],
+            next_actions=["Run run_checks(level='precommit') before committing."],
+        )
 
     add = _run_command(
         root_path,
@@ -1042,14 +1056,12 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     git_parser.add_argument("action", choices=["commit", "push"])
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
-    git_parser.add_argument("--allow-without-checks", action="store_true")
     git_parser.add_argument("--root", default=".")
     git_parser.set_defaults(
         handler=lambda args: git_workflow(
             action=args.action,
             message=args.message,
             paths=args.paths,
-            allow_without_checks=args.allow_without_checks,
             root=args.root,
         )
     )
@@ -1447,11 +1459,24 @@ def _validated_commit_paths(paths: list[str] | None) -> list[str]:
     return [path.strip() for path in paths if path.strip()]
 
 
+def _is_sensitive_local_path(rel_path: str) -> bool:
+    normalized = rel_path.replace("\\", "/").strip("/")
+    if not normalized:
+        return False
+    parts = normalized.split("/")
+    return normalized in SENSITIVE_LOCAL_PATHS or any(
+        part in SENSITIVE_LOCAL_DIRS for part in parts
+    )
+
+
 def _untracked_file_fingerprint_parts(root: Path) -> list[str]:
     result = _run_git(root, ["ls-files", "--others", "--exclude-standard"])
     parts = ["untracked-files", result.get("stderr", "")]
     for rel_path in sorted(result.get("stdout", "").splitlines()):
         if not rel_path:
+            continue
+        if _is_sensitive_local_path(rel_path):
+            parts.append(f"{rel_path}:excluded-sensitive-local-path")
             continue
         path = root / rel_path
         if not path.is_file():

@@ -215,6 +215,7 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     result = mcp_server.workflow_status(
         "implementation release workflow",
         module="agent_tools",
+        instructions_read=True,
         root=str(root),
     )
 
@@ -257,6 +258,39 @@ def test_workflow_status_suppresses_instruction_reminder_when_confirmed(
 
     assert result["ok"] is True
     assert result["result"]["missing_mandatory_actions"] == []
+
+
+def test_workflow_status_not_ok_when_mandatory_actions_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_git",
+        lambda root_path, args: {
+            "ok": True,
+            "stdout": "main\n" if args == ["branch", "--show-current"] else "",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git",
+            "summary": "",
+        },
+    )
+
+    result = mcp_server.workflow_status(
+        "implementation",
+        module="agent_tools",
+        instructions_read=False,
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"] == []
+    assert result["result"]["missing_mandatory_actions"] == [
+        "Read required instruction files: AGENTS.md, agent_docs/development.md, agent_tools/README.md"
+    ]
+    assert result["next_actions"] == result["result"]["missing_mandatory_actions"]
 
 
 def test_workflow_status_cli_accepts_instructions_read_flag(
@@ -448,6 +482,50 @@ def test_precommit_fingerprint_includes_untracked_file_contents(tmp_path: Path) 
     assert first != second
 
 
+def test_precommit_fingerprint_excludes_sensitive_untracked_file_contents(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    (root / ".connections").write_text("secret connection\n", encoding="utf-8")
+    (root / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    certs = root / ".certs"
+    certs.mkdir()
+    (certs / "client.key").write_text("secret key\n", encoding="utf-8")
+    (root / "new_agent_note.txt").write_text("safe note\n", encoding="utf-8")
+    read_paths: list[str] = []
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes_with_secret_guard(path: Path) -> bytes:
+        rel_path = path.relative_to(root).as_posix()
+        if mcp_server._is_sensitive_local_path(rel_path):
+            raise AssertionError(f"sensitive path was read: {rel_path}")
+        read_paths.append(rel_path)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_git",
+        lambda root_path, args: {
+            "ok": True,
+            "stdout": ".connections\n.env\n.certs/client.key\nnew_agent_note.txt\n",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git ls-files --others --exclude-standard",
+            "summary": "",
+        },
+    )
+    monkeypatch.setattr(Path, "read_bytes", read_bytes_with_secret_guard)
+
+    parts = mcp_server._untracked_file_fingerprint_parts(root)
+
+    assert read_paths == ["new_agent_note.txt"]
+    assert "new_agent_note.txt" in "\n".join(parts)
+    assert ".connections:excluded-sensitive-local-path" in parts
+    assert ".env:excluded-sensitive-local-path" in parts
+    assert ".certs/client.key:excluded-sensitive-local-path" in parts
+
+
 def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     _init_git_repo(root)
@@ -552,6 +630,25 @@ def test_git_workflow_cli_accepts_explicit_commit_paths(
         "agent_tools/mcp_server.py",
         "tests/test_agent_tools_mcp.py",
     ]
+
+
+def test_git_workflow_cli_rejects_precommit_bypass_flag() -> None:
+    parser = mcp_server._build_cli_parser()
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            [
+                "git-workflow",
+                "commit",
+                "--message",
+                "Update workflow",
+                "--path",
+                "agent_tools/mcp_server.py",
+                "--allow-without-checks",
+            ]
+        )
+
+    assert exc_info.value.code == 2
 
 
 def test_git_workflow_push_blocks_on_readiness_failure(
