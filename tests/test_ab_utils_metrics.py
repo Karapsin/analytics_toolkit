@@ -1383,11 +1383,29 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
             )
         if "duplicate_user_day_rows" in query:
             return pd.DataFrame({"duplicate_user_day_rows": [0]})
-        if 'CAST("dt" AS DATE) >= DATE \'2024-01-03\'' in query:
-            return pd.DataFrame({"user_id": [1, 2, 3], "orders": [7.0, 14.0, 23.0]})
-        if 'CAST("dt" AS DATE) >= DATE \'2024-01-01\'' in query:
-            return pd.DataFrame({"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]})
-        raise AssertionError(f"Unexpected query:\n{query}")
+        raise AssertionError(f"Unexpected direct aggregate query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        assert kwargs["concurrency"] == 1
+        frames: dict[str, pd.DataFrame] = {}
+        for task in tasks:
+            assert task["db_key"] == "analytics"
+            assert task["query_label"] == "mde"
+            query = task["query"]
+            assert isinstance(query, str)
+            queries.append(query)
+            if 'CAST("dt" AS DATE) >= DATE \'2024-01-03\'' in query:
+                frames[str(task["name"])] = pd.DataFrame(
+                    {"user_id": [1, 2, 3], "orders": [7.0, 14.0, 23.0]}
+                )
+                continue
+            if 'CAST("dt" AS DATE) >= DATE \'2024-01-01\'' in query:
+                frames[str(task["name"])] = pd.DataFrame(
+                    {"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]}
+                )
+                continue
+            raise AssertionError(f"Unexpected aggregate query:\n{query}")
+        return frames
 
     monkeypatch.setattr(
         "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
@@ -1396,6 +1414,10 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         "analytics_toolkit.ab_utils.planning.sql_facade.read",
         fake_read,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
     )
 
     result = compute_mde_from_sql(
@@ -1447,9 +1469,26 @@ def test_compute_mde_from_sql_applies_where_to_validation_and_windows(
             )
         if "duplicate_user_day_rows" in query:
             return pd.DataFrame({"duplicate_user_day_rows": [0]})
-        return pd.DataFrame({"user_id": [1, 2], "orders": [10.0, 12.0]})
+        raise AssertionError(f"Unexpected direct aggregate query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        del kwargs
+        frames: dict[str, pd.DataFrame] = {}
+        for task in tasks:
+            query = task["query"]
+            assert isinstance(query, str)
+            queries.append(query)
+            assert "(country = 'US')" in query
+            frames[str(task["name"])] = pd.DataFrame(
+                {"user_id": [1, 2], "orders": [10.0, 12.0]}
+            )
+        return frames
 
     monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
+    )
 
     with pytest.warns(UserWarning, match="Could not compute CUPED MDE"):
         compute_mde_from_sql(
@@ -1519,30 +1558,16 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
         resolved_table=None,
     )
     events: list[str] = []
-    active_aggregates = 0
-    max_active_aggregates = 0
+    active_loads = 0
+    max_active_loads = 0
+    active_compute_tasks = 0
+    max_active_compute_tasks = 0
     lock = threading.Lock()
-    real_executor_cls = planning_module.ThreadPoolExecutor
-
-    class RecordingExecutor:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            with lock:
-                assert events == ["validation:stats", "validation:duplicates"]
-                events.append("executor")
-            self._executor = real_executor_cls(*args, **kwargs)
-
-        def __enter__(self) -> Any:
-            self._executor.__enter__()
-            return self
-
-        def __exit__(self, *args: object) -> object:
-            return self._executor.__exit__(*args)
-
-        def submit(self, *args: object, **kwargs: object) -> Any:
-            return self._executor.submit(*args, **kwargs)
+    parallel_kwargs: dict[str, object] = {}
+    compute_calls: list[tuple[int, int]] = []
+    real_compute_task = planning_module._compute_sql_mde_day_size_rows
 
     def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
-        nonlocal active_aggregates, max_active_aggregates
         del kwargs
         assert db_key == "analytics"
         if "COUNT(*) AS row_count" in query:
@@ -1562,27 +1587,80 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
                 events.append("validation:duplicates")
             return pd.DataFrame({"duplicate_user_day_rows": [0]})
 
+        raise AssertionError(f"Unexpected direct aggregate query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        nonlocal active_loads, max_active_loads
+        task_list = list(tasks)
         with lock:
-            events.append("aggregate")
-            active_aggregates += 1
-            max_active_aggregates = max(max_active_aggregates, active_aggregates)
+            assert events == ["validation:stats", "validation:duplicates"]
+            events.append("parallel_sql")
+        parallel_kwargs.update(kwargs)
+        assert len(task_list) == 2
+
+        def run_task(task: dict[str, object]) -> tuple[str, pd.DataFrame]:
+            nonlocal active_loads, max_active_loads
+            assert task["type"] == "read"
+            assert task["db_key"] == "analytics"
+            query = task["query"]
+            assert isinstance(query, str)
+            with lock:
+                events.append("aggregate")
+                active_loads += 1
+                max_active_loads = max(max_active_loads, active_loads)
+            try:
+                time.sleep(0.02)
+                if 'CAST("dt" AS DATE) < DATE \'2024-01-02\'' in query:
+                    frame = pd.DataFrame(
+                        {"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]}
+                    )
+                elif 'CAST("dt" AS DATE) < DATE \'2024-01-03\'' in query:
+                    frame = pd.DataFrame(
+                        {"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]}
+                    )
+                else:
+                    raise AssertionError(f"Unexpected aggregate query:\n{query}")
+                return str(task["name"]), frame
+            finally:
+                with lock:
+                    active_loads -= 1
+
+        with planning_module.ThreadPoolExecutor(
+            max_workers=int(kwargs["concurrency"]),
+        ) as executor:
+            return dict(executor.map(run_task, task_list))
+
+    def recording_compute_task(*args: object, **kwargs: object) -> object:
+        nonlocal active_compute_tasks, max_active_compute_tasks
+        with lock:
+            assert "parallel_sql" in events
+            active_compute_tasks += 1
+            max_active_compute_tasks = max(
+                max_active_compute_tasks,
+                active_compute_tasks,
+            )
+            compute_calls.append((int(kwargs["days"]), int(kwargs["split"]["group_size"])))
         try:
             time.sleep(0.02)
-            if 'CAST("dt" AS DATE) < DATE \'2024-01-02\'' in query:
-                return pd.DataFrame({"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]})
-            if 'CAST("dt" AS DATE) < DATE \'2024-01-03\'' in query:
-                return pd.DataFrame({"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]})
+            return real_compute_task(*args, **kwargs)
         finally:
             with lock:
-                active_aggregates -= 1
-        raise AssertionError(f"Unexpected aggregate query:\n{query}")
+                active_compute_tasks -= 1
 
     monkeypatch.setattr(
         "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
         lambda db_key, table: table_info,
     )
     monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
-    monkeypatch.setattr(planning_module, "ThreadPoolExecutor", RecordingExecutor)
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
+    )
+    monkeypatch.setattr(
+        planning_module,
+        "_compute_sql_mde_day_size_rows",
+        recording_compute_task,
+    )
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", UserWarning)
@@ -1598,14 +1676,87 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
         )
 
     pd.testing.assert_frame_equal(result, expected)
-    assert max_active_aggregates == 2
-    assert events.count("aggregate") == 4
+    assert parallel_kwargs == {
+        "concurrency": 2,
+        "fail_fast": True,
+        "progress": False,
+        "hard_concurrency_cap": 10,
+    }
+    assert max_active_loads == 2
+    assert events.count("aggregate") == 2
+    assert max_active_compute_tasks == 2
+    assert sorted(compute_calls) == [(1, 10), (1, 20), (2, 10), (2, 20)]
     cuped_warnings = [
         warning
         for warning in caught
         if "Could not compute CUPED MDE" in str(warning.message)
     ]
     assert len(cuped_warnings) == 2
+
+
+def test_compute_mde_from_sql_parallel_load_raises_sql_hard_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    parallel_kwargs: dict[str, object] = {}
+
+    def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        del kwargs
+        assert db_key == "analytics"
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [2],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-01")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+        raise AssertionError(f"Unexpected direct aggregate query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        parallel_kwargs.update(kwargs)
+        return {
+            str(task["name"]): pd.DataFrame(
+                {"user_id": [1, 2], "orders": [1.0, 2.0]},
+            )
+            for task in tasks
+        }
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: table_info,
+    )
+    monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            outliers_quantile=1,
+            concurrency=11,
+        )
+
+    assert parallel_kwargs["concurrency"] == 11
+    assert parallel_kwargs["hard_concurrency_cap"] == 11
 
 
 def test_compute_mde_from_sql_rejects_missing_table_or_columns(

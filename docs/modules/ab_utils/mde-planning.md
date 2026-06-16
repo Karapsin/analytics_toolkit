@@ -85,8 +85,9 @@ planning = compute_mde_from_sql(
 Use explicit `exp_days` and `group_sizes` lists for irregular scenarios, or use
 `min_days`/`max_days`/`days_step` with
 `min_group_size`/`max_group_size`/`group_size_step` for regular grids.
-For SQL-backed planning, `concurrency > 1` computes day-size combinations in
-parallel after metadata and source validation have completed.
+For SQL-backed planning, `concurrency` first controls parallel loading of the
+required SQL outcome and CUPED pre-period windows, then controls parallel
+in-memory computation of the day-size combinations after all windows are loaded.
 `RatioMetricSpec` can also be passed to
 [compute_test_metrics](functions/compute-test-metrics.md); see
 [Ratio Metrics](ratio-metrics.md) for the dictionary form and

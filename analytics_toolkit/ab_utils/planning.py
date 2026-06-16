@@ -321,153 +321,55 @@ def compute_mde_from_sql(
 
     aggregation_columns = _ordered_mde_aggregation_columns(metric_definitions)
     normalized_outliers_policy = outliers_policy.strip().lower()
-    if concurrency > 1:
-        return _compute_parallel_sql_mde_rows(
-            concurrency=concurrency,
-            db_key=db_key,
-            backend=table_info.backend,
-            source=source,
-            sql_where=normalized_where,
-            user_id=user_id,
-            date_column=date_column,
-            aggregation_columns=aggregation_columns,
-            aggregation_policies=aggregation_policies,
-            metric_definitions=metric_definitions,
-            days_values=options["days"],
-            planned_splits=options["planned_splits"],
-            control_share=float(options["control_share"]),
-            windows=windows,
-            outliers_quantile=float(outliers_quantile),
-            outliers_policy=normalized_outliers_policy,
-            mde_alpha=mde_alpha,
-            mde_power=mde_power,
-            print_queries=print_queries,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-            query_label=query_label,
-        )
-
-    outcome_frames: dict[int, pd.DataFrame] = {}
-    pre_frames: dict[int, pd.DataFrame | None] = {}
-    for days in options["days"]:
-        window = windows[days]
-        outcome_frames[days] = _read_sql_mde_user_window(
-            db_key=db_key,
-            backend=table_info.backend,
-            source=source,
-            sql_where=normalized_where,
-            user_id=user_id,
-            date_column=date_column,
-            columns=aggregation_columns,
-            aggregation_policies=aggregation_policies,
-            start_date=window["outcome_start"],
-            days=days,
-            print_queries=print_queries,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-            query_label=query_label,
-        )
-        pre_frames[days] = None
-        if window["pre_start"] is not None:
-            pre_frames[days] = _read_sql_mde_user_window(
-                db_key=db_key,
-                backend=table_info.backend,
-                source=source,
-                sql_where=normalized_where,
-                user_id=user_id,
-                date_column=date_column,
-                columns=aggregation_columns,
-                aggregation_policies=aggregation_policies,
-                start_date=window["pre_start"],
-                days=window["pre_days"],
-                print_queries=print_queries,
-                retry_cnt=retry_cnt,
-                timeout_increment=timeout_increment,
-                query_label=query_label,
-            )
-
-    rows: list[dict[str, object]] = []
-    for metric_definition in metric_definitions:
-        for days in options["days"]:
-            window = windows[days]
-            user_metric_df = outcome_frames[days]
-            outlier_context = _build_outlier_context(
-                df=user_metric_df,
-                metric_definition=metric_definition,
-                outliers_quantile=float(outliers_quantile),
-                outliers_policy=normalized_outliers_policy,
-            )
-            metric_stats = _compute_mde_metric_stats(
-                df=user_metric_df,
-                metric_definition=metric_definition,
-                outlier_context=outlier_context,
-            )
-            cuped_variance, cuped_reason = _compute_mde_cuped_variance_from_user_frames(
-                user_id=user_id,
-                metric_definition=metric_definition,
-                outcome_user_metric_df=user_metric_df,
-                pre_user_metric_df=pre_frames[days],
-                outcome_outlier_context=outlier_context,
-                pre_days=window["pre_days"],
-                unavailable_reason=window["cuped_unavailable_reason"],
-                outliers_quantile=float(outliers_quantile),
-                outliers_policy=normalized_outliers_policy,
-            )
-            if cuped_reason is not None:
-                warnings.warn(
-                    (
-                        "Could not compute CUPED MDE for metric "
-                        f"{str(metric_definition['metric_key'])!r} "
-                        f"(days={days}, pre_exp_days={window['pre_days']}): "
-                        f"{cuped_reason}."
-                    ),
-                    stacklevel=2,
-                )
-            for split in options["planned_splits"]:
-                rows.append(
-                    _build_mde_planning_row(
-                        metric_name=str(metric_definition["metric_key"]),
-                        avg=metric_stats["avg"],
-                        variance=metric_stats["var"],
-                        days=days,
-                        pre_exp_days=window["pre_days"],
-                        group_size=split["group_size"],
-                        control_share=options["control_share"],
-                        control_n=split["control_n"],
-                        test_n=split["test_n"],
-                        cuped_variance=cuped_variance,
-                        mde_alpha=mde_alpha,
-                        mde_power=mde_power,
-                    )
-                )
-
-    return _mde_result_frame(rows)
+    outcome_frames, pre_frames = _load_sql_mde_window_frames(
+        concurrency=concurrency,
+        db_key=db_key,
+        backend=table_info.backend,
+        source=source,
+        sql_where=normalized_where,
+        user_id=user_id,
+        date_column=date_column,
+        aggregation_columns=aggregation_columns,
+        aggregation_policies=aggregation_policies,
+        days_values=options["days"],
+        windows=windows,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    return _compute_parallel_sql_mde_rows(
+        concurrency=concurrency,
+        user_id=user_id,
+        metric_definitions=metric_definitions,
+        days_values=options["days"],
+        planned_splits=options["planned_splits"],
+        control_share=float(options["control_share"]),
+        windows=windows,
+        outcome_frames=outcome_frames,
+        pre_frames=pre_frames,
+        outliers_quantile=float(outliers_quantile),
+        outliers_policy=normalized_outliers_policy,
+        mde_alpha=mde_alpha,
+        mde_power=mde_power,
+    )
 
 
 def _compute_parallel_sql_mde_rows(
     *,
     concurrency: int,
-    db_key: str,
-    backend: str,
-    source: str,
-    sql_where: str | None,
     user_id: str,
-    date_column: str,
-    aggregation_columns: Sequence[str],
-    aggregation_policies: dict[str, str],
     metric_definitions: Sequence[dict[str, object]],
     days_values: Sequence[int],
     planned_splits: Sequence[dict[str, int]],
     control_share: float,
     windows: dict[int, dict[str, Any]],
+    outcome_frames: dict[int, pd.DataFrame],
+    pre_frames: dict[int, pd.DataFrame | None],
     outliers_quantile: float,
     outliers_policy: str,
     mde_alpha: float,
     mde_power: float,
-    print_queries: bool,
-    retry_cnt: int,
-    timeout_increment: int | float,
-    query_label: str | None,
 ) -> pd.DataFrame:
     task_specs = [
         (days_index, split_index, int(days), split)
@@ -481,27 +383,18 @@ def _compute_parallel_sql_mde_rows(
         future_to_key = {
             executor.submit(
                 _compute_sql_mde_day_size_rows,
-                db_key=db_key,
-                backend=backend,
-                source=source,
-                sql_where=sql_where,
                 user_id=user_id,
-                date_column=date_column,
-                aggregation_columns=aggregation_columns,
-                aggregation_policies=aggregation_policies,
                 metric_definitions=metric_definitions,
                 days=days,
                 split=split,
                 control_share=control_share,
                 window=windows[days],
+                outcome_frame=outcome_frames[days],
+                pre_frame=pre_frames[days],
                 outliers_quantile=outliers_quantile,
                 outliers_policy=outliers_policy,
                 mde_alpha=mde_alpha,
                 mde_power=mde_power,
-                print_queries=print_queries,
-                retry_cnt=retry_cnt,
-                timeout_increment=timeout_increment,
-                query_label=query_label,
             ): (days_index, split_index)
             for days_index, split_index, days, split in task_specs
         }
@@ -546,63 +439,19 @@ def _compute_parallel_sql_mde_rows(
 
 def _compute_sql_mde_day_size_rows(
     *,
-    db_key: str,
-    backend: str,
-    source: str,
-    sql_where: str | None,
     user_id: str,
-    date_column: str,
-    aggregation_columns: Sequence[str],
-    aggregation_policies: dict[str, str],
     metric_definitions: Sequence[dict[str, object]],
     days: int,
     split: dict[str, int],
     control_share: float,
     window: dict[str, Any],
+    outcome_frame: pd.DataFrame,
+    pre_frame: pd.DataFrame | None,
     outliers_quantile: float,
     outliers_policy: str,
     mde_alpha: float,
     mde_power: float,
-    print_queries: bool,
-    retry_cnt: int,
-    timeout_increment: int | float,
-    query_label: str | None,
 ) -> tuple[dict[int, dict[str, object]], dict[int, str]]:
-    outcome_frame = _read_sql_mde_user_window(
-        db_key=db_key,
-        backend=backend,
-        source=source,
-        sql_where=sql_where,
-        user_id=user_id,
-        date_column=date_column,
-        columns=aggregation_columns,
-        aggregation_policies=aggregation_policies,
-        start_date=window["outcome_start"],
-        days=days,
-        print_queries=print_queries,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-    )
-    pre_frame = None
-    if window["pre_start"] is not None:
-        pre_frame = _read_sql_mde_user_window(
-            db_key=db_key,
-            backend=backend,
-            source=source,
-            sql_where=sql_where,
-            user_id=user_id,
-            date_column=date_column,
-            columns=aggregation_columns,
-            aggregation_policies=aggregation_policies,
-            start_date=window["pre_start"],
-            days=window["pre_days"],
-            print_queries=print_queries,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-            query_label=query_label,
-        )
-
     rows_by_metric: dict[int, dict[str, object]] = {}
     cuped_reasons_by_metric: dict[int, str] = {}
     for metric_index, metric_definition in enumerate(metric_definitions):
@@ -1465,6 +1314,164 @@ FROM (
     }
 
 
+def _load_sql_mde_window_frames(
+    *,
+    concurrency: int,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    aggregation_columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    days_values: Sequence[int],
+    windows: dict[int, dict[str, Any]],
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> tuple[dict[int, pd.DataFrame], dict[int, pd.DataFrame | None]]:
+    tasks: list[dict[str, object]] = []
+    task_names_by_window: dict[tuple[pd.Timestamp, int], str] = {}
+    outcome_task_names: dict[int, str] = {}
+    pre_task_names: dict[int, str | None] = {}
+
+    for days in days_values:
+        window = windows[int(days)]
+        outcome_task_names[int(days)] = _add_sql_mde_window_load_task(
+            tasks=tasks,
+            task_names_by_window=task_names_by_window,
+            task_name=f"mde_outcome_{int(days)}",
+            db_key=db_key,
+            backend=backend,
+            source=source,
+            sql_where=sql_where,
+            user_id=user_id,
+            date_column=date_column,
+            columns=aggregation_columns,
+            aggregation_policies=aggregation_policies,
+            start_date=window["outcome_start"],
+            days=int(days),
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+        pre_task_names[int(days)] = None
+        if window["pre_start"] is not None:
+            pre_task_names[int(days)] = _add_sql_mde_window_load_task(
+                tasks=tasks,
+                task_names_by_window=task_names_by_window,
+                task_name=f"mde_pre_{int(days)}",
+                db_key=db_key,
+                backend=backend,
+                source=source,
+                sql_where=sql_where,
+                user_id=user_id,
+                date_column=date_column,
+                columns=aggregation_columns,
+                aggregation_policies=aggregation_policies,
+                start_date=window["pre_start"],
+                days=int(window["pre_days"]),
+                print_queries=print_queries,
+                retry_cnt=retry_cnt,
+                timeout_increment=timeout_increment,
+                query_label=query_label,
+            )
+
+    loaded_frames = sql_facade.parallel_sql(
+        tasks,
+        concurrency=concurrency,
+        fail_fast=True,
+        progress=False,
+        hard_concurrency_cap=max(10, concurrency),
+    )
+    normalized_frames = {
+        name: _normalize_sql_mde_window_frame(
+            result=result,
+            user_id=user_id,
+            columns=aggregation_columns,
+        )
+        for name, result in loaded_frames.items()
+    }
+    outcome_frames = {
+        int(days): normalized_frames[outcome_task_names[int(days)]]
+        for days in days_values
+    }
+    pre_frames = {
+        int(days): (
+            normalized_frames[pre_task_names[int(days)]]
+            if pre_task_names[int(days)] is not None
+            else None
+        )
+        for days in days_values
+    }
+    return outcome_frames, pre_frames
+
+
+def _add_sql_mde_window_load_task(
+    *,
+    tasks: list[dict[str, object]],
+    task_names_by_window: dict[tuple[pd.Timestamp, int], str],
+    task_name: str,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    start_date: pd.Timestamp,
+    days: int,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> str:
+    window_key = (pd.Timestamp(start_date), int(days))
+    existing_task_name = task_names_by_window.get(window_key)
+    if existing_task_name is not None:
+        return existing_task_name
+
+    task_names_by_window[window_key] = task_name
+    tasks.append(
+        {
+            "name": task_name,
+            "type": "read",
+            "db_key": db_key,
+            "query": _build_sql_mde_user_window_query(
+                backend=backend,
+                source=source,
+                sql_where=sql_where,
+                user_id=user_id,
+                date_column=date_column,
+                columns=columns,
+                aggregation_policies=aggregation_policies,
+                start_date=start_date,
+                days=days,
+            ),
+            "print_queries": print_queries,
+            "retry_cnt": retry_cnt,
+            "timeout_increment": timeout_increment,
+            "query_label": query_label,
+        }
+    )
+    return task_name
+
+
+def _normalize_sql_mde_window_frame(
+    *,
+    result: object,
+    user_id: str,
+    columns: Sequence[str],
+) -> pd.DataFrame:
+    if not isinstance(result, pd.DataFrame):
+        raise TypeError("SQL read did not return a dataframe.")
+    return result[[user_id, *columns]] if not result.empty else result
+
+
 def _read_sql_mde_user_window(
     *,
     db_key: str,
@@ -1482,6 +1489,44 @@ def _read_sql_mde_user_window(
     timeout_increment: int | float,
     query_label: str | None,
 ) -> pd.DataFrame:
+    query = _build_sql_mde_user_window_query(
+        backend=backend,
+        source=source,
+        sql_where=sql_where,
+        user_id=user_id,
+        date_column=date_column,
+        columns=columns,
+        aggregation_policies=aggregation_policies,
+        start_date=start_date,
+        days=days,
+    )
+    result = _read_sql_mde_query(
+        db_key=db_key,
+        query=query,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    return _normalize_sql_mde_window_frame(
+        result=result,
+        user_id=user_id,
+        columns=columns,
+    )
+
+
+def _build_sql_mde_user_window_query(
+    *,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    start_date: pd.Timestamp,
+    days: int,
+) -> str:
     user_expr = _quote_sql_identifier(user_id, backend)
     dt_expr = _sql_date_expr(backend, _quote_sql_identifier(date_column, backend))
     end_date = start_date + pd.Timedelta(days=days)
@@ -1510,15 +1555,7 @@ FROM {source}
 GROUP BY {user_expr}
 ORDER BY {user_expr}
 """.strip()
-    result = _read_sql_mde_query(
-        db_key=db_key,
-        query=query,
-        print_queries=print_queries,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-    )
-    return result[[user_id, *columns]] if not result.empty else result
+    return query
 
 
 def _read_sql_mde_query(

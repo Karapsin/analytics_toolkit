@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.5 - 2026-06-16
+
+- Refactor compute_mde_from_sql concurrency to load SQL windows via parallel_sql before in-memory scenario computation.
+
 ## 1.3.10.4 - 2026-06-16
 
 - Added non_zero_truncate AB outlier policy as the default for sparse metrics.
