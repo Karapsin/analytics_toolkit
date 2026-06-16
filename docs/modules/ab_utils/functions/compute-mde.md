@@ -25,7 +25,7 @@ compute_mde(
     mde_alpha=0.05,
     mde_power=0.8,
     outliers_quantile=0.999,
-    outliers_policy="truncate",
+    outliers_policy="non_zero_truncate",
     pre_exp_days=None,
     sum_agg_metrics=None,
     max_agg_metrics=None,
@@ -53,7 +53,7 @@ compute_mde(
 - `mde_alpha` - significance level used for MDE calculation
 - `mde_power` - statistical power used for MDE calculation
 - `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
-- `outliers_policy` - `"truncate"` or `"drop"`
+- `outliers_policy` - `"non_zero_truncate"`, `"truncate"`, or `"drop"`
 - `pre_exp_days` - pre-experiment covariate window length for CUPED MDE;
   `None` uses each `exp_days` value
 - `sum_agg_metrics` - metric/component columns to sum inside each user window;
@@ -119,6 +119,9 @@ planning[
 - pass `sum_agg_metrics` to invert the default for a call; listed columns use sum and all other metric/component columns use max
 - `sum_agg_metrics` and `max_agg_metrics` cannot be provided together
 - ratio metrics aggregate numerator and denominator columns independently before computing statistics
+- the default `"non_zero_truncate"` policy computes the cutoff from non-zero
+  aggregated user-window values, then caps values above that cutoff while
+  keeping zeros in the metric sample
 - the pseudo-experiment outcome window starts at `start_dt`; when `start_dt` is
   `None`, it starts at the first available historical date
 - CUPED MDE uses the adjacent pre-period immediately before the outcome window

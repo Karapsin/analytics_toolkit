@@ -65,6 +65,21 @@ def test_compute_mde_from_sql_concurrency_defaults_to_one() -> None:
     assert inspect.signature(compute_mde_from_sql).parameters["concurrency"].default == 1
 
 
+def test_ab_metric_outlier_policy_defaults_to_non_zero_truncate() -> None:
+    assert (
+        inspect.signature(compute_test_metrics).parameters["outliers_policy"].default
+        == "non_zero_truncate"
+    )
+    assert (
+        inspect.signature(compute_mde).parameters["outliers_policy"].default
+        == "non_zero_truncate"
+    )
+    assert (
+        inspect.signature(compute_mde_from_sql).parameters["outliers_policy"].default
+        == "non_zero_truncate"
+    )
+
+
 def _build_sample_metrics_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -837,6 +852,47 @@ def test_compute_mde_accepts_max_aggregation_for_mean_metric() -> None:
     expected_values = pd.Series([1.0, 0.0, 1.0])
     assert row["avg"] == pytest.approx(float(expected_values.mean()))
     assert row["var"] == pytest.approx(float(expected_values.var(ddof=1)))
+
+
+def test_compute_mde_default_non_zero_truncate_keeps_sparse_positive_values() -> None:
+    user_ids = list(range(1, 11))
+    df = pd.DataFrame(
+        {
+            "user_id": user_ids + user_ids,
+            "dt": pd.to_datetime(["2024-01-01"] * 10 + ["2024-01-02"] * 10),
+            "revenue": [0.0] * 9 + [100.0] + [0.0] * 9 + [100.0],
+        }
+    )
+
+    default_result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["revenue"],
+        group_sizes=[10],
+        exp_days=[1],
+        start_dt="2024-01-02",
+        outliers_quantile=0.8,
+    )
+    with pytest.warns(UserWarning, match="pre-experiment covariate variance"):
+        truncate_result = compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["revenue"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt="2024-01-02",
+            outliers_quantile=0.8,
+            outliers_policy="truncate",
+        )
+
+    default_row = _single_metric_row(default_result, "revenue")
+    truncate_row = _single_metric_row(truncate_result, "revenue")
+    assert default_row["avg"] == pytest.approx(10.0)
+    assert default_row["var"] > 0
+    assert not math.isnan(float(default_row["mde_abs"]))
+    assert truncate_row["avg"] == pytest.approx(0.0)
+    assert truncate_row["var"] == pytest.approx(0.0)
+    assert math.isnan(float(truncate_row["mde_abs"]))
 
 
 def test_compute_mde_sum_aggregation_list_makes_other_metrics_use_max() -> None:
@@ -1986,6 +2042,51 @@ def test_compute_test_metrics_uses_global_outlier_cutoff_across_groups() -> None
     assert orders_row["metric_test"] == pytest.approx((100 + cutoff) / 2)
 
 
+def test_compute_test_metrics_default_non_zero_truncate_ignores_zeros_for_cutoff() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 11)),
+            "group_name": ["control"] * 5 + ["test"] * 5,
+            "orders": [0.0] * 9 + [100.0],
+        }
+    )
+
+    default_result = compute_test_metrics(
+        df,
+        control="control",
+        test_vs_test=False,
+        outliers_quantile=0.8,
+    )
+    truncate_result = compute_test_metrics(
+        df,
+        control="control",
+        test_vs_test=False,
+        outliers_quantile=0.8,
+        outliers_policy="truncate",
+    )
+
+    default_row = _single_metric_row(default_result, "orders")
+    truncate_row = _single_metric_row(truncate_result, "orders")
+    assert default_row["outliers_cutoff"] == pytest.approx(100.0)
+    assert default_row["outliers_n_test"] == 0
+    assert default_row["metric_test"] == pytest.approx(20.0)
+    assert truncate_row["outliers_cutoff"] == pytest.approx(0.0)
+    assert truncate_row["outliers_n_test"] == 1
+    assert truncate_row["metric_test"] == pytest.approx(0.0)
+
+
+def test_compute_test_metrics_accepts_non_zero_truncate_explicitly() -> None:
+    df = _build_sample_metrics_df()
+
+    result = compute_test_metrics(
+        df,
+        test_vs_test=False,
+        outliers_policy="non_zero_truncate",
+    )
+
+    assert not result.empty
+
+
 def test_compute_test_metrics_user_ratio_outliers_truncate_and_drop() -> None:
     df = pd.DataFrame(
         {
@@ -2032,6 +2133,38 @@ def test_compute_test_metrics_user_ratio_outliers_truncate_and_drop() -> None:
     assert drop_row["n1"] == 1
 
 
+def test_compute_test_metrics_user_ratio_default_non_zero_truncate() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 11)),
+            "group_name": ["control"] * 5 + ["test"] * 5,
+            "clicks": [0.0] * 9 + [100.0],
+            "impressions": [10.0] * 10,
+        }
+    )
+    ratio_metrics = [
+        {
+            "name": "ctr_user",
+            "numerator": "clicks",
+            "denominator": "impressions",
+            "level": "user",
+        }
+    ]
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        outliers_quantile=0.8,
+    )
+
+    row = _single_metric_row(result, "ctr_user")
+    assert row["outliers_cutoff"] == pytest.approx(10.0)
+    assert row["outliers_n_test"] == 0
+    assert row["metric_test"] == pytest.approx(2.0)
+
+
 def test_compute_test_metrics_agg_ratio_outliers_drop_and_truncate() -> None:
     df = pd.DataFrame(
         {
@@ -2069,6 +2202,31 @@ def test_compute_test_metrics_agg_ratio_outliers_drop_and_truncate() -> None:
     assert truncate_row["n1"] == 2
     assert drop_row["metric_test"] == pytest.approx(3 / 10)
     assert drop_row["n1"] == 1
+
+
+def test_compute_test_metrics_agg_ratio_default_non_zero_truncate() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": list(range(1, 11)),
+            "group_name": ["control"] * 5 + ["test"] * 5,
+            "clicks": [0.0] * 9 + [100.0],
+            "impressions": [10.0] * 10,
+        }
+    )
+    ratio_metrics = [{"name": "ctr", "numerator": "clicks", "denominator": "impressions"}]
+
+    result = compute_test_metrics(
+        df,
+        control="control",
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        outliers_quantile=0.8,
+    )
+
+    row = _single_metric_row(result, "ctr")
+    assert row["outliers_cutoff"] == pytest.approx(10.0)
+    assert row["outliers_n_test"] == 0
+    assert row["metric_test"] == pytest.approx(2.0)
 
 
 @pytest.mark.filterwarnings(
@@ -2148,7 +2306,11 @@ def test_compute_test_metrics_validates_bootstrap_parameters(
         ),
         ({"outliers_quantile": True}, TypeError, "outliers_quantile must be numeric"),
         ({"outliers_quantile": "0.9"}, TypeError, "outliers_quantile must be numeric"),
-        ({"outliers_policy": "winsorize"}, ValueError, "outliers_policy must be 'truncate' or 'drop'"),
+        (
+            {"outliers_policy": "winsorize"},
+            ValueError,
+            "outliers_policy must be 'truncate', 'drop', or 'non_zero_truncate'",
+        ),
         ({"outliers_policy": None}, TypeError, "outliers_policy must be a string"),
     ],
 )

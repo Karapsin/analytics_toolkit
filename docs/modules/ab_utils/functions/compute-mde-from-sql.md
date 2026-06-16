@@ -28,7 +28,7 @@ compute_mde_from_sql(
     mde_alpha=0.05,
     mde_power=0.8,
     outliers_quantile=0.999,
-    outliers_policy="truncate",
+    outliers_policy="non_zero_truncate",
     pre_exp_days=None,
     sum_agg_metrics=None,
     max_agg_metrics=None,

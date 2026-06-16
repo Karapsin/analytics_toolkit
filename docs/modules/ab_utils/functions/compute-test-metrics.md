@@ -22,7 +22,7 @@ compute_test_metrics(
     bootstrap_progress=False,
     pre_exp_metrics_df=None,
     outliers_quantile=0.999,
-    outliers_policy="truncate",
+    outliers_policy="non_zero_truncate",
 )
 ```
 
@@ -43,7 +43,7 @@ compute_test_metrics(
 - `bootstrap_n_jobs` - number of bootstrap workers
 - `bootstrap_progress` - whether to show bootstrap progress
 - `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
-- `outliers_policy` - `"truncate"` or `"drop"`
+- `outliers_policy` - `"non_zero_truncate"`, `"truncate"`, or `"drop"`
 
 ## Usage
 
@@ -76,6 +76,9 @@ result[["metric", "metric_type", "group A", "group B", "p-value"]]
 - All numeric columns not used as `group`, `user_id`, or ratio components are
   treated as mean metrics.
 - Missing metric values are ignored per metric and group.
+- The default `"non_zero_truncate"` policy computes the cutoff from non-zero
+  metric values, then caps values above that cutoff while keeping zeros in the
+  metric sample.
 - CUPED failures warn and return `NaN` for CUPED outputs after validation has
   passed.
 

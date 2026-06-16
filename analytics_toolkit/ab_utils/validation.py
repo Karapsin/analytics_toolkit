@@ -29,8 +29,8 @@ def _validate_outlier_parameters(outliers_quantile: float, outliers_policy: str)
     if not isinstance(outliers_policy, str):
         raise TypeError("outliers_policy must be a string.")
     normalized_policy = outliers_policy.strip().lower()
-    if normalized_policy not in {"truncate", "drop"}:
-        raise ValueError("outliers_policy must be 'truncate' or 'drop'.")
+    if normalized_policy not in {"truncate", "drop", "non_zero_truncate"}:
+        raise ValueError("outliers_policy must be 'truncate', 'drop', or 'non_zero_truncate'.")
 
 
 def _validate_pre_experiment_dataframe(

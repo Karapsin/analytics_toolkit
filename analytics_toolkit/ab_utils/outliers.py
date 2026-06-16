@@ -50,7 +50,11 @@ def _build_outlier_context(
         return {
             "kind": "mean",
             "metric_key": metric_key,
-            "cutoff": _compute_outlier_cutoff(values, outliers_quantile),
+            "cutoff": _compute_outlier_cutoff(
+                values,
+                outliers_quantile,
+                outliers_policy,
+            ),
             "policy": outliers_policy,
         }
 
@@ -84,13 +88,23 @@ def _build_outlier_context(
         "kind": "ratio",
         "level": ratio_spec["level"],
         "metric_key": metric_key,
-        "cutoff": _compute_outlier_cutoff(values, outliers_quantile),
+        "cutoff": _compute_outlier_cutoff(
+            values,
+            outliers_quantile,
+            outliers_policy,
+        ),
         "policy": outliers_policy,
     }
 
 
-def _compute_outlier_cutoff(values: pd.Series, outliers_quantile: float) -> float:
+def _compute_outlier_cutoff(
+    values: pd.Series,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> float:
     nonmissing_values = values.dropna()
+    if outliers_policy == "non_zero_truncate":
+        nonmissing_values = nonmissing_values[nonmissing_values != 0]
     if nonmissing_values.empty:
         return math.nan
     return float(nonmissing_values.quantile(outliers_quantile))
@@ -105,7 +119,7 @@ def _apply_outliers_to_values(
     if outlier_mask.any() and outlier_context is not None:
         cutoff = float(outlier_context["cutoff"])
         policy = str(outlier_context["policy"])
-        if policy == "truncate":
+        if policy in {"truncate", "non_zero_truncate"}:
             transformed.loc[outlier_mask] = cutoff
         else:
             transformed.loc[outlier_mask] = np.nan
@@ -127,7 +141,7 @@ def _apply_outliers_to_agg_ratio_components(
     if outlier_mask.any() and outlier_context is not None:
         cutoff = float(outlier_context["cutoff"])
         policy = str(outlier_context["policy"])
-        if policy == "truncate":
+        if policy in {"truncate", "non_zero_truncate"}:
             transformed_numerator.loc[outlier_mask] = cutoff * denominator.loc[outlier_mask]
         else:
             transformed_numerator.loc[outlier_mask] = np.nan

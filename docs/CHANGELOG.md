@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.4 - 2026-06-16
+
+- Added non_zero_truncate AB outlier policy as the default for sparse metrics.
+
 ## 1.3.10.3 - 2026-06-16
 
 - Add compute_mde_from_sql concurrency.

@@ -41,7 +41,7 @@ def compute_test_metrics(
     bootstrap_progress: bool = False,
     pre_exp_metrics_df: pd.DataFrame | None = None,
     outliers_quantile: float = 0.999,
-    outliers_policy: str = "truncate",
+    outliers_policy: str = "non_zero_truncate",
 ) -> pd.DataFrame:
     """Compute per-metric experiment comparison statistics.
 

@@ -28,10 +28,12 @@ separately because they need numerator and denominator columns; see
 [Ratio Metrics](ratio-metrics.md) for aggregate and per-user ratio behavior.
 
 Outlier handling is enabled by default. Each metric gets one upper-tail cutoff
-across all experiment groups. `"truncate"` caps values at the cutoff, while
-`"drop"` treats values above the cutoff as missing. Aggregate ratio outliers are
-handled through numerator and denominator sums so the final ratio remains an
-aggregate estimate.
+across all experiment groups. The default `"non_zero_truncate"` policy computes
+that cutoff from non-zero values, then caps values above the cutoff while keeping
+zeros in the metric sample. `"truncate"` computes the cutoff from all non-missing
+values and caps values above it; `"drop"` treats values above the cutoff as
+missing. Aggregate ratio outliers are handled through numerator and denominator
+sums so the final ratio remains an aggregate estimate.
 
 The reported `mde_abs` and `mde_relative` use a normal approximation based on
 observed group variances and sample sizes. When CUPED input is provided, CUPED
