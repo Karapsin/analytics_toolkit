@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.2 - 2026-06-16
+
+- Add SQL-backed MDE planning and start_dt window selection.
+
 ## 1.3.10.1 - 2026-06-16
 
 - Add compute_mde aggregation policies.

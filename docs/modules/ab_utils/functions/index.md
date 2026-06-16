@@ -12,6 +12,7 @@ helpers most likely to be used in normal workflows appear first.
 - [format_ab_metrics](format-ab-metrics.md) - reshape metric output for reports
 - [do_split](do-split.md) - assign users to AB groups
 - [compute_mde](compute-mde.md) - estimate MDE planning scenarios
+- [compute_mde_from_sql](compute-mde-from-sql.md) - estimate MDE planning scenarios from a SQL table
 
 ## Advanced Functions
 

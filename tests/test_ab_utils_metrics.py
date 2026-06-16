@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import math
+from types import SimpleNamespace
 import warnings
 
 import numpy as np
@@ -14,6 +15,7 @@ import analytics_toolkit.ab_utils.metrics as ab_metrics
 from analytics_toolkit.ab_utils import (
     RatioMetricSpec,
     compute_mde,
+    compute_mde_from_sql,
     compute_test_metrics,
 )
 from analytics_toolkit.ab_utils.metrics import (
@@ -45,6 +47,14 @@ def test_compute_test_metrics_bootstrap_progress_defaults_to_false() -> None:
     signature = inspect.signature(compute_test_metrics)
 
     assert signature.parameters["bootstrap_progress"].default is False
+
+
+def test_compute_mde_start_dt_is_required() -> None:
+    assert inspect.signature(compute_mde).parameters["start_dt"].default is inspect._empty
+    assert (
+        inspect.signature(compute_mde_from_sql).parameters["start_dt"].default
+        is inspect._empty
+    )
 
 
 def _build_sample_metrics_df() -> pd.DataFrame:
@@ -666,6 +676,7 @@ def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
         metric_columns=["orders"],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         control_share=0.6,
         outliers_quantile=1,
     )
@@ -736,6 +747,7 @@ def test_compute_mde_accepts_explicit_list_grids_sorted_unique() -> None:
         metric_columns=["orders"],
         group_sizes=[20, 10, 20],
         exp_days=[2, 1, 1],
+        start_dt="2024-01-03",
     )
 
     assert result["days"].tolist() == [1, 1, 2, 2]
@@ -784,6 +796,7 @@ def test_compute_mde_accepts_min_max_step_grids() -> None:
         min_days=1,
         max_days=3,
         days_step=2,
+        start_dt="2024-01-04",
     )
 
     assert result["days"].tolist() == [1, 1, 3, 3]
@@ -807,6 +820,7 @@ def test_compute_mde_accepts_max_aggregation_for_mean_metric() -> None:
         metric_columns=["converted"],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         max_agg_metrics=["converted"],
         outliers_quantile=1,
     )
@@ -824,7 +838,20 @@ def test_compute_mde_sum_aggregation_list_makes_other_metrics_use_max() -> None:
             "dt": pd.to_datetime(
                 ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
             ),
-            "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
+            "orders": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                3.0,
+                4.0,
+                6.0,
+                8.0,
+                5.0,
+                6.0,
+                10.0,
+                13.0,
+            ],
             "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         }
     )
@@ -835,6 +862,7 @@ def test_compute_mde_sum_aggregation_list_makes_other_metrics_use_max() -> None:
         metric_columns=["orders", "converted"],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         sum_agg_metrics=["orders"],
         outliers_quantile=1,
     )
@@ -884,6 +912,7 @@ def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
         ],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         outliers_quantile=1,
     )
 
@@ -921,6 +950,7 @@ def test_compute_mde_applies_aggregation_policy_to_user_ratio_components() -> No
         ],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         max_agg_metrics=["converted"],
         outliers_quantile=1,
     )
@@ -983,6 +1013,7 @@ def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
         ],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         outliers_quantile=1,
     )
 
@@ -1024,6 +1055,7 @@ def test_compute_mde_applies_aggregation_policy_to_agg_ratio_components() -> Non
         ],
         group_sizes=[10],
         exp_days=[2],
+        start_dt="2024-01-03",
         max_agg_metrics=["converted"],
         outliers_quantile=1,
     )
@@ -1038,7 +1070,7 @@ def test_compute_mde_applies_aggregation_policy_to_agg_ratio_components() -> Non
     assert row["var"] == pytest.approx(expected_variance)
 
 
-def test_compute_mde_selects_start_and_end_windows() -> None:
+def test_compute_mde_defaults_to_first_historical_date_and_accepts_start_dt() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 2] * 6,
@@ -1075,30 +1107,31 @@ def test_compute_mde_selects_start_and_end_windows() -> None:
         }
     )
 
-    start_result = compute_mde(
+    with pytest.warns(UserWarning, match="Could not compute CUPED MDE"):
+        default_result = compute_mde(
+            df,
+            user_id="user_id",
+                metric_columns=["orders"],
+                group_sizes=[10],
+                exp_days=[2],
+                start_dt=None,
+                outliers_quantile=1,
+        )
+    explicit_result = compute_mde(
         df,
         user_id="user_id",
         metric_columns=["orders"],
         group_sizes=[10],
         exp_days=[2],
-        exp_length_policy="start",
-        outliers_quantile=1,
-    )
-    end_result = compute_mde(
-        df,
-        user_id="user_id",
-        metric_columns=["orders"],
-        group_sizes=[10],
-        exp_days=[2],
-        exp_length_policy="end",
+        start_dt="2024-01-05",
         outliers_quantile=1,
     )
 
-    assert _single_metric_row(start_result, "orders")["avg"] == pytest.approx(30.0)
-    assert _single_metric_row(end_result, "orders")["avg"] == pytest.approx(400.0)
+    assert _single_metric_row(default_result, "orders")["avg"] == pytest.approx(4.0)
+    assert _single_metric_row(explicit_result, "orders")["avg"] == pytest.approx(400.0)
 
 
-def test_compute_mde_selects_seeded_random_window() -> None:
+def test_compute_mde_rejects_start_dt_outside_history() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 2] * 6,
@@ -1135,29 +1168,26 @@ def test_compute_mde_selects_seeded_random_window() -> None:
         }
     )
 
-    result = compute_mde(
-        df,
-        user_id="user_id",
-        metric_columns=["orders"],
-        group_sizes=[10],
-        exp_days=[2],
-        exp_length_policy="random",
-        random_state=42,
-        outliers_quantile=1,
-    )
-
-    expected_offset = int(np.random.default_rng(42).integers(0, 3)) + 2
-    selected_dates = pd.date_range("2024-01-01", periods=6)[
-        expected_offset : expected_offset + 2
-    ]
-    expected_values = (
-        df[df["dt"].isin(selected_dates)]
-        .groupby("user_id")["orders"]
-        .sum()
-    )
-    assert _single_metric_row(result, "orders")["avg"] == pytest.approx(
-        float(expected_values.mean())
-    )
+    with pytest.raises(ValueError, match="before the first available historical date"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[2],
+            start_dt="2023-12-31",
+            outliers_quantile=1,
+        )
+    with pytest.raises(ValueError, match="exceeds the available historical span"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[2],
+            start_dt="2024-01-06",
+            outliers_quantile=1,
+        )
 
 
 def test_compute_mde_uses_explicit_pre_exp_days_for_cuped_window() -> None:
@@ -1175,6 +1205,7 @@ def test_compute_mde_uses_explicit_pre_exp_days_for_cuped_window() -> None:
         metric_columns=["orders"],
         group_sizes=[12],
         exp_days=[2],
+        start_dt="2024-01-02",
         pre_exp_days=1,
         outliers_quantile=1,
     )
@@ -1199,10 +1230,11 @@ def test_compute_mde_warns_and_returns_nan_when_cuped_window_is_unavailable() ->
         result = compute_mde(
             df,
             user_id="user_id",
-            metric_columns=["orders"],
-            group_sizes=[10],
-            exp_days=[2],
-            outliers_quantile=1,
+                metric_columns=["orders"],
+                group_sizes=[10],
+                exp_days=[2],
+                start_dt=None,
+                outliers_quantile=1,
         )
 
     row = _single_metric_row(result, "orders")
@@ -1225,12 +1257,269 @@ def test_compute_mde_defaults_user_id_argument() -> None:
         metric_columns=["orders"],
         group_sizes=[10],
         exp_days=[1],
+        start_dt="2024-01-02",
         outliers_quantile=1,
     )
 
     row = _single_metric_row(result, "orders")
     assert row["avg"] == pytest.approx(16.0)
     assert row["var"] == pytest.approx(8.0)
+
+
+def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    source_df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
+        }
+    )
+    expected = compute_mde(
+        source_df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        start_dt="2024-01-03",
+        outliers_quantile=1,
+    )
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    queries: list[str] = []
+
+    def fake_table_info(db_key: str, table: str) -> SimpleNamespace:
+        assert db_key == "analytics"
+        assert table == "sandbox.events"
+        return table_info
+
+    def fake_read(
+        db_key: str,
+        query: str,
+        **kwargs: object,
+    ) -> pd.DataFrame:
+        assert db_key == "analytics"
+        assert kwargs["query_label"] == "mde"
+        queries.append(query)
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [len(source_df)],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-04")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+        if 'CAST("dt" AS DATE) >= DATE \'2024-01-03\'' in query:
+            return pd.DataFrame({"user_id": [1, 2, 3], "orders": [7.0, 14.0, 23.0]})
+        if 'CAST("dt" AS DATE) >= DATE \'2024-01-01\'' in query:
+            return pd.DataFrame({"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]})
+        raise AssertionError(f"Unexpected query:\n{query}")
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        fake_table_info,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.read",
+        fake_read,
+    )
+
+    result = compute_mde_from_sql(
+        "analytics",
+        "sandbox.events",
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        start_dt="2024-01-03",
+        outliers_quantile=1,
+        query_label="mde",
+    )
+
+    pd.testing.assert_frame_equal(result, expected)
+    assert any('FROM "sandbox"."events"' in query for query in queries)
+
+
+def test_compute_mde_from_sql_applies_where_to_validation_and_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    queries: list[str] = []
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: table_info,
+    )
+
+    def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        del db_key, kwargs
+        queries.append(query)
+        assert "(country = 'US')" in query
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [4],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-02")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+        return pd.DataFrame({"user_id": [1, 2], "orders": [10.0, 12.0]})
+
+    monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
+
+    with pytest.warns(UserWarning, match="Could not compute CUPED MDE"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            sql_where="country = 'US'",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            outliers_quantile=1,
+        )
+
+    assert len(queries) == 3
+
+
+def test_compute_mde_from_sql_rejects_missing_table_or_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_table = SimpleNamespace(
+        exists=False,
+        columns={},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: missing_table,
+    )
+    with pytest.raises(ValueError, match="does not exist"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+    missing_column = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: missing_column,
+    )
+    with pytest.raises(ValueError, match="Missing metric column"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+
+def test_compute_mde_from_sql_rejects_nulls_and_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: table_info,
+    )
+
+    def fake_null_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        del db_key, kwargs
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [4],
+                    "null_user_rows": [1],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-02")],
+                }
+            )
+        raise AssertionError("duplicate query should not run after null validation fails")
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.read",
+        fake_null_read,
+    )
+    with pytest.raises(ValueError, match="must not contain missing values"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+    def fake_duplicate_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        del db_key, kwargs
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [4],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-02")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [1]})
+        raise AssertionError("aggregate query should not run after duplicate validation fails")
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.read",
+        fake_duplicate_read,
+    )
+    with pytest.raises(ValueError, match="unique user-day rows"):
+        compute_mde_from_sql(
+            "analytics",
+            "sandbox.events",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
 
 
 def test_compute_mde_rejects_invalid_grid_inputs() -> None:
@@ -1245,9 +1534,10 @@ def test_compute_mde_rejects_invalid_grid_inputs() -> None:
             group_sizes=[10],
             min_group_size=10,
             exp_days=[1],
+            start_dt=None,
         )
     with pytest.raises(ValueError, match="Either group_sizes"):
-        compute_mde(df, user_id="user_id", exp_days=[1])
+        compute_mde(df, user_id="user_id", exp_days=[1], start_dt=None)
     with pytest.raises(ValueError, match="exp_days cannot be combined"):
         compute_mde(
             df,
@@ -1255,15 +1545,37 @@ def test_compute_mde_rejects_invalid_grid_inputs() -> None:
             group_sizes=[10],
             exp_days=[1],
             min_days=1,
+            start_dt=None,
         )
     with pytest.raises(ValueError, match="control_share"):
-        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], control_share=1.0)
+        compute_mde(
+            df,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            control_share=1.0,
+        )
     with pytest.raises(ValueError, match="at least one control and one test user"):
-        compute_mde(df, user_id="user_id", group_sizes=[1], exp_days=[1])
+        compute_mde(df, user_id="user_id", group_sizes=[1], exp_days=[1], start_dt=None)
     with pytest.raises(ValueError, match="pre_exp_days"):
-        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=0)
+        compute_mde(
+            df,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            pre_exp_days=0,
+        )
     with pytest.raises(TypeError, match="pre_exp_days"):
-        compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=True)
+        compute_mde(
+            df,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+            pre_exp_days=True,
+        )
 
 
 def test_compute_mde_rejects_invalid_aggregation_policy_inputs() -> None:
@@ -1283,6 +1595,7 @@ def test_compute_mde_rejects_invalid_aggregation_policy_inputs() -> None:
             metric_columns=["orders", "converted"],
             group_sizes=[10],
             exp_days=[1],
+            start_dt=None,
             sum_agg_metrics=["orders"],
             max_agg_metrics=["converted"],
         )
@@ -1293,6 +1606,7 @@ def test_compute_mde_rejects_invalid_aggregation_policy_inputs() -> None:
             metric_columns=["orders", "converted"],
             group_sizes=[10],
             exp_days=[1],
+            start_dt=None,
             max_agg_metrics=["converted", "converted"],
         )
     with pytest.raises(ValueError, match="unknown metric column"):
@@ -1302,6 +1616,7 @@ def test_compute_mde_rejects_invalid_aggregation_policy_inputs() -> None:
             metric_columns=["orders"],
             group_sizes=[10],
             exp_days=[1],
+            start_dt=None,
             max_agg_metrics=["converted"],
         )
 
@@ -1323,13 +1638,37 @@ def test_compute_mde_rejects_invalid_user_day_grain() -> None:
     )
 
     with pytest.raises(ValueError, match="must not contain missing values"):
-        compute_mde(missing_user, user_id="user_id", group_sizes=[10], exp_days=[1])
+        compute_mde(
+            missing_user,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
     with pytest.raises(ValueError, match="must not contain missing values"):
-        compute_mde(missing_date, user_id="user_id", group_sizes=[10], exp_days=[1])
+        compute_mde(
+            missing_date,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
     with pytest.raises(ValueError, match="datelike"):
-        compute_mde(invalid_date, user_id="user_id", group_sizes=[10], exp_days=[1])
+        compute_mde(
+            invalid_date,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
     with pytest.raises(ValueError, match="unique user-day rows"):
-        compute_mde(duplicate_user_day, user_id="user_id", group_sizes=[10], exp_days=[1])
+        compute_mde(
+            duplicate_user_day,
+            user_id="user_id",
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
 
 
 def test_compute_mde_rejects_ratio_name_conflicting_with_mean_metric() -> None:
@@ -1349,6 +1688,7 @@ def test_compute_mde_rejects_ratio_name_conflicting_with_mean_metric() -> None:
             user_id="user_id",
             group_sizes=[10],
             exp_days=[1],
+            start_dt=None,
             ratio_metrics=[
                 RatioMetricSpec(
                     name="ctr",

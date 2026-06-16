@@ -21,8 +21,7 @@ compute_mde(
     min_days=None,
     max_days=None,
     days_step=None,
-    exp_length_policy="start",
-    random_state=None,
+    start_dt,
     mde_alpha=0.05,
     mde_power=0.8,
     outliers_quantile=0.999,
@@ -49,8 +48,8 @@ compute_mde(
 - `min_days` - minimum experiment length for range mode
 - `max_days` - maximum experiment length for range mode
 - `days_step` - experiment length step for range mode
-- `exp_length_policy` - `"start"`, `"end"`, or `"random"` historical window selection
-- `random_state` - seed used when `exp_length_policy="random"`
+- `start_dt` - required first day of the pseudo-experiment outcome window; pass
+  `None` explicitly to use the first available historical date
 - `mde_alpha` - significance level used for MDE calculation
 - `mde_power` - statistical power used for MDE calculation
 - `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
@@ -88,9 +87,9 @@ planning = compute_mde(
     ],
     max_agg_metrics=["converted"],
     exp_days=[7, 14, 21],
+    start_dt="2024-01-15",
     group_sizes=[50_000, 100_000, 150_000],
     control_share=0.5,
-    exp_length_policy="end",
 )
 ```
 
@@ -120,10 +119,9 @@ planning[
 - pass `sum_agg_metrics` to invert the default for a call; listed columns use sum and all other metric/component columns use max
 - `sum_agg_metrics` and `max_agg_metrics` cannot be provided together
 - ratio metrics aggregate numerator and denominator columns independently before computing statistics
-- CUPED MDE uses an adjacent pre-period and outcome window:
-  - `"start"` uses the first `pre_exp_days` days as pre-period and the next `days` as outcome
-  - `"end"` uses the last `days` as outcome and the immediately preceding pre-period
-  - `"random"` chooses a seeded contiguous pre-period plus outcome pair
+- the pseudo-experiment outcome window starts at `start_dt`; when `start_dt` is
+  `None`, it starts at the first available historical date
+- CUPED MDE uses the adjacent pre-period immediately before the outcome window
 - `mde_relative_cuped` is `mde_abs_cuped / avg`
 - if a CUPED estimate cannot be built, CUPED columns are `NaN` and a warning is emitted
 

@@ -7,8 +7,13 @@ from numbers import Integral, Real
 from typing import Any
 import warnings
 
-import numpy as np
 import pandas as pd
+
+from analytics_toolkit import sql as sql_facade
+from analytics_toolkit.sql.core.identifiers import (
+    parse_table_identifier,
+    quote_identifier_part,
+)
 
 from .constants import DEFAULT_ALPHA, DEFAULT_POWER
 from .cuped import _build_metric_values_by_user
@@ -63,8 +68,7 @@ def compute_mde(
     min_days: int | None = None,
     max_days: int | None = None,
     days_step: int | None = None,
-    exp_length_policy: str = "start",
-    random_state: int | None = None,
+    start_dt: object | None,
     mde_alpha: float = DEFAULT_ALPHA,
     mde_power: float = DEFAULT_POWER,
     outliers_quantile: float = 0.999,
@@ -75,45 +79,27 @@ def compute_mde(
 ) -> pd.DataFrame:
     """Estimate MDE scenarios from historical user-day metric variance."""
 
-    resolved_group_sizes = _resolve_positive_int_grid(
-        values=group_sizes,
-        min_value=min_group_size,
-        max_value=max_group_size,
-        step=group_size_step,
-        values_name="group_sizes",
-        min_name="min_group_size",
-        max_name="max_group_size",
-        step_name="group_size_step",
+    options = _resolve_mde_options(
+        control_share=control_share,
+        group_sizes=group_sizes,
+        min_group_size=min_group_size,
+        max_group_size=max_group_size,
+        group_size_step=group_size_step,
+        exp_days=exp_days,
+        min_days=min_days,
+        max_days=max_days,
+        days_step=days_step,
+        start_dt=start_dt,
+        pre_exp_days=pre_exp_days,
+        mde_alpha=mde_alpha,
+        mde_power=mde_power,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
     )
-    resolved_days = _resolve_positive_int_grid(
-        values=exp_days,
-        min_value=min_days,
-        max_value=max_days,
-        step=days_step,
-        values_name="exp_days",
-        min_name="min_days",
-        max_name="max_days",
-        step_name="days_step",
-    )
-    resolved_pre_exp_days = _validate_optional_pre_exp_days(pre_exp_days)
-    resolved_control_share = _validate_control_share(control_share)
-    planned_splits = [
-        _build_planned_split(
-            group_size=group_size,
-            control_share=resolved_control_share,
-        )
-        for group_size in resolved_group_sizes
-    ]
-    normalized_policy = _normalize_exp_length_policy(exp_length_policy)
     prepared_df = _prepare_mde_user_day_frame(
         df=df,
         user_id=user_id,
         date_column=date_column,
-    )
-    _validate_mde_parameters(mde_alpha=mde_alpha, mde_power=mde_power)
-    _validate_outlier_parameters(
-        outliers_quantile=outliers_quantile,
-        outliers_policy=outliers_policy,
     )
 
     reserved_columns = {user_id, date_column}
@@ -142,15 +128,15 @@ def compute_mde(
     rows: list[dict[str, object]] = []
     normalized_outliers_policy = outliers_policy.strip().lower()
     windows = _select_mde_windows(
-        df=prepared_df,
-        days_values=resolved_days,
-        pre_exp_days=resolved_pre_exp_days,
+        min_date=pd.Timestamp(prepared_df[date_column].min()),
+        max_date=pd.Timestamp(prepared_df[date_column].max()),
+        days_values=options["days"],
+        pre_exp_days=options["pre_exp_days"],
         date_column=date_column,
-        exp_length_policy=normalized_policy,
-        random_state=random_state,
+        start_dt=options["start_dt"],
     )
     for metric_definition in metric_definitions:
-        for days in resolved_days:
+        for days in options["days"]:
             window = windows[days]
             window_df = _filter_mde_window(
                 df=prepared_df,
@@ -199,7 +185,7 @@ def compute_mde(
                     ),
                     stacklevel=2,
                 )
-            for split in planned_splits:
+            for split in options["planned_splits"]:
                 rows.append(
                     _build_mde_planning_row(
                         metric_name=str(metric_definition["metric_key"]),
@@ -208,7 +194,7 @@ def compute_mde(
                         days=days,
                         pre_exp_days=window["pre_days"],
                         group_size=split["group_size"],
-                        control_share=resolved_control_share,
+                        control_share=options["control_share"],
                         control_n=split["control_n"],
                         test_n=split["test_n"],
                         cuped_variance=cuped_variance,
@@ -217,6 +203,219 @@ def compute_mde(
                     )
                 )
 
+    return _mde_result_frame(rows)
+
+
+def compute_mde_from_sql(
+    db_key: str,
+    sql_table_name: str,
+    *,
+    sql_where: str | None = None,
+    user_id: str = "user_id",
+    metric_columns: Sequence[str] | None = None,
+    ratio_metrics: Sequence[dict[str, object] | RatioMetricSpec] | None = None,
+    control_share: float = 0.5,
+    group_sizes: Sequence[int] | None = None,
+    min_group_size: int | None = None,
+    max_group_size: int | None = None,
+    group_size_step: int | None = None,
+    date_column: str = "dt",
+    exp_days: Sequence[int] | None = None,
+    min_days: int | None = None,
+    max_days: int | None = None,
+    days_step: int | None = None,
+    start_dt: object | None,
+    mde_alpha: float = DEFAULT_ALPHA,
+    mde_power: float = DEFAULT_POWER,
+    outliers_quantile: float = 0.999,
+    outliers_policy: str = "truncate",
+    pre_exp_days: int | None = None,
+    sum_agg_metrics: Sequence[str] | None = None,
+    max_agg_metrics: Sequence[str] | None = None,
+    print_queries: bool = False,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
+    query_label: str | None = None,
+) -> pd.DataFrame:
+    """Estimate MDE scenarios from a SQL historical user-day table."""
+
+    options = _resolve_mde_options(
+        control_share=control_share,
+        group_sizes=group_sizes,
+        min_group_size=min_group_size,
+        max_group_size=max_group_size,
+        group_size_step=group_size_step,
+        exp_days=exp_days,
+        min_days=min_days,
+        max_days=max_days,
+        days_step=days_step,
+        start_dt=start_dt,
+        pre_exp_days=pre_exp_days,
+        mde_alpha=mde_alpha,
+        mde_power=mde_power,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+    normalized_where = _normalize_sql_where(sql_where)
+    table_info = sql_facade.table_info(db_key, sql_table_name)
+    if not table_info.exists:
+        raise ValueError(f"SQL table {sql_table_name!r} does not exist.")
+
+    column_names = list(table_info.columns)
+    metadata_frame = pd.DataFrame(columns=column_names)
+    _validate_sql_source_required_columns(
+        column_names=column_names,
+        user_id=user_id,
+        date_column=date_column,
+    )
+    reserved_columns = {user_id, date_column}
+    ratio_specs = _normalize_ratio_metrics(
+        metadata_frame,
+        _coerce_ratio_metric_specs(ratio_metrics),
+        reserved_columns=reserved_columns,
+    )
+    mean_metric_columns = _normalize_metric_columns(
+        df=metadata_frame,
+        metric_columns=metric_columns,
+        ratio_specs=ratio_specs,
+        user_id=user_id,
+        date_column=date_column,
+    )
+    _validate_metric_name_conflicts(mean_metric_columns, ratio_specs)
+    if not mean_metric_columns and not ratio_specs:
+        raise ValueError("At least one metric column or ratio metric is required.")
+
+    metric_definitions = _build_metric_definitions(mean_metric_columns, ratio_specs)
+    aggregation_policies = _resolve_mde_aggregation_policies(
+        metric_definitions=metric_definitions,
+        sum_agg_metrics=sum_agg_metrics,
+        max_agg_metrics=max_agg_metrics,
+    )
+    source = _build_sql_mde_source(
+        table_name=table_info.resolved_table or table_info.table,
+        backend=table_info.backend,
+    )
+    source_stats = _validate_sql_mde_source_rows(
+        db_key=db_key,
+        backend=table_info.backend,
+        source=source,
+        sql_where=normalized_where,
+        user_id=user_id,
+        date_column=date_column,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    windows = _select_mde_windows(
+        min_date=source_stats["min_date"],
+        max_date=source_stats["max_date"],
+        days_values=options["days"],
+        pre_exp_days=options["pre_exp_days"],
+        date_column=date_column,
+        start_dt=options["start_dt"],
+    )
+
+    aggregation_columns = _ordered_mde_aggregation_columns(metric_definitions)
+    outcome_frames: dict[int, pd.DataFrame] = {}
+    pre_frames: dict[int, pd.DataFrame | None] = {}
+    for days in options["days"]:
+        window = windows[days]
+        outcome_frames[days] = _read_sql_mde_user_window(
+            db_key=db_key,
+            backend=table_info.backend,
+            source=source,
+            sql_where=normalized_where,
+            user_id=user_id,
+            date_column=date_column,
+            columns=aggregation_columns,
+            aggregation_policies=aggregation_policies,
+            start_date=window["outcome_start"],
+            days=days,
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+        pre_frames[days] = None
+        if window["pre_start"] is not None:
+            pre_frames[days] = _read_sql_mde_user_window(
+                db_key=db_key,
+                backend=table_info.backend,
+                source=source,
+                sql_where=normalized_where,
+                user_id=user_id,
+                date_column=date_column,
+                columns=aggregation_columns,
+                aggregation_policies=aggregation_policies,
+                start_date=window["pre_start"],
+                days=window["pre_days"],
+                print_queries=print_queries,
+                retry_cnt=retry_cnt,
+                timeout_increment=timeout_increment,
+                query_label=query_label,
+            )
+
+    rows: list[dict[str, object]] = []
+    normalized_outliers_policy = outliers_policy.strip().lower()
+    for metric_definition in metric_definitions:
+        for days in options["days"]:
+            window = windows[days]
+            user_metric_df = outcome_frames[days]
+            outlier_context = _build_outlier_context(
+                df=user_metric_df,
+                metric_definition=metric_definition,
+                outliers_quantile=float(outliers_quantile),
+                outliers_policy=normalized_outliers_policy,
+            )
+            metric_stats = _compute_mde_metric_stats(
+                df=user_metric_df,
+                metric_definition=metric_definition,
+                outlier_context=outlier_context,
+            )
+            cuped_variance, cuped_reason = _compute_mde_cuped_variance_from_user_frames(
+                user_id=user_id,
+                metric_definition=metric_definition,
+                outcome_user_metric_df=user_metric_df,
+                pre_user_metric_df=pre_frames[days],
+                outcome_outlier_context=outlier_context,
+                pre_days=window["pre_days"],
+                unavailable_reason=window["cuped_unavailable_reason"],
+                outliers_quantile=float(outliers_quantile),
+                outliers_policy=normalized_outliers_policy,
+            )
+            if cuped_reason is not None:
+                warnings.warn(
+                    (
+                        "Could not compute CUPED MDE for metric "
+                        f"{str(metric_definition['metric_key'])!r} "
+                        f"(days={days}, pre_exp_days={window['pre_days']}): "
+                        f"{cuped_reason}."
+                    ),
+                    stacklevel=2,
+                )
+            for split in options["planned_splits"]:
+                rows.append(
+                    _build_mde_planning_row(
+                        metric_name=str(metric_definition["metric_key"]),
+                        avg=metric_stats["avg"],
+                        variance=metric_stats["var"],
+                        days=days,
+                        pre_exp_days=window["pre_days"],
+                        group_size=split["group_size"],
+                        control_share=options["control_share"],
+                        control_n=split["control_n"],
+                        test_n=split["test_n"],
+                        cuped_variance=cuped_variance,
+                        mde_alpha=mde_alpha,
+                        mde_power=mde_power,
+                    )
+                )
+
+    return _mde_result_frame(rows)
+
+
+def _mde_result_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
     return pd.DataFrame(
         rows,
         columns=[
@@ -233,6 +432,85 @@ def compute_mde(
             "mde_relative_cuped",
         ],
     )
+
+
+def _resolve_mde_options(
+    *,
+    control_share: float,
+    group_sizes: Sequence[int] | None,
+    min_group_size: int | None,
+    max_group_size: int | None,
+    group_size_step: int | None,
+    exp_days: Sequence[int] | None,
+    min_days: int | None,
+    max_days: int | None,
+    days_step: int | None,
+    start_dt: object | None,
+    pre_exp_days: int | None,
+    mde_alpha: float,
+    mde_power: float,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> dict[str, object]:
+    resolved_group_sizes = _resolve_positive_int_grid(
+        values=group_sizes,
+        min_value=min_group_size,
+        max_value=max_group_size,
+        step=group_size_step,
+        values_name="group_sizes",
+        min_name="min_group_size",
+        max_name="max_group_size",
+        step_name="group_size_step",
+    )
+    resolved_days = _resolve_positive_int_grid(
+        values=exp_days,
+        min_value=min_days,
+        max_value=max_days,
+        step=days_step,
+        values_name="exp_days",
+        min_name="min_days",
+        max_name="max_days",
+        step_name="days_step",
+    )
+    resolved_control_share = _validate_control_share(control_share)
+    _validate_mde_parameters(mde_alpha=mde_alpha, mde_power=mde_power)
+    _validate_outlier_parameters(
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+    normalized_start_dt = _normalize_optional_start_dt(start_dt)
+    planned_splits = [
+        _build_planned_split(
+            group_size=group_size,
+            control_share=resolved_control_share,
+        )
+        for group_size in resolved_group_sizes
+    ]
+    return {
+        "days": resolved_days,
+        "pre_exp_days": _validate_optional_pre_exp_days(pre_exp_days),
+        "control_share": resolved_control_share,
+        "planned_splits": planned_splits,
+        "start_dt": normalized_start_dt,
+    }
+
+
+def _normalize_optional_start_dt(start_dt: object | None) -> pd.Timestamp | None:
+    if start_dt is None:
+        return None
+    return _normalize_start_dt(start_dt)
+
+
+def _normalize_start_dt(start_dt: object) -> pd.Timestamp:
+    if isinstance(start_dt, bool):
+        raise TypeError("start_dt must be a datelike value.")
+    try:
+        normalized = pd.Timestamp(start_dt).normalize()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("start_dt must be a datelike value.") from exc
+    if pd.isna(normalized):
+        raise ValueError("start_dt must be a datelike value.")
+    return normalized
 
 
 def _build_mde_planning_row(
@@ -371,6 +649,35 @@ def _compute_mde_cuped_variance(
         user_id=user_id,
         aggregation_policies=aggregation_policies,
     )
+    return _compute_mde_cuped_variance_from_user_frames(
+        user_id=user_id,
+        metric_definition=metric_definition,
+        outcome_user_metric_df=outcome_user_metric_df,
+        pre_user_metric_df=pre_user_metric_df,
+        outcome_outlier_context=outcome_outlier_context,
+        pre_days=pre_days,
+        unavailable_reason=None,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+
+
+def _compute_mde_cuped_variance_from_user_frames(
+    *,
+    user_id: str,
+    metric_definition: dict[str, object],
+    outcome_user_metric_df: pd.DataFrame,
+    pre_user_metric_df: pd.DataFrame | None,
+    outcome_outlier_context: dict[str, object] | None,
+    pre_days: int,
+    unavailable_reason: str | None,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> tuple[float, str | None]:
+    if unavailable_reason is not None:
+        return math.nan, unavailable_reason
+    if pre_user_metric_df is None:
+        return math.nan, "pre-experiment window is unavailable"
     pre_outlier_context = _build_outlier_context(
         df=pre_user_metric_df,
         metric_definition=metric_definition,
@@ -556,13 +863,6 @@ def _build_planned_split(*, group_size: int, control_share: float) -> dict[str, 
     return {"group_size": group_size, "control_n": control_n, "test_n": test_n}
 
 
-def _normalize_exp_length_policy(exp_length_policy: str) -> str:
-    normalized = str(exp_length_policy).strip().lower()
-    if normalized not in {"start", "end", "random"}:
-        raise ValueError("exp_length_policy must be 'start', 'end', or 'random'.")
-    return normalized
-
-
 def _prepare_mde_user_day_frame(
     *,
     df: pd.DataFrame,
@@ -598,55 +898,40 @@ def _prepare_mde_user_day_frame(
 
 def _select_mde_windows(
     *,
-    df: pd.DataFrame,
+    min_date: pd.Timestamp,
+    max_date: pd.Timestamp,
     days_values: Sequence[int],
     pre_exp_days: int | None,
     date_column: str,
-    exp_length_policy: str,
-    random_state: int | None,
+    start_dt: pd.Timestamp | None,
 ) -> dict[int, dict[str, Any]]:
-    min_date = pd.Timestamp(df[date_column].min())
-    max_date = pd.Timestamp(df[date_column].max())
-    total_days = int((max_date - min_date).days) + 1
-    rng = np.random.default_rng(random_state) if exp_length_policy == "random" else None
+    del date_column
+    outcome_start = min_date if start_dt is None else pd.Timestamp(start_dt)
+    if outcome_start < min_date:
+        raise ValueError(
+            f"start_dt {outcome_start.date()} is before the first available "
+            f"historical date {min_date.date()}."
+        )
     windows: dict[int, dict[str, Any]] = {}
     for days in days_values:
         resolved_pre_days = int(days if pre_exp_days is None else pre_exp_days)
-        possible_outcome_starts = total_days - days + 1
-        if possible_outcome_starts < 1:
+        outcome_end = outcome_start + pd.Timedelta(days=days - 1)
+        if outcome_end > max_date:
+            available_days = int((max_date - outcome_start).days) + 1
             raise ValueError(
-                f"exp_days value {days} exceeds the available historical calendar span "
-                f"of {total_days} day(s)."
+                f"exp_days value {days} exceeds the available historical span "
+                f"from start_dt ({available_days} day(s))."
             )
-        possible_pair_starts = total_days - resolved_pre_days - days + 1
+        pre_start = outcome_start - pd.Timedelta(days=resolved_pre_days)
         cuped_unavailable_reason = None
-        pre_start = None
-        if possible_pair_starts >= 1:
-            if exp_length_policy == "start":
-                pre_offset = 0
-            elif exp_length_policy == "end":
-                pre_offset = possible_pair_starts - 1
-            else:
-                pre_offset = (
-                    int(rng.integers(0, possible_pair_starts)) if rng is not None else 0
-                )
-            outcome_offset = pre_offset + resolved_pre_days
-            pre_start = min_date + pd.Timedelta(days=pre_offset)
-        else:
+        if pre_start < min_date:
+            pre_start = None
             cuped_unavailable_reason = (
-                "not enough historical calendar days for the requested "
-                "pre-experiment and experiment windows"
+                "not enough historical calendar days before start_dt for the "
+                "requested pre-experiment window"
             )
-            if exp_length_policy == "start":
-                outcome_offset = 0
-            elif exp_length_policy == "end":
-                outcome_offset = possible_outcome_starts - 1
-            else:
-                outcome_offset = (
-                    int(rng.integers(0, possible_outcome_starts)) if rng is not None else 0
-                )
         windows[int(days)] = {
-            "outcome_start": min_date + pd.Timedelta(days=outcome_offset),
+            "outcome_start": outcome_start,
             "pre_start": pre_start,
             "pre_days": resolved_pre_days,
             "cuped_unavailable_reason": cuped_unavailable_reason,
@@ -780,6 +1065,269 @@ def _collect_mde_aggregation_columns(
         columns.add(ratio_spec["numerator"])
         columns.add(ratio_spec["denominator"])
     return columns
+
+
+def _ordered_mde_aggregation_columns(
+    metric_definitions: Sequence[dict[str, object]],
+) -> list[str]:
+    columns: list[str] = []
+    seen: set[str] = set()
+    for metric_definition in metric_definitions:
+        if metric_definition["kind"] == "mean":
+            candidates = [str(metric_definition["column"])]
+        else:
+            ratio_spec = dict(metric_definition["ratio_spec"])
+            candidates = [ratio_spec["numerator"], ratio_spec["denominator"]]
+        for column in candidates:
+            if column not in seen:
+                columns.append(column)
+                seen.add(column)
+    return columns
+
+
+def _normalize_sql_where(sql_where: str | None) -> str | None:
+    if sql_where is None:
+        return None
+    if not isinstance(sql_where, str):
+        raise TypeError("sql_where must be a string or None.")
+    normalized = sql_where.strip()
+    if not normalized:
+        raise ValueError("sql_where must not be empty when provided.")
+    return normalized
+
+
+def _validate_sql_source_required_columns(
+    *,
+    column_names: Sequence[str],
+    user_id: str,
+    date_column: str,
+) -> None:
+    available = set(column_names)
+    if user_id not in available:
+        raise ValueError(f"Column '{user_id}' was not found.")
+    if date_column not in available:
+        raise ValueError(f"Column '{date_column}' was not found.")
+
+
+def _build_sql_mde_source(*, table_name: str, backend: str) -> str:
+    return parse_table_identifier(table_name, backend).render_quoted(backend)
+
+
+def _validate_sql_mde_source_rows(
+    *,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> dict[str, pd.Timestamp]:
+    user_expr = _quote_sql_identifier(user_id, backend)
+    dt_expr = _sql_date_expr(backend, _quote_sql_identifier(date_column, backend))
+    where_clause = _sql_where_clause(sql_where)
+    query = f"""
+WITH source AS (
+    SELECT
+        {user_expr} AS __mde_user_id,
+        {dt_expr} AS __mde_dt
+    FROM {source}
+    {where_clause}
+)
+SELECT
+    COUNT(*) AS row_count,
+    SUM(CASE WHEN __mde_user_id IS NULL THEN 1 ELSE 0 END) AS null_user_rows,
+    SUM(CASE WHEN __mde_dt IS NULL THEN 1 ELSE 0 END) AS null_date_rows,
+    MIN(__mde_dt) AS min_dt,
+    MAX(__mde_dt) AS max_dt
+FROM source
+""".strip()
+    rows = _read_sql_mde_query(
+        db_key=db_key,
+        query=query,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    if rows.empty:
+        raise ValueError("SQL source validation returned no rows.")
+    row = rows.iloc[0]
+    row_count = _coerce_sql_int(row.get("row_count"))
+    if row_count <= 0:
+        raise ValueError("SQL source must contain at least one user-day row.")
+    null_user_rows = _coerce_sql_int(row.get("null_user_rows"))
+    if null_user_rows > 0:
+        raise ValueError(f"Column '{user_id}' must not contain missing values.")
+    null_date_rows = _coerce_sql_int(row.get("null_date_rows"))
+    if null_date_rows > 0:
+        raise ValueError(f"Column '{date_column}' must not contain missing values.")
+
+    duplicate_rows = _read_sql_mde_query(
+        db_key=db_key,
+        query=f"""
+WITH source AS (
+    SELECT
+        {user_expr} AS __mde_user_id,
+        {dt_expr} AS __mde_dt
+    FROM {source}
+    {where_clause}
+)
+SELECT COALESCE(SUM(__mde_cnt - 1), 0) AS duplicate_user_day_rows
+FROM (
+    SELECT __mde_user_id, __mde_dt, COUNT(*) AS __mde_cnt
+    FROM source
+    WHERE __mde_user_id IS NOT NULL AND __mde_dt IS NOT NULL
+    GROUP BY __mde_user_id, __mde_dt
+    HAVING COUNT(*) > 1
+) duplicates
+""".strip(),
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    duplicate_count = (
+        _coerce_sql_int(duplicate_rows.iloc[0].get("duplicate_user_day_rows"))
+        if not duplicate_rows.empty
+        else 0
+    )
+    if duplicate_count > 0:
+        raise ValueError(
+            f"Columns '{user_id}' and '{date_column}' must identify unique user-day rows."
+        )
+    return {
+        "min_date": _coerce_sql_date(row.get("min_dt"), "min_dt"),
+        "max_date": _coerce_sql_date(row.get("max_dt"), "max_dt"),
+    }
+
+
+def _read_sql_mde_user_window(
+    *,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    start_date: pd.Timestamp,
+    days: int,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> pd.DataFrame:
+    user_expr = _quote_sql_identifier(user_id, backend)
+    dt_expr = _sql_date_expr(backend, _quote_sql_identifier(date_column, backend))
+    end_date = start_date + pd.Timedelta(days=days)
+    conditions = [
+        f"{dt_expr} >= {_sql_date_literal(start_date, backend)}",
+        f"{dt_expr} < {_sql_date_literal(end_date, backend)}",
+    ]
+    where_clause = _sql_where_clause(sql_where, extra_conditions=conditions)
+    select_parts = [f"{user_expr} AS {_quote_sql_identifier(user_id, backend)}"]
+    for column in columns:
+        quoted_column = _quote_sql_identifier(column, backend)
+        policy = aggregation_policies.get(column, "sum")
+        if policy == "sum":
+            expression = f"SUM({quoted_column})"
+        elif policy == "max":
+            expression = f"MAX({quoted_column})"
+        else:
+            raise AssertionError(f"Unexpected MDE aggregation policy: {policy}")
+        select_parts.append(f"{expression} AS {_quote_sql_identifier(column, backend)}")
+    select_sql = ",\n    ".join(select_parts)
+    query = f"""
+SELECT
+    {select_sql}
+FROM {source}
+{where_clause}
+GROUP BY {user_expr}
+ORDER BY {user_expr}
+""".strip()
+    result = _read_sql_mde_query(
+        db_key=db_key,
+        query=query,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    return result[[user_id, *columns]] if not result.empty else result
+
+
+def _read_sql_mde_query(
+    *,
+    db_key: str,
+    query: str,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> pd.DataFrame:
+    result = sql_facade.read(
+        db_key,
+        query,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    if not isinstance(result, pd.DataFrame):
+        raise TypeError("SQL read did not return a dataframe.")
+    return result
+
+
+def _quote_sql_identifier(identifier: str, backend: str) -> str:
+    return quote_identifier_part(identifier, backend, quoted=True)
+
+
+def _sql_date_expr(backend: str, expression: str) -> str:
+    if backend == "ch":
+        return f"toDate({expression})"
+    return f"CAST({expression} AS DATE)"
+
+
+def _sql_date_literal(value: pd.Timestamp, backend: str) -> str:
+    date_value = pd.Timestamp(value).strftime("%Y-%m-%d")
+    if backend == "ch":
+        return f"toDate('{date_value}')"
+    return f"DATE '{date_value}'"
+
+
+def _sql_where_clause(
+    sql_where: str | None,
+    *,
+    extra_conditions: Sequence[str] | None = None,
+) -> str:
+    conditions: list[str] = []
+    if sql_where is not None:
+        conditions.append(f"({sql_where})")
+    if extra_conditions is not None:
+        conditions.extend(extra_conditions)
+    if not conditions:
+        return ""
+    return "WHERE " + " AND ".join(conditions)
+
+
+def _coerce_sql_int(value: object) -> int:
+    if value is None or pd.isna(value):
+        return 0
+    return int(value)
+
+
+def _coerce_sql_date(value: object, name: str) -> pd.Timestamp:
+    if value is None or pd.isna(value):
+        raise ValueError(f"SQL source {name} is missing.")
+    try:
+        return pd.Timestamp(value).normalize()
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"SQL source {name} must be datelike.") from exc
 
 
 def _validate_mde_aggregation_metric_names(
