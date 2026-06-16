@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.15 - 2026-06-16
+
+- Hardened agent tool workflow safety.
+
 ## 1.3.9.14 - 2026-06-16
 
 - Consolidated the agent MCP surface into intent-based workflow tools for

@@ -242,11 +242,13 @@ def docs(
     index_dir: str = DEFAULT_INDEX_DIR,
 ) -> dict[str, Any]:
     """Search or answer from the local docs RAG index."""
+    resolved_index_dir = _resolve_index_dir(index_dir)
     input_summary = {
         "query": query,
         "mode": mode,
         "top_k": top_k,
         "index_dir": index_dir,
+        "resolved_index_dir": str(resolved_index_dir),
     }
     if mode not in {"search", "ask"}:
         return _tool_output(
@@ -259,20 +261,25 @@ def docs(
 
     try:
         if mode == "search":
-            results = docs_assistant.search_docs(query, index_dir=index_dir, top_k=top_k)
+            results = docs_assistant.search_docs(query, index_dir=resolved_index_dir, top_k=top_k)
             result: dict[str, Any] = {
                 "mode": mode,
                 "results": [_search_result_to_dict(item) for item in results],
-                "freshness_warnings": _freshness_warnings(index_dir),
+                "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
         else:
-            answer = docs_assistant.ask_docs(query, index_dir=index_dir, top_k=top_k, no_llm=True)
+            answer = docs_assistant.ask_docs(
+                query,
+                index_dir=resolved_index_dir,
+                top_k=top_k,
+                no_llm=True,
+            )
             result = {
                 "mode": mode,
                 "answer": answer.answer,
                 "citations": answer.citations,
                 "results": [_search_result_to_dict(item) for item in answer.results],
-                "freshness_warnings": _freshness_warnings(index_dir),
+                "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
     except Exception as exc:
         return _tool_output(
@@ -383,17 +390,49 @@ def version_bump(
     pyproject = root_path / "pyproject.toml"
     readme = root_path / "README.md"
     changelog = root_path / "docs" / "CHANGELOG.md"
-    _write_text(pyproject, VERSION_RE.sub(f'version = "{next_version_value}"', _read_text(pyproject), count=1))
-    _write_text(
-        readme,
-        README_VERSION_RE.sub(f"**Version:** `{next_version_value}`", _read_text(readme), count=1),
-    )
+    try:
+        pyproject_text = _replace_required(
+            VERSION_RE,
+            _read_text(pyproject),
+            f'version = "{next_version_value}"',
+            "project version",
+        )
+        readme_text = _replace_required(
+            README_VERSION_RE,
+            _read_text(readme),
+            f"**Version:** `{next_version_value}`",
+            "README version",
+        )
+    except ValueError as exc:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Version bump metadata update failed.",
+            result=planned,
+            blockers=[{"phase": "metadata", "message": str(exc)}],
+            next_actions=["Fix the metadata marker, then rerun version_bump(...)."],
+        )
+
+    _write_text(pyproject, pyproject_text)
+    _write_text(readme, readme_text)
     _prepend_changelog_entry(changelog, entry)
+    metadata = metadata_status(root=str(root_path))
+    if not metadata["ok"]:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Version bump metadata is not aligned after update.",
+            result={**planned, "metadata_status": metadata},
+            blockers=metadata["blockers"],
+            next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
+        )
     return _tool_output(
         "version_bump",
         input_summary,
         summary=f"Bumped version to {next_version_value}.",
-        result=planned,
+        result={**planned, "metadata_status": metadata},
         next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
     )
 
@@ -1086,7 +1125,7 @@ def _search_result_to_dict(result: docs_assistant.SearchResult) -> dict[str, Any
     }
 
 
-def _freshness_warnings(index_dir: str) -> list[str]:
+def _freshness_warnings(index_dir: str | Path) -> list[str]:
     try:
         return docs_assistant.index_freshness_warnings(index_dir)
     except (FileNotFoundError, ValueError) as exc:
@@ -1111,6 +1150,13 @@ def _resolve_root(root: str) -> Path:
     return path.resolve()
 
 
+def _resolve_index_dir(index_dir: str | Path) -> Path:
+    path = Path(index_dir)
+    if path.is_absolute():
+        return path
+    return (REPO_ROOT / path).resolve()
+
+
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -1124,6 +1170,13 @@ def _parse_required(pattern: re.Pattern[str], text: str, label: str) -> str:
     if match is None:
         raise ValueError(f"Could not parse {label}")
     return match.group(1)
+
+
+def _replace_required(pattern: re.Pattern[str], text: str, replacement: str, label: str) -> str:
+    updated, count = pattern.subn(replacement, text, count=1)
+    if count != 1:
+        raise ValueError(f"Could not update {label}")
+    return updated
 
 
 def _package_version(root: Path) -> str:
@@ -1280,7 +1333,25 @@ def _working_tree_fingerprint(root: Path) -> str:
         result = _run_git(root, args)
         parts.append(result.get("stdout", ""))
         parts.append(result.get("stderr", ""))
+    parts.extend(_untracked_file_fingerprint_parts(root))
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def _untracked_file_fingerprint_parts(root: Path) -> list[str]:
+    result = _run_git(root, ["ls-files", "--others", "--exclude-standard"])
+    parts = ["untracked-files", result.get("stderr", "")]
+    for rel_path in sorted(result.get("stdout", "").splitlines()):
+        if not rel_path:
+            continue
+        path = root / rel_path
+        if not path.is_file():
+            continue
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            digest = f"unreadable:{type(exc).__name__}:{exc}"
+        parts.append(f"{rel_path}:{digest}")
+    return parts
 
 
 def _record_precommit_success(

@@ -175,6 +175,25 @@ def test_docs_search_and_ask_modes(tmp_path: Path) -> None:
     assert ask_result["result"]["citations"][0].startswith("agent_tools/README.md:L")
 
 
+def test_docs_default_index_dir_is_resolved_from_repo_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_docs_project(tmp_path / "project")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(mcp_server, "REPO_ROOT", root)
+    monkeypatch.chdir(outside)
+    mcp_server.docs_assistant.build_docs_index(root=root, index_dir=root / ".rag_index")
+
+    result = mcp_server.docs("docs MCP workflow", mode="search", top_k=1)
+
+    assert result["ok"] is True
+    assert result["input"]["index_dir"] == ".rag_index"
+    assert result["input"]["resolved_index_dir"] == str(root / ".rag_index")
+    assert result["result"]["results"][0]["path"] == "agent_tools/README.md"
+
+
 def test_workflow_status_combines_routing_health_metadata_and_checks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -223,6 +242,18 @@ def test_version_bump_dry_run_and_real_edit(tmp_path: Path) -> None:
     assert applied["ok"] is True
 
 
+def test_version_bump_fails_when_readme_version_marker_is_missing(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    (root / "README.md").write_text("# analytics_toolkit\n", encoding="utf-8")
+
+    result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["message"] == "Could not update README version"
+    assert 'version = "1.3.9.13"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "## 1.3.9.14 - " not in (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+
+
 def test_version_bump_skips_documentation_only_changes(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 
@@ -265,6 +296,38 @@ def test_run_checks_dry_run_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_pat
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 
+    result = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "precommit"
+
+
+def test_precommit_fingerprint_includes_untracked_file_contents(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _init_git_repo(root)
+    untracked = root / "new_agent_note.txt"
+    untracked.write_text("first version\n", encoding="utf-8")
+
+    first = mcp_server._working_tree_fingerprint(root)
+    untracked.write_text("second version\n", encoding="utf-8")
+    second = mcp_server._working_tree_fingerprint(root)
+
+    assert first != second
+
+
+def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _init_git_repo(root)
+    untracked = root / "new_agent_note.txt"
+    untracked.write_text("checked contents\n", encoding="utf-8")
+    fingerprint = mcp_server._working_tree_fingerprint(root)
+    mcp_server._record_precommit_success(
+        root,
+        fingerprint,
+        [{"command": "precommit", "returncode": 0, "summary": "ok"}],
+    )
+
+    untracked.write_text("changed after checks\n", encoding="utf-8")
     result = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
 
     assert result["ok"] is False
@@ -434,6 +497,26 @@ def _write_minimal_repo_files(root: Path, version: str = "1.3.9.13") -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _init_git_repo(root: Path) -> None:
+    (root / ".gitignore").write_text(".rag_index/\n", encoding="utf-8")
+    _git(root, "init")
+    _git(root, "add", ".")
+    _git(
+        root,
+        "-c",
+        "user.name=Agent Tools Test",
+        "-c",
+        "user.email=agent-tools-test@example.invalid",
+        "commit",
+        "-m",
+        "Initial test repo",
+    )
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True)
 
 
 def _write_docs_project(root: Path) -> Path:
