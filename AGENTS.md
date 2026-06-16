@@ -4,19 +4,6 @@
 
 These instructions apply to the whole repository.
 
-## Mandatory Startup Sync
-
-Before any repository-related action, run:
-
-```bash
-git pull origin main
-```
-
-This pull must happen before RAG indexing/search, file inspection, tests, or
-edits. If it fails because of local changes, merge conflicts, authentication,
-network issues, or divergent history, stop and report the blocker instead of
-continuing with stale code.
-
 ## Mandatory Agent MCP Tools
 
 Coding agents in this repository must use the repository-local MCP tools for
@@ -78,7 +65,8 @@ repository safety rules and must not access databases or read `.connections`.
 
 ## Project Overview
 
-`analytics_toolkit` is a Python 3.11+ utility package with five public areas:
+`analytics_toolkit` is a Python `>=3.8,<3.15` utility package with five public
+areas:
 
 - `analytics_toolkit.ab_utils`: AB-test metric comparison helpers.
 - `analytics_toolkit.sql`: SQL read/execute/load/transfer helpers for Greenplum, Trino, and ClickHouse.
