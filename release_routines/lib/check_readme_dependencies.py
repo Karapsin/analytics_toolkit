@@ -56,12 +56,11 @@ def parse_suggests(value: str) -> list[tuple[str, str, str]]:
     return entries
 
 
-def main() -> None:
-    project = load_project()
+def validate_readme_dependencies(project: dict[str, object], readme: str) -> list[str]:
     failures: list[str] = []
 
     requires_python = str(project["requires-python"])
-    readme_depends = parse_python_depends(read_readme_line("Depends"))
+    readme_depends = parse_python_depends(read_readme_line_from_text(readme, "Depends"))
     if readme_depends != requires_python:
         failures.append(
             f"README Depends Python spec {readme_depends!r} does not match "
@@ -69,9 +68,9 @@ def main() -> None:
         )
 
     expected_imports = [
-        split_requirement(requirement) for requirement in project["dependencies"]
+        split_requirement(str(requirement)) for requirement in project["dependencies"]  # type: ignore[index]
     ]
-    readme_imports = parse_imports(read_readme_line("Imports"))
+    readme_imports = parse_imports(read_readme_line_from_text(readme, "Imports"))
     if readme_imports != expected_imports:
         failures.append(
             f"README Imports {readme_imports!r} do not match pyproject "
@@ -80,16 +79,31 @@ def main() -> None:
 
     optional_dependencies = project.get("optional-dependencies", {})
     expected_suggests = [
-        (*split_requirement(requirement), extra)
-        for extra, requirements in optional_dependencies.items()
+        (*split_requirement(str(requirement)), extra)
+        for extra, requirements in optional_dependencies.items()  # type: ignore[union-attr]
         for requirement in requirements
     ]
-    readme_suggests = parse_suggests(read_readme_line("Suggests"))
+    readme_suggests = parse_suggests(read_readme_line_from_text(readme, "Suggests"))
     if readme_suggests != expected_suggests:
         failures.append(
             f"README Suggests {readme_suggests!r} do not match pyproject "
             f"optional dependencies {expected_suggests!r}"
         )
+    return failures
+
+
+def read_readme_line_from_text(readme: str, label: str) -> str:
+    pattern = rf"^\*\*{re.escape(label)}:\*\* (.+)<br>$"
+    match = re.search(pattern, readme, flags=re.MULTILINE)
+    if match is None:
+        raise SystemExit(f"README.md must contain a {label} metadata line")
+    return match.group(1)
+
+
+def main() -> None:
+    project = load_project()
+    readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+    failures = validate_readme_dependencies(project, readme)
 
     if failures:
         raise SystemExit("\n".join(failures))

@@ -21,8 +21,15 @@ except ImportError:  # pragma: no cover - normal package test env has no MCP dep
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from release_routines.lib.check_readme_dependencies import validate_readme_dependencies
+from release_routines.lib.project_metadata import load_project
+
 DEFAULT_INDEX_DIR = docs_assistant.DEFAULT_INDEX_DIR
 CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
+RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
@@ -403,6 +410,7 @@ def version_bump(
             f"**Version:** `{next_version_value}`",
             "README version",
         )
+        changelog_text = _prepend_changelog_entry_text(_read_text(changelog), entry)
     except ValueError as exc:
         return _tool_output(
             "version_bump",
@@ -416,7 +424,7 @@ def version_bump(
 
     _write_text(pyproject, pyproject_text)
     _write_text(readme, readme_text)
-    _prepend_changelog_entry(changelog, entry)
+    _write_text(changelog, changelog_text)
     metadata = metadata_status(root=str(root_path))
     if not metadata["ok"]:
         return _tool_output(
@@ -530,13 +538,33 @@ def git_workflow(
         )
 
     if action == "push":
-        result = _run_command(root_path, {"display": "git push origin main", "args": ["git", "push", "origin", "main"], "env": {}})
+        readiness = _push_readiness(root_path)
+        if readiness["blockers"]:
+            return _tool_output(
+                "git_workflow",
+                input_summary,
+                ok=False,
+                summary="Push blocked by repository readiness checks.",
+                result={"push_readiness": readiness},
+                command_results=readiness["command_results"],
+                blockers=readiness["blockers"],
+                next_actions=["Resolve push readiness blockers, then retry git_workflow(action='push')."],
+            )
+        result = _run_command(
+            root_path,
+            {
+                "display": "git push origin HEAD:main",
+                "args": ["git", "push", "origin", "HEAD:main"],
+                "env": {},
+            },
+        )
         return _tool_output(
             "git_workflow",
             input_summary,
             ok=result["ok"],
             summary="Push completed." if result["ok"] else "Push failed.",
-            command_results=[result],
+            result={"push_readiness": readiness},
+            command_results=[*readiness["command_results"], result],
             blockers=[] if result["ok"] else [_command_blocker("push", result)],
         )
 
@@ -602,18 +630,51 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
             blockers=[{"phase": "validate", "message": "action must be 'status' or 'publish'"}],
         )
 
-    status = _release_readiness(root_path)
     if action == "status":
+        status = _release_readiness(root_path)
+        if status["blockers"]:
+            return _tool_output(
+                "release_workflow",
+                input_summary,
+                ok=False,
+                summary="Release has blockers.",
+                result=status,
+                command_results=status["command_results"],
+                blockers=status["blockers"],
+                next_actions=["Resolve release blockers, then rerun release_workflow(action='status')."],
+            )
+
+        command_results: list[dict[str, Any]] = []
+        for command in RELEASE_CHECK_COMMANDS:
+            result = _run_command(root_path, command)
+            command_results.append(result)
+            if not result["ok"]:
+                blocker = _command_blocker("release_checks", result)
+                status["blockers"].append(blocker)
+                return _tool_output(
+                    "release_workflow",
+                    input_summary,
+                    ok=False,
+                    summary="Release validation command failed.",
+                    result=status,
+                    command_results=[*status["command_results"], *command_results],
+                    blockers=[blocker],
+                    next_actions=["Fix the release validation failure, then rerun release_workflow(action='status')."],
+                )
+
+        fingerprint = _working_tree_fingerprint(root_path)
+        _record_release_check_success(root_path, fingerprint, command_results)
+        status["release_check_verification"] = _verify_release_check_success(root_path)
         return _tool_output(
             "release_workflow",
             input_summary,
-            ok=not status["blockers"],
-            summary="Release is ready." if not status["blockers"] else "Release has blockers.",
+            summary="Release is ready.",
             result=status,
-            blockers=status["blockers"],
+            command_results=[*status["command_results"], *command_results],
             next_actions=["Use release_workflow(action='publish') only after all blockers are resolved."],
         )
 
+    status = _release_readiness(root_path, require_release_check=True)
     if status["blockers"]:
         return _tool_output(
             "release_workflow",
@@ -621,6 +682,7 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
             ok=False,
             summary="Publish blocked by release readiness checks.",
             result=status,
+            command_results=status["command_results"],
             blockers=status["blockers"],
         )
     result = _run_command(
@@ -637,7 +699,7 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
         ok=result["ok"],
         summary="Release publish workflow completed." if result["ok"] else "Release publish workflow failed.",
         result=status,
-        command_results=[result],
+        command_results=[*status["command_results"], result],
         blockers=[] if result["ok"] else [_command_blocker("publish", result)],
     )
 
@@ -769,34 +831,31 @@ def metadata_status(root: str = ".") -> dict[str, Any]:
 
 def dependency_metadata_status(root: str = ".") -> dict[str, Any]:
     root_path = _resolve_root(root)
-    pyproject_text = _read_text(root_path / "pyproject.toml")
-    readme_text = _read_text(root_path / "README.md")
-    pyproject_deps = _project_dependencies(pyproject_text)
-    optional_deps = _optional_dependencies(pyproject_text)
     blockers = []
-    for dep in pyproject_deps:
-        name = _dependency_name(dep)
-        if name not in readme_text:
-            blockers.append(
-                {
-                    "phase": "dependency_metadata",
-                    "message": f"README Imports is missing dependency {name}",
-                }
-            )
-    for extra, deps in optional_deps.items():
-        for dep in deps:
-            name = _dependency_name(dep)
-            if name not in readme_text or extra not in readme_text:
-                blockers.append(
-                    {
-                        "phase": "dependency_metadata",
-                        "message": f"README Suggests is missing optional dependency {name} for extra {extra}",
-                    }
-                )
+    project: dict[str, Any] = {}
+    try:
+        project = load_project(root_path / "pyproject.toml")
+        failures = validate_readme_dependencies(
+            project,
+            _read_text(root_path / "README.md"),
+        )
+    except (OSError, SystemExit, ValueError) as exc:
+        failures = [str(exc)]
+
+    for failure in failures:
+        blockers.append({"phase": "dependency_metadata", "message": failure})
+
+    pyproject_deps = list(project.get("dependencies", []))
+    optional_deps = project.get("optional-dependencies", {})
+    optional_count = (
+        sum(len(values) for values in optional_deps.values())
+        if isinstance(optional_deps, dict)
+        else 0
+    )
     return {
         "ok": not blockers,
         "dependency_count": len(pyproject_deps),
-        "optional_dependency_count": sum(len(values) for values in optional_deps.values()),
+        "optional_dependency_count": optional_count,
         "blockers": blockers,
     }
 
@@ -1162,7 +1221,9 @@ def _read_text(path: Path) -> str:
 
 
 def _write_text(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(text, encoding="utf-8")
+    os.replace(temp_path, path)
 
 
 def _parse_required(pattern: re.Pattern[str], text: str, label: str) -> str:
@@ -1202,12 +1263,16 @@ def _format_changelog_entry(version: str, summary: str) -> str:
 
 
 def _prepend_changelog_entry(path: Path, entry: str) -> None:
-    text = _read_text(path)
+    _write_text(path, _prepend_changelog_entry_text(_read_text(path), entry))
+
+
+def _prepend_changelog_entry_text(text: str, entry: str) -> str:
+    if not text.strip():
+        raise ValueError("Could not update changelog")
     match = re.search(r"^##\s+", text, flags=re.MULTILINE)
     if match is None:
-        _write_text(path, text.rstrip() + "\n\n" + entry)
-        return
-    _write_text(path, text[: match.start()] + entry + "\n" + text[match.start() :])
+        return text.rstrip() + "\n\n" + entry
+    return text[: match.start()] + entry + "\n" + text[match.start() :]
 
 
 def _increment_version(version: str) -> str:
@@ -1396,7 +1461,159 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
     return {"ok": True, "message": "Pre-commit check record matches the current tree.", "fingerprint": current}
 
 
-def _release_readiness(root: Path) -> dict[str, Any]:
+def _push_readiness(root: Path) -> dict[str, Any]:
+    health = repo_health(root=str(root))
+    blockers: list[dict[str, Any]] = []
+    if health["branch"] != "main":
+        blockers.append({"phase": "push", "message": "Push workflow must run from main."})
+    if health["dirty"]:
+        blockers.append({"phase": "push", "message": "Push workflow requires a clean working tree."})
+
+    remote = _remote_main_status(root, require_equal=False)
+    blockers.extend(remote["blockers"])
+    return {
+        "repo_health": health,
+        "remote_main_status": remote["result"],
+        "command_results": remote["command_results"],
+        "blockers": blockers,
+    }
+
+
+def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
+    command_results: list[dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = []
+
+    fetch = _run_git(root, ["fetch", "origin", "main"])
+    command_results.append(fetch)
+    if not fetch["ok"]:
+        blockers.append(_command_blocker("remote_main", fetch))
+        return {
+            "result": {"fetched": False, "require_equal": require_equal},
+            "command_results": command_results,
+            "blockers": blockers,
+        }
+
+    head = _run_git(root, ["rev-parse", "HEAD"])
+    origin = _run_git(root, ["rev-parse", "origin/main"])
+    command_results.extend([head, origin])
+    if not head["ok"]:
+        blockers.append(_command_blocker("remote_main", head))
+    if not origin["ok"]:
+        blockers.append(_command_blocker("remote_main", origin))
+    if blockers:
+        return {
+            "result": {"fetched": True, "require_equal": require_equal},
+            "command_results": command_results,
+            "blockers": blockers,
+        }
+
+    head_commit = head["stdout"].strip()
+    origin_commit = origin["stdout"].strip()
+    result = {
+        "fetched": True,
+        "require_equal": require_equal,
+        "head": head_commit,
+        "origin_main": origin_commit,
+        "matches_origin_main": head_commit == origin_commit,
+    }
+    if require_equal:
+        if head_commit != origin_commit:
+            blockers.append(
+                {
+                    "phase": "remote_main",
+                    "message": "Local HEAD must match origin/main.",
+                    "head": head_commit,
+                    "origin_main": origin_commit,
+                }
+            )
+        return {"result": result, "command_results": command_results, "blockers": blockers}
+
+    ancestor = _run_git(root, ["merge-base", "--is-ancestor", "origin/main", "HEAD"])
+    command_results.append(ancestor)
+    result["contains_origin_main"] = ancestor["returncode"] == 0
+    if ancestor["returncode"] == 1:
+        blockers.append(
+            {
+                "phase": "remote_main",
+                "message": "Local HEAD does not contain origin/main; pull or rebase before pushing.",
+                "head": head_commit,
+                "origin_main": origin_commit,
+            }
+        )
+    elif not ancestor["ok"]:
+        blockers.append(_command_blocker("remote_main", ancestor))
+    return {"result": result, "command_results": command_results, "blockers": blockers}
+
+
+def _record_release_check_success(
+    root: Path,
+    fingerprint: str,
+    command_results: list[dict[str, Any]],
+) -> None:
+    _record_tree_check_success(root, RELEASE_CHECK_STATE_FILE, fingerprint, command_results)
+
+
+def _verify_release_check_success(root: Path) -> dict[str, Any]:
+    return _verify_tree_check_success(
+        root,
+        RELEASE_CHECK_STATE_FILE,
+        missing_message="No successful release check record exists.",
+        mismatch_message="Recorded release check fingerprint does not match the current tree.",
+        success_message="Release check record matches the current tree.",
+    )
+
+
+def _record_tree_check_success(
+    root: Path,
+    state_file: Path,
+    fingerprint: str,
+    command_results: list[dict[str, Any]],
+) -> None:
+    state_path = root / state_file
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "fingerprint": fingerprint,
+        "recorded_at": date.today().isoformat(),
+        "commands": [
+            {
+                "command": result["command"],
+                "returncode": result["returncode"],
+                "summary": result["summary"],
+            }
+            for result in command_results
+        ],
+    }
+    state_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _verify_tree_check_success(
+    root: Path,
+    state_file: Path,
+    *,
+    missing_message: str,
+    mismatch_message: str,
+    success_message: str,
+) -> dict[str, Any]:
+    state_path = root / state_file
+    if not state_path.is_file():
+        return {"ok": False, "message": missing_message}
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "message": f"Check record is invalid: {exc}"}
+    current = _working_tree_fingerprint(root)
+    recorded = state.get("fingerprint")
+    if recorded != current:
+        return {
+            "ok": False,
+            "message": mismatch_message,
+            "recorded_fingerprint": recorded,
+            "current_fingerprint": current,
+        }
+    return {"ok": True, "message": success_message, "fingerprint": current}
+
+
+def _release_readiness(root: Path, *, require_release_check: bool = False) -> dict[str, Any]:
     health = repo_health(root=str(root))
     metadata = metadata_status(root=str(root))
     dependencies = dependency_metadata_status(root=str(root))
@@ -1408,11 +1625,23 @@ def _release_readiness(root: Path) -> dict[str, Any]:
         blockers.append({"phase": "release", "message": "Release publishing requires a clean working tree."})
     if "agent_docs/release.md" not in route["required_files"]:
         blockers.append({"phase": "release", "message": "Release instructions were not routed."})
+    remote = _remote_main_status(root, require_equal=True)
+    blockers.extend(remote["blockers"])
+    precommit = _verify_precommit_success(root)
+    if not precommit["ok"]:
+        blockers.append({"phase": "precommit", "message": precommit["message"]})
+    release_check = _verify_release_check_success(root) if require_release_check else None
+    if release_check is not None and not release_check["ok"]:
+        blockers.append({"phase": "release_checks", "message": release_check["message"]})
     return {
         "repo_health": health,
         "metadata_status": metadata,
         "dependency_metadata_status": dependencies,
         "required_instruction_files": route["required_files"],
+        "remote_main_status": remote["result"],
+        "precommit_verification": precommit,
+        "release_check_verification": release_check,
+        "command_results": remote["command_results"],
         "blockers": blockers,
     }
 

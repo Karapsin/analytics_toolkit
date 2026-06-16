@@ -254,6 +254,26 @@ def test_version_bump_fails_when_readme_version_marker_is_missing(tmp_path: Path
     assert "## 1.3.9.14 - " not in (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
+def test_version_bump_does_not_partially_write_when_changelog_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    original_pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    original_readme = (root / "README.md").read_text(encoding="utf-8")
+
+    def fail_changelog(text: str, entry: str) -> str:
+        raise ValueError("Could not update changelog")
+
+    monkeypatch.setattr(mcp_server, "_prepend_changelog_entry_text", fail_changelog)
+
+    result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
+
+    assert result["ok"] is False
+    assert (root / "pyproject.toml").read_text(encoding="utf-8") == original_pyproject
+    assert (root / "README.md").read_text(encoding="utf-8") == original_readme
+
+
 def test_version_bump_skips_documentation_only_changes(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 
@@ -302,6 +322,38 @@ def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
     assert result["blockers"][0]["phase"] == "precommit"
 
 
+def test_dependency_metadata_status_detects_readme_constraint_mismatch(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    (root / "README.md").write_text(
+        readme.replace(
+            "[requests](https://pypi.org/project/requests/) (`>=2.28.2,<3`)",
+            "[requests](https://pypi.org/project/requests/) (`>=2.28.1,<3`)",
+        ),
+        encoding="utf-8",
+    )
+
+    result = mcp_server.dependency_metadata_status(root=str(root))
+
+    assert result["ok"] is False
+    assert "README Imports" in result["blockers"][0]["message"]
+    assert "do not match pyproject" in result["blockers"][0]["message"]
+
+
+def test_dependency_metadata_status_detects_malformed_optional_extra(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    (root / "README.md").write_text(
+        readme.replace("; optional extra `airflow`", ""),
+        encoding="utf-8",
+    )
+
+    result = mcp_server.dependency_metadata_status(root=str(root))
+
+    assert result["ok"] is False
+    assert "Unsupported README Suggests entry" in result["blockers"][0]["message"]
+
+
 def test_precommit_fingerprint_includes_untracked_file_contents(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     _init_git_repo(root)
@@ -345,6 +397,11 @@ def test_git_workflow_commit_and_push_dispatch(
         "_verify_precommit_success",
         lambda root_path: {"ok": True, "message": "ok"},
     )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "main"}},
+    )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
         commands.append(str(command["display"]))
@@ -367,8 +424,64 @@ def test_git_workflow_commit_and_push_dispatch(
     assert commands == [
         "git add .",
         "git commit -m 'Update workflow'",
-        "git push origin main",
+        "git push origin HEAD:main",
     ]
+
+
+def test_git_workflow_push_blocks_on_readiness_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {
+            "blockers": [{"phase": "push", "message": "Push workflow must run from main."}],
+            "command_results": [],
+            "repo_health": {"branch": "feature"},
+        },
+    )
+
+    def fail_if_called(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        raise AssertionError("push command should not run")
+
+    monkeypatch.setattr(mcp_server, "_run_command", fail_if_called)
+
+    result = mcp_server.git_workflow("push", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["message"] == "Push workflow must run from main."
+
+
+def test_push_readiness_blocks_when_origin_main_is_not_ancestor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda root: {"branch": "main", "dirty": False},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_remote_main_status",
+        lambda root_path, require_equal: {
+            "result": {"contains_origin_main": False},
+            "command_results": [],
+            "blockers": [
+                {
+                    "phase": "remote_main",
+                    "message": "Local HEAD does not contain origin/main; pull or rebase before pushing.",
+                }
+            ],
+        },
+    )
+
+    result = mcp_server._push_readiness(root)
+
+    assert result["blockers"][0]["phase"] == "remote_main"
 
 
 def test_release_workflow_status_reports_readiness_blockers(
@@ -404,7 +517,11 @@ def test_release_workflow_publish_delegates_to_release_script(
     monkeypatch.setattr(
         mcp_server,
         "_release_readiness",
-        lambda root_path: {"blockers": [], "repo_health": {"branch": "main"}},
+        lambda root_path, require_release_check=False: {
+            "blockers": [],
+            "repo_health": {"branch": "main"},
+            "command_results": [],
+        },
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -424,6 +541,97 @@ def test_release_workflow_publish_delegates_to_release_script(
 
     assert result["ok"] is True
     assert commands == ["release_routines/pypi_release.sh"]
+
+
+def test_release_status_blocks_without_current_precommit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda root: {"branch": "main", "dirty": False},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_remote_main_status",
+        lambda root_path, require_equal: {
+            "result": {"matches_origin_main": True},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
+
+    result = mcp_server.release_workflow("status", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "precommit"
+
+
+def test_release_status_records_release_check_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_release_readiness",
+        lambda root_path, require_release_check=False: {
+            "blockers": [],
+            "repo_health": {"branch": "main"},
+            "command_results": [],
+        },
+    )
+    monkeypatch.setattr(mcp_server, "_working_tree_fingerprint", lambda root_path: "tree")
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.release_workflow("status", root=str(root))
+
+    assert result["ok"] is True
+    assert result["result"]["release_check_verification"]["ok"] is True
+    assert commands == [
+        "release_routines/scripts/check_package_metadata.sh",
+        "release_routines/scripts/check_readme_dependencies.sh",
+        "release_routines/scripts/check_docs_links.sh",
+        "release_routines/scripts/check_docs_coverage.sh",
+    ]
+
+
+def test_release_publish_requires_current_release_check(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    seen_require_release_check: list[bool] = []
+
+    def fake_readiness(root_path: Path, require_release_check: bool = False) -> dict[str, object]:
+        seen_require_release_check.append(require_release_check)
+        return {
+            "blockers": [{"phase": "release_checks", "message": "No successful release check record exists."}],
+            "command_results": [],
+        }
+
+    monkeypatch.setattr(mcp_server, "_release_readiness", fake_readiness)
+
+    result = mcp_server.release_workflow("publish", root=str(root))
+
+    assert result["ok"] is False
+    assert seen_require_release_check == [True]
+    assert result["blockers"][0]["phase"] == "release_checks"
 
 
 def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
@@ -485,8 +693,9 @@ def _write_minimal_repo_files(root: Path, version: str = "1.3.9.13") -> Path:
                 "# analytics_toolkit",
                 "",
                 f"**Version:** `{version}`<br>",
-                "**Imports:** requests (`>=2.28.2,<3`)<br>",
-                "**Suggests:** apache-airflow (`>=2.4,<3`; optional extra `airflow`)<br>",
+                "**Depends:** Python (`>=3.8,<3.15`)<br>",
+                "**Imports:** [requests](https://pypi.org/project/requests/) (`>=2.28.2,<3`)<br>",
+                "**Suggests:** [apache-airflow](https://pypi.org/project/apache-airflow/) (`>=2.4,<3`; optional extra `airflow`)<br>",
             ]
         ),
         encoding="utf-8",

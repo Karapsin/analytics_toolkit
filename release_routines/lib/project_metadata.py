@@ -27,14 +27,15 @@ def _read_array_value(lines: list[str], index: int, initial_value: str) -> tuple
     return parsed, index
 
 
-def load_project() -> dict[str, Any]:
+def load_project(project_path: pathlib.Path | str = PROJECT_PATH) -> dict[str, Any]:
+    project_path = pathlib.Path(project_path)
     if tomllib is not None:
-        with PROJECT_PATH.open("rb") as pyproject_file:
+        with project_path.open("rb") as pyproject_file:
             return tomllib.load(pyproject_file)["project"]
 
     project: dict[str, Any] = {}
     optional_dependencies: dict[str, list[str]] = {}
-    lines = PROJECT_PATH.read_text(encoding="utf-8").splitlines()
+    lines = project_path.read_text(encoding="utf-8").splitlines()
     index = 0
     section = ""
 
