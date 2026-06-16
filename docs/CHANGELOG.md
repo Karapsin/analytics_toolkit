@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.1 - 2026-06-16
+
+- Add compute_mde aggregation policies.
+
 ## 1.3.10.0 - 2026-06-16
 
 - Fixed agent tool root handling, fingerprint verification, and RAG ranking.

@@ -28,6 +28,8 @@ compute_mde(
     outliers_quantile=0.999,
     outliers_policy="truncate",
     pre_exp_days=None,
+    sum_agg_metrics=None,
+    max_agg_metrics=None,
 )
 ```
 
@@ -55,6 +57,10 @@ compute_mde(
 - `outliers_policy` - `"truncate"` or `"drop"`
 - `pre_exp_days` - pre-experiment covariate window length for CUPED MDE;
   `None` uses each `exp_days` value
+- `sum_agg_metrics` - metric/component columns to sum inside each user window;
+  all other metric/component columns use max aggregation
+- `max_agg_metrics` - metric/component columns to max inside each user window;
+  all other metric/component columns use sum aggregation
 
 ## Usage
 
@@ -72,8 +78,15 @@ planning = compute_mde(
             numerator="clicks",
             denominator="views",
             level="user",
+        ),
+        RatioMetricSpec(
+            name="conversion_rate",
+            numerator="converted",
+            denominator="views",
+            level="agg",
         )
     ],
+    max_agg_metrics=["converted"],
     exp_days=[7, 14, 21],
     group_sizes=[50_000, 100_000, 150_000],
     control_share=0.5,
@@ -102,8 +115,11 @@ planning[
 
 - `group_size` is the total planned experiment user count
 - control and test sizes are derived from `floor(group_size * control_share)`
-- metrics are first summed to one row per user inside each selected outcome window
-- ratio metrics use summed user-level numerators and denominators before computing statistics
+- by default, metric columns are summed to one row per user inside each selected outcome window
+- pass `max_agg_metrics` for period indicators such as conversion flags; columns not listed there still use sum aggregation
+- pass `sum_agg_metrics` to invert the default for a call; listed columns use sum and all other metric/component columns use max
+- `sum_agg_metrics` and `max_agg_metrics` cannot be provided together
+- ratio metrics aggregate numerator and denominator columns independently before computing statistics
 - CUPED MDE uses an adjacent pre-period and outcome window:
   - `"start"` uses the first `pre_exp_days` days as pre-period and the next `days` as outcome
   - `"end"` uses the last `days` as outcome and the immediately preceding pre-period

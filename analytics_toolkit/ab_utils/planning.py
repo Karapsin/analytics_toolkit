@@ -70,6 +70,8 @@ def compute_mde(
     outliers_quantile: float = 0.999,
     outliers_policy: str = "truncate",
     pre_exp_days: int | None = None,
+    sum_agg_metrics: Sequence[str] | None = None,
+    max_agg_metrics: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Estimate MDE scenarios from historical user-day metric variance."""
 
@@ -132,6 +134,11 @@ def compute_mde(
         raise ValueError("At least one metric column or ratio metric is required.")
 
     metric_definitions = _build_metric_definitions(mean_metric_columns, ratio_specs)
+    aggregation_policies = _resolve_mde_aggregation_policies(
+        metric_definitions=metric_definitions,
+        sum_agg_metrics=sum_agg_metrics,
+        max_agg_metrics=max_agg_metrics,
+    )
     rows: list[dict[str, object]] = []
     normalized_outliers_policy = outliers_policy.strip().lower()
     windows = _select_mde_windows(
@@ -155,6 +162,7 @@ def compute_mde(
                 df=window_df,
                 metric_definition=metric_definition,
                 user_id=user_id,
+                aggregation_policies=aggregation_policies,
             )
             outlier_context = _build_outlier_context(
                 df=user_metric_df,
@@ -179,6 +187,7 @@ def compute_mde(
                 unavailable_reason=window["cuped_unavailable_reason"],
                 outliers_quantile=float(outliers_quantile),
                 outliers_policy=normalized_outliers_policy,
+                aggregation_policies=aggregation_policies,
             )
             if cuped_reason is not None:
                 warnings.warn(
@@ -343,6 +352,7 @@ def _compute_mde_cuped_variance(
     unavailable_reason: str | None,
     outliers_quantile: float,
     outliers_policy: str,
+    aggregation_policies: dict[str, str],
 ) -> tuple[float, str | None]:
     if unavailable_reason is not None:
         return math.nan, unavailable_reason
@@ -359,6 +369,7 @@ def _compute_mde_cuped_variance(
         df=pre_window_df,
         metric_definition=metric_definition,
         user_id=user_id,
+        aggregation_policies=aggregation_policies,
     )
     pre_outlier_context = _build_outlier_context(
         df=pre_user_metric_df,
@@ -660,6 +671,7 @@ def _aggregate_mde_window_to_users(
     df: pd.DataFrame,
     metric_definition: dict[str, object],
     user_id: str,
+    aggregation_policies: dict[str, str],
 ) -> pd.DataFrame:
     if metric_definition["kind"] == "mean":
         metric_column = str(metric_definition["column"])
@@ -668,10 +680,11 @@ def _aggregate_mde_window_to_users(
             {user_id: df[user_id].to_numpy(), metric_column: numeric_values.to_numpy()},
             index=df.index,
         )
-        return (
-            aggregate_frame.groupby(user_id, as_index=False)[[metric_column]]
-            .sum(min_count=1)
-            .reset_index(drop=True)
+        return _aggregate_mde_columns_to_users(
+            aggregate_frame=aggregate_frame,
+            user_id=user_id,
+            columns=[metric_column],
+            aggregation_policies=aggregation_policies,
         )
 
     ratio_spec = dict(metric_definition["ratio_spec"])
@@ -687,11 +700,105 @@ def _aggregate_mde_window_to_users(
         },
         index=df.index,
     )
-    return (
-        aggregate_frame.groupby(user_id, as_index=False)[[numerator_column, denominator_column]]
-        .sum(min_count=1)
-        .reset_index(drop=True)
+    return _aggregate_mde_columns_to_users(
+        aggregate_frame=aggregate_frame,
+        user_id=user_id,
+        columns=[numerator_column, denominator_column],
+        aggregation_policies=aggregation_policies,
     )
+
+
+def _aggregate_mde_columns_to_users(
+    *,
+    aggregate_frame: pd.DataFrame,
+    user_id: str,
+    columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+) -> pd.DataFrame:
+    grouped = aggregate_frame.groupby(user_id, as_index=False)
+    aggregated_columns = []
+    for column in columns:
+        policy = aggregation_policies.get(column, "sum")
+        if policy == "sum":
+            aggregated = grouped[[column]].sum(min_count=1)
+        elif policy == "max":
+            aggregated = grouped[[column]].max()
+        else:
+            raise AssertionError(f"Unexpected MDE aggregation policy: {policy}")
+        aggregated_columns.append(aggregated[[column]])
+
+    result = grouped.size()[[user_id]].reset_index(drop=True)
+    for aggregated_column in aggregated_columns:
+        result[aggregated_column.columns[0]] = aggregated_column.iloc[:, 0].to_numpy()
+    return result.reset_index(drop=True)
+
+
+def _resolve_mde_aggregation_policies(
+    *,
+    metric_definitions: Sequence[dict[str, object]],
+    sum_agg_metrics: Sequence[str] | None,
+    max_agg_metrics: Sequence[str] | None,
+) -> dict[str, str]:
+    if sum_agg_metrics is not None and max_agg_metrics is not None:
+        raise ValueError("Only one of sum_agg_metrics or max_agg_metrics can be provided.")
+
+    metric_columns = _collect_mde_aggregation_columns(metric_definitions)
+    if sum_agg_metrics is None and max_agg_metrics is None:
+        return {column: "sum" for column in metric_columns}
+
+    if max_agg_metrics is not None:
+        max_columns = _validate_mde_aggregation_metric_names(
+            values=max_agg_metrics,
+            name="max_agg_metrics",
+            metric_columns=metric_columns,
+        )
+        return {
+            column: "max" if column in max_columns else "sum"
+            for column in metric_columns
+        }
+
+    sum_columns = _validate_mde_aggregation_metric_names(
+        values=sum_agg_metrics,
+        name="sum_agg_metrics",
+        metric_columns=metric_columns,
+    )
+    return {
+        column: "sum" if column in sum_columns else "max"
+        for column in metric_columns
+    }
+
+
+def _collect_mde_aggregation_columns(
+    metric_definitions: Sequence[dict[str, object]],
+) -> set[str]:
+    columns: set[str] = set()
+    for metric_definition in metric_definitions:
+        if metric_definition["kind"] == "mean":
+            columns.add(str(metric_definition["column"]))
+            continue
+        ratio_spec = dict(metric_definition["ratio_spec"])
+        columns.add(ratio_spec["numerator"])
+        columns.add(ratio_spec["denominator"])
+    return columns
+
+
+def _validate_mde_aggregation_metric_names(
+    *,
+    values: Sequence[str] | None,
+    name: str,
+    metric_columns: set[str],
+) -> set[str]:
+    if values is None:
+        return set()
+    columns = [str(value) for value in values]
+    if len(set(columns)) != len(columns):
+        raise ValueError(f"{name} must not contain duplicates.")
+    unknown_columns = sorted(set(columns) - metric_columns)
+    if unknown_columns:
+        raise ValueError(
+            f"{name} contains unknown metric column(s): {', '.join(unknown_columns)}."
+        )
+    return set(columns)
 
 
 def _validate_metric_name_conflicts(

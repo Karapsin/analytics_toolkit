@@ -790,6 +790,61 @@ def test_compute_mde_accepts_min_max_step_grids() -> None:
     assert result["group_size"].tolist() == [10, 20, 10, 20]
 
 
+def test_compute_mde_accepts_max_aggregation_for_mean_metric() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["converted"],
+        group_sizes=[10],
+        exp_days=[2],
+        max_agg_metrics=["converted"],
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "converted")
+    expected_values = pd.Series([1.0, 0.0, 1.0])
+    assert row["avg"] == pytest.approx(float(expected_values.mean()))
+    assert row["var"] == pytest.approx(float(expected_values.var(ddof=1)))
+
+
+def test_compute_mde_sum_aggregation_list_makes_other_metrics_use_max() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
+            "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=["orders", "converted"],
+        group_sizes=[10],
+        exp_days=[2],
+        sum_agg_metrics=["orders"],
+        outliers_quantile=1,
+    )
+
+    orders_row = _single_metric_row(result, "orders")
+    converted_row = _single_metric_row(result, "converted")
+    assert orders_row["avg"] == pytest.approx(float(pd.Series([7.0, 14.0, 23.0]).mean()))
+    assert converted_row["avg"] == pytest.approx(float(pd.Series([1.0, 0.0, 1.0]).mean()))
+
+
 def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
     df = pd.DataFrame(
         {
@@ -838,6 +893,42 @@ def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
     assert row["var"] == pytest.approx(float(ratio_values.var(ddof=1)))
     assert not math.isnan(float(row["mde_abs_cuped"]))
     assert not math.isnan(float(row["mde_relative_cuped"]))
+
+
+def test_compute_mde_applies_aggregation_policy_to_user_ratio_components() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            "visits": [10.0] * 12,
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=[],
+        ratio_metrics=[
+            RatioMetricSpec(
+                name="conversion_rate",
+                numerator="converted",
+                denominator="visits",
+                level="user",
+            )
+        ],
+        group_sizes=[10],
+        exp_days=[2],
+        max_agg_metrics=["converted"],
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "conversion_rate")
+    ratio_values = pd.Series([1.0 / 20.0, 0.0, 1.0 / 20.0])
+    assert row["avg"] == pytest.approx(float(ratio_values.mean()))
+    assert row["var"] == pytest.approx(float(ratio_values.var(ddof=1)))
 
 
 def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
@@ -905,6 +996,46 @@ def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
     assert row["var"] == pytest.approx(expected_variance)
     assert not math.isnan(float(row["mde_abs_cuped"]))
     assert not math.isnan(float(row["mde_relative_cuped"]))
+
+
+def test_compute_mde_applies_aggregation_policy_to_agg_ratio_components() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            "visits": [10.0] * 12,
+        }
+    )
+
+    result = compute_mde(
+        df,
+        user_id="user_id",
+        metric_columns=[],
+        ratio_metrics=[
+            RatioMetricSpec(
+                name="conversion_rate",
+                numerator="converted",
+                denominator="visits",
+                level="agg",
+            )
+        ],
+        group_sizes=[10],
+        exp_days=[2],
+        max_agg_metrics=["converted"],
+        outliers_quantile=1,
+    )
+
+    row = _single_metric_row(result, "conversion_rate")
+    numerator = pd.Series([1.0, 0.0, 1.0])
+    denominator = pd.Series([20.0, 20.0, 20.0])
+    ratio = float(numerator.sum() / denominator.sum())
+    centered = numerator - ratio * denominator
+    expected_variance = float(centered.var(ddof=1)) / float(denominator.mean()) ** 2
+    assert row["avg"] == pytest.approx(ratio)
+    assert row["var"] == pytest.approx(expected_variance)
 
 
 def test_compute_mde_selects_start_and_end_windows() -> None:
@@ -1133,6 +1264,46 @@ def test_compute_mde_rejects_invalid_grid_inputs() -> None:
         compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=0)
     with pytest.raises(TypeError, match="pre_exp_days"):
         compute_mde(df, user_id="user_id", group_sizes=[10], exp_days=[1], pre_exp_days=True)
+
+
+def test_compute_mde_rejects_invalid_aggregation_policy_inputs() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 2],
+            "dt": ["2024-01-01", "2024-01-01"],
+            "orders": [10.0, 12.0],
+            "converted": [1.0, 0.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Only one of sum_agg_metrics or max_agg_metrics"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders", "converted"],
+            group_sizes=[10],
+            exp_days=[1],
+            sum_agg_metrics=["orders"],
+            max_agg_metrics=["converted"],
+        )
+    with pytest.raises(ValueError, match="max_agg_metrics must not contain duplicates"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders", "converted"],
+            group_sizes=[10],
+            exp_days=[1],
+            max_agg_metrics=["converted", "converted"],
+        )
+    with pytest.raises(ValueError, match="unknown metric column"):
+        compute_mde(
+            df,
+            user_id="user_id",
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[1],
+            max_agg_metrics=["converted"],
+        )
 
 
 def test_compute_mde_rejects_invalid_user_day_grain() -> None:

@@ -26,8 +26,15 @@ planning = compute_mde(
             numerator="clicks",
             denominator="views",
             level="user",
+        ),
+        RatioMetricSpec(
+            name="conversion_rate",
+            numerator="converted",
+            denominator="views",
+            level="agg",
         )
     ],
+    max_agg_metrics=["converted"],
     exp_days=[7, 14, 21],
     group_sizes=[50_000, 100_000, 150_000],
     control_share=0.5,
@@ -40,6 +47,14 @@ The result contains one row per metric, experiment length, and total planned
 experiment size. `group_size` is total experiment users; the control and test
 sizes are derived from `control_share` when computing `mde_abs`,
 `mde_relative`, `mde_abs_cuped`, and `mde_relative_cuped`.
+
+By default, `compute_mde` sums metric columns and ratio numerator/denominator
+components inside each selected user window. Pass `max_agg_metrics` for period
+indicator columns such as conversion flags; ratio metrics apply the selected
+aggregation independently to numerator and denominator components before the
+ratio statistics are computed. Pass `sum_agg_metrics` instead when most metrics
+should use max aggregation and only selected columns should keep sum
+aggregation.
 
 By default, CUPED uses a pre-period with the same length as each `exp_days`
 scenario. Pass `pre_exp_days` to use one fixed pre-period length across all
