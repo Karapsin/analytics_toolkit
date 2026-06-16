@@ -39,11 +39,16 @@ DEPENDENCY_RE = re.compile(r'"([^"]+)"')
 MODULE_DOCS = {
     "ab_utils": "agent_docs/ab_utils.md",
     "ab": "agent_docs/ab_utils.md",
+    "agent_tool": "agent_tools/README.md",
+    "agent_tools": "agent_tools/README.md",
     "sql": "agent_docs/sql.md",
     "excel": "agent_docs/excel.md",
     "dates": "agent_docs/dates.md",
     "date": "agent_docs/dates.md",
     "general": "agent_docs/general.md",
+    "docs_assistant": "agent_tools/README.md",
+    "mcp": "agent_tools/README.md",
+    "rag": "agent_tools/README.md",
 }
 
 TASK_DOCS = {
@@ -311,6 +316,7 @@ def workflow_status(
     task: str,
     module: str | None = None,
     change_type: str = "implementation",
+    instructions_read: bool = False,
     root: str = ".",
 ) -> dict[str, Any]:
     """Return route, repository, metadata, and check status for the workflow."""
@@ -319,6 +325,7 @@ def workflow_status(
         "task": task,
         "module": module,
         "change_type": change_type,
+        "instructions_read": instructions_read,
         "root": str(root_path),
     }
     route = route_agent_context(task=task, module=module)
@@ -330,6 +337,7 @@ def workflow_status(
         health=health,
         metadata=metadata,
         change_type=change_type,
+        instructions_read=instructions_read,
         route=route,
         root=root_path,
     )
@@ -517,6 +525,7 @@ def run_checks(
 def git_workflow(
     action: str,
     message: str | None = None,
+    paths: list[str] | None = None,
     allow_without_checks: bool = False,
     root: str = ".",
 ) -> dict[str, Any]:
@@ -525,6 +534,7 @@ def git_workflow(
     input_summary = {
         "action": action,
         "message": message,
+        "paths": paths,
         "allow_without_checks": allow_without_checks,
         "root": str(root_path),
     }
@@ -576,6 +586,21 @@ def git_workflow(
             summary="Commit message is required.",
             blockers=[{"phase": "validate", "message": "message is required for commit"}],
         )
+    commit_paths = _validated_commit_paths(paths)
+    if not commit_paths:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit staging requires explicit paths.",
+            blockers=[
+                {
+                    "phase": "stage",
+                    "message": "paths are required for commit so git_workflow does not stage unrelated changes",
+                }
+            ],
+            next_actions=["Pass explicit paths for the current batch, then retry git_workflow(action='commit')."],
+        )
     if not allow_without_checks:
         verification = _verify_precommit_success(root_path)
         if not verification["ok"]:
@@ -589,7 +614,14 @@ def git_workflow(
                 next_actions=["Run run_checks(level='precommit') before committing."],
             )
 
-    add = _run_command(root_path, {"display": "git add .", "args": ["git", "add", "."], "env": {}})
+    add = _run_command(
+        root_path,
+        {
+            "display": f"git add -- {' '.join(commit_paths)}",
+            "args": ["git", "add", "--", *commit_paths],
+            "env": {},
+        },
+    )
     if not add["ok"]:
         return _tool_output(
             "git_workflow",
@@ -964,12 +996,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     workflow_parser.add_argument("--task", required=True)
     workflow_parser.add_argument("--module")
     workflow_parser.add_argument("--change-type", default="implementation")
+    workflow_parser.add_argument("--instructions-read", action="store_true")
     workflow_parser.add_argument("--root", default=".")
     workflow_parser.set_defaults(
         handler=lambda args: workflow_status(
             task=args.task,
             module=args.module,
             change_type=args.change_type,
+            instructions_read=args.instructions_read,
             root=args.root,
         )
     )
@@ -1007,12 +1041,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     git_parser = subparsers.add_parser("git-workflow")
     git_parser.add_argument("action", choices=["commit", "push"])
     git_parser.add_argument("--message")
+    git_parser.add_argument("--path", dest="paths", action="append")
     git_parser.add_argument("--allow-without-checks", action="store_true")
     git_parser.add_argument("--root", default=".")
     git_parser.set_defaults(
         handler=lambda args: git_workflow(
             action=args.action,
             message=args.message,
+            paths=args.paths,
             allow_without_checks=args.allow_without_checks,
             root=args.root,
         )
@@ -1369,10 +1405,13 @@ def _missing_mandatory_actions(
     health: dict[str, Any],
     metadata: dict[str, Any],
     change_type: str,
+    instructions_read: bool,
     route: dict[str, Any],
     root: Path,
 ) -> list[str]:
-    missing = ["Read required instruction files: " + ", ".join(route["required_files"])]
+    missing = []
+    if not instructions_read:
+        missing.append("Read required instruction files: " + ", ".join(route["required_files"]))
     if health["dirty"] and not _is_docs_only(change_type):
         if not metadata["ok"]:
             missing.append("Run version_bump(...) so pyproject.toml, README.md, and docs/CHANGELOG.md align.")
@@ -1400,6 +1439,12 @@ def _working_tree_fingerprint(root: Path) -> str:
         parts.append(result.get("stderr", ""))
     parts.extend(_untracked_file_fingerprint_parts(root))
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def _validated_commit_paths(paths: list[str] | None) -> list[str]:
+    if not paths:
+        return []
+    return [path.strip() for path in paths if path.strip()]
 
 
 def _untracked_file_fingerprint_parts(root: Path) -> list[str]:

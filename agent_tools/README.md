@@ -14,14 +14,16 @@ wrapper:
 ```bash
 agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
 agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
-agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_tools
+agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_tools --instructions-read
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
+agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/test_agent_tools_mcp.py
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
 Use `git-workflow commit` only when the current batch is ready to commit, and
-use `release-workflow --action publish` only when release readiness is clean.
+pass explicit `--path` values so unrelated local changes are not staged. Use
+`release-workflow --action publish` only when release readiness is clean.
 
 `mcp_server.py` exposes the consolidated tool surface:
 `prepare_start`, `docs`, `workflow_status`, `version_bump`, `run_checks`,

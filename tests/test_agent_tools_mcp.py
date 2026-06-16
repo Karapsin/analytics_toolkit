@@ -223,10 +223,68 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     assert result["result"]["repo_health"]["branch"] == "main"
     assert "agent_docs/development.md" in result["result"]["required_instruction_files"]
     assert "agent_docs/release.md" in result["result"]["required_instruction_files"]
+    assert "agent_tools/README.md" in result["result"]["required_instruction_files"]
     assert result["result"]["metadata_status"]["ok"] is True
     assert result["result"]["recommended_checks"]["focused_commands"] == [
         "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py"
     ]
+
+
+def test_workflow_status_suppresses_instruction_reminder_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_git",
+        lambda root_path, args: {
+            "ok": True,
+            "stdout": "main\n" if args == ["branch", "--show-current"] else "",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git",
+            "summary": "",
+        },
+    )
+
+    result = mcp_server.workflow_status(
+        "implementation",
+        module="agent_tools",
+        instructions_read=True,
+        root=str(root),
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["missing_mandatory_actions"] == []
+
+
+def test_workflow_status_cli_accepts_instructions_read_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_workflow_status(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "workflow_status", fake_workflow_status)
+    parser = mcp_server._build_cli_parser()
+    args = parser.parse_args(
+        [
+            "workflow-status",
+            "--task",
+            "implementation",
+            "--module",
+            "agent_tools",
+            "--instructions-read",
+        ]
+    )
+
+    result = args.handler(args)
+
+    assert result == {"ok": True}
+    assert captured["instructions_read"] is True
 
 
 def test_version_bump_dry_run_and_real_edit(tmp_path: Path) -> None:
@@ -316,10 +374,33 @@ def test_run_checks_dry_run_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_pat
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 
-    result = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py"],
+        root=str(root),
+    )
 
     assert result["ok"] is False
     assert result["blockers"][0]["phase"] == "precommit"
+
+
+def test_git_workflow_commit_requires_explicit_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    result = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "stage"
+    assert "paths are required" in result["blockers"][0]["message"]
 
 
 def test_dependency_metadata_status_detects_readme_constraint_mismatch(tmp_path: Path) -> None:
@@ -380,7 +461,12 @@ def test_git_workflow_blocks_when_untracked_content_changes_after_checks(tmp_pat
     )
 
     untracked.write_text("changed after checks\n", encoding="utf-8")
-    result = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["new_agent_note.txt"],
+        root=str(root),
+    )
 
     assert result["ok"] is False
     assert result["blockers"][0]["phase"] == "precommit"
@@ -416,15 +502,55 @@ def test_git_workflow_commit_and_push_dispatch(
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
 
-    commit = mcp_server.git_workflow("commit", message="Update workflow", root=str(root))
+    commit = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py", "tests/test_agent_tools_mcp.py"],
+        root=str(root),
+    )
     push = mcp_server.git_workflow("push", root=str(root))
 
     assert commit["ok"] is True
     assert push["ok"] is True
     assert commands == [
-        "git add .",
+        "git add -- agent_tools/mcp_server.py tests/test_agent_tools_mcp.py",
         "git commit -m 'Update workflow'",
         "git push origin HEAD:main",
+    ]
+
+
+def test_git_workflow_cli_accepts_explicit_commit_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_git_workflow(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "git_workflow", fake_git_workflow)
+    parser = mcp_server._build_cli_parser()
+    args = parser.parse_args(
+        [
+            "git-workflow",
+            "commit",
+            "--message",
+            "Update workflow",
+            "--path",
+            "agent_tools/mcp_server.py",
+            "--path",
+            "tests/test_agent_tools_mcp.py",
+        ]
+    )
+
+    result = args.handler(args)
+
+    assert result == {"ok": True}
+    assert captured["action"] == "commit"
+    assert captured["message"] == "Update workflow"
+    assert captured["paths"] == [
+        "agent_tools/mcp_server.py",
+        "tests/test_agent_tools_mcp.py",
     ]
 
 

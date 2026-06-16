@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.9.17 - 2026-06-16
+
+- Made agent tool commit staging explicit and improved routing status.
+
 ## 1.3.9.16 - 2026-06-16
 
 - Harden agent workflow safety.
