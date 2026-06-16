@@ -25,6 +25,23 @@ python -m venv .venv
 .venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt
 ```
 
+### Read-Only Planning Exception
+
+For strictly read-only review or planning work, agents may skip `git pull origin
+main` and `prepare_start(...)` only when the user explicitly authorizes skipping
+startup sync. When using this exception, state that findings may be stale because
+the pull was skipped. Do not edit files, run mutating workflows, run tests,
+commit, push, publish, or otherwise change repository state while relying on the
+exception.
+
+Before leaving this read-only exception for edits, tests, commits, pushes, or
+release actions, run the normal `prepare_start(...)` workflow and re-check the
+files or areas covered by the plan. If pulled changes conflict with, invalidate,
+or materially change the plan, stop before editing and explain what changed, why
+it blocks or alters the plan, and suggest concrete next options. If pulled
+changes do not affect the plan, continue normally and mention that the plan was
+revalidated after startup sync.
+
 Use these MCP tools for the corresponding agent workflow steps:
 
 - Startup orchestration and required instruction routing: `prepare_start`.
@@ -52,9 +69,11 @@ agent_tools/mcp_tool.sh docs "specific question" --mode ask
 agent_tools/mcp_tool.sh workflow-status --task "documentation" --module sql
 agent_tools/mcp_tool.sh version-bump "Updated SQL docs" --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level focused --dry-run
-agent_tools/mcp_tool.sh git-workflow commit --message "Update SQL helpers"
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
+
+Use `git-workflow commit` only when the current batch is ready to commit, and
+use `release-workflow --action publish` only when release readiness is clean.
 
 If MCP setup or `prepare_start` fails because of local changes, merge
 conflicts, authentication, network issues, dependency installation failure,
@@ -83,8 +102,8 @@ exported internals as compatibility surface too.
 Root `AGENTS.md` is the auto-discovered instruction file. The files under
 `agent_docs/` are not auto-loaded unless this file routes you to them.
 
-After the mandatory startup sync and RAG pass, read the relevant files before
-normal repository inspection, tests, or edits:
+After `prepare_start(...)` and focused `docs(...)` retrieval, read the relevant
+files before normal repository inspection, tests, or edits:
 
 - Any implementation, testing, build, or commit work: `agent_docs/development.md`.
 - Public documentation work under `docs/` or README documentation sections: `agent_docs/documentation.md`.
