@@ -27,11 +27,14 @@ python -m venv .venv
 
 ### Read-Only Planning Exception
 
-For strictly read-only review or planning work, agents may skip `git pull origin
-main` and `prepare_start(...)` only when the user explicitly authorizes skipping
-startup sync. When using this exception, state that findings may be stale because
-the pull was skipped. Do not edit files, run mutating workflows, run tests,
-commit, push, publish, or otherwise change repository state while relying on the
+For strictly read-only review or planning work, `prepare_start(...)` is always
+allowed and remains the preferred default startup workflow. Its startup sync,
+environment preparation, and local RAG index refresh are permitted preparatory
+workflow, not implementation work. Agents may skip `git pull origin main` and
+`prepare_start(...)` only when the user explicitly authorizes skipping startup
+sync. When using this exception, state that findings may be stale because the
+pull was skipped. Do not edit files, run mutating workflows, run tests, commit,
+push, publish, or otherwise change repository state while relying on the
 exception.
 
 Before leaving this read-only exception for edits, tests, commits, pushes, or
@@ -152,7 +155,7 @@ specific documentation update that would make future RAG retrieval unambiguous.
 
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
-- After every non-documentation repository change, use `version_bump(...)` to bump the package version in `pyproject.toml`, the root README version, and `docs/CHANGELOG.md` in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
+- After every non-documentation repository change, use `version_bump(...)` to update version metadata or the changelog. Non-documentation changes add one concise bullet under `## Unreleased` in `docs/CHANGELOG.md` until there are at least 10 unreleased bullets. While `## Unreleased` has fewer than 10 bullets, do not bump `pyproject.toml` or the root README version. Once `## Unreleased` reaches 10 or more bullets, use `version_bump(...)` to create a new versioned changelog section from all unreleased bullets, bump the package version in `pyproject.toml`, and update the root README version in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
 - Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.

@@ -54,10 +54,13 @@ REQUIRED_VERSION_PATHS = {
     "README.md",
     "docs/CHANGELOG.md",
 }
+CHANGELOG_PATH = "docs/CHANGELOG.md"
+UNRELEASED_CHANGELOG_THRESHOLD = 10
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
 CHANGELOG_HEADING_RE = re.compile(r"^##\s+([0-9]+(?:\.[0-9]+){3})\s+-\s+(.+?)\s*$", flags=re.MULTILINE)
+UNRELEASED_HEADING_RE = re.compile(r"^##\s+Unreleased\s*$", flags=re.IGNORECASE | re.MULTILINE)
 DEPENDENCY_RE = re.compile(r'"([^"]+)"')
 
 MODULE_DOCS = {
@@ -432,26 +435,87 @@ def version_bump(
         )
 
     current_version = _package_version(root_path)
+    changelog = root_path / CHANGELOG_PATH
+    changelog_text = _read_text(changelog)
+    bullet = _format_changelog_bullet(summary)
+    unreleased_count = _count_unreleased_changelog_bullets(changelog_text)
+    planned_unreleased_count = unreleased_count + 1
     next_version_value = _increment_version(current_version)
-    entry = _format_changelog_entry(next_version_value, summary)
-    planned = {
-        "decision": "bump",
-        "current_version": current_version,
-        "planned_version": next_version_value,
-        "changelog_entry": entry,
-    }
+    should_bump = planned_unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD
+    if should_bump:
+        entry = _format_changelog_entry(
+            next_version_value,
+            _unreleased_changelog_bullets(changelog_text) + [bullet],
+        )
+        planned = {
+            "decision": "bump",
+            "current_version": current_version,
+            "planned_version": next_version_value,
+            "changelog_entry": entry,
+            "unreleased_count": planned_unreleased_count,
+        }
+    else:
+        planned = {
+            "decision": "unreleased",
+            "current_version": current_version,
+            "planned_version": None,
+            "changelog_entry": bullet,
+            "unreleased_count": planned_unreleased_count,
+            "threshold": UNRELEASED_CHANGELOG_THRESHOLD,
+        }
     if dry_run:
+        summary_text = (
+            "Version bump planned."
+            if should_bump
+            else "Unreleased changelog update planned; version bump threshold not reached."
+        )
         return _tool_output(
             "version_bump",
             input_summary,
-            summary="Version bump planned.",
+            summary=summary_text,
             result=planned,
             next_actions=["Run version_bump(..., dry_run=False) when ready to edit metadata."],
         )
 
+    if not should_bump:
+        try:
+            updated_changelog = _upsert_unreleased_changelog_bullet(changelog_text, bullet)
+        except ValueError as exc:
+            return _tool_output(
+                "version_bump",
+                input_summary,
+                ok=False,
+                summary="Unreleased changelog update failed.",
+                result=planned,
+                blockers=[{"phase": "metadata", "message": str(exc)}],
+                next_actions=["Fix the changelog, then rerun version_bump(...)."],
+            )
+        _write_text(changelog, updated_changelog)
+        metadata = metadata_status(root=str(root_path))
+        if not metadata["ok"]:
+            return _tool_output(
+                "version_bump",
+                input_summary,
+                ok=False,
+                summary="Metadata is not aligned after unreleased changelog update.",
+                result={**planned, "metadata_status": metadata},
+                blockers=metadata["blockers"],
+                next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
+            )
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            summary=(
+                "Added unreleased changelog bullet "
+                f"({planned_unreleased_count}/{UNRELEASED_CHANGELOG_THRESHOLD}); "
+                "version not bumped."
+            ),
+            result={**planned, "metadata_status": metadata},
+            next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
+        )
+
     pyproject = root_path / "pyproject.toml"
     readme = root_path / "README.md"
-    changelog = root_path / "docs" / "CHANGELOG.md"
     try:
         pyproject_text = _replace_required(
             VERSION_RE,
@@ -465,7 +529,7 @@ def version_bump(
             f"**Version:** `{next_version_value}`",
             "README version",
         )
-        changelog_text = _prepend_changelog_entry_text(_read_text(changelog), entry)
+        updated_changelog = _release_unreleased_changelog_text(changelog_text, entry)
     except ValueError as exc:
         return _tool_output(
             "version_bump",
@@ -479,7 +543,7 @@ def version_bump(
 
     _write_text(pyproject, pyproject_text)
     _write_text(readme, readme_text)
-    _write_text(changelog, changelog_text)
+    _write_text(changelog, updated_changelog)
     metadata = metadata_status(root=str(root_path))
     if not metadata["ok"]:
         return _tool_output(
@@ -1383,11 +1447,19 @@ def _latest_changelog_entry(text: str) -> dict[str, str]:
     return {"version": match.group(1), "date": match.group(2)}
 
 
-def _format_changelog_entry(version: str, summary: str) -> str:
+def _format_changelog_bullet(summary: str) -> str:
     clean_summary = summary.strip().rstrip(".")
     if not clean_summary:
         clean_summary = "Updated repository workflow."
-    return f"## {version} - {date.today().isoformat()}\n\n- {clean_summary}.\n"
+    return f"- {clean_summary}."
+
+
+def _format_changelog_entry(version: str, summary_or_bullets: str | list[str]) -> str:
+    if isinstance(summary_or_bullets, str):
+        bullets = [_format_changelog_bullet(summary_or_bullets)]
+    else:
+        bullets = summary_or_bullets or [_format_changelog_bullet("")]
+    return f"## {version} - {date.today().isoformat()}\n\n" + "\n".join(bullets) + "\n"
 
 
 def _prepend_changelog_entry(path: Path, entry: str) -> None:
@@ -1401,6 +1473,63 @@ def _prepend_changelog_entry_text(text: str, entry: str) -> str:
     if match is None:
         return text.rstrip() + "\n\n" + entry
     return text[: match.start()] + entry + "\n" + text[match.start() :]
+
+
+def _unreleased_changelog_bounds(text: str) -> tuple[int, int, int] | None:
+    match = UNRELEASED_HEADING_RE.search(text)
+    if match is None:
+        return None
+    next_match = re.search(r"^##\s+", text[match.end() :], flags=re.MULTILINE)
+    end = len(text) if next_match is None else match.end() + next_match.start()
+    return match.start(), match.end(), end
+
+
+def _unreleased_changelog_bullets(text: str) -> list[str]:
+    bounds = _unreleased_changelog_bounds(text)
+    if bounds is None:
+        return []
+    _, body_start, section_end = bounds
+    return [
+        line.strip()
+        for line in text[body_start:section_end].splitlines()
+        if line.strip().startswith("- ")
+    ]
+
+
+def _count_unreleased_changelog_bullets(text: str) -> int:
+    return len(_unreleased_changelog_bullets(text))
+
+
+def _upsert_unreleased_changelog_bullet(text: str, bullet: str) -> str:
+    if not text.strip():
+        raise ValueError("Could not update changelog")
+    bounds = _unreleased_changelog_bounds(text)
+    if bounds is None:
+        entry = f"## Unreleased\n\n{bullet}\n\n"
+        match = re.search(r"^##\s+", text, flags=re.MULTILINE)
+        if match is None:
+            return text.rstrip() + "\n\n" + entry.rstrip() + "\n"
+        return text[: match.start()] + entry + text[match.start() :]
+
+    section_start, body_start, section_end = bounds
+    body = text[body_start:section_end].strip()
+    updated_body = f"{body}\n{bullet}" if body else bullet
+    return (
+        text[:body_start].rstrip()
+        + "\n\n"
+        + updated_body
+        + "\n\n"
+        + text[section_end:].lstrip("\n")
+    )
+
+
+def _release_unreleased_changelog_text(text: str, entry: str) -> str:
+    bounds = _unreleased_changelog_bounds(text)
+    if bounds is None:
+        return _prepend_changelog_entry_text(text, entry)
+    section_start, _, section_end = bounds
+    without_unreleased = text[:section_start] + text[section_end:].lstrip("\n")
+    return _prepend_changelog_entry_text(without_unreleased, entry)
 
 
 def _increment_version(version: str) -> str:
@@ -1625,21 +1754,32 @@ def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dic
         and path not in REQUIRED_VERSION_PATHS
         and not _is_documentation_path(path)
     )
-    missing = sorted(path for path in REQUIRED_VERSION_PATHS if path not in changed_paths or path not in selected_paths)
+    unreleased_count = 0
+    required_paths: set[str] = {CHANGELOG_PATH}
+    changelog_path = root / CHANGELOG_PATH
+    if changelog_path.exists():
+        unreleased_count = _count_unreleased_changelog_bullets(_read_text(changelog_path))
+    if unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD:
+        required_paths = set(REQUIRED_VERSION_PATHS)
+    missing = sorted(
+        path for path in required_paths if path not in changed_paths or path not in selected_paths
+    )
     if not non_documentation_paths:
         missing = []
     return {
         "changed_paths": sorted(changed_paths),
         "selected_paths": sorted(selected_paths),
         "non_documentation_paths": non_documentation_paths,
-        "required_paths": sorted(REQUIRED_VERSION_PATHS),
+        "required_paths": sorted(required_paths),
         "missing": missing,
+        "unreleased_count": unreleased_count,
+        "threshold": UNRELEASED_CHANGELOG_THRESHOLD,
     }
 
 
 def _version_bump_message(missing: list[str]) -> str:
     return (
-        "Run version_bump(...) so non-documentation changes include "
+        "Run version_bump(...) so non-documentation changes include required version/changelog paths: "
         + ", ".join(missing)
         + "."
     )

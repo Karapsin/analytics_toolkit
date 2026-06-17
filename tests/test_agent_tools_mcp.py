@@ -341,21 +341,46 @@ def test_workflow_status_cli_accepts_instructions_read_flag(
     assert captured["instructions_read"] is True
 
 
-def test_version_bump_dry_run_and_real_edit(tmp_path: Path) -> None:
+def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
 
     dry_run = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root), dry_run=True)
     applied = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 
-    assert dry_run["result"]["planned_version"] == "1.3.9.14"
-    assert 'version = "1.3.9.14"' in (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "**Version:** `1.3.9.14`" in (root / "README.md").read_text(encoding="utf-8")
-    assert "## 1.3.9.14 - " in (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert dry_run["result"]["decision"] == "unreleased"
+    assert dry_run["result"]["planned_version"] is None
+    assert applied["result"]["decision"] == "unreleased"
+    assert 'version = "1.3.9.13"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "**Version:** `1.3.9.13`" in (root / "README.md").read_text(encoding="utf-8")
+    changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## Unreleased" in changelog
+    assert "- Consolidated agent MCP workflow." in changelog
+    assert "## 1.3.9.14 - " not in changelog
     assert applied["ok"] is True
 
 
-def test_version_bump_fails_when_readme_version_marker_is_missing(tmp_path: Path) -> None:
+def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
+
+    dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
+    applied = mcp_server.version_bump("Tenth change", root=str(root))
+
+    assert dry_run["result"]["decision"] == "bump"
+    assert dry_run["result"]["planned_version"] == "1.3.9.14"
+    assert 'version = "1.3.9.14"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "**Version:** `1.3.9.14`" in (root / "README.md").read_text(encoding="utf-8")
+    changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## Unreleased" not in changelog
+    assert "## 1.3.9.14 - " in changelog
+    assert "- Existing change 1." in changelog
+    assert "- Tenth change." in changelog
+    assert applied["ok"] is True
+
+
+def test_version_bump_fails_when_readme_version_marker_is_missing_at_threshold(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
     (root / "README.md").write_text("# analytics_toolkit\n", encoding="utf-8")
 
     result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
@@ -366,18 +391,19 @@ def test_version_bump_fails_when_readme_version_marker_is_missing(tmp_path: Path
     assert "## 1.3.9.14 - " not in (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
-def test_version_bump_does_not_partially_write_when_changelog_fails(
+def test_version_bump_does_not_partially_write_when_release_changelog_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
     original_pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     original_readme = (root / "README.md").read_text(encoding="utf-8")
 
     def fail_changelog(text: str, entry: str) -> str:
         raise ValueError("Could not update changelog")
 
-    monkeypatch.setattr(mcp_server, "_prepend_changelog_entry_text", fail_changelog)
+    monkeypatch.setattr(mcp_server, "_release_unreleased_changelog_text", fail_changelog)
 
     result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 
@@ -531,7 +557,7 @@ def test_workflow_status_requires_version_bump_for_dirty_implementation(
 
     assert result["ok"] is False
     assert result["result"]["missing_mandatory_actions"] == [
-        "Run version_bump(...) so non-documentation changes include README.md, docs/CHANGELOG.md, pyproject.toml."
+        "Run version_bump(...) so non-documentation changes include required version/changelog paths: docs/CHANGELOG.md."
     ]
 
 
@@ -562,7 +588,7 @@ def test_workflow_status_ignores_sensitive_local_state_for_version_bump(
     assert result["result"]["missing_mandatory_actions"] == []
 
 
-def test_git_workflow_commit_requires_version_paths_for_implementation(
+def test_git_workflow_commit_requires_changelog_for_implementation_below_threshold(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -587,9 +613,100 @@ def test_git_workflow_commit_requires_version_paths_for_implementation(
     assert result["ok"] is False
     assert result["blockers"][0]["phase"] == "version_bump"
     assert result["result"]["version_bump_requirement"]["missing"] == [
-        "README.md",
         "docs/CHANGELOG.md",
+    ]
+
+
+def test_git_workflow_commit_requires_version_paths_at_unreleased_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
+    (root / "agent_tools").mkdir()
+    (root / "agent_tools" / "mcp_server.py").write_text("# initial\n", encoding="utf-8")
+    _init_git_repo(root)
+    (root / "agent_tools" / "mcp_server.py").write_text("# changed\n", encoding="utf-8")
+    changelog = root / "docs" / "CHANGELOG.md"
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8").replace(
+            "- Existing change 9.",
+            "- Existing change 9.\n- Tenth change.",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "version_bump"
+    assert result["result"]["version_bump_requirement"]["missing"] == [
+        "README.md",
         "pyproject.toml",
+    ]
+
+
+def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    (root / "agent_tools").mkdir()
+    (root / "agent_tools" / "mcp_server.py").write_text("# initial\n", encoding="utf-8")
+    _init_git_repo(root)
+    (root / "agent_tools" / "mcp_server.py").write_text("# changed\n", encoding="utf-8")
+    changelog = root / "docs" / "CHANGELOG.md"
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8").replace(
+            "# Changelog\n\n",
+            "# Changelog\n\n## Unreleased\n\n- Updated workflow.\n\n",
+        ),
+        encoding="utf-8",
+    )
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+    real_run_command = mcp_server._run_command
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        if command["display"] == "git status --short":
+            return real_run_command(root_path, command)
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
+        root=str(root),
+    )
+
+    assert result["ok"] is True
+    assert commands[-2:] == [
+        "git add -- agent_tools/mcp_server.py docs/CHANGELOG.md",
+        "git commit -m 'Update workflow'",
     ]
 
 
@@ -1223,7 +1340,7 @@ def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
     output = json.loads(completed.stdout)
     assert output["ok"] is True
     assert output["tool"] == "version_bump"
-    assert output["result"]["decision"] == "bump"
+    assert output["result"]["decision"] == "unreleased"
 
 
 def test_agent_docs_cleanup_removed_direct_docs_assistant_workflow() -> None:
@@ -1282,6 +1399,16 @@ def _write_minimal_repo_files(root: Path, version: str = "1.3.9.13") -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _write_unreleased_changelog(root: Path, summaries: list[str]) -> None:
+    changelog = root / "docs" / "CHANGELOG.md"
+    current = changelog.read_text(encoding="utf-8")
+    bullets = "\n".join(f"- {summary.rstrip('.')}." for summary in summaries)
+    changelog.write_text(
+        current.replace("# Changelog\n\n", f"# Changelog\n\n## Unreleased\n\n{bullets}\n\n"),
+        encoding="utf-8",
+    )
 
 
 def _init_git_repo(root: Path) -> None:
