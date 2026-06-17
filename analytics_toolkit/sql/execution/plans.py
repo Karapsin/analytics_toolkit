@@ -30,6 +30,7 @@ class SqlOperationMetadata:
     statement_count: int | None = None
     operation_status: str | None = None
     query_label: str | None = None
+    stage_external_location: str | None = None
 
     def as_dict(self) -> dict[str, int | float | str | None]:
         return {
@@ -45,6 +46,7 @@ class SqlOperationMetadata:
             "statement_count": self.statement_count,
             "operation_status": self.operation_status,
             "query_label": self.query_label,
+            "stage_external_location": self.stage_external_location,
         }
 
 

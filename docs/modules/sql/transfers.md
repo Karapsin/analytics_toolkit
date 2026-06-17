@@ -14,6 +14,13 @@ The transfer flow has four conceptual steps:
 3. Stream source rows in batches.
 4. Insert staged rows and finalize the target table.
 
+For Trino targets, a target connection with both `transfer_staging_schema` and
+`transfer_staging_location` stages transfers from different connection keys
+through Parquet files in object storage. The staging schema is the Trino table
+namespace, while the staging location is the physical prefix that Python writes
+and Trino reads. Without `transfer_staging_location`, Trino transfers keep the
+row-batch `INSERT` staging behavior.
+
 Use `write_mode` to choose finalization behavior:
 
 - `append` inserts staged rows into the existing target.

@@ -104,6 +104,17 @@ rows
 - `transfer_staging_schema` configured on the target connection keeps staging
   tables inside that schema. When configured, stale and overlapping staging tables
   for the target user are cleaned before and after each transfer.
+- For Trino targets, setting both `transfer_staging_schema` and
+  `transfer_staging_location` on the target connection enables Parquet
+  object-storage staging when `from_db` and `to_db` are different keys. The
+  transfer streams source rows into temporary Parquet files under
+  `transfer_staging_location`, creates a Trino external stage table in
+  `transfer_staging_schema`, and then applies the normal `append`, `replace`,
+  `truncate_insert`, or `upsert` finalization logic from that stage table.
+- Python and Trino must both have access to the same object-storage prefix for
+  Parquet staging. Install `analytics-toolkit[parquet-transfer]`; if
+  `transfer_staging_location` is not configured, Trino targets keep using the
+  row-batch `INSERT` staging path.
 - `sql.cleanup_stale_stage_tables()` is the public helper for explicit cleanup of
   user-scoped staging tables.
 - Optional `min_batch_seconds`, `max_batch_seconds`, `min_batch_memory_mb`, and

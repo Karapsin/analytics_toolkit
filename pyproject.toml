@@ -57,6 +57,11 @@ dependencies = [
 
 [project.optional-dependencies]
 airflow = ["apache-airflow>=2.4,<3"]
+parquet-transfer = [
+  "fsspec>=2024.2",
+  "pyarrow>=14,<23",
+  "s3fs>=2024.2",
+]
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"

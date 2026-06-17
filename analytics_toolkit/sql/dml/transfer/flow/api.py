@@ -59,6 +59,10 @@ from .options import (
     resolve_target_rows_per_second_deadband,
     resolve_target_rows_per_second_window,
 )
+from .parquet_stage import (
+    build_create_parquet_stage_table_sql,
+    build_stage_external_location,
+)
 from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
 from ..runtime.retry import run_with_retry
@@ -292,6 +296,17 @@ def build_transfer_options(
     configured_trino_insert_chunk_size = (
         to_config.insert_chunk_size if isinstance(to_config, TrinoConfig) else None
     )
+    transfer_staging_location = (
+        to_config.transfer_staging_location
+        if isinstance(to_config, TrinoConfig)
+        else None
+    )
+    use_parquet_staging = (
+        to_config.backend == "trino"
+        and from_config.connection_key != to_config.connection_key
+        and to_config.transfer_staging_schema is not None
+        and transfer_staging_location is not None
+    )
     resolved_write_mode = _resolve_transfer_write_mode(
         to_config.backend,
         write_mode=write_mode,
@@ -391,7 +406,9 @@ def build_transfer_options(
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
+        transfer_staging_location=transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
+        use_parquet_staging=use_parquet_staging,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -469,6 +486,11 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     stage_table = _dry_run_stage_table_name(options)
+    stage_external_location = (
+        _dry_run_stage_external_location(options)
+        if options.use_parquet_staging
+        else None
+    )
     plan = SqlPlan(
         operation="transfer_table",
         source_alias=options.from_db_key,
@@ -502,6 +524,8 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 else None
             ),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
+            "transfer_staging_location": options.transfer_staging_location,
+            "use_parquet_staging": options.use_parquet_staging,
             "table_schema": options.table_schema,
             "partition_by": options.partition_by,
             "order_by": options.order_by,
@@ -511,7 +535,10 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "ch_only_shard": options.ch_only_shard,
             "estimate_total_rows": options.estimate_total_rows,
         },
-        metadata=SqlOperationMetadata(stage_table=stage_table),
+        metadata=SqlOperationMetadata(
+            stage_table=stage_table,
+            stage_external_location=stage_external_location,
+        ),
     )
     plan.add(
         options.source_sql,
@@ -520,7 +547,20 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         phase="read_source",
         query_label=options.query_label,
     )
-    if options.table_schema is None:
+    if options.use_parquet_staging:
+        plan.add(
+            build_create_parquet_stage_table_sql(
+                stage_table,
+                options.table_schema,
+                stage_external_location or "<stage external location>",
+                query_label=options.query_label,
+            ),
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase="create_stage",
+            target_table=stage_table,
+        )
+    elif options.table_schema is None:
         add_create_table_placeholder_step(
             plan,
             alias=options.to_db_key,
@@ -545,14 +585,28 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             phase="create_stage",
             table_name=stage_table,
         )
-    add_load_stage_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        stage_table=stage_table,
-        sql=f"INSERT INTO {stage_table} SELECT * FROM (<source batches>)",
-        query_label=options.query_label,
-    )
+    if options.use_parquet_staging:
+        add_load_stage_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            stage_table=stage_table,
+            sql=(
+                "WRITE PARQUET FILES TO "
+                f"{stage_external_location or '<stage external location>'} "
+                "FROM <source batches>"
+            ),
+            query_label=options.query_label,
+        )
+    else:
+        add_load_stage_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            stage_table=stage_table,
+            sql=f"INSERT INTO {stage_table} SELECT * FROM (<source batches>)",
+            query_label=options.query_label,
+        )
     if options.write_mode == "replace":
         if options.to_db_backend == "ch":
             add_drop_target_steps(
@@ -683,6 +737,14 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         stage_table=stage_table,
         query_label=options.query_label,
     )
+    if options.use_parquet_staging:
+        plan.add(
+            f"DELETE STAGE FILES {stage_external_location or '<stage external location>'}",
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase="cleanup_stage",
+            target_table=stage_table,
+        )
     return plan
 
 
@@ -697,6 +759,15 @@ def _dry_run_stage_table_name(options: TransferOptions) -> str:
         )
     except Exception:
         return f"{options.target_table}__stage__dryrun"
+
+
+def _dry_run_stage_external_location(options: TransferOptions) -> str | None:
+    if not options.transfer_staging_location:
+        return None
+    try:
+        return build_stage_external_location(options, stage_suffix="dryrun")
+    except Exception:
+        return options.transfer_staging_location.rstrip("/") + "/__stage__dryrun/"
 
 
 def _resolve_dry_run_upsert_columns(options: TransferOptions) -> list[str] | None:

@@ -353,7 +353,9 @@ class TransferOptions:
     progress: bool = False
     estimate_total_rows: bool = False
     transfer_staging_schema: str | None = None
+    transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
+    use_parquet_staging: bool = False
 
 
 @dataclass
@@ -365,6 +367,7 @@ class TransferStageState:
     stage_column_types: dict[str, str] | None = None
     insert_column_types: dict[str, str] | None = None
     stage_table: str | None = None
+    stage_external_location: str | None = None
 
 
 @dataclass

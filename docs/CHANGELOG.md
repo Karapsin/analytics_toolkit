@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Verify dev branch after startup.
 - Push dev after agent commits.
 - Consolidated AB metric batch APIs.
+- Add Parquet object-storage staging for Trino transfers.
 
 ## 1.3.10.7 - 2026-06-17
 

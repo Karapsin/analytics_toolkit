@@ -61,6 +61,7 @@ class TrinoConfig:
     request_timeout: int | None
     source: str | None
     transfer_staging_schema: str | None
+    transfer_staging_location: str | None
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,11 @@ def _build_connection_config(
                 raw_config,
                 connection_key,
                 "transfer_staging_schema",
+            ),
+            transfer_staging_location=_optional_string(
+                raw_config,
+                connection_key,
+                "transfer_staging_location",
             ),
             ca_certs=_optional_string_or_string_list(
                 raw_config,
@@ -422,6 +428,8 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "schema": "sandbox",
             "http_scheme": "https",
             "ca_certs": "trino-ca.pem",
+            "transfer_staging_schema": "object_storage.sandbox",
+            "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
         },
         "ch": {
             "type": "ch",
@@ -441,7 +449,12 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
         "source": "airflow",
         "connections": {
             "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
-            "trino": {"type": "trino", "ca_certs": "trino-ca.pem"},
+            "trino": {
+                "type": "trino",
+                "ca_certs": "trino-ca.pem",
+                "transfer_staging_schema": "object_storage.sandbox",
+                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },
     }
@@ -833,6 +846,7 @@ def _get_airflow_raw_connection_config_and_extras(
                 "catalog",
                 "schema",
                 "transfer_staging_schema",
+                "transfer_staging_location",
                 "auth_mode",
                 "http_scheme",
                 "verify",

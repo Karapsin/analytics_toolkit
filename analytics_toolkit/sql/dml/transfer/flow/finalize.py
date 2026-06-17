@@ -15,6 +15,7 @@ from ...table.table_validation import (
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
 )
+from .parquet_stage import cleanup_parquet_stage_location
 from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
 from ..schema import get_existing_target_insert_types
@@ -147,18 +148,40 @@ def cleanup_stage(
     stage_state: TransferStageState,
     read_retry_cnt: int,
 ) -> None:
-    if not stage_state.stage_table_created:
-        return
+    stage_cleanup_error: Exception | None = None
+    remote_cleanup_error: Exception | None = None
 
-    cleanup_stage_table_with_retry(
-        options.to_db_backend,
-        options.to_db_key,
-        connection_refs.target,
-        stage_state.stage_table,
-        retry_fn=run_with_retry,
-        retry_cnt=read_retry_cnt,
-        timeout_increment=options.timeout_increment,
-        rollback_fn=rollback_quietly,
-        replace_connection_fn=replace_connection,
-        query_label=options.query_label,
-    )
+    if stage_state.stage_table_created:
+        try:
+            cleanup_stage_table_with_retry(
+                options.to_db_backend,
+                options.to_db_key,
+                connection_refs.target,
+                stage_state.stage_table,
+                retry_fn=run_with_retry,
+                retry_cnt=read_retry_cnt,
+                timeout_increment=options.timeout_increment,
+                rollback_fn=rollback_quietly,
+                replace_connection_fn=replace_connection,
+                query_label=options.query_label,
+            )
+        except Exception as exc:
+            stage_cleanup_error = exc
+
+    if stage_state.stage_external_location is not None:
+        try:
+            cleanup_parquet_stage_location(stage_state.stage_external_location)
+        except Exception as exc:
+            remote_cleanup_error = exc
+
+    if stage_cleanup_error is not None:
+        if remote_cleanup_error is not None:
+            from analytics_toolkit.general import time_print
+
+            time_print(
+                "Remote Parquet stage cleanup failed while handling stage table "
+                f"cleanup error: {remote_cleanup_error!r}"
+            )
+        raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
+    if remote_cleanup_error is not None:
+        raise remote_cleanup_error.with_traceback(remote_cleanup_error.__traceback__)

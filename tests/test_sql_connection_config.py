@@ -617,6 +617,8 @@ def test_generate_dummy_connections_writes_direct_file(
             "schema": "sandbox",
             "http_scheme": "https",
             "ca_certs": "trino-ca.pem",
+            "transfer_staging_schema": "object_storage.sandbox",
+            "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
         },
         "ch": {
             "type": "ch",
@@ -652,7 +654,12 @@ def test_generate_dummy_connections_writes_airflow_file(
         "source": "airflow",
         "connections": {
             "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
-            "trino": {"type": "trino", "ca_certs": "trino-ca.pem"},
+            "trino": {
+                "type": "trino",
+                "ca_certs": "trino-ca.pem",
+                "transfer_staging_schema": "object_storage.sandbox",
+                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },
     }
@@ -1914,6 +1921,32 @@ def test_direct_connections_file_supports_transfer_staging_schema(
     assert config.transfer_staging_schema == f"transfer_{backend}"
 
 
+def test_direct_trino_connections_file_supports_transfer_staging_location(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "trino_with_location": {
+                "type": "trino",
+                "host": "trino.example",
+                "user": "user",
+                "password": "password",
+                "catalog": "iceberg",
+                "schema": "sandbox",
+                "transfer_staging_schema": "object_storage.sandbox",
+                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            },
+        }
+    )
+
+    config = config_module.get_connection_config("trino_with_location")
+    assert config.transfer_staging_schema == "object_storage.sandbox"
+    assert (
+        config.transfer_staging_location
+        == "s3://bucket/tmp/analytics_toolkit_transfer"
+    )
+
+
 @pytest.mark.parametrize(
     ("backend", "raw_config"),
     [
@@ -2013,4 +2046,48 @@ def test_airflow_connections_file_supports_transfer_staging_schema(
     )
     assert config_module.get_connection_config("airflow_ch").transfer_staging_schema == (
         "airflow_transfer_ch"
+    )
+
+
+def test_airflow_trino_connections_file_supports_transfer_staging_location(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "airflow_trino": {
+                    "type": "trino",
+                    "transfer_staging_schema": "object_storage.sandbox",
+                    "transfer_staging_location": {
+                        "from": "extra",
+                        "key": "parquet_transfer_location",
+                    },
+                },
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "airflow_trino": FakeAirflowConnection(
+                conn_type="trino",
+                host="air-trino.example",
+                login="air-user",
+                password="air-password",
+                extra_dejson={
+                    "parquet_transfer_location": (
+                        "s3://bucket/tmp/analytics_toolkit_transfer"
+                    ),
+                },
+            ),
+        },
+    )
+
+    config = config_module.get_connection_config("airflow_trino")
+    assert config.transfer_staging_schema == "object_storage.sandbox"
+    assert (
+        config.transfer_staging_location
+        == "s3://bucket/tmp/analytics_toolkit_transfer"
     )

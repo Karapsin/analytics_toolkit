@@ -15,8 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 attempt_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.attempt"
 )
+config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
 finalize_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.finalize"
+)
+parquet_stage_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
@@ -172,6 +176,79 @@ def make_progress_options(**overrides: Any) -> Any:
     }
     values.update(overrides)
     return models_module.TransferOptions(**values)
+
+
+def make_gp_config(connection_key: str) -> Any:
+    return config_module.GpConfig(
+        connection_key=connection_key,
+        backend="gp",
+        host="gp.example",
+        port=5432,
+        user="source_user",
+        password="password",
+        database="db",
+        connect_timeout=30,
+        keepalives=True,
+        keepalives_idle=60,
+        keepalives_interval=10,
+        keepalives_count=3,
+        sslmode=None,
+        ca_certs=[],
+        ssl_cert=None,
+        ssl_key=None,
+        transfer_staging_schema=None,
+    )
+
+
+def make_ch_config(connection_key: str) -> Any:
+    return config_module.ChConfig(
+        connection_key=connection_key,
+        backend="ch",
+        host="ch.example",
+        port=8123,
+        user="source_user",
+        password="password",
+        database="default",
+        secure=False,
+        verify_value=None,
+        ca_certs=[],
+        ca_certs_variable=None,
+        connect_timeout=None,
+        send_receive_timeout=None,
+        settings=None,
+        interface=None,
+        query_limit=None,
+        query_retries=None,
+        client_name=None,
+        transfer_staging_schema=None,
+    )
+
+
+def make_trino_config(
+    connection_key: str,
+    *,
+    transfer_staging_schema: str | None = "object_storage.sandbox",
+    transfer_staging_location: str | None = "s3://bucket/tmp/analytics_toolkit_transfer",
+) -> Any:
+    return config_module.TrinoConfig(
+        connection_key=connection_key,
+        backend="trino",
+        host="trino.example",
+        port=8080,
+        user="target_user",
+        password="password",
+        catalog="iceberg",
+        schema="sandbox",
+        auth_mode="basic",
+        http_scheme="https",
+        verify_value="true",
+        ca_certs=[],
+        insert_chunk_size=None,
+        request_timeout=None,
+        source=None,
+        transfer_staging_schema=transfer_staging_schema,
+        transfer_staging_location=transfer_staging_location,
+    )
 
 
 def test_run_transfer_attempt_cleans_only_current_stage_table(
@@ -609,6 +686,166 @@ def test_transfer_options_progress_defaults_to_false() -> None:
     )
 
     assert options.progress is False
+
+
+@pytest.mark.parametrize(
+    ("source_key", "source_config"),
+    [
+        ("gp", make_gp_config("gp")),
+        ("ch", make_ch_config("ch")),
+        ("trino_a", make_trino_config("trino_a")),
+    ],
+)
+def test_transfer_options_enable_parquet_staging_for_trino_target_with_location(
+    monkeypatch: pytest.MonkeyPatch,
+    source_key: str,
+    source_config: Any,
+) -> None:
+    target_config = make_trino_config("trino_b")
+    configs = {source_key: source_config, "trino_b": target_config}
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db=source_key,
+        to_db="trino_b",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+    )
+
+    assert options.use_parquet_staging is True
+    assert options.transfer_staging_schema == "object_storage.sandbox"
+    assert (
+        options.transfer_staging_location
+        == "s3://bucket/tmp/analytics_toolkit_transfer"
+    )
+
+
+def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino", transfer_staging_location=None),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+    )
+
+    assert options.use_parquet_staging is False
+    assert options.transfer_staging_schema == "object_storage.sandbox"
+    assert options.transfer_staging_location is None
+
+
+def test_transfer_options_reject_same_key_before_parquet_staging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = make_trino_config("trino")
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: config,
+    )
+
+    with pytest.raises(ValueError, match="from_db and to_db must be different"):
+        transfer_api_module.build_transfer_options(
+            from_db="trino",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+        )
+
+
+def test_transfer_dry_run_shows_parquet_stage_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        table_schema={"id": "BIGINT"},
+        dry_run=True,
+    )
+
+    assert plan.options["use_parquet_staging"] is True
+    assert plan.metadata.stage_table.startswith("object_storage.sandbox.target__")
+    assert plan.metadata.stage_external_location == (
+        "s3://bucket/tmp/analytics_toolkit_transfer/target/"
+        "__analytics_toolkit_target_user__stage__dryrun/"
+    )
+    assert any(
+        sql.startswith("CREATE TABLE object_storage.sandbox.target__")
+        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
+        in sql
+        for sql in plan.sqls
+    )
+    assert any(
+        sql.startswith("WRITE PARQUET FILES TO ")
+        and "__analytics_toolkit_target_user__stage__dryrun/" in sql
+        for sql in plan.sqls
+    )
+    assert any(sql.startswith("INSERT INTO sandbox.target") for sql in plan.sqls)
+    assert any(
+        sql.startswith("DROP TABLE IF EXISTS object_storage.sandbox")
+        for sql in plan.sqls
+    )
+    assert any(
+        sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls
+    )
+
+
+def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id, amount from source_table",
+        to_table="sandbox.target",
+        write_mode="upsert",
+        key_columns=["id"],
+        table_schema={"id": "BIGINT", "amount": "DOUBLE"},
+        dry_run=True,
+    )
+
+    assert any(
+        sql.startswith("MERGE INTO sandbox.target AS target_dst\n")
+        and "USING object_storage.sandbox.target__" in sql
+        for sql in plan.sqls
+    )
 
 
 def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> None:
@@ -1634,6 +1871,387 @@ def test_load_stage_batches_skips_gp_insert_page_sizer_for_non_gp_target(
     )
 
     assert total_rows == 2
+
+
+def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,), (2,), (3,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "BIGINT"},
+    )
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="trino",
+        to_db_backend="trino",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        batch_size=2,
+        adaptive_batch_size=False,
+        transfer_staging_schema="object_storage.sandbox",
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        transfer_staging_username="target_user",
+        use_parquet_staging=True,
+    )
+    written_batches: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: ("pa", "pq", "fsspec"),
+    )
+
+    def fake_create_parquet_stage_table(
+        options: Any,
+        connection_refs: Any,
+        stage_state: Any,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = pd.DataFrame({"id": [1]})
+        stage_state.stage_table = "object_storage.sandbox.target__stage__abcd1234"
+        stage_state.stage_external_location = (
+            "s3://bucket/tmp/analytics_toolkit_transfer/target/"
+            "__analytics_toolkit_target_user__stage__abcd1234/"
+        )
+        stage_state.stage_table_created = True
+
+    def fake_write_batch_to_parquet_stage(batch: Any, **kwargs: Any) -> int:
+        written_batches.append(
+            {
+                "rows": list(batch.rows),
+                "file_index": kwargs["file_index"],
+                "location": kwargs["stage_external_location"],
+                "row_group_size": kwargs["row_group_size"],
+                "pa": kwargs["pa"],
+                "pq": kwargs["pq"],
+                "fsspec": kwargs["fsspec_module"],
+            }
+        )
+        return len(batch.rows)
+
+    def fail_insert_rows_batch(*_args: Any, **_kwargs: Any) -> int:
+        raise AssertionError("Parquet staging must not call insert_rows_batch")
+
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        fake_create_parquet_stage_table,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "write_batch_to_parquet_stage",
+        fake_write_batch_to_parquet_stage,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fail_insert_rows_batch)
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 3
+    assert [batch["rows"] for batch in written_batches] == [[(1,), (2,)], [(3,)]]
+    assert [batch["file_index"] for batch in written_batches] == [0, 1]
+    assert all(batch["row_group_size"] == 2 for batch in written_batches)
+    assert source.cursor_obj.fetch_sizes == [2, 2, 2]
+
+
+def test_load_parquet_stage_infers_schema_from_first_row_group(
+    monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+    source = RecordingSourceConnection(rows=[(1, "a")])
+    source.cursor_obj.description = [
+        ("id", 23, None, None, None, None),
+        ("label", 25, None, None, None, None),
+    ]
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(target_exists=False)
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="trino",
+        to_db_backend="trino",
+        source_sql="select id, label from source_table",
+        target_table="sandbox.target",
+        batch_size=1,
+        transfer_staging_schema="object_storage.sandbox",
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        transfer_staging_username="target_user",
+        use_parquet_staging=True,
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: ("pa", "pq", "fsspec"),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "write_batch_to_parquet_stage",
+        lambda batch, **kwargs: len(batch.rows),
+    )
+
+    def fake_create_parquet_stage_table(
+        options: Any,
+        connection_refs: Any,
+        stage_state: Any,
+    ) -> None:
+        del options, connection_refs
+        stage_state.stage_table = "object_storage.sandbox.target__stage__abcd1234"
+        stage_state.stage_external_location = "s3://bucket/tmp/stage/"
+        stage_state.stage_table_created = True
+
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        fake_create_parquet_stage_table,
+    )
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 1
+    assert stage_state.stage_column_types == {"id": "BIGINT", "label": "VARCHAR"}
+    assert list(stage_state.first_non_empty_batch.columns) == ["id", "label"]
+
+
+def test_create_parquet_stage_table_uses_staging_schema_and_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed_sqls: list[str] = []
+
+    class FakeCursor:
+        def execute(self, sql: str) -> None:
+            executed_sqls.append(sql)
+
+        def close(self) -> None:
+            pass
+
+    class FakeConnection:
+        def cursor(self) -> FakeCursor:
+            return FakeCursor()
+
+    options = models_module.TransferOptions(
+        from_db_key="gp",
+        from_db_backend="gp",
+        to_db_key="trino",
+        to_db_backend="trino",
+        source_sql="select id from source_table",
+        target_table="sandbox.target",
+        transfer_staging_schema="object_storage.sandbox",
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        transfer_staging_username="target_user",
+        use_parquet_staging=True,
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "BIGINT"},
+    )
+
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "table_exists",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module.uuid,
+        "uuid4",
+        lambda: SimpleNamespace(hex="abcd1234"),
+    )
+
+    parquet_stage_module.create_parquet_stage_table(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(
+            target={"connection": FakeConnection()},
+        ),
+        stage_state=stage_state,
+    )
+
+    assert stage_state.stage_table == (
+        "object_storage.sandbox.target__analytics_toolkit_target_user__stage__abcd1234"
+    )
+    assert stage_state.stage_external_location == (
+        "s3://bucket/tmp/analytics_toolkit_transfer/target/"
+        "__analytics_toolkit_target_user__stage__abcd1234/"
+    )
+    assert executed_sqls == [
+        "CREATE TABLE "
+        "object_storage.sandbox.target__analytics_toolkit_target_user__stage__abcd1234 "
+        "(\"id\" BIGINT) WITH (format = 'PARQUET', "
+        "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
+        "__analytics_toolkit_target_user__stage__abcd1234/')"
+    ]
+
+
+def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dropped: list[str | None] = []
+    removed: list[str] = []
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        stage_table="object_storage.sandbox.target__stage__abcd1234",
+        stage_external_location="s3://bucket/tmp/stage/",
+    )
+    options = make_progress_options(
+        to_db_key="trino",
+        to_db_backend="trino",
+        transfer_staging_schema="object_storage.sandbox",
+        transfer_staging_location="s3://bucket/tmp",
+        use_parquet_staging=True,
+    )
+
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_stage_table_with_retry",
+        lambda connection_type,
+        connection_key,
+        connection_ref,
+        stage_table,
+        **kwargs: dropped.append(stage_table),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_parquet_stage_location",
+        lambda stage_external_location: removed.append(stage_external_location),
+    )
+
+    finalize_module.cleanup_stage(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(
+            target={"connection": object()},
+        ),
+        stage_state=stage_state,
+        read_retry_cnt=1,
+    )
+
+    assert dropped == ["object_storage.sandbox.target__stage__abcd1234"]
+    assert removed == ["s3://bucket/tmp/stage/"]
+
+
+def test_parquet_staging_missing_dependencies_raise_clear_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        to_db_key="trino",
+        to_db_backend="trino",
+        transfer_staging_schema="object_storage.sandbox",
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        use_parquet_staging=True,
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: (_ for _ in ()).throw(
+            ImportError(parquet_stage_module.PARQUET_STAGING_IMPORT_ERROR)
+        ),
+    )
+
+    with pytest.raises(ImportError, match="parquet-transfer"):
+        attempt_module.load_stage_batches(
+            options=options,
+            connection_refs=models_module.TransferConnectionRefs(
+                source={"connection": RecordingSourceConnection(rows=[(1,)])},
+                target={"connection": object()},
+            ),
+            stage_state=models_module.TransferStageState(
+                target_exists=False,
+                stage_column_types={"id": "BIGINT"},
+            ),
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+
+def test_write_batch_to_parquet_stage_uses_one_spooled_file_without_getvalue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_spooled_files = 0
+    max_active_spooled_files = 0
+    uploads: list[tuple[str, Any]] = []
+
+    class FakeSpooledFile:
+        _rolled = False
+
+        def __init__(self, max_size: int) -> None:
+            nonlocal active_spooled_files, max_active_spooled_files
+            assert max_size == parquet_stage_module.PARQUET_STAGE_MAX_SPOOL_BYTES
+            active_spooled_files += 1
+            max_active_spooled_files = max(
+                max_active_spooled_files,
+                active_spooled_files,
+            )
+            self.closed = False
+            self.position = 0
+
+        def seek(self, position: int) -> None:
+            self.position = position
+
+        def close(self) -> None:
+            nonlocal active_spooled_files
+            self.closed = True
+            active_spooled_files -= 1
+
+        def getvalue(self) -> bytes:
+            raise AssertionError("Parquet staging must not materialize file bytes")
+
+    monkeypatch.setattr(
+        parquet_stage_module.tempfile,
+        "SpooledTemporaryFile",
+        FakeSpooledFile,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "row_batch_to_arrow_table",
+        lambda pa, batch: {"rows": list(batch.rows)},
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "write_arrow_table_to_parquet",
+        lambda pq, arrow_table, spooled_file, row_group_size: None,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "upload_spooled_file",
+        lambda fsspec_module, spooled_file, remote_uri: uploads.append(
+            (remote_uri, spooled_file)
+        ),
+    )
+
+    row_count = parquet_stage_module.write_batch_to_parquet_stage(
+        models_module.RowBatch(columns=["id"], rows=[(1,), (2,)]),
+        file_index=0,
+        stage_external_location="s3://bucket/tmp/stage/",
+        pa=object(),
+        pq=object(),
+        fsspec_module=object(),
+        row_group_size=2,
+    )
+
+    assert row_count == 2
+    assert max_active_spooled_files == 1
+    assert active_spooled_files == 0
+    assert uploads[0][0] == "s3://bucket/tmp/stage/part-00000.parquet"
+    assert uploads[0][1].closed is True
 
 
 def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:

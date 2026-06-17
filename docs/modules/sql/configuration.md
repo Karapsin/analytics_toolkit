@@ -48,6 +48,7 @@ for an Airflow-source file. The helper never overwrites an existing
     "catalog": "iceberg",
     "schema": "sandbox",
     "transfer_staging_schema": "transfer_schema",
+    "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
     "http_scheme": "https",
     "ca_certs": "trino-ca.pem",
     "insert_chunk_size": 1000
@@ -95,12 +96,21 @@ connection timeout with TCP keepalives enabled. When `ca_certs` is set and
 `sslmode` is omitted, Greenplum uses `sslmode="verify-full"`.
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
-`insert_chunk_size`, `request_timeout`, `source`, and
-`transfer_staging_schema` fields.
+`insert_chunk_size`, `request_timeout`, `source`,
+`transfer_staging_schema`, and `transfer_staging_location` fields.
 
 When `transfer_staging_schema` is set, transfer staging tables for that
 connection are created under that schema and transfer cleanup scans only
 staging tables matching the target transfer user marker.
+
+When a Trino target defines both `transfer_staging_schema` and
+`transfer_staging_location`, transfers from a different connection key stage
+source rows as Parquet files under the object-storage location and create a
+temporary Trino table in `transfer_staging_schema` over that prefix. Python and
+Trino must both be able to write/read/delete the same object-storage prefix.
+Install `analytics-toolkit[parquet-transfer]` in Python environments that use
+this fast path. If `transfer_staging_location` is omitted, Trino transfers keep
+using row-batch `INSERT` staging.
 
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,

@@ -8,13 +8,23 @@ from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import insert_rows_batch
+from ...table.table_validation import validate_key_columns_in_columns
 from .estimate import estimate_source_rows
 from .finalize import (
     cleanup_stage,
     finalize_loaded_stage,
 )
+from .parquet_stage import (
+    create_parquet_stage_table,
+    ensure_parquet_staging_dependencies,
+    infer_trino_column_types_from_rows,
+    parquet_row_group_size,
+    sample_dataframe_from_batch,
+    write_batch_to_parquet_stage,
+)
 from ..runtime.models import (
     AdaptiveBatchSizer,
+    RowBatch,
     TransferConnectionRefs,
     TransferOptions,
     TransferStageState,
@@ -63,6 +73,8 @@ def run_transfer_attempt(
                 options.table_schema,
                 [column.name for column in source_schema],
             )
+        elif options.table_schema is not None:
+            stage_state.stage_column_types = options.table_schema
         elif source_schema:
             stage_state.stage_column_types = map_source_schema_to_target(
                 source_schema,
@@ -115,6 +127,14 @@ def load_stage_batches(
     read_retry_cnt: int,
     insert_retry_cnt: int,
 ) -> int:
+    if options.use_parquet_staging:
+        return load_parquet_stage_batches(
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            read_retry_cnt=read_retry_cnt,
+        )
+
     total_rows = 0
     estimated_total_rows = None
     if options.progress and options.estimate_total_rows:
@@ -251,6 +271,104 @@ def load_stage_batches(
         return total_rows
     finally:
         progress_bar.close()
+
+
+def load_parquet_stage_batches(
+    options: TransferOptions,
+    connection_refs: TransferConnectionRefs,
+    stage_state: TransferStageState,
+    read_retry_cnt: int,
+) -> int:
+    pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
+    total_rows = 0
+    file_index = 0
+    row_group_size = parquet_row_group_size(options)
+    estimated_total_rows = None
+    if options.progress and options.estimate_total_rows:
+        estimated_total_rows = estimate_source_rows(
+            options,
+            connection_refs.source["connection"],
+        )
+    progress_bar = _make_transfer_progress_bar(options, total=estimated_total_rows)
+    progress_tracker = _ProgressTracker(progress_bar)
+    try:
+        for batch in iter_source_batches(
+            options.from_db_key,
+            options.from_db_backend,
+            connection_refs.source,
+            options.source_sql,
+            row_group_size,
+            retry_cnt=read_retry_cnt,
+            timeout_increment=options.timeout_increment,
+            query_label=options.query_label,
+            get_batch_size=lambda: row_group_size,
+        ):
+            if batch.empty:
+                continue
+
+            if stage_state.first_non_empty_batch is None:
+                _initialize_parquet_stage_for_first_batch(
+                    options=options,
+                    connection_refs=connection_refs,
+                    stage_state=stage_state,
+                    batch=batch,
+                )
+
+            if stage_state.stage_external_location is None:
+                raise RuntimeError("Expected Parquet stage location to be initialized.")
+
+            progress_tracker.start_batch()
+            inserted_rows = write_batch_to_parquet_stage(
+                batch,
+                file_index=file_index,
+                stage_external_location=stage_state.stage_external_location,
+                pa=pa,
+                pq=pq,
+                fsspec_module=fsspec_module,
+                row_group_size=row_group_size,
+            )
+            file_index += 1
+            progress_tracker.update(inserted_rows)
+            progress_tracker.complete_batch(inserted_rows)
+            total_rows += inserted_rows
+            time_print(
+                f"Wrote Parquet transfer batch of "
+                f"{_format_transfer_progress_count(inserted_rows)} row(s) "
+                f"to {stage_state.stage_external_location}; total transferred "
+                f"{_format_transfer_progress_count(total_rows)} row(s)",
+                connection=options.to_db_key,
+                backend=options.to_db_backend,
+            )
+            del batch
+        return total_rows
+    finally:
+        progress_bar.close()
+
+
+def _initialize_parquet_stage_for_first_batch(
+    options: TransferOptions,
+    connection_refs: TransferConnectionRefs,
+    stage_state: TransferStageState,
+    batch: RowBatch,
+) -> None:
+    if options.table_schema is not None:
+        stage_state.stage_column_types = validate_table_schema_columns(
+            options.table_schema,
+            batch.columns,
+        )
+    elif stage_state.stage_column_types is None:
+        stage_state.stage_column_types = infer_trino_column_types_from_rows(batch)
+
+    validate_key_columns_in_columns(
+        options.key_columns,
+        batch.columns,
+    )
+    stage_state.first_non_empty_batch = sample_dataframe_from_batch(batch)
+    create_parquet_stage_table(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+    )
 
 
 class _ProgressTracker:
