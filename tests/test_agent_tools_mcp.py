@@ -147,6 +147,11 @@ def test_prepare_start_sequences_environment_and_index(
     )
     monkeypatch.setattr(
         mcp_server,
+        "repo_health",
+        lambda root: {"branch": "dev"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
         "workflow_status",
         lambda **kwargs: {
             "result": {
@@ -170,6 +175,36 @@ def test_prepare_start_sequences_environment_and_index(
         ".venv/bin/python -m pip install -e . pytest tox",
     ]
     assert result["result"]["docs_index"]["chunk_count"] == 5
+
+
+def test_prepare_start_fails_when_branch_verification_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda root: {"branch": "main"},
+    )
+
+    result = mcp_server.prepare_start("implementation", root=str(root))
+
+    assert result["ok"] is False
+    assert result["result"]["phase"] == "branch_verify"
+    assert result["blockers"][0]["expected_branch"] == "dev"
 
 
 def test_docs_search_and_ask_modes(tmp_path: Path) -> None:

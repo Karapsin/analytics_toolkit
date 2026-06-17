@@ -259,6 +259,26 @@ def prepare_start(
                 next_actions=["Resolve the startup blocker, then rerun prepare_start."],
             )
 
+    health = repo_health(root=str(root_path))
+    if health["branch"] != WORK_BRANCH:
+        return _tool_output(
+            "prepare_start",
+            input_summary,
+            ok=False,
+            summary=f"startup branch verification failed; expected {WORK_BRANCH}.",
+            result={"phase": "branch_verify", "repo_health": health},
+            command_results=command_results,
+            blockers=[
+                {
+                    "phase": "branch_verify",
+                    "message": f"prepare_start must leave the repository on {WORK_BRANCH}.",
+                    "branch": health["branch"],
+                    "expected_branch": WORK_BRANCH,
+                }
+            ],
+            next_actions=[f"Switch to {WORK_BRANCH}, resolve checkout issues, then rerun prepare_start."],
+        )
+
     try:
         index = docs_assistant.build_docs_index(root=root_path, index_dir=index_dir)
     except Exception as exc:
