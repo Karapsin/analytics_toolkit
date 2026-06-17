@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Updated startup and version bump workflow.
+- Route normal agent work through dev branch.
 
 ## 1.3.10.7 - 2026-06-17
 

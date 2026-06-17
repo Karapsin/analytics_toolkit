@@ -18,11 +18,14 @@ agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_t
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
 agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/test_agent_tools_mcp.py
+agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
 Use `git-workflow commit` only when the current batch is ready to commit, and
-pass explicit `--path` values so unrelated local changes are not staged. Use
+pass explicit `--path` values so unrelated local changes are not staged.
+Normal push workflow targets `dev`; use `release-workflow --action merge-dev`
+to fast-forward `main` from `origin/dev` before a PyPI release. Use
 `release-workflow --action publish` only when release readiness is clean.
 
 `mcp_server.py` exposes the consolidated tool surface:

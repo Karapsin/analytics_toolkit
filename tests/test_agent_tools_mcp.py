@@ -112,9 +112,9 @@ def test_prepare_start_stops_on_failed_step(monkeypatch: pytest.MonkeyPatch, tmp
 
     assert result["ok"] is False
     assert result["tool"] == "prepare_start"
-    assert result["result"]["phase"] == "git_pull"
+    assert result["result"]["phase"] == "git_fetch_dev"
     assert result["blockers"][0]["stderr"] == "network unavailable"
-    assert calls == ["git pull origin main"]
+    assert calls == ["git fetch origin dev"]
 
 
 def test_prepare_start_sequences_environment_and_index(
@@ -150,7 +150,7 @@ def test_prepare_start_sequences_environment_and_index(
         "workflow_status",
         lambda **kwargs: {
             "result": {
-                "repo_health": {"branch": "main"},
+                "repo_health": {"branch": "dev"},
                 "required_instruction_files": ["AGENTS.md", "agent_docs/development.md"],
                 "metadata_status": {"ok": True},
                 "recommended_checks": {"focused_commands": []},
@@ -162,7 +162,9 @@ def test_prepare_start_sequences_environment_and_index(
 
     assert result["ok"] is True
     assert commands == [
-        "git pull origin main",
+        "git fetch origin dev",
+        "git switch dev",
+        "git pull --ff-only origin dev",
         "python -m venv .venv",
         ".venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt",
         ".venv/bin/python -m pip install -e . pytest tox",
@@ -1034,7 +1036,7 @@ def test_git_workflow_commit_and_push_dispatch(
     monkeypatch.setattr(
         mcp_server,
         "_push_readiness",
-        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "main"}},
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -1063,7 +1065,7 @@ def test_git_workflow_commit_and_push_dispatch(
     assert commands == [
         "git add -- agent_tools/mcp_server.py tests/test_agent_tools_mcp.py",
         "git commit -m 'Update workflow'",
-        "git push origin HEAD:main",
+        "git push origin HEAD:dev",
     ]
 
 
@@ -1130,7 +1132,7 @@ def test_git_workflow_push_blocks_on_readiness_failure(
         mcp_server,
         "_push_readiness",
         lambda root_path: {
-            "blockers": [{"phase": "push", "message": "Push workflow must run from main."}],
+            "blockers": [{"phase": "push", "message": "Push workflow must run from dev."}],
             "command_results": [],
             "repo_health": {"branch": "feature"},
         },
@@ -1144,10 +1146,10 @@ def test_git_workflow_push_blocks_on_readiness_failure(
     result = mcp_server.git_workflow("push", root=str(root))
 
     assert result["ok"] is False
-    assert result["blockers"][0]["message"] == "Push workflow must run from main."
+    assert result["blockers"][0]["message"] == "Push workflow must run from dev."
 
 
-def test_push_readiness_blocks_when_origin_main_is_not_ancestor(
+def test_push_readiness_blocks_when_origin_dev_is_not_ancestor(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1155,18 +1157,18 @@ def test_push_readiness_blocks_when_origin_main_is_not_ancestor(
     monkeypatch.setattr(
         mcp_server,
         "repo_health",
-        lambda root: {"branch": "main", "dirty": False},
+        lambda root: {"branch": "dev", "dirty": False},
     )
     monkeypatch.setattr(
         mcp_server,
-        "_remote_main_status",
+        "_remote_dev_status",
         lambda root_path, require_equal: {
-            "result": {"contains_origin_main": False},
+            "result": {"contains_origin_dev": False},
             "command_results": [],
             "blockers": [
                 {
-                    "phase": "remote_main",
-                    "message": "Local HEAD does not contain origin/main; pull or rebase before pushing.",
+                    "phase": "remote_dev",
+                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
                 }
             ],
         },
@@ -1174,7 +1176,7 @@ def test_push_readiness_blocks_when_origin_main_is_not_ancestor(
 
     result = mcp_server._push_readiness(root)
 
-    assert result["blockers"][0]["phase"] == "remote_main"
+    assert result["blockers"][0]["phase"] == "remote_dev"
 
 
 def test_release_workflow_status_reports_readiness_blockers(
@@ -1236,6 +1238,84 @@ def test_release_workflow_publish_delegates_to_release_script(
     assert commands == ["release_routines/pypi_release.sh"]
 
 
+def test_release_workflow_merge_dev_fast_forwards_main(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda root: {"branch": "dev", "dirty": False},
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.release_workflow("merge-dev", root=str(root))
+
+    assert result["ok"] is True
+    assert commands == [
+        "git fetch origin main",
+        "git fetch origin dev",
+        "git switch main",
+        "git pull --ff-only origin main",
+        "git merge --ff-only origin/dev",
+        "git push origin main",
+    ]
+
+
+def test_release_readiness_blocks_when_main_lacks_origin_dev(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda root: {"branch": "main", "dirty": False},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_remote_main_status",
+        lambda root_path, require_equal: {
+            "result": {"matches_origin_main": True},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_remote_dev_status",
+        lambda root_path, require_equal: {
+            "result": {"contains_origin_dev": False},
+            "command_results": [],
+            "blockers": [
+                {
+                    "phase": "remote_dev",
+                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
+                }
+            ],
+        },
+    )
+
+    result = mcp_server.release_workflow("status", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "remote_dev"
+
+
 def test_release_status_blocks_without_current_precommit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1251,6 +1331,15 @@ def test_release_status_blocks_without_current_precommit(
         "_remote_main_status",
         lambda root_path, require_equal: {
             "result": {"matches_origin_main": True},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_remote_dev_status",
+        lambda root_path, require_equal: {
+            "result": {"contains_origin_dev": True},
             "command_results": [],
             "blockers": [],
         },

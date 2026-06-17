@@ -56,6 +56,8 @@ REQUIRED_VERSION_PATHS = {
 }
 CHANGELOG_PATH = "docs/CHANGELOG.md"
 UNRELEASED_CHANGELOG_THRESHOLD = 10
+WORK_BRANCH = "dev"
+RELEASE_BRANCH = "main"
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
@@ -684,8 +686,8 @@ def git_workflow(
         result = _run_command(
             root_path,
             {
-                "display": "git push origin HEAD:main",
-                "args": ["git", "push", "origin", "HEAD:main"],
+                "display": f"git push origin HEAD:{WORK_BRANCH}",
+                "args": ["git", "push", "origin", f"HEAD:{WORK_BRANCH}"],
                 "env": {},
             },
         )
@@ -799,14 +801,17 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
     """Report release readiness or delegate to the release script."""
     root_path = _resolve_root(root)
     input_summary = {"action": action, "root": str(root_path)}
-    if action not in {"status", "publish"}:
+    if action not in {"status", "merge-dev", "publish"}:
         return _tool_output(
             "release_workflow",
             input_summary,
             ok=False,
             summary="Unsupported release workflow action.",
-            blockers=[{"phase": "validate", "message": "action must be 'status' or 'publish'"}],
+            blockers=[{"phase": "validate", "message": "action must be 'status', 'merge-dev', or 'publish'"}],
         )
+
+    if action == "merge-dev":
+        return _merge_dev_for_release(root_path, input_summary)
 
     if action == "status":
         status = _release_readiness(root_path)
@@ -1211,7 +1216,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     )
 
     release_parser = subparsers.add_parser("release-workflow")
-    release_parser.add_argument("--action", choices=["status", "publish"], default="status")
+    release_parser.add_argument("--action", choices=["status", "merge-dev", "publish"], default="status")
     release_parser.add_argument("--root", default=".")
     release_parser.set_defaults(
         handler=lambda args: release_workflow(action=args.action, root=args.root)
@@ -1223,7 +1228,30 @@ def _build_cli_parser() -> argparse.ArgumentParser:
 def _prepare_start_commands(root: Path, ensure_project_env: bool) -> list[tuple[str, dict[str, Any]]]:
     venv_python = root / ".venv" / "bin" / "python"
     commands: list[tuple[str, dict[str, Any]]] = [
-        ("git_pull", {"display": "git pull origin main", "args": ["git", "pull", "origin", "main"], "env": {}}),
+        (
+            "git_fetch_dev",
+            {
+                "display": f"git fetch origin {WORK_BRANCH}",
+                "args": ["git", "fetch", "origin", WORK_BRANCH],
+                "env": {},
+            },
+        ),
+        (
+            "git_switch_dev",
+            {
+                "display": f"git switch {WORK_BRANCH}",
+                "args": ["git", "switch", WORK_BRANCH],
+                "env": {},
+            },
+        ),
+        (
+            "git_pull_dev",
+            {
+                "display": f"git pull --ff-only origin {WORK_BRANCH}",
+                "args": ["git", "pull", "--ff-only", "origin", WORK_BRANCH],
+                "env": {},
+            },
+        ),
     ]
     if not venv_python.exists():
         commands.append(
@@ -1909,29 +1937,39 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
 def _push_readiness(root: Path) -> dict[str, Any]:
     health = repo_health(root=str(root))
     blockers: list[dict[str, Any]] = []
-    if health["branch"] != "main":
-        blockers.append({"phase": "push", "message": "Push workflow must run from main."})
+    if health["branch"] != WORK_BRANCH:
+        blockers.append({"phase": "push", "message": f"Push workflow must run from {WORK_BRANCH}."})
     if health["dirty"]:
         blockers.append({"phase": "push", "message": "Push workflow requires a clean working tree."})
 
-    remote = _remote_main_status(root, require_equal=False)
+    remote = _remote_dev_status(root, require_equal=False)
     blockers.extend(remote["blockers"])
     return {
         "repo_health": health,
-        "remote_main_status": remote["result"],
+        "remote_dev_status": remote["result"],
         "command_results": remote["command_results"],
         "blockers": blockers,
     }
 
 
 def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
+    return _remote_branch_status(root, branch=RELEASE_BRANCH, require_equal=require_equal)
+
+
+def _remote_dev_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
+    return _remote_branch_status(root, branch=WORK_BRANCH, require_equal=require_equal)
+
+
+def _remote_branch_status(root: Path, *, branch: str, require_equal: bool) -> dict[str, Any]:
     command_results: list[dict[str, Any]] = []
     blockers: list[dict[str, Any]] = []
+    remote_ref = f"origin/{branch}"
+    result_key = f"origin_{branch}"
 
-    fetch = _run_git(root, ["fetch", "origin", "main"])
+    fetch = _run_git(root, ["fetch", "origin", branch])
     command_results.append(fetch)
     if not fetch["ok"]:
-        blockers.append(_command_blocker("remote_main", fetch))
+        blockers.append(_command_blocker(f"remote_{branch}", fetch))
         return {
             "result": {"fetched": False, "require_equal": require_equal},
             "command_results": command_results,
@@ -1939,12 +1977,12 @@ def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
         }
 
     head = _run_git(root, ["rev-parse", "HEAD"])
-    origin = _run_git(root, ["rev-parse", "origin/main"])
+    origin = _run_git(root, ["rev-parse", remote_ref])
     command_results.extend([head, origin])
     if not head["ok"]:
-        blockers.append(_command_blocker("remote_main", head))
+        blockers.append(_command_blocker(f"remote_{branch}", head))
     if not origin["ok"]:
-        blockers.append(_command_blocker("remote_main", origin))
+        blockers.append(_command_blocker(f"remote_{branch}", origin))
     if blockers:
         return {
             "result": {"fetched": True, "require_equal": require_equal},
@@ -1958,36 +1996,104 @@ def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
         "fetched": True,
         "require_equal": require_equal,
         "head": head_commit,
-        "origin_main": origin_commit,
-        "matches_origin_main": head_commit == origin_commit,
+        result_key: origin_commit,
+        f"matches_origin_{branch}": head_commit == origin_commit,
     }
     if require_equal:
         if head_commit != origin_commit:
             blockers.append(
                 {
-                    "phase": "remote_main",
-                    "message": "Local HEAD must match origin/main.",
+                    "phase": f"remote_{branch}",
+                    "message": f"Local HEAD must match {remote_ref}.",
                     "head": head_commit,
-                    "origin_main": origin_commit,
+                    result_key: origin_commit,
                 }
             )
         return {"result": result, "command_results": command_results, "blockers": blockers}
 
-    ancestor = _run_git(root, ["merge-base", "--is-ancestor", "origin/main", "HEAD"])
+    ancestor = _run_git(root, ["merge-base", "--is-ancestor", remote_ref, "HEAD"])
     command_results.append(ancestor)
-    result["contains_origin_main"] = ancestor["returncode"] == 0
+    result[f"contains_origin_{branch}"] = ancestor["returncode"] == 0
     if ancestor["returncode"] == 1:
         blockers.append(
             {
-                "phase": "remote_main",
-                "message": "Local HEAD does not contain origin/main; pull or rebase before pushing.",
+                "phase": f"remote_{branch}",
+                "message": f"Local HEAD does not contain {remote_ref}; pull, rebase, or merge before continuing.",
                 "head": head_commit,
-                "origin_main": origin_commit,
+                result_key: origin_commit,
             }
         )
     elif not ancestor["ok"]:
-        blockers.append(_command_blocker("remote_main", ancestor))
+        blockers.append(_command_blocker(f"remote_{branch}", ancestor))
     return {"result": result, "command_results": command_results, "blockers": blockers}
+
+
+def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[str, Any]:
+    health = repo_health(root=str(root))
+    if health["dirty"]:
+        return _tool_output(
+            "release_workflow",
+            input_summary,
+            ok=False,
+            summary="Release merge blocked by repository readiness checks.",
+            result={"repo_health": health},
+            blockers=[{"phase": "release_merge", "message": "Release merge requires a clean working tree."}],
+        )
+
+    command_results: list[dict[str, Any]] = []
+    commands = [
+        {
+            "display": f"git fetch origin {RELEASE_BRANCH}",
+            "args": ["git", "fetch", "origin", RELEASE_BRANCH],
+            "env": {},
+        },
+        {
+            "display": f"git fetch origin {WORK_BRANCH}",
+            "args": ["git", "fetch", "origin", WORK_BRANCH],
+            "env": {},
+        },
+        {
+            "display": f"git switch {RELEASE_BRANCH}",
+            "args": ["git", "switch", RELEASE_BRANCH],
+            "env": {},
+        },
+        {
+            "display": f"git pull --ff-only origin {RELEASE_BRANCH}",
+            "args": ["git", "pull", "--ff-only", "origin", RELEASE_BRANCH],
+            "env": {},
+        },
+        {
+            "display": f"git merge --ff-only origin/{WORK_BRANCH}",
+            "args": ["git", "merge", "--ff-only", f"origin/{WORK_BRANCH}"],
+            "env": {},
+        },
+        {
+            "display": f"git push origin {RELEASE_BRANCH}",
+            "args": ["git", "push", "origin", RELEASE_BRANCH],
+            "env": {},
+        },
+    ]
+    for command in commands:
+        result = _run_command(root, command)
+        command_results.append(result)
+        if not result["ok"]:
+            return _tool_output(
+                "release_workflow",
+                input_summary,
+                ok=False,
+                summary="Release merge failed.",
+                command_results=command_results,
+                blockers=[_command_blocker("release_merge", result)],
+                next_actions=["Resolve the merge blocker, then rerun release_workflow(action='merge-dev')."],
+            )
+
+    return _tool_output(
+        "release_workflow",
+        input_summary,
+        summary=f"Merged {WORK_BRANCH} into {RELEASE_BRANCH} for release.",
+        command_results=command_results,
+        next_actions=["Run release_workflow(action='status') before publishing."],
+    )
 
 
 def _record_release_check_success(
@@ -2071,14 +2177,16 @@ def _release_readiness(root: Path, *, require_release_check: bool = False) -> di
     dependencies = dependency_metadata_status(root=str(root))
     route = route_agent_context("release publish", module=None)
     blockers = [*metadata["blockers"], *dependencies["blockers"]]
-    if health["branch"] != "main":
-        blockers.append({"phase": "release", "message": "Release publishing must run from main."})
+    if health["branch"] != RELEASE_BRANCH:
+        blockers.append({"phase": "release", "message": f"Release publishing must run from {RELEASE_BRANCH}."})
     if health["dirty"]:
         blockers.append({"phase": "release", "message": "Release publishing requires a clean working tree."})
     if "agent_docs/release.md" not in route["required_files"]:
         blockers.append({"phase": "release", "message": "Release instructions were not routed."})
     remote = _remote_main_status(root, require_equal=True)
     blockers.extend(remote["blockers"])
+    remote_dev = _remote_dev_status(root, require_equal=False)
+    blockers.extend(remote_dev["blockers"])
     precommit = _verify_precommit_success(root)
     if not precommit["ok"]:
         blockers.append({"phase": "precommit", "message": precommit["message"]})
@@ -2091,9 +2199,10 @@ def _release_readiness(root: Path, *, require_release_check: bool = False) -> di
         "dependency_metadata_status": dependencies,
         "required_instruction_files": route["required_files"],
         "remote_main_status": remote["result"],
+        "remote_dev_status": remote_dev["result"],
         "precommit_verification": precommit,
         "release_check_verification": release_check,
-        "command_results": remote["command_results"],
+        "command_results": [*remote["command_results"], *remote_dev["command_results"]],
         "blockers": blockers,
     }
 

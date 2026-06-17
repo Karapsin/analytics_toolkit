@@ -12,11 +12,12 @@ test recommendations, checks, commits, pushes, and release workflow entrypoints.
 If MCP is already available, call
 `prepare_start(task, module=None, root=".", index_dir=".rag_index",
 ensure_project_env=True)` before any repository search, file inspection, tests,
-or edits. `prepare_start` runs `git pull origin main`, prepares the local agent
+or edits. `prepare_start` switches to `dev`, pulls `origin dev`, prepares the local agent
 and project environment, refreshes `.rag_index/`, returns repo health, and
 reports the instruction files that must be read next.
 
-If MCP is not available, run only the mandatory `git pull origin main` first,
+If MCP is not available, run only the mandatory `git switch dev` and
+`git pull --ff-only origin dev` first,
 then set up the local agent-only MCP environment and call `prepare_start` before
 continuing:
 
@@ -30,7 +31,8 @@ python -m venv .venv
 For strictly read-only review or planning work, `prepare_start(...)` is always
 allowed and remains the preferred default startup workflow. Its startup sync,
 environment preparation, and local RAG index refresh are permitted preparatory
-workflow, not implementation work. Agents may skip `git pull origin main` and
+workflow, not implementation work. Agents may skip `git switch dev`,
+`git pull --ff-only origin dev`, and
 `prepare_start(...)` only when the user explicitly authorizes skipping startup
 sync. When using this exception, state that findings may be stale because the
 pull was skipped. Do not edit files, run mutating workflows, run tests, commit,
@@ -56,6 +58,12 @@ Use these MCP tools for the corresponding agent workflow steps:
 - Stage/commit and push workflow: `git_workflow`.
 - Release readiness and PyPI publishing entrypoint: `release_workflow`.
 
+Normal implementation, documentation, test, commit, and push work is done on
+the `dev` branch and syncs with `origin/dev`. Use `main` only for PyPI release
+preparation and publishing. When a PyPI release is requested, merge `dev` into
+`main` with `release_workflow(action="merge-dev")`, then run release readiness
+and publishing from `main`.
+
 Use `workflow_status(...)` before and after repository changes. Use
 `version_bump(...)`, `run_checks(...)`, `git_workflow(...)`, and
 `release_workflow(...)` for the mandatory repository workflows instead of
@@ -72,6 +80,7 @@ agent_tools/mcp_tool.sh docs "specific question" --mode ask
 agent_tools/mcp_tool.sh workflow-status --task "documentation" --module sql
 agent_tools/mcp_tool.sh version-bump "Updated SQL docs" --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level focused --dry-run
+agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
 

@@ -9,6 +9,9 @@ When the user asks to update, publish, or release the package on PyPI, run the
 complete publishing workflow unless they explicitly ask for a narrower action:
 
 - Use `release_workflow(action="status")` to confirm release readiness before publishing.
+- Use `release_workflow(action="merge-dev")` to fast-forward `main` from `origin/dev`
+  before release readiness checks. Normal work stays on `dev`; PyPI publishing
+  runs only from `main` after that handoff.
 - Use `release_workflow(action="publish")` for the full publishing workflow. It delegates to `release_routines/pypi_release.sh`, which runs TestPyPI publishing and artifact verification first, then real PyPI publishing and artifact verification. Do not call the internal scripts under `release_routines/scripts/` unless the user explicitly asks for a narrower release action or the top-level workflow itself is blocked.
 - If the release only changes documentation or PyPI README content, bump the package version for the release artifact and update `docs/CHANGELOG.md` even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
 - Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
