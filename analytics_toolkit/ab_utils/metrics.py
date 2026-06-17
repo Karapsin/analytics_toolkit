@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .api import compute_test_metrics
 from .formatter import format_ab_metrics
-from .parallel import parallel_compute_metrics, parallel_compute_metrics_from_sql
+from .parallel import compute_metrics_from_sql
 from .planning import (
     RatioMetricSpec,
     compute_mde,
@@ -97,9 +97,8 @@ __all__ = [
     "compute_mde_from_sql",
     "compute_mde_sql_native",
     "compute_test_metrics",
+    "compute_metrics_from_sql",
     "format_ab_metrics",
-    "parallel_compute_metrics",
-    "parallel_compute_metrics_from_sql",
     "_apply_multiple_comparisons_adjustment",
     "_apply_outliers_to_agg_ratio_components",
     "_apply_outliers_to_values",

@@ -15,35 +15,119 @@ parallel_module = importlib.import_module("analytics_toolkit.ab_utils.parallel")
 async_sql_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 
 
-def test_parallel_compute_metrics_is_exported() -> None:
-    assert ab_utils_module.parallel_compute_metrics is parallel_module.parallel_compute_metrics
-    assert metrics_module.parallel_compute_metrics is parallel_module.parallel_compute_metrics
+def test_compute_metrics_from_sql_is_exported() -> None:
+    assert ab_utils_module.compute_metrics_from_sql is parallel_module.compute_metrics_from_sql
+    assert metrics_module.compute_metrics_from_sql is parallel_module.compute_metrics_from_sql
 
 
-def test_parallel_compute_metrics_from_sql_is_exported() -> None:
-    assert (
-        ab_utils_module.parallel_compute_metrics_from_sql
-        is parallel_module.parallel_compute_metrics_from_sql
-    )
-    assert (
-        metrics_module.parallel_compute_metrics_from_sql
-        is parallel_module.parallel_compute_metrics_from_sql
-    )
+def test_removed_parallel_metric_names_are_not_exported() -> None:
+    assert not hasattr(ab_utils_module, "parallel_compute_metrics")
+    assert not hasattr(metrics_module, "parallel_compute_metrics")
+    assert not hasattr(ab_utils_module, "parallel_compute_metrics_from_sql")
+    assert not hasattr(metrics_module, "parallel_compute_metrics_from_sql")
 
 
 @pytest.mark.parametrize(
     "function_name",
     [
-        "parallel_compute_metrics",
-        "parallel_compute_metrics_from_sql",
+        "compute_test_metrics",
+        "compute_metrics_from_sql",
     ],
 )
 def test_parallel_compute_metrics_progress_defaults_to_false(
     function_name: str,
 ) -> None:
-    signature = inspect.signature(getattr(parallel_module, function_name))
+    module = ab_utils_module if function_name == "compute_test_metrics" else parallel_module
+    signature = inspect.signature(getattr(module, function_name))
 
     assert signature.parameters["progress"].default is False
+    assert signature.parameters["concurrency"].default == 1
+
+
+def _build_metric_parity_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "user_id": list(range(1, 9)),
+            "group_name": [
+                "control",
+                "control",
+                "control",
+                "control",
+                "test",
+                "test",
+                "test",
+                "test",
+            ],
+            "orders": [1.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 5.0],
+            "clicks": [1.0, 2.0, 1.0, 3.0, 2.0, 3.0, 2.0, 4.0],
+            "views": [10.0, 12.0, 8.0, 15.0, 11.0, 14.0, 9.0, 16.0],
+        }
+    )
+
+
+def test_metric_entrypoints_match_for_one_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    df = _build_metric_parity_df()
+    ratio_metrics = [
+        {"name": "ctr", "numerator": "clicks", "denominator": "views"},
+    ]
+    expected = ab_utils_module.compute_test_metrics(
+        df,
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        outliers_quantile=1,
+    )
+
+    task_result = ab_utils_module.compute_test_metrics(
+        {
+            "one": {
+                "df": df,
+                "ratio_metrics": ratio_metrics,
+                "test_vs_test": False,
+                "outliers_quantile": 1,
+            }
+        },
+        concurrency=1,
+        progress=False,
+    )
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        assert tasks == [
+            {
+                "name": "one:sql",
+                "type": "read",
+                "db_key": "analytics",
+                "query": "select * from source",
+            }
+        ]
+        assert kwargs == {"concurrency": 1, "fail_fast": True, "progress": False}
+        return {"one:sql": df}
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+    sql_result = parallel_module.compute_metrics_from_sql(
+        {"one": {"sql": "select * from source", "test_vs_test": False}},
+        db_key="analytics",
+        ratio_metrics=ratio_metrics,
+        outliers_quantile=1,
+        concurrency=1,
+        progress=False,
+    )
+
+    pd.testing.assert_frame_equal(task_result["one"], expected)
+    pd.testing.assert_frame_equal(sql_result["one"], expected)
+
+
+def test_compute_test_metrics_rejects_dataframe_concurrency_above_one() -> None:
+    with pytest.raises(ValueError, match="task mapping"):
+        ab_utils_module.compute_test_metrics(
+            _build_metric_parity_df(),
+            concurrency=2,
+            progress=False,
+        )
 
 
 def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
@@ -55,11 +139,11 @@ def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         {
             "slow": {"df": pd.DataFrame(), "metric": "first", "delay": 0.05},
             "fast": {"df": pd.DataFrame(), "metric": "second", "delay": 0.0},
@@ -91,11 +175,11 @@ def test_parallel_compute_metrics_maps_pre_exp_df_and_honors_task_kwargs(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
-    parallel_module.parallel_compute_metrics(
+    ab_utils_module.compute_test_metrics(
         {
             "with_pre": {
                 "df": pd.DataFrame({"user_id": [1]}),
@@ -130,11 +214,11 @@ def test_parallel_compute_metrics_inserts_labels_as_leading_columns(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         {
             "segment_1": {
                 "df": pd.DataFrame(),
@@ -175,7 +259,7 @@ def test_parallel_compute_metrics_limits_concurrency(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
@@ -184,7 +268,7 @@ def test_parallel_compute_metrics_limits_concurrency(
         for index in range(6)
     }
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         tasks,
         concurrency=2,
         progress=False,
@@ -213,7 +297,7 @@ def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
@@ -222,7 +306,7 @@ def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
         for index in range(6)
     }
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         tasks,
         concurrency=6,
         soft_concurrency_cap=2,
@@ -246,7 +330,7 @@ def test_parallel_compute_metrics_hard_cap_rejects_unthrottled_concurrency() -> 
             "soft_concurrency_cap"
         ),
     ):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             tasks,
             concurrency=11,
             progress=False,
@@ -272,7 +356,7 @@ def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
@@ -281,7 +365,7 @@ def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
         for index in range(11)
     }
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         tasks,
         concurrency=11,
         soft_concurrency_cap=5,
@@ -317,11 +401,11 @@ def test_parallel_compute_metrics_updates_progress_bar(
     monkeypatch.setattr(parallel_module, "tqdm", FakeTqdm)
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
-    parallel_module.parallel_compute_metrics(
+    ab_utils_module.compute_test_metrics(
         {
             "first": {"df": pd.DataFrame(), "metric_name": "first"},
             "second": {"df": pd.DataFrame(), "metric_name": "second"},
@@ -333,7 +417,7 @@ def test_parallel_compute_metrics_updates_progress_bar(
     progress_bar = progress_bars[0]
     assert progress_bar.kwargs == {
         "total": 2,
-        "desc": "parallel_compute_metrics tasks",
+        "desc": "compute_test_metrics tasks",
         "unit": "task",
         "disable": False,
     }
@@ -351,12 +435,12 @@ def test_parallel_compute_metrics_fail_fast_raises_original_exception(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {
                 "broken": {"df": pd.DataFrame()},
                 "also_broken": {"df": pd.DataFrame()},
@@ -381,11 +465,11 @@ def test_parallel_compute_metrics_fail_fast_false_returns_exception_strings(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics(
+    result = ab_utils_module.compute_test_metrics(
         {
             "ok": {"df": pd.DataFrame(), "metric_name": "ok"},
             "broken": {"df": pd.DataFrame(), "metric_name": "broken"},
@@ -419,7 +503,7 @@ def test_parallel_compute_metrics_validates_task_input(
     expected_exception: type[Exception],
 ) -> None:
     with pytest.raises(expected_exception):
-        parallel_module.parallel_compute_metrics(tasks, progress=False)
+        ab_utils_module.compute_test_metrics(tasks, progress=False)
 
 
 @pytest.mark.parametrize(
@@ -434,7 +518,7 @@ def test_parallel_compute_metrics_validates_task_input(
 )
 def test_parallel_compute_metrics_validates_labels(labels: Any) -> None:
     with pytest.raises((TypeError, ValueError), match="labels|label"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {"task": {"df": pd.DataFrame(), "labels": labels}},
             progress=False,
         )
@@ -448,12 +532,12 @@ def test_parallel_compute_metrics_rejects_label_result_column_conflict(
 
     monkeypatch.setattr(
         parallel_module,
-        "compute_test_metrics",
+        "_compute_test_metrics_dataframe",
         fake_compute_test_metrics,
     )
 
     with pytest.raises(ValueError, match="conflict"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {
                 "task": {
                     "df": pd.DataFrame(),
@@ -467,7 +551,7 @@ def test_parallel_compute_metrics_rejects_label_result_column_conflict(
 @pytest.mark.parametrize("concurrency", [0, -1, True, 1.5])
 def test_parallel_compute_metrics_validates_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="concurrency"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {"task": {"df": pd.DataFrame()}},
             concurrency=concurrency,
             progress=False,
@@ -479,7 +563,7 @@ def test_parallel_compute_metrics_validates_soft_concurrency_cap(
     soft_concurrency_cap: Any,
 ) -> None:
     with pytest.raises(ValueError, match="soft_concurrency_cap"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {"task": {"df": pd.DataFrame()}},
             soft_concurrency_cap=soft_concurrency_cap,
             progress=False,
@@ -491,7 +575,7 @@ def test_parallel_compute_metrics_validates_hard_concurrency_cap(
     hard_concurrency_cap: Any,
 ) -> None:
     with pytest.raises(ValueError, match="hard_concurrency_cap"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {"task": {"df": pd.DataFrame()}},
             hard_concurrency_cap=hard_concurrency_cap,
             progress=False,
@@ -501,7 +585,7 @@ def test_parallel_compute_metrics_validates_hard_concurrency_cap(
 @pytest.mark.parametrize("progress", [None, 0, 1, "yes"])
 def test_parallel_compute_metrics_validates_progress(progress: Any) -> None:
     with pytest.raises(ValueError, match="progress"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {"task": {"df": pd.DataFrame()}},
             progress=progress,
         )
@@ -509,7 +593,7 @@ def test_parallel_compute_metrics_validates_progress(progress: Any) -> None:
 
 def test_parallel_compute_metrics_rejects_ambiguous_pre_exp_aliases() -> None:
     with pytest.raises(ValueError, match="pre_exp_df"):
-        parallel_module.parallel_compute_metrics(
+        ab_utils_module.compute_test_metrics(
             {
                 "task": {
                     "df": pd.DataFrame(),
@@ -554,11 +638,11 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "with_pre": {
                 "sql": "select * from experiment_1",
@@ -573,7 +657,7 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
                 "multiple_comparisons_adjustment": True,
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         concurrency=2,
         fail_fast=False,
         progress=False,
@@ -623,7 +707,12 @@ def test_parallel_compute_metrics_from_sql_loads_sql_and_delegates(
 
     assert len(compute_calls) == 1
     metric_tasks, metric_kwargs = compute_calls[0]
-    assert metric_kwargs == {"concurrency": 2, "fail_fast": False, "progress": False}
+    assert metric_kwargs == {
+        "metric_defaults": {},
+        "concurrency": 2,
+        "fail_fast": False,
+        "progress": False,
+    }
     assert list(metric_tasks) == ["with_pre", "without_pre"]
 
     with_pre = dict(metric_tasks["with_pre"])
@@ -666,13 +755,13 @@ def test_parallel_compute_metrics_from_sql_uses_db_key_for_async_read_dispatch(
     monkeypatch.setattr(async_sql_module, "read_sql", fake_read_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {"segment": {"sql": "select * from experiment"}},
-        db="analytics_prod",
+        db_key="analytics_prod",
         concurrency=1,
         progress=False,
     )
@@ -716,11 +805,11 @@ def test_parallel_compute_metrics_from_sql_applies_metric_defaults(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "default": {
                 "sql": "select * from default_task",
@@ -732,7 +821,7 @@ def test_parallel_compute_metrics_from_sql_applies_metric_defaults(
                 "test_vs_test": True,
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         concurrency=2,
         progress=False,
         group="variant",
@@ -751,6 +840,7 @@ def test_parallel_compute_metrics_from_sql_applies_metric_defaults(
     assert len(compute_calls) == 1
     metric_tasks, metric_kwargs = compute_calls[0]
     assert metric_kwargs == {
+        "metric_defaults": {},
         "concurrency": 2,
         "fail_fast": True,
         "progress": False,
@@ -800,17 +890,17 @@ def test_parallel_compute_metrics_from_sql_passes_concurrency_caps(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "segment": {
                 "sql": "select * from experiment",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         concurrency=6,
         soft_concurrency_cap=2,
         hard_concurrency_cap=7,
@@ -828,6 +918,7 @@ def test_parallel_compute_metrics_from_sql_passes_concurrency_caps(
     }
     assert len(compute_calls) == 1
     assert compute_calls[0][1] == {
+        "metric_defaults": {},
         "concurrency": 6,
         "fail_fast": True,
         "progress": False,
@@ -869,11 +960,11 @@ def test_parallel_compute_metrics_from_sql_passes_start_comments(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "default": {
                 "sql": "select * from default_task",
@@ -888,7 +979,7 @@ def test_parallel_compute_metrics_from_sql_passes_start_comments(
                 "start_comment": "",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         concurrency=3,
         fail_fast=False,
         start_comment="-- default comment",
@@ -965,11 +1056,11 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_returns_sql_errors(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "ok": {"sql": "select * from ok"},
             "broken": {"sql": "select * from broken"},
@@ -978,7 +1069,7 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_returns_sql_errors(
                 "pre_exp_sql": "select * from pre_exp",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         fail_fast=False,
         progress=False,
     )
@@ -1008,14 +1099,14 @@ def test_parallel_compute_metrics_from_sql_prints_both_sqls_for_exp_error(
 
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "broken": {
                 "sql": "select * from experiment_source",
                 "pre_exp_sql": "select * from pre_experiment_source",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         fail_fast=False,
         progress=False,
     )
@@ -1044,14 +1135,14 @@ def test_parallel_compute_metrics_from_sql_prints_both_sqls_for_pre_exp_error(
 
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "broken": {
                 "sql": "select * from experiment_source",
                 "pre_exp_sql": "select * from pre_experiment_source",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         fail_fast=False,
         progress=False,
     )
@@ -1081,14 +1172,14 @@ def test_parallel_compute_metrics_from_sql_fail_fast_prints_both_sqls(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
 
     with pytest.raises(RuntimeError) as exc_info:
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {
                 "broken": {
                     "sql": "select * from experiment_source",
                     "pre_exp_sql": "select * from pre_experiment_source",
                 },
             },
-            db="analytics_prod",
+            db_key="analytics_prod",
             fail_fast=True,
             progress=False,
         )
@@ -1119,14 +1210,14 @@ def test_parallel_compute_metrics_from_sql_prints_sqls_for_compute_error(
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
 
     with pytest.raises(ValueError, match="Control label 'control'"):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {
                 "broken": {
                     "sql": "select * from experiment_source",
                     "pre_exp_sql": "select * from pre_experiment_source",
                 },
             },
-            db="analytics_prod",
+            db_key="analytics_prod",
             concurrency=1,
             fail_fast=True,
             progress=False,
@@ -1170,11 +1261,11 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_prints_compute_errors
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
         parallel_module,
-        "parallel_compute_metrics",
+        "_compute_metric_tasks",
         fake_parallel_compute_metrics,
     )
 
-    result = parallel_module.parallel_compute_metrics_from_sql(
+    result = parallel_module.compute_metrics_from_sql(
         {
             "ok": {"sql": "select * from ok_source"},
             "broken": {
@@ -1182,7 +1273,7 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_prints_compute_errors
                 "pre_exp_sql": "select * from pre_experiment_source",
             },
         },
-        db="analytics_prod",
+        db_key="analytics_prod",
         fail_fast=False,
         progress=False,
     )
@@ -1216,18 +1307,18 @@ def test_parallel_compute_metrics_from_sql_validates_task_input(
     expected_exception: type[Exception],
 ) -> None:
     with pytest.raises(expected_exception):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             tasks,
-            db="analytics_prod",
+            db_key="analytics_prod",
             progress=False,
         )
 
 
 def test_parallel_compute_metrics_from_sql_rejects_non_string_start_comment() -> None:
     with pytest.raises(ValueError, match="start_comment"):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {"task": {"sql": "select 1"}},
-            db="analytics_prod",
+            db_key="analytics_prod",
             start_comment=1,
             progress=False,
         )
@@ -1235,9 +1326,9 @@ def test_parallel_compute_metrics_from_sql_rejects_non_string_start_comment() ->
 
 def test_parallel_compute_metrics_from_sql_rejects_unknown_metric_default() -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument 'not_a_metric'"):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {"task": {"sql": "select 1"}},
-            db="analytics_prod",
+            db_key="analytics_prod",
             progress=False,
             not_a_metric=True,
         )
@@ -1248,9 +1339,9 @@ def test_parallel_compute_metrics_from_sql_rejects_top_level_dataframe_defaults(
     field: str,
 ) -> None:
     with pytest.raises(ValueError, match="SQL-backed dataframe"):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {"task": {"sql": "select 1"}},
-            db="analytics_prod",
+            db_key="analytics_prod",
             progress=False,
             **{field: pd.DataFrame()},
         )
@@ -1259,13 +1350,13 @@ def test_parallel_compute_metrics_from_sql_rejects_top_level_dataframe_defaults(
 @pytest.mark.parametrize("field", ["df", "pre_exp_df", "pre_exp_metrics_df"])
 def test_parallel_compute_metrics_from_sql_rejects_dataframe_inputs(field: str) -> None:
     with pytest.raises(ValueError, match="SQL-backed"):
-        parallel_module.parallel_compute_metrics_from_sql(
+        parallel_module.compute_metrics_from_sql(
             {
                 "task": {
                     "sql": "select 1",
                     field: pd.DataFrame(),
                 }
             },
-            db="analytics_prod",
+            db_key="analytics_prod",
             progress=False,
         )

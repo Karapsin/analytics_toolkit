@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Route normal agent work through dev branch.
 - Verify dev branch after startup.
 - Push dev after agent commits.
+- Consolidated AB metric batch APIs.
 
 ## 1.3.10.7 - 2026-06-17
 

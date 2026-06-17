@@ -1,15 +1,15 @@
 [All AB functions](index.md)
 
-# parallel_compute_metrics_from_sql
+# compute_metrics_from_sql
 
 Load named SQL-backed metric tasks, then run metric computation concurrently.
 
 ```python
-parallel_compute_metrics_from_sql(
+compute_metrics_from_sql(
     tasks,
-    db,
+    db_key,
     *,
-    concurrency=5,
+    concurrency=1,
     fail_fast=True,
     start_comment=None,
     soft_concurrency_cap=None,
@@ -22,7 +22,7 @@ parallel_compute_metrics_from_sql(
 ## Inputs
 
 - `tasks` - mapping of task names to SQL-backed metric task dictionaries
-- `db` - connection alias used for SQL task reads
+- `db_key` - connection alias used for SQL task reads
 - `concurrency` - requested SQL loading and metric task fan-out
 - `fail_fast` - whether to stop after the first failed task
 - `start_comment` - optional SQL comment prepended to task reads
@@ -36,9 +36,9 @@ parallel_compute_metrics_from_sql(
 ## Usage
 
 ```python
-from analytics_toolkit.ab_utils import parallel_compute_metrics_from_sql
+from analytics_toolkit.ab_utils import compute_metrics_from_sql
 
-result = parallel_compute_metrics_from_sql(
+result = compute_metrics_from_sql(
     {
         "segment_a": {
             "sql": "select * from mart.ab_segment_a",
@@ -46,7 +46,7 @@ result = parallel_compute_metrics_from_sql(
             "test_vs_test": False,
         },
     },
-    db="analytics_prod",
+    db_key="analytics_prod",
     concurrency=2,
     outliers_quantile=0.999,
     test_vs_test=False,

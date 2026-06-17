@@ -16,13 +16,13 @@ from tqdm import tqdm
 from analytics_toolkit import sql as sql_facade
 from analytics_toolkit.general import time_print
 
-from .api import compute_test_metrics
+from .api import _compute_test_metrics_dataframe
 
 async_sql = sql_facade.async_sql
 
 _SQL_DATAFRAME_FIELDS = frozenset({"df", "pre_exp_df", "pre_exp_metrics_df"})
 _COMPUTE_TEST_METRICS_FIELDS = frozenset(
-    inspect.signature(compute_test_metrics).parameters
+    inspect.signature(_compute_test_metrics_dataframe).parameters
 )
 _DEFAULT_HARD_CONCURRENCY_CAP = 10
 _CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
@@ -51,17 +51,19 @@ def _shutdown_executor(
         executor.shutdown(wait=wait)
 
 
-def parallel_compute_metrics(
+def _compute_metric_tasks(
     tasks: Mapping[str, Mapping[str, Any]],
     *,
-    concurrency: int = 5,
+    metric_defaults: Mapping[str, Any] | None = None,
+    concurrency: int = 1,
     fail_fast: bool = True,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
     progress: bool = False,
 ) -> dict[str, pd.DataFrame | str]:
     """Run independent ``compute_test_metrics`` tasks concurrently."""
-    task_defs = _validate_tasks(tasks)
+    defaults = _validate_metric_task_defaults(metric_defaults or {})
+    task_defs = _validate_tasks(tasks, metric_defaults=defaults)
     _validate_concurrency(concurrency)
     _validate_optional_soft_concurrency_cap(soft_concurrency_cap)
     _validate_hard_concurrency_cap(hard_concurrency_cap)
@@ -121,11 +123,11 @@ def parallel_compute_metrics(
         _CONCURRENCY_STATE.reset(reset_token)
 
 
-def parallel_compute_metrics_from_sql(
+def compute_metrics_from_sql(
     tasks: Mapping[str, Mapping[str, Any]],
-    db: str,
+    db_key: str,
     *,
-    concurrency: int = 5,
+    concurrency: int = 1,
     fail_fast: bool = True,
     start_comment: str | None = None,
     soft_concurrency_cap: int | None = None,
@@ -133,7 +135,7 @@ def parallel_compute_metrics_from_sql(
     progress: bool = False,
     **metric_defaults: Any,
 ) -> dict[str, pd.DataFrame | str]:
-    """Load SQL-backed task dataframes, then run ``parallel_compute_metrics``."""
+    """Load SQL-backed task dataframes, then run ``compute_test_metrics``."""
     _validate_start_comment("start_comment", start_comment)
     metric_defaults = _validate_metric_defaults(metric_defaults)
     task_defs = _validate_sql_tasks(tasks)
@@ -148,7 +150,7 @@ def parallel_compute_metrics_from_sql(
             _make_sql_read_task(
                 name=name,
                 field="sql",
-                db=db,
+                db_key=db_key,
                 query=sql,
                 start_comment=task_start_comment,
             )
@@ -158,7 +160,7 @@ def parallel_compute_metrics_from_sql(
                 _make_sql_read_task(
                     name=name,
                     field="pre_exp_sql",
-                    db=db,
+                    db_key=db_key,
                     query=pre_exp_sql,
                     start_comment=task_start_comment,
                 )
@@ -227,7 +229,7 @@ def parallel_compute_metrics_from_sql(
 
     try:
         metric_results = (
-            parallel_compute_metrics(metric_tasks, **metric_kwargs)
+            _compute_metric_tasks(metric_tasks, metric_defaults={}, **metric_kwargs)
             if metric_tasks
             else {}
         )
@@ -256,7 +258,7 @@ def parallel_compute_metrics_from_sql(
 def _make_progress_bar(*, total: int, progress: bool) -> Any:
     return tqdm(
         total=total,
-        desc="parallel_compute_metrics tasks",
+        desc="compute_test_metrics tasks",
         unit="task",
         disable=not progress,
     )
@@ -319,7 +321,7 @@ def _run_task_with_concurrency_state(
 
 
 def _run_task(kwargs: dict[str, Any], labels: dict[str, Any]) -> pd.DataFrame:
-    result = compute_test_metrics(**kwargs)
+    result = _compute_test_metrics_dataframe(**kwargs)
     if not labels:
         return result
 
@@ -343,6 +345,8 @@ def _annotate_metric_exception(exc: BaseException, name: str) -> None:
 
 def _validate_tasks(
     tasks: Mapping[str, Mapping[str, Any]],
+    *,
+    metric_defaults: Mapping[str, Any],
 ) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
     if not isinstance(tasks, Mapping):
         raise TypeError("tasks must be a non-empty mapping of task names to task mappings.")
@@ -355,15 +359,18 @@ def _validate_tasks(
             raise ValueError("Task names must be non-empty strings.")
         if not isinstance(spec, Mapping):
             raise TypeError(f"Task {name!r} must be a mapping.")
-        task_defs.append(_validate_task_spec(name, spec))
+        task_defs.append(_validate_task_spec(name, spec, metric_defaults=metric_defaults))
     return task_defs
 
 
 def _validate_task_spec(
     name: str,
     spec: Mapping[str, Any],
+    *,
+    metric_defaults: Mapping[str, Any],
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
-    kwargs = dict(spec)
+    kwargs = dict(metric_defaults)
+    kwargs.update(spec)
     if "df" not in kwargs:
         raise ValueError(f"Task {name!r} must define df.")
 
@@ -439,7 +446,7 @@ def _validate_metric_defaults(metric_defaults: Mapping[str, Any]) -> dict[str, A
     if dataframe_fields:
         fields = ", ".join(dataframe_fields)
         raise ValueError(
-            "parallel_compute_metrics_from_sql top-level metric defaults cannot "
+            "compute_metrics_from_sql top-level metric defaults cannot "
             f"define SQL-backed dataframe field(s): {fields}."
         )
 
@@ -452,14 +459,31 @@ def _validate_metric_defaults(metric_defaults: Mapping[str, Any]) -> dict[str, A
         quoted_fields = ", ".join(repr(field) for field in unexpected_fields)
         if len(unexpected_fields) == 1:
             raise TypeError(
-                "parallel_compute_metrics_from_sql() got an unexpected keyword "
+                "compute_metrics_from_sql() got an unexpected keyword "
                 f"argument {quoted_fields}"
             )
         raise TypeError(
-            "parallel_compute_metrics_from_sql() got unexpected keyword "
+            "compute_metrics_from_sql() got unexpected keyword "
             f"arguments: {quoted_fields}"
         )
 
+    return dict(metric_defaults)
+
+
+def _validate_metric_task_defaults(metric_defaults: Mapping[str, Any]) -> dict[str, Any]:
+    supported_fields = _COMPUTE_TEST_METRICS_FIELDS - {"df"}
+    unexpected_fields = sorted(set(metric_defaults) - supported_fields)
+    if unexpected_fields:
+        quoted_fields = ", ".join(repr(field) for field in unexpected_fields)
+        if len(unexpected_fields) == 1:
+            raise TypeError(
+                "compute_test_metrics() got an unexpected task default "
+                f"{quoted_fields}"
+            )
+        raise TypeError(
+            "compute_test_metrics() got unexpected task defaults: "
+            f"{quoted_fields}"
+        )
     return dict(metric_defaults)
 
 
@@ -467,14 +491,14 @@ def _make_sql_read_task(
     *,
     name: str,
     field: str,
-    db: str,
+    db_key: str,
     query: str,
     start_comment: Any,
 ) -> dict[str, Any]:
     task = {
         "name": _sql_read_task_name(name, field),
         "type": "read",
-        "db_key": db,
+        "db_key": db_key,
         "query": query,
     }
     if start_comment is not _MISSING:
@@ -557,7 +581,7 @@ def _log_sql_metric_task_failure(
         else "pre_exp_sql was not provided for this metrics task."
     )
     time_print(
-        f"parallel_compute_metrics_from_sql task {name!r} failed while loading "
+        f"compute_metrics_from_sql task {name!r} failed while loading "
         f"{failed_field}: {error}\n"
         f"Experiment SQL:\n{sql}\n"
         f"Pre-experiment SQL:\n{pre_exp_message}"
@@ -577,7 +601,7 @@ def _log_sql_metric_compute_failure(
         else "pre_exp_sql was not provided for this metrics task."
     )
     time_print(
-        f"parallel_compute_metrics_from_sql task {name!r} failed during metric "
+        f"compute_metrics_from_sql task {name!r} failed during metric "
         f"computation: {error}\n"
         f"Experiment SQL:\n{sql}\n"
         f"Pre-experiment SQL:\n{pre_exp_message}"

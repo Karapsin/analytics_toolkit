@@ -5,13 +5,13 @@
 Parallel AB workflows are useful when the same metric comparison should run for
 several independent segments. The task mapping names each segment and stores
 the dataframe, labels, and per-task comparison options. Use
-[parallel_compute_metrics](functions/parallel-compute-metrics.md) when the
-dataframes are already loaded.
+[compute_test_metrics](functions/compute-test-metrics.md) with a task mapping
+when the dataframes are already loaded.
 
 ```python
-from analytics_toolkit.ab_utils import parallel_compute_metrics
+from analytics_toolkit.ab_utils import compute_test_metrics
 
-result = parallel_compute_metrics(
+result = compute_test_metrics(
     {
         "segment_1": {
             "df": segment_1_df,
@@ -30,14 +30,14 @@ result = parallel_compute_metrics(
 ```
 
 When the task data should be read from SQL first, use
-[parallel_compute_metrics_from_sql](functions/parallel-compute-metrics-from-sql.md).
+[compute_metrics_from_sql](functions/compute-metrics-from-sql.md).
 It loads each task through the supported `from analytics_toolkit import sql`
 facade and then runs the metric calculations with the same concurrency caps.
 
 ```python
-from analytics_toolkit.ab_utils import parallel_compute_metrics_from_sql
+from analytics_toolkit.ab_utils import compute_metrics_from_sql
 
-result = parallel_compute_metrics_from_sql(
+result = compute_metrics_from_sql(
     {
         "segment_1": {
             "sql": "select * from mart.ab_segment_1",
@@ -52,15 +52,15 @@ result = parallel_compute_metrics_from_sql(
             "start_comment": "/* segment_2 metrics */",
         },
     },
-    db="analytics_prod",
+    db_key="analytics_prod",
     concurrency=2,
     start_comment="/* ab metrics batch */",
 )
 ```
 
 The SQL-backed workflow passes the top-level `start_comment` to task reads. A
-task-level `start_comment` overrides it for that task. Both parallel helpers use
-`concurrency` as requested fan-out and accept soft and hard caps like
+task-level `start_comment` overrides it for that task. Both task-map workflows
+use `concurrency` as requested fan-out and accept soft and hard caps like
 [sql.async_sql](../sql/functions/async_sql.md), so large batches can be bounded
 without rewriting the task map.
 

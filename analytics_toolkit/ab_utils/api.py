@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import pandas as pd
 
 from analytics_toolkit.general import time_print
@@ -26,6 +29,146 @@ from .validation import (
 
 
 def compute_test_metrics(
+    df: pd.DataFrame | Mapping[str, Mapping[str, Any]],
+    group: str = "group_name",
+    control: str = "control",
+    user_id: str = "user_id",
+    mde_alpha: float = DEFAULT_ALPHA,
+    mde_power: float = DEFAULT_POWER,
+    ratio_metrics: list[dict[str, object]] | None = None,
+    test_vs_test: bool = True,
+    multiple_comparisons_adjustment: bool = False,
+    multiple_comparisons_adjustment_resamples: int = 2000,
+    bootstrap_random_state: int | None = 0,
+    bootstrap_n_jobs: int = 1,
+    bootstrap_progress: bool = False,
+    pre_exp_metrics_df: pd.DataFrame | None = None,
+    outliers_quantile: float = 0.999,
+    outliers_policy: str = "non_zero_truncate",
+    concurrency: int = 1,
+    fail_fast: bool = True,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 10,
+    progress: bool = False,
+) -> pd.DataFrame | dict[str, pd.DataFrame | str]:
+    """Compute experiment metric statistics for one dataframe or named tasks."""
+
+    metric_kwargs = {
+        "group": group,
+        "control": control,
+        "user_id": user_id,
+        "mde_alpha": mde_alpha,
+        "mde_power": mde_power,
+        "ratio_metrics": ratio_metrics,
+        "test_vs_test": test_vs_test,
+        "multiple_comparisons_adjustment": multiple_comparisons_adjustment,
+        "multiple_comparisons_adjustment_resamples": multiple_comparisons_adjustment_resamples,
+        "bootstrap_random_state": bootstrap_random_state,
+        "bootstrap_n_jobs": bootstrap_n_jobs,
+        "bootstrap_progress": bootstrap_progress,
+        "outliers_quantile": outliers_quantile,
+        "outliers_policy": outliers_policy,
+    }
+    if pre_exp_metrics_df is not None:
+        metric_kwargs["pre_exp_metrics_df"] = pre_exp_metrics_df
+
+    if isinstance(df, pd.DataFrame):
+        if concurrency != 1:
+            raise ValueError(
+                "concurrency can be greater than 1 only when df is a task mapping."
+            )
+        return _compute_test_metrics_dataframe(df=df, **metric_kwargs)
+
+    if isinstance(df, Mapping):
+        from .parallel import _compute_metric_tasks
+
+        metric_defaults = _changed_metric_defaults(
+            group=group,
+            control=control,
+            user_id=user_id,
+            mde_alpha=mde_alpha,
+            mde_power=mde_power,
+            ratio_metrics=ratio_metrics,
+            test_vs_test=test_vs_test,
+            multiple_comparisons_adjustment=multiple_comparisons_adjustment,
+            multiple_comparisons_adjustment_resamples=(
+                multiple_comparisons_adjustment_resamples
+            ),
+            bootstrap_random_state=bootstrap_random_state,
+            bootstrap_n_jobs=bootstrap_n_jobs,
+            bootstrap_progress=bootstrap_progress,
+            pre_exp_metrics_df=pre_exp_metrics_df,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+        return _compute_metric_tasks(
+            df,
+            metric_defaults=metric_defaults,
+            concurrency=concurrency,
+            fail_fast=fail_fast,
+            soft_concurrency_cap=soft_concurrency_cap,
+            hard_concurrency_cap=hard_concurrency_cap,
+            progress=progress,
+        )
+
+    raise TypeError("df must be a pandas DataFrame or a non-empty task mapping.")
+
+
+def _changed_metric_defaults(
+    *,
+    group: str,
+    control: str,
+    user_id: str,
+    mde_alpha: float,
+    mde_power: float,
+    ratio_metrics: list[dict[str, object]] | None,
+    test_vs_test: bool,
+    multiple_comparisons_adjustment: bool,
+    multiple_comparisons_adjustment_resamples: int,
+    bootstrap_random_state: int | None,
+    bootstrap_n_jobs: int,
+    bootstrap_progress: bool,
+    pre_exp_metrics_df: pd.DataFrame | None,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    if group != "group_name":
+        defaults["group"] = group
+    if control != "control":
+        defaults["control"] = control
+    if user_id != "user_id":
+        defaults["user_id"] = user_id
+    if mde_alpha != DEFAULT_ALPHA:
+        defaults["mde_alpha"] = mde_alpha
+    if mde_power != DEFAULT_POWER:
+        defaults["mde_power"] = mde_power
+    if ratio_metrics is not None:
+        defaults["ratio_metrics"] = ratio_metrics
+    if test_vs_test is not True:
+        defaults["test_vs_test"] = test_vs_test
+    if multiple_comparisons_adjustment is not False:
+        defaults["multiple_comparisons_adjustment"] = multiple_comparisons_adjustment
+    if multiple_comparisons_adjustment_resamples != 2000:
+        defaults["multiple_comparisons_adjustment_resamples"] = (
+            multiple_comparisons_adjustment_resamples
+        )
+    if bootstrap_random_state != 0:
+        defaults["bootstrap_random_state"] = bootstrap_random_state
+    if bootstrap_n_jobs != 1:
+        defaults["bootstrap_n_jobs"] = bootstrap_n_jobs
+    if bootstrap_progress is not False:
+        defaults["bootstrap_progress"] = bootstrap_progress
+    if pre_exp_metrics_df is not None:
+        defaults["pre_exp_metrics_df"] = pre_exp_metrics_df
+    if outliers_quantile != 0.999:
+        defaults["outliers_quantile"] = outliers_quantile
+    if outliers_policy != "non_zero_truncate":
+        defaults["outliers_policy"] = outliers_policy
+    return defaults
+
+
+def _compute_test_metrics_dataframe(
     df: pd.DataFrame,
     group: str = "group_name",
     control: str = "control",
