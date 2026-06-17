@@ -29,9 +29,9 @@ from ..runtime.models import (
 )
 
 PARQUET_STAGING_IMPORT_ERROR = (
-    "Parquet transfer staging requires optional dependencies. "
-    "Install analytics-toolkit[parquet-transfer] to enable Trino object-storage "
-    "staging."
+    "Parquet object-storage staging requires pyarrow, fsspec, and s3fs. "
+    "Install or repair the analytics-toolkit package dependencies to enable "
+    "Trino object-storage staging."
 )
 PARQUET_STAGE_MAX_SPOOL_BYTES = 64 * 1024 * 1024
 PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE = 50_000
@@ -118,14 +118,14 @@ def build_create_parquet_stage_table_sql(
 
 
 def build_stage_external_location(
-    options: TransferOptions,
+    options: Any,
     *,
     stage_suffix: str | None = None,
 ) -> str:
     if not options.transfer_staging_location:
         raise ValueError("transfer_staging_location is required.")
     base_location = options.transfer_staging_location.rstrip("/")
-    target_base = _target_table_base(options.target_table)
+    target_base = _target_table_base(_stage_target_table_name(options))
     username = options.transfer_staging_username or "unknown"
     resolved_suffix = stage_suffix or uuid.uuid4().hex
     return (
@@ -185,6 +185,54 @@ def write_batch_to_parquet_stage(
         return row_count
     finally:
         spooled_file.close()
+
+
+def write_dataframe_to_parquet_stage(
+    df: pd.DataFrame,
+    *,
+    stage_external_location: str,
+    pa: Any,
+    pq: Any,
+    fsspec_module: Any,
+    row_group_size: int,
+    on_progress: Any | None = None,
+) -> int:
+    if len(df) == 0:
+        return 0
+
+    row_group_size = max(1, row_group_size)
+    written_rows = 0
+    for file_index, start in enumerate(range(0, len(df), row_group_size)):
+        stop = min(start + row_group_size, len(df))
+        chunk = df.iloc[start:stop]
+        spooled_file = tempfile.SpooledTemporaryFile(
+            max_size=PARQUET_STAGE_MAX_SPOOL_BYTES,
+        )
+        try:
+            arrow_table = pa.Table.from_pandas(chunk, preserve_index=False)
+            write_arrow_table_to_parquet(
+                pq,
+                arrow_table,
+                spooled_file,
+                row_group_size=row_group_size,
+            )
+            del arrow_table
+            spooled_file.seek(0)
+            remote_uri = (
+                f"{stage_external_location.rstrip('/')}/"
+                f"part-{file_index:05d}.parquet"
+            )
+            upload_spooled_file(fsspec_module, spooled_file, remote_uri)
+            written_count = len(chunk)
+            written_rows += written_count
+            if on_progress is not None:
+                on_progress(written_count)
+            if _spooled_file_rolled_to_disk(spooled_file):
+                gc.collect()
+        finally:
+            del chunk
+            spooled_file.close()
+    return written_rows
 
 
 def row_batch_to_arrow_table(pa: Any, batch: RowBatch) -> Any:
@@ -281,6 +329,16 @@ def _target_table_base(target_table: str) -> str:
     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
         raise ValueError(f"Invalid target table name: {target_table}")
     return str(table.this.this)
+
+
+def _stage_target_table_name(options: Any) -> str:
+    target_table = getattr(options, "target_table", None)
+    if target_table is not None:
+        return target_table
+    destination_table = getattr(options, "destination_table", None)
+    if destination_table is not None:
+        return destination_table
+    raise ValueError("Parquet staging options must include a target table name.")
 
 
 def _trino_string_literal(value: str) -> str:

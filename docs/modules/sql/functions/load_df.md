@@ -74,6 +74,13 @@ rows
   for `MERGE` is checked by Trino at runtime. Greenplum uses staged
   delete-and-insert. ClickHouse uses lightweight `DELETE` plus insert and does
   not require `ReplacingMergeTree`.
+- For Trino connections with both `transfer_staging_schema` and
+  `transfer_staging_location` configured, `load_df` writes temporary Parquet
+  files to the object-storage prefix, creates an external stage table in
+  `transfer_staging_schema`, and finalizes into the target table from that
+  stage. Python and Trino must both be able to access and clean up that prefix.
+- If `transfer_staging_location` is not configured, Trino `load_df` keeps using
+  direct dataframe inserts controlled by `trino_insert_chunk_size`.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 
 [SQL functions index](index.md)

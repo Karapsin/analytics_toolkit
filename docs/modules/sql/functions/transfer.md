@@ -112,9 +112,9 @@ rows
   `transfer_staging_schema`, and then applies the normal `append`, `replace`,
   `truncate_insert`, or `upsert` finalization logic from that stage table.
 - Python and Trino must both have access to the same object-storage prefix for
-  Parquet staging. Install `analytics-toolkit[parquet-transfer]`; if
-  `transfer_staging_location` is not configured, Trino targets keep using the
-  row-batch `INSERT` staging path.
+  Parquet staging. The Parquet/object-storage Python dependencies are installed
+  with the package; if `transfer_staging_location` is not configured, Trino
+  targets keep using the row-batch `INSERT` staging path.
 - `sql.cleanup_stale_stage_tables()` is the public helper for explicit cleanup of
   user-scoped staging tables.
 - Optional `min_batch_seconds`, `max_batch_seconds`, `min_batch_memory_mb`, and

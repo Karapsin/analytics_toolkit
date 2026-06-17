@@ -24,7 +24,9 @@ class LoadOptions:
     ch_retry_per_host_drops: bool = True
     query_label: str | None = None
     transfer_staging_schema: str | None = None
+    transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
+    use_parquet_staging: bool = False
     retry_cnt: int = 5
     timeout_increment: int | float = 5
 
@@ -34,4 +36,5 @@ class LoadState:
     target_exists: bool
     original_target_exists: bool
     overlap_stage_table: str | None = None
+    stage_external_location: str | None = None
     target_column_types: dict[str, str] | None = None

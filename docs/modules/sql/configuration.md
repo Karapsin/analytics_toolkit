@@ -103,14 +103,14 @@ When `transfer_staging_schema` is set, transfer staging tables for that
 connection are created under that schema and transfer cleanup scans only
 staging tables matching the target transfer user marker.
 
-When a Trino target defines both `transfer_staging_schema` and
-`transfer_staging_location`, transfers from a different connection key stage
-source rows as Parquet files under the object-storage location and create a
-temporary Trino table in `transfer_staging_schema` over that prefix. Python and
-Trino must both be able to write/read/delete the same object-storage prefix.
-Install `analytics-toolkit[parquet-transfer]` in Python environments that use
-this fast path. If `transfer_staging_location` is omitted, Trino transfers keep
-using row-batch `INSERT` staging.
+When a Trino connection defines both `transfer_staging_schema` and
+`transfer_staging_location`, `load_df` and transfers from a different
+connection key stage source rows as Parquet files under the object-storage
+location and create a temporary Trino table in `transfer_staging_schema` over
+that prefix. Python and Trino must both be able to write/read/delete the same
+object-storage prefix. If `transfer_staging_location` is omitted, Trino
+transfers keep using row-batch `INSERT` staging and `load_df` keeps using direct
+dataframe inserts.
 
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,

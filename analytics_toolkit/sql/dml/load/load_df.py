@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
+from ..._backend_adapters import get_backend_adapter
 from ...core.capabilities import validate_write_mode
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
@@ -47,11 +48,24 @@ from ...execution.plan_steps import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..transfer.runtime.retry import rollback_quietly, replace_connection, run_with_retry
+from ..transfer.flow.parquet_stage import (
+    PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
+    build_create_parquet_stage_table_sql,
+    build_stage_external_location,
+    cleanup_parquet_stage_location,
+    ensure_parquet_staging_dependencies,
+    write_dataframe_to_parquet_stage,
+)
 from ..transfer.staging import _sanitize_transfer_staging_username
 from analytics_toolkit.general import time_print
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
-from .stage import cleanup_stage_table_with_retry, create_stage_table
+from .stage import (
+    STAGE_TABLE_NAME_MAX_ATTEMPTS,
+    build_stage_table_name,
+    cleanup_stage_table_with_retry,
+    create_stage_table,
+)
 from ..table._basic_ops import (
     count_table_rows,
     insert_from_table,
@@ -259,6 +273,9 @@ def _build_load_options(
     configured_trino_insert_chunk_size = (
         config.insert_chunk_size if isinstance(config, TrinoConfig) else None
     )
+    transfer_staging_location = (
+        config.transfer_staging_location if isinstance(config, TrinoConfig) else None
+    )
     resolved_write_mode = _resolve_load_write_mode(
         config.backend,
         append=append,
@@ -292,7 +309,13 @@ def _build_load_options(
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
         transfer_staging_schema=config.transfer_staging_schema,
+        transfer_staging_location=transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(config.user),
+        use_parquet_staging=(
+            config.backend == "trino"
+            and config.transfer_staging_schema is not None
+            and transfer_staging_location is not None
+        ),
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
     )
@@ -612,7 +635,11 @@ def _build_load_result(
 def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     metadata = SqlOperationMetadata(
         source_rows=len(df),
-        staged_rows=len(df) if options.append and options.key_columns else None,
+        staged_rows=(
+            len(df)
+            if options.use_parquet_staging or (options.append and options.key_columns)
+            else None
+        ),
         inserted_rows=len(df),
         affected_rows=len(df),
     )
@@ -635,6 +662,9 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
+            "transfer_staging_schema": options.transfer_staging_schema,
+            "transfer_staging_location": options.transfer_staging_location,
+            "use_parquet_staging": options.use_parquet_staging,
         },
         metadata=metadata,
     )
@@ -696,7 +726,9 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             table_name=options.destination_table,
         )
 
-    if options.write_mode == "upsert":
+    if options.use_parquet_staging:
+        _add_parquet_load_plan_steps(plan, options, df, metadata)
+    elif options.write_mode == "upsert":
         stage_table = f"{options.destination_table}__stage__dry_run"
         metadata.stage_table = stage_table
         add_create_table_steps(
@@ -844,6 +876,98 @@ def _build_dataframe_insert_placeholder(
     return f"INSERT INTO {table_name} ({columns}) VALUES <{len(df)} dataframe {row_word}>"
 
 
+def _add_parquet_load_plan_steps(
+    plan: SqlPlan,
+    options: LoadOptions,
+    df: pd.DataFrame,
+    metadata: SqlOperationMetadata,
+) -> None:
+    stage_table = build_stage_table_name(
+        "trino",
+        options.destination_table,
+        transfer_staging_schema=options.transfer_staging_schema,
+        transfer_staging_username=options.transfer_staging_username,
+        random_suffix="dryrun",
+    )
+    stage_external_location = build_stage_external_location(
+        options,
+        stage_suffix="dryrun",
+    )
+    metadata.stage_table = stage_table
+    metadata.stage_external_location = stage_external_location
+
+    add_create_table_steps(
+        plan,
+        [
+            build_create_parquet_stage_table_sql(
+                stage_table,
+                options.table_schema,
+                stage_external_location,
+                query_label=options.query_label,
+            )
+        ],
+        alias=options.connection_key,
+        backend=options.connection_backend,
+        phase="create_stage",
+        table_name=stage_table,
+    )
+    add_load_stage_step(
+        plan,
+        alias=options.connection_key,
+        backend=options.connection_backend,
+        stage_table=stage_table,
+        sql=(
+            "WRITE PARQUET FILES TO "
+            f"{stage_external_location} FROM <{len(df)} dataframe "
+            f"{'row' if len(df) == 1 else 'rows'}>"
+        ),
+        query_label=options.query_label,
+    )
+
+    if options.write_mode == "upsert":
+        plan.extend(
+            build_upsert_stage_sqls(
+                options.connection_backend,
+                options.destination_table,
+                stage_table,
+                columns=[str(column) for column in df.columns],
+                key_columns=options.key_columns or [],
+                column_types=options.table_schema,
+                query_label=options.query_label,
+            ),
+            alias=options.connection_key,
+            backend=options.connection_backend,
+            phase="upsert_target",
+            target_table=options.destination_table,
+        )
+    else:
+        add_insert_from_stage_step(
+            plan,
+            alias=options.connection_key,
+            backend=options.connection_backend,
+            target_table=options.destination_table,
+            stage_table=stage_table,
+            phase="insert_from_stage",
+            query_label=options.query_label,
+        )
+
+    add_cleanup_stage_step(
+        plan,
+        alias=options.connection_key,
+        backend=options.connection_backend,
+        stage_table=stage_table,
+        query_label=options.query_label,
+    )
+    plan.add(
+        f"DELETE STAGE FILES {stage_external_location}",
+        alias=options.connection_key,
+        backend=options.connection_backend,
+        phase="cleanup_stage_location",
+        target_table=stage_table,
+        query_label=options.query_label,
+    )
+
+
 def _build_load_metadata(
     *,
     options: LoadOptions,
@@ -859,6 +983,7 @@ def _build_load_metadata(
     metadata.inserted_rows = inserted_rows
     metadata.affected_rows = inserted_rows
     metadata.stage_table = state.overlap_stage_table
+    metadata.stage_external_location = state.stage_external_location
     try:
         metadata.final_target_rows = count_table_rows(
             options.connection_backend,
@@ -878,6 +1003,15 @@ def _load_dataframe(
     df: pd.DataFrame,
     on_progress: Any | None = None,
 ) -> int:
+    if options.use_parquet_staging:
+        return _load_dataframe_via_parquet_stage(
+            options=options,
+            state=state,
+            connection_ref=connection_ref,
+            df=df,
+            on_progress=on_progress,
+        )
+
     if (
         (options.append and state.target_exists and options.key_columns)
         or (options.write_mode == "upsert" and state.original_target_exists)
@@ -966,6 +1100,139 @@ def _load_dataframe(
     )
 
 
+def _load_dataframe_via_parquet_stage(
+    *,
+    options: LoadOptions,
+    state: LoadState,
+    connection_ref: dict[str, Any],
+    df: pd.DataFrame,
+    on_progress: Any | None,
+) -> int:
+    pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
+    _create_load_parquet_stage_table(options, state, connection_ref["connection"])
+    if state.stage_external_location is None or state.overlap_stage_table is None:
+        raise RuntimeError("Parquet load stage was not initialized.")
+
+    inserted_rows = write_dataframe_to_parquet_stage(
+        df,
+        stage_external_location=state.stage_external_location,
+        pa=pa,
+        pq=pq,
+        fsspec_module=fsspec_module,
+        row_group_size=PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
+        on_progress=on_progress,
+    )
+    _finalize_loaded_dataframe_stage(
+        options=options,
+        state=state,
+        connection=connection_ref["connection"],
+        df=df,
+    )
+    return inserted_rows
+
+
+def _create_load_parquet_stage_table(
+    options: LoadOptions,
+    state: LoadState,
+    connection: Any,
+) -> None:
+    if not options.transfer_staging_schema:
+        raise ValueError("transfer_staging_schema is required for Parquet staging.")
+    if not options.transfer_staging_location:
+        raise ValueError("transfer_staging_location is required for Parquet staging.")
+    stage_column_types = options.table_schema or state.target_column_types
+    if stage_column_types is None:
+        raise ValueError(
+            "Could not resolve target schema before creating a Parquet load stage "
+            "table. Pass table_schema or create/load a target table with inspectable "
+            "column types."
+        )
+
+    for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
+        stage_table = build_stage_table_name(
+            "trino",
+            options.destination_table,
+            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_username=options.transfer_staging_username,
+        )
+        if table_exists(
+            "trino",
+            connection,
+            stage_table,
+            connection_key=options.connection_key,
+        ):
+            time_print(
+                f"Stage table name collision detected for {stage_table}; "
+                f"retrying with a new name "
+                f"({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
+            )
+            continue
+
+        stage_external_location = build_stage_external_location(options)
+        create_sql = build_create_parquet_stage_table_sql(
+            stage_table,
+            stage_column_types,
+            stage_external_location,
+            query_label=options.query_label,
+        )
+        get_backend_adapter("trino").execute_command(connection, create_sql)
+        state.overlap_stage_table = stage_table
+        state.stage_external_location = stage_external_location
+        return
+
+    raise RuntimeError("Could not generate a unique Parquet load stage table name.")
+
+
+def _finalize_loaded_dataframe_stage(
+    *,
+    options: LoadOptions,
+    state: LoadState,
+    connection: Any,
+    df: pd.DataFrame,
+) -> None:
+    if state.overlap_stage_table is None:
+        raise RuntimeError("Parquet load stage table was not initialized.")
+
+    if options.write_mode == "upsert":
+        validate_stage_uniqueness(
+            connection_type=options.connection_backend,
+            connection=connection,
+            stage_table=state.overlap_stage_table,
+            key_columns=options.key_columns,
+        )
+        if state.original_target_exists:
+            upsert_stage_table(
+                options.connection_backend,
+                connection,
+                options.destination_table,
+                state.overlap_stage_table,
+                columns=[str(column) for column in df.columns],
+                key_columns=options.key_columns or [],
+                column_types=options.table_schema or state.target_column_types,
+                query_label=options.query_label,
+            )
+            return
+
+    if options.append and state.target_exists and options.key_columns:
+        validate_stage_target_key_overlap(
+            connection_type=options.connection_backend,
+            connection=connection,
+            stage_table=state.overlap_stage_table,
+            target_table=options.destination_table,
+            key_columns=options.key_columns,
+            target_exists=state.target_exists,
+            replace_target_table=False,
+        )
+
+    insert_from_table(
+        options.connection_backend,
+        connection,
+        options.destination_table,
+        state.overlap_stage_table,
+        query_label=options.query_label,
+    )
+
+
 class _ProgressTracker:
     def __init__(self, progress_bar: Any) -> None:
         self.progress_bar = progress_bar
@@ -1021,6 +1288,14 @@ def _cleanup_load(
         except Exception:
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
+            )
+    if state is not None and state.stage_external_location is not None:
+        try:
+            cleanup_parquet_stage_location(state.stage_external_location)
+        except Exception:
+            time_print(
+                "Failed to delete temporary load_df Parquet stage files "
+                f"{state.stage_external_location}"
             )
     time_print(
         "Closing connection",

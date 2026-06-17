@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Push dev after agent commits.
 - Consolidated AB metric batch APIs.
 - Add Parquet object-storage staging for Trino transfers.
+- Add Parquet object-storage staging for Trino load_df and make Parquet dependencies mandatory.
 
 ## 1.3.10.7 - 2026-06-17
 

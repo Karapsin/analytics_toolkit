@@ -2166,7 +2166,7 @@ def test_parquet_staging_missing_dependencies_raise_clear_error(
         ),
     )
 
-    with pytest.raises(ImportError, match="parquet-transfer"):
+    with pytest.raises(ImportError, match="pyarrow, fsspec, and s3fs"):
         attempt_module.load_stage_batches(
             options=options,
             connection_refs=models_module.TransferConnectionRefs(

@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -28,7 +29,30 @@ load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
 )
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
+parquet_stage_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
+)
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.write_modes")
+
+
+def _write_trino_connections(
+    write_sql_connections: Any,
+    *,
+    transfer_staging_location: str | None,
+) -> None:
+    config: dict[str, object] = {
+        "type": "trino",
+        "host": "trino.example",
+        "port": 8080,
+        "user": "target_user",
+        "password": "password",
+        "catalog": "iceberg",
+        "schema": "sandbox",
+        "transfer_staging_schema": "object_storage.pa_core_stage",
+    }
+    if transfer_staging_location is not None:
+        config["transfer_staging_location"] = transfer_staging_location
+    write_sql_connections({"trino_stage": config})
 
 
 class FakeClickHouseClient:
@@ -1605,3 +1629,367 @@ def test_finalize_stage_table_upsert_missing_target_creates_and_inserts() -> Non
     assert connection.executed[1].startswith(
         'INSERT INTO sandbox.target ("id", "score") '
     )
+
+
+def test_load_df_trino_parquet_stage_routes_through_external_table(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+) -> None:
+    _write_trino_connections(
+        write_sql_connections,
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+    )
+    connection = FakeDbapiConnection()
+    writes: list[dict[str, object]] = []
+    inserts: list[tuple[str, str]] = []
+    cleaned_locations: list[str] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(
+        load_df_module,
+        "table_exists",
+        lambda connection_type, connection, table_name, **kwargs: table_name
+        == "iceberg.sandbox.target",
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *args, **kwargs: {"id": "BIGINT", "label": "VARCHAR"},
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: ("pa", "pq", "fsspec"),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "write_dataframe_to_parquet_stage",
+        lambda df, **kwargs: writes.append(
+            {
+                "rows": len(df),
+                "location": kwargs["stage_external_location"],
+                "row_group_size": kwargs["row_group_size"],
+                "pa": kwargs["pa"],
+                "pq": kwargs["pq"],
+                "fsspec": kwargs["fsspec_module"],
+            }
+        )
+        or len(df),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "insert_from_table",
+        lambda connection_type, connection, target, stage, **kwargs: inserts.append(
+            (target, stage)
+        ),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "insert_table_batch",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Parquet load_df must not use row inserts")
+        ),
+    )
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_parquet_stage_location",
+        lambda location: cleaned_locations.append(location),
+    )
+
+    rows = load_df_module.load_df(
+        "trino_stage",
+        "iceberg.sandbox.target",
+        pd.DataFrame({"id": [1, 2], "label": ["a", "b"]}),
+        append=True,
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert rows == 2
+    assert writes == [
+        {
+            "rows": 2,
+            "location": cleaned_locations[0],
+            "row_group_size": 50_000,
+            "pa": "pa",
+            "pq": "pq",
+            "fsspec": "fsspec",
+        }
+    ]
+    assert inserts[0][0] == "iceberg.sandbox.target"
+    assert inserts[0][1].startswith("object_storage.pa_core_stage.target__")
+    assert cleaned_locations[0].startswith(
+        "s3://bucket/tmp/analytics_toolkit_transfer/target/"
+    )
+    assert "__analytics_toolkit_target_user__stage__" in cleaned_locations[0]
+    assert any(
+        sql.startswith("CREATE TABLE object_storage.pa_core_stage.target__")
+        and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/"
+        in sql
+        for sql in connection.executed
+    )
+    assert any(
+        sql.startswith("DROP TABLE IF EXISTS object_storage.pa_core_stage.target__")
+        for sql in connection.executed
+    )
+
+
+def test_load_df_trino_without_staging_location_keeps_insert_path(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+) -> None:
+    _write_trino_connections(write_sql_connections, transfer_staging_location=None)
+    connection = FakeDbapiConnection()
+    inserted_tables: list[str] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(load_df_module, "get_table_column_types", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        load_df_module,
+        "insert_table_batch",
+        lambda connection_type, connection_ref, table_name, batch, **kwargs: (
+            inserted_tables.append(table_name) or len(batch)
+        ),
+    )
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("Parquet dependencies should not be loaded")
+        ),
+    )
+
+    rows = load_df_module.load_df(
+        "trino_stage",
+        "iceberg.sandbox.target",
+        pd.DataFrame({"id": [1]}),
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert rows == 1
+    assert inserted_tables == ["iceberg.sandbox.target"]
+
+
+def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+) -> None:
+    _write_trino_connections(
+        write_sql_connections,
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+    )
+    connection = FakeDbapiConnection()
+    uniqueness_checks: list[tuple[str, list[str]]] = []
+    upserts: list[dict[str, object]] = []
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(
+        load_df_module,
+        "table_exists",
+        lambda connection_type, connection, table_name, **kwargs: table_name
+        == "iceberg.sandbox.target",
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *args, **kwargs: {"id": "BIGINT", "score": "INTEGER"},
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: ("pa", "pq", "fsspec"),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "write_dataframe_to_parquet_stage",
+        lambda df, **kwargs: len(df),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "validate_stage_uniqueness",
+        lambda connection_type, connection, stage_table, key_columns: uniqueness_checks.append(
+            (stage_table, list(key_columns))
+        ),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "upsert_stage_table",
+        lambda connection_type,
+        connection,
+        target,
+        stage,
+        columns,
+        key_columns,
+        **kwargs: upserts.append(
+            {
+                "target": target,
+                "stage": stage,
+                "columns": list(columns),
+                "key_columns": list(key_columns),
+            }
+        ),
+    )
+    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    monkeypatch.setattr(load_df_module, "cleanup_parquet_stage_location", lambda *args: None)
+
+    rows = load_df_module.load_df(
+        "trino_stage",
+        "iceberg.sandbox.target",
+        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+        write_mode="upsert",
+        key_columns=["id"],
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert rows == 2
+    assert uniqueness_checks[0][1] == ["id"]
+    assert upserts == [
+        {
+            "target": "iceberg.sandbox.target",
+            "stage": uniqueness_checks[0][0],
+            "columns": ["id", "score"],
+            "key_columns": ["id"],
+        }
+    ]
+
+
+def test_load_df_trino_parquet_dry_run_includes_stage_location(
+    write_sql_connections: Any,
+) -> None:
+    _write_trino_connections(
+        write_sql_connections,
+        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+    )
+
+    plan = load_df_module.load_df(
+        "trino_stage",
+        "iceberg.sandbox.target",
+        pd.DataFrame({"id": [1], "label": ["a"]}),
+        table_schema={"id": "BIGINT", "label": "VARCHAR"},
+        dry_run=True,
+    )
+
+    assert plan.options["use_parquet_staging"] is True
+    assert plan.metadata.stage_table == (
+        "object_storage.pa_core_stage.target__analytics_toolkit_target_user__stage__dryrun"
+    )
+    assert plan.metadata.stage_external_location == (
+        "s3://bucket/tmp/analytics_toolkit_transfer/target/"
+        "__analytics_toolkit_target_user__stage__dryrun/"
+    )
+    assert [statement.phase for statement in plan.statements] == [
+        "drop_target",
+        "create_target",
+        "create_stage",
+        "load_stage",
+        "insert_from_stage",
+        "drop_stage",
+        "cleanup_stage_location",
+        "analyze",
+        "count_target",
+    ]
+    assert any(
+        "CREATE TABLE object_storage.pa_core_stage.target__analytics_toolkit_target_user__stage__dryrun "
+        in sql
+        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
+        in sql
+        for sql in plan.sqls
+    )
+    assert any(
+        sql.startswith(
+            "WRITE PARQUET FILES TO s3://bucket/tmp/analytics_toolkit_transfer/target/"
+        )
+        for sql in plan.sqls
+    )
+    assert any(sql.startswith("DELETE STAGE FILES s3://bucket/tmp/") for sql in plan.sqls)
+
+
+def test_write_dataframe_to_parquet_stage_uses_one_spooled_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_spooled_files = 0
+    max_active_spooled_files = 0
+    uploaded: list[tuple[str, object]] = []
+
+    class FakeSpooledFile:
+        _rolled = False
+
+        def __init__(self, max_size: int) -> None:
+            nonlocal active_spooled_files, max_active_spooled_files
+            assert max_size == parquet_stage_module.PARQUET_STAGE_MAX_SPOOL_BYTES
+            active_spooled_files += 1
+            max_active_spooled_files = max(
+                max_active_spooled_files,
+                active_spooled_files,
+            )
+            self.closed = False
+
+        def seek(self, position: int) -> None:
+            assert position == 0
+
+        def close(self) -> None:
+            nonlocal active_spooled_files
+            self.closed = True
+            active_spooled_files -= 1
+
+        def getvalue(self) -> bytes:
+            raise AssertionError("load_df Parquet staging must not materialize bytes")
+
+    class FakeArrowTable:
+        @staticmethod
+        def from_pandas(chunk: pd.DataFrame, preserve_index: bool) -> dict[str, int]:
+            assert preserve_index is False
+            return {"rows": len(chunk)}
+
+    fake_pa = SimpleNamespace(Table=FakeArrowTable)
+
+    monkeypatch.setattr(
+        parquet_stage_module.tempfile,
+        "SpooledTemporaryFile",
+        FakeSpooledFile,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "write_arrow_table_to_parquet",
+        lambda pq, arrow_table, spooled_file, row_group_size: None,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "upload_spooled_file",
+        lambda fsspec_module, spooled_file, remote_uri: uploaded.append(
+            (remote_uri, spooled_file)
+        ),
+    )
+
+    rows = parquet_stage_module.write_dataframe_to_parquet_stage(
+        pd.DataFrame({"id": [1, 2, 3]}),
+        stage_external_location="s3://bucket/tmp/stage/",
+        pa=fake_pa,
+        pq=object(),
+        fsspec_module=object(),
+        row_group_size=2,
+    )
+
+    assert rows == 3
+    assert max_active_spooled_files == 1
+    assert active_spooled_files == 0
+    assert [item[0] for item in uploaded] == [
+        "s3://bucket/tmp/stage/part-00000.parquet",
+        "s3://bucket/tmp/stage/part-00001.parquet",
+    ]
+    assert all(getattr(spooled_file, "closed") for _uri, spooled_file in uploaded)
