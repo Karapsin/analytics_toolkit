@@ -1,12 +1,12 @@
 [All AB functions](index.md)
 
-# compute_mde_from_sql
+# compute_mde_sql_native
 
-Estimate MDE planning scenarios from a SQL historical user-day table without
-loading the full table into Python.
+Estimate MDE planning scenarios from a SQL historical user-day table while
+computing metric statistics inside SQL.
 
 ```python
-compute_mde_from_sql(
+compute_mde_sql_native(
     db_key,
     sql_table_name,
     *,
@@ -45,25 +45,23 @@ compute_mde_from_sql(
 - `db_key` - connection key or alias from `.connections`
 - `sql_table_name` - historical user-day SQL table
 - `sql_where` - optional raw SQL predicate applied to validation and aggregate
-  queries
+  stats queries
 - `user_id` - user id column
 - `date_column` - date column used for historical windows
 - `metric_columns` - mean metric columns to include
 - `ratio_metrics` - optional ratio metric specifications
 - `start_dt` - required first day of the pseudo-experiment outcome window; pass
   `None` explicitly to use the first available historical date after filtering
-- `concurrency` - worker concurrency used first for SQL window reads through
-  `sql.parallel_sql`, then for in-memory day-size scenario combinations;
-  metadata and validation queries always run once before worker threads start
+- `concurrency` - worker concurrency used for independent SQL stats queries
 - MDE, grid, outlier, CUPED, and aggregation options match
   [compute_mde](compute-mde.md)
 
 ## Usage
 
 ```python
-from analytics_toolkit.ab_utils import RatioMetricSpec, compute_mde_from_sql
+from analytics_toolkit.ab_utils import RatioMetricSpec, compute_mde_sql_native
 
-planning = compute_mde_from_sql(
+planning = compute_mde_sql_native(
     "analytics_prod",
     "mart.user_day_metrics",
     sql_where="country = 'US'",
@@ -88,15 +86,14 @@ planning = compute_mde_from_sql(
 
 - The helper validates table existence, column names, non-null user/date values,
   unique user-date rows, and available date span before computing scenarios.
-- SQL reads aggregate each selected outcome and pre-period window to one row per
-  user through `sql.parallel_sql`, then reuse the same Python MDE, ratio,
-  outlier, and CUPED calculations as `compute_mde`.
-- All required SQL window dataframes are loaded before day-size scenario
-  computation starts; each day-size combination is then computed independently
-  from the loaded frames.
-- Use [compute_mde_sql_native](compute-mde-sql-native.md) when even per-user
-  window dataframes are too large to download and SQL-side aggregate stats are
-  preferred.
+- SQL queries aggregate each selected outcome and pre-period window to one row
+  per user inside SQL, then compute averages, variances, outlier-adjusted stats,
+  ratio stats, and CUPED variance in SQL.
+- Python receives only compact stats result rows and the final planning output;
+  it does not load per-user window dataframes.
+- Greenplum uses exact percentile SQL for outlier cutoffs, ClickHouse uses
+  `quantileExact`, and Trino uses `approx_percentile` because that is the
+  portable Trino aggregate available for percentile cutoffs.
 - `sql_where` is inserted as a SQL predicate; callers are responsible for safe
   predicate construction.
 

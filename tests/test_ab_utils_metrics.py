@@ -20,6 +20,7 @@ from analytics_toolkit.ab_utils import (
     RatioMetricSpec,
     compute_mde,
     compute_mde_from_sql,
+    compute_mde_sql_native,
     compute_test_metrics,
 )
 from analytics_toolkit.ab_utils.metrics import (
@@ -59,10 +60,15 @@ def test_compute_mde_start_dt_is_required() -> None:
         inspect.signature(compute_mde_from_sql).parameters["start_dt"].default
         is inspect._empty
     )
+    assert (
+        inspect.signature(compute_mde_sql_native).parameters["start_dt"].default
+        is inspect._empty
+    )
 
 
 def test_compute_mde_from_sql_concurrency_defaults_to_one() -> None:
     assert inspect.signature(compute_mde_from_sql).parameters["concurrency"].default == 1
+    assert inspect.signature(compute_mde_sql_native).parameters["concurrency"].default == 1
 
 
 def test_ab_metric_outlier_policy_defaults_to_non_zero_truncate() -> None:
@@ -76,6 +82,10 @@ def test_ab_metric_outlier_policy_defaults_to_non_zero_truncate() -> None:
     )
     assert (
         inspect.signature(compute_mde_from_sql).parameters["outliers_policy"].default
+        == "non_zero_truncate"
+    )
+    assert (
+        inspect.signature(compute_mde_sql_native).parameters["outliers_policy"].default
         == "non_zero_truncate"
     )
 
@@ -1434,6 +1444,170 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
 
     pd.testing.assert_frame_equal(result, expected)
     assert any('FROM "sandbox"."events"' in query for query in queries)
+
+
+def test_compute_mde_sql_native_uses_compact_sql_stats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "dt": pd.to_datetime(
+                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
+            ),
+            "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
+        }
+    )
+    expected = compute_mde(
+        source_df,
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        start_dt="2024-01-03",
+        outliers_quantile=1,
+    )
+    expected_row = expected.iloc[0]
+    pre_values = pd.Series([3.0, 7.0, 11.0])
+    outcome_values = pd.Series([7.0, 14.0, 23.0])
+    cuped_pre_var = float(pre_values.var(ddof=1))
+    cuped_adjusted_var = _manual_cuped_adjusted_variance(outcome_values, pre_values)
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={"user_id": "int", "dt": "date", "orders": "double precision"},
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+    queries: list[str] = []
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        lambda db_key, table: table_info,
+    )
+
+    def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        assert db_key == "analytics"
+        assert kwargs["query_label"] == "mde-native"
+        queries.append(query)
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [len(source_df)],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-04")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+        raise AssertionError(f"Unexpected direct query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        assert kwargs["concurrency"] == 1
+        frames: dict[str, pd.DataFrame] = {}
+        for task in tasks:
+            assert task["db_key"] == "analytics"
+            assert task["query_label"] == "mde-native"
+            query = task["query"]
+            assert isinstance(query, str)
+            queries.append(query)
+            assert "GROUP BY" in query
+            assert "ORDER BY" not in query
+            assert "MAX(value)" in query
+            assert "VAR_SAMP" in query
+            assert "COVAR_SAMP" in query
+            frames[str(task["name"])] = pd.DataFrame(
+                {
+                    "avg": [expected_row["avg"]],
+                    "var": [expected_row["var"]],
+                    "cuped_pair_n": [3],
+                    "cuped_pre_var": [cuped_pre_var],
+                    "cuped_adjusted_var": [cuped_adjusted_var],
+                }
+            )
+        return frames
+
+    monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
+    )
+
+    result = compute_mde_sql_native(
+        "analytics",
+        "sandbox.events",
+        user_id="user_id",
+        metric_columns=["orders"],
+        group_sizes=[10],
+        exp_days=[2],
+        start_dt="2024-01-03",
+        outliers_quantile=1,
+        query_label="mde-native",
+    )
+
+    pd.testing.assert_frame_equal(result, expected)
+    assert any('FROM "sandbox"."events"' in query for query in queries)
+
+
+def test_compute_mde_sql_native_generates_backend_specific_stats_sql() -> None:
+    metric_definition = {"kind": "mean", "metric_key": "orders", "column": "orders"}
+
+    gp_query = planning_module._build_sql_native_mde_stats_query(
+        backend="gp",
+        source='"sandbox"."events"',
+        sql_where="country = 'US'",
+        user_id="user_id",
+        date_column="dt",
+        metric_definition=metric_definition,
+        aggregation_policies={"orders": "sum"},
+        outcome_start=pd.Timestamp("2024-01-03"),
+        outcome_days=2,
+        pre_start=pd.Timestamp("2024-01-01"),
+        pre_days=2,
+        outliers_quantile=0.95,
+        outliers_policy="truncate",
+    )
+    trino_query = planning_module._build_sql_native_mde_stats_query(
+        backend="trino",
+        source='"sandbox"."events"',
+        sql_where=None,
+        user_id="user_id",
+        date_column="dt",
+        metric_definition=metric_definition,
+        aggregation_policies={"orders": "sum"},
+        outcome_start=pd.Timestamp("2024-01-03"),
+        outcome_days=2,
+        pre_start=pd.Timestamp("2024-01-01"),
+        pre_days=2,
+        outliers_quantile=0.95,
+        outliers_policy="truncate",
+    )
+    ch_query = planning_module._build_sql_native_mde_stats_query(
+        backend="ch",
+        source="`sandbox`.`events`",
+        sql_where=None,
+        user_id="user_id",
+        date_column="dt",
+        metric_definition=metric_definition,
+        aggregation_policies={"orders": "sum"},
+        outcome_start=pd.Timestamp("2024-01-03"),
+        outcome_days=2,
+        pre_start=pd.Timestamp("2024-01-01"),
+        pre_days=2,
+        outliers_quantile=0.95,
+        outliers_policy="truncate",
+    )
+
+    assert "PERCENTILE_CONT" in gp_query
+    assert "VAR_SAMP" in gp_query
+    assert "COVAR_SAMP" in gp_query
+    assert "(country = 'US')" in gp_query
+    assert "approx_percentile" in trino_query
+    assert "quantileExact" in ch_query
+    assert "varSamp" in ch_query
+    assert "covarSamp" in ch_query
 
 
 def test_compute_mde_from_sql_applies_where_to_validation_and_windows(

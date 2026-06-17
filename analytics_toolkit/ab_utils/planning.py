@@ -355,6 +355,182 @@ def compute_mde_from_sql(
     )
 
 
+def compute_mde_sql_native(
+    db_key: str,
+    sql_table_name: str,
+    *,
+    sql_where: str | None = None,
+    user_id: str = "user_id",
+    metric_columns: Sequence[str] | None = None,
+    ratio_metrics: Sequence[dict[str, object] | RatioMetricSpec] | None = None,
+    control_share: float = 0.5,
+    group_sizes: Sequence[int] | None = None,
+    min_group_size: int | None = None,
+    max_group_size: int | None = None,
+    group_size_step: int | None = None,
+    date_column: str = "dt",
+    exp_days: Sequence[int] | None = None,
+    min_days: int | None = None,
+    max_days: int | None = None,
+    days_step: int | None = None,
+    start_dt: object | None,
+    mde_alpha: float = DEFAULT_ALPHA,
+    mde_power: float = DEFAULT_POWER,
+    outliers_quantile: float = 0.999,
+    outliers_policy: str = "non_zero_truncate",
+    pre_exp_days: int | None = None,
+    sum_agg_metrics: Sequence[str] | None = None,
+    max_agg_metrics: Sequence[str] | None = None,
+    print_queries: bool = False,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
+    query_label: str | None = None,
+    concurrency: int = 1,
+) -> pd.DataFrame:
+    """Estimate MDE scenarios from SQL-side aggregate statistics."""
+
+    _validate_mde_sql_concurrency(concurrency)
+    options = _resolve_mde_options(
+        control_share=control_share,
+        group_sizes=group_sizes,
+        min_group_size=min_group_size,
+        max_group_size=max_group_size,
+        group_size_step=group_size_step,
+        exp_days=exp_days,
+        min_days=min_days,
+        max_days=max_days,
+        days_step=days_step,
+        start_dt=start_dt,
+        pre_exp_days=pre_exp_days,
+        mde_alpha=mde_alpha,
+        mde_power=mde_power,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+    normalized_where = _normalize_sql_where(sql_where)
+    table_info = sql_facade.table_info(db_key, sql_table_name)
+    if not table_info.exists:
+        raise ValueError(f"SQL table {sql_table_name!r} does not exist.")
+
+    column_names = list(table_info.columns)
+    metadata_frame = pd.DataFrame(columns=column_names)
+    _validate_sql_source_required_columns(
+        column_names=column_names,
+        user_id=user_id,
+        date_column=date_column,
+    )
+    reserved_columns = {user_id, date_column}
+    ratio_specs = _normalize_ratio_metrics(
+        metadata_frame,
+        _coerce_ratio_metric_specs(ratio_metrics),
+        reserved_columns=reserved_columns,
+    )
+    mean_metric_columns = _normalize_metric_columns(
+        df=metadata_frame,
+        metric_columns=metric_columns,
+        ratio_specs=ratio_specs,
+        user_id=user_id,
+        date_column=date_column,
+    )
+    _validate_metric_name_conflicts(mean_metric_columns, ratio_specs)
+    if not mean_metric_columns and not ratio_specs:
+        raise ValueError("At least one metric column or ratio metric is required.")
+
+    metric_definitions = _build_metric_definitions(mean_metric_columns, ratio_specs)
+    aggregation_policies = _resolve_mde_aggregation_policies(
+        metric_definitions=metric_definitions,
+        sum_agg_metrics=sum_agg_metrics,
+        max_agg_metrics=max_agg_metrics,
+    )
+    source = _build_sql_mde_source(
+        table_name=table_info.resolved_table or table_info.table,
+        backend=table_info.backend,
+    )
+    source_stats = _validate_sql_mde_source_rows(
+        db_key=db_key,
+        backend=table_info.backend,
+        source=source,
+        sql_where=normalized_where,
+        user_id=user_id,
+        date_column=date_column,
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    windows = _select_mde_windows(
+        min_date=source_stats["min_date"],
+        max_date=source_stats["max_date"],
+        days_values=options["days"],
+        pre_exp_days=options["pre_exp_days"],
+        date_column=date_column,
+        start_dt=options["start_dt"],
+    )
+    stats_by_metric_day = _load_sql_native_mde_stats(
+        concurrency=concurrency,
+        db_key=db_key,
+        backend=table_info.backend,
+        source=source,
+        sql_where=normalized_where,
+        user_id=user_id,
+        date_column=date_column,
+        metric_definitions=metric_definitions,
+        aggregation_policies=aggregation_policies,
+        days_values=options["days"],
+        windows=windows,
+        outliers_quantile=float(outliers_quantile),
+        outliers_policy=outliers_policy.strip().lower(),
+        print_queries=print_queries,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+    )
+    rows: list[dict[str, object]] = []
+    emitted_cuped_warnings: set[tuple[int, int, int, str]] = set()
+    for metric_index, metric_definition in enumerate(metric_definitions):
+        for days in options["days"]:
+            window = windows[int(days)]
+            stats = stats_by_metric_day[(metric_index, int(days))]
+            cuped_variance, cuped_reason = _resolve_sql_native_cuped_result(
+                stats=stats,
+                unavailable_reason=window["cuped_unavailable_reason"],
+            )
+            if cuped_reason is not None:
+                warning_key = (
+                    metric_index,
+                    int(days),
+                    int(window["pre_days"]),
+                    cuped_reason,
+                )
+                if warning_key not in emitted_cuped_warnings:
+                    emitted_cuped_warnings.add(warning_key)
+                    _warn_mde_cuped_reason(
+                        metric_definition=metric_definition,
+                        days=int(days),
+                        pre_days=int(window["pre_days"]),
+                        reason=cuped_reason,
+                        stacklevel=2,
+                    )
+            for split in options["planned_splits"]:
+                rows.append(
+                    _build_mde_planning_row(
+                        metric_name=str(metric_definition["metric_key"]),
+                        avg=_coerce_sql_float(stats.get("avg")),
+                        variance=_coerce_sql_float(stats.get("var")),
+                        days=int(days),
+                        pre_exp_days=int(window["pre_days"]),
+                        group_size=split["group_size"],
+                        control_share=float(options["control_share"]),
+                        control_n=split["control_n"],
+                        test_n=split["test_n"],
+                        cuped_variance=cuped_variance,
+                        mde_alpha=mde_alpha,
+                        mde_power=mde_power,
+                    )
+                )
+    return _mde_result_frame(rows)
+
+
 def _compute_parallel_sql_mde_rows(
     *,
     concurrency: int,
@@ -494,6 +670,625 @@ def _compute_sql_mde_day_size_rows(
             mde_power=mde_power,
         )
     return rows_by_metric, cuped_reasons_by_metric
+
+
+def _load_sql_native_mde_stats(
+    *,
+    concurrency: int,
+    db_key: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    metric_definitions: Sequence[dict[str, object]],
+    aggregation_policies: dict[str, str],
+    days_values: Sequence[int],
+    windows: dict[int, dict[str, Any]],
+    outliers_quantile: float,
+    outliers_policy: str,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> dict[tuple[int, int], dict[str, object]]:
+    tasks: list[dict[str, object]] = []
+    task_keys: dict[str, tuple[int, int]] = {}
+    for metric_index, metric_definition in enumerate(metric_definitions):
+        for days in days_values:
+            task_name = f"mde_native_{metric_index}_{int(days)}"
+            task_keys[task_name] = (metric_index, int(days))
+            tasks.append(
+                {
+                    "name": task_name,
+                    "type": "read",
+                    "db_key": db_key,
+                    "query": _build_sql_native_mde_stats_query(
+                        backend=backend,
+                        source=source,
+                        sql_where=sql_where,
+                        user_id=user_id,
+                        date_column=date_column,
+                        metric_definition=metric_definition,
+                        aggregation_policies=aggregation_policies,
+                        outcome_start=windows[int(days)]["outcome_start"],
+                        outcome_days=int(days),
+                        pre_start=windows[int(days)]["pre_start"],
+                        pre_days=int(windows[int(days)]["pre_days"]),
+                        outliers_quantile=outliers_quantile,
+                        outliers_policy=outliers_policy,
+                    ),
+                    "print_queries": print_queries,
+                    "retry_cnt": retry_cnt,
+                    "timeout_increment": timeout_increment,
+                    "query_label": query_label,
+                }
+            )
+    loaded = sql_facade.parallel_sql(
+        tasks,
+        concurrency=concurrency,
+        fail_fast=True,
+        progress=False,
+        hard_concurrency_cap=max(10, concurrency),
+    )
+    stats: dict[tuple[int, int], dict[str, object]] = {}
+    for task_name, result in loaded.items():
+        if not isinstance(result, pd.DataFrame):
+            raise TypeError("SQL read did not return a dataframe.")
+        if result.empty:
+            raise ValueError("SQL-native MDE stats query returned no rows.")
+        stats[task_keys[task_name]] = dict(result.iloc[0])
+    return stats
+
+
+def _resolve_sql_native_cuped_result(
+    *,
+    stats: dict[str, object],
+    unavailable_reason: str | None,
+) -> tuple[float, str | None]:
+    if unavailable_reason is not None:
+        return math.nan, unavailable_reason
+    pair_count = _coerce_sql_int(stats.get("cuped_pair_n"))
+    if pair_count < 2:
+        return (
+            math.nan,
+            "not enough overlapping non-missing experiment/pre-experiment observations",
+        )
+    pre_variance = _coerce_sql_float(stats.get("cuped_pre_var"))
+    if math.isnan(pre_variance) or pre_variance <= 0:
+        return math.nan, "pre-experiment covariate variance is not positive"
+    adjusted_variance = _coerce_sql_float(stats.get("cuped_adjusted_var"))
+    if math.isnan(adjusted_variance):
+        return math.nan, "not enough adjusted observations to estimate CUPED variance"
+    return adjusted_variance, None
+
+
+def _build_sql_native_mde_stats_query(
+    *,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    metric_definition: dict[str, object],
+    aggregation_policies: dict[str, str],
+    outcome_start: pd.Timestamp,
+    outcome_days: int,
+    pre_start: pd.Timestamp | None,
+    pre_days: int,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> str:
+    metric_columns = _sql_native_metric_columns(metric_definition)
+    ctes: list[str] = []
+    ctes.append(
+        _build_sql_native_user_window_cte(
+            cte_name="outcome_user",
+            backend=backend,
+            source=source,
+            sql_where=sql_where,
+            user_id=user_id,
+            date_column=date_column,
+            columns=metric_columns,
+            aggregation_policies=aggregation_policies,
+            start_date=outcome_start,
+            days=outcome_days,
+        )
+    )
+    ctes.extend(
+        _build_sql_native_metric_value_ctes(
+            prefix="outcome",
+            backend=backend,
+            user_id=user_id,
+            metric_definition=metric_definition,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+    )
+    if pre_start is not None:
+        ctes.append(
+            _build_sql_native_user_window_cte(
+                cte_name="pre_user",
+                backend=backend,
+                source=source,
+                sql_where=sql_where,
+                user_id=user_id,
+                date_column=date_column,
+                columns=metric_columns,
+                aggregation_policies=aggregation_policies,
+                start_date=pre_start,
+                days=pre_days,
+            )
+        )
+        ctes.extend(
+            _build_sql_native_metric_value_ctes(
+                prefix="pre",
+                backend=backend,
+                user_id=user_id,
+                metric_definition=metric_definition,
+                outliers_quantile=outliers_quantile,
+                outliers_policy=outliers_policy,
+            )
+        )
+        ctes.extend(
+            _build_sql_native_cuped_ctes(
+                backend=backend,
+                user_id=user_id,
+            )
+        )
+        cuped_select = """
+    cuped_stats.cuped_pair_n,
+    cuped_stats.cuped_pre_var,
+    cuped_stats.cuped_adjusted_var
+FROM outcome_stats
+CROSS JOIN cuped_stats
+""".rstrip()
+    else:
+        cuped_select = """
+    CAST(0 AS INTEGER) AS cuped_pair_n,
+    NULL AS cuped_pre_var,
+    NULL AS cuped_adjusted_var
+FROM outcome_stats
+""".rstrip()
+
+    with_sql = ",\n".join(ctes)
+    return f"""
+WITH {with_sql}
+SELECT
+    outcome_stats.avg AS avg,
+    outcome_stats.var AS var,
+{cuped_select}
+""".strip()
+
+
+def _sql_native_metric_columns(metric_definition: dict[str, object]) -> list[str]:
+    if metric_definition["kind"] == "mean":
+        return [str(metric_definition["column"])]
+    ratio_spec = dict(metric_definition["ratio_spec"])
+    return list(
+        dict.fromkeys([str(ratio_spec["numerator"]), str(ratio_spec["denominator"])])
+    )
+
+
+def _build_sql_native_user_window_cte(
+    *,
+    cte_name: str,
+    backend: str,
+    source: str,
+    sql_where: str | None,
+    user_id: str,
+    date_column: str,
+    columns: Sequence[str],
+    aggregation_policies: dict[str, str],
+    start_date: pd.Timestamp,
+    days: int,
+) -> str:
+    user_expr = _quote_sql_identifier(user_id, backend)
+    dt_expr = _sql_date_expr(backend, _quote_sql_identifier(date_column, backend))
+    end_date = start_date + pd.Timedelta(days=days)
+    conditions = [
+        f"{dt_expr} >= {_sql_date_literal(start_date, backend)}",
+        f"{dt_expr} < {_sql_date_literal(end_date, backend)}",
+    ]
+    where_clause = _sql_where_clause(sql_where, extra_conditions=conditions)
+    select_parts = [f"{user_expr} AS {_quote_sql_identifier(user_id, backend)}"]
+    for column in columns:
+        quoted_column = _quote_sql_identifier(column, backend)
+        policy = aggregation_policies.get(column, "sum")
+        if policy == "sum":
+            expression = f"SUM({quoted_column})"
+        elif policy == "max":
+            expression = f"MAX({quoted_column})"
+        else:
+            raise AssertionError(f"Unexpected MDE aggregation policy: {policy}")
+        select_parts.append(f"{expression} AS {_quote_sql_identifier(column, backend)}")
+    select_sql = ",\n        ".join(select_parts)
+    return f"""
+{cte_name} AS (
+    SELECT
+        {select_sql}
+    FROM {source}
+    {where_clause}
+    GROUP BY {user_expr}
+)
+""".strip()
+
+
+def _build_sql_native_metric_value_ctes(
+    *,
+    prefix: str,
+    backend: str,
+    user_id: str,
+    metric_definition: dict[str, object],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    if metric_definition["kind"] == "mean":
+        return _build_sql_native_value_metric_ctes(
+            prefix=prefix,
+            backend=backend,
+            user_id=user_id,
+            value_expression=_sql_float_expr(
+                _quote_sql_identifier(str(metric_definition["column"]), backend),
+                backend,
+            ),
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+
+    ratio_spec = dict(metric_definition["ratio_spec"])
+    numerator = _sql_float_expr(
+        _quote_sql_identifier(str(ratio_spec["numerator"]), backend),
+        backend,
+    )
+    denominator = _sql_float_expr(
+        _quote_sql_identifier(str(ratio_spec["denominator"]), backend),
+        backend,
+    )
+    if ratio_spec["level"] == "user":
+        return _build_sql_native_value_metric_ctes(
+            prefix=prefix,
+            backend=backend,
+            user_id=user_id,
+            value_expression=(
+                "CASE WHEN "
+                f"{numerator} IS NOT NULL AND {denominator} IS NOT NULL "
+                f"AND {denominator} > 0 THEN {numerator} / {denominator} "
+                "ELSE NULL END"
+            ),
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+    return _build_sql_native_agg_ratio_metric_ctes(
+        prefix=prefix,
+        backend=backend,
+        user_id=user_id,
+        numerator=numerator,
+        denominator=denominator,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+
+
+def _build_sql_native_value_metric_ctes(
+    *,
+    prefix: str,
+    backend: str,
+    user_id: str,
+    value_expression: str,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    user_column = _quote_sql_identifier(user_id, backend)
+    cutoff_filter = _sql_native_cutoff_filter("value", outliers_policy)
+    adjusted_value = _sql_native_adjusted_value_expr(
+        value_expression="value",
+        cutoff_expression="cutoff.cutoff",
+        outliers_policy=outliers_policy,
+    )
+    return [
+        f"""
+{prefix}_values AS (
+    SELECT
+        {user_column} AS {user_column},
+        {value_expression} AS value
+    FROM {prefix}_user
+)
+""".strip(),
+        f"""
+{prefix}_cutoff AS (
+    SELECT {_sql_quantile_expr("value", outliers_quantile, backend)} AS cutoff
+    FROM {prefix}_values
+    WHERE value IS NOT NULL{cutoff_filter}
+)
+""".strip(),
+        f"""
+{prefix}_metric AS (
+    SELECT
+        {user_column} AS {user_column},
+        {adjusted_value} AS metric_value
+    FROM {prefix}_values
+    CROSS JOIN {prefix}_cutoff AS cutoff
+)
+""".strip(),
+        f"""
+{prefix}_stats AS (
+    SELECT
+        AVG(metric_value) AS avg,
+        {_sql_var_samp_expr("metric_value", backend)} AS var
+    FROM {prefix}_metric
+)
+""".strip(),
+    ]
+
+
+def _build_sql_native_agg_ratio_metric_ctes(
+    *,
+    prefix: str,
+    backend: str,
+    user_id: str,
+    numerator: str,
+    denominator: str,
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    user_column = _quote_sql_identifier(user_id, backend)
+    ratio_value = (
+        "CASE WHEN "
+        f"{numerator} IS NOT NULL AND {denominator} IS NOT NULL "
+        f"AND {denominator} > 0 THEN {numerator} / {denominator} "
+        "ELSE NULL END"
+    )
+    cutoff_filter = _sql_native_cutoff_filter("ratio_value", outliers_policy)
+    adjusted_numerator = _sql_native_adjusted_agg_ratio_numerator_expr(
+        numerator_expression="numerator",
+        denominator_expression="denominator",
+        ratio_expression="ratio_value",
+        cutoff_expression="cutoff.cutoff",
+        outliers_policy=outliers_policy,
+    )
+    adjusted_denominator = _sql_native_adjusted_agg_ratio_denominator_expr(
+        denominator_expression="denominator",
+        ratio_expression="ratio_value",
+        cutoff_expression="cutoff.cutoff",
+        outliers_policy=outliers_policy,
+    )
+    valid_adjusted = (
+        "numerator IS NOT NULL AND denominator IS NOT NULL AND denominator > 0"
+    )
+    return [
+        f"""
+{prefix}_values AS (
+    SELECT
+        {user_column} AS {user_column},
+        {numerator} AS numerator,
+        {denominator} AS denominator,
+        {ratio_value} AS ratio_value
+    FROM {prefix}_user
+)
+""".strip(),
+        f"""
+{prefix}_cutoff AS (
+    SELECT {_sql_quantile_expr("ratio_value", outliers_quantile, backend)} AS cutoff
+    FROM {prefix}_values
+    WHERE ratio_value IS NOT NULL{cutoff_filter}
+)
+""".strip(),
+        f"""
+{prefix}_components AS (
+    SELECT
+        {user_column} AS {user_column},
+        {adjusted_numerator} AS numerator,
+        {adjusted_denominator} AS denominator
+    FROM {prefix}_values
+    CROSS JOIN {prefix}_cutoff AS cutoff
+)
+""".strip(),
+        f"""
+{prefix}_summary AS (
+    SELECT
+        COUNT(*) AS n,
+        SUM(numerator) AS numerator_sum,
+        SUM(denominator) AS denominator_sum,
+        AVG(denominator) AS denominator_mean,
+        CASE WHEN SUM(denominator) > 0
+            THEN SUM(numerator) / SUM(denominator)
+            ELSE NULL
+        END AS ratio
+    FROM {prefix}_components
+    WHERE {valid_adjusted}
+)
+""".strip(),
+        f"""
+{prefix}_metric AS (
+    SELECT
+        components.{user_column} AS {user_column},
+        CASE WHEN summary.denominator_sum > 0
+            THEN components.numerator - summary.ratio * components.denominator
+            ELSE NULL
+        END AS metric_value
+    FROM {prefix}_components AS components
+    CROSS JOIN {prefix}_summary AS summary
+    WHERE components.numerator IS NOT NULL
+        AND components.denominator IS NOT NULL
+        AND components.denominator > 0
+)
+""".strip(),
+        f"""
+{prefix}_stats AS (
+    SELECT
+        summary.ratio AS avg,
+        CASE WHEN summary.n >= 2
+            AND summary.denominator_mean > 0
+            AND summary.ratio IS NOT NULL
+            THEN (
+                SELECT {_sql_var_samp_expr("metric_value", backend)}
+                FROM {prefix}_metric
+            ) / (summary.denominator_mean * summary.denominator_mean)
+            ELSE NULL
+        END AS var
+    FROM {prefix}_summary AS summary
+)
+""".strip(),
+    ]
+
+
+def _build_sql_native_cuped_ctes(*, backend: str, user_id: str) -> list[str]:
+    user_column = _quote_sql_identifier(user_id, backend)
+    covar_expr = _sql_covar_samp_expr("metric_exp", "metric_pre", backend)
+    var_expr = _sql_var_samp_expr("metric_pre", backend)
+    adjusted_var_expr = _sql_var_samp_expr("adjusted_value", backend)
+    return [
+        f"""
+cuped_pairs AS (
+    SELECT
+        outcome.{user_column} AS {user_column},
+        outcome.metric_value AS metric_exp,
+        pre.metric_value AS metric_pre
+    FROM outcome_metric AS outcome
+    INNER JOIN pre_metric AS pre
+        ON outcome.{user_column} = pre.{user_column}
+    WHERE outcome.metric_value IS NOT NULL
+        AND pre.metric_value IS NOT NULL
+)
+""".strip(),
+        f"""
+cuped_summary AS (
+    SELECT
+        COUNT(*) AS cuped_pair_n,
+        {var_expr} AS cuped_pre_var,
+        {covar_expr} AS cuped_covar,
+        AVG(metric_pre) AS cuped_pre_mean
+    FROM cuped_pairs
+)
+""".strip(),
+        """
+cuped_adjusted AS (
+    SELECT
+        pairs.metric_exp
+            - (summary.cuped_covar / summary.cuped_pre_var)
+            * (pairs.metric_pre - summary.cuped_pre_mean) AS adjusted_value
+    FROM cuped_pairs AS pairs
+    CROSS JOIN cuped_summary AS summary
+    WHERE summary.cuped_pair_n >= 2
+        AND summary.cuped_pre_var > 0
+)
+""".strip(),
+        f"""
+cuped_stats AS (
+    SELECT
+        summary.cuped_pair_n AS cuped_pair_n,
+        summary.cuped_pre_var AS cuped_pre_var,
+        CASE WHEN summary.cuped_pair_n >= 2
+            AND summary.cuped_pre_var > 0
+            THEN (
+                SELECT {adjusted_var_expr}
+                FROM cuped_adjusted
+            )
+            ELSE NULL
+        END AS cuped_adjusted_var
+    FROM cuped_summary AS summary
+)
+""".strip(),
+    ]
+
+
+def _sql_native_cutoff_filter(expression: str, outliers_policy: str) -> str:
+    return f" AND {expression} <> 0" if outliers_policy == "non_zero_truncate" else ""
+
+
+def _sql_native_adjusted_value_expr(
+    *,
+    value_expression: str,
+    cutoff_expression: str,
+    outliers_policy: str,
+) -> str:
+    if outliers_policy in {"truncate", "non_zero_truncate"}:
+        return (
+            f"CASE WHEN {cutoff_expression} IS NOT NULL "
+            f"AND {value_expression} > {cutoff_expression} "
+            f"THEN {cutoff_expression} ELSE {value_expression} END"
+        )
+    return (
+        f"CASE WHEN {cutoff_expression} IS NOT NULL "
+        f"AND {value_expression} > {cutoff_expression} "
+        f"THEN NULL ELSE {value_expression} END"
+    )
+
+
+def _sql_native_adjusted_agg_ratio_numerator_expr(
+    *,
+    numerator_expression: str,
+    denominator_expression: str,
+    ratio_expression: str,
+    cutoff_expression: str,
+    outliers_policy: str,
+) -> str:
+    if outliers_policy in {"truncate", "non_zero_truncate"}:
+        return (
+            f"CASE WHEN {cutoff_expression} IS NOT NULL "
+            f"AND {ratio_expression} > {cutoff_expression} "
+            f"THEN {cutoff_expression} * {denominator_expression} "
+            f"ELSE {numerator_expression} END"
+        )
+    return (
+        f"CASE WHEN {cutoff_expression} IS NOT NULL "
+        f"AND {ratio_expression} > {cutoff_expression} "
+        f"THEN NULL ELSE {numerator_expression} END"
+    )
+
+
+def _sql_native_adjusted_agg_ratio_denominator_expr(
+    *,
+    denominator_expression: str,
+    ratio_expression: str,
+    cutoff_expression: str,
+    outliers_policy: str,
+) -> str:
+    if outliers_policy in {"truncate", "non_zero_truncate"}:
+        return denominator_expression
+    return (
+        f"CASE WHEN {cutoff_expression} IS NOT NULL "
+        f"AND {ratio_expression} > {cutoff_expression} "
+        f"THEN NULL ELSE {denominator_expression} END"
+    )
+
+
+def _sql_float_expr(expression: str, backend: str) -> str:
+    if backend == "gp":
+        return f"CAST({expression} AS DOUBLE PRECISION)"
+    if backend == "ch":
+        return f"CAST({expression} AS Float64)"
+    return f"CAST({expression} AS DOUBLE)"
+
+
+def _sql_var_samp_expr(expression: str, backend: str) -> str:
+    if backend == "ch":
+        return f"varSamp({expression})"
+    return f"VAR_SAMP({expression})"
+
+
+def _sql_covar_samp_expr(x_expression: str, y_expression: str, backend: str) -> str:
+    if backend == "ch":
+        return f"covarSamp({x_expression}, {y_expression})"
+    return f"COVAR_SAMP({x_expression}, {y_expression})"
+
+
+def _sql_quantile_expr(expression: str, quantile: float, backend: str) -> str:
+    quantile_sql = format(float(quantile), ".17g")
+    if float(quantile) == 1.0:
+        return f"MAX({expression})"
+    if backend == "gp":
+        return f"PERCENTILE_CONT({quantile_sql}) WITHIN GROUP (ORDER BY {expression})"
+    if backend == "ch":
+        return f"quantileExact({quantile_sql})({expression})"
+    return f"approx_percentile({expression}, {quantile_sql})"
+
+
+def _coerce_sql_float(value: object) -> float:
+    if value is None or pd.isna(value):
+        return math.nan
+    return float(value)
 
 
 def _validate_mde_sql_concurrency(concurrency: object) -> None:

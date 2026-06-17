@@ -65,7 +65,9 @@ scenario. Pass `pre_exp_days` to use one fixed pre-period length across all
 scenarios. If the adjacent pre-period before the outcome window is unavailable,
 CUPED columns are `NaN` and a warning is emitted.
 
-For SQL-backed planning, pass the table and connection alias directly:
+For SQL-backed planning, pass the table and connection alias directly. Use
+`compute_mde_from_sql` when you want the SQL helper to aggregate each window to
+one row per user and then reuse the dataframe implementation:
 
 ```python
 from analytics_toolkit.ab_utils import compute_mde_from_sql
@@ -88,6 +90,27 @@ Use explicit `exp_days` and `group_sizes` lists for irregular scenarios, or use
 For SQL-backed planning, `concurrency` first controls parallel loading of the
 required SQL outcome and CUPED pre-period windows, then controls parallel
 in-memory computation of the day-size combinations after all windows are loaded.
+
+Use `compute_mde_sql_native` when per-user window dataframes are too large to
+download. It keeps the same planning options, but computes metric averages,
+variances, ratio stats, outlier-adjusted stats, and CUPED variance inside SQL
+and downloads only compact stats rows:
+
+```python
+from analytics_toolkit.ab_utils import compute_mde_sql_native
+
+planning = compute_mde_sql_native(
+    "analytics_prod",
+    "mart.user_day_metrics",
+    sql_where="country = 'US'",
+    metric_columns=["orders", "gmv"],
+    exp_days=[7, 14],
+    start_dt="2024-01-15",
+    group_sizes=[50_000, 100_000],
+    concurrency=2,
+)
+```
+
 `RatioMetricSpec` can also be passed to
 [compute_test_metrics](functions/compute-test-metrics.md); see
 [Ratio Metrics](ratio-metrics.md) for the dictionary form and

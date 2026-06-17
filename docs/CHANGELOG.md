@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.6 - 2026-06-17
+
+- Added SQL-native MDE planning.
+
 ## 1.3.10.5 - 2026-06-16
 
 - Refactor compute_mde_from_sql concurrency to load SQL windows via parallel_sql before in-memory scenario computation.
