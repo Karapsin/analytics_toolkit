@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.10.7 - 2026-06-17
+
+- Added three-way MDE parity coverage.
+
 ## 1.3.10.6 - 2026-06-17
 
 - Added SQL-native MDE planning.

@@ -5,7 +5,7 @@ import math
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Sequence
 import warnings
 
 import numpy as np
@@ -1444,6 +1444,300 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
 
     pd.testing.assert_frame_equal(result, expected)
     assert any('FROM "sandbox"."events"' in query for query in queries)
+
+
+def test_compute_mde_variants_match_for_same_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_df = pd.DataFrame(
+        {
+            "user_id": [user_id for user_id in range(1, 6) for _ in range(4)],
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 5),
+            "orders": [
+                1.0,
+                2.0,
+                4.0,
+                6.0,
+                2.0,
+                3.0,
+                5.0,
+                7.0,
+                4.0,
+                5.0,
+                7.0,
+                10.0,
+                3.0,
+                6.0,
+                8.0,
+                12.0,
+                5.0,
+                8.0,
+                13.0,
+                17.0,
+            ],
+            "clicks": [
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                1.0,
+                4.0,
+                5.0,
+                7.0,
+                3.0,
+                5.0,
+                6.0,
+                9.0,
+                4.0,
+                6.0,
+                8.0,
+                10.0,
+                5.0,
+                7.0,
+                9.0,
+                12.0,
+            ],
+            "views": [
+                10.0,
+                12.0,
+                14.0,
+                16.0,
+                8.0,
+                10.0,
+                15.0,
+                18.0,
+                11.0,
+                13.0,
+                17.0,
+                20.0,
+                12.0,
+                15.0,
+                19.0,
+                23.0,
+                13.0,
+                16.0,
+                21.0,
+                26.0,
+            ],
+            "converted": [
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ],
+        }
+    )
+    ratio_metrics = [
+        RatioMetricSpec(
+            name="ctr_user",
+            numerator="clicks",
+            denominator="views",
+            level="user",
+        ),
+        RatioMetricSpec(
+            name="ctr_agg",
+            numerator="clicks",
+            denominator="views",
+            level="agg",
+        ),
+    ]
+    common_kwargs = {
+        "user_id": "user_id",
+        "metric_columns": ["orders", "converted"],
+        "ratio_metrics": ratio_metrics,
+        "group_sizes": [10, 14],
+        "exp_days": [1, 2],
+        "start_dt": "2024-01-03",
+        "control_share": 0.6,
+        "outliers_quantile": 1,
+        "max_agg_metrics": ["converted"],
+    }
+    expected = compute_mde(source_df, **common_kwargs)
+    table_info = SimpleNamespace(
+        exists=True,
+        columns={
+            "user_id": "int",
+            "dt": "date",
+            "orders": "double precision",
+            "clicks": "double precision",
+            "views": "double precision",
+            "converted": "double precision",
+        },
+        backend="gp",
+        table="sandbox.events",
+        resolved_table=None,
+    )
+
+    def aggregate_window(start: str, days: int) -> pd.DataFrame:
+        start_date = pd.Timestamp(start)
+        mask = (source_df["dt"] >= start_date) & (
+            source_df["dt"] < start_date + pd.Timedelta(days=days)
+        )
+        return (
+            source_df.loc[mask]
+            .groupby("user_id", as_index=False)
+            .agg(
+                {
+                    "orders": "sum",
+                    "clicks": "sum",
+                    "views": "sum",
+                    "converted": "max",
+                }
+            )
+        )
+
+    def fake_table_info(db_key: str, table: str) -> SimpleNamespace:
+        assert db_key == "analytics"
+        assert table == "sandbox.events"
+        return table_info
+
+    def fake_read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        assert db_key == "analytics"
+        assert kwargs["query_label"] in {"mde-parity", "mde-native-parity"}
+        if "COUNT(*) AS row_count" in query:
+            return pd.DataFrame(
+                {
+                    "row_count": [len(source_df)],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [pd.Timestamp("2024-01-01")],
+                    "max_dt": [pd.Timestamp("2024-01-04")],
+                }
+            )
+        if "duplicate_user_day_rows" in query:
+            return pd.DataFrame({"duplicate_user_day_rows": [0]})
+        raise AssertionError(f"Unexpected direct aggregate query:\n{query}")
+
+    def fake_parallel_sql(tasks: object, **kwargs: object) -> dict[str, pd.DataFrame]:
+        assert kwargs["concurrency"] == 1
+        frames: dict[str, pd.DataFrame] = {}
+        for task in tasks:
+            task_name = str(task["name"])
+            assert task["db_key"] == "analytics"
+            assert task["query_label"] == "mde-parity"
+            if task_name == "mde_outcome_1":
+                frames[task_name] = aggregate_window("2024-01-03", 1)
+            elif task_name == "mde_outcome_2":
+                frames[task_name] = aggregate_window("2024-01-03", 2)
+            elif task_name == "mde_pre_1":
+                frames[task_name] = aggregate_window("2024-01-02", 1)
+            elif task_name == "mde_pre_2":
+                frames[task_name] = aggregate_window("2024-01-01", 2)
+            else:
+                raise AssertionError(f"Unexpected SQL task name: {task_name}")
+        return frames
+
+    def fake_load_sql_native_mde_stats(
+        *,
+        metric_definitions: Sequence[dict[str, object]],
+        aggregation_policies: dict[str, str],
+        days_values: Sequence[int],
+        windows: dict[int, dict[str, Any]],
+        outliers_quantile: float,
+        outliers_policy: str,
+        **kwargs: object,
+    ) -> dict[tuple[int, int], dict[str, object]]:
+        del kwargs
+        stats_by_metric_day: dict[tuple[int, int], dict[str, object]] = {}
+        for metric_index, metric_definition in enumerate(metric_definitions):
+            for days in days_values:
+                window = windows[int(days)]
+                window_df = planning_module._filter_mde_window(
+                    df=source_df,
+                    date_column="dt",
+                    start_date=window["outcome_start"],
+                    days=int(days),
+                )
+                user_metric_df = planning_module._aggregate_mde_window_to_users(
+                    df=window_df,
+                    metric_definition=metric_definition,
+                    user_id="user_id",
+                    aggregation_policies=aggregation_policies,
+                )
+                outlier_context = planning_module._build_outlier_context(
+                    df=user_metric_df,
+                    metric_definition=metric_definition,
+                    outliers_quantile=outliers_quantile,
+                    outliers_policy=outliers_policy,
+                )
+                metric_stats = planning_module._compute_mde_metric_stats(
+                    df=user_metric_df,
+                    metric_definition=metric_definition,
+                    outlier_context=outlier_context,
+                )
+                cuped_variance, cuped_reason = planning_module._compute_mde_cuped_variance(
+                    df=source_df,
+                    date_column="dt",
+                    user_id="user_id",
+                    metric_definition=metric_definition,
+                    outcome_user_metric_df=user_metric_df,
+                    outcome_outlier_context=outlier_context,
+                    pre_start_date=window["pre_start"],
+                    pre_days=window["pre_days"],
+                    unavailable_reason=window["cuped_unavailable_reason"],
+                    outliers_quantile=outliers_quantile,
+                    outliers_policy=outliers_policy,
+                    aggregation_policies=aggregation_policies,
+                )
+                assert cuped_reason is None
+                stats_by_metric_day[(metric_index, int(days))] = {
+                    "avg": metric_stats["avg"],
+                    "var": metric_stats["var"],
+                    "cuped_pair_n": 5,
+                    "cuped_pre_var": 1.0,
+                    "cuped_adjusted_var": cuped_variance,
+                }
+        return stats_by_metric_day
+
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
+        fake_table_info,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.read",
+        fake_read,
+    )
+    monkeypatch.setattr(
+        "analytics_toolkit.ab_utils.planning.sql_facade.parallel_sql",
+        fake_parallel_sql,
+    )
+
+    sql_result = compute_mde_from_sql(
+        "analytics",
+        "sandbox.events",
+        **common_kwargs,
+        query_label="mde-parity",
+    )
+    monkeypatch.setattr(
+        planning_module,
+        "_load_sql_native_mde_stats",
+        fake_load_sql_native_mde_stats,
+    )
+    native_result = compute_mde_sql_native(
+        "analytics",
+        "sandbox.events",
+        **common_kwargs,
+        query_label="mde-native-parity",
+    )
+
+    pd.testing.assert_frame_equal(sql_result, expected)
+    pd.testing.assert_frame_equal(native_result, expected)
 
 
 def test_compute_mde_sql_native_uses_compact_sql_stats(
