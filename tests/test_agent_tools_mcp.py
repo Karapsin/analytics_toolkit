@@ -716,6 +716,11 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
         "_verify_precommit_success",
         lambda root_path: {"ok": True, "message": "ok"},
     )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
     real_run_command = mcp_server._run_command
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -741,9 +746,10 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
     )
 
     assert result["ok"] is True
-    assert commands[-2:] == [
+    assert commands[-3:] == [
         "git add -- agent_tools/mcp_server.py docs/CHANGELOG.md",
         "git commit -m 'Update workflow'",
+        "git push origin HEAD:dev",
     ]
 
 
@@ -760,6 +766,11 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
         mcp_server,
         "_verify_precommit_success",
         lambda root_path: {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -783,9 +794,10 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
     )
 
     assert result["ok"] is True
-    assert commands[-2:] == [
+    assert commands[-3:] == [
         "git add -- docs/guide.md",
         "git commit -m 'Update docs'",
+        "git push origin HEAD:dev",
     ]
 
 
@@ -804,6 +816,11 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
         mcp_server,
         "_verify_precommit_success",
         lambda root_path: {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -827,9 +844,10 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
     )
 
     assert result["ok"] is True
-    assert commands[-2:] == [
+    assert commands[-3:] == [
         "git add -- agent_tools/README.md",
         "git commit -m 'Update agent tools docs'",
+        "git push origin HEAD:dev",
     ]
 
 
@@ -1087,18 +1105,156 @@ def test_git_workflow_commit_and_push_dispatch(
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
 
-    commit = mcp_server.git_workflow(
+    result = mcp_server.git_workflow(
         "commit",
         message="Update workflow",
         paths=["agent_tools/mcp_server.py", "tests/test_agent_tools_mcp.py"],
         root=str(root),
     )
-    push = mcp_server.git_workflow("push", root=str(root))
 
-    assert commit["ok"] is True
-    assert push["ok"] is True
+    assert result["ok"] is True
+    assert result["summary"] == "Commit completed and pushed to dev."
     assert commands == [
         "git add -- agent_tools/mcp_server.py tests/test_agent_tools_mcp.py",
+        "git commit -m 'Update workflow'",
+        "git push origin HEAD:dev",
+    ]
+
+
+def test_git_workflow_push_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow("push", root=str(root))
+
+    assert result["ok"] is True
+    assert commands == ["git push origin HEAD:dev"]
+
+
+def test_git_workflow_commit_reports_push_readiness_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_version_bump_requirement",
+        lambda root_path, paths=None: {"missing": []},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {
+            "blockers": [{"phase": "push", "message": "Push workflow must run from dev."}],
+            "command_results": [],
+            "repo_health": {"branch": "feature"},
+        },
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        commands.append(str(command["display"]))
+        return {
+            "ok": True,
+            "command": command["display"],
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py"],
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["summary"] == "Commit completed, but push to dev failed."
+    assert result["blockers"][0]["phase"] == "push"
+    assert commands == [
+        "git add -- agent_tools/mcp_server.py",
+        "git commit -m 'Update workflow'",
+    ]
+
+
+def test_git_workflow_commit_reports_push_command_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_verify_precommit_success",
+        lambda root_path: {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_version_bump_requirement",
+        lambda root_path, paths=None: {"missing": []},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        display = str(command["display"])
+        commands.append(display)
+        ok = not display.startswith("git push ")
+        return {
+            "ok": ok,
+            "command": command["display"],
+            "returncode": 0 if ok else 1,
+            "stdout": "ok" if ok else "",
+            "stderr": "" if ok else "network unavailable",
+            "summary": "ok" if ok else "network unavailable",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.git_workflow(
+        "commit",
+        message="Update workflow",
+        paths=["agent_tools/mcp_server.py"],
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "push"
+    assert commands == [
+        "git add -- agent_tools/mcp_server.py",
         "git commit -m 'Update workflow'",
         "git push origin HEAD:dev",
     ]

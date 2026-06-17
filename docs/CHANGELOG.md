@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Updated startup and version bump workflow.
 - Route normal agent work through dev branch.
 - Verify dev branch after startup.
+- Push dev after agent commits.
 
 ## 1.3.10.7 - 2026-06-17
 

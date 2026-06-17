@@ -59,10 +59,13 @@ Use these MCP tools for the corresponding agent workflow steps:
 - Release readiness and PyPI publishing entrypoint: `release_workflow`.
 
 Normal implementation, documentation, test, commit, and push work is done on
-the `dev` branch and syncs with `origin/dev`. Use `main` only for PyPI release
-preparation and publishing. When a PyPI release is requested, merge `dev` into
-`main` with `release_workflow(action="merge-dev")`, then run release readiness
-and publishing from `main`.
+the `dev` branch and syncs with `origin/dev`. `git_workflow(action="commit")`
+must be the final repository step for a coherent task batch: after pre-commit
+checks pass, it stages the explicit paths, commits, and pushes `HEAD` to
+`origin/dev`. Use `main` only for PyPI release preparation and publishing. When
+a PyPI release is requested, merge `dev` into `main` with
+`release_workflow(action="merge-dev")`, then run release readiness and
+publishing from `main`.
 
 Use `workflow_status(...)` before and after repository changes. Use
 `version_bump(...)`, `run_checks(...)`, `git_workflow(...)`, and
@@ -84,8 +87,10 @@ agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
-Use `git-workflow commit` only when the current batch is ready to commit, and
-use `release-workflow --action publish` only when release readiness is clean.
+Use `git-workflow commit` only when the current batch is ready to commit and
+push to `origin/dev`. Use standalone `git-workflow push` only to retry a failed
+post-commit push. Use `release-workflow --action publish` only when release
+readiness is clean.
 
 If MCP setup or `prepare_start` fails because of local changes, merge
 conflicts, authentication, network issues, dependency installation failure,

@@ -691,35 +691,7 @@ def git_workflow(
         )
 
     if action == "push":
-        readiness = _push_readiness(root_path)
-        if readiness["blockers"]:
-            return _tool_output(
-                "git_workflow",
-                input_summary,
-                ok=False,
-                summary="Push blocked by repository readiness checks.",
-                result={"push_readiness": readiness},
-                command_results=readiness["command_results"],
-                blockers=readiness["blockers"],
-                next_actions=["Resolve push readiness blockers, then retry git_workflow(action='push')."],
-            )
-        result = _run_command(
-            root_path,
-            {
-                "display": f"git push origin HEAD:{WORK_BRANCH}",
-                "args": ["git", "push", "origin", f"HEAD:{WORK_BRANCH}"],
-                "env": {},
-            },
-        )
-        return _tool_output(
-            "git_workflow",
-            input_summary,
-            ok=result["ok"],
-            summary="Push completed." if result["ok"] else "Push failed.",
-            result={"push_readiness": readiness},
-            command_results=[*readiness["command_results"], result],
-            blockers=[] if result["ok"] else [_command_blocker("push", result)],
-        )
+        return _push_dev_workflow(root_path, input_summary)
 
     if not message:
         return _tool_output(
@@ -807,13 +779,36 @@ def git_workflow(
             "env": {},
         },
     )
+    if not commit["ok"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit failed.",
+            command_results=[add, commit],
+            blockers=[_command_blocker("commit", commit)],
+        )
+
+    push = _push_dev_result(root_path)
+    command_results = [add, commit, *push["command_results"]]
+    if push["blockers"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit completed, but push to dev failed.",
+            result={"push_readiness": push["readiness"]},
+            command_results=command_results,
+            blockers=push["blockers"],
+            next_actions=["Resolve push blockers, then retry git_workflow(action='push')."],
+        )
+
     return _tool_output(
         "git_workflow",
         input_summary,
-        ok=commit["ok"],
-        summary="Commit completed." if commit["ok"] else "Commit failed.",
-        command_results=[add, commit],
-        blockers=[] if commit["ok"] else [_command_blocker("commit", commit)],
+        summary="Commit completed and pushed to dev.",
+        result={"push_readiness": push["readiness"]},
+        command_results=command_results,
     )
 
 
@@ -1970,6 +1965,45 @@ def _push_readiness(root: Path) -> dict[str, Any]:
         "command_results": remote["command_results"],
         "blockers": blockers,
     }
+
+
+def _push_dev_result(root: Path) -> dict[str, Any]:
+    readiness = _push_readiness(root)
+    if readiness["blockers"]:
+        return {
+            "readiness": readiness,
+            "command_results": readiness["command_results"],
+            "blockers": readiness["blockers"],
+        }
+
+    result = _run_command(
+        root,
+        {
+            "display": f"git push origin HEAD:{WORK_BRANCH}",
+            "args": ["git", "push", "origin", f"HEAD:{WORK_BRANCH}"],
+            "env": {},
+        },
+    )
+    blockers = [] if result["ok"] else [_command_blocker("push", result)]
+    return {
+        "readiness": readiness,
+        "command_results": [*readiness["command_results"], result],
+        "blockers": blockers,
+    }
+
+
+def _push_dev_workflow(root: Path, input_summary: dict[str, Any]) -> dict[str, Any]:
+    push = _push_dev_result(root)
+    return _tool_output(
+        "git_workflow",
+        input_summary,
+        ok=not push["blockers"],
+        summary="Push completed." if not push["blockers"] else "Push failed.",
+        result={"push_readiness": push["readiness"]},
+        command_results=push["command_results"],
+        blockers=push["blockers"],
+        next_actions=[] if not push["blockers"] else ["Resolve push readiness blockers, then retry git_workflow(action='push')."],
+    )
 
 
 def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
