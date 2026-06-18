@@ -31,8 +31,7 @@ def test_format_sql_aligns_join_condition_with_join_keyword() -> None:
             "join b on a.id = b.id "
             "and a.kind = b.kind"
         )
-        == "select\n"
-        "    *\n"
+        == "select *\n"
         "from a\n"
         "join b\n"
         "  on a.id = b.id\n"
@@ -181,8 +180,7 @@ def test_format_sql_adds_default_where_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1")
-        == "select\n"
-        "    *\n"
+        == "select *\n"
         "from t\n"
         "where 1=1\n"
         "      and x = 1"
@@ -228,8 +226,7 @@ def test_format_sql_where_anchor_modes(
             "select * from t where 1=1 and x=1",
             where_anchor=where_anchor,
         )
-        == "select\n"
-        "    *\n"
+        == "select *\n"
         "from t\n"
         f"{expected_where}"
     )
@@ -240,8 +237,7 @@ def test_format_sql_aligns_multiple_and_conditions_under_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1 and y=2 and label = 'A AND B'")
-        == "select\n"
-        "    *\n"
+        == "select *\n"
         "from t\n"
         "where 1=1\n"
         "      and x = 1\n"
@@ -255,24 +251,21 @@ def test_format_sql_aligns_multiple_and_conditions_under_anchor() -> None:
     [
         (
             "upper",
-            "SELECT\n"
-            "    *\n"
+            "SELECT *\n"
             "FROM t\n"
             "WHERE 1=1\n"
             "      AND x = 1",
         ),
         (
             "lower",
-            "select\n"
-            "    *\n"
+            "select *\n"
             "from t\n"
             "where 1=1\n"
             "      and x = 1",
         ),
         (
             "capitalize",
-            "Select\n"
-            "    *\n"
+            "Select *\n"
             "From t\n"
             "Where 1=1\n"
             "      And x = 1",
@@ -296,8 +289,7 @@ def test_format_sql_preserves_semicolon_with_aligned_where_anchor() -> None:
 
     assert (
         format_sql("select * from t where x=1;")
-        == "select\n"
-        "    *\n"
+        == "select *\n"
         "from t\n"
         "where 1=1\n"
         "      and x = 1;"
@@ -330,8 +322,7 @@ def test_format_sql_adds_default_blank_line_between_ctes() -> None:
         "        x\n"
         "    from b\n"
         ")\n"
-        "select\n"
-        "    *\n"
+        "select *\n"
         "from c"
     )
 
@@ -355,8 +346,7 @@ def test_format_sql_can_disable_blank_lines_between_ctes() -> None:
         "        x\n"
         "    from a\n"
         ")\n"
-        "select\n"
-        "    *\n"
+        "select *\n"
         "from b"
     )
 
@@ -379,9 +369,99 @@ def test_format_sql_cte_spacing_preserves_keyword_case() -> None:
         "        x\n"
         "    FROM a\n"
         ")\n"
-        "SELECT\n"
-        "    *\n"
+        "SELECT *\n"
         "FROM b"
+    )
+
+
+def test_format_sql_adds_default_blank_line_before_unions() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select * from a union all select * from b union select * from c"
+        )
+        == "select *\n"
+        "from a\n"
+        "\n"
+        "union all\n"
+        "select *\n"
+        "from b\n"
+        "\n"
+        "union\n"
+        "select *\n"
+        "from c"
+    )
+
+
+def test_format_sql_can_disable_blank_lines_before_unions() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "select * from a union select * from b",
+            union_blank_lines=0,
+        )
+        == "select *\n"
+        "from a\n"
+        "union\n"
+        "select *\n"
+        "from b"
+    )
+
+
+def test_format_sql_compacts_single_star_select_lists() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert format_sql("select * from t") == "select *\nfrom t"
+    assert format_sql("select t.* from t") == "select t.*\nfrom t"
+    assert (
+        format_sql("select distinct * from t")
+        == "select distinct *\n"
+        "from t"
+    )
+    assert (
+        format_sql("select distinct t.* from t")
+        == "select distinct t.*\n"
+        "from t"
+    )
+
+
+def test_format_sql_keeps_multi_star_select_lists_expanded() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select a.*, b.* from a join b on a.id = b.id")
+        == "select\n"
+        "    a.*,\n"
+        "    b.*\n"
+        "from a\n"
+        "join b\n"
+        "  on a.id = b.id"
+    )
+    assert (
+        format_sql("select *, x from t")
+        == "select\n"
+        "    *,\n"
+        "    x\n"
+        "from t"
+    )
+    assert (
+        format_sql("select count(*) from t")
+        == "select\n"
+        "    COUNT(*)\n"
+        "from t"
+    )
+
+
+def test_format_sql_preserves_group_by_expressions_with_star_projection() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql("select * from t group by a, b, c")
+        == "select *\n"
+        "from t\n"
+        "group by a, b, c"
     )
 
 
@@ -427,6 +507,27 @@ def test_sql_format_helpers_reject_invalid_cte_blank_lines(
         getattr(sql_format, helper_name)(
             "select 1",
             cte_blank_lines=cte_blank_lines,
+        )
+
+
+@pytest.mark.parametrize(
+    "union_blank_lines",
+    [-1, True, 1.5],
+)
+@pytest.mark.parametrize(
+    "helper_name",
+    ["format_sql", "rewrite_with_ctes", "gp_rewrite_to_temp_tables"],
+)
+def test_sql_format_helpers_reject_invalid_union_blank_lines(
+    helper_name: str,
+    union_blank_lines: object,
+) -> None:
+    from analytics_toolkit import sql_format
+
+    with pytest.raises(ValueError, match="union_blank_lines"):
+        getattr(sql_format, helper_name)(
+            "select 1",
+            union_blank_lines=union_blank_lines,
         )
 
 
@@ -666,8 +767,7 @@ def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
             "select * from users where amount > "
             "(select avg(amount) from orders)",
             "amount > (\n"
-            "        select\n"
-            "            *\n"
+            "        select *\n"
             "        from tmp_1\n"
             "    )",
         ),
@@ -675,8 +775,7 @@ def test_gp_rewrite_to_temp_tables_propagates_clause_formats() -> None:
             "select * from users where id in "
             "(select user_id from orders)",
             "id in (\n"
-            "        select\n"
-            "            *\n"
+            "        select *\n"
             "        from tmp_1\n"
             "    )",
         ),
@@ -715,8 +814,7 @@ def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
         ") DISTRIBUTED BY (user_id);\n"
         "ANALYZE s;\n"
         "\n"
-        "SELECT\n"
-        "    *\n"
+        "SELECT *\n"
         "FROM s\n"
         "JOIN users AS u\n"
         "  ON s.user_id = u.id"

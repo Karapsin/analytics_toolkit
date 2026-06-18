@@ -5,7 +5,7 @@
 Format exactly one SQL statement without opening a database connection.
 
 ```python
-format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1) -> str
+format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1, union_blank_lines=1) -> str
 ```
 
 ## Inputs
@@ -19,6 +19,7 @@ format_sql(sql, *, dialect=None, leading_commas=False, where_anchor="1=1", group
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
 - `cte_blank_lines` - number of empty lines between adjacent CTE definitions
+- `union_blank_lines` - number of empty lines before `UNION` and `UNION ALL`
 
 ## Usage
 
@@ -50,5 +51,6 @@ where 1=1
 - `where_anchor="preserve"` leaves parsed WHERE conditions unchanged instead of adding or removing anchors
 - Existing numeric `GROUP BY` and `ORDER BY` ordinals are preserved
 - Unmatched grouping or sorting items stay as rendered expressions instead of being guessed
+- Single `*`, `alias.*`, `distinct *`, and `distinct alias.*` select lists stay on the `select` line
 
 [Functions index](index.md)

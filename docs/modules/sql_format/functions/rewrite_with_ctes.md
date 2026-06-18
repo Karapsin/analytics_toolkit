@@ -5,7 +5,7 @@
 Rewrite supported derived-table SELECT subqueries into named CTEs.
 
 ```python
-rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1) -> str
+rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1, union_blank_lines=1) -> str
 ```
 
 ## Inputs
@@ -19,6 +19,7 @@ rewrite_with_ctes(sql, *, dialect=None, strategy="auto", cte_prefix="cte", group
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
 - `cte_blank_lines` - number of empty lines between adjacent CTE definitions
+- `union_blank_lines` - number of empty lines before `UNION` and `UNION ALL`
 
 ## Usage
 

@@ -69,6 +69,7 @@ def format_sql(
     keyword_case: str = "lower",
     indent: int = 4,
     cte_blank_lines: int = 1,
+    union_blank_lines: int = 1,
 ) -> str:
     """Format exactly one SQL statement without opening a database connection."""
 
@@ -76,6 +77,7 @@ def format_sql(
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
     normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
+    normalized_union_blank_lines = _validate_union_blank_lines(union_blank_lines)
     normalized_where_anchor = _validate_where_anchor(where_anchor)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
@@ -105,6 +107,7 @@ def format_sql(
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         cte_blank_lines=normalized_cte_blank_lines,
+        union_blank_lines=normalized_union_blank_lines,
         operation="format_sql",
     )
     return _with_semicolon_policy(rendered, statement.has_trailing_semicolon)
@@ -121,6 +124,7 @@ def rewrite_with_ctes(
     keyword_case: str = "lower",
     indent: int = 4,
     cte_blank_lines: int = 1,
+    union_blank_lines: int = 1,
 ) -> str:
     """Rewrite derived-table SELECT subqueries into named CTEs."""
 
@@ -128,6 +132,7 @@ def rewrite_with_ctes(
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
     normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
+    normalized_union_blank_lines = _validate_union_blank_lines(union_blank_lines)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
         label="group_by_format",
@@ -160,6 +165,7 @@ def rewrite_with_ctes(
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         cte_blank_lines=normalized_cte_blank_lines,
+        union_blank_lines=normalized_union_blank_lines,
         operation="rewrite_with_ctes",
     )
     _parse_expression(
@@ -180,6 +186,7 @@ def gp_rewrite_to_temp_tables(
     keyword_case: str = "lower",
     indent: int = 4,
     cte_blank_lines: int = 1,
+    union_blank_lines: int = 1,
 ) -> str:
     """Rewrite SELECT CTEs and subqueries into Greenplum temp-table SQL."""
 
@@ -187,6 +194,7 @@ def gp_rewrite_to_temp_tables(
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
     normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
+    normalized_union_blank_lines = _validate_union_blank_lines(union_blank_lines)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
         label="group_by_format",
@@ -213,6 +221,7 @@ def gp_rewrite_to_temp_tables(
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         cte_blank_lines=normalized_cte_blank_lines,
+        union_blank_lines=normalized_union_blank_lines,
     )
     planner.rewrite_select(expression)
     planner.validate_complete_rewrite(expression)
@@ -232,6 +241,7 @@ def gp_rewrite_to_temp_tables(
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
         cte_blank_lines=normalized_cte_blank_lines,
+        union_blank_lines=normalized_union_blank_lines,
         operation="gp_rewrite_to_temp_tables",
     )
     _parse_expression(
@@ -273,13 +283,17 @@ def _validate_indent(indent: int) -> int:
 
 
 def _validate_cte_blank_lines(cte_blank_lines: int) -> int:
-    if (
-        not isinstance(cte_blank_lines, int)
-        or isinstance(cte_blank_lines, bool)
-        or cte_blank_lines < 0
-    ):
-        raise ValueError("cte_blank_lines must be a non-negative integer.")
-    return cte_blank_lines
+    return _validate_blank_lines(cte_blank_lines, label="cte_blank_lines")
+
+
+def _validate_union_blank_lines(union_blank_lines: int) -> int:
+    return _validate_blank_lines(union_blank_lines, label="union_blank_lines")
+
+
+def _validate_blank_lines(value: int, *, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer.")
+    return value
 
 
 def _validate_where_anchor(where_anchor: str) -> str:
@@ -370,6 +384,7 @@ def _render_expression(
     keyword_case: str,
     indent: int,
     cte_blank_lines: int,
+    union_blank_lines: int,
     operation: str,
 ) -> str:
     expression_to_render, compaction_targets = _prepare_group_order_rendering(
@@ -397,6 +412,8 @@ def _render_expression(
         rendered = _compact_targeted_clause_layout(rendered, compaction_targets)
     rendered = _normalize_join_condition_layout(rendered)
     rendered = _normalize_cte_separator_layout(rendered, cte_blank_lines)
+    rendered = _normalize_union_separator_layout(rendered, union_blank_lines)
+    rendered = _compact_single_star_select_layout(rendered)
     return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
 
 
@@ -906,6 +923,7 @@ class _GpTempTablePlanner:
         keyword_case: str,
         indent: int,
         cte_blank_lines: int,
+        union_blank_lines: int,
     ) -> None:
         self.dialect = dialect
         self.temp_prefix = temp_prefix
@@ -914,6 +932,7 @@ class _GpTempTablePlanner:
         self.keyword_case = keyword_case
         self.indent = indent
         self.cte_blank_lines = cte_blank_lines
+        self.union_blank_lines = union_blank_lines
         self.temp_tables: list[_GpTempTable] = []
         self._used_temp_names: set[str] = set()
         self._next_generated_index = 1
@@ -1148,6 +1167,7 @@ class _GpTempTablePlanner:
             keyword_case=self.keyword_case,
             indent=self.indent,
             cte_blank_lines=self.cte_blank_lines,
+            union_blank_lines=self.union_blank_lines,
             operation="gp_rewrite_to_temp_tables",
         )
         indented_query = _indent_sql(rendered_query, self.indent)
@@ -1438,6 +1458,56 @@ def _normalize_cte_separator_layout(sql: str, cte_blank_lines: int) -> str:
         normalized_lines.extend("" for _ in range(cte_blank_lines))
         normalized_lines.append(f"{indent_prefix}{separator.group('next_cte')}")
     return "\n".join(normalized_lines)
+
+
+def _normalize_union_separator_layout(sql: str, union_blank_lines: int) -> str:
+    normalized_lines: list[str] = []
+    for line in sql.splitlines():
+        if line.strip().upper() not in {"UNION", "UNION ALL"}:
+            normalized_lines.append(line)
+            continue
+
+        while normalized_lines and not normalized_lines[-1].strip():
+            normalized_lines.pop()
+        normalized_lines.extend("" for _ in range(union_blank_lines))
+        normalized_lines.append(line)
+    return "\n".join(normalized_lines)
+
+
+def _compact_single_star_select_layout(sql: str) -> str:
+    lines = sql.splitlines()
+    compacted_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if index + 1 >= len(lines) or not _is_single_star_select_line(line):
+            compacted_lines.append(line)
+            index += 1
+            continue
+
+        star_line = lines[index + 1]
+        stripped_star = star_line.strip()
+        if not _is_single_star_projection(stripped_star):
+            compacted_lines.append(line)
+            index += 1
+            continue
+
+        prefix = line[: len(line) - len(line.lstrip(" "))]
+        compacted_lines.append(f"{prefix}{line.strip()} {stripped_star}")
+        index += 2
+    return "\n".join(compacted_lines)
+
+
+def _is_single_star_select_line(line: str) -> bool:
+    stripped = line.strip().upper()
+    return stripped in {"SELECT", "SELECT DISTINCT"}
+
+
+def _is_single_star_projection(projection_sql: str) -> bool:
+    return (
+        projection_sql == "*"
+        or re.match(r"^[^\s,()]+\.\*$", projection_sql) is not None
+    )
 
 
 def _split_join_condition_line(stripped_line: str) -> list[str]:

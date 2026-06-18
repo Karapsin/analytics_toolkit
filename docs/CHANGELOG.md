@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Add Parquet object-storage staging for Trino transfers.
 - Add Parquet object-storage staging for Trino load_df and make Parquet dependencies mandatory.
 - Added configurable CTE spacing for sql_format output.
+- Added union spacing and compact star select formatting.
 
 ## 1.3.10.7 - 2026-06-17
 
