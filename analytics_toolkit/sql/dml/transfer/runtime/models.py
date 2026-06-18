@@ -383,6 +383,7 @@ class TransferStageState:
     stage_column_types: dict[str, str] | None = None
     insert_column_types: dict[str, str] | None = None
     stage_table: str | None = None
+    stage_tables: list[str] | None = None
     stage_external_location: str | None = None
 
 

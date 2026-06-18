@@ -169,9 +169,13 @@ rows = sql.transfer(
   value-only placeholders.
 - Values are always explicit; the helper does not query distinct key values
   automatically.
-- Keyed transfers render each source slice by replacing placeholders inline,
-  load every generated slice into one shared stage table, and finalize the
-  target once after all slices have loaded.
+- Keyed transfers render each source slice by replacing placeholders inline.
+  With SQL row staging and `concurrency > 1`, workers stream their assigned
+  slices batch-by-batch into one private stage table per worker, then the worker
+  stages are consolidated sequentially into the first stage table before one
+  final target write. The helper does not buffer all slice data in memory.
+  Trino Parquet staging keeps one external stage table and uses unique staged
+  files instead of concurrent SQL inserts into a shared stage table.
 - `transfer_keys` expressions should be deterministic and disjoint. The library
   rejects duplicate generated key tuples, but it cannot prove that arbitrary SQL
   expressions produce non-overlapping slices.

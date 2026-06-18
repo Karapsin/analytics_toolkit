@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Add from_table source input to SQL transfer.
 - Add public SQL facade dry-run smoke tests.
 - Harden SQL transfer imports against autoreload drift.
+- Use per-worker stage tables for keyed SQL transfer concurrency.
 
 ## 1.3.10.8 - 2026-06-18
 

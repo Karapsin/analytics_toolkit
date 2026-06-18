@@ -822,13 +822,21 @@ def test_run_keyed_transfer_attempt_uses_one_stage_finalize_and_cleanup(
 def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    options = make_keyed_options()
+    options = make_keyed_options(concurrency=2)
     stage_state = models_module.TransferStageState(
         target_exists=False,
         stage_table_created=True,
         first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
         stage_column_types={"id": "INTEGER", "event_date": "DATE"},
-        stage_table="sandbox.target__stage__abcd1234",
+        stage_table="sandbox.target__stage__abcd1234__w00000",
+        stage_tables=[
+            "sandbox.target__stage__abcd1234__w00000",
+            "sandbox.target__stage__abcd1234__w00001",
+        ],
+    )
+    worker_stage_states = attempt_module.build_keyed_worker_stage_states(
+        options=options,
+        stage_state=stage_state,
     )
     opened_connections: list[tuple[str, str]] = []
     loaded: list[dict[str, Any]] = []
@@ -845,6 +853,7 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
                 "source_conn": kwargs["connection_refs"].source["connection"].name,
                 "target_conn": kwargs["connection_refs"].target["connection"].name,
                 "slice_index": kwargs["slice_index"],
+                "stage_table": kwargs["stage_state"].stage_table,
             }
         )
         return kwargs["slice_index"] + 1
@@ -854,7 +863,7 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
 
     total_rows = attempt_module.load_keyed_stage_slices(
         options=options,
-        stage_state=stage_state,
+        worker_stage_states=worker_stage_states,
         read_retry_cnt=1,
         insert_retry_cnt=1,
     )
@@ -864,6 +873,10 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
         transfer_slice.source_sql for transfer_slice in options.transfer_slices
     ]
     assert [item["slice_index"] for item in loaded] == [0, 1]
+    assert [item["stage_table"] for item in loaded] == [
+        "sandbox.target__stage__abcd1234__w00000",
+        "sandbox.target__stage__abcd1234__w00001",
+    ]
     assert opened_connections == [
         ("source_db", "source_db-0"),
         ("target_db", "target_db-1"),
@@ -945,31 +958,214 @@ def test_keyed_transfer_workers_run_concurrently(
         stage_table_created=True,
         first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
         stage_column_types={"id": "INTEGER", "event_date": "DATE"},
-        stage_table="sandbox.target__stage__abcd1234",
+        stage_table="sandbox.target__stage__abcd1234__w00000",
+        stage_tables=[
+            "sandbox.target__stage__abcd1234__w00000",
+            "sandbox.target__stage__abcd1234__w00001",
+        ],
+    )
+    worker_stage_states = attempt_module.build_keyed_worker_stage_states(
+        options=options,
+        stage_state=stage_state,
     )
     barrier = threading.Barrier(2)
     started: list[int] = []
 
-    def fake_load_keyed_stage_slice(**kwargs: Any) -> int:
-        started.append(kwargs["transfer_slice"].index)
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        return FakeTransferConnection(connection_key)
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        started.append(kwargs["slice_index"])
         barrier.wait(timeout=2)
         return 1
 
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
     monkeypatch.setattr(
         attempt_module,
-        "load_keyed_stage_slice",
-        fake_load_keyed_stage_slice,
+        "load_stage_batches",
+        fake_load_stage_batches,
     )
 
     total_rows = attempt_module.load_keyed_stage_slices(
         options=options,
-        stage_state=stage_state,
+        worker_stage_states=worker_stage_states,
         read_retry_cnt=1,
         insert_retry_cnt=1,
     )
 
     assert total_rows == 2
     assert sorted(started) == [0, 1]
+
+
+def test_keyed_worker_stage_groups_assign_slices_round_robin() -> None:
+    _keys, expressions, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from source_table where {event_date}",
+        transfer_keys="event_date",
+        transfer_key_values=[f"2025-01-{day:02d}" for day in range(1, 80)],
+        concurrency=5,
+    )
+    options = make_keyed_options(
+        transfer_key_expressions=expressions,
+        transfer_key_values=values,
+        transfer_slices=slices,
+        concurrency=concurrency,
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
+        stage_column_types={"id": "INTEGER", "event_date": "DATE"},
+        stage_table="stage_w00000",
+        stage_tables=[f"stage_w{worker_index:05d}" for worker_index in range(5)],
+    )
+
+    worker_stage_states = attempt_module.build_keyed_worker_stage_states(
+        options=options,
+        stage_state=stage_state,
+    )
+
+    assert len(worker_stage_states) == 5
+    assert [
+        [transfer_slice.index for transfer_slice in worker.transfer_slices]
+        for worker in worker_stage_states
+    ] == [list(range(worker_index, 79, 5)) for worker_index in range(5)]
+    assert [worker.stage_state.stage_table for worker in worker_stage_states] == [
+        f"stage_w{worker_index:05d}" for worker_index in range(5)
+    ]
+
+
+def test_initialize_keyed_row_stages_creates_one_stage_per_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _keys, expressions, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from source_table where {event_date}",
+        transfer_keys="event_date",
+        transfer_key_values=[f"2025-01-{day:02d}" for day in range(1, 80)],
+        concurrency=5,
+    )
+    options = make_keyed_options(
+        transfer_key_expressions=expressions,
+        transfer_key_values=values,
+        transfer_slices=slices,
+        concurrency=concurrency,
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+    )
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": FakeTransferConnection("source")},
+        target={"connection": FakeTransferConnection("target")},
+    )
+    stage_state = models_module.TransferStageState(target_exists=False)
+    created: list[dict[str, Any]] = []
+
+    def fake_create_stage_table(**kwargs: Any) -> str:
+        created.append(kwargs)
+        return f"stage_{kwargs['random_suffix']}"
+
+    monkeypatch.setattr(attempt_module, "create_stage_table", fake_create_stage_table)
+
+    attempt_module.initialize_shared_stage_for_keyed_slices(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        source_schema=[
+            SimpleNamespace(name="id", native_type="integer"),
+            SimpleNamespace(name="event_date", native_type="date"),
+        ],
+    )
+
+    assert len(created) == 5
+    assert [item["random_suffix"][-8:] for item in created] == [
+        f"__w{worker_index:05d}" for worker_index in range(5)
+    ]
+    assert stage_state.stage_table == "stage_" + created[0]["random_suffix"]
+    assert stage_state.stage_tables == [
+        "stage_" + item["random_suffix"] for item in created
+    ]
+
+
+def test_consolidate_keyed_worker_stages_inserts_into_aggregate_sequentially(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(concurrency=3)
+    connection_refs = models_module.TransferConnectionRefs(
+        target={"connection": FakeTransferConnection("target")},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table="stage_w00000",
+        stage_tables=["stage_w00000", "stage_w00001", "stage_w00002"],
+        stage_column_types={"id": "INTEGER", "event_date": "DATE"},
+    )
+    worker_stage_states = [
+        attempt_module.WorkerStageState(
+            worker_index=worker_index,
+            stage_state=models_module.TransferStageState(
+                target_exists=False,
+                stage_table=f"stage_w{worker_index:05d}",
+            ),
+            transfer_slices=[],
+        )
+        for worker_index in range(3)
+    ]
+    inserted: list[tuple[str, str, dict[str, str] | None]] = []
+
+    def fake_insert_from_table(
+        _connection_type: str,
+        _connection: Any,
+        target_table: str,
+        source_table: str,
+        column_types: dict[str, str] | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        inserted.append((target_table, source_table, column_types))
+
+    monkeypatch.setattr(attempt_module, "insert_from_table", fake_insert_from_table)
+
+    attempt_module.consolidate_keyed_worker_stages(
+        options=options,
+        connection_refs=connection_refs,
+        worker_stage_states=worker_stage_states,
+        stage_state=stage_state,
+    )
+
+    assert inserted == [
+        ("stage_w00000", "stage_w00001", {"id": "INTEGER", "event_date": "DATE"}),
+        ("stage_w00000", "stage_w00002", {"id": "INTEGER", "event_date": "DATE"}),
+    ]
+
+
+def test_cleanup_stage_drops_each_worker_stage_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options()
+    connection_refs = models_module.TransferConnectionRefs(
+        target={"connection": FakeTransferConnection("target")},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        stage_table="stage_w00000",
+        stage_tables=["stage_w00000", "stage_w00001", "stage_w00001"],
+    )
+    dropped: list[str] = []
+
+    def fake_cleanup_stage_table_with_retry(*args: Any, **_kwargs: Any) -> None:
+        dropped.append(args[3])
+
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_stage_table_with_retry",
+        fake_cleanup_stage_table_with_retry,
+    )
+
+    finalize_module.cleanup_stage(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+    )
+
+    assert dropped == ["stage_w00000", "stage_w00001"]
 
 
 def test_cleanup_stale_stage_tables_warns_once_when_staging_schema_missing(
@@ -1526,6 +1722,9 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
 
     assert plan.options["trino_mode"] == "parquet"
     assert "use_parquet_staging" not in plan.options
+    assert plan.options["worker_stage_count"] == 1
+    assert plan.metadata.worker_stage_count == 1
+    assert plan.metadata.stage_tables == [plan.metadata.stage_table]
     assert plan.metadata.stage_table.startswith("object_storage.sandbox.target__")
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -1660,7 +1859,16 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     )
     assert "(event_date) = '2025-01-01'" in read_source_sqls[0]
     assert "(event_date) = '2025-01-02'" in read_source_sqls[1]
-    assert any("shared keyed source slice batches" in sql for sql in plan.sqls)
+    assert plan.options["worker_stage_count"] == 2
+    assert plan.metadata.worker_stage_count == 2
+    assert plan.metadata.aggregate_stage_table == plan.metadata.stage_tables[0]
+    assert len(plan.metadata.stage_tables) == 2
+    assert [statement.phase for statement in plan.statements].count("create_stage") == 2
+    assert [statement.phase for statement in plan.statements].count("load_stage") == 2
+    assert [statement.phase for statement in plan.statements].count("consolidate_stage") == 1
+    assert [statement.phase for statement in plan.statements].count("drop_stage") == 2
+    assert any("worker 0 streamed keyed source slice batches [0]" in sql for sql in plan.sqls)
+    assert any("worker 1 streamed keyed source slice batches [1]" in sql for sql in plan.sqls)
 
 
 def test_transfer_dry_run_shows_keyed_from_table_slice_plan(
@@ -1703,6 +1911,50 @@ def test_transfer_dry_run_shows_keyed_from_table_slice_plan(
         "SELECT * FROM sandbox.source_table\nWHERE (event_date) = '2025-01-01'",
         "SELECT * FROM sandbox.source_table\nWHERE (event_date) = '2025-01-02'",
     ]
+
+
+def test_transfer_dry_run_keyed_row_staging_uses_per_worker_stage_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id, event_date from source_table where {event_date};",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+        transfer_keys="event_date",
+        transfer_key_values=[f"2025-01-{day:02d}" for day in range(1, 80)],
+        concurrency=5,
+        dry_run=True,
+    )
+
+    phases = [statement.phase for statement in plan.statements]
+    assert plan.options["transfer_slice_count"] == 79
+    assert plan.options["worker_stage_count"] == 5
+    assert plan.metadata.worker_stage_count == 5
+    assert plan.metadata.stage_table == plan.metadata.aggregate_stage_table
+    assert len(plan.metadata.stage_tables) == 5
+    assert phases.count("read_source") == 79
+    assert phases.count("create_stage") == 5
+    assert phases.count("load_stage") == 5
+    assert phases.count("consolidate_stage") == 4
+    assert phases.count("insert_target") == 1
+    assert phases.count("drop_stage") == 5
+    assert all("__stage__dryrun__w" in stage for stage in plan.metadata.stage_tables)
+    assert any(
+        "worker 0 streamed keyed source slice batches [0, 5, 10" in sql
+        for sql in plan.sqls
+    )
 
 
 def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(

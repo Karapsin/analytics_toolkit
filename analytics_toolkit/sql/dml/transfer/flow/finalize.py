@@ -153,18 +153,19 @@ def cleanup_stage(
 
     if stage_state.stage_table_created:
         try:
-            cleanup_stage_table_with_retry(
-                options.to_db_backend,
-                options.to_db_key,
-                connection_refs.target,
-                stage_state.stage_table,
-                retry_fn=run_with_retry,
-                retry_cnt=read_retry_cnt,
-                timeout_increment=options.timeout_increment,
-                rollback_fn=rollback_quietly,
-                replace_connection_fn=replace_connection,
-                query_label=options.query_label,
-            )
+            for stage_table in _stage_tables_to_cleanup(stage_state):
+                cleanup_stage_table_with_retry(
+                    options.to_db_backend,
+                    options.to_db_key,
+                    connection_refs.target,
+                    stage_table,
+                    retry_fn=run_with_retry,
+                    retry_cnt=read_retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
+                    query_label=options.query_label,
+                )
         except Exception as exc:
             stage_cleanup_error = exc
 
@@ -185,3 +186,11 @@ def cleanup_stage(
         raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
     if remote_cleanup_error is not None:
         raise remote_cleanup_error.with_traceback(remote_cleanup_error.__traceback__)
+
+
+def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
+    if stage_state.stage_tables is not None:
+        return list(dict.fromkeys(stage_state.stage_tables))
+    if stage_state.stage_table is not None:
+        return [stage_state.stage_table]
+    return []

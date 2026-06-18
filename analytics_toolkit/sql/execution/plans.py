@@ -31,8 +31,11 @@ class SqlOperationMetadata:
     operation_status: str | None = None
     query_label: str | None = None
     stage_external_location: str | None = None
+    worker_stage_count: int | None = None
+    stage_tables: list[str] | None = None
+    aggregate_stage_table: str | None = None
 
-    def as_dict(self) -> dict[str, int | float | str | None]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "source_rows": self.source_rows,
             "staged_rows": self.staged_rows,
@@ -47,6 +50,9 @@ class SqlOperationMetadata:
             "operation_status": self.operation_status,
             "query_label": self.query_label,
             "stage_external_location": self.stage_external_location,
+            "worker_stage_count": self.worker_stage_count,
+            "stage_tables": self.stage_tables,
+            "aggregate_stage_table": self.aggregate_stage_table,
         }
 
 

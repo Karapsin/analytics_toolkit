@@ -4,10 +4,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pandas as pd
-from sqlglot import exp, parse_one
 
 from ....core.capabilities import validate_write_mode
-from ....core.identifiers import sqlglot_dialect
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
@@ -43,7 +41,6 @@ from ....ddl.schema import normalize_table_schema
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
-from ...load.stage import build_stage_table_name
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from ...table.write_modes import (
@@ -51,11 +48,16 @@ from ...table.write_modes import (
     build_upsert_stage_sqls,
 )
 from .attempt import run_transfer_attempt
+from .dry_run import (
+    dry_run_stage_external_location,
+    dry_run_stage_table_names,
+    resolve_dry_run_upsert_columns,
+    source_batches_label,
+)
 from . import options as transfer_options
 from .keys import normalize_transfer_slices
 from .parquet_stage import (
     build_create_parquet_stage_table_sql,
-    build_stage_external_location,
 )
 from .source import normalize_transfer_source
 from ..staging import _sanitize_transfer_staging_username
@@ -523,9 +525,10 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
 
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
-    stage_table = _dry_run_stage_table_name(options)
+    stage_tables = dry_run_stage_table_names(options)
+    stage_table = stage_tables[0]
     stage_external_location = (
-        _dry_run_stage_external_location(options)
+        dry_run_stage_external_location(options)
         if options.trino_mode == "parquet"
         else None
     )
@@ -575,6 +578,9 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 if options.transfer_slices is not None
                 else None
             ),
+            "worker_stage_count": len(stage_tables),
+            "stage_tables": stage_tables,
+            "aggregate_stage_table": stage_table,
             "table_schema": options.table_schema,
             "partition_by": options.partition_by,
             "order_by": options.order_by,
@@ -587,6 +593,9 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         metadata=SqlOperationMetadata(
             stage_table=stage_table,
             stage_external_location=stage_external_location,
+            worker_stage_count=len(stage_tables),
+            stage_tables=stage_tables,
+            aggregate_stage_table=stage_table,
         ),
     )
     if options.transfer_slices is None:
@@ -620,30 +629,32 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             target_table=stage_table,
         )
     elif options.table_schema is None:
-        add_create_table_placeholder_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="create_stage",
-            table_name=stage_table,
-            query_label=options.query_label,
-        )
-    else:
-        add_create_table_steps(
-            plan,
-            _build_create_table_sqls(
-                options.to_db_backend,
-                stage_table,
-                pd.DataFrame(columns=list(options.table_schema)),
-                table_schema=options.table_schema,
-                gp_distributed_by_key=options.gp_distributed_by_key,
+        for worker_stage_table in stage_tables:
+            add_create_table_placeholder_step(
+                plan,
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="create_stage",
+                table_name=worker_stage_table,
                 query_label=options.query_label,
-            ),
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="create_stage",
-            table_name=stage_table,
-        )
+            )
+    else:
+        for worker_stage_table in stage_tables:
+            add_create_table_steps(
+                plan,
+                _build_create_table_sqls(
+                    options.to_db_backend,
+                    worker_stage_table,
+                    pd.DataFrame(columns=list(options.table_schema)),
+                    table_schema=options.table_schema,
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                    query_label=options.query_label,
+                ),
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="create_stage",
+                table_name=worker_stage_table,
+            )
     if options.trino_mode == "parquet":
         add_load_stage_step(
             plan,
@@ -653,22 +664,33 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             sql=(
                 "WRITE PARQUET FILES TO "
                 f"{stage_external_location or '<stage external location>'} "
-                f"FROM <{_source_batches_label(options)}>"
+                f"FROM <{source_batches_label(options)}>"
             ),
             query_label=options.query_label,
         )
     else:
-        add_load_stage_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            stage_table=stage_table,
-            sql=(
-                f"INSERT INTO {stage_table} SELECT * "
-                f"FROM (<{_source_batches_label(options)}>)"
-            ),
-            query_label=options.query_label,
-        )
+        for worker_index, worker_stage_table in enumerate(stage_tables):
+            add_load_stage_step(
+                plan,
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                stage_table=worker_stage_table,
+                sql=(
+                    f"INSERT INTO {worker_stage_table} SELECT * "
+                    f"FROM (<{source_batches_label(options, worker_index)}>)"
+                ),
+                query_label=options.query_label,
+            )
+        for worker_stage_table in stage_tables[1:]:
+            add_insert_from_stage_step(
+                plan,
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                target_table=stage_table,
+                stage_table=worker_stage_table,
+                phase="consolidate_stage",
+                query_label=options.query_label,
+            )
     if options.write_mode == "replace":
         if options.to_db_backend == "ch":
             add_drop_target_steps(
@@ -700,7 +722,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             ch_only_shard=options.ch_only_shard,
         )
     if options.write_mode == "upsert":
-        columns = _resolve_dry_run_upsert_columns(options)
+        columns = resolve_dry_run_upsert_columns(options)
         upsert_sqls = (
             build_upsert_stage_sqls(
                 options.to_db_backend,
@@ -792,13 +814,14 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         table_name=options.target_table,
         query_label=options.query_label,
     )
-    add_cleanup_stage_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        stage_table=stage_table,
-        query_label=options.query_label,
-    )
+    for worker_stage_table in stage_tables:
+        add_cleanup_stage_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            stage_table=worker_stage_table,
+            query_label=options.query_label,
+        )
     if options.trino_mode == "parquet":
         plan.add(
             f"DELETE STAGE FILES {stage_external_location or '<stage external location>'}",
@@ -808,70 +831,6 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             target_table=stage_table,
         )
     return plan
-
-
-def _dry_run_stage_table_name(options: TransferOptions) -> str:
-    try:
-        return build_stage_table_name(
-            options.to_db_backend,
-            options.target_table,
-            transfer_staging_schema=options.transfer_staging_schema,
-            transfer_staging_username=options.transfer_staging_username,
-            random_suffix="dryrun",
-        )
-    except Exception:
-        return f"{options.target_table}__stage__dryrun"
-
-
-def _source_batches_label(options: TransferOptions) -> str:
-    if options.transfer_slices is None:
-        return "source batches"
-    return "shared keyed source slice batches"
-
-
-def _dry_run_stage_external_location(options: TransferOptions) -> str | None:
-    if not options.transfer_staging_location:
-        return None
-    try:
-        return build_stage_external_location(options, stage_suffix="dryrun")
-    except Exception:
-        return options.transfer_staging_location.rstrip("/") + "/__stage__dryrun/"
-
-
-def _resolve_dry_run_upsert_columns(options: TransferOptions) -> list[str] | None:
-    if options.table_schema is not None:
-        return list(options.table_schema)
-    return _infer_source_select_columns(
-        options.source_sql,
-        source_backend=options.from_db_backend,
-    )
-
-
-def _infer_source_select_columns(
-    source_sql: str,
-    *,
-    source_backend: str,
-) -> list[str] | None:
-    try:
-        expression = parse_one(
-            source_sql.strip().rstrip(";"),
-            read=sqlglot_dialect(source_backend),
-        )
-    except Exception:
-        return None
-
-    if not isinstance(expression, exp.Select):
-        return None
-
-    columns: list[str] = []
-    for projection in expression.expressions:
-        if isinstance(projection, exp.Star) or projection.find(exp.Star) is not None:
-            return None
-        column_name = projection.alias_or_name
-        if not column_name or column_name == "*":
-            return None
-        columns.append(str(column_name))
-    return columns or None
 
 
 def _best_effort_transfer_target_count(options: TransferOptions) -> int | None:

@@ -32,13 +32,16 @@ def create_stage_table(
     query_label: str | None = None,
     transfer_staging_schema: str | None = None,
     transfer_staging_username: str | None = None,
+    random_suffix: str | None = None,
 ) -> str:
-    for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
+    max_attempts = 1 if random_suffix is not None else STAGE_TABLE_NAME_MAX_ATTEMPTS
+    for attempt in range(1, max_attempts + 1):
         stage_table = build_stage_table_name(
             connection_type,
             target_table,
             transfer_staging_schema=transfer_staging_schema,
             transfer_staging_username=transfer_staging_username,
+            random_suffix=random_suffix,
         )
         if table_exists(
             connection_type,
@@ -46,6 +49,10 @@ def create_stage_table(
             stage_table,
             connection_key=connection_key or connection_type,
         ):
+            if random_suffix is not None:
+                raise RuntimeError(
+                    f"Stage table name collision detected for {stage_table}."
+                )
             time_print(
                 f"Stage table name collision detected for {stage_table}; "
                 f"retrying with a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
