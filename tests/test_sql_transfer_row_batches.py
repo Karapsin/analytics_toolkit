@@ -1118,7 +1118,7 @@ def test_transfer_options_enable_parquet_staging_for_trino_target_with_location(
         to_table="sandbox.target",
     )
 
-    assert options.use_parquet_staging is True
+    assert options.trino_mode == "parquet"
     assert options.transfer_staging_schema == "object_storage.sandbox"
     assert (
         options.transfer_staging_location
@@ -1146,9 +1146,107 @@ def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
         to_table="sandbox.target",
     )
 
-    assert options.use_parquet_staging is False
+    assert options.trino_mode == "values"
     assert options.transfer_staging_schema == "object_storage.sandbox"
     assert options.transfer_staging_location is None
+
+
+def test_transfer_options_explicit_values_mode_disables_parquet_staging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        trino_mode="values",
+    )
+
+    assert options.trino_mode == "values"
+    assert options.transfer_staging_schema == "object_storage.sandbox"
+    assert (
+        options.transfer_staging_location
+        == "s3://bucket/tmp/analytics_toolkit_transfer"
+    )
+
+
+def test_transfer_options_reject_explicit_parquet_without_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino", transfer_staging_location=None),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    with pytest.raises(ValueError, match="transfer_staging_location"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            trino_mode="parquet",
+        )
+
+
+def test_transfer_options_reject_explicit_mode_for_non_trino_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    with pytest.raises(ValueError, match="to_db has type 'trino'"):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            trino_mode="values",
+        )
+
+
+def test_transfer_options_reject_invalid_trino_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    with pytest.raises(ValueError, match="trino_mode"):
+        transfer_api_module.build_transfer_options(
+            from_db="gp",
+            to_db="trino",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            trino_mode="execute_values",
+        )
 
 
 def test_transfer_options_reject_same_key_before_parquet_staging(
@@ -1192,7 +1290,8 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
         dry_run=True,
     )
 
-    assert plan.options["use_parquet_staging"] is True
+    assert plan.options["trino_mode"] == "parquet"
+    assert "use_parquet_staging" not in plan.options
     assert plan.metadata.stage_table.startswith("object_storage.sandbox.target__")
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -1216,6 +1315,41 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     )
     assert any(
         sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls
+    )
+
+
+def test_transfer_dry_run_values_mode_uses_row_stage_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp": make_gp_config("gp"),
+        "trino": make_trino_config("trino"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        table_schema={"id": "BIGINT"},
+        trino_mode="values",
+        dry_run=True,
+    )
+
+    assert plan.options["trino_mode"] == "values"
+    assert "use_parquet_staging" not in plan.options
+    assert plan.metadata.stage_external_location is None
+    assert not any(sql.startswith("WRITE PARQUET FILES TO ") for sql in plan.sqls)
+    assert not any(sql.startswith("DELETE STAGE FILES ") for sql in plan.sqls)
+    assert any(
+        sql.startswith("INSERT INTO ")
+        and " SELECT * FROM (<source batches>)" in sql
+        for sql in plan.sqls
     )
 
 
@@ -2344,7 +2478,7 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
         transfer_staging_schema="object_storage.sandbox",
         transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
-        use_parquet_staging=True,
+        trino_mode="parquet",
     )
     written_batches: list[dict[str, Any]] = []
 
@@ -2477,7 +2611,7 @@ def test_load_parquet_stage_infers_schema_from_first_row_group(
         transfer_staging_schema="object_storage.sandbox",
         transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
-        use_parquet_staging=True,
+        trino_mode="parquet",
     )
 
     monkeypatch.setattr(
@@ -2546,7 +2680,7 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
         transfer_staging_schema="object_storage.sandbox",
         transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
-        use_parquet_staging=True,
+        trino_mode="parquet",
     )
     stage_state = models_module.TransferStageState(
         target_exists=False,
@@ -2604,7 +2738,7 @@ def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
         to_db_backend="trino",
         transfer_staging_schema="object_storage.sandbox",
         transfer_staging_location="s3://bucket/tmp",
-        use_parquet_staging=True,
+        trino_mode="parquet",
     )
 
     monkeypatch.setattr(
@@ -2643,7 +2777,7 @@ def test_parquet_staging_missing_dependencies_raise_clear_error(
         to_db_backend="trino",
         transfer_staging_schema="object_storage.sandbox",
         transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
-        use_parquet_staging=True,
+        trino_mode="parquet",
     )
 
     monkeypatch.setattr(

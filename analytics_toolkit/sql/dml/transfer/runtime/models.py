@@ -3,11 +3,12 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from collections import deque
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
 DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
+TrinoTransferMode = Literal["parquet", "values"]
 
 
 @dataclass(frozen=True)
@@ -364,7 +365,7 @@ class TransferOptions:
     transfer_staging_schema: str | None = None
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
-    use_parquet_staging: bool = False
+    trino_mode: TrinoTransferMode | None = None
     transfer_keys: list[str] | None = None
     transfer_key_values: dict[str, list[Any]] | None = None
     transfer_slices: list[TransferSlice] | None = None

@@ -258,7 +258,7 @@ def initialize_shared_stage_for_keyed_slices(
 
     sample_batch = pd.DataFrame(columns=source_columns)
     stage_state.first_non_empty_batch = sample_batch
-    if options.use_parquet_staging:
+    if options.trino_mode == "parquet":
         create_parquet_stage_table(
             options=options,
             connection_refs=connection_refs,
@@ -359,7 +359,7 @@ def load_stage_batches(
     insert_retry_cnt: int,
     slice_index: int | None = None,
 ) -> int:
-    if options.use_parquet_staging:
+    if options.trino_mode == "parquet":
         return load_parquet_stage_batches(
             options=options,
             connection_refs=connection_refs,

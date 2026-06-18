@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int' = 1) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int' = 1, trino_mode: 'Literal["parquet", "values"] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -54,6 +54,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
 - `gp_insert_chunk_size` - initial Greenplum transfer stage insert page size; omitted values start at `10_000`
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
+- `trino_mode` - Trino target staging mode: `None` keeps automatic selection, `"parquet"` forces object-storage Parquet staging, and `"values"` forces generated multi-row `INSERT ... VALUES`
 - `ch_engine` - engine to use for created ClickHouse local shard tables
 - `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
 - `ch_sharding_key` - sharding expression for ClickHouse distributed table creation
@@ -151,10 +152,12 @@ rows = sql.transfer(
 - `transfer_staging_schema` configured on the target connection keeps staging
   tables inside that schema. When configured, stale and overlapping staging tables
   for the target user are cleaned before and after each transfer.
-- For Trino targets, setting both `transfer_staging_schema` and
-  `transfer_staging_location` on the target connection enables Parquet
-  object-storage staging when `from_db` and `to_db` are different keys. The
-  transfer streams source rows into temporary Parquet files under
+- For Trino targets, `trino_mode=None` automatically uses Parquet
+  object-storage staging when both `transfer_staging_schema` and
+  `transfer_staging_location` are configured on the target connection. Set
+  `trino_mode="parquet"` to require that path, or `trino_mode="values"` to force
+  generated multi-row `INSERT ... VALUES` staging.
+- Parquet transfer streams source rows into temporary Parquet files under
   `transfer_staging_location`, creates a Trino external stage table in
   `transfer_staging_schema`, and then applies the normal `append`, `replace`,
   `truncate_insert`, or `upsert` finalization logic from that stage table.

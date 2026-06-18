@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Add Trino transfer mode option.
+
 ## 1.3.10.8 - 2026-06-18
 
 - Updated startup and version bump workflow.

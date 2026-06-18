@@ -3,8 +3,40 @@ from __future__ import annotations
 import math
 from numbers import Real
 
+from ..runtime.models import TrinoTransferMode
+
 
 _DEFAULT_TARGET_BATCH_SECONDS = 10.0
+
+
+def resolve_trino_mode(
+    trino_mode: TrinoTransferMode | str | None,
+    *,
+    target_backend: str,
+    transfer_staging_schema: str | None,
+    transfer_staging_location: str | None,
+) -> TrinoTransferMode | None:
+    if trino_mode is None:
+        if target_backend != "trino":
+            return None
+        if transfer_staging_schema is not None and transfer_staging_location is not None:
+            return "parquet"
+        return "values"
+
+    if trino_mode not in {"parquet", "values"}:
+        raise ValueError("trino_mode must be one of: 'parquet', 'values'.")
+    if target_backend != "trino":
+        raise ValueError("trino_mode can only be used when to_db has type 'trino'.")
+    if trino_mode == "parquet":
+        if transfer_staging_schema is None:
+            raise ValueError(
+                "trino_mode='parquet' requires transfer_staging_schema on to_db."
+            )
+        if transfer_staging_location is None:
+            raise ValueError(
+                "trino_mode='parquet' requires transfer_staging_location on to_db."
+            )
+    return trino_mode
 
 
 def resolve_target_adaptation_mode(

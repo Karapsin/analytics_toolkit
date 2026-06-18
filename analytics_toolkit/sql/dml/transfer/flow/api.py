@@ -59,6 +59,7 @@ from .options import (
     resolve_target_batch_memory_limits,
     resolve_target_rows_per_second_deadband,
     resolve_target_rows_per_second_window,
+    resolve_trino_mode,
 )
 from .keys import normalize_transfer_slices
 from .parquet_stage import (
@@ -67,6 +68,7 @@ from .parquet_stage import (
 )
 from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
+from ..runtime.models import TrinoTransferMode
 from ..runtime.retry import run_with_retry
 
 
@@ -116,6 +118,7 @@ def transfer_table(
     transfer_keys: str | Sequence[str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
+    trino_mode: TrinoTransferMode | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -159,6 +162,7 @@ def transfer_table(
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
+        trino_mode=trino_mode,
     )
 
     if dry_run or return_sql:
@@ -301,6 +305,7 @@ def build_transfer_options(
     transfer_keys: str | Sequence[str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
+    trino_mode: TrinoTransferMode | None = None,
 ) -> TransferOptions:
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
@@ -312,11 +317,11 @@ def build_transfer_options(
         if isinstance(to_config, TrinoConfig)
         else None
     )
-    use_parquet_staging = (
-        to_config.backend == "trino"
-        and from_config.connection_key != to_config.connection_key
-        and to_config.transfer_staging_schema is not None
-        and transfer_staging_location is not None
+    resolved_trino_mode = resolve_trino_mode(
+        trino_mode,
+        target_backend=to_config.backend,
+        transfer_staging_schema=to_config.transfer_staging_schema,
+        transfer_staging_location=transfer_staging_location,
     )
     resolved_write_mode = _resolve_transfer_write_mode(
         to_config.backend,
@@ -431,7 +436,7 @@ def build_transfer_options(
         transfer_staging_schema=to_config.transfer_staging_schema,
         transfer_staging_location=transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
-        use_parquet_staging=use_parquet_staging,
+        trino_mode=resolved_trino_mode,
         transfer_keys=normalized_transfer_keys,
         transfer_key_values=normalized_transfer_key_values,
         transfer_slices=transfer_slices,
@@ -515,7 +520,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     stage_table = _dry_run_stage_table_name(options)
     stage_external_location = (
         _dry_run_stage_external_location(options)
-        if options.use_parquet_staging
+        if options.trino_mode == "parquet"
         else None
     )
     plan = SqlPlan(
@@ -552,7 +557,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             ),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "transfer_staging_location": options.transfer_staging_location,
-            "use_parquet_staging": options.use_parquet_staging,
+            "trino_mode": options.trino_mode,
             "transfer_keys": options.transfer_keys,
             "transfer_key_values": options.transfer_key_values,
             "concurrency": options.concurrency,
@@ -592,7 +597,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 phase="read_source",
                 query_label=options.query_label,
             )
-    if options.use_parquet_staging:
+    if options.trino_mode == "parquet":
         plan.add(
             build_create_parquet_stage_table_sql(
                 stage_table,
@@ -630,7 +635,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             phase="create_stage",
             table_name=stage_table,
         )
-    if options.use_parquet_staging:
+    if options.trino_mode == "parquet":
         add_load_stage_step(
             plan,
             alias=options.to_db_key,
@@ -785,7 +790,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         stage_table=stage_table,
         query_label=options.query_label,
     )
-    if options.use_parquet_staging:
+    if options.trino_mode == "parquet":
         plan.add(
             f"DELETE STAGE FILES {stage_external_location or '<stage external location>'}",
             alias=options.to_db_key,
