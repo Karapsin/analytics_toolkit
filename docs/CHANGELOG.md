@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.8 - 2026-06-18
 
 - Updated startup and version bump workflow.
 - Route normal agent work through dev branch.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Add Parquet object-storage staging for Trino load_df and make Parquet dependencies mandatory.
 - Added configurable CTE spacing for sql_format output.
 - Added union spacing and compact star select formatting.
+- Add keyed SQL transfer slices.
 
 ## 1.3.10.7 - 2026-06-17
 

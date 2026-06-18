@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import pandas as pd
 from sqlglot import exp, parse_one
@@ -59,6 +60,7 @@ from .options import (
     resolve_target_rows_per_second_deadband,
     resolve_target_rows_per_second_window,
 )
+from .keys import normalize_transfer_slices
 from .parquet_stage import (
     build_create_parquet_stage_table_sql,
     build_stage_external_location,
@@ -111,6 +113,9 @@ def transfer_table(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
+    transfer_keys: str | Sequence[str] | None = None,
+    transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
+    concurrency: int = 1,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -151,6 +156,9 @@ def transfer_table(
         progress=progress,
         estimate_total_rows=estimate_total_rows,
         table_schema=table_schema,
+        transfer_keys=transfer_keys,
+        transfer_key_values=transfer_key_values,
+        concurrency=concurrency,
     )
 
     if dry_run or return_sql:
@@ -290,6 +298,9 @@ def build_transfer_options(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
+    transfer_keys: str | Sequence[str] | None = None,
+    transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
+    concurrency: int = 1,
 ) -> TransferOptions:
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
@@ -356,12 +367,24 @@ def build_transfer_options(
         adaptive_batch_size_step,
     )
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
+    source_sql = from_sql.strip()
+    (
+        normalized_transfer_keys,
+        normalized_transfer_key_values,
+        transfer_slices,
+        resolved_concurrency,
+    ) = normalize_transfer_slices(
+        source_sql=source_sql,
+        transfer_keys=transfer_keys,
+        transfer_key_values=transfer_key_values,
+        concurrency=concurrency,
+    )
     options = TransferOptions(
         from_db_key=from_config.connection_key,
         from_db_backend=from_config.backend,
         to_db_key=to_config.connection_key,
         to_db_backend=to_config.backend,
-        source_sql=from_sql.strip(),
+        source_sql=source_sql,
         target_table=to_table.strip(),
         table_schema=normalize_table_schema(table_schema),
         replace_target_table=resolved_write_mode != "append",
@@ -409,6 +432,10 @@ def build_transfer_options(
         transfer_staging_location=transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         use_parquet_staging=use_parquet_staging,
+        transfer_keys=normalized_transfer_keys,
+        transfer_key_values=normalized_transfer_key_values,
+        transfer_slices=transfer_slices,
+        concurrency=resolved_concurrency,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -526,6 +553,14 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "transfer_staging_location": options.transfer_staging_location,
             "use_parquet_staging": options.use_parquet_staging,
+            "transfer_keys": options.transfer_keys,
+            "transfer_key_values": options.transfer_key_values,
+            "concurrency": options.concurrency,
+            "transfer_slice_count": (
+                len(options.transfer_slices)
+                if options.transfer_slices is not None
+                else None
+            ),
             "table_schema": options.table_schema,
             "partition_by": options.partition_by,
             "order_by": options.order_by,
@@ -540,13 +575,23 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             stage_external_location=stage_external_location,
         ),
     )
-    plan.add(
-        options.source_sql,
-        alias=options.from_db_key,
-        backend=options.from_db_backend,
-        phase="read_source",
-        query_label=options.query_label,
-    )
+    if options.transfer_slices is None:
+        plan.add(
+            options.source_sql,
+            alias=options.from_db_key,
+            backend=options.from_db_backend,
+            phase="read_source",
+            query_label=options.query_label,
+        )
+    else:
+        for transfer_slice in options.transfer_slices:
+            plan.add(
+                transfer_slice.source_sql,
+                alias=options.from_db_key,
+                backend=options.from_db_backend,
+                phase="read_source",
+                query_label=options.query_label,
+            )
     if options.use_parquet_staging:
         plan.add(
             build_create_parquet_stage_table_sql(
@@ -594,7 +639,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             sql=(
                 "WRITE PARQUET FILES TO "
                 f"{stage_external_location or '<stage external location>'} "
-                "FROM <source batches>"
+                f"FROM <{_source_batches_label(options)}>"
             ),
             query_label=options.query_label,
         )
@@ -604,7 +649,10 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             alias=options.to_db_key,
             backend=options.to_db_backend,
             stage_table=stage_table,
-            sql=f"INSERT INTO {stage_table} SELECT * FROM (<source batches>)",
+            sql=(
+                f"INSERT INTO {stage_table} SELECT * "
+                f"FROM (<{_source_batches_label(options)}>)"
+            ),
             query_label=options.query_label,
         )
     if options.write_mode == "replace":
@@ -759,6 +807,12 @@ def _dry_run_stage_table_name(options: TransferOptions) -> str:
         )
     except Exception:
         return f"{options.target_table}__stage__dryrun"
+
+
+def _source_batches_label(options: TransferOptions) -> str:
+    if options.transfer_slices is None:
+        return "source batches"
+    return "shared keyed source slice batches"
 
 
 def _dry_run_stage_external_location(options: TransferOptions) -> str | None:

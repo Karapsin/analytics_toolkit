@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from dataclasses import replace
 from typing import Any
 
+import pandas as pd
 from tqdm import tqdm
 
+from ....clickhouse.options import validate_ch_columns_in_columns
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
 from analytics_toolkit.general import time_print
+from ...load.stage import create_stage_table
 from ...load.load_sql_table import insert_rows_batch
 from ...table.table_validation import validate_key_columns_in_columns
 from .estimate import estimate_source_rows
@@ -27,6 +32,7 @@ from ..runtime.models import (
     RowBatch,
     TransferConnectionRefs,
     TransferOptions,
+    TransferSlice,
     TransferStageState,
     make_gp_insert_chunk_sizer,
 )
@@ -50,6 +56,13 @@ def run_transfer_attempt(
     read_retry_cnt: int,
     insert_retry_cnt: int,
 ) -> int:
+    if options.transfer_slices is not None:
+        return run_keyed_transfer_attempt(
+            options=options,
+            read_retry_cnt=read_retry_cnt,
+            insert_retry_cnt=insert_retry_cnt,
+        )
+
     connection_refs = TransferConnectionRefs(
         source={"connection": get_sql_connection(options.from_db_key)},
         target={"connection": get_sql_connection(options.to_db_key)},
@@ -120,12 +133,231 @@ def run_transfer_attempt(
     return total_rows
 
 
+def run_keyed_transfer_attempt(
+    options: TransferOptions,
+    read_retry_cnt: int,
+    insert_retry_cnt: int,
+) -> int:
+    if options.transfer_slices is None:
+        raise ValueError("run_keyed_transfer_attempt requires transfer_slices.")
+
+    connection_refs = TransferConnectionRefs(
+        source={"connection": get_sql_connection(options.from_db_key)},
+        target={"connection": get_sql_connection(options.to_db_key)},
+    )
+    total_rows = 0
+    transfer_error: Exception | None = None
+    cleanup_error: Exception | None = None
+    stage_state = create_stage_state(options, connection_refs)
+
+    try:
+        representative_sql = options.transfer_slices[0].source_sql
+        source_schema = inspect_source_query_schema(
+            options.from_db_backend,
+            connection_refs.source["connection"],
+            representative_sql,
+        )
+        stage_state.source_column_types = {
+            column.name: column.native_type for column in source_schema
+        }
+        initialize_shared_stage_for_keyed_slices(
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            source_schema=source_schema,
+        )
+        total_rows = load_keyed_stage_slices(
+            options=options,
+            stage_state=stage_state,
+            read_retry_cnt=read_retry_cnt,
+            insert_retry_cnt=insert_retry_cnt,
+        )
+        finalize_loaded_stage(
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            total_rows=total_rows,
+        )
+    except Exception as exc:
+        transfer_error = exc
+    finally:
+        try:
+            cleanup_stage(
+                options=options,
+                connection_refs=connection_refs,
+                stage_state=stage_state,
+                read_retry_cnt=read_retry_cnt,
+            )
+        except Exception as exc:
+            cleanup_error = exc
+        finally:
+            close_connection_ref(connection_refs.source, options.from_db_key, "source")
+            close_connection_ref(connection_refs.target, options.to_db_key, "target")
+
+    if transfer_error is not None:
+        if cleanup_error is not None:
+            time_print(
+                f"Cleanup failed while handling transfer error: {cleanup_error!r}"
+            )
+        raise transfer_error.with_traceback(transfer_error.__traceback__)
+    if cleanup_error is not None:
+        raise cleanup_error.with_traceback(cleanup_error.__traceback__)
+    return total_rows
+
+
+def initialize_shared_stage_for_keyed_slices(
+    *,
+    options: TransferOptions,
+    connection_refs: TransferConnectionRefs,
+    stage_state: TransferStageState,
+    source_schema: list[Any],
+) -> None:
+    source_columns = [column.name for column in source_schema]
+    if options.table_schema is not None and source_schema:
+        stage_state.stage_column_types = validate_table_schema_columns(
+            options.table_schema,
+            source_columns,
+        )
+    elif options.table_schema is not None:
+        stage_state.stage_column_types = options.table_schema
+        source_columns = list(options.table_schema)
+    elif source_schema:
+        stage_state.stage_column_types = map_source_schema_to_target(
+            source_schema,
+            options.to_db_backend,
+        )
+    else:
+        raise ValueError(
+            "Keyed transfer requires table_schema or an inspectable source query "
+            "schema so the shared stage table can be created before workers start."
+        )
+
+    if not source_columns:
+        raise ValueError("Keyed transfer source schema must contain at least one column.")
+
+    validate_key_columns_in_columns(
+        options.key_columns,
+        source_columns,
+    )
+    validate_key_columns_in_columns(
+        options.gp_distributed_by_key,
+        source_columns,
+    )
+    validate_ch_columns_in_columns(
+        options.partition_by,
+        source_columns,
+        "partition_by",
+        data_name="staged data",
+    )
+    validate_ch_columns_in_columns(
+        options.order_by,
+        source_columns,
+        "order_by",
+        data_name="staged data",
+    )
+
+    sample_batch = pd.DataFrame(columns=source_columns)
+    stage_state.first_non_empty_batch = sample_batch
+    if options.use_parquet_staging:
+        create_parquet_stage_table(
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+        )
+        return
+
+    stage_state.stage_table = create_stage_table(
+        connection_type=options.to_db_backend,
+        connection=connection_refs.target["connection"],
+        target_table=options.target_table,
+        batch=sample_batch,
+        column_types=stage_state.stage_column_types,
+        gp_distributed_by_key=options.gp_distributed_by_key,
+        connection_key=options.to_db_key,
+        query_label=options.query_label,
+        transfer_staging_schema=options.transfer_staging_schema,
+        transfer_staging_username=options.transfer_staging_username,
+    )
+    stage_state.stage_table_created = True
+
+
+def load_keyed_stage_slices(
+    *,
+    options: TransferOptions,
+    stage_state: TransferStageState,
+    read_retry_cnt: int,
+    insert_retry_cnt: int,
+) -> int:
+    transfer_slices = options.transfer_slices or []
+    total_rows = 0
+    with ThreadPoolExecutor(max_workers=options.concurrency) as executor:
+        pending = {
+            executor.submit(
+                load_keyed_stage_slice,
+                options=options,
+                transfer_slice=transfer_slice,
+                stage_state=stage_state,
+                read_retry_cnt=read_retry_cnt,
+                insert_retry_cnt=insert_retry_cnt,
+            )
+            for transfer_slice in transfer_slices
+        }
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_EXCEPTION)
+            for future in done:
+                exc = future.exception()
+                if exc is not None:
+                    for pending_future in pending:
+                        pending_future.cancel()
+                    raise exc
+                total_rows += future.result()
+    return total_rows
+
+
+def load_keyed_stage_slice(
+    *,
+    options: TransferOptions,
+    transfer_slice: TransferSlice,
+    stage_state: TransferStageState,
+    read_retry_cnt: int,
+    insert_retry_cnt: int,
+) -> int:
+    worker_options = replace(options, source_sql=transfer_slice.source_sql)
+    worker_stage_state = TransferStageState(
+        target_exists=stage_state.target_exists,
+        stage_table_created=stage_state.stage_table_created,
+        first_non_empty_batch=stage_state.first_non_empty_batch,
+        source_column_types=stage_state.source_column_types,
+        stage_column_types=stage_state.stage_column_types,
+        insert_column_types=stage_state.insert_column_types,
+        stage_table=stage_state.stage_table,
+        stage_external_location=stage_state.stage_external_location,
+    )
+    connection_refs = TransferConnectionRefs(
+        source={"connection": get_sql_connection(options.from_db_key)},
+        target={"connection": get_sql_connection(options.to_db_key)},
+    )
+    try:
+        return load_stage_batches(
+            options=worker_options,
+            connection_refs=connection_refs,
+            stage_state=worker_stage_state,
+            read_retry_cnt=read_retry_cnt,
+            insert_retry_cnt=insert_retry_cnt,
+            slice_index=transfer_slice.index,
+        )
+    finally:
+        close_connection_ref(connection_refs.source, options.from_db_key, "source")
+        close_connection_ref(connection_refs.target, options.to_db_key, "target")
+
+
 def load_stage_batches(
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     read_retry_cnt: int,
     insert_retry_cnt: int,
+    slice_index: int | None = None,
 ) -> int:
     if options.use_parquet_staging:
         return load_parquet_stage_batches(
@@ -133,6 +365,7 @@ def load_stage_batches(
             connection_refs=connection_refs,
             stage_state=stage_state,
             read_retry_cnt=read_retry_cnt,
+            slice_index=slice_index,
         )
 
     total_rows = 0
@@ -278,6 +511,7 @@ def load_parquet_stage_batches(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     read_retry_cnt: int,
+    slice_index: int | None = None,
 ) -> int:
     pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
     total_rows = 0
@@ -321,6 +555,7 @@ def load_parquet_stage_batches(
             inserted_rows = write_batch_to_parquet_stage(
                 batch,
                 file_index=file_index,
+                slice_index=slice_index,
                 stage_external_location=stage_state.stage_external_location,
                 pa=pa,
                 pq=pq,

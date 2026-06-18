@@ -152,6 +152,7 @@ def write_batch_to_parquet_stage(
     batch: RowBatch,
     *,
     file_index: int,
+    slice_index: int | None = None,
     stage_external_location: str,
     pa: Any,
     pq: Any,
@@ -175,9 +176,14 @@ def write_batch_to_parquet_stage(
         )
         del arrow_table
         spooled_file.seek(0)
+        file_name = (
+            f"slice-{slice_index:05d}-part-{file_index:05d}.parquet"
+            if slice_index is not None
+            else f"part-{file_index:05d}.parquet"
+        )
         remote_uri = (
             f"{stage_external_location.rstrip('/')}/"
-            f"part-{file_index:05d}.parquet"
+            f"{file_name}"
         )
         upload_spooled_file(fsspec_module, spooled_file, remote_uri)
         if _spooled_file_rolled_to_disk(spooled_file):

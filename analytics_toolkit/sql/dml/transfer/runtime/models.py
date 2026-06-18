@@ -307,6 +307,15 @@ def make_gp_insert_chunk_sizer(options: TransferOptions) -> AdaptiveBatchSizer:
 
 
 @dataclass(frozen=True)
+class TransferSlice:
+    index: int
+    values: tuple[Any, ...]
+    predicate_sql: str
+    source_sql: str
+    label: str
+
+
+@dataclass(frozen=True)
 class TransferOptions:
     from_db_key: str
     from_db_backend: str
@@ -356,6 +365,10 @@ class TransferOptions:
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
     use_parquet_staging: bool = False
+    transfer_keys: list[str] | None = None
+    transfer_key_values: dict[str, list[Any]] | None = None
+    transfer_slices: list[TransferSlice] | None = None
+    concurrency: int = 1
 
 
 @dataclass

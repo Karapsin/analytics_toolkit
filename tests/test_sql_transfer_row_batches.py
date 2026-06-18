@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import io
+import threading
 import warnings
 import sys
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from types import SimpleNamespace
@@ -22,6 +26,7 @@ finalize_module = importlib.import_module(
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
+keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keys")
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
 )
@@ -251,6 +256,134 @@ def make_trino_config(
     )
 
 
+def test_normalize_transfer_slices_accepts_single_key_sequence_values() -> None:
+    keys, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from events;",
+        transfer_keys="event_date",
+        transfer_key_values=["2025-01-01", "2025-01-02"],
+        concurrency=2,
+    )
+
+    assert keys == ["event_date"]
+    assert values == {"event_date": ["2025-01-01", "2025-01-02"]}
+    assert concurrency == 2
+    assert [transfer_slice.values for transfer_slice in slices] == [
+        ("2025-01-01",),
+        ("2025-01-02",),
+    ]
+    assert "FROM (select id, event_date from events)" in slices[0].source_sql
+    assert "(event_date) = '2025-01-01'" in slices[0].source_sql
+
+
+def test_normalize_transfer_slices_accepts_single_key_mapping_values() -> None:
+    keys, values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id from events",
+        transfer_keys="event_date",
+        transfer_key_values={"event_date": ["2025-01-01"]},
+        concurrency=1,
+    )
+
+    assert keys == ["event_date"]
+    assert values == {"event_date": ["2025-01-01"]}
+    assert [transfer_slice.values for transfer_slice in slices] == [("2025-01-01",)]
+
+
+def test_normalize_transfer_slices_builds_multi_key_cartesian_values() -> None:
+    keys, values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from events",
+        transfer_keys=["event_date", "right(user_id, 1)"],
+        transfer_key_values={
+            "event_date": ["2025-01-01", "2025-01-02"],
+            "right(user_id, 1)": ["0", "1"],
+        },
+        concurrency=3,
+    )
+
+    assert keys == ["event_date", "right(user_id, 1)"]
+    assert values == {
+        "event_date": ["2025-01-01", "2025-01-02"],
+        "right(user_id, 1)": ["0", "1"],
+    }
+    assert [transfer_slice.values for transfer_slice in slices] == [
+        ("2025-01-01", "0"),
+        ("2025-01-01", "1"),
+        ("2025-01-02", "0"),
+        ("2025-01-02", "1"),
+    ]
+    assert "(event_date) = '2025-01-01'\n  AND (right(user_id, 1)) = '0'" in (
+        slices[0].predicate_sql
+    )
+
+
+@pytest.mark.parametrize(
+    ("transfer_keys", "transfer_key_values", "concurrency", "match"),
+    [
+        ("event_date", ["2025-01-01", "2025-01-01"], 1, "duplicate"),
+        ("event_date", [], 1, "must not be empty"),
+        (["event_date", "bucket"], {"event_date": ["2025-01-01"]}, 1, "missing"),
+        ("event_date", {"event_date": ["2025-01-01"], "bucket": ["0"]}, 1, "extra"),
+        (None, ["2025-01-01"], 1, "requires transfer_keys"),
+        ("event_date", None, 1, "requires explicit"),
+        (None, None, 2, "concurrency > 1"),
+        ("event_date", ["2025-01-01"], 0, "positive integer"),
+        ("event_date", ["2025-01-01"], True, "positive integer"),
+    ],
+)
+def test_normalize_transfer_slices_rejects_invalid_inputs(
+    transfer_keys: Any,
+    transfer_key_values: Any,
+    concurrency: Any,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        keys_module.normalize_transfer_slices(
+            source_sql="select id from events",
+            transfer_keys=transfer_keys,
+            transfer_key_values=transfer_key_values,
+            concurrency=concurrency,
+        )
+
+
+def test_transfer_slice_query_literals_and_wrapping() -> None:
+    values = (
+        "Bob's",
+        date(2025, 1, 1),
+        datetime(2025, 1, 1, 12, 30, 1),
+        7,
+        1.5,
+        True,
+        Decimal("10.25"),
+        None,
+    )
+    transfer_slice = keys_module.build_transfer_slice(
+        index=3,
+        source_sql="select * from events",
+        transfer_keys=["name", "dt", "ts", "id", "score", "active", "amount", "deleted_at"],
+        values=values,
+    )
+
+    assert transfer_slice.source_sql.startswith("SELECT *\nFROM (select * from events)")
+    assert "(name) = 'Bob''s'" in transfer_slice.predicate_sql
+    assert "(dt) = DATE '2025-01-01'" in transfer_slice.predicate_sql
+    assert "(ts) = TIMESTAMP '2025-01-01 12:30:01'" in transfer_slice.predicate_sql
+    assert "(id) = 7" in transfer_slice.predicate_sql
+    assert "(score) = 1.5" in transfer_slice.predicate_sql
+    assert "(active) = TRUE" in transfer_slice.predicate_sql
+    assert "(amount) = 10.25" in transfer_slice.predicate_sql
+    assert "(deleted_at) IS NULL" in transfer_slice.predicate_sql
+    assert "\n  AND " in transfer_slice.predicate_sql
+
+
+def test_normalize_transfer_slices_rejects_multi_statement_source_sql() -> None:
+    with pytest.raises(ValueError, match="exactly one SQL statement"):
+        keys_module.normalize_transfer_slices(
+            source_sql="select 1; select 2",
+            transfer_keys="id",
+            transfer_key_values=[1],
+            concurrency=1,
+        )
+
+
 def test_run_transfer_attempt_cleans_only_current_stage_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -430,6 +563,275 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         "close:source",
         "close:target",
     ]
+
+
+def make_keyed_options(**overrides: Any) -> Any:
+    _keys, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from source_table",
+        transfer_keys="event_date",
+        transfer_key_values=["2025-01-01", "2025-01-02"],
+        concurrency=overrides.pop("concurrency", 1),
+    )
+    option_values = {
+        "from_db_key": "source_db",
+        "from_db_backend": "gp",
+        "to_db_key": "target_db",
+        "to_db_backend": "gp",
+        "source_sql": "select id, event_date from source_table",
+        "target_table": "sandbox.target",
+        "batch_size": 2,
+        "transfer_keys": ["event_date"],
+        "transfer_key_values": values,
+        "transfer_slices": slices,
+        "concurrency": concurrency,
+    }
+    option_values.update(overrides)
+    return models_module.TransferOptions(**option_values)
+
+
+def test_run_keyed_transfer_attempt_uses_one_stage_finalize_and_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    source_conn = FakeTransferConnection("main-source")
+    target_conn = FakeTransferConnection("main-target")
+    options = make_keyed_options()
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        if connection_key == "source_db":
+            return source_conn
+        if connection_key == "target_db":
+            return target_conn
+        raise AssertionError(f"unexpected connection key: {connection_key}")
+
+    def fake_create_stage_state(*_args: Any, **_kwargs: Any) -> Any:
+        events.append("create_stage_state")
+        return models_module.TransferStageState(target_exists=False)
+
+    def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
+        events.append("inspect_source_query_schema")
+        return [SimpleNamespace(name="id", native_type="integer")]
+
+    def fake_initialize_shared_stage_for_keyed_slices(**kwargs: Any) -> None:
+        events.append("initialize_shared_stage")
+        stage_state = kwargs["stage_state"]
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+        stage_state.stage_table_created = True
+        stage_state.stage_column_types = {"id": "INTEGER"}
+        stage_state.first_non_empty_batch = pd.DataFrame(columns=["id"])
+
+    def fake_load_keyed_stage_slices(**_kwargs: Any) -> int:
+        events.append("load_keyed_stage_slices")
+        return 5
+
+    def fake_finalize_loaded_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("finalize_loaded_stage")
+
+    def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("cleanup_stage")
+
+    def fake_close_connection_ref(
+        _connection_ref: dict[str, Any],
+        _connection_type: str,
+        role: str,
+    ) -> None:
+        events.append(f"close:{role}")
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "create_stage_state", fake_create_stage_state)
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        fake_inspect_source_query_schema,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_shared_stage_for_keyed_slices",
+        fake_initialize_shared_stage_for_keyed_slices,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "load_keyed_stage_slices",
+        fake_load_keyed_stage_slices,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        fake_finalize_loaded_stage,
+    )
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
+    monkeypatch.setattr(attempt_module, "close_connection_ref", fake_close_connection_ref)
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=3,
+        insert_retry_cnt=2,
+    )
+
+    assert total_rows == 5
+    assert events == [
+        "create_stage_state",
+        "inspect_source_query_schema",
+        "initialize_shared_stage",
+        "load_keyed_stage_slices",
+        "finalize_loaded_stage",
+        "cleanup_stage",
+        "close:source",
+        "close:target",
+    ]
+
+
+def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options()
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
+        stage_column_types={"id": "INTEGER", "event_date": "DATE"},
+        stage_table="sandbox.target__stage__abcd1234",
+    )
+    opened_connections: list[tuple[str, str]] = []
+    loaded: list[dict[str, Any]] = []
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        connection = FakeTransferConnection(f"{connection_key}-{len(opened_connections)}")
+        opened_connections.append((connection_key, connection.name))
+        return connection
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        loaded.append(
+            {
+                "source_sql": kwargs["options"].source_sql,
+                "source_conn": kwargs["connection_refs"].source["connection"].name,
+                "target_conn": kwargs["connection_refs"].target["connection"].name,
+                "slice_index": kwargs["slice_index"],
+            }
+        )
+        return kwargs["slice_index"] + 1
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+
+    total_rows = attempt_module.load_keyed_stage_slices(
+        options=options,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 3
+    assert [item["source_sql"] for item in loaded] == [
+        transfer_slice.source_sql for transfer_slice in options.transfer_slices
+    ]
+    assert [item["slice_index"] for item in loaded] == [0, 1]
+    assert opened_connections == [
+        ("source_db", "source_db-0"),
+        ("target_db", "target_db-1"),
+        ("source_db", "source_db-2"),
+        ("target_db", "target_db-3"),
+    ]
+    assert loaded[0]["source_conn"] != loaded[1]["source_conn"]
+    assert loaded[0]["target_conn"] != loaded[1]["target_conn"]
+
+
+def test_keyed_worker_failure_skips_finalize_and_still_cleans_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    options = make_keyed_options()
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [SimpleNamespace(name="id", native_type="integer")],
+    )
+
+    def fake_initialize_shared_stage_for_keyed_slices(**kwargs: Any) -> None:
+        stage_state = kwargs["stage_state"]
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+        stage_state.stage_table_created = True
+        stage_state.stage_column_types = {"id": "INTEGER"}
+        stage_state.first_non_empty_batch = pd.DataFrame(columns=["id"])
+
+    def fake_load_keyed_stage_slices(**_kwargs: Any) -> int:
+        events.append("load_keyed_stage_slices")
+        raise RuntimeError("slice failed")
+
+    def fail_finalize(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("target must not be finalized after slice failure")
+
+    def fake_cleanup_stage(*_args: Any, **_kwargs: Any) -> None:
+        events.append("cleanup_stage")
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_shared_stage_for_keyed_slices",
+        fake_initialize_shared_stage_for_keyed_slices,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "load_keyed_stage_slices",
+        fake_load_keyed_stage_slices,
+    )
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", fail_finalize)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
+
+    with pytest.raises(RuntimeError, match="slice failed"):
+        attempt_module.run_transfer_attempt(
+            options=options,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    assert events == ["load_keyed_stage_slices", "cleanup_stage"]
+
+
+def test_keyed_transfer_workers_run_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(concurrency=2)
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
+        stage_column_types={"id": "INTEGER", "event_date": "DATE"},
+        stage_table="sandbox.target__stage__abcd1234",
+    )
+    barrier = threading.Barrier(2)
+    started: list[int] = []
+
+    def fake_load_keyed_stage_slice(**kwargs: Any) -> int:
+        started.append(kwargs["transfer_slice"].index)
+        barrier.wait(timeout=2)
+        return 1
+
+    monkeypatch.setattr(
+        attempt_module,
+        "load_keyed_stage_slice",
+        fake_load_keyed_stage_slice,
+    )
+
+    total_rows = attempt_module.load_keyed_stage_slices(
+        options=options,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 2
+    assert sorted(started) == [0, 1]
 
 
 def test_cleanup_stale_stage_tables_warns_once_when_staging_schema_missing(
@@ -815,6 +1217,51 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     assert any(
         sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls
     )
+
+
+def test_transfer_dry_run_shows_keyed_slice_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id, event_date from source_table;",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+        transfer_keys="event_date",
+        transfer_key_values=["2025-01-01", "2025-01-02"],
+        concurrency=2,
+        dry_run=True,
+    )
+
+    assert plan.options["transfer_keys"] == ["event_date"]
+    assert plan.options["transfer_key_values"] == {
+        "event_date": ["2025-01-01", "2025-01-02"]
+    }
+    assert plan.options["concurrency"] == 2
+    assert plan.options["transfer_slice_count"] == 2
+    read_source_sqls = [
+        statement.sql for statement in plan.statements if statement.phase == "read_source"
+    ]
+    assert len(read_source_sqls) == 2
+    assert all(
+        "FROM (select id, event_date from source_table) AS "
+        "analytics_toolkit_transfer_source" in sql
+        for sql in read_source_sqls
+    )
+    assert "(event_date) = '2025-01-01'" in read_source_sqls[0]
+    assert "(event_date) = '2025-01-02'" in read_source_sqls[1]
+    assert any("shared keyed source slice batches" in sql for sql in plan.sqls)
 
 
 def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(
@@ -1963,6 +2410,47 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
     assert [batch["file_index"] for batch in written_batches] == [0, 1]
     assert all(batch["row_group_size"] == 2 for batch in written_batches)
     assert source.cursor_obj.fetch_sizes == [2, 2, 2]
+
+
+def test_keyed_parquet_writer_includes_slice_and_part_in_filename() -> None:
+    batch = models_module.RowBatch(columns=["id"], rows=[(1,)])
+    opened_uris: list[str] = []
+
+    class FakeTable:
+        @staticmethod
+        def from_pydict(values: dict[str, list[Any]]) -> dict[str, list[Any]]:
+            return values
+
+    class FakePq:
+        @staticmethod
+        def write_table(
+            _arrow_table: Any,
+            spooled_file: Any,
+            *,
+            row_group_size: int,
+        ) -> None:
+            del row_group_size
+            spooled_file.write(b"parquet")
+
+    class FakeFsspec:
+        def open(self, uri: str, mode: str) -> io.BytesIO:
+            assert mode == "wb"
+            opened_uris.append(uri)
+            return io.BytesIO()
+
+    inserted_rows = parquet_stage_module.write_batch_to_parquet_stage(
+        batch,
+        file_index=7,
+        slice_index=3,
+        stage_external_location="s3://bucket/tmp/stage/",
+        pa=SimpleNamespace(Table=FakeTable),
+        pq=FakePq,
+        fsspec_module=FakeFsspec(),
+        row_group_size=100,
+    )
+
+    assert inserted_rows == 1
+    assert opened_uris == ["s3://bucket/tmp/stage/slice-00003-part-00007.parquet"]
 
 
 def test_load_parquet_stage_infers_schema_from_first_row_group(
