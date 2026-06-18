@@ -1387,6 +1387,102 @@ def test_transfer_options_reject_invalid_trino_mode(
         )
 
 
+def test_transfer_options_rejects_both_source_inputs_before_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_get_connection_config(_db_key: str) -> Any:
+        raise AssertionError("connection config should not be loaded")
+
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        fail_get_connection_config,
+    )
+
+    with pytest.raises(ValueError, match="Provide only one of from_sql or from_table"):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            from_sql="select id from source_table",
+            from_table="source_table",
+            to_table="sandbox.target",
+        )
+
+
+def test_transfer_options_rejects_missing_source_input_before_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_get_connection_config(_db_key: str) -> Any:
+        raise AssertionError("connection config should not be loaded")
+
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        fail_get_connection_config,
+    )
+
+    with pytest.raises(ValueError, match="Provide exactly one of from_sql or from_table"):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            to_table="sandbox.target",
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"from_sql": " "}, "from_sql must not be empty"),
+        ({"from_table": " "}, "from_table must not be empty"),
+    ],
+)
+def test_transfer_options_rejects_empty_source_input_before_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, str],
+    match: str,
+) -> None:
+    def fail_get_connection_config(_db_key: str) -> Any:
+        raise AssertionError("connection config should not be loaded")
+
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        fail_get_connection_config,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            to_table="sandbox.target",
+            **kwargs,
+        )
+
+
+def test_transfer_options_accepts_from_table_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db="source",
+        to_db="target",
+        from_table="sandbox.source_table",
+        to_table="sandbox.target",
+    )
+
+    assert options.source_table == "sandbox.source_table"
+    assert options.source_sql == "SELECT * FROM sandbox.source_table"
+
+
 def test_transfer_options_reject_same_key_before_parquet_staging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1491,6 +1587,36 @@ def test_transfer_dry_run_values_mode_uses_row_stage_plan(
     )
 
 
+def test_transfer_dry_run_shows_from_table_source_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_table="sandbox.source_table",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        dry_run=True,
+    )
+
+    assert plan.options["from_table"] == "sandbox.source_table"
+    assert plan.options["source_table"] == "sandbox.source_table"
+    read_source_sqls = [
+        statement.sql for statement in plan.statements if statement.phase == "read_source"
+    ]
+    assert read_source_sqls == ["SELECT * FROM sandbox.source_table"]
+
+
 def test_transfer_dry_run_shows_keyed_slice_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1535,6 +1661,48 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     assert "(event_date) = '2025-01-01'" in read_source_sqls[0]
     assert "(event_date) = '2025-01-02'" in read_source_sqls[1]
     assert any("shared keyed source slice batches" in sql for sql in plan.sqls)
+
+
+def test_transfer_dry_run_shows_keyed_from_table_slice_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_table="sandbox.source_table",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+        transfer_keys="event_date",
+        transfer_key_values=["2025-01-01", "2025-01-02"],
+        concurrency=2,
+        dry_run=True,
+    )
+
+    assert plan.options["from_table"] == "sandbox.source_table"
+    assert plan.options["transfer_keys"] == ["event_date"]
+    assert plan.options["transfer_key_expressions"] == {"event_date": "event_date"}
+    assert plan.options["transfer_key_values"] == {
+        "event_date": ["2025-01-01", "2025-01-02"]
+    }
+    assert plan.options["concurrency"] == 2
+    assert plan.options["transfer_slice_count"] == 2
+    read_source_sqls = [
+        statement.sql for statement in plan.statements if statement.phase == "read_source"
+    ]
+    assert read_source_sqls == [
+        "SELECT * FROM sandbox.source_table\nWHERE (event_date) = '2025-01-01'",
+        "SELECT * FROM sandbox.source_table\nWHERE (event_date) = '2025-01-02'",
+    ]
 
 
 def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(

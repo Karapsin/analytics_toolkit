@@ -371,6 +371,7 @@ class TransferOptions:
     transfer_key_values: dict[str, list[Any]] | None = None
     transfer_slices: list[TransferSlice] | None = None
     concurrency: int = 1
+    source_table: str | None = None
 
 
 @dataclass

@@ -66,6 +66,7 @@ from .parquet_stage import (
     build_create_parquet_stage_table_sql,
     build_stage_external_location,
 )
+from .source import normalize_transfer_source
 from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
 from ..runtime.models import TrinoTransferMode
@@ -76,8 +77,9 @@ from ..runtime.retry import run_with_retry
 def transfer_table(
     from_db: str,
     to_db: str,
-    from_sql: str,
-    to_table: str,
+    from_sql: str | None = None,
+    to_table: str | None = None,
+    from_table: str | None = None,
     write_mode: str | None = None,
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
@@ -125,6 +127,7 @@ def transfer_table(
         to_db=to_db,
         from_sql=from_sql,
         to_table=to_table,
+        from_table=from_table,
         write_mode=write_mode,
         batch_size=batch_size,
         adaptive_batch_size=adaptive_batch_size,
@@ -266,8 +269,9 @@ def transfer_table(
 def build_transfer_options(
     from_db: str,
     to_db: str,
-    from_sql: str,
-    to_table: str,
+    from_sql: str | None = None,
+    to_table: str | None = None,
+    from_table: str | None = None,
     write_mode: str | None = None,
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
@@ -307,6 +311,10 @@ def build_transfer_options(
     concurrency: int = 1,
     trino_mode: TrinoTransferMode | None = None,
 ) -> TransferOptions:
+    source_sql, source_table = normalize_transfer_source(
+        from_sql=from_sql,
+        from_table=from_table,
+    )
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
     configured_trino_insert_chunk_size = (
@@ -372,7 +380,6 @@ def build_transfer_options(
         adaptive_batch_size_step,
     )
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
-    source_sql = from_sql.strip()
     (
         normalized_transfer_keys,
         normalized_transfer_key_expressions,
@@ -381,6 +388,7 @@ def build_transfer_options(
         resolved_concurrency,
     ) = normalize_transfer_slices(
         source_sql=source_sql,
+        source_table=source_table,
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
@@ -391,7 +399,8 @@ def build_transfer_options(
         to_db_key=to_config.connection_key,
         to_db_backend=to_config.backend,
         source_sql=source_sql,
-        target_table=to_table.strip(),
+        source_table=source_table,
+        target_table=to_table.strip() if isinstance(to_table, str) else "",
         table_schema=normalize_table_schema(table_schema),
         replace_target_table=resolved_write_mode != "append",
         write_mode=resolved_write_mode,
@@ -450,8 +459,6 @@ def build_transfer_options(
 
     if options.from_db_key == options.to_db_key:
         raise ValueError("from_db and to_db must be different.")
-    if not options.source_sql:
-        raise ValueError("from_sql must not be empty.")
     if not options.target_table:
         raise ValueError("to_table must not be empty.")
     if options.write_mode == "upsert" and not options.key_columns:
@@ -560,6 +567,8 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "transfer_staging_location": options.transfer_staging_location,
             "trino_mode": options.trino_mode,
+            "from_table": options.source_table,
+            "source_table": options.source_table,
             "transfer_keys": options.transfer_keys,
             "transfer_key_expressions": options.transfer_key_expressions,
             "transfer_key_values": options.transfer_key_values,

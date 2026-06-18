@@ -28,6 +28,7 @@ class TransferKey:
 def normalize_transfer_slices(
     *,
     source_sql: str,
+    source_table: str | None = None,
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None,
     concurrency: int,
@@ -66,6 +67,7 @@ def normalize_transfer_slices(
         build_transfer_slice(
             index=index,
             source_sql=stripped_source_sql,
+            source_table=source_table,
             transfer_keys=keys,
             values=values,
         )
@@ -194,15 +196,22 @@ def build_transfer_slice(
     *,
     index: int,
     source_sql: str,
+    source_table: str | None = None,
     transfer_keys: list[TransferKey],
     values: tuple[Any, ...],
 ) -> TransferSlice:
     predicate_sql = build_transfer_slice_predicate(transfer_keys, values)
-    source_sql = render_transfer_slice_source_sql(
-        source_sql,
-        transfer_keys=transfer_keys,
-        values=values,
-    )
+    if source_table is None:
+        source_sql = render_transfer_slice_source_sql(
+            source_sql,
+            transfer_keys=transfer_keys,
+            values=values,
+        )
+    else:
+        source_sql = render_transfer_table_slice_source_sql(
+            source_table,
+            predicate_sql=predicate_sql,
+        )
     validate_single_rendered_slice_statement(source_sql)
     return TransferSlice(
         index=index,
@@ -226,6 +235,14 @@ def build_transfer_slice_predicate(
         else:
             predicates.append(f"({key.expression}) = {render_transfer_literal(value)}")
     return "\n  AND ".join(predicates)
+
+
+def render_transfer_table_slice_source_sql(
+    source_table: str,
+    *,
+    predicate_sql: str,
+) -> str:
+    return f"SELECT * FROM {source_table}\nWHERE {predicate_sql}"
 
 
 def render_transfer_slice_source_sql(
