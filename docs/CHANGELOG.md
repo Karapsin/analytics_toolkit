@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Add workflow status diff summaries.
 - Require inline predicate placeholders for keyed SQL transfer.
 - Add from_table source input to SQL transfer.
+- Add public SQL facade dry-run smoke tests.
 
 ## 1.3.10.8 - 2026-06-18
 
