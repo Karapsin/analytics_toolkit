@@ -51,16 +51,7 @@ from ...table.write_modes import (
     build_upsert_stage_sqls,
 )
 from .attempt import run_transfer_attempt
-from .options import (
-    resolve_adaptive_batch_bounds,
-    resolve_adaptive_batch_size_step,
-    resolve_target_adaptation_mode,
-    resolve_target_batch_memory,
-    resolve_target_batch_memory_limits,
-    resolve_target_rows_per_second_deadband,
-    resolve_target_rows_per_second_window,
-    resolve_trino_mode,
-)
+from . import options as transfer_options
 from .keys import normalize_transfer_slices
 from .parquet_stage import (
     build_create_parquet_stage_table_sql,
@@ -325,7 +316,7 @@ def build_transfer_options(
         if isinstance(to_config, TrinoConfig)
         else None
     )
-    resolved_trino_mode = resolve_trino_mode(
+    resolved_trino_mode = transfer_options.resolve_trino_mode(
         trino_mode,
         target_backend=to_config.backend,
         transfer_staging_schema=to_config.transfer_staging_schema,
@@ -335,7 +326,7 @@ def build_transfer_options(
         to_config.backend,
         write_mode=write_mode,
     )
-    resolved_target_rows_per_second = resolve_target_adaptation_mode(
+    resolved_target_rows_per_second = transfer_options.resolve_target_adaptation_mode(
         adaptive_batch_size=adaptive_batch_size,
         target_rows_per_second=target_rows_per_second,
         target_batch_seconds=target_batch_seconds,
@@ -344,13 +335,13 @@ def build_transfer_options(
     (
         resolved_target_batch_memory_mb,
         resolved_target_batch_memory_bytes,
-    ) = resolve_target_batch_memory(target_batch_memory_mb)
+    ) = transfer_options.resolve_target_batch_memory(target_batch_memory_mb)
     (
         resolved_min_batch_memory_mb,
         resolved_min_batch_memory_bytes,
         resolved_max_batch_memory_mb,
         resolved_max_batch_memory_bytes,
-    ) = resolve_target_batch_memory_limits(
+    ) = transfer_options.resolve_target_batch_memory_limits(
         min_batch_memory_mb=min_batch_memory_mb,
         max_batch_memory_mb=max_batch_memory_mb,
     )
@@ -360,7 +351,7 @@ def build_transfer_options(
         resolved_target_batch_seconds,
         resolved_min_batch_seconds,
         resolved_max_batch_seconds,
-    ) = resolve_adaptive_batch_bounds(
+    ) = transfer_options.resolve_adaptive_batch_bounds(
         batch_size=batch_size,
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
@@ -370,14 +361,20 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         unlimited_default_max=resolved_target_batch_memory_bytes is not None,
     )
-    resolved_target_rows_per_second_window = resolve_target_rows_per_second_window(
-        target_rows_per_second_window,
+    resolved_target_rows_per_second_window = (
+        transfer_options.resolve_target_rows_per_second_window(
+            target_rows_per_second_window,
+        )
     )
     resolved_target_rows_per_second_deadband = (
-        resolve_target_rows_per_second_deadband(target_rows_per_second_deadband)
+        transfer_options.resolve_target_rows_per_second_deadband(
+            target_rows_per_second_deadband
+        )
     )
-    resolved_adaptive_batch_size_step = resolve_adaptive_batch_size_step(
-        adaptive_batch_size_step,
+    resolved_adaptive_batch_size_step = (
+        transfer_options.resolve_adaptive_batch_size_step(
+            adaptive_batch_size_step,
+        )
     )
     retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
     (

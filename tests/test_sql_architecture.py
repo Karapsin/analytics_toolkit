@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import importlib
+import pkgutil
 from pathlib import Path
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +53,68 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
     for name in removed_public_aliases:
         assert name not in sql.__all__
         assert not hasattr(sql, name)
+
+
+def test_transfer_api_reload_tolerates_stale_transfer_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.api"
+    )
+    options_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.options"
+    )
+
+    assert hasattr(options_module, "resolve_trino_mode")
+    with monkeypatch.context() as patch:
+        patch.delattr(options_module, "resolve_trino_mode")
+        reloaded_api = importlib.reload(api_module)
+
+    assert callable(reloaded_api.transfer_table)
+    assert hasattr(options_module, "resolve_trino_mode")
+    importlib.reload(api_module)
+
+
+def test_sql_facade_reload_tolerates_stale_transfer_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sql_module = importlib.import_module("analytics_toolkit.sql")
+    api_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.api"
+    )
+    options_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.options"
+    )
+
+    assert hasattr(options_module, "resolve_trino_mode")
+    with monkeypatch.context() as patch:
+        patch.delattr(options_module, "resolve_trino_mode")
+        importlib.reload(api_module)
+        reloaded_sql = importlib.reload(sql_module)
+
+    assert callable(reloaded_sql.show_tables)
+    assert callable(reloaded_sql.transfer)
+    assert "show_tables" in reloaded_sql.__all__
+    assert "transfer" in reloaded_sql.__all__
+    assert hasattr(options_module, "resolve_trino_mode")
+    importlib.reload(api_module)
+    importlib.reload(sql_module)
+
+
+def test_sql_submodules_import_cleanly() -> None:
+    import analytics_toolkit.sql as sql_package
+
+    failed_imports: list[str] = []
+    for module_info in pkgutil.walk_packages(
+        sql_package.__path__,
+        prefix=f"{sql_package.__name__}.",
+    ):
+        try:
+            importlib.import_module(module_info.name)
+        except Exception as exc:  # pragma: no cover - assertion reports details
+            failed_imports.append(f"{module_info.name}: {type(exc).__name__}: {exc}")
+
+    assert failed_imports == []
 
 
 def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:
