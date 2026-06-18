@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Add Trino transfer mode option.
+- Add workflow status diff summaries.
 
 ## 1.3.10.8 - 2026-06-18
 

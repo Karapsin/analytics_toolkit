@@ -256,18 +256,24 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
-    monkeypatch.setattr(
-        mcp_server,
-        "_run_git",
-        lambda root_path, args: {
+
+    def fake_run_git(root_path: Path, args: list[str]) -> dict[str, object]:
+        stdout_by_args = {
+            ("branch", "--show-current"): "main\n",
+            ("status", "--short"): "",
+            ("diff", "--stat"): " agent_tools/mcp_server.py | 2 ++\n",
+            ("diff", "--cached", "--stat"): " tests/test_agent_tools_mcp.py | 3 +++\n",
+        }
+        return {
             "ok": True,
-            "stdout": "main\n" if args == ["branch", "--show-current"] else "",
+            "stdout": stdout_by_args.get(tuple(args), ""),
             "stderr": "",
             "returncode": 0,
             "command": "git",
             "summary": "",
-        },
-    )
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_git", fake_run_git)
 
     result = mcp_server.workflow_status(
         "implementation release workflow",
@@ -279,6 +285,12 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     assert result["ok"] is True
     assert result["tool"] == "workflow_status"
     assert result["result"]["repo_health"]["branch"] == "main"
+    assert result["result"]["repo_health"]["dirty"] is False
+    assert result["result"]["repo_health"]["status_short"] == []
+    assert result["result"]["repo_health"]["diff_stat"] == [" agent_tools/mcp_server.py | 2 ++"]
+    assert result["result"]["repo_health"]["staged_diff_stat"] == [
+        " tests/test_agent_tools_mcp.py | 3 +++"
+    ]
     assert "agent_docs/development.md" in result["result"]["required_instruction_files"]
     assert "agent_docs/release.md" in result["result"]["required_instruction_files"]
     assert "agent_tools/README.md" in result["result"]["required_instruction_files"]
@@ -286,6 +298,47 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     assert result["result"]["recommended_checks"]["focused_commands"] == [
         "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py"
     ]
+
+
+def test_repo_health_reports_unstaged_and_staged_diff_stats(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    calls: list[list[str]] = []
+
+    def fake_run_git(root_path: Path, args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        stdout_by_args = {
+            ("status", "--short"): " M agent_tools/mcp_server.py\n",
+            ("branch", "--show-current"): "dev\n",
+            ("diff", "--stat"): " agent_tools/mcp_server.py | 2 ++\n",
+            ("diff", "--cached", "--stat"): " tests/test_agent_tools_mcp.py | 3 +++\n",
+        }
+        return {
+            "ok": True,
+            "stdout": stdout_by_args[tuple(args)],
+            "stderr": "",
+            "returncode": 0,
+            "command": "git " + " ".join(args),
+            "summary": "",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_git", fake_run_git)
+
+    result = mcp_server.repo_health(root=str(root))
+
+    assert calls == [
+        ["status", "--short"],
+        ["branch", "--show-current"],
+        ["diff", "--stat"],
+        ["diff", "--cached", "--stat"],
+    ]
+    assert result["branch"] == "dev"
+    assert result["dirty"] is True
+    assert result["status_short"] == [" M agent_tools/mcp_server.py"]
+    assert result["diff_stat"] == [" agent_tools/mcp_server.py | 2 ++"]
+    assert result["staged_diff_stat"] == [" tests/test_agent_tools_mcp.py | 3 +++"]
 
 
 def test_workflow_status_suppresses_instruction_reminder_when_confirmed(

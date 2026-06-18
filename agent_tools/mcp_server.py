@@ -991,6 +991,8 @@ def repo_health(root: str = ".") -> dict[str, Any]:
     root_path = _resolve_root(root)
     status = _run_git(root_path, ["status", "--short"])
     branch = _run_git(root_path, ["branch", "--show-current"])
+    diff_stat = _run_git(root_path, ["diff", "--stat"])
+    staged_diff_stat = _run_git(root_path, ["diff", "--cached", "--stat"])
     pyproject_text = _read_text(root_path / "pyproject.toml")
     changelog_text = _read_text(root_path / "docs" / "CHANGELOG.md")
     latest = _latest_changelog_entry(changelog_text)
@@ -999,6 +1001,10 @@ def repo_health(root: str = ".") -> dict[str, Any]:
         "branch": branch["stdout"].strip() if branch["ok"] else "",
         "dirty": bool(status["stdout"].strip()) if status["ok"] else None,
         "status_short": status["stdout"].splitlines() if status["ok"] else [],
+        "diff_stat": diff_stat["stdout"].splitlines() if diff_stat["ok"] else [],
+        "staged_diff_stat": staged_diff_stat["stdout"].splitlines()
+        if staged_diff_stat["ok"]
+        else [],
         "package_version": _parse_required(VERSION_RE, pyproject_text, "project version"),
         "requires_python": _parse_required(PYTHON_REQUIRES_RE, pyproject_text, "requires-python"),
         "latest_changelog": latest,

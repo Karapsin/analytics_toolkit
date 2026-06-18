@@ -30,6 +30,11 @@ use standalone `git-workflow push` only to retry a failed post-commit push. Use
 before a PyPI release. Use `release-workflow --action publish` only when release
 readiness is clean.
 
+`workflow-status` reports the current branch, dirty state, `git status --short`
+lines, unstaged `git diff --stat` lines, and staged `git diff --cached --stat`
+lines through its `repo_health` result. Use that consolidated status instead of
+running separate shell probes for routine worktree summaries.
+
 `mcp_server.py` exposes the consolidated tool surface:
 `prepare_start`, `docs`, `workflow_status`, `version_bump`, `run_checks`,
 `git_workflow`, and `release_workflow`.
