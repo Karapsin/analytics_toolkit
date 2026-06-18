@@ -256,53 +256,96 @@ def make_trino_config(
     )
 
 
+def test_normalize_transfer_keys_accepts_simple_string_key() -> None:
+    keys = keys_module.normalize_transfer_keys(" event_date ")
+
+    assert keys == [
+        keys_module.TransferKey(name="event_date", expression="event_date"),
+    ]
+
+
+def test_normalize_transfer_keys_accepts_list_keys_in_order() -> None:
+    keys = keys_module.normalize_transfer_keys(["event_date", " store_id "])
+
+    assert keys == [
+        keys_module.TransferKey(name="event_date", expression="event_date"),
+        keys_module.TransferKey(name="store_id", expression="store_id"),
+    ]
+
+
+def test_normalize_transfer_keys_accepts_mapping_expression_key() -> None:
+    keys = keys_module.normalize_transfer_keys(
+        {" user_id_suffix ": " right(user_id, 1) "}
+    )
+
+    assert keys == [
+        keys_module.TransferKey(
+            name="user_id_suffix",
+            expression="right(user_id, 1)",
+        ),
+    ]
+
+
 def test_normalize_transfer_slices_accepts_single_key_sequence_values() -> None:
-    keys, values, slices, concurrency = keys_module.normalize_transfer_slices(
-        source_sql="select id, event_date from events;",
+    keys, expressions, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from events where {event_date};",
         transfer_keys="event_date",
         transfer_key_values=["2025-01-01", "2025-01-02"],
         concurrency=2,
     )
 
     assert keys == ["event_date"]
+    assert expressions == {"event_date": "event_date"}
     assert values == {"event_date": ["2025-01-01", "2025-01-02"]}
     assert concurrency == 2
     assert [transfer_slice.values for transfer_slice in slices] == [
         ("2025-01-01",),
         ("2025-01-02",),
     ]
-    assert "FROM (select id, event_date from events)" in slices[0].source_sql
+    assert "analytics_toolkit_transfer_source" not in slices[0].source_sql
     assert "(event_date) = '2025-01-01'" in slices[0].source_sql
 
 
 def test_normalize_transfer_slices_accepts_single_key_mapping_values() -> None:
-    keys, values, slices, _concurrency = keys_module.normalize_transfer_slices(
-        source_sql="select id from events",
-        transfer_keys="event_date",
-        transfer_key_values={"event_date": ["2025-01-01"]},
+    keys, expressions, values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id from events where {user_id_suffix}",
+        transfer_keys={"user_id_suffix": "right(user_id, 1)"},
+        transfer_key_values=["0", "1"],
         concurrency=1,
     )
 
-    assert keys == ["event_date"]
-    assert values == {"event_date": ["2025-01-01"]}
-    assert [transfer_slice.values for transfer_slice in slices] == [("2025-01-01",)]
+    assert keys == ["user_id_suffix"]
+    assert expressions == {"user_id_suffix": "right(user_id, 1)"}
+    assert values == {"user_id_suffix": ["0", "1"]}
+    assert [transfer_slice.values for transfer_slice in slices] == [("0",), ("1",)]
+    assert "(right(user_id, 1)) = '0'" in slices[0].source_sql
 
 
 def test_normalize_transfer_slices_builds_multi_key_cartesian_values() -> None:
-    keys, values, slices, _concurrency = keys_module.normalize_transfer_slices(
-        source_sql="select id, event_date from events",
-        transfer_keys=["event_date", "right(user_id, 1)"],
+    keys, expressions, values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql=(
+            "select id, event_date from events "
+            "where {event_date} and {user_id_suffix}"
+        ),
+        transfer_keys={
+            "event_date": "event_date",
+            "user_id_suffix": "right(user_id, 1)",
+        },
         transfer_key_values={
             "event_date": ["2025-01-01", "2025-01-02"],
-            "right(user_id, 1)": ["0", "1"],
+            "user_id_suffix": ["0", "1"],
         },
         concurrency=3,
     )
 
-    assert keys == ["event_date", "right(user_id, 1)"]
+    assert keys == ["event_date", "user_id_suffix"]
+    assert expressions == {
+        "event_date": "event_date",
+        "user_id_suffix": "right(user_id, 1)",
+    }
     assert values == {
         "event_date": ["2025-01-01", "2025-01-02"],
-        "right(user_id, 1)": ["0", "1"],
+        "user_id_suffix": ["0", "1"],
     }
     assert [transfer_slice.values for transfer_slice in slices] == [
         ("2025-01-01", "0"),
@@ -312,6 +355,10 @@ def test_normalize_transfer_slices_builds_multi_key_cartesian_values() -> None:
     ]
     assert "(event_date) = '2025-01-01'\n  AND (right(user_id, 1)) = '0'" in (
         slices[0].predicate_sql
+    )
+    assert (
+        "where (event_date) = '2025-01-01' and (right(user_id, 1)) = '0'"
+        in slices[0].source_sql
     )
 
 
@@ -344,7 +391,41 @@ def test_normalize_transfer_slices_rejects_invalid_inputs(
         )
 
 
-def test_transfer_slice_query_literals_and_wrapping() -> None:
+@pytest.mark.parametrize(
+    ("transfer_keys", "match"),
+    [
+        ("right(user_id, 1)", "For SQL expressions, use mapping form"),
+        (["event_date", "event_date "], "placeholder names must be unique"),
+        ("1event_date", "Invalid entry"),
+        ("event date", "Invalid entry"),
+    ],
+)
+def test_normalize_transfer_keys_rejects_invalid_simple_names(
+    transfer_keys: Any,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        keys_module.normalize_transfer_keys(transfer_keys)
+
+
+@pytest.mark.parametrize(
+    ("transfer_keys", "match"),
+    [
+        ({"right(user_id, 1)": "right(user_id, 1)"}, "Invalid entry"),
+        ({"bucket": " "}, "must not be empty"),
+        ({"bucket": 1}, "mapping values must be strings"),
+        ({" bucket ": "id", "bucket": "id"}, "placeholder names must be unique"),
+    ],
+)
+def test_normalize_transfer_keys_rejects_invalid_mapping_entries(
+    transfer_keys: Any,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        keys_module.normalize_transfer_keys(transfer_keys)
+
+
+def test_transfer_slice_query_literals_and_inline_placeholders() -> None:
     values = (
         "Bob's",
         date(2025, 1, 1),
@@ -357,12 +438,25 @@ def test_transfer_slice_query_literals_and_wrapping() -> None:
     )
     transfer_slice = keys_module.build_transfer_slice(
         index=3,
-        source_sql="select * from events",
-        transfer_keys=["name", "dt", "ts", "id", "score", "active", "amount", "deleted_at"],
+        source_sql=(
+            "select * from events where {name} and {dt} and {ts} and {id} "
+            "and {score} and {active} and {amount} and {deleted_at}"
+        ),
+        transfer_keys=[
+            keys_module.TransferKey(name="name", expression="name"),
+            keys_module.TransferKey(name="dt", expression="dt"),
+            keys_module.TransferKey(name="ts", expression="ts"),
+            keys_module.TransferKey(name="id", expression="id"),
+            keys_module.TransferKey(name="score", expression="score"),
+            keys_module.TransferKey(name="active", expression="active"),
+            keys_module.TransferKey(name="amount", expression="amount"),
+            keys_module.TransferKey(name="deleted_at", expression="deleted_at"),
+        ],
         values=values,
     )
 
-    assert transfer_slice.source_sql.startswith("SELECT *\nFROM (select * from events)")
+    assert transfer_slice.source_sql.startswith("select * from events where ")
+    assert "SELECT *\nFROM (" not in transfer_slice.source_sql
     assert "(name) = 'Bob''s'" in transfer_slice.predicate_sql
     assert "(dt) = DATE '2025-01-01'" in transfer_slice.predicate_sql
     assert "(ts) = TIMESTAMP '2025-01-01 12:30:01'" in transfer_slice.predicate_sql
@@ -379,6 +473,49 @@ def test_normalize_transfer_slices_rejects_multi_statement_source_sql() -> None:
         keys_module.normalize_transfer_slices(
             source_sql="select 1; select 2",
             transfer_keys="id",
+            transfer_key_values=[1],
+            concurrency=1,
+        )
+
+
+def test_normalize_transfer_slices_rejects_missing_placeholder() -> None:
+    with pytest.raises(ValueError, match=r"Missing placeholder: \{event_date\}"):
+        keys_module.normalize_transfer_slices(
+            source_sql="select id from events",
+            transfer_keys="event_date",
+            transfer_key_values=["2025-01-01"],
+            concurrency=1,
+        )
+
+
+def test_normalize_transfer_slices_rejects_duplicate_placeholder() -> None:
+    with pytest.raises(ValueError, match=r"\{event_date\} must appear exactly once"):
+        keys_module.normalize_transfer_slices(
+            source_sql="select id from events where {event_date} or {event_date}",
+            transfer_keys="event_date",
+            transfer_key_values=["2025-01-01"],
+            concurrency=1,
+        )
+
+
+def test_normalize_transfer_slices_leaves_unknown_brace_text() -> None:
+    _keys, _expressions, _values, slices, _concurrency = (
+        keys_module.normalize_transfer_slices(
+            source_sql="select '{not_a_transfer_key}' as token where {id}",
+            transfer_keys="id",
+            transfer_key_values=[1],
+            concurrency=1,
+        )
+    )
+
+    assert "{not_a_transfer_key}" in slices[0].source_sql
+
+
+def test_normalize_transfer_slices_rejects_multi_statement_rendered_slice() -> None:
+    with pytest.raises(ValueError, match="rendered slice SQL"):
+        keys_module.normalize_transfer_slices(
+            source_sql="select id from events where {bad_expr}",
+            transfer_keys={"bad_expr": "id) = 1; select 2 where (id"},
             transfer_key_values=[1],
             concurrency=1,
         )
@@ -566,8 +703,8 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
 
 
 def make_keyed_options(**overrides: Any) -> Any:
-    _keys, values, slices, concurrency = keys_module.normalize_transfer_slices(
-        source_sql="select id, event_date from source_table",
+    _keys, expressions, values, slices, concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select id, event_date from source_table where {event_date}",
         transfer_keys="event_date",
         transfer_key_values=["2025-01-01", "2025-01-02"],
         concurrency=overrides.pop("concurrency", 1),
@@ -581,6 +718,7 @@ def make_keyed_options(**overrides: Any) -> Any:
         "target_table": "sandbox.target",
         "batch_size": 2,
         "transfer_keys": ["event_date"],
+        "transfer_key_expressions": expressions,
         "transfer_key_values": values,
         "transfer_slices": slices,
         "concurrency": concurrency,
@@ -1369,7 +1507,7 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     plan = transfer_api_module.transfer_table(
         from_db="source",
         to_db="target",
-        from_sql="select id, event_date from source_table;",
+        from_sql="select id, event_date from source_table where {event_date};",
         to_table="sandbox.target",
         table_schema={"id": "INTEGER", "event_date": "DATE"},
         transfer_keys="event_date",
@@ -1379,6 +1517,7 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     )
 
     assert plan.options["transfer_keys"] == ["event_date"]
+    assert plan.options["transfer_key_expressions"] == {"event_date": "event_date"}
     assert plan.options["transfer_key_values"] == {
         "event_date": ["2025-01-01", "2025-01-02"]
     }
@@ -1388,10 +1527,10 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
         statement.sql for statement in plan.statements if statement.phase == "read_source"
     ]
     assert len(read_source_sqls) == 2
-    assert all(
-        "FROM (select id, event_date from source_table) AS "
-        "analytics_toolkit_transfer_source" in sql
-        for sql in read_source_sqls
+    assert all("analytics_toolkit_transfer_source" not in sql for sql in read_source_sqls)
+    assert all("SELECT *\nFROM (" not in sql for sql in read_source_sqls)
+    assert read_source_sqls[0].startswith(
+        "select id, event_date from source_table where "
     )
     assert "(event_date) = '2025-01-01'" in read_source_sqls[0]
     assert "(event_date) = '2025-01-02'" in read_source_sqls[1]

@@ -115,7 +115,7 @@ def transfer_table(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
-    transfer_keys: str | Sequence[str] | None = None,
+    transfer_keys: str | Sequence[str] | Mapping[str, str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
     trino_mode: TrinoTransferMode | None = None,
@@ -302,7 +302,7 @@ def build_transfer_options(
     progress: bool = False,
     estimate_total_rows: bool = False,
     table_schema: dict[str, str] | None = None,
-    transfer_keys: str | Sequence[str] | None = None,
+    transfer_keys: str | Sequence[str] | Mapping[str, str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
     trino_mode: TrinoTransferMode | None = None,
@@ -375,6 +375,7 @@ def build_transfer_options(
     source_sql = from_sql.strip()
     (
         normalized_transfer_keys,
+        normalized_transfer_key_expressions,
         normalized_transfer_key_values,
         transfer_slices,
         resolved_concurrency,
@@ -438,6 +439,7 @@ def build_transfer_options(
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         trino_mode=resolved_trino_mode,
         transfer_keys=normalized_transfer_keys,
+        transfer_key_expressions=normalized_transfer_key_expressions,
         transfer_key_values=normalized_transfer_key_values,
         transfer_slices=transfer_slices,
         concurrency=resolved_concurrency,
@@ -559,6 +561,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "transfer_staging_location": options.transfer_staging_location,
             "trino_mode": options.trino_mode,
             "transfer_keys": options.transfer_keys,
+            "transfer_key_expressions": options.transfer_key_expressions,
             "transfer_key_values": options.transfer_key_values,
             "concurrency": options.concurrency,
             "transfer_slice_count": (

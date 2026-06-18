@@ -367,6 +367,7 @@ class TransferOptions:
     transfer_staging_username: str | None = None
     trino_mode: TrinoTransferMode | None = None
     transfer_keys: list[str] | None = None
+    transfer_key_expressions: dict[str, str] | None = None
     transfer_key_values: dict[str, list[Any]] | None = None
     transfer_slices: list[TransferSlice] | None = None
     concurrency: int = 1

@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int' = 1, trino_mode: 'Literal["parquet", "values"] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_mode: 'str | None' = None, batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'int | float' = 600, key_columns: 'list[str] | None' = None, gp_distributed_by_key: 'list[str] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int' = 1, trino_mode: 'Literal["parquet", "values"] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -43,8 +43,8 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str', to_table: 'str', write_m
 - `progress` - whether to show progress bars for supported multi-step or row-loading operations
 - `estimate_total_rows` - whether transfer should ask the source backend for a best-effort row estimate for progress
 - `table_schema` - explicit backend-native column type mapping for created tables
-- `transfer_keys` - optional SQL expression or expressions used to split the source query into explicit keyed slices
-- `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{key: values}`, while multiple keys require `{key: values}` for every key
+- `transfer_keys` - optional placeholder name, placeholder-name sequence, or `{placeholder_name: sql_expression}` mapping used to split the source query into explicit keyed slices
+- `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{placeholder_name: values}`, while multiple keys require `{placeholder_name: values}` for every key
 - `concurrency` - number of keyed source slices to load at once; values above `1` require `transfer_keys`
 - `partition_by` - partitioning columns or expression for created tables, interpreted according to the target backend
 - `order_by` - ordering or sorting columns or expression for created tables, interpreted according to the target backend
@@ -82,23 +82,30 @@ rows
 # 125000
 ```
 
-Single-key slices:
+Single-key slices require a predicate placeholder in `from_sql`. The
+placeholder is replaced with the full predicate, not just the literal value:
 
 ```python
 from analytics_toolkit import sql
 
 rows = sql.transfer(
-    from_db="trino",
-    to_db="gp",
-    from_sql="select user_id, event_date, amount from events",
-    to_table="sandbox.events_copy",
+    from_db="ch",
+    to_db="trino",
+    from_sql="""
+        select event_date as dt, store_id, product_id
+        from sandbox.loyalty_events
+        where event_name in ('purchase', 'return')
+          and {event_date}
+    """,
+    to_table="iceberg.sandbox.loyalty_events_copy",
     transfer_keys="event_date",
-    transfer_key_values=["2025-01-01", "2025-01-02"],
-    concurrency=2,
+    transfer_key_values=["2026-04-01", "2026-04-02"],
+    concurrency=4,
 )
 ```
 
-Multi-key slices use the Cartesian product of values in `transfer_keys` order:
+Expression keys use mapping form. Mapping keys are placeholder names, and
+mapping values are trusted SQL expressions:
 
 ```python
 from analytics_toolkit import sql
@@ -106,12 +113,20 @@ from analytics_toolkit import sql
 rows = sql.transfer(
     from_db="trino",
     to_db="gp",
-    from_sql="select user_id, event_date, amount from events",
+    from_sql="""
+        select user_id, event_date, amount
+        from events
+        where {event_date}
+          and {user_id_suffix}
+    """,
     to_table="sandbox.events_copy",
-    transfer_keys=["event_date", "right(user_id, 1)"],
+    transfer_keys={
+        "event_date": "event_date",
+        "user_id_suffix": "right(user_id, 1)",
+    },
     transfer_key_values={
-        "event_date": ["2025-01-01", "2025-01-02"],
-        "right(user_id, 1)": ["0", "1", "2"],
+        "event_date": ["2026-04-01"],
+        "user_id_suffix": ["0", "1", "2"],
     },
     concurrency=3,
 )
@@ -121,12 +136,20 @@ rows = sql.transfer(
 
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
-- `transfer_keys` expressions are evaluated against columns or expressions
-  projected by `from_sql`. Values are always explicit; the helper does not query
-  distinct key values automatically.
-- Keyed transfers wrap `from_sql` as a source subquery, load every generated
-  slice into one shared stage table, and finalize the target once after all
-  slices have loaded.
+- `transfer_keys` string and list forms accept only simple placeholder names
+  such as `"event_date"`. Use mapping form for SQL expressions, for example
+  `{"user_id_suffix": "right(user_id, 1)"}`.
+- Each keyed transfer requires exactly one `{placeholder_name}` occurrence in
+  `from_sql` for every transfer key. If `from_sql` is an f-string, escape
+  braces as `{{event_date}}`.
+- Key placeholders are replaced by predicates such as
+  `(event_date) = DATE '2026-04-01'` or `(event_date) IS NULL`; they are not
+  value-only placeholders.
+- Values are always explicit; the helper does not query distinct key values
+  automatically.
+- Keyed transfers render each source slice by replacing placeholders inline,
+  load every generated slice into one shared stage table, and finalize the
+  target once after all slices have loaded.
 - `transfer_keys` expressions should be deterministic and disjoint. The library
   rejects duplicate generated key tuples, but it cannot prove that arbitrary SQL
   expressions produce non-overlapping slices.

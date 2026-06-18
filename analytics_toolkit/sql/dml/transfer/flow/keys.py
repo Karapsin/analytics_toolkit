@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import product
@@ -11,29 +12,45 @@ import sqlparse
 
 from ..runtime.models import TransferSlice
 
-_TRANSFER_SOURCE_ALIAS = "analytics_toolkit_transfer_source"
+
+_INVALID_SIMPLE_KEY_MESSAGE = (
+    "transfer_keys string/list entries must be simple placeholder names such as "
+    "'event_date'."
+)
+
+
+@dataclass(frozen=True)
+class TransferKey:
+    name: str
+    expression: str
 
 
 def normalize_transfer_slices(
     *,
     source_sql: str,
-    transfer_keys: str | Sequence[str] | None,
+    transfer_keys: str | Sequence[str] | Mapping[str, str] | None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None,
     concurrency: int,
-) -> tuple[list[str] | None, dict[str, list[Any]] | None, list[TransferSlice] | None, int]:
+) -> tuple[
+    list[str] | None,
+    dict[str, str] | None,
+    dict[str, list[Any]] | None,
+    list[TransferSlice] | None,
+    int,
+]:
     resolved_concurrency = normalize_transfer_concurrency(concurrency)
     if transfer_keys is None:
         if transfer_key_values is not None:
             raise ValueError("transfer_key_values requires transfer_keys.")
         if resolved_concurrency > 1:
             raise ValueError("concurrency > 1 requires transfer_keys.")
-        return None, None, None, resolved_concurrency
+        return None, None, None, None, resolved_concurrency
 
     keys = normalize_transfer_keys(transfer_keys)
     if transfer_key_values is None:
         raise ValueError("transfer_keys requires explicit transfer_key_values.")
     values_by_key = normalize_transfer_key_values(keys, transfer_key_values)
-    values_product = list(product(*(values_by_key[key] for key in keys)))
+    values_product = list(product(*(values_by_key[key.name] for key in keys)))
     if not values_product:
         raise ValueError("transfer_key_values must generate at least one slice.")
 
@@ -54,7 +71,9 @@ def normalize_transfer_slices(
         )
         for index, values in enumerate(values_product)
     ]
-    return keys, values_by_key, slices, resolved_concurrency
+    key_names = [key.name for key in keys]
+    key_expressions = {key.name: key.expression for key in keys}
+    return key_names, key_expressions, values_by_key, slices, resolved_concurrency
 
 
 def normalize_transfer_concurrency(concurrency: int) -> int:
@@ -65,50 +84,99 @@ def normalize_transfer_concurrency(concurrency: int) -> int:
     return concurrency
 
 
-def normalize_transfer_keys(transfer_keys: str | Sequence[str]) -> list[str]:
+def normalize_transfer_keys(
+    transfer_keys: str | Sequence[str] | Mapping[str, str],
+) -> list[TransferKey]:
+    if isinstance(transfer_keys, Mapping):
+        return _normalize_transfer_key_mapping(transfer_keys)
     if isinstance(transfer_keys, str):
-        keys = [transfer_keys.strip()]
+        raw_keys = [transfer_keys]
     else:
-        keys = []
-        for key in transfer_keys:
-            if not isinstance(key, str):
-                raise ValueError("transfer_keys entries must be strings.")
-            keys.append(key.strip())
-    if not keys or any(not key for key in keys):
-        raise ValueError("transfer_keys must contain at least one non-empty expression.")
-    if len(set(keys)) != len(keys):
-        raise ValueError("transfer_keys expressions must be unique.")
+        raw_keys = list(transfer_keys)
+    if not raw_keys:
+        raise ValueError("transfer_keys must contain at least one placeholder name.")
+
+    keys: list[TransferKey] = []
+    seen: set[str] = set()
+    for raw_key in raw_keys:
+        if not isinstance(raw_key, str):
+            raise ValueError("transfer_keys entries must be strings.")
+        name = raw_key.strip()
+        _validate_simple_transfer_key_name(name, raw_entry=raw_key)
+        if name in seen:
+            raise ValueError("transfer_keys placeholder names must be unique.")
+        seen.add(name)
+        keys.append(TransferKey(name=name, expression=name))
     return keys
 
 
+def _normalize_transfer_key_mapping(
+    transfer_keys: Mapping[str, str],
+) -> list[TransferKey]:
+    if not transfer_keys:
+        raise ValueError("transfer_keys must contain at least one placeholder name.")
+    keys: list[TransferKey] = []
+    seen: set[str] = set()
+    for raw_name, raw_expression in transfer_keys.items():
+        if not isinstance(raw_name, str):
+            raise ValueError("transfer_keys mapping keys must be strings.")
+        name = raw_name.strip()
+        _validate_simple_transfer_key_name(name, raw_entry=raw_name)
+        if name in seen:
+            raise ValueError("transfer_keys placeholder names must be unique.")
+        seen.add(name)
+        if not isinstance(raw_expression, str):
+            raise ValueError("transfer_keys mapping values must be strings.")
+        expression = raw_expression.strip()
+        if not expression:
+            raise ValueError(
+                f"transfer_keys expression for placeholder {name!r} must not be empty."
+            )
+        keys.append(TransferKey(name=name, expression=expression))
+    return keys
+
+
+def _validate_simple_transfer_key_name(name: str, *, raw_entry: str) -> None:
+    if name and name.isidentifier():
+        return
+    raise ValueError(
+        _INVALID_SIMPLE_KEY_MESSAGE
+        + f"\nInvalid entry: {raw_entry!r}.\n"
+        + "For SQL expressions, use mapping form:\n"
+        + "  transfer_keys={'user_id_suffix': 'right(user_id, 1)'}"
+    )
+
+
 def normalize_transfer_key_values(
-    keys: list[str],
+    keys: list[TransferKey],
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]],
 ) -> dict[str, list[Any]]:
+    key_names = [key.name for key in keys]
     if isinstance(transfer_key_values, Mapping):
         provided_keys = set(transfer_key_values)
-        expected_keys = set(keys)
+        expected_keys = set(key_names)
         missing = expected_keys - provided_keys
         extra = provided_keys - expected_keys
         if missing or extra:
             details: list[str] = []
             if missing:
-                details.append("missing: " + ", ".join(sorted(missing)))
+                details.append("missing: " + ", ".join(sorted(map(str, missing))))
             if extra:
-                details.append("extra: " + ", ".join(sorted(extra)))
+                details.append("extra: " + ", ".join(sorted(map(str, extra))))
             raise ValueError(
-                "transfer_key_values keys must exactly match transfer_keys ("
+                "transfer_key_values keys must exactly match transfer key placeholder names ("
                 + "; ".join(details)
                 + ")."
             )
         return {
             key: _normalize_single_key_values(transfer_key_values[key], key)
-            for key in keys
+            for key in key_names
         }
 
     if len(keys) != 1:
         raise ValueError("Multiple transfer_keys require mapping transfer_key_values.")
-    return {keys[0]: _normalize_single_key_values(transfer_key_values, keys[0])}
+    key_name = keys[0].name
+    return {key_name: _normalize_single_key_values(transfer_key_values, key_name)}
 
 
 def _normalize_single_key_values(values: Sequence[Any], key: str) -> list[Any]:
@@ -126,34 +194,74 @@ def build_transfer_slice(
     *,
     index: int,
     source_sql: str,
-    transfer_keys: list[str],
+    transfer_keys: list[TransferKey],
     values: tuple[Any, ...],
 ) -> TransferSlice:
     predicate_sql = build_transfer_slice_predicate(transfer_keys, values)
-    wrapped_source_sql = (
-        f"SELECT *\n"
-        f"FROM ({source_sql}) AS {_TRANSFER_SOURCE_ALIAS}\n"
-        f"WHERE {predicate_sql}"
+    source_sql = render_transfer_slice_source_sql(
+        source_sql,
+        transfer_keys=transfer_keys,
+        values=values,
     )
+    validate_single_rendered_slice_statement(source_sql)
     return TransferSlice(
         index=index,
         values=values,
         predicate_sql=predicate_sql,
-        source_sql=wrapped_source_sql,
+        source_sql=source_sql,
         label=f"slice-{index:05d}",
     )
 
 
-def build_transfer_slice_predicate(keys: list[str], values: tuple[Any, ...]) -> str:
+def build_transfer_slice_predicate(
+    keys: list[TransferKey],
+    values: tuple[Any, ...],
+) -> str:
     if len(keys) != len(values):
         raise ValueError("transfer key and value counts must match.")
     predicates = []
     for key, value in zip(keys, values):
         if value is None:
-            predicates.append(f"({key}) IS NULL")
+            predicates.append(f"({key.expression}) IS NULL")
         else:
-            predicates.append(f"({key}) = {render_transfer_literal(value)}")
+            predicates.append(f"({key.expression}) = {render_transfer_literal(value)}")
     return "\n  AND ".join(predicates)
+
+
+def render_transfer_slice_source_sql(
+    source_sql: str,
+    *,
+    transfer_keys: list[TransferKey],
+    values: tuple[Any, ...],
+) -> str:
+    if len(transfer_keys) != len(values):
+        raise ValueError("transfer key and value counts must match.")
+    for key in transfer_keys:
+        token = "{" + key.name + "}"
+        count = source_sql.count(token)
+        if count == 0:
+            raise ValueError(
+                "transfer_keys requires one predicate placeholder per key in from_sql.\n"
+                f"Missing placeholder: {token}\n\n"
+                "Add it where the source backend should filter rows, for example:\n"
+                f"  ... WHERE ... AND {token}\n\n"
+                f"If from_sql is an f-string, escape braces as {{{{{key.name}}}}}.\n"
+                f'The placeholder is replaced with "({key.expression}) = <value>" '
+                f'or "({key.expression}) IS NULL".'
+            )
+        if count != 1:
+            raise ValueError(
+                f"transfer key placeholder {token} must appear exactly once in "
+                f"from_sql; found {count}."
+            )
+    rendered_sql = source_sql
+    for key, value in zip(transfer_keys, values):
+        token = "{" + key.name + "}"
+        rendered_sql = rendered_sql.replace(
+            token,
+            build_transfer_slice_predicate([key], (value,)),
+        )
+    return rendered_sql
 
 
 def render_transfer_literal(value: Any) -> str:
@@ -194,3 +302,11 @@ def validate_single_source_statement(source_sql: str) -> None:
     statements = [statement for statement in sqlparse.split(source_sql) if statement.strip()]
     if len(statements) != 1:
         raise ValueError("transfer_keys requires from_sql to contain exactly one SQL statement.")
+
+
+def validate_single_rendered_slice_statement(source_sql: str) -> None:
+    statements = [statement for statement in sqlparse.split(source_sql) if statement.strip()]
+    if len(statements) != 1:
+        raise ValueError(
+            "transfer_keys rendered slice SQL must contain exactly one SQL statement."
+        )
