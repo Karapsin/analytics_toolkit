@@ -304,6 +304,132 @@ def test_format_sql_preserves_semicolon_with_aligned_where_anchor() -> None:
     )
 
 
+def test_format_sql_adds_default_blank_line_between_ctes() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "with a as (select 1 as x), "
+            "b as (select x from a), "
+            "c as (select x from b) "
+            "select * from c"
+        )
+        == "with a as (\n"
+        "    select\n"
+        "        1 as x\n"
+        "),\n"
+        "\n"
+        "b as (\n"
+        "    select\n"
+        "        x\n"
+        "    from a\n"
+        "),\n"
+        "\n"
+        "c as (\n"
+        "    select\n"
+        "        x\n"
+        "    from b\n"
+        ")\n"
+        "select\n"
+        "    *\n"
+        "from c"
+    )
+
+
+def test_format_sql_can_disable_blank_lines_between_ctes() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "with a as (select 1 as x), "
+            "b as (select x from a) "
+            "select * from b",
+            cte_blank_lines=0,
+        )
+        == "with a as (\n"
+        "    select\n"
+        "        1 as x\n"
+        "),\n"
+        "b as (\n"
+        "    select\n"
+        "        x\n"
+        "    from a\n"
+        ")\n"
+        "select\n"
+        "    *\n"
+        "from b"
+    )
+
+
+def test_format_sql_cte_spacing_preserves_keyword_case() -> None:
+    from analytics_toolkit.sql_format import format_sql
+
+    assert (
+        format_sql(
+            "with a as (select 1 as x), b as (select x from a) select * from b",
+            keyword_case="upper",
+        )
+        == "WITH a AS (\n"
+        "    SELECT\n"
+        "        1 AS x\n"
+        "),\n"
+        "\n"
+        "b AS (\n"
+        "    SELECT\n"
+        "        x\n"
+        "    FROM a\n"
+        ")\n"
+        "SELECT\n"
+        "    *\n"
+        "FROM b"
+    )
+
+
+def test_rewrite_with_ctes_exposes_cte_blank_lines() -> None:
+    from analytics_toolkit.sql_format import rewrite_with_ctes
+
+    assert (
+        rewrite_with_ctes(
+            "with old as (select 1 as x) "
+            "select s.x from (select x from old) s",
+            cte_blank_lines=0,
+        )
+        == "with old as (\n"
+        "    select\n"
+        "        1 as x\n"
+        "),\n"
+        "cte_1 as (\n"
+        "    select\n"
+        "        x\n"
+        "    from old\n"
+        ")\n"
+        "select\n"
+        "    s.x\n"
+        "from cte_1 as s"
+    )
+
+
+@pytest.mark.parametrize(
+    "cte_blank_lines",
+    [-1, True, 1.5],
+)
+@pytest.mark.parametrize(
+    "helper_name",
+    ["format_sql", "rewrite_with_ctes", "gp_rewrite_to_temp_tables"],
+)
+def test_sql_format_helpers_reject_invalid_cte_blank_lines(
+    helper_name: str,
+    cte_blank_lines: object,
+) -> None:
+    from analytics_toolkit import sql_format
+
+    with pytest.raises(ValueError, match="cte_blank_lines"):
+        getattr(sql_format, helper_name)(
+            "select 1",
+            cte_blank_lines=cte_blank_lines,
+        )
+
+
 @pytest.mark.parametrize(
     "sql",
     [

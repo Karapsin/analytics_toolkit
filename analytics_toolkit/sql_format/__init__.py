@@ -68,12 +68,14 @@ def format_sql(
     order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
+    cte_blank_lines: int = 1,
 ) -> str:
     """Format exactly one SQL statement without opening a database connection."""
 
     normalized_dialect = _validate_dialect(dialect)
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
+    normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
     normalized_where_anchor = _validate_where_anchor(where_anchor)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
@@ -102,6 +104,7 @@ def format_sql(
         order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
+        cte_blank_lines=normalized_cte_blank_lines,
         operation="format_sql",
     )
     return _with_semicolon_policy(rendered, statement.has_trailing_semicolon)
@@ -117,12 +120,14 @@ def rewrite_with_ctes(
     order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
+    cte_blank_lines: int = 1,
 ) -> str:
     """Rewrite derived-table SELECT subqueries into named CTEs."""
 
     normalized_dialect = _validate_dialect(dialect)
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
+    normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
         label="group_by_format",
@@ -154,6 +159,7 @@ def rewrite_with_ctes(
         order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
+        cte_blank_lines=normalized_cte_blank_lines,
         operation="rewrite_with_ctes",
     )
     _parse_expression(
@@ -173,12 +179,14 @@ def gp_rewrite_to_temp_tables(
     order_by_format: str = "ordinal",
     keyword_case: str = "lower",
     indent: int = 4,
+    cte_blank_lines: int = 1,
 ) -> str:
     """Rewrite SELECT CTEs and subqueries into Greenplum temp-table SQL."""
 
     normalized_dialect = _validate_dialect(dialect)
     normalized_keyword_case = _validate_keyword_case(keyword_case)
     normalized_indent = _validate_indent(indent)
+    normalized_cte_blank_lines = _validate_cte_blank_lines(cte_blank_lines)
     normalized_group_by_format = _validate_group_order_format(
         group_by_format,
         label="group_by_format",
@@ -204,6 +212,7 @@ def gp_rewrite_to_temp_tables(
         order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
+        cte_blank_lines=normalized_cte_blank_lines,
     )
     planner.rewrite_select(expression)
     planner.validate_complete_rewrite(expression)
@@ -222,6 +231,7 @@ def gp_rewrite_to_temp_tables(
         order_by_format=normalized_order_by_format,
         keyword_case=normalized_keyword_case,
         indent=normalized_indent,
+        cte_blank_lines=normalized_cte_blank_lines,
         operation="gp_rewrite_to_temp_tables",
     )
     _parse_expression(
@@ -260,6 +270,16 @@ def _validate_indent(indent: int) -> int:
     if not isinstance(indent, int) or isinstance(indent, bool) or indent < 1:
         raise ValueError("indent must be a positive integer.")
     return indent
+
+
+def _validate_cte_blank_lines(cte_blank_lines: int) -> int:
+    if (
+        not isinstance(cte_blank_lines, int)
+        or isinstance(cte_blank_lines, bool)
+        or cte_blank_lines < 0
+    ):
+        raise ValueError("cte_blank_lines must be a non-negative integer.")
+    return cte_blank_lines
 
 
 def _validate_where_anchor(where_anchor: str) -> str:
@@ -349,6 +369,7 @@ def _render_expression(
     order_by_format: str,
     keyword_case: str,
     indent: int,
+    cte_blank_lines: int,
     operation: str,
 ) -> str:
     expression_to_render, compaction_targets = _prepare_group_order_rendering(
@@ -375,6 +396,7 @@ def _render_expression(
     if compaction_targets:
         rendered = _compact_targeted_clause_layout(rendered, compaction_targets)
     rendered = _normalize_join_condition_layout(rendered)
+    rendered = _normalize_cte_separator_layout(rendered, cte_blank_lines)
     return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
 
 
@@ -883,6 +905,7 @@ class _GpTempTablePlanner:
         order_by_format: str,
         keyword_case: str,
         indent: int,
+        cte_blank_lines: int,
     ) -> None:
         self.dialect = dialect
         self.temp_prefix = temp_prefix
@@ -890,6 +913,7 @@ class _GpTempTablePlanner:
         self.order_by_format = order_by_format
         self.keyword_case = keyword_case
         self.indent = indent
+        self.cte_blank_lines = cte_blank_lines
         self.temp_tables: list[_GpTempTable] = []
         self._used_temp_names: set[str] = set()
         self._next_generated_index = 1
@@ -1123,6 +1147,7 @@ class _GpTempTablePlanner:
             order_by_format=self.order_by_format,
             keyword_case=self.keyword_case,
             indent=self.indent,
+            cte_blank_lines=self.cte_blank_lines,
             operation="gp_rewrite_to_temp_tables",
         )
         indented_query = _indent_sql(rendered_query, self.indent)
@@ -1393,6 +1418,25 @@ def _normalize_join_condition_layout(sql: str) -> str:
         if _starts_join_condition(previous_stripped):
             previous_prefix = previous_prefix[:-1]
         normalized_lines.append(f"{previous_prefix}{stripped}")
+    return "\n".join(normalized_lines)
+
+
+def _normalize_cte_separator_layout(sql: str, cte_blank_lines: int) -> str:
+    normalized_lines: list[str] = []
+    for line in sql.splitlines():
+        separator = re.match(
+            r"^(?P<indent>\s*)\),\s+(?P<next_cte>.+\bAS\s+\()$",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if separator is None:
+            normalized_lines.append(line)
+            continue
+
+        indent_prefix = separator.group("indent")
+        normalized_lines.append(f"{indent_prefix}),")
+        normalized_lines.extend("" for _ in range(cte_blank_lines))
+        normalized_lines.append(f"{indent_prefix}{separator.group('next_cte')}")
     return "\n".join(normalized_lines)
 
 

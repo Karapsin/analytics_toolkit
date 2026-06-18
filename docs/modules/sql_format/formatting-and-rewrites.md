@@ -10,7 +10,8 @@ Use [format_sql](functions/format_sql.md) when SQL should be normalized before
 review, logging, or storage. The formatter accepts one statement, applies stable
 indentation, can choose leading or trailing comma style, and can normalize WHERE
 clauses with an explicit anchor. By default, eligible `GROUP BY` and `ORDER BY`
-items render as SELECT-list ordinals; pass `group_by_format="expressions"` or
+items render as SELECT-list ordinals, and adjacent CTE definitions are separated
+by one empty line; pass `group_by_format="expressions"` or
 `order_by_format="expressions"` to keep expression-based clause output.
 
 ```python

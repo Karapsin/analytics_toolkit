@@ -5,7 +5,7 @@
 Rewrite SELECT CTEs and subqueries into a Greenplum temp-table script.
 
 ```python
-gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4) -> str
+gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1) -> str
 ```
 
 ## Inputs
@@ -17,6 +17,7 @@ gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", group_b
 - `order_by_format` - `ordinal` uses SELECT-list positions when an ORDER BY item can be matched and preserves sort modifiers; `expressions` preserves expression-based output
 - `keyword_case` - keyword case: `upper`, `lower`, or `capitalize`
 - `indent` - number of spaces per indentation level
+- `cte_blank_lines` - number of empty lines between adjacent CTE definitions
 
 ## Usage
 
