@@ -117,6 +117,37 @@ def test_sql_submodules_import_cleanly() -> None:
     assert failed_imports == []
 
 
+def test_sql_backend_registry_is_canonical_backend_list() -> None:
+    from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend_names
+    from analytics_toolkit.sql.connection.config import SUPPORTED_BACKENDS
+    from analytics_toolkit.sql.core.capabilities import BACKEND_CAPABILITIES
+
+    backend_names = set(get_backend_names())
+    assert backend_names == set(BACKEND_REGISTRY)
+    assert SUPPORTED_BACKENDS == backend_names
+    assert set(BACKEND_CAPABILITIES) == backend_names
+    assert {
+        backend_name: backend.capability
+        for backend_name, backend in BACKEND_REGISTRY.items()
+    } == BACKEND_CAPABILITIES
+
+
+def test_sql_backend_compatibility_shims_do_not_own_implementations() -> None:
+    shim_paths = {
+        SQL_ROOT / "backend_adapters.py",
+        *(SQL_ROOT / "_backend_adapters").glob("*.py"),
+    }
+    offenders: list[str] = []
+    for path in SQL_ROOT.rglob("*.py"):
+        if path in shim_paths:
+            continue
+        text = path.read_text()
+        if "._backend_adapters" in text or "sql._backend_adapters" in text:
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+
+    assert offenders == []
+
+
 def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:
     from analytics_toolkit import sql
 

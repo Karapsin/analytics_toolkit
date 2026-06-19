@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from ..._backend_adapters import get_backend_adapter
+from ...backend_adapters import get_backend_adapter
 from ...core.capabilities import validate_write_mode
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,

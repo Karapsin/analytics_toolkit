@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from ._backend_adapters import (
+from .backends import (
     BACKEND_ADAPTERS,
     UNSUPPORTED_BACKEND_MESSAGE,
     BackendAdapter,
+    BackendCapability,
     ClickHouseAdapter,
     DbApiBackendAdapter,
     GreenplumAdapter,
     TrinoAdapter,
+    WriteMode,
     ch_cluster_clause,
     extract_row_count,
     format_ch_cluster_name,
@@ -22,11 +24,13 @@ from ._backend_adapters import (
 __all__ = [
     "BACKEND_ADAPTERS",
     "BackendAdapter",
+    "BackendCapability",
     "ClickHouseAdapter",
     "DbApiBackendAdapter",
     "GreenplumAdapter",
     "TrinoAdapter",
     "UNSUPPORTED_BACKEND_MESSAGE",
+    "WriteMode",
     "ch_cluster_clause",
     "extract_row_count",
     "format_ch_cluster_name",

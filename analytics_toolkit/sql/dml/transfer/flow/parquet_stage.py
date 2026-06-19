@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 from sqlglot import exp, parse_one
 
-from ...._backend_adapters import get_backend_adapter
+from ....backend_adapters import get_backend_adapter
 from ....ddl.identifiers import quote_identifier
 from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print

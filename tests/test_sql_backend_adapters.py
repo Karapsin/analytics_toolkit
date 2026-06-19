@@ -8,6 +8,9 @@ import pandas as pd
 import pytest
 
 from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
+from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend_names
+from analytics_toolkit.sql.backends.base import BackendAdapter
+from analytics_toolkit.sql.backends.registry import get_backend_capability
 from tests.sql_fakes import FakeClickHouseResult, FakeDbapiConnection
 
 
@@ -190,6 +193,8 @@ def test_clickhouse_wait_helpers_are_lifecycle_owned_with_ddl_shims() -> None:
 
 def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
     assert set(BACKEND_ADAPTERS) == {"gp", "trino", "ch"}
+    assert BACKEND_ADAPTERS is BACKEND_REGISTRY
+    assert set(get_backend_names()) == set(BACKEND_REGISTRY)
 
     assert get_backend_adapter("gp").clear_table_sqls("schema.target") == [
         "TRUNCATE TABLE schema.target"
@@ -246,6 +251,49 @@ def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
         "OR (stage_src.`id` IS NULL AND target_dst.`id` IS NULL)) "
         "LIMIT 1"
     )
+
+
+def test_registered_backends_implement_full_contract() -> None:
+    required_methods = {
+        "build_connection_config",
+        "build_create_table_sqls",
+        "copy_airflow_fields",
+        "open_connection",
+        "execute_command",
+        "table_exists",
+        "clear_table_sqls",
+        "get_table_column_types",
+        "running_query_ids_sql",
+        "cancel_query_sql",
+    }
+    missing: list[str] = []
+    for backend_name, backend in BACKEND_REGISTRY.items():
+        capability = get_backend_capability(backend_name)
+        assert capability.name == backend_name
+        assert capability == backend.capability
+        assert backend.backend == backend_name
+        for method_name in sorted(required_methods):
+            method = getattr(type(backend), method_name, None)
+            if method is getattr(BackendAdapter, method_name, None):
+                missing.append(f"{backend_name}.{method_name}")
+
+    assert missing == []
+
+
+def test_legacy_backend_imports_resolve_to_canonical_objects() -> None:
+    legacy_module = importlib.import_module("analytics_toolkit.sql._backend_adapters")
+    public_compat_module = importlib.import_module(
+        "analytics_toolkit.sql.backend_adapters"
+    )
+
+    assert legacy_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
+    assert public_compat_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
+    for backend_name in get_backend_names():
+        assert legacy_module.get_backend_adapter(backend_name) is BACKEND_REGISTRY[backend_name]
+        assert (
+            public_compat_module.get_backend_adapter(backend_name)
+            is BACKEND_REGISTRY[backend_name]
+        )
 
 
 def test_sql_backend_dispatch_uses_callable_registries() -> None:

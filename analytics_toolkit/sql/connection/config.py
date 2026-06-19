@@ -9,11 +9,17 @@ from pathlib import Path
 from typing import Any, Literal, Union, cast
 
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
+from ..backends.registry import (
+    BACKEND_REGISTRY,
+    get_backend,
+    normalize_backend_name as _registry_normalize_backend_name,
+    require_backend_name,
+)
 from ..execution.operation_runner import timed_public_sql_function
 
 
 BackendName = Literal["trino", "gp", "ch"]
-SUPPORTED_BACKENDS: set[str] = {"trino", "gp", "ch"}
+SUPPORTED_BACKENDS: set[str] = set(BACKEND_REGISTRY)
 CONNECTIONS_FILE_NAME = ".connections"
 DEFAULT_GP_CONNECT_TIMEOUT_SECONDS = 30
 DEFAULT_GP_KEEPALIVES = True
@@ -179,194 +185,7 @@ def _build_connection_config(
     raw_config: dict[str, Any],
 ) -> ConnectionConfig:
     backend = _require_backend(connection_key, raw_config)
-
-    if backend == "trino":
-        _reject_removed_fields(
-            raw_config,
-            connection_key,
-            ["use_keychain_certs", "keychain_cert_names", "ca_cert"],
-        )
-        return TrinoConfig(
-            connection_key=connection_key,
-            backend=backend,
-            host=_require_string(raw_config, connection_key, "host"),
-            port=_optional_int(raw_config, connection_key, "port", 8080),
-            user=_require_string(raw_config, connection_key, "user"),
-            password=_optional_string(raw_config, connection_key, "password"),
-            catalog=_optional_string(raw_config, connection_key, "catalog"),
-            schema=_optional_string(raw_config, connection_key, "schema"),
-            auth_mode=_optional_string(
-                raw_config,
-                connection_key,
-                "auth_mode",
-                "basic",
-            ).lower(),
-            http_scheme=_optional_string(
-                raw_config,
-                connection_key,
-                "http_scheme",
-                "http",
-            ),
-            verify_value=(
-                _optional_bool_or_string_as_string(
-                    raw_config,
-                    connection_key,
-                    "verify",
-                )
-                or "true"
-            ),
-            transfer_staging_schema=_optional_string(
-                raw_config,
-                connection_key,
-                "transfer_staging_schema",
-            ),
-            transfer_staging_location=_optional_string(
-                raw_config,
-                connection_key,
-                "transfer_staging_location",
-            ),
-            ca_certs=_optional_string_or_string_list(
-                raw_config,
-                connection_key,
-                "ca_certs",
-            ),
-            insert_chunk_size=_optional_positive_int(
-                raw_config,
-                connection_key,
-                "insert_chunk_size",
-            ),
-            request_timeout=_optional_positive_int(
-                raw_config,
-                connection_key,
-                "request_timeout",
-            ),
-            source=_optional_string(raw_config, connection_key, "source"),
-        )
-    if backend == "gp":
-        _reject_removed_fields(raw_config, connection_key, ["ca_cert"])
-        ca_certs = _optional_string_or_string_list(
-            raw_config,
-            connection_key,
-            "ca_certs",
-        )
-        sslmode = _optional_string(raw_config, connection_key, "sslmode")
-        if ca_certs and sslmode is None:
-            sslmode = "verify-full"
-        return GpConfig(
-            connection_key=connection_key,
-            backend=backend,
-            host=_require_string(raw_config, connection_key, "host"),
-            port=_optional_int(raw_config, connection_key, "port", 5432),
-            user=_require_string(raw_config, connection_key, "user"),
-            password=_require_string(raw_config, connection_key, "password"),
-            database=_require_string(raw_config, connection_key, "database"),
-            connect_timeout=_optional_int(
-                raw_config,
-                connection_key,
-                "connect_timeout",
-                DEFAULT_GP_CONNECT_TIMEOUT_SECONDS,
-            ),
-            keepalives=_optional_bool(
-                raw_config,
-                connection_key,
-                "keepalives",
-                DEFAULT_GP_KEEPALIVES,
-            ),
-            keepalives_idle=_optional_int(
-                raw_config,
-                connection_key,
-                "keepalives_idle",
-                DEFAULT_GP_KEEPALIVES_IDLE_SECONDS,
-            ),
-            keepalives_interval=_optional_int(
-                raw_config,
-                connection_key,
-                "keepalives_interval",
-                DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS,
-            ),
-            keepalives_count=_optional_int(
-                raw_config,
-                connection_key,
-                "keepalives_count",
-                DEFAULT_GP_KEEPALIVES_COUNT,
-            ),
-            sslmode=sslmode,
-            ca_certs=ca_certs,
-            ssl_cert=_optional_string(raw_config, connection_key, "ssl_cert"),
-            ssl_key=_optional_string(raw_config, connection_key, "ssl_key"),
-            transfer_staging_schema=_optional_string(
-                raw_config,
-                connection_key,
-                "transfer_staging_schema",
-            ),
-        )
-    if backend == "ch":
-        _reject_removed_fields(
-            raw_config,
-            connection_key,
-            ["ca_cert", "ca_cert_variable"],
-        )
-        ca_certs = _optional_string_or_string_list(
-            raw_config,
-            connection_key,
-            "ca_certs",
-        )
-        ca_certs_variable = _optional_string(
-            raw_config,
-            connection_key,
-            "ca_certs_variable",
-        )
-        if ca_certs:
-            ca_certs_variable = None
-        return ChConfig(
-            connection_key=connection_key,
-            backend=backend,
-            host=_require_string(raw_config, connection_key, "host"),
-            port=_optional_int(raw_config, connection_key, "port", 8123),
-            user=_require_string(raw_config, connection_key, "user"),
-            password=_require_string(raw_config, connection_key, "password"),
-            database=_optional_string(raw_config, connection_key, "database"),
-            secure=_optional_bool(raw_config, connection_key, "secure", False),
-            verify_value=_optional_bool_or_string_as_string(
-                raw_config,
-                connection_key,
-                "verify",
-            ),
-            ca_certs=ca_certs,
-            ca_certs_variable=ca_certs_variable,
-            connect_timeout=_optional_positive_int(
-                raw_config,
-                connection_key,
-                "connect_timeout",
-            ),
-            send_receive_timeout=_optional_positive_int(
-                raw_config,
-                connection_key,
-                "send_receive_timeout",
-            ),
-            settings=_optional_mapping(raw_config, connection_key, "settings"),
-            interface=_optional_string(raw_config, connection_key, "interface"),
-            query_limit=_optional_non_negative_int(
-                raw_config,
-                connection_key,
-                "query_limit",
-            ),
-            query_retries=_optional_non_negative_int(
-                raw_config,
-                connection_key,
-                "query_retries",
-            ),
-            client_name=_optional_string(raw_config, connection_key, "client_name"),
-            transfer_staging_schema=_optional_string(
-                raw_config,
-                connection_key,
-                "transfer_staging_schema",
-            ),
-        )
-
-    raise UnsupportedConnectionTypeError(
-        f"Unsupported backend for SQL connection '{connection_key}': {backend!r}."
-    )
+    return get_backend(backend).build_connection_config(connection_key, raw_config)
 
 
 def get_connection_backend(connection_key: str) -> BackendName:
@@ -820,71 +639,13 @@ def _get_airflow_raw_connection_config_and_extras(
     _set_if_not_none(raw_config, "user", getattr(connection, "login", None))
     _set_if_not_none(raw_config, "password", getattr(connection, "password", None))
 
-    if resolved_backend == "gp":
-        _set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
-        _copy_extra_fields(
-            raw_config,
-            extras,
-            [
-                "connect_timeout",
-                "keepalives",
-                "keepalives_idle",
-                "keepalives_interval",
-                "keepalives_count",
-                "sslmode",
-                "transfer_staging_schema",
-                "ca_certs",
-                "ssl_cert",
-                "ssl_key",
-            ],
-        )
-    elif resolved_backend == "trino":
-        _copy_extra_fields(
-            raw_config,
-            extras,
-            [
-                "catalog",
-                "schema",
-                "transfer_staging_schema",
-                "transfer_staging_location",
-                "auth_mode",
-                "http_scheme",
-                "verify",
-                "ca_certs",
-                "insert_chunk_size",
-                "request_timeout",
-                "source",
-            ],
-        )
-        if isinstance(raw_config.get("verify"), bool):
-            raw_config["verify"] = str(raw_config["verify"]).lower()
-    elif resolved_backend == "ch":
-        _set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
-        raw_config["send_receive_timeout"] = 6000
-        raw_config["settings"] = {"connect_timeout": "500"}
-        _copy_extra_fields(
-            raw_config,
-            extras,
-            [
-                "secure",
-                "verify",
-                "ca_certs",
-                "transfer_staging_schema",
-                "ca_certs_variable",
-                "connect_timeout",
-                "send_receive_timeout",
-                "settings",
-                "interface",
-                "query_limit",
-                "query_retries",
-                "client_name",
-            ],
-        )
-    else:
-        raise UnsupportedConnectionTypeError(
-            f"Unsupported Airflow backend for SQL connection '{connection_id}': "
-            f"{resolved_backend!r}."
-        )
+    get_backend(resolved_backend).copy_airflow_fields(
+        raw_config,
+        extras,
+        connection,
+        _copy_extra_fields,
+        _set_if_not_none,
+    )
 
     return raw_config, extras
 
@@ -961,24 +722,7 @@ def _resolve_airflow_connection_backend(
 
 
 def _normalize_backend_name(raw_backend: BackendName | str) -> BackendName:
-    backend = str(raw_backend).strip().lower()
-    aliases = {
-        "greenplum": "gp",
-        "postgres": "gp",
-        "postgresql": "gp",
-        "presto": "trino",
-        "clickhouse": "ch",
-        "clickhouse-connect": "ch",
-        "clickhouse_connect": "ch",
-    }
-    normalized = aliases.get(backend, backend)
-    if normalized not in SUPPORTED_BACKENDS:
-        expected = ", ".join(sorted(SUPPORTED_BACKENDS))
-        raise UnsupportedConnectionTypeError(
-            f"Unsupported SQL connection backend {raw_backend!r}. "
-            f"Expected one of: {expected}."
-        )
-    return cast(BackendName, normalized)
+    return _registry_normalize_backend_name(raw_backend)
 
 
 def _normalize_optional_backend_name(
@@ -1088,14 +832,8 @@ def _set_if_not_none(
 
 
 def _require_backend(connection_key: str, config: dict[str, Any]) -> BackendName:
-    raw_backend = _require_string(config, connection_key, "type").lower()
-    if raw_backend not in SUPPORTED_BACKENDS:
-        expected = ", ".join(sorted(SUPPORTED_BACKENDS))
-        raise UnsupportedConnectionTypeError(
-            f"SQL connection '{connection_key}' has unsupported type {raw_backend!r}. "
-            f"Expected one of: {expected}."
-        )
-    return cast(BackendName, raw_backend)
+    raw_backend = _require_string(config, connection_key, "type")
+    return require_backend_name(raw_backend, connection_key=connection_key)
 
 
 def _require_string(

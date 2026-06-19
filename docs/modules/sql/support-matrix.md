@@ -7,9 +7,10 @@ ClickHouse, but generated SQL and metadata richness differ by backend. Use this
 matrix as a quick check before choosing a workflow or expecting a generated plan
 to look the same across engines.
 
-Use `analytics-toolkit sql support-matrix` for the compact CLI view. For Python
-checks, use `from analytics_toolkit import sql` and inspect
-`sql.BACKEND_CAPABILITIES`.
+For Python checks, use `from analytics_toolkit import sql` and inspect
+`sql.BACKEND_CAPABILITIES`. The capability rows are derived from the internal
+backend registry in `analytics_toolkit.sql.backends`, so support-matrix output
+and backend dispatch share the same canonical backend list.
 
 ## Backend Capabilities
 
@@ -47,5 +48,17 @@ Greenplum is the transactional, maintenance-friendly backend. Trino is best
 treated as a query and Iceberg table backend without portable table-size
 metadata. ClickHouse has the most specialized DDL behavior because distributed
 targets are managed as shard/distributed table pairs.
+
+## Backend Extension Notes
+
+Backend implementations live under `analytics_toolkit/sql/backends/<backend>/`.
+The public facade remains `from analytics_toolkit import sql`; generic public
+functions accept configured connection keys, not backend objects.
+
+A normal in-repo backend addition should add a backend package with adapter and
+config/opening logic, register it in `analytics_toolkit.sql.backends.registry`,
+then add focused behavior tests and documentation. Legacy compatibility imports
+under `analytics_toolkit.sql.backend_adapters` and
+`analytics_toolkit.sql._backend_adapters` resolve to the canonical registry.
 
 [SQL module index](index.md)

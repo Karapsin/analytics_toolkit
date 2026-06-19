@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..backends.gp import (
+from .adapter import (
     GreenplumAdapter,
     format_gp_information_schema_type,
     split_gp_table_name,

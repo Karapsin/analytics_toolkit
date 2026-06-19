@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from ..backends.trino import TrinoAdapter, split_trino_table_name
+from .adapter import TrinoAdapter, split_trino_table_name
 
 __all__ = ["TrinoAdapter", "split_trino_table_name"]

@@ -1,90 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
-
-from ..connection.config import BackendName, resolve_connection_backend
+from ..backends.base import BackendCapability, WriteMode
+from ..backends.registry import (
+    BACKEND_REGISTRY,
+    backend_capability_map,
+    get_backend_capability,
+)
 from ..execution.operation_runner import timed_public_sql_function
 
 
-WriteMode = Literal["append", "replace", "truncate_insert", "upsert"]
-
-
-@dataclass(frozen=True)
-class BackendCapability:
-    name: BackendName
-    display_name: str
-    sqlglot_dialect: str
-    identifier_quote: str
-    supports_transactions: bool
-    supports_analyze: bool
-    uses_stage_tables: bool
-    supports_distributed_tables: bool
-    truncate_semantics: str
-    drop_semantics: str
-    create_semantics: str
-    type_family: str
-    supported_write_modes: frozenset[WriteMode]
-
-
-BACKEND_CAPABILITIES: dict[BackendName, BackendCapability] = {
-    "gp": BackendCapability(
-        name="gp",
-        display_name="Greenplum",
-        sqlglot_dialect="postgres",
-        identifier_quote='"',
-        supports_transactions=True,
-        supports_analyze=True,
-        uses_stage_tables=True,
-        supports_distributed_tables=False,
-        truncate_semantics="TRUNCATE TABLE",
-        drop_semantics="DROP TABLE IF EXISTS",
-        create_semantics="CREATE TABLE with append-only columnar storage",
-        type_family="postgres",
-        supported_write_modes=frozenset(
-            {"append", "replace", "truncate_insert", "upsert"}
-        ),
-    ),
-    "trino": BackendCapability(
-        name="trino",
-        display_name="Trino",
-        sqlglot_dialect="trino",
-        identifier_quote='"',
-        supports_transactions=False,
-        supports_analyze=True,
-        uses_stage_tables=True,
-        supports_distributed_tables=False,
-        truncate_semantics="DELETE FROM",
-        drop_semantics="DROP TABLE IF EXISTS",
-        create_semantics="CREATE TABLE WITH parquet/object-store layout",
-        type_family="trino",
-        supported_write_modes=frozenset(
-            {"append", "replace", "truncate_insert", "upsert"}
-        ),
-    ),
-    "ch": BackendCapability(
-        name="ch",
-        display_name="ClickHouse",
-        sqlglot_dialect="clickhouse",
-        identifier_quote="`",
-        supports_transactions=False,
-        supports_analyze=False,
-        uses_stage_tables=True,
-        supports_distributed_tables=True,
-        truncate_semantics="TRUNCATE TABLE IF EXISTS",
-        drop_semantics="DROP TABLE IF EXISTS plus distributed pair when requested",
-        create_semantics="MergeTree or shard plus Distributed pair",
-        type_family="clickhouse",
-        supported_write_modes=frozenset(
-            {"append", "replace", "truncate_insert", "upsert"}
-        ),
-    ),
-}
-
-
-def get_backend_capability(connection_type_or_key: str) -> BackendCapability:
-    backend = resolve_connection_backend(connection_type_or_key)
-    return BACKEND_CAPABILITIES[backend]
+BACKEND_CAPABILITIES = backend_capability_map()
 
 
 def validate_write_mode(
@@ -110,7 +35,8 @@ def validate_write_mode(
 @timed_public_sql_function
 def support_matrix_rows() -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    for capability in BACKEND_CAPABILITIES.values():
+    for backend_name in BACKEND_REGISTRY:
+        capability = get_backend_capability(backend_name)
         rows.append(
             {
                 "backend": capability.name,
@@ -166,3 +92,14 @@ def format_support_matrix() -> str:
 
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
+
+
+__all__ = [
+    "BACKEND_CAPABILITIES",
+    "BackendCapability",
+    "WriteMode",
+    "format_support_matrix",
+    "get_backend_capability",
+    "support_matrix_rows",
+    "validate_write_mode",
+]
