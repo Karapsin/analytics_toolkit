@@ -258,6 +258,104 @@ class TrinoAdapter(DbApiBackendAdapter):
             )
         ]
 
+    def execute_sql(
+        self,
+        connection: Any,
+        sql: str,
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        del gp_break_query, gp_commit_each_statement
+        from ...dml.io.execute_sql import _execute_trino
+
+        return _execute_trino(
+            connection,
+            sql,
+            print_queries=print_queries,
+            progress=progress,
+        )
+
+    def execute_read_sql(
+        self,
+        connection: Any,
+        statements: list[str],
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        del gp_break_query, gp_commit_each_statement
+        from ...dml.io.execute_read import _execute_read_trino
+
+        return _execute_read_trino(
+            connection,
+            statements,
+            print_queries=print_queries,
+            progress=progress,
+        )
+
+    def insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+    ) -> None:
+        del gp_insert_chunk_size
+        from ...dml.load.load_sql_table import _insert_trino_batch
+
+        _insert_trino_batch(
+            connection,
+            table_name,
+            batch,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
+    def insert_rows_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+        gp_insert_page_size_getter: Callable[[], int] | None = None,
+        on_gp_insert_page_success: Callable[[float, int], None] | None = None,
+    ) -> None:
+        del gp_insert_chunk_size, gp_insert_page_size_getter, on_gp_insert_page_success
+        from ...dml.load.load_sql_table import _insert_trino_rows
+
+        _insert_trino_rows(
+            connection,
+            table_name,
+            columns,
+            rows,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
     def running_query_ids_sql(self) -> str:
         return """select query_id
 from system.runtime.queries

@@ -5,7 +5,7 @@ from typing import cast
 
 import pandas as pd
 
-from ..backend_adapters import split_trino_table_name
+from ..backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, split_trino_table_name
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from ..dml.io.read_sql import read_sql
@@ -58,9 +58,7 @@ def _build_extract_ddl_query(
             "AS ddl"
         )
 
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-    )
+    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 
 def _validate_tables(tables: str | Sequence[str]) -> list[str]:

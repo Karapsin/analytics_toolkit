@@ -5,21 +5,18 @@ from typing import Any
 
 import pandas as pd
 
+from ...backends.base import (
+    StageFinalizationRequest,
+    StageTargetTableRequest,
+    TargetWriteModeRequest,
+)
 from ...backend_adapters import ch_cluster_clause, get_backend_adapter
 from ...connection.config import resolve_connection_backend
-from ...ddl.api import _create_sql_table_with_connection
 from ...execution.labels import apply_query_label
 from ...execution.plans import SqlOperationMetadata, SqlPlan
 from analytics_toolkit.general import time_print
 from ._basic_ops import (
     build_clear_table_sqls,
-    get_table_column_types,
-    insert_from_table,
-)
-from .maintenance import (
-    clear_ch_distributed_table_data,
-    drop_ch_distributed_table_pair,
-    drop_table,
 )
 
 
@@ -86,85 +83,22 @@ def apply_target_write_mode(
 ) -> bool:
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
-    if write_mode == "append":
-        return target_exists
-
-    if backend == "ch":
-        if ch_only_shard:
-            if write_mode == "truncate_insert" and target_exists:
-                clear_target_table(
-                    backend,
-                    connection,
-                    table_name,
-                    query_label=query_label,
-                )
-                return True
-            if write_mode == "truncate_insert" and not drop_missing_ch_truncate_target:
-                return False
-
-            time_print(f"Dropping existing ClickHouse table {table_name}")
-            drop_table(
-                backend,
-                connection,
-                table_name,
-                ch_cluster=None,
-                query_label=query_label,
-            )
-            return False
-
-        if write_mode == "truncate_insert" and target_exists:
-            clear_ch_distributed_table_data(
-                connection,
-                table_name,
-                ch_cluster=ch_cluster,
-                query_label=query_label,
-            )
-            return True
-        if write_mode == "truncate_insert" and not drop_missing_ch_truncate_target:
-            return False
-
-        time_print(
-            "Dropping existing ClickHouse distributed table pair "
-            f"{table_name}"
-        )
-        drop_ch_distributed_table_pair(
-            connection,
-            table_name,
+    return get_backend_adapter(backend).apply_target_write_mode(
+        TargetWriteModeRequest(
+            connection=connection,
+            table_name=table_name,
+            write_mode=write_mode,
+            target_exists=target_exists,
+            replace_existing_non_ch=replace_existing_non_ch,
             ch_cluster=ch_cluster,
+            connection_label=log_connection,
+            drop_missing_ch_truncate_target=drop_missing_ch_truncate_target,
             query_label=query_label,
-            wait_for_absence=True,
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
+            ch_only_shard=ch_only_shard,
         )
-        return False
-
-    if not target_exists:
-        return False
-
-    if write_mode == "truncate_insert" or replace_existing_non_ch == "clear":
-        clear_target_table(
-            backend,
-            connection,
-            table_name,
-            query_label=query_label,
-        )
-        return True
-
-    if replace_existing_non_ch == "drop":
-        time_print(
-            f"Dropping existing table {table_name}",
-            connection=log_connection,
-            backend=backend,
-        )
-        drop_table(
-            backend,
-            connection,
-            table_name,
-            query_label=query_label,
-        )
-        return False
-
-    raise ValueError("replace_existing_non_ch must be one of: clear, drop.")
+    )
 
 def build_upsert_stage_sqls(
     connection_type: str,
@@ -460,99 +394,18 @@ def finalize_stage_table(
         connection=connection_key or connection_type,
         backend=backend,
     )
-    original_target_exists = target_exists
-
-    if write_mode == "upsert":
-        if not target_exists:
-            target_exists = _ensure_stage_target_table(
-                backend=backend,
-                connection=connection,
-                target_table=target_table,
-                sample_batch=sample_batch,
-                target_column_types=target_column_types,
-                gp_distributed_by_key=gp_distributed_by_key,
-                partition_by=partition_by,
-                order_by=order_by,
-                ch_engine=ch_engine,
-                ch_cluster=ch_cluster,
-                ch_sharding_key=ch_sharding_key,
-                query_label=query_label,
-                connection_key=connection_key,
-                ch_only_shard=ch_only_shard,
-            )
-            insert_from_table(
-                backend,
-                connection,
-                target_table,
-                stage_table,
-                column_types=insert_column_types,
-                query_label=query_label,
-            )
-            return
-
-        if backend == "ch":
-            _ensure_ch_distributed_target_pair(
-                connection_type,
-                connection,
-                target_table,
-                sample_batch,
-                target_exists=target_exists,
-                target_column_types=target_column_types,
-                insert_column_types=insert_column_types,
-                gp_distributed_by_key=gp_distributed_by_key,
-                partition_by=partition_by,
-                order_by=order_by,
-                ch_engine=ch_engine,
-                ch_cluster=ch_cluster,
-                ch_sharding_key=ch_sharding_key,
-                query_label=query_label,
-                connection_key=connection_key,
-                ch_replace_table=False,
-                ch_only_shard=ch_only_shard,
-            )
-
-        upsert_stage_table(
-            backend,
-            connection,
-            target_table,
-            stage_table,
-            columns=list(
-                insert_column_types
-                or target_column_types
-                or sample_batch.columns
-            ),
-            key_columns=key_columns or [],
-            column_types=insert_column_types,
-            ch_cluster=ch_cluster,
-            ch_only_shard=ch_only_shard,
-            query_label=query_label,
-        )
-        return
-
-    if replace_target_table:
-        target_exists = apply_target_write_mode(
-            backend,
-            connection,
-            target_table,
-            write_mode=write_mode,
+    get_backend_adapter(backend).finalize_stage_table(
+        StageFinalizationRequest(
+            connection=connection,
+            stage_table=stage_table,
+            target_table=target_table,
+            replace_target_table=replace_target_table,
             target_exists=target_exists,
-            replace_existing_non_ch="clear",
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            connection_key=connection_key,
-            ch_retry_per_host_drops=ch_retry_per_host_drops,
-            ch_only_shard=ch_only_shard,
-        )
-
-    if backend == "ch":
-        _ensure_ch_distributed_target_pair(
-            connection_type,
-            connection,
-            target_table,
-            sample_batch,
-            target_exists=target_exists,
+            sample_batch=sample_batch,
             target_column_types=target_column_types,
             insert_column_types=insert_column_types,
+            write_mode=write_mode,
+            key_columns=key_columns,
             gp_distributed_by_key=gp_distributed_by_key,
             partition_by=partition_by,
             order_by=order_by,
@@ -561,49 +414,9 @@ def finalize_stage_table(
             ch_sharding_key=ch_sharding_key,
             query_label=query_label,
             connection_key=connection_key,
-            ch_replace_table=(
-                original_target_exists
-                and replace_target_table
-                and write_mode == "replace"
-                and not ch_only_shard
-            ),
+            ch_retry_per_host_drops=ch_retry_per_host_drops,
             ch_only_shard=ch_only_shard,
         )
-        insert_from_table(
-            backend,
-            connection,
-            target_table,
-            stage_table,
-            column_types=insert_column_types,
-            query_label=query_label,
-        )
-        return
-
-    if not target_exists:
-        create_kwargs: dict[str, Any] = {}
-        if partition_by is not None:
-            create_kwargs["partition_by"] = partition_by
-        if order_by is not None:
-            create_kwargs["order_by"] = order_by
-        _create_sql_table_with_connection(
-            backend,
-            connection,
-            target_table,
-            None if target_column_types is not None else sample_batch,
-            connection_key=connection_key or backend,
-            table_schema=target_column_types,
-            gp_distributed_by_key=gp_distributed_by_key,
-            query_label=query_label,
-            **create_kwargs,
-        )
-
-    insert_from_table(
-        backend,
-        connection,
-        target_table,
-        stage_table,
-        column_types=insert_column_types,
-        query_label=query_label,
     )
 
 
@@ -624,15 +437,12 @@ def _ensure_stage_target_table(
     connection_key: str | None,
     ch_only_shard: bool = False,
 ) -> bool:
-    if backend == "ch":
-        _ensure_ch_distributed_target_pair(
-            backend,
-            connection,
-            target_table,
-            sample_batch,
-            target_exists=False,
+    return get_backend_adapter(backend).ensure_stage_target_table(
+        StageTargetTableRequest(
+            connection=connection,
+            target_table=target_table,
+            sample_batch=sample_batch,
             target_column_types=target_column_types,
-            insert_column_types=target_column_types,
             gp_distributed_by_key=gp_distributed_by_key,
             partition_by=partition_by,
             order_by=order_by,
@@ -641,28 +451,9 @@ def _ensure_stage_target_table(
             ch_sharding_key=ch_sharding_key,
             query_label=query_label,
             connection_key=connection_key,
-            ch_replace_table=False,
             ch_only_shard=ch_only_shard,
         )
-        return True
-
-    create_kwargs: dict[str, Any] = {}
-    if partition_by is not None:
-        create_kwargs["partition_by"] = partition_by
-    if order_by is not None:
-        create_kwargs["order_by"] = order_by
-    _create_sql_table_with_connection(
-        backend,
-        connection,
-        target_table,
-        None if target_column_types is not None else sample_batch,
-        connection_key=connection_key or backend,
-        table_schema=target_column_types,
-        gp_distributed_by_key=gp_distributed_by_key,
-        query_label=query_label,
-        **create_kwargs,
     )
-    return True
 
 
 def _ensure_ch_distributed_target_pair(
@@ -685,33 +476,21 @@ def _ensure_ch_distributed_target_pair(
     ch_replace_table: bool = False,
     ch_only_shard: bool = False,
 ) -> None:
-    create_batch = sample_batch
-    create_column_types = target_column_types or insert_column_types
-    if target_exists:
-        existing_column_types = get_table_column_types(
-            connection_type,
-            connection,
-            target_table,
-        )
-        if existing_column_types:
-            create_batch = pd.DataFrame(columns=list(existing_column_types))
-            create_column_types = existing_column_types
-
-    _create_sql_table_with_connection(
-        connection_type,
+    get_backend_adapter(connection_type).ensure_distributed_target_pair(
         connection,
         target_table,
-        None if create_column_types is not None else create_batch,
-        connection_key=connection_key or connection_type,
-        table_schema=create_column_types,
+        sample_batch,
+        target_exists=target_exists,
+        target_column_types=target_column_types,
+        insert_column_types=insert_column_types,
         gp_distributed_by_key=gp_distributed_by_key,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=not ch_only_shard,
-        ch_only_shard=ch_only_shard,
-        ch_replace_table=ch_replace_table,
         query_label=query_label,
+        connection_key=connection_key,
+        ch_replace_table=ch_replace_table,
+        ch_only_shard=ch_only_shard,
     )

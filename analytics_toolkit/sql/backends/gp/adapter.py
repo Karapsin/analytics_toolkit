@@ -273,6 +273,137 @@ class GreenplumAdapter(DbApiBackendAdapter):
             ),
         ]
 
+    def planned_execute_statements(
+        self,
+        sql: str,
+        *,
+        gp_break_query: bool = False,
+    ) -> list[str]:
+        if not gp_break_query:
+            return [sql]
+        from ...dml.io.execute_sql import _split_sql_statements
+
+        return _split_sql_statements(sql)
+
+    def execute_sql(
+        self,
+        connection: Any,
+        sql: str,
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        from ...dml.io.execute_sql import _execute_gp
+
+        return _execute_gp(
+            connection,
+            sql,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            progress=progress,
+        )
+
+    def execute_read_sql(
+        self,
+        connection: Any,
+        statements: list[str],
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        from ...dml.io.execute_read import _execute_read_gp
+
+        return _execute_read_gp(
+            connection,
+            statements,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            progress=progress,
+        )
+
+    def normalize_insert_batch(self, batch: Any) -> Any:
+        from ...dml.load.load_sql_table import normalize_batch
+
+        return normalize_batch(batch)
+
+    def normalize_insert_rows(
+        self,
+        rows: Sequence[Sequence[Any]],
+    ) -> list[tuple[Any, ...]]:
+        from ...dml.load.load_sql_table import normalize_rows
+
+        return normalize_rows(rows)
+
+    def should_wrap_insert_error_as_ambiguous(
+        self,
+        connection: Any,
+        exc: Exception,
+    ) -> bool:
+        del connection, exc
+        return False
+
+    def insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+    ) -> None:
+        del target_column_types, trino_insert_chunk_size, connection_type
+        from ...dml.load.load_sql_table import _insert_gp_batch
+
+        _insert_gp_batch(
+            connection,
+            table_name,
+            batch,
+            gp_insert_chunk_size=gp_insert_chunk_size,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
+    def insert_rows_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+        gp_insert_page_size_getter: Callable[[], int] | None = None,
+        on_gp_insert_page_success: Callable[[float, int], None] | None = None,
+    ) -> None:
+        del target_column_types, trino_insert_chunk_size, connection_type
+        from ...dml.load.load_sql_table import _insert_gp_rows
+
+        _insert_gp_rows(
+            connection,
+            table_name,
+            columns,
+            rows,
+            gp_insert_chunk_size=gp_insert_chunk_size,
+            query_label=query_label,
+            on_progress=on_progress,
+            page_size_getter=gp_insert_page_size_getter,
+            on_page_success=on_gp_insert_page_success,
+        )
+
     def type_code_name(
         self,
         type_code: Any,

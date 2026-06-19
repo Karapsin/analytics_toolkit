@@ -154,15 +154,15 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/ddl/api.py": 4,
         "analytics_toolkit/sql/ddl/builders.py": 1,
         "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
-        "analytics_toolkit/sql/dml/io/execute_sql.py": 1,
+        "analytics_toolkit/sql/dml/io/execute_sql.py": 0,
         "analytics_toolkit/sql/dml/load/load_df.py": 11,
-        "analytics_toolkit/sql/dml/load/load_sql_table.py": 4,
+        "analytics_toolkit/sql/dml/load/load_sql_table.py": 0,
         "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 2,
         "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 10,
         "analytics_toolkit/sql/dml/table/drop_tables.py": 2,
         "analytics_toolkit/sql/dml/table/maintenance.py": 4,
         "analytics_toolkit/sql/dml/table/partitions.py": 7,
-        "analytics_toolkit/sql/dml/table/write_modes.py": 4,
+        "analytics_toolkit/sql/dml/table/write_modes.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/api.py": 9,
         "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 1,
         "analytics_toolkit/sql/dml/transfer/flow/estimate.py": 4,
@@ -222,6 +222,30 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
                 f"{relative}: {count} backend branches "
                 f"(allowed {allowed_counts.get(relative, 0)})"
             )
+
+    assert offenders == []
+
+
+def test_generic_sql_modules_do_not_pin_literal_backend_sets() -> None:
+    literal_sets = {
+        '{"gp", "trino", "ch"}',
+        '{"trino", "gp", "ch"}',
+        '{"gp","trino","ch"}',
+        '{"trino","gp","ch"}',
+    }
+    excluded_paths = {
+        SQL_ROOT / "backend_adapters.py",
+    }
+    excluded_parts = {"backends", "_backend_adapters"}
+    offenders: list[str] = []
+
+    for path in SQL_ROOT.rglob("*.py"):
+        relative = str(path.relative_to(PROJECT_ROOT))
+        if path in excluded_paths or any(part in excluded_parts for part in path.parts):
+            continue
+        text = path.read_text()
+        if any(literal_set in text for literal_set in literal_sets):
+            offenders.append(relative)
 
     assert offenders == []
 

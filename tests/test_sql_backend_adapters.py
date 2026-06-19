@@ -196,9 +196,10 @@ def test_clickhouse_wait_helpers_are_lifecycle_owned_with_ddl_shims() -> None:
 
 
 def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
-    assert set(BACKEND_ADAPTERS) == {"gp", "trino", "ch"}
+    expected_backends = set(get_backend_names())
+    assert set(BACKEND_ADAPTERS) == expected_backends
     assert BACKEND_ADAPTERS is BACKEND_REGISTRY
-    assert set(get_backend_names()) == set(BACKEND_REGISTRY)
+    assert expected_backends == set(BACKEND_REGISTRY)
 
     assert get_backend_adapter("gp").clear_table_sqls("schema.target") == [
         "TRUNCATE TABLE schema.target"
@@ -271,6 +272,10 @@ def test_registered_backends_implement_full_contract() -> None:
         "map_source_type_to_target",
         "build_upsert_stage_sqls",
         "build_upsert_stage_placeholder_sqls",
+        "execute_sql",
+        "execute_read_sql",
+        "insert_dataframe_batch",
+        "insert_rows_batch",
         "running_query_ids_sql",
         "cancel_query_sql",
     }
@@ -334,24 +339,26 @@ def test_sql_backend_dispatch_uses_callable_registries() -> None:
     for function in dispatch_functions:
         assert "globals()[" not in inspect.getsource(function)
 
-    assert set(read_sql_module._READ_BACKENDS) == {"gp", "trino", "ch"}
+    expected_backends = set(get_backend_names())
+
+    assert set(read_sql_module._READ_BACKENDS) == expected_backends
     assert all(callable(callback) for callback in read_sql_module._READ_BACKENDS.values())
-    assert set(execute_sql_module._EXECUTE_BACKENDS) == {"gp", "trino", "ch"}
+    assert set(execute_sql_module._EXECUTE_BACKENDS) == expected_backends
     assert all(
         callable(callback)
         for callback in execute_sql_module._EXECUTE_BACKENDS.values()
     )
-    assert set(execute_read_module._EXECUTE_READ_BACKENDS) == {"gp", "trino", "ch"}
+    assert set(execute_read_module._EXECUTE_READ_BACKENDS) == expected_backends
     assert all(
         callable(callback)
         for callback in execute_read_module._EXECUTE_READ_BACKENDS.values()
     )
-    assert set(load_sql_table_module._BATCH_INSERT_BACKENDS) == {"gp", "trino", "ch"}
+    assert set(load_sql_table_module._BATCH_INSERT_BACKENDS) == expected_backends
     assert all(
         callable(callback)
         for callback in load_sql_table_module._BATCH_INSERT_BACKENDS.values()
     )
-    assert set(load_sql_table_module._ROW_INSERT_BACKENDS) == {"gp", "trino", "ch"}
+    assert set(load_sql_table_module._ROW_INSERT_BACKENDS) == expected_backends
     assert all(
         callable(callback)
         for callback in load_sql_table_module._ROW_INSERT_BACKENDS.values()

@@ -5,11 +5,11 @@ from typing import Any, Callable, Iterator
 import sqlparse
 from tqdm import tqdm
 
-from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
+from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_names
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
-    UnsupportedConnectionTypeError,
     sql_preview,
 )
 from ...connection.config import get_connection_config
@@ -291,9 +291,10 @@ def build_execute_sql_plan(options: ExecuteSqlOptions) -> SqlPlan:
 
 
 def _planned_execute_statements(options: ExecuteSqlOptions) -> list[str]:
-    if options.backend == "gp" and not options.gp_break_query:
-        return [options.sql]
-    return _split_sql_statements(options.sql)
+    return get_backend_adapter(options.backend).planned_execute_statements(
+        options.sql,
+        gp_break_query=options.gp_break_query,
+    )
 
 
 def _execute_ch_statement(client: ClickHouseClient, query: str) -> None:
@@ -396,10 +397,29 @@ def _execute_ch_backend(
     )
 
 
+def _make_execute_backend(backend: str) -> ExecuteBackend:
+    def execute_backend(
+        connection: Any,
+        sql: str,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        return get_backend_adapter(backend).execute_sql(
+            connection,
+            sql,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            progress=progress,
+        )
+
+    return execute_backend
+
+
 _EXECUTE_BACKENDS: dict[str, ExecuteBackend] = {
-    "trino": _execute_trino_backend,
-    "gp": _execute_gp_backend,
-    "ch": _execute_ch_backend,
+    backend: _make_execute_backend(backend) for backend in get_backend_names()
 }
 
 
@@ -413,9 +433,7 @@ def _execute_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> Any:
-    execute_backend = _EXECUTE_BACKENDS.get(backend)
-    if execute_backend is None:
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    execute_backend = _EXECUTE_BACKENDS.get(backend) or _make_execute_backend(backend)
     return execute_backend(
         connection,
         sql,

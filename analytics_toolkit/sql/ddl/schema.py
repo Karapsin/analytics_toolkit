@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from ..backends import UNSUPPORTED_BACKEND_MESSAGE
 from ..connection.config import resolve_connection_backend
 from ..connection.errors import UnsupportedConnectionTypeError
 from .identifiers import quote_identifier
@@ -153,9 +154,7 @@ def _infer_backend_type(backend: str, series: pd.Series) -> str:
     try:
         infer_type = _COLUMN_TYPE_INFERERS[backend]
     except KeyError as exc:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        ) from exc
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE) from exc
     return infer_type(series)
 
 def _explicit_column_type(

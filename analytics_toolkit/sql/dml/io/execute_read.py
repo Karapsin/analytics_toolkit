@@ -4,12 +4,12 @@ from typing import Any, Callable, List
 
 import pandas as pd
 
-from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
+from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_names
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
-    UnsupportedConnectionTypeError,
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
@@ -364,10 +364,29 @@ def _execute_read_ch_backend(
     )
 
 
+def _make_execute_read_backend(backend: str) -> ExecuteReadBackend:
+    def execute_read_backend(
+        connection: Any,
+        statements: list[str],
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> pd.DataFrame:
+        return get_backend_adapter(backend).execute_read_sql(
+            connection,
+            statements,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            progress=progress,
+        )
+
+    return execute_read_backend
+
+
 _EXECUTE_READ_BACKENDS: dict[str, ExecuteReadBackend] = {
-    "trino": _execute_read_trino_backend,
-    "gp": _execute_read_gp_backend,
-    "ch": _execute_read_ch_backend,
+    backend: _make_execute_read_backend(backend) for backend in get_backend_names()
 }
 
 
@@ -381,9 +400,9 @@ def _execute_read_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> pd.DataFrame:
-    execute_read_backend = _EXECUTE_READ_BACKENDS.get(backend)
-    if execute_read_backend is None:
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    execute_read_backend = (
+        _EXECUTE_READ_BACKENDS.get(backend) or _make_execute_read_backend(backend)
+    )
     return execute_read_backend(
         connection,
         statements,

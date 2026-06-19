@@ -7,13 +7,14 @@ from itertools import islice
 
 import pandas as pd
 
-from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, get_backend_adapter
+from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_names
 from ...connection.config import (
     TrinoConfig,
     get_connection_config,
     resolve_connection_backend,
 )
-from ...connection.errors import SqlConfigError, UnsupportedConnectionTypeError
+from ...connection.errors import SqlConfigError
 from analytics_toolkit.general import time_print
 
 
@@ -86,7 +87,8 @@ def insert_table_batch(
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
-    normalized_batch = normalize_batch(batch) if backend != "trino" else batch
+    adapter = get_backend_adapter(backend)
+    normalized_batch = adapter.normalize_insert_batch(batch)
 
     def operation(attempt: int) -> int:
         connection = connection_ref["connection"]
@@ -105,10 +107,7 @@ def insert_table_batch(
             )
             return len(normalized_batch)
         except Exception as exc:
-            if backend == "gp":
-                if getattr(connection, "closed", 0):
-                    raise
-            else:
+            if adapter.should_wrap_insert_error_as_ambiguous(connection, exc):
                 time_print(
                     f"Stage insert failed for {table_name}; "
                     "the current stage table will be discarded and reloaded "
@@ -154,12 +153,11 @@ def insert_rows_batch(
     on_gp_insert_page_success: Callable[[float, int], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
+    adapter = get_backend_adapter(backend)
     row_tuples = [tuple(row) for row in rows]
     if not row_tuples:
         return 0
-    normalized_rows = (
-        row_tuples if backend in {"trino", "ch"} else normalize_rows(row_tuples)
-    )
+    normalized_rows = adapter.normalize_insert_rows(row_tuples)
 
     def operation(attempt: int) -> int:
         connection = connection_ref["connection"]
@@ -182,10 +180,7 @@ def insert_rows_batch(
             )
             duration_seconds = time.perf_counter() - started_at
         except Exception as exc:
-            if backend == "gp":
-                if getattr(connection, "closed", 0):
-                    raise
-            else:
+            if adapter.should_wrap_insert_error_as_ambiguous(connection, exc):
                 time_print(
                     f"Stage insert failed for {table_name}; "
                     "the current stage table will be discarded and reloaded "
@@ -565,16 +560,72 @@ def _insert_ch_rows_backend(
     )
 
 
+def _make_batch_insert_backend(backend: str) -> BatchInsertBackend:
+    def insert_backend(
+        connection: Any,
+        table_name: str,
+        batch: pd.DataFrame,
+        target_column_types: Optional[Dict[str, str]],
+        trino_insert_chunk_size: Optional[int],
+        gp_insert_chunk_size: Optional[int],
+        connection_type: str,
+        query_label: Optional[str],
+        on_progress: Optional[Callable[[int], None]],
+    ) -> None:
+        get_backend_adapter(backend).insert_dataframe_batch(
+            connection,
+            table_name,
+            batch,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            gp_insert_chunk_size=gp_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
+    return insert_backend
+
+
+def _make_row_insert_backend(backend: str) -> RowInsertBackend:
+    def insert_backend(
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        target_column_types: Optional[Dict[str, str]],
+        trino_insert_chunk_size: Optional[int],
+        gp_insert_chunk_size: Optional[int],
+        connection_type: str,
+        query_label: Optional[str],
+        on_progress: Optional[Callable[[int], None]],
+        gp_insert_page_size_getter: Optional[Callable[[], int]],
+        on_gp_insert_page_success: Optional[Callable[[float, int], None]],
+    ) -> None:
+        get_backend_adapter(backend).insert_rows_batch(
+            connection,
+            table_name,
+            columns,
+            rows,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            gp_insert_chunk_size=gp_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
+            gp_insert_page_size_getter=gp_insert_page_size_getter,
+            on_gp_insert_page_success=on_gp_insert_page_success,
+        )
+
+    return insert_backend
+
+
 _BATCH_INSERT_BACKENDS: dict[str, BatchInsertBackend] = {
-    "gp": _insert_gp_batch_backend,
-    "trino": _insert_trino_batch_backend,
-    "ch": _insert_ch_batch_backend,
+    backend: _make_batch_insert_backend(backend) for backend in get_backend_names()
 }
 
 _ROW_INSERT_BACKENDS: dict[str, RowInsertBackend] = {
-    "gp": _insert_gp_rows_backend,
-    "trino": _insert_trino_rows_backend,
-    "ch": _insert_ch_rows_backend,
+    backend: _make_row_insert_backend(backend) for backend in get_backend_names()
 }
 
 
@@ -591,9 +642,9 @@ def _insert_batch_backend(
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
 ) -> None:
-    insert_backend = _BATCH_INSERT_BACKENDS.get(backend)
-    if insert_backend is None:
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    insert_backend = _BATCH_INSERT_BACKENDS.get(backend) or _make_batch_insert_backend(
+        backend
+    )
     insert_backend(
         connection,
         table_name,
@@ -623,9 +674,9 @@ def _insert_rows_backend(
     gp_insert_page_size_getter: Callable[[], int] | None = None,
     on_gp_insert_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
-    insert_backend = _ROW_INSERT_BACKENDS.get(backend)
-    if insert_backend is None:
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    insert_backend = _ROW_INSERT_BACKENDS.get(backend) or _make_row_insert_backend(
+        backend
+    )
     insert_backend(
         connection,
         table_name,

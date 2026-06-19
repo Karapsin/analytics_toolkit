@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from .base import (
-    UNSUPPORTED_BACKEND_MESSAGE,
-    BackendAdapter,
-    BackendCapability,
-    WriteMode,
-)
+from .base import BackendAdapter, BackendCapability, WriteMode
 from .ch import (
     ClickHouseAdapter,
     ch_cluster_clause,
@@ -23,6 +18,7 @@ from .registry import (
     BACKEND_ALIASES,
     BACKEND_REGISTRY,
     SUPPORTED_BACKENDS,
+    UNSUPPORTED_BACKEND_MESSAGE,
     backend_capability_map,
     get_backend,
     get_backend_adapter,

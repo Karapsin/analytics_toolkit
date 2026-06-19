@@ -6,7 +6,11 @@ from datetime import date, datetime, timedelta
 import re
 from typing import Any
 
-from ...backend_adapters import ch_cluster_clause, get_backend_adapter
+from ...backend_adapters import (
+    UNSUPPORTED_BACKEND_MESSAGE,
+    ch_cluster_clause,
+    get_backend_adapter,
+)
 from ...connection.config import get_connection_config, resolve_connection_backend
 from ...connection.errors import (
     InvalidSqlInputError,
@@ -513,9 +517,7 @@ def _build_drop_many_partitions_sqls_for_backend(
             f"DROP PARTITION {_sql_string_literal(key)}"
             for key in partition_keys
         ]
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-    )
+    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 def _normalize_gp_create_partitions(
     *,

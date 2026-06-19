@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ..backends import get_backend
+from ..backends import UNSUPPORTED_BACKEND_MESSAGE, get_backend
 from ..connection.errors import UnsupportedConnectionTypeError
 from ..execution.labels import apply_query_label
 
@@ -34,9 +34,7 @@ def _build_backend_create_table_sqls(
     try:
         backend_adapter = get_backend(backend)
     except UnsupportedConnectionTypeError as exc:
-        raise UnsupportedConnectionTypeError(
-            "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-        ) from exc
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE) from exc
     return backend_adapter.build_create_table_sqls(
         table_name=table_name,
         joined_columns=joined_columns,

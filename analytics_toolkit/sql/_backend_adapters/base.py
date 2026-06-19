@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from ..backends.base import (
-    UNSUPPORTED_BACKEND_MESSAGE,
-    BackendAdapter,
-    BackendCapability,
-    WriteMode,
-)
+from ..backends.base import BackendAdapter, BackendCapability, WriteMode
+from ..backends.registry import UNSUPPORTED_BACKEND_MESSAGE
 
 __all__ = [
     "BackendAdapter",

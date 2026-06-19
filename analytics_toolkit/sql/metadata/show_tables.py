@@ -9,6 +9,7 @@ from typing import cast
 import pandas as pd
 import sqlparse
 
+from ..backends import UNSUPPORTED_BACKEND_MESSAGE
 from ..connection.config import ConnectionConfig, TrinoConfig, get_connection_config
 from ..connection.errors import InvalidSqlInputError, UnsupportedConnectionTypeError
 from ..dml.io.read_sql import read_sql
@@ -123,9 +124,7 @@ def _build_show_tables_query(
             conditions,
         )
 
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-    )
+    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 
 def _build_clickhouse_show_tables_query(

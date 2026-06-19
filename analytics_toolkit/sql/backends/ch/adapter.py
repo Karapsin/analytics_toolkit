@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from ..base import BackendAdapter, BackendName, _apply_query_label
+from ..base import (
+    BackendAdapter,
+    BackendName,
+    StageFinalizationRequest,
+    StageTargetTableRequest,
+    TargetWriteModeRequest,
+    _apply_query_label,
+)
 
 
 ON_CLUSTER_COMMAND_SETTINGS = {
@@ -324,6 +331,351 @@ class ClickHouseAdapter(BackendAdapter):
                 query_label=query_label,
             ),
         ]
+
+    def execute_sql(
+        self,
+        connection: Any,
+        sql: str,
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        del gp_break_query, gp_commit_each_statement
+        from ...dml.io.execute_sql import _execute_ch
+
+        return _execute_ch(
+            connection,
+            sql,
+            print_queries=print_queries,
+            progress=progress,
+        )
+
+    def execute_read_sql(
+        self,
+        connection: Any,
+        statements: list[str],
+        *,
+        print_queries: bool,
+        gp_break_query: bool,
+        gp_commit_each_statement: bool,
+        progress: bool,
+    ) -> Any:
+        del gp_break_query, gp_commit_each_statement
+        from ...dml.io.execute_read import _execute_read_ch
+
+        return _execute_read_ch(
+            connection,
+            statements,
+            print_queries=print_queries,
+            progress=progress,
+        )
+
+    def insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+    ) -> None:
+        del target_column_types, trino_insert_chunk_size, gp_insert_chunk_size
+        del connection_type, query_label
+        from ...dml.load.load_sql_table import _insert_ch_batch
+
+        _insert_ch_batch(connection, table_name, batch, on_progress=on_progress)
+
+    def insert_rows_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        *,
+        target_column_types: dict[str, str] | None,
+        trino_insert_chunk_size: int | None,
+        gp_insert_chunk_size: int | None,
+        connection_type: str,
+        query_label: str | None,
+        on_progress: Callable[[int], None] | None,
+        gp_insert_page_size_getter: Callable[[], int] | None = None,
+        on_gp_insert_page_success: Callable[[float, int], None] | None = None,
+    ) -> None:
+        del trino_insert_chunk_size, gp_insert_chunk_size, connection_type, query_label
+        del gp_insert_page_size_getter, on_gp_insert_page_success
+        from ...dml.load.load_sql_table import _insert_ch_rows
+
+        _insert_ch_rows(
+            connection,
+            table_name,
+            columns,
+            rows,
+            target_column_types,
+            on_progress=on_progress,
+        )
+
+    def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
+        from analytics_toolkit.general import time_print
+        from ...clickhouse.lifecycle import (
+            drop_ch_distributed_table_pair,
+            truncate_ch_distributed_table_pair,
+        )
+        from ...connection.get_sql_connection import get_ch_connection_for_host
+
+        if request.write_mode == "append":
+            return request.target_exists
+
+        if request.ch_only_shard:
+            if request.write_mode == "truncate_insert" and request.target_exists:
+                self.clear_table(
+                    request.connection,
+                    request.table_name,
+                    query_label=request.query_label,
+                )
+                return True
+            if (
+                request.write_mode == "truncate_insert"
+                and not request.drop_missing_ch_truncate_target
+            ):
+                return False
+
+            time_print(f"Dropping existing ClickHouse table {request.table_name}")
+            self.drop_table(
+                request.connection,
+                request.table_name,
+                ch_cluster=None,
+                query_label=request.query_label,
+            )
+            return False
+
+        if request.write_mode == "truncate_insert" and request.target_exists:
+            truncate_ch_distributed_table_pair(
+                request.connection,
+                request.table_name,
+                ch_cluster=request.ch_cluster,
+                query_label=request.query_label,
+            )
+            return True
+        if (
+            request.write_mode == "truncate_insert"
+            and not request.drop_missing_ch_truncate_target
+        ):
+            return False
+
+        time_print(
+            "Dropping existing ClickHouse distributed table pair "
+            f"{request.table_name}"
+        )
+        per_host_connection_factory = (
+            (lambda host: get_ch_connection_for_host(request.connection_key, host))
+            if request.connection_key is not None
+            else None
+        )
+        drop_ch_distributed_table_pair(
+            request.connection,
+            request.table_name,
+            ch_cluster=request.ch_cluster,
+            query_label=request.query_label,
+            wait_for_absence=True,
+            ch_retry_per_host_drops=request.ch_retry_per_host_drops,
+            per_host_connection_factory=per_host_connection_factory,
+        )
+        return False
+
+    def ensure_stage_target_table(self, request: StageTargetTableRequest) -> bool:
+        self.ensure_distributed_target_pair(
+            request.connection,
+            request.target_table,
+            request.sample_batch,
+            target_exists=False,
+            target_column_types=request.target_column_types,
+            insert_column_types=request.target_column_types,
+            gp_distributed_by_key=request.gp_distributed_by_key,
+            partition_by=request.partition_by,
+            order_by=request.order_by,
+            ch_engine=request.ch_engine,
+            ch_cluster=request.ch_cluster,
+            ch_sharding_key=request.ch_sharding_key,
+            query_label=request.query_label,
+            connection_key=request.connection_key,
+            ch_replace_table=False,
+            ch_only_shard=request.ch_only_shard,
+        )
+        return True
+
+    def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
+        target_exists = request.target_exists
+        original_target_exists = target_exists
+        if request.write_mode == "upsert":
+            if not target_exists:
+                self.ensure_stage_target_table(
+                    StageTargetTableRequest(
+                        connection=request.connection,
+                        target_table=request.target_table,
+                        sample_batch=request.sample_batch,
+                        target_column_types=request.target_column_types,
+                        gp_distributed_by_key=request.gp_distributed_by_key,
+                        partition_by=request.partition_by,
+                        order_by=request.order_by,
+                        ch_engine=request.ch_engine,
+                        ch_cluster=request.ch_cluster,
+                        ch_sharding_key=request.ch_sharding_key,
+                        query_label=request.query_label,
+                        connection_key=request.connection_key,
+                        ch_only_shard=request.ch_only_shard,
+                    )
+                )
+                self.insert_from_table(
+                    request.connection,
+                    request.target_table,
+                    request.stage_table,
+                    column_types=request.insert_column_types,
+                    query_label=request.query_label,
+                )
+                return
+
+            self.ensure_distributed_target_pair(
+                request.connection,
+                request.target_table,
+                request.sample_batch,
+                target_exists=target_exists,
+                target_column_types=request.target_column_types,
+                insert_column_types=request.insert_column_types,
+                gp_distributed_by_key=request.gp_distributed_by_key,
+                partition_by=request.partition_by,
+                order_by=request.order_by,
+                ch_engine=request.ch_engine,
+                ch_cluster=request.ch_cluster,
+                ch_sharding_key=request.ch_sharding_key,
+                query_label=request.query_label,
+                connection_key=request.connection_key,
+                ch_replace_table=False,
+                ch_only_shard=request.ch_only_shard,
+            )
+            for sql in self.build_upsert_stage_sqls(
+                request.target_table,
+                request.stage_table,
+                columns=list(
+                    request.insert_column_types
+                    or request.target_column_types
+                    or request.sample_batch.columns
+                ),
+                key_columns=request.key_columns or [],
+                column_types=request.insert_column_types,
+                ch_cluster=request.ch_cluster,
+                ch_only_shard=request.ch_only_shard,
+                query_label=request.query_label,
+            ):
+                self.execute_command(request.connection, sql)
+            return
+
+        if request.replace_target_table:
+            target_exists = self.apply_target_write_mode(
+                TargetWriteModeRequest(
+                    connection=request.connection,
+                    table_name=request.target_table,
+                    write_mode=request.write_mode,
+                    target_exists=target_exists,
+                    replace_existing_non_ch="clear",
+                    ch_cluster=request.ch_cluster,
+                    query_label=request.query_label,
+                    connection_key=request.connection_key,
+                    ch_retry_per_host_drops=request.ch_retry_per_host_drops,
+                    ch_only_shard=request.ch_only_shard,
+                )
+            )
+
+        self.ensure_distributed_target_pair(
+            request.connection,
+            request.target_table,
+            request.sample_batch,
+            target_exists=target_exists,
+            target_column_types=request.target_column_types,
+            insert_column_types=request.insert_column_types,
+            gp_distributed_by_key=request.gp_distributed_by_key,
+            partition_by=request.partition_by,
+            order_by=request.order_by,
+            ch_engine=request.ch_engine,
+            ch_cluster=request.ch_cluster,
+            ch_sharding_key=request.ch_sharding_key,
+            query_label=request.query_label,
+            connection_key=request.connection_key,
+            ch_replace_table=(
+                original_target_exists
+                and request.replace_target_table
+                and request.write_mode == "replace"
+                and not request.ch_only_shard
+            ),
+            ch_only_shard=request.ch_only_shard,
+        )
+        self.insert_from_table(
+            request.connection,
+            request.target_table,
+            request.stage_table,
+            column_types=request.insert_column_types,
+            query_label=request.query_label,
+        )
+
+    def ensure_distributed_target_pair(
+        self,
+        connection: Any,
+        target_table: str,
+        sample_batch: Any,
+        *,
+        target_exists: bool,
+        target_column_types: dict[str, str] | None,
+        insert_column_types: dict[str, str] | None,
+        gp_distributed_by_key: list[str] | None,
+        partition_by: list[str] | str | None,
+        order_by: list[str] | str | None,
+        ch_engine: str,
+        ch_cluster: str,
+        ch_sharding_key: str,
+        query_label: str | None,
+        connection_key: str | None,
+        ch_replace_table: bool = False,
+        ch_only_shard: bool = False,
+    ) -> None:
+        import pandas as pd
+
+        from ...ddl.api import _create_sql_table_with_connection
+
+        create_batch = sample_batch
+        create_column_types = target_column_types or insert_column_types
+        if target_exists:
+            existing_column_types = self.get_table_column_types(
+                connection,
+                target_table,
+                connection_key=connection_key or self.backend,
+            )
+            if existing_column_types:
+                create_batch = pd.DataFrame(columns=list(existing_column_types))
+                create_column_types = existing_column_types
+
+        _create_sql_table_with_connection(
+            self.backend,
+            connection,
+            target_table,
+            None if create_column_types is not None else create_batch,
+            connection_key=connection_key or self.backend,
+            table_schema=create_column_types,
+            gp_distributed_by_key=gp_distributed_by_key,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_distributed_table=not ch_only_shard,
+            ch_only_shard=ch_only_shard,
+            ch_replace_table=ch_replace_table,
+            query_label=query_label,
+        )
 
     def running_query_ids_sql(self) -> str:
         return """select query_id

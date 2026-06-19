@@ -7,7 +7,6 @@ from .base import (
     BackendAdapter,
     BackendCapability,
     BackendName,
-    UNSUPPORTED_BACKEND_MESSAGE,
 )
 from .ch import ClickHouseAdapter
 from .gp import GreenplumAdapter
@@ -32,6 +31,15 @@ BACKEND_REGISTRY: dict[BackendName, BackendAdapter] = {
 
 BACKEND_ADAPTERS = BACKEND_REGISTRY
 SUPPORTED_BACKENDS = set(BACKEND_REGISTRY)
+
+
+def supported_backend_message() -> str:
+    return "Expected one of: " + ", ".join(sorted(BACKEND_REGISTRY)) + "."
+
+
+UNSUPPORTED_BACKEND_MESSAGE = (
+    "Unsupported connection type. " + supported_backend_message()
+)
 
 
 def normalize_backend_name(raw_backend: BackendName | str) -> BackendName:
@@ -103,7 +111,3 @@ def backend_capability_map() -> dict[BackendName, BackendCapability]:
         backend_name: backend.capability
         for backend_name, backend in BACKEND_REGISTRY.items()
     }
-
-
-def supported_backend_message() -> str:
-    return "Expected one of: " + ", ".join(sorted(BACKEND_REGISTRY)) + "."

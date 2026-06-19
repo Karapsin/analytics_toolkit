@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from ....backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
 from ....connection.errors import UnsupportedConnectionTypeError
 from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
@@ -47,9 +48,7 @@ def iter_source_batches(
         )
         return
 
-    raise UnsupportedConnectionTypeError(
-        "Unsupported connection type. Expected one of: 'trino', 'gp', 'ch'."
-    )
+    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 
 def _iter_dbapi_batches(

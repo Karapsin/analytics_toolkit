@@ -27,6 +27,7 @@ execute_read_module = importlib.import_module(
 transfer_api_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.api"
 )
+backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends")
 ddl_create_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.api"
 )
@@ -117,7 +118,9 @@ class InspectableClickHouseClient:
 def test_backend_support_matrix_includes_write_modes() -> None:
     rows = capabilities_module.support_matrix_rows()
 
-    assert {row["backend"] for row in rows} == {"gp", "trino", "ch"}
+    assert {row["backend"] for row in rows} == set(
+        backend_registry_module.get_backend_names()
+    )
     for row in rows:
         assert "truncate_insert" in row["write_modes"]
         assert "upsert" in row["write_modes"]

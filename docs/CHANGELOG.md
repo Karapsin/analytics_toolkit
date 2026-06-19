@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Tighten SQL backend registry guardrails.
+- Continue SQL backend registry cleanup.
 
 ## 1.3.10.9 - 2026-06-19
 

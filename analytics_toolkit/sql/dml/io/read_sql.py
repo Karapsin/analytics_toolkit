@@ -5,11 +5,11 @@ from typing import Any, Callable
 import pandas as pd
 import sqlparse
 
-from ...backend_adapters import UNSUPPORTED_BACKEND_MESSAGE, get_backend_adapter
+from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_names
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
-    UnsupportedConnectionTypeError,
     sql_preview,
 )
 from ...connection.config import get_connection_config
@@ -272,11 +272,33 @@ def _read_ch_backend(
     return _read_ch(connection, sql, print_queries)
 
 
+def _make_read_backend(backend: str) -> ReadBackend:
+    def read_backend(
+        connection: Any,
+        sql: str,
+        print_queries: bool = False,
+    ) -> pd.DataFrame:
+        return get_backend_adapter(backend).read_dataframe(
+            connection,
+            sql,
+            print_queries=print_queries,
+            print_query=_maybe_print_query,
+            read_dbapi_query=_read_dbapi_query,
+        )
+
+    return read_backend
+
+
 _READ_BACKENDS: dict[str, ReadBackend] = {
-    "trino": _read_trino_backend,
-    "gp": _read_gp_backend,
-    "ch": _read_ch_backend,
+    backend: _make_read_backend(backend) for backend in get_backend_names()
 }
+_READ_BACKENDS.update(
+    {
+        "trino": _read_trino_backend,
+        "gp": _read_gp_backend,
+        "ch": _read_ch_backend,
+    }
+)
 
 
 def _read_backend(
@@ -286,9 +308,7 @@ def _read_backend(
     *,
     print_queries: bool,
 ) -> pd.DataFrame:
-    read_backend = _READ_BACKENDS.get(backend)
-    if read_backend is None:
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    read_backend = _READ_BACKENDS.get(backend) or _make_read_backend(backend)
     return run_timed_query(
         backend,
         lambda: read_backend(
