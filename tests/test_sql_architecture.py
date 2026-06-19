@@ -148,6 +148,84 @@ def test_sql_backend_compatibility_shims_do_not_own_implementations() -> None:
     assert offenders == []
 
 
+def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
+    allowed_counts = {
+        "analytics_toolkit/sql/clickhouse/options.py": 2,
+        "analytics_toolkit/sql/ddl/api.py": 4,
+        "analytics_toolkit/sql/ddl/builders.py": 1,
+        "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
+        "analytics_toolkit/sql/dml/io/execute_sql.py": 1,
+        "analytics_toolkit/sql/dml/load/load_df.py": 11,
+        "analytics_toolkit/sql/dml/load/load_sql_table.py": 4,
+        "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 2,
+        "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 10,
+        "analytics_toolkit/sql/dml/table/drop_tables.py": 2,
+        "analytics_toolkit/sql/dml/table/maintenance.py": 4,
+        "analytics_toolkit/sql/dml/table/partitions.py": 7,
+        "analytics_toolkit/sql/dml/table/write_modes.py": 4,
+        "analytics_toolkit/sql/dml/transfer/flow/api.py": 9,
+        "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 1,
+        "analytics_toolkit/sql/dml/transfer/flow/estimate.py": 4,
+        "analytics_toolkit/sql/dml/transfer/flow/finalize.py": 1,
+        "analytics_toolkit/sql/dml/transfer/flow/options.py": 2,
+        "analytics_toolkit/sql/dml/transfer/flow/stage.py": 2,
+        "analytics_toolkit/sql/dml/transfer/io/source.py": 3,
+        "analytics_toolkit/sql/dml/transfer/staging.py": 5,
+        "analytics_toolkit/sql/execution/operation_runner.py": 1,
+        "analytics_toolkit/sql/execution/plan_steps.py": 3,
+        "analytics_toolkit/sql/metadata/show_tables.py": 4,
+        "analytics_toolkit/sql/metadata/table_info.py": 2,
+    }
+    needles = (
+        'backend == "',
+        'backend != "',
+        'backend in {"',
+        "config.backend ==",
+        "config.backend !=",
+        "options.backend ==",
+        "options.backend !=",
+        "options.connection_backend ==",
+        "options.connection_backend !=",
+        "target_config.backend ==",
+        "target_config.backend !=",
+        "source_config.backend ==",
+        "source_config.backend !=",
+        "connection_backend ==",
+        "connection_backend !=",
+        "connection_backend in {",
+        "target_backend ==",
+        "target_backend !=",
+        "from_db_backend ==",
+        "from_db_backend !=",
+        "to_db_backend ==",
+        "to_db_backend !=",
+        "transfer_backend ==",
+        "transfer_backend !=",
+    )
+    excluded_paths = {
+        SQL_ROOT / "backend_adapters.py",
+    }
+    excluded_parts = {"backends", "_backend_adapters"}
+    offenders: list[str] = []
+
+    for path in SQL_ROOT.rglob("*.py"):
+        relative = str(path.relative_to(PROJECT_ROOT))
+        if path in excluded_paths or any(part in excluded_parts for part in path.parts):
+            continue
+        count = sum(
+            1
+            for line in path.read_text().splitlines()
+            if any(needle in line for needle in needles)
+        )
+        if count > allowed_counts.get(relative, 0):
+            offenders.append(
+                f"{relative}: {count} backend branches "
+                f"(allowed {allowed_counts.get(relative, 0)})"
+            )
+
+    assert offenders == []
+
+
 def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:
     from analytics_toolkit import sql
 

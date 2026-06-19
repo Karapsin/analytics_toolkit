@@ -230,6 +230,101 @@ class ClickHouseAdapter(BackendAdapter):
         result = connection.query(sql)
         return bool(getattr(result, "result_rows", None) or [])
 
+    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
+        from ...dml.transfer.schema import _inspect_ch_source_schema
+
+        return _inspect_ch_source_schema(connection, query)
+
+    def map_source_type_to_target(self, column: Any) -> str:
+        from ...dml.transfer import schema as transfer_schema
+
+        source_type = transfer_schema._normalize_type_name(column.native_type)
+        precision, scale = transfer_schema._type_precision_scale(column, source_type)
+        kind = transfer_schema._classify_source_type(source_type)
+        base_type = transfer_schema._map_to_ch_base_type(
+            kind,
+            source_type,
+            precision,
+            scale,
+        )
+        return transfer_schema._nullable_ch_type(base_type)
+
+    def build_upsert_stage_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        key_columns: Sequence[str],
+        column_types: dict[str, str] | None = None,
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        from ...clickhouse.lifecycle import ch_distributed_table_pair
+        from ...dml.table import write_modes
+
+        delete_table = (
+            target_table
+            if ch_only_shard
+            else ch_distributed_table_pair(target_table).shard_table
+        )
+        return [
+            _apply_query_label(
+                write_modes._build_ch_delete_matching_stage_sql(
+                    delete_table,
+                    stage_table,
+                    key_columns,
+                    ch_cluster=None if ch_only_shard else ch_cluster,
+                ),
+                query_label,
+            ),
+            write_modes._build_insert_from_stage_sql(
+                self.backend,
+                target_table,
+                stage_table,
+                columns=columns,
+                column_types=column_types,
+                query_label=query_label,
+            ),
+        ]
+
+    def build_upsert_stage_placeholder_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        key_columns: Sequence[str],
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        from ...clickhouse.lifecycle import ch_distributed_table_pair
+        from ...dml.table import write_modes
+
+        delete_table = (
+            target_table
+            if ch_only_shard
+            else ch_distributed_table_pair(target_table).shard_table
+        )
+        return [
+            _apply_query_label(
+                write_modes._build_ch_delete_matching_stage_sql(
+                    delete_table,
+                    stage_table,
+                    key_columns,
+                    ch_cluster=None if ch_only_shard else ch_cluster,
+                ),
+                query_label,
+            ),
+            write_modes._build_insert_from_stage_placeholder_sql(
+                self.backend,
+                target_table,
+                stage_table,
+                query_label=query_label,
+            ),
+        ]
+
     def running_query_ids_sql(self) -> str:
         return """select query_id
 from system.processes

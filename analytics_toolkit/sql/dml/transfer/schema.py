@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from ...backend_adapters import get_backend_adapter
 from ..table._basic_ops import get_table_column_types
 
 
@@ -47,11 +48,10 @@ def inspect_source_query_schema(
     connection: Any,
     query: str,
 ) -> list[SourceColumn]:
-    if connection_backend in {"gp", "trino"}:
-        return _inspect_dbapi_source_schema(connection_backend, connection, query)
-    if connection_backend == "ch":
-        return _inspect_ch_source_schema(connection, query)
-    raise ValueError(f"Unsupported source backend: {connection_backend!r}.")
+    return get_backend_adapter(connection_backend).inspect_source_query_schema(
+        connection,
+        query,
+    )
 
 
 def map_source_schema_to_target(
@@ -120,17 +120,7 @@ def refine_ch_column_types_nullability_from_rows(
 
 
 def map_source_type_to_target(column: SourceColumn, target_backend: str) -> str:
-    source_type = _normalize_type_name(column.native_type)
-    precision, scale = _type_precision_scale(column, source_type)
-    kind = _classify_source_type(source_type)
-
-    if target_backend == "gp":
-        return _map_to_gp_type(kind, source_type, precision, scale)
-    if target_backend == "trino":
-        return _map_to_trino_type(kind, source_type, precision, scale)
-    if target_backend == "ch":
-        return _nullable_ch_type(_map_to_ch_base_type(kind, source_type, precision, scale))
-    raise ValueError(f"Unsupported target backend: {target_backend!r}.")
+    return get_backend_adapter(target_backend).map_source_type_to_target(column)
 
 
 def _inspect_dbapi_source_schema(
@@ -190,18 +180,11 @@ def _type_code_name(
     precision: int | None,
     scale: int | None,
 ) -> str | None:
-    if type_code is None:
-        return None
-    if connection_backend == "gp" and isinstance(type_code, int):
-        base_type = _GP_OID_TYPES.get(type_code, str(type_code))
-        if base_type == "numeric" and precision is not None and scale is not None:
-            return f"numeric({precision},{scale})"
-        return base_type
-    for attribute in ("name", "type_name", "typename"):
-        value = getattr(type_code, attribute, None)
-        if value:
-            return str(value)
-    return str(type_code)
+    return get_backend_adapter(connection_backend).type_code_name(
+        type_code,
+        precision,
+        scale,
+    )
 
 
 def _zero_row_query(query: str) -> str:

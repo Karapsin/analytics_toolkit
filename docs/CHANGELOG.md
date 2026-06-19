@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Tighten SQL backend registry guardrails.
+
 ## 1.3.10.9 - 2026-06-19
 
 - Add Trino transfer mode option.

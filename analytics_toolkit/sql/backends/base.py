@@ -264,6 +264,53 @@ class BackendAdapter:
     ) -> dict[str, str]:
         raise NotImplementedError
 
+    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
+        raise NotImplementedError
+
+    def map_source_type_to_target(self, column: Any) -> str:
+        raise NotImplementedError
+
+    def build_upsert_stage_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        key_columns: Sequence[str],
+        column_types: Mapping[str, str] | None = None,
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        raise NotImplementedError
+
+    def build_upsert_stage_placeholder_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        key_columns: Sequence[str],
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        raise NotImplementedError
+
+    def type_code_name(
+        self,
+        type_code: Any,
+        precision: int | None,
+        scale: int | None,
+    ) -> str | None:
+        del precision, scale
+        if type_code is None:
+            return None
+        for attribute in ("name", "type_name", "typename"):
+            value = getattr(type_code, attribute, None)
+            if value:
+                return str(value)
+        return str(type_code)
+
     def running_query_ids_sql(self) -> str:
         raise NotImplementedError
 

@@ -6,7 +6,6 @@ from typing import Any
 import pandas as pd
 
 from ...backend_adapters import ch_cluster_clause, get_backend_adapter
-from ...clickhouse.lifecycle import ch_distributed_table_pair
 from ...connection.config import resolve_connection_backend
 from ...ddl.api import _create_sql_table_with_connection
 from ...execution.labels import apply_query_label
@@ -185,66 +184,16 @@ def build_upsert_stage_sqls(
     if not columns:
         raise ValueError("columns are required for write_mode='upsert'.")
 
-    if backend == "trino":
-        return [
-            apply_query_label(
-                _build_trino_merge_sql(
-                    target_table,
-                    stage_table,
-                    columns=columns,
-                    key_columns=key_columns,
-                ),
-                query_label,
-            )
-        ]
-
-    if backend == "gp":
-        return [
-            apply_query_label(
-                _build_gp_delete_matching_stage_sql(
-                    target_table,
-                    stage_table,
-                    key_columns,
-                ),
-                query_label,
-            ),
-            _build_insert_from_stage_sql(
-                backend,
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=column_types,
-                query_label=query_label,
-            ),
-        ]
-
-    if backend == "ch":
-        delete_table = (
-            target_table
-            if ch_only_shard
-            else ch_distributed_table_pair(target_table).shard_table
-        )
-        return [
-            apply_query_label(
-                _build_ch_delete_matching_stage_sql(
-                    delete_table,
-                    stage_table,
-                    key_columns,
-                    ch_cluster=None if ch_only_shard else ch_cluster,
-                ),
-                query_label,
-            ),
-            _build_insert_from_stage_sql(
-                backend,
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=column_types,
-                query_label=query_label,
-            ),
-        ]
-
-    raise ValueError(f"Unsupported connection type for upsert: {backend}")
+    return get_backend_adapter(backend).build_upsert_stage_sqls(
+        target_table,
+        stage_table,
+        columns=columns,
+        key_columns=key_columns,
+        column_types=column_types,
+        ch_cluster=ch_cluster,
+        ch_only_shard=ch_only_shard,
+        query_label=query_label,
+    )
 
 
 def build_upsert_stage_placeholder_sqls(
@@ -261,61 +210,14 @@ def build_upsert_stage_placeholder_sqls(
     if not key_columns:
         raise ValueError("key_columns are required for write_mode='upsert'.")
 
-    if backend == "trino":
-        return [
-            apply_query_label(
-                _build_trino_merge_placeholder_sql(
-                    target_table,
-                    stage_table,
-                    key_columns=key_columns,
-                ),
-                query_label,
-            )
-        ]
-
-    if backend == "gp":
-        return [
-            apply_query_label(
-                _build_gp_delete_matching_stage_sql(
-                    target_table,
-                    stage_table,
-                    key_columns,
-                ),
-                query_label,
-            ),
-            _build_insert_from_stage_placeholder_sql(
-                backend,
-                target_table,
-                stage_table,
-                query_label=query_label,
-            ),
-        ]
-
-    if backend == "ch":
-        delete_table = (
-            target_table
-            if ch_only_shard
-            else ch_distributed_table_pair(target_table).shard_table
-        )
-        return [
-            apply_query_label(
-                _build_ch_delete_matching_stage_sql(
-                    delete_table,
-                    stage_table,
-                    key_columns,
-                    ch_cluster=None if ch_only_shard else ch_cluster,
-                ),
-                query_label,
-            ),
-            _build_insert_from_stage_placeholder_sql(
-                backend,
-                target_table,
-                stage_table,
-                query_label=query_label,
-            ),
-        ]
-
-    raise ValueError(f"Unsupported connection type for upsert: {backend}")
+    return get_backend_adapter(backend).build_upsert_stage_placeholder_sqls(
+        target_table,
+        stage_table,
+        key_columns=key_columns,
+        ch_cluster=ch_cluster,
+        ch_only_shard=ch_only_shard,
+        query_label=query_label,
+    )
 
 
 def upsert_stage_table(

@@ -194,6 +194,70 @@ class TrinoAdapter(DbApiBackendAdapter):
         finally:
             cursor.close()
 
+    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
+        from ...dml.transfer.schema import _inspect_dbapi_source_schema
+
+        return _inspect_dbapi_source_schema(self.backend, connection, query)
+
+    def map_source_type_to_target(self, column: Any) -> str:
+        from ...dml.transfer import schema as transfer_schema
+
+        source_type = transfer_schema._normalize_type_name(column.native_type)
+        precision, scale = transfer_schema._type_precision_scale(column, source_type)
+        kind = transfer_schema._classify_source_type(source_type)
+        return transfer_schema._map_to_trino_type(kind, source_type, precision, scale)
+
+    def build_upsert_stage_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        key_columns: Sequence[str],
+        column_types: dict[str, str] | None = None,
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        del column_types, ch_cluster, ch_only_shard
+        from ...dml.table import write_modes
+
+        return [
+            _apply_query_label(
+                write_modes._build_trino_merge_sql(
+                    target_table,
+                    stage_table,
+                    columns=columns,
+                    key_columns=key_columns,
+                ),
+                query_label,
+            )
+        ]
+
+    def build_upsert_stage_placeholder_sqls(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        key_columns: Sequence[str],
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+        query_label: str | None = None,
+    ) -> list[str]:
+        del ch_cluster, ch_only_shard
+        from ...dml.table import write_modes
+
+        return [
+            _apply_query_label(
+                write_modes._build_trino_merge_placeholder_sql(
+                    target_table,
+                    stage_table,
+                    key_columns=key_columns,
+                ),
+                query_label,
+            )
+        ]
+
     def running_query_ids_sql(self) -> str:
         return """select query_id
 from system.runtime.queries

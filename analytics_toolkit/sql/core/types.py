@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-BackendName = Literal["gp", "trino", "ch"]
+BackendName = str
 ConnectionKey = str
 SqlText = str
 TableName = str

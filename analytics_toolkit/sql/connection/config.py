@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Union, cast
+from typing import Any, Union, cast
 
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 from ..backends.registry import (
@@ -18,7 +18,7 @@ from ..backends.registry import (
 from ..execution.operation_runner import timed_public_sql_function
 
 
-BackendName = Literal["trino", "gp", "ch"]
+BackendName = str
 SUPPORTED_BACKENDS: set[str] = set(BACKEND_REGISTRY)
 CONNECTIONS_FILE_NAME = ".connections"
 DEFAULT_GP_CONNECT_TIMEOUT_SECONDS = 30

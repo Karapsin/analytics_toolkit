@@ -8,9 +8,13 @@ import pandas as pd
 import pytest
 
 from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
-from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend_names
+from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
 from analytics_toolkit.sql.backends.base import BackendAdapter
 from analytics_toolkit.sql.backends.registry import get_backend_capability
+from analytics_toolkit.sql.connection.errors import (
+    SqlConfigError,
+    UnsupportedConnectionTypeError,
+)
 from tests.sql_fakes import FakeClickHouseResult, FakeDbapiConnection
 
 
@@ -263,6 +267,10 @@ def test_registered_backends_implement_full_contract() -> None:
         "table_exists",
         "clear_table_sqls",
         "get_table_column_types",
+        "inspect_source_query_schema",
+        "map_source_type_to_target",
+        "build_upsert_stage_sqls",
+        "build_upsert_stage_placeholder_sqls",
         "running_query_ids_sql",
         "cancel_query_sql",
     }
@@ -278,6 +286,25 @@ def test_registered_backends_implement_full_contract() -> None:
                 missing.append(f"{backend_name}.{method_name}")
 
     assert missing == []
+
+
+def test_backend_lookup_preserves_connection_config_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    connections_path = tmp_path / ".connections"
+    connections_path.unlink()
+    with pytest.raises(SqlConfigError, match="Missing SQL connections file"):
+        get_backend("missing_alias")
+
+    connections_path.write_text("{", encoding="utf-8")
+    with pytest.raises(SqlConfigError, match="must contain valid JSON"):
+        get_backend("missing_alias")
+
+
+def test_backend_lookup_preserves_unknown_connection_key_errors() -> None:
+    with pytest.raises(UnsupportedConnectionTypeError, match="Unknown SQL connection key"):
+        get_backend("missing_alias")
 
 
 def test_legacy_backend_imports_resolve_to_canonical_objects() -> None:

@@ -71,16 +71,19 @@ def get_backend(name_or_key: str) -> BackendAdapter:
     if backend_name in BACKEND_REGISTRY:
         return BACKEND_REGISTRY[cast(BackendName, backend_name)]
 
-    try:
-        from ..connection.config import get_connection_backend
+    from ..connection.config import get_connection_backend
 
-        return BACKEND_REGISTRY[get_connection_backend(name_or_key)]
-    except Exception as exc:
+    resolved_backend = get_connection_backend(name_or_key)
+    try:
+        return BACKEND_REGISTRY[resolved_backend]
+    except KeyError:
         from ..connection.errors import UnsupportedConnectionTypeError
 
-        if isinstance(exc, UnsupportedConnectionTypeError):
-            raise
-        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE) from exc
+        # This should only be reachable if a caller bypasses normal config
+        # validation and supplies a backend absent from the canonical registry.
+        # Config and unknown-key errors from get_connection_backend intentionally
+        # propagate unchanged.
+        raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 
 def get_backend_adapter(name_or_key: str) -> BackendAdapter:
