@@ -7,6 +7,28 @@ from ..base import _apply_query_label
 from ..dbapi import DbApiBackendAdapter
 
 
+_GP_OID_TYPES = {
+    16: "boolean",
+    17: "bytea",
+    20: "bigint",
+    21: "smallint",
+    23: "integer",
+    25: "text",
+    700: "real",
+    701: "double precision",
+    1042: "character",
+    1043: "character varying",
+    1082: "date",
+    1083: "time",
+    1114: "timestamp",
+    1184: "timestamp with time zone",
+    1700: "numeric",
+    2950: "uuid",
+    3802: "jsonb",
+}
+_GP_MAX_NUMERIC_PRECISION = 1000
+
+
 class GreenplumAdapter(DbApiBackendAdapter):
     display_name = "Greenplum"
     sqlglot_dialect = "postgres"
@@ -207,7 +229,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         source_type = transfer_schema._normalize_type_name(column.native_type)
         precision, scale = transfer_schema._type_precision_scale(column, source_type)
         kind = transfer_schema._classify_source_type(source_type)
-        return transfer_schema._map_to_gp_type(kind, source_type, precision, scale)
+        return _map_to_gp_type(kind, source_type, precision, scale)
 
     def build_upsert_stage_sqls(
         self,
@@ -222,19 +244,17 @@ class GreenplumAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         del ch_cluster, ch_only_shard
-        from ...dml.table import write_modes
 
         return [
             _apply_query_label(
-                write_modes._build_gp_delete_matching_stage_sql(
+                self._build_delete_matching_stage_sql(
                     target_table,
                     stage_table,
                     key_columns,
                 ),
                 query_label,
             ),
-            write_modes._build_insert_from_stage_sql(
-                self.backend,
+            self.build_insert_from_stage_sql(
                 target_table,
                 stage_table,
                 columns=columns,
@@ -254,24 +274,38 @@ class GreenplumAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         del ch_cluster, ch_only_shard
-        from ...dml.table import write_modes
 
         return [
             _apply_query_label(
-                write_modes._build_gp_delete_matching_stage_sql(
+                self._build_delete_matching_stage_sql(
                     target_table,
                     stage_table,
                     key_columns,
                 ),
                 query_label,
             ),
-            write_modes._build_insert_from_stage_placeholder_sql(
-                self.backend,
+            self.build_insert_from_stage_placeholder_sql(
                 target_table,
                 stage_table,
                 query_label=query_label,
             ),
         ]
+
+    def _build_delete_matching_stage_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        key_columns: Sequence[str],
+    ) -> str:
+        predicates = " AND ".join(
+            self.null_safe_key_equality("target_dst", "stage_src", column_name)
+            for column_name in key_columns
+        )
+        return (
+            f"DELETE FROM {target_table} AS target_dst\n"
+            f"USING {stage_table} AS stage_src\n"
+            f"WHERE {predicates}"
+        )
 
     def planned_execute_statements(
         self,
@@ -295,16 +329,52 @@ class GreenplumAdapter(DbApiBackendAdapter):
         gp_commit_each_statement: bool,
         progress: bool,
     ) -> Any:
-        from ...dml.io.execute_sql import _execute_gp
-
-        return _execute_gp(
-            connection,
-            sql,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
+        from analytics_toolkit.general import time_print
+        from ...execution.query_timing import run_timed_query
+        from ...dml.io.execute_sql import (
+            _iterate_statements_with_progress,
+            _maybe_print_query,
+            _split_sql_statements,
         )
+
+        statement: str | None = None
+        try:
+            with connection.cursor() as cursor:
+                should_commit_at_end = True
+                if not gp_break_query:
+                    time_print("Executing 1 statement set", backend=self.backend)
+                    statement = sql
+                    _maybe_print_query(statement, print_queries, split_preview=False)
+                    run_timed_query(
+                        self.backend,
+                        lambda: cursor.execute(statement),
+                    )
+                else:
+                    statements = _split_sql_statements(sql)
+                    time_print(
+                        f"Executing {len(statements)} statement(s)",
+                        backend=self.backend,
+                    )
+                    for statement in _iterate_statements_with_progress(
+                        statements,
+                        self.backend,
+                        progress=progress,
+                    ):
+                        _maybe_print_query(statement, print_queries, split_preview=True)
+                        run_timed_query(
+                            self.backend,
+                            lambda statement=statement: cursor.execute(statement),
+                        )
+                        if gp_commit_each_statement:
+                            connection.commit()
+                            should_commit_at_end = False
+                if should_commit_at_end:
+                    connection.commit()
+                return None
+        except Exception:
+            failed_query = statement if statement is not None else sql
+            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
+            raise
 
     def execute_read_sql(
         self,
@@ -316,16 +386,56 @@ class GreenplumAdapter(DbApiBackendAdapter):
         gp_commit_each_statement: bool,
         progress: bool,
     ) -> Any:
-        from ...dml.io.execute_read import _execute_read_gp
-
-        return _execute_read_gp(
-            connection,
-            statements,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
+        from analytics_toolkit.general import time_print
+        from ...execution.query_timing import run_timed_query
+        from ...dml.io.execute_read import _read_dbapi_cursor
+        from ...dml.io.execute_sql import (
+            _iterate_statements_with_progress,
+            _maybe_print_query,
         )
+
+        time_print(
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
+            "and reading final query",
+            backend=self.backend,
+        )
+        cursor = connection.cursor()
+        should_commit_at_end = len(statements) > 1
+        try:
+            setup_statements = statements[:-1]
+            if setup_statements and not gp_break_query:
+                setup_sql = ";\n".join(setup_statements)
+                _maybe_print_query(setup_sql, print_queries, split_preview=False)
+                run_timed_query(self.backend, lambda: cursor.execute(setup_sql))
+            else:
+                for statement in _iterate_statements_with_progress(
+                    setup_statements,
+                    self.backend,
+                    progress=progress,
+                ):
+                    _maybe_print_query(statement, print_queries, split_preview=True)
+                    run_timed_query(
+                        self.backend,
+                        lambda statement=statement: cursor.execute(statement),
+                    )
+                    if gp_commit_each_statement:
+                        connection.commit()
+                        should_commit_at_end = False
+
+            result = _read_dbapi_cursor(
+                cursor,
+                statements[-1],
+                self.backend,
+                print_queries,
+            )
+            if should_commit_at_end:
+                connection.commit()
+            return result
+        except Exception:
+            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+            raise
+        finally:
+            cursor.close()
 
     def normalize_insert_batch(self, batch: Any) -> Any:
         from ...dml.load.load_sql_table import normalize_batch
@@ -362,9 +472,8 @@ class GreenplumAdapter(DbApiBackendAdapter):
         on_progress: Callable[[int], None] | None,
     ) -> None:
         del target_column_types, trino_insert_chunk_size, connection_type
-        from ...dml.load.load_sql_table import _insert_gp_batch
 
-        _insert_gp_batch(
+        self._insert_dataframe_batch(
             connection,
             table_name,
             batch,
@@ -390,9 +499,8 @@ class GreenplumAdapter(DbApiBackendAdapter):
         on_gp_insert_page_success: Callable[[float, int], None] | None = None,
     ) -> None:
         del target_column_types, trino_insert_chunk_size, connection_type
-        from ...dml.load.load_sql_table import _insert_gp_rows
 
-        _insert_gp_rows(
+        self._insert_rows(
             connection,
             table_name,
             columns,
@@ -404,6 +512,88 @@ class GreenplumAdapter(DbApiBackendAdapter):
             on_page_success=on_gp_insert_page_success,
         )
 
+    def _insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        *,
+        gp_insert_chunk_size: int | None = None,
+        query_label: str | None = None,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
+        rows = list(batch.itertuples(index=False, name=None))
+        self._insert_rows(
+            connection,
+            table_name,
+            batch.columns,
+            rows,
+            gp_insert_chunk_size=gp_insert_chunk_size,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
+    def _insert_rows(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        *,
+        gp_insert_chunk_size: int | None = None,
+        query_label: str | None = None,
+        on_progress: Callable[[int], None] | None = None,
+        page_size_getter: Callable[[], int] | None = None,
+        on_page_success: Callable[[float, int], None] | None = None,
+    ) -> None:
+        import time
+        from ...dml.load import load_sql_table
+
+        row_tuples = [tuple(row) for row in rows]
+        if not row_tuples:
+            return
+
+        sql = load_sql_table.build_gp_batch_insert_sql(
+            table_name,
+            columns,
+            query_label=query_label,
+        )
+
+        cursor = connection.cursor()
+        try:
+            next_index = 0
+            while next_index < len(row_tuples):
+                remaining_rows = len(row_tuples) - next_index
+                configured_page_size = (
+                    page_size_getter()
+                    if page_size_getter is not None
+                    else gp_insert_chunk_size
+                )
+                page_size = min(
+                    load_sql_table._get_gp_insert_chunk_size(configured_page_size),
+                    remaining_rows,
+                )
+                row_chunk = row_tuples[next_index:next_index + page_size]
+                started_at = time.perf_counter()
+                load_sql_table.execute_values(
+                    cursor,
+                    sql,
+                    row_chunk,
+                    page_size=page_size,
+                )
+                duration_seconds = time.perf_counter() - started_at
+                if on_progress is not None:
+                    on_progress(len(row_chunk))
+                if on_page_success is not None:
+                    on_page_success(duration_seconds, len(row_chunk))
+                next_index += page_size
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def type_code_name(
         self,
         type_code: Any,
@@ -413,8 +603,6 @@ class GreenplumAdapter(DbApiBackendAdapter):
         if type_code is None:
             return None
         if isinstance(type_code, int):
-            from ...dml.transfer.schema import _GP_OID_TYPES
-
             base_type = _GP_OID_TYPES.get(type_code, str(type_code))
             if base_type == "numeric" and precision is not None and scale is not None:
                 return f"numeric({precision},{scale})"
@@ -507,3 +695,46 @@ def _normalize_gp_partition_column(partition_by: Sequence[str] | str) -> str:
     if len(columns) != 1:
         raise ValueError("partition_by for Greenplum must contain exactly one column.")
     return columns[0]
+
+
+def _map_to_gp_type(
+    kind: str,
+    source_type: str,
+    precision: int | None,
+    scale: int | None,
+) -> str:
+    from ...dml.transfer.schema import _decimal_type
+
+    if kind == "binary":
+        return "BYTEA"
+    if kind == "boolean":
+        return "BOOLEAN"
+    if kind == "integer":
+        if "small" in source_type or source_type in {"int16", "uint8"}:
+            return "SMALLINT"
+        if source_type in {"integer", "int", "int4", "int32", "uint16"}:
+            return "INTEGER"
+        if source_type in {"uint32"}:
+            return "BIGINT"
+        if source_type in {"uint64"}:
+            return "NUMERIC(20, 0)"
+        return "BIGINT"
+    if kind == "float":
+        if source_type in {"real", "float4", "float32"}:
+            return "REAL"
+        return "DOUBLE PRECISION"
+    if kind == "decimal":
+        return _decimal_type(
+            "NUMERIC",
+            precision,
+            scale,
+            fallback="NUMERIC",
+            max_precision=_GP_MAX_NUMERIC_PRECISION,
+        )
+    if kind == "date":
+        return "DATE"
+    if kind == "timestamp":
+        if "with time zone" in source_type or "timestamptz" in source_type:
+            return "TIMESTAMP WITH TIME ZONE"
+        return "TIMESTAMP"
+    return "TEXT"

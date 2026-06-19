@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
+from ...backends.gp.adapter import _GP_OID_TYPES
 from ..table._basic_ops import get_table_column_types
 
 
@@ -16,31 +17,6 @@ class SourceColumn:
     native_type: str | None = None
     precision: int | None = None
     scale: int | None = None
-
-
-_GP_OID_TYPES = {
-    16: "boolean",
-    17: "bytea",
-    20: "bigint",
-    21: "smallint",
-    23: "integer",
-    25: "text",
-    700: "real",
-    701: "double precision",
-    1042: "character",
-    1043: "character varying",
-    1082: "date",
-    1083: "time",
-    1114: "timestamp",
-    1184: "timestamp with time zone",
-    1700: "numeric",
-    2950: "uuid",
-    3802: "jsonb",
-}
-
-_GP_MAX_NUMERIC_PRECISION = 1000
-_TRINO_MAX_DECIMAL_PRECISION = 38
-_CLICKHOUSE_MAX_DECIMAL_PRECISION = 76
 
 
 def inspect_source_query_schema(
@@ -266,39 +242,9 @@ def _map_to_gp_type(
     precision: int | None,
     scale: int | None,
 ) -> str:
-    if kind == "binary":
-        return "BYTEA"
-    if kind == "boolean":
-        return "BOOLEAN"
-    if kind == "integer":
-        if "small" in source_type or source_type in {"int16", "uint8"}:
-            return "SMALLINT"
-        if source_type in {"integer", "int", "int4", "int32", "uint16"}:
-            return "INTEGER"
-        if source_type in {"uint32"}:
-            return "BIGINT"
-        if source_type in {"uint64"}:
-            return "NUMERIC(20, 0)"
-        return "BIGINT"
-    if kind == "float":
-        if source_type in {"real", "float4", "float32"}:
-            return "REAL"
-        return "DOUBLE PRECISION"
-    if kind == "decimal":
-        return _decimal_type(
-            "NUMERIC",
-            precision,
-            scale,
-            fallback="NUMERIC",
-            max_precision=_GP_MAX_NUMERIC_PRECISION,
-        )
-    if kind == "date":
-        return "DATE"
-    if kind == "timestamp":
-        if "with time zone" in source_type or "timestamptz" in source_type:
-            return "TIMESTAMP WITH TIME ZONE"
-        return "TIMESTAMP"
-    return "TEXT"
+    from ...backends.gp.adapter import _map_to_gp_type as map_to_gp_type
+
+    return map_to_gp_type(kind, source_type, precision, scale)
 
 
 def _map_to_trino_type(
@@ -307,39 +253,9 @@ def _map_to_trino_type(
     precision: int | None,
     scale: int | None,
 ) -> str:
-    if kind == "binary":
-        return "VARBINARY"
-    if kind == "boolean":
-        return "BOOLEAN"
-    if kind == "integer":
-        if "tiny" in source_type or source_type in {"int8", "uint8"}:
-            return "TINYINT"
-        if "small" in source_type or source_type in {"int16", "uint16"}:
-            return "SMALLINT"
-        if source_type in {"integer", "int", "int4", "int32", "uint32"}:
-            return "INTEGER" if source_type != "uint32" else "BIGINT"
-        if source_type == "uint64":
-            return "DECIMAL(20, 0)"
-        return "BIGINT"
-    if kind == "float":
-        if source_type in {"real", "float4", "float32"}:
-            return "REAL"
-        return "DOUBLE"
-    if kind == "decimal":
-        return _decimal_type(
-            "DECIMAL",
-            precision,
-            scale,
-            fallback="DECIMAL(38, 10)",
-            max_precision=_TRINO_MAX_DECIMAL_PRECISION,
-        )
-    if kind == "date":
-        return "DATE"
-    if kind == "timestamp":
-        if "with time zone" in source_type or "timestamptz" in source_type:
-            return "TIMESTAMP WITH TIME ZONE"
-        return "TIMESTAMP"
-    return "VARCHAR"
+    from ...backends.trino.adapter import _map_to_trino_type as map_to_trino_type
+
+    return map_to_trino_type(kind, source_type, precision, scale)
 
 
 def _map_to_ch_base_type(
@@ -348,43 +264,9 @@ def _map_to_ch_base_type(
     precision: int | None,
     scale: int | None,
 ) -> str:
-    if kind == "binary":
-        return "String"
-    if kind == "boolean":
-        return "Bool"
-    if kind == "integer":
-        if source_type.startswith("u"):
-            if "8" in source_type:
-                return "UInt8"
-            if "16" in source_type:
-                return "UInt16"
-            if "32" in source_type:
-                return "UInt32"
-            return "UInt64"
-        if "8" in source_type and "64" not in source_type:
-            return "Int8"
-        if "16" in source_type or "small" in source_type:
-            return "Int16"
-        if "32" in source_type or source_type in {"integer", "int", "int4"}:
-            return "Int32"
-        return "Int64"
-    if kind == "float":
-        if source_type in {"real", "float4", "float32"}:
-            return "Float32"
-        return "Float64"
-    if kind == "decimal":
-        return _decimal_type(
-            "Decimal",
-            precision,
-            scale,
-            fallback="Decimal(38, 10)",
-            max_precision=_CLICKHOUSE_MAX_DECIMAL_PRECISION,
-        )
-    if kind == "date":
-        return "Date"
-    if kind == "timestamp":
-        return "DateTime64(6)"
-    return "String"
+    from ...backends.ch.adapter import _map_to_ch_base_type as map_to_ch_base_type
+
+    return map_to_ch_base_type(kind, source_type, precision, scale)
 
 
 def _decimal_type(

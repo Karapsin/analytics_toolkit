@@ -17,6 +17,7 @@ ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
     "distributed_ddl_output_mode": "none",
 }
+_CLICKHOUSE_MAX_DECIMAL_PRECISION = 76
 
 
 class ClickHouseAdapter(BackendAdapter):
@@ -248,7 +249,7 @@ class ClickHouseAdapter(BackendAdapter):
         source_type = transfer_schema._normalize_type_name(column.native_type)
         precision, scale = transfer_schema._type_precision_scale(column, source_type)
         kind = transfer_schema._classify_source_type(source_type)
-        base_type = transfer_schema._map_to_ch_base_type(
+        base_type = _map_to_ch_base_type(
             kind,
             source_type,
             precision,
@@ -269,7 +270,6 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         from ...clickhouse.lifecycle import ch_distributed_table_pair
-        from ...dml.table import write_modes
 
         delete_table = (
             target_table
@@ -278,7 +278,7 @@ class ClickHouseAdapter(BackendAdapter):
         )
         return [
             _apply_query_label(
-                write_modes._build_ch_delete_matching_stage_sql(
+                self._build_delete_matching_stage_sql(
                     delete_table,
                     stage_table,
                     key_columns,
@@ -286,8 +286,7 @@ class ClickHouseAdapter(BackendAdapter):
                 ),
                 query_label,
             ),
-            write_modes._build_insert_from_stage_sql(
-                self.backend,
+            self.build_insert_from_stage_sql(
                 target_table,
                 stage_table,
                 columns=columns,
@@ -307,7 +306,6 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         from ...clickhouse.lifecycle import ch_distributed_table_pair
-        from ...dml.table import write_modes
 
         delete_table = (
             target_table
@@ -316,7 +314,7 @@ class ClickHouseAdapter(BackendAdapter):
         )
         return [
             _apply_query_label(
-                write_modes._build_ch_delete_matching_stage_sql(
+                self._build_delete_matching_stage_sql(
                     delete_table,
                     stage_table,
                     key_columns,
@@ -324,13 +322,41 @@ class ClickHouseAdapter(BackendAdapter):
                 ),
                 query_label,
             ),
-            write_modes._build_insert_from_stage_placeholder_sql(
-                self.backend,
+            self.build_insert_from_stage_placeholder_sql(
                 target_table,
                 stage_table,
                 query_label=query_label,
             ),
         ]
+
+    def _build_delete_matching_stage_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        key_columns: Sequence[str],
+        *,
+        ch_cluster: str | None,
+    ) -> str:
+        target_tuple = self._build_normalized_key_tuple(key_columns)
+        stage_tuple = self._build_normalized_key_tuple(key_columns)
+        return (
+            f"DELETE FROM {target_table}{ch_cluster_clause(ch_cluster)}\n"
+            f"WHERE {target_tuple} IN (\n"
+            f"  SELECT {stage_tuple} FROM {stage_table}\n"
+            ")"
+        )
+
+    def _build_normalized_key_tuple(self, key_columns: Sequence[str]) -> str:
+        expressions: list[str] = []
+        for column_name in key_columns:
+            quoted_column = self.quote_identifier(column_name)
+            expressions.extend(
+                [
+                    f"isNull({quoted_column})",
+                    f"ifNull(toString({quoted_column}), '')",
+                ]
+            )
+        return "tuple(" + ", ".join(expressions) + ")"
 
     def execute_sql(
         self,
@@ -343,14 +369,33 @@ class ClickHouseAdapter(BackendAdapter):
         progress: bool,
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
-        from ...dml.io.execute_sql import _execute_ch
-
-        return _execute_ch(
-            connection,
-            sql,
-            print_queries=print_queries,
-            progress=progress,
+        from analytics_toolkit.general import time_print
+        from ...execution.query_timing import run_timed_query
+        from ...dml.io.execute_sql import (
+            _iterate_statements_with_progress,
+            _maybe_print_query,
+            _split_sql_statements,
         )
+
+        statements = _split_sql_statements(sql)
+        time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
+        statement: str | None = None
+        try:
+            for statement in _iterate_statements_with_progress(
+                statements,
+                self.backend,
+                progress=progress,
+            ):
+                _maybe_print_query(statement, print_queries, split_preview=True)
+                run_timed_query(
+                    self.backend,
+                    lambda statement=statement: connection.command(statement),
+                )
+        except Exception:
+            failed_query = statement if statement is not None else sql
+            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
+            raise
+        return None
 
     def execute_read_sql(
         self,
@@ -363,14 +408,33 @@ class ClickHouseAdapter(BackendAdapter):
         progress: bool,
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
-        from ...dml.io.execute_read import _execute_read_ch
+        from analytics_toolkit.general import time_print
+        from ...execution.query_timing import run_timed_query
+        from ...dml.io.execute_read import _execute_setup_statements
+        from ...dml.io.execute_sql import _maybe_print_query
 
-        return _execute_read_ch(
-            connection,
-            statements,
-            print_queries=print_queries,
-            progress=progress,
+        time_print(
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
+            "and reading final query",
+            backend=self.backend,
         )
+        try:
+            _execute_setup_statements(
+                connection,
+                statements[:-1],
+                connection_type=self.backend,
+                execute_statement=lambda client, statement: client.command(statement),
+                print_queries=print_queries,
+                progress=progress,
+            )
+            _maybe_print_query(statements[-1], print_queries, split_preview=True)
+            return run_timed_query(
+                self.backend,
+                lambda: connection.query_df(statements[-1]),
+            )
+        except Exception:
+            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+            raise
 
     def insert_dataframe_batch(
         self,
@@ -387,9 +451,13 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         del target_column_types, trino_insert_chunk_size, gp_insert_chunk_size
         del connection_type, query_label
-        from ...dml.load.load_sql_table import _insert_ch_batch
 
-        _insert_ch_batch(connection, table_name, batch, on_progress=on_progress)
+        self._insert_dataframe_batch(
+            connection,
+            table_name,
+            batch,
+            on_progress=on_progress,
+        )
 
     def insert_rows_batch(
         self,
@@ -409,9 +477,8 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         del trino_insert_chunk_size, gp_insert_chunk_size, connection_type, query_label
         del gp_insert_page_size_getter, on_gp_insert_page_success
-        from ...dml.load.load_sql_table import _insert_ch_rows
 
-        _insert_ch_rows(
+        self._insert_rows(
             connection,
             table_name,
             columns,
@@ -419,6 +486,44 @@ class ClickHouseAdapter(BackendAdapter):
             target_column_types,
             on_progress=on_progress,
         )
+
+    def _insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
+        from ...dml.load.load_sql_table import normalize_ch_batch
+
+        normalized_batch = normalize_ch_batch(batch)
+        connection.insert_df(
+            table=table_name,
+            df=normalized_batch,
+            column_names=list(batch.columns),
+        )
+        if on_progress is not None:
+            on_progress(len(batch))
+
+    def _insert_rows(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        column_types: dict[str, str] | None,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
+        from ...dml.load.load_sql_table import _column_type_names, _normalize_ch_row
+
+        connection.insert(
+            table=table_name,
+            data=[_normalize_ch_row(row) for row in rows],
+            column_names=list(columns),
+            column_type_names=_column_type_names(columns, column_types),
+        )
+        if on_progress is not None:
+            on_progress(len(rows))
 
     def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
         from analytics_toolkit.general import time_print
@@ -724,3 +829,50 @@ def is_simple_identifier(identifier: str) -> bool:
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _map_to_ch_base_type(
+    kind: str,
+    source_type: str,
+    precision: int | None,
+    scale: int | None,
+) -> str:
+    from ...dml.transfer.schema import _decimal_type
+
+    if kind == "binary":
+        return "String"
+    if kind == "boolean":
+        return "Bool"
+    if kind == "integer":
+        if source_type.startswith("u"):
+            if "8" in source_type:
+                return "UInt8"
+            if "16" in source_type:
+                return "UInt16"
+            if "32" in source_type:
+                return "UInt32"
+            return "UInt64"
+        if "8" in source_type and "64" not in source_type:
+            return "Int8"
+        if "16" in source_type or "small" in source_type:
+            return "Int16"
+        if "32" in source_type or source_type in {"integer", "int", "int4"}:
+            return "Int32"
+        return "Int64"
+    if kind == "float":
+        if source_type in {"real", "float4", "float32"}:
+            return "Float32"
+        return "Float64"
+    if kind == "decimal":
+        return _decimal_type(
+            "Decimal",
+            precision,
+            scale,
+            fallback="Decimal(38, 10)",
+            max_precision=_CLICKHOUSE_MAX_DECIMAL_PRECISION,
+        )
+    if kind == "date":
+        return "Date"
+    if kind == "timestamp":
+        return "DateTime64(6)"
+    return "String"

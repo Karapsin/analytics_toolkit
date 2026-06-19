@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import importlib
 import pkgutil
@@ -246,6 +247,118 @@ def test_generic_sql_modules_do_not_pin_literal_backend_sets() -> None:
         text = path.read_text()
         if any(literal_set in text for literal_set in literal_sets):
             offenders.append(relative)
+
+    assert offenders == []
+
+
+def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
+    allowed_helper_defs = {
+        "analytics_toolkit/sql/dml/io/execute_read.py": {
+            "_execute_read_ch",
+            "_execute_read_ch_backend",
+            "_execute_read_gp",
+            "_execute_read_gp_backend",
+            "_execute_read_trino",
+            "_execute_read_trino_backend",
+        },
+        "analytics_toolkit/sql/dml/io/execute_sql.py": {
+            "_execute_ch",
+            "_execute_ch_backend",
+            "_execute_ch_statement",
+            "_execute_gp",
+            "_execute_gp_backend",
+            "_execute_trino",
+            "_execute_trino_backend",
+            "_execute_trino_statement",
+        },
+        "analytics_toolkit/sql/dml/io/read_sql.py": {
+            "_read_ch",
+            "_read_ch_backend",
+            "_read_gp",
+            "_read_gp_backend",
+            "_read_trino",
+            "_read_trino_backend",
+        },
+        "analytics_toolkit/sql/dml/load/load_sql_table.py": {
+            "_build_trino_values_tuple",
+            "_chunk_rows",
+            "_chunk_sequence",
+            "_get_gp_insert_chunk_size",
+            "_get_trino_insert_chunk_size",
+            "_insert_ch_batch",
+            "_insert_ch_batch_backend",
+            "_insert_ch_rows",
+            "_insert_ch_rows_backend",
+            "_insert_gp_batch",
+            "_insert_gp_batch_backend",
+            "_insert_gp_rows",
+            "_insert_gp_rows_backend",
+            "_insert_trino_batch",
+            "_insert_trino_batch_backend",
+            "_insert_trino_rows",
+            "_insert_trino_rows_backend",
+            "_iter_trino_row_values",
+            "_iter_trino_rows",
+            "_normalize_ch_row",
+            "_normalize_ch_scalar",
+            "_normalize_trino_value",
+            "_trino_literal",
+            "build_gp_batch_insert_sql",
+            "build_trino_batch_insert_sql",
+            "normalize_ch_batch",
+        },
+        "analytics_toolkit/sql/dml/table/write_modes.py": {
+            "_build_ch_delete_matching_stage_sql",
+            "_build_ch_normalized_key_tuple",
+            "_build_gp_delete_matching_stage_sql",
+            "_build_trino_merge_placeholder_sql",
+            "_build_trino_merge_sql",
+            "_ensure_ch_distributed_target_pair",
+        },
+        "analytics_toolkit/sql/dml/transfer/schema.py": {
+            "_inspect_ch_source_schema",
+            "_map_to_ch_base_type",
+            "_map_to_gp_type",
+            "_map_to_trino_type",
+            "_nullable_ch_type",
+            "_unwrap_nullable_ch_type",
+            "refine_ch_column_types_nullability_from_rows",
+        },
+    }
+    backend_tokens = ("_ch", "_gp", "_trino")
+    offenders: list[str] = []
+
+    for relative in allowed_helper_defs:
+        path = PROJECT_ROOT / relative
+        relative = str(path.relative_to(PROJECT_ROOT))
+        allowed = allowed_helper_defs.get(relative, set())
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not any(token in node.name for token in backend_tokens):
+                continue
+            if node.name not in allowed:
+                offenders.append(f"{relative}: {node.name}")
+
+    assert offenders == []
+
+
+def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> None:
+    forbidden_snippets = {
+        "from ...dml.table import write_modes",
+        "transfer_schema._map_to_gp_type",
+        "transfer_schema._map_to_trino_type",
+        "transfer_schema._map_to_ch_base_type",
+        "transfer.schema import _GP_OID_TYPES",
+    }
+    offenders: list[str] = []
+
+    for path in (SQL_ROOT / "backends").rglob("*.py"):
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
 
     assert offenders == []
 

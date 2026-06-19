@@ -279,12 +279,19 @@ def test_registered_backends_implement_full_contract() -> None:
         "running_query_ids_sql",
         "cancel_query_sql",
     }
+    inherited_contract_methods = {
+        "build_insert_from_stage_sql",
+        "build_insert_from_stage_placeholder_sql",
+        "column_types_for_columns",
+    }
     missing: list[str] = []
     for backend_name, backend in BACKEND_REGISTRY.items():
         capability = get_backend_capability(backend_name)
         assert capability.name == backend_name
         assert capability == backend.capability
         assert backend.backend == backend_name
+        for method_name in sorted(inherited_contract_methods):
+            assert callable(getattr(backend, method_name))
         for method_name in sorted(required_methods):
             method = getattr(type(backend), method_name, None)
             if method is getattr(BackendAdapter, method_name, None):

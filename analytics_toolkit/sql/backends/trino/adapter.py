@@ -7,6 +7,9 @@ from ..base import _apply_query_label
 from ..dbapi import DbApiBackendAdapter
 
 
+_TRINO_MAX_DECIMAL_PRECISION = 38
+
+
 class TrinoAdapter(DbApiBackendAdapter):
     display_name = "Trino"
     sqlglot_dialect = "trino"
@@ -205,7 +208,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         source_type = transfer_schema._normalize_type_name(column.native_type)
         precision, scale = transfer_schema._type_precision_scale(column, source_type)
         kind = transfer_schema._classify_source_type(source_type)
-        return transfer_schema._map_to_trino_type(kind, source_type, precision, scale)
+        return _map_to_trino_type(kind, source_type, precision, scale)
 
     def build_upsert_stage_sqls(
         self,
@@ -220,11 +223,10 @@ class TrinoAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         del column_types, ch_cluster, ch_only_shard
-        from ...dml.table import write_modes
 
         return [
             _apply_query_label(
-                write_modes._build_trino_merge_sql(
+                self._build_merge_sql(
                     target_table,
                     stage_table,
                     columns=columns,
@@ -245,11 +247,10 @@ class TrinoAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         del ch_cluster, ch_only_shard
-        from ...dml.table import write_modes
 
         return [
             _apply_query_label(
-                write_modes._build_trino_merge_placeholder_sql(
+                self._build_merge_placeholder_sql(
                     target_table,
                     stage_table,
                     key_columns=key_columns,
@@ -257,6 +258,59 @@ class TrinoAdapter(DbApiBackendAdapter):
                 query_label,
             )
         ]
+
+    def _build_merge_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        key_columns: Sequence[str],
+    ) -> str:
+        on_predicates = " AND ".join(
+            self.null_safe_key_equality("target_dst", "stage_src", column_name)
+            for column_name in key_columns
+        )
+        assignments = ",\n  ".join(
+            f"{self.quote_identifier(column_name)} = "
+            f"stage_src.{self.quote_identifier(column_name)}"
+            for column_name in columns
+        )
+        insert_columns = self.column_list_sql(columns)
+        insert_values = ", ".join(
+            f"stage_src.{self.quote_identifier(column_name)}"
+            for column_name in columns
+        )
+        return (
+            f"MERGE INTO {target_table} AS target_dst\n"
+            f"USING {stage_table} AS stage_src\n"
+            f"ON {on_predicates}\n"
+            "WHEN MATCHED THEN UPDATE SET\n"
+            f"  {assignments}\n"
+            f"WHEN NOT MATCHED THEN INSERT ({insert_columns})\n"
+            f"  VALUES ({insert_values})"
+        )
+
+    def _build_merge_placeholder_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        key_columns: Sequence[str],
+    ) -> str:
+        on_predicates = " AND ".join(
+            self.null_safe_key_equality("target_dst", "stage_src", column_name)
+            for column_name in key_columns
+        )
+        return (
+            f"MERGE INTO {target_table} AS target_dst\n"
+            f"USING {stage_table} AS stage_src\n"
+            f"ON {on_predicates}\n"
+            "WHEN MATCHED THEN UPDATE SET\n"
+            "  <source query columns>\n"
+            "WHEN NOT MATCHED THEN INSERT (<source query columns>)\n"
+            "  VALUES (<source query columns>)"
+        )
 
     def execute_sql(
         self,
@@ -269,14 +323,34 @@ class TrinoAdapter(DbApiBackendAdapter):
         progress: bool,
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
-        from ...dml.io.execute_sql import _execute_trino
-
-        return _execute_trino(
-            connection,
-            sql,
-            print_queries=print_queries,
-            progress=progress,
+        from analytics_toolkit.general import time_print
+        from ...execution.query_timing import run_timed_query
+        from ...dml.io.execute_sql import (
+            _iterate_statements_with_progress,
+            _maybe_print_query,
+            _split_sql_statements,
         )
+
+        cursor = connection.cursor()
+        statements = _split_sql_statements(sql)
+        time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
+        statement: str | None = None
+        try:
+            for statement in _iterate_statements_with_progress(
+                statements,
+                self.backend,
+                progress=progress,
+            ):
+                _maybe_print_query(statement, print_queries, split_preview=True)
+                run_timed_query(
+                    self.backend,
+                    lambda statement=statement: cursor.execute(statement),
+                )
+        except Exception:
+            failed_query = statement if statement is not None else sql
+            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
+            raise
+        return None
 
     def execute_read_sql(
         self,
@@ -289,14 +363,38 @@ class TrinoAdapter(DbApiBackendAdapter):
         progress: bool,
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
-        from ...dml.io.execute_read import _execute_read_trino
-
-        return _execute_read_trino(
-            connection,
-            statements,
-            print_queries=print_queries,
-            progress=progress,
+        from analytics_toolkit.general import time_print
+        from ...dml.io.execute_read import (
+            _execute_setup_statements,
+            _read_dbapi_cursor,
         )
+
+        time_print(
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
+            "and reading final query",
+            backend=self.backend,
+        )
+        cursor = connection.cursor()
+        try:
+            _execute_setup_statements(
+                cursor,
+                statements[:-1],
+                connection_type=self.backend,
+                execute_statement=lambda cursor, statement: cursor.execute(statement),
+                print_queries=print_queries,
+                progress=progress,
+            )
+            return _read_dbapi_cursor(
+                cursor,
+                statements[-1],
+                self.backend,
+                print_queries,
+            )
+        except Exception:
+            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+            raise
+        finally:
+            cursor.close()
 
     def insert_dataframe_batch(
         self,
@@ -312,9 +410,8 @@ class TrinoAdapter(DbApiBackendAdapter):
         on_progress: Callable[[int], None] | None,
     ) -> None:
         del gp_insert_chunk_size
-        from ...dml.load.load_sql_table import _insert_trino_batch
 
-        _insert_trino_batch(
+        self._insert_dataframe_batch(
             connection,
             table_name,
             batch,
@@ -342,9 +439,8 @@ class TrinoAdapter(DbApiBackendAdapter):
         on_gp_insert_page_success: Callable[[float, int], None] | None = None,
     ) -> None:
         del gp_insert_chunk_size, gp_insert_page_size_getter, on_gp_insert_page_success
-        from ...dml.load.load_sql_table import _insert_trino_rows
 
-        _insert_trino_rows(
+        self._insert_rows(
             connection,
             table_name,
             columns,
@@ -355,6 +451,76 @@ class TrinoAdapter(DbApiBackendAdapter):
             query_label=query_label,
             on_progress=on_progress,
         )
+
+    def _insert_dataframe_batch(
+        self,
+        connection: Any,
+        table_name: str,
+        batch: Any,
+        *,
+        target_column_types: dict[str, str] | None = None,
+        trino_insert_chunk_size: int | None = None,
+        connection_type: str = "trino",
+        query_label: str | None = None,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
+        rows = list(batch.itertuples(index=False, name=None))
+        self._insert_rows(
+            connection,
+            table_name,
+            batch.columns,
+            rows,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
+        )
+
+    def _insert_rows(
+        self,
+        connection: Any,
+        table_name: str,
+        columns: Sequence[str],
+        rows: Sequence[Sequence[Any]],
+        *,
+        target_column_types: dict[str, str] | None = None,
+        trino_insert_chunk_size: int | None = None,
+        connection_type: str = "trino",
+        query_label: str | None = None,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
+        from analytics_toolkit.general import time_print
+        from ...dml.load import load_sql_table
+
+        chunk_size = load_sql_table._get_trino_insert_chunk_size(
+            trino_insert_chunk_size,
+            connection_type,
+        )
+        cursor = connection.cursor()
+        try:
+            row_iterator = load_sql_table._iter_trino_row_values(
+                columns,
+                rows,
+                target_column_types,
+            )
+            for row_chunk in load_sql_table._chunk_rows(row_iterator, chunk_size):
+                params = [value for row in row_chunk for value in row]
+                sql = load_sql_table.build_trino_batch_insert_sql(
+                    table_name,
+                    columns,
+                    row_count=len(row_chunk),
+                    query_label=query_label,
+                )
+                time_print(
+                    f"Writing {len(row_chunk)} row(s) to table {table_name}",
+                    backend=self.backend,
+                )
+                cursor.execute(sql, params)
+                if on_progress is not None:
+                    on_progress(len(row_chunk))
+        finally:
+            cursor.close()
 
     def running_query_ids_sql(self) -> str:
         return """select query_id
@@ -450,3 +616,46 @@ def _trino_string_array_sql(entries: Sequence[str]) -> str:
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _map_to_trino_type(
+    kind: str,
+    source_type: str,
+    precision: int | None,
+    scale: int | None,
+) -> str:
+    from ...dml.transfer.schema import _decimal_type
+
+    if kind == "binary":
+        return "VARBINARY"
+    if kind == "boolean":
+        return "BOOLEAN"
+    if kind == "integer":
+        if "tiny" in source_type or source_type in {"int8", "uint8"}:
+            return "TINYINT"
+        if "small" in source_type or source_type in {"int16", "uint16"}:
+            return "SMALLINT"
+        if source_type in {"integer", "int", "int4", "int32", "uint32"}:
+            return "INTEGER" if source_type != "uint32" else "BIGINT"
+        if source_type == "uint64":
+            return "DECIMAL(20, 0)"
+        return "BIGINT"
+    if kind == "float":
+        if source_type in {"real", "float4", "float32"}:
+            return "REAL"
+        return "DOUBLE"
+    if kind == "decimal":
+        return _decimal_type(
+            "DECIMAL",
+            precision,
+            scale,
+            fallback="DECIMAL(38, 10)",
+            max_precision=_TRINO_MAX_DECIMAL_PRECISION,
+        )
+    if kind == "date":
+        return "DATE"
+    if kind == "timestamp":
+        if "with time zone" in source_type or "timestamptz" in source_type:
+            return "TIMESTAMP WITH TIME ZONE"
+        return "TIMESTAMP"
+    return "VARCHAR"

@@ -10,9 +10,8 @@ from ...backends.base import (
     StageTargetTableRequest,
     TargetWriteModeRequest,
 )
-from ...backend_adapters import ch_cluster_clause, get_backend_adapter
+from ...backend_adapters import get_backend_adapter
 from ...connection.config import resolve_connection_backend
-from ...execution.labels import apply_query_label
 from ...execution.plans import SqlOperationMetadata, SqlPlan
 from analytics_toolkit.general import time_print
 from ._basic_ops import (
@@ -193,28 +192,11 @@ def _build_trino_merge_sql(
     columns: Sequence[str],
     key_columns: Sequence[str],
 ) -> str:
-    adapter = get_backend_adapter("trino")
-    on_predicates = " AND ".join(
-        adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
-    )
-    assignments = ",\n  ".join(
-        f"{adapter.quote_identifier(column_name)} = "
-        f"stage_src.{adapter.quote_identifier(column_name)}"
-        for column_name in columns
-    )
-    insert_columns = adapter.column_list_sql(columns)
-    insert_values = ", ".join(
-        f"stage_src.{adapter.quote_identifier(column_name)}" for column_name in columns
-    )
-    return (
-        f"MERGE INTO {target_table} AS target_dst\n"
-        f"USING {stage_table} AS stage_src\n"
-        f"ON {on_predicates}\n"
-        "WHEN MATCHED THEN UPDATE SET\n"
-        f"  {assignments}\n"
-        f"WHEN NOT MATCHED THEN INSERT ({insert_columns})\n"
-        f"  VALUES ({insert_values})"
+    return get_backend_adapter("trino")._build_merge_sql(
+        target_table,
+        stage_table,
+        columns=columns,
+        key_columns=key_columns,
     )
 
 
@@ -224,19 +206,10 @@ def _build_trino_merge_placeholder_sql(
     *,
     key_columns: Sequence[str],
 ) -> str:
-    adapter = get_backend_adapter("trino")
-    on_predicates = " AND ".join(
-        adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
-    )
-    return (
-        f"MERGE INTO {target_table} AS target_dst\n"
-        f"USING {stage_table} AS stage_src\n"
-        f"ON {on_predicates}\n"
-        "WHEN MATCHED THEN UPDATE SET\n"
-        "  <source query columns>\n"
-        "WHEN NOT MATCHED THEN INSERT (<source query columns>)\n"
-        "  VALUES (<source query columns>)"
+    return get_backend_adapter("trino")._build_merge_placeholder_sql(
+        target_table,
+        stage_table,
+        key_columns=key_columns,
     )
 
 
@@ -245,15 +218,10 @@ def _build_gp_delete_matching_stage_sql(
     stage_table: str,
     key_columns: Sequence[str],
 ) -> str:
-    adapter = get_backend_adapter("gp")
-    predicates = " AND ".join(
-        adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
-    )
-    return (
-        f"DELETE FROM {target_table} AS target_dst\n"
-        f"USING {stage_table} AS stage_src\n"
-        f"WHERE {predicates}"
+    return get_backend_adapter("gp")._build_delete_matching_stage_sql(
+        target_table,
+        stage_table,
+        key_columns,
     )
 
 
@@ -264,28 +232,16 @@ def _build_ch_delete_matching_stage_sql(
     *,
     ch_cluster: str | None,
 ) -> str:
-    target_tuple = _build_ch_normalized_key_tuple(key_columns)
-    stage_tuple = _build_ch_normalized_key_tuple(key_columns)
-    return (
-        f"DELETE FROM {target_table}{ch_cluster_clause(ch_cluster)}\n"
-        f"WHERE {target_tuple} IN (\n"
-        f"  SELECT {stage_tuple} FROM {stage_table}\n"
-        ")"
+    return get_backend_adapter("ch")._build_delete_matching_stage_sql(
+        target_table,
+        stage_table,
+        key_columns,
+        ch_cluster=ch_cluster,
     )
 
 
 def _build_ch_normalized_key_tuple(key_columns: Sequence[str]) -> str:
-    adapter = get_backend_adapter("ch")
-    expressions: list[str] = []
-    for column_name in key_columns:
-        quoted_column = adapter.quote_identifier(column_name)
-        expressions.extend(
-            [
-                f"isNull({quoted_column})",
-                f"ifNull(toString({quoted_column}), '')",
-            ]
-        )
-    return "tuple(" + ", ".join(expressions) + ")"
+    return get_backend_adapter("ch")._build_normalized_key_tuple(key_columns)
 
 
 def _build_insert_from_stage_sql(
@@ -297,16 +253,12 @@ def _build_insert_from_stage_sql(
     column_types: Mapping[str, str] | None,
     query_label: str | None,
 ) -> str:
-    typed_columns = _column_types_for_columns(column_types, columns)
-    return apply_query_label(
-        _build_explicit_insert_from_stage_sql(
-            backend,
-            target_table,
-            stage_table,
-            columns=columns,
-            column_types=typed_columns,
-        ),
-        query_label,
+    return get_backend_adapter(backend).build_insert_from_stage_sql(
+        target_table,
+        stage_table,
+        columns=columns,
+        column_types=column_types,
+        query_label=query_label,
     )
 
 
@@ -318,19 +270,11 @@ def _build_explicit_insert_from_stage_sql(
     columns: Sequence[str],
     column_types: Mapping[str, str] | None,
 ) -> str:
-    adapter = get_backend_adapter(backend)
-    if column_types:
-        return adapter.build_insert_from_table_sql(
-            target_table,
-            stage_table,
-            column_types,
-        )
-
-    target_columns = adapter.column_list_sql(columns)
-    selected_columns = ", ".join(adapter.quote_identifier(column) for column in columns)
-    return (
-        f"INSERT INTO {target_table} ({target_columns}) "
-        f"SELECT {selected_columns} FROM {stage_table}"
+    return get_backend_adapter(backend).build_explicit_insert_from_stage_sql(
+        target_table,
+        stage_table,
+        columns=columns,
+        column_types=column_types,
     )
 
 
@@ -341,11 +285,10 @@ def _build_insert_from_stage_placeholder_sql(
     *,
     query_label: str | None,
 ) -> str:
-    del backend
-    return apply_query_label(
-        f"INSERT INTO {target_table} (<source query columns>) "
-        f"SELECT <source query columns> FROM {stage_table}",
-        query_label,
+    return get_backend_adapter(backend).build_insert_from_stage_placeholder_sql(
+        target_table,
+        stage_table,
+        query_label=query_label,
     )
 
 
@@ -353,16 +296,7 @@ def _column_types_for_columns(
     column_types: Mapping[str, str] | None,
     columns: Sequence[str],
 ) -> dict[str, str] | None:
-    if column_types is None:
-        return None
-
-    missing_columns = [column for column in columns if column not in column_types]
-    if missing_columns:
-        raise ValueError(
-            "Target table is missing staged column(s): "
-            + ", ".join(missing_columns)
-        )
-    return {column: column_types[column] for column in columns}
+    return get_backend_adapter("gp").column_types_for_columns(column_types, columns)
 
 
 def finalize_stage_table(

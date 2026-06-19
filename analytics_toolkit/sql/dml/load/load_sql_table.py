@@ -231,12 +231,10 @@ def _insert_gp_batch(
     query_label: str | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    rows = list(batch.itertuples(index=False, name=None))
-    _insert_gp_rows(
+    get_backend_adapter("gp")._insert_dataframe_batch(
         connection,
         table_name,
-        batch.columns,
-        rows,
+        batch,
         gp_insert_chunk_size=gp_insert_chunk_size,
         query_label=query_label,
         on_progress=on_progress,
@@ -254,41 +252,17 @@ def _insert_gp_rows(
     page_size_getter: Callable[[], int] | None = None,
     on_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
-    row_tuples = [tuple(row) for row in rows]
-    if not row_tuples:
-        return
-
-    sql = build_gp_batch_insert_sql(table_name, columns, query_label=query_label)
-
-    cursor = connection.cursor()
-    try:
-        next_index = 0
-        while next_index < len(row_tuples):
-            remaining_rows = len(row_tuples) - next_index
-            configured_page_size = (
-                page_size_getter()
-                if page_size_getter is not None
-                else gp_insert_chunk_size
-            )
-            page_size = min(
-                _get_gp_insert_chunk_size(configured_page_size),
-                remaining_rows,
-            )
-            row_chunk = row_tuples[next_index:next_index + page_size]
-            started_at = time.perf_counter()
-            execute_values(cursor, sql, row_chunk, page_size=page_size)
-            duration_seconds = time.perf_counter() - started_at
-            if on_progress is not None:
-                on_progress(len(row_chunk))
-            if on_page_success is not None:
-                on_page_success(duration_seconds, len(row_chunk))
-            next_index += page_size
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        cursor.close()
+    get_backend_adapter("gp")._insert_rows(
+        connection,
+        table_name,
+        columns,
+        rows,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        query_label=query_label,
+        on_progress=on_progress,
+        page_size_getter=page_size_getter,
+        on_page_success=on_page_success,
+    )
 
 
 def _insert_trino_batch(
@@ -301,12 +275,10 @@ def _insert_trino_batch(
     query_label: str | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    rows = list(batch.itertuples(index=False, name=None))
-    _insert_trino_rows(
+    get_backend_adapter("trino")._insert_dataframe_batch(
         connection,
         table_name,
-        batch.columns,
-        rows,
+        batch,
         target_column_types=target_column_types,
         trino_insert_chunk_size=trino_insert_chunk_size,
         connection_type=connection_type,
@@ -326,30 +298,17 @@ def _insert_trino_rows(
     query_label: str | None = None,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    chunk_size = _get_trino_insert_chunk_size(
-        trino_insert_chunk_size,
-        connection_type,
+    get_backend_adapter("trino")._insert_rows(
+        connection,
+        table_name,
+        columns,
+        rows,
+        target_column_types=target_column_types,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        connection_type=connection_type,
+        query_label=query_label,
+        on_progress=on_progress,
     )
-    cursor = connection.cursor()
-    try:
-        row_iterator = _iter_trino_row_values(columns, rows, target_column_types)
-        for row_chunk in _chunk_rows(row_iterator, chunk_size):
-            params = [value for row in row_chunk for value in row]
-            sql = build_trino_batch_insert_sql(
-                table_name,
-                columns,
-                row_count=len(row_chunk),
-                query_label=query_label,
-            )
-            time_print(
-                f"Writing {len(row_chunk)} row(s) to table {table_name}",
-                backend="trino",
-            )
-            cursor.execute(sql, params)
-            if on_progress is not None:
-                on_progress(len(row_chunk))
-    finally:
-        cursor.close()
 
 
 def build_gp_batch_insert_sql(
@@ -388,14 +347,12 @@ def _insert_ch_batch(
     batch: pd.DataFrame,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    normalized_batch = normalize_ch_batch(batch)
-    client.insert_df(
-        table=table_name,
-        df=normalized_batch,
-        column_names=list(batch.columns),
+    get_backend_adapter("ch")._insert_dataframe_batch(
+        client,
+        table_name,
+        batch,
+        on_progress=on_progress,
     )
-    if on_progress is not None:
-        on_progress(len(batch))
 
 
 def _insert_ch_rows(
@@ -406,14 +363,14 @@ def _insert_ch_rows(
     column_types: dict[str, str] | None,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    client.insert(
-        table=table_name,
-        data=[_normalize_ch_row(row) for row in rows],
-        column_names=list(columns),
-        column_type_names=_column_type_names(columns, column_types),
+    get_backend_adapter("ch")._insert_rows(
+        client,
+        table_name,
+        columns,
+        rows,
+        column_types,
+        on_progress=on_progress,
     )
-    if on_progress is not None:
-        on_progress(len(rows))
 
 
 def _insert_gp_batch_backend(

@@ -349,6 +349,77 @@ class BackendAdapter:
     ) -> list[str]:
         raise NotImplementedError
 
+    def build_insert_from_stage_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        column_types: Mapping[str, str] | None,
+        query_label: str | None,
+    ) -> str:
+        typed_columns = self.column_types_for_columns(column_types, columns)
+        return _apply_query_label(
+            self.build_explicit_insert_from_stage_sql(
+                target_table,
+                stage_table,
+                columns=columns,
+                column_types=typed_columns,
+            ),
+            query_label,
+        )
+
+    def build_explicit_insert_from_stage_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        columns: Sequence[str],
+        column_types: Mapping[str, str] | None,
+    ) -> str:
+        if column_types:
+            return self.build_insert_from_table_sql(
+                target_table,
+                stage_table,
+                column_types,
+            )
+
+        target_columns = self.column_list_sql(columns)
+        selected_columns = ", ".join(self.quote_identifier(column) for column in columns)
+        return (
+            f"INSERT INTO {target_table} ({target_columns}) "
+            f"SELECT {selected_columns} FROM {stage_table}"
+        )
+
+    def build_insert_from_stage_placeholder_sql(
+        self,
+        target_table: str,
+        stage_table: str,
+        *,
+        query_label: str | None,
+    ) -> str:
+        return _apply_query_label(
+            f"INSERT INTO {target_table} (<source query columns>) "
+            f"SELECT <source query columns> FROM {stage_table}",
+            query_label,
+        )
+
+    def column_types_for_columns(
+        self,
+        column_types: Mapping[str, str] | None,
+        columns: Sequence[str],
+    ) -> dict[str, str] | None:
+        if column_types is None:
+            return None
+
+        missing_columns = [column for column in columns if column not in column_types]
+        if missing_columns:
+            raise ValueError(
+                "Target table is missing staged column(s): "
+                + ", ".join(missing_columns)
+            )
+        return {column: column_types[column] for column in columns}
+
     def planned_execute_statements(
         self,
         sql: str,

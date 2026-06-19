@@ -25,8 +25,6 @@ from ...execution.plans import SqlOperationMetadata, SqlOperationResult
 from ...execution.query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .execute_sql import (
-    _execute_ch_statement,
-    _execute_trino_statement,
     _iterate_statements_with_progress,
     _maybe_print_query,
     _split_sql_statements,
@@ -176,27 +174,14 @@ def _execute_read_trino(
     print_queries: bool = False,
     progress: bool = False,
 ) -> pd.DataFrame:
-    time_print(
-        f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query",
-        backend="trino",
+    return get_backend_adapter("trino").execute_read_sql(
+        conn,
+        statements,
+        print_queries=print_queries,
+        gp_break_query=False,
+        gp_commit_each_statement=False,
+        progress=progress,
     )
-    cursor = conn.cursor()
-    try:
-        _execute_setup_statements(
-            cursor,
-            statements[:-1],
-            connection_type="trino",
-            execute_statement=_execute_trino_statement,
-            print_queries=print_queries,
-            progress=progress,
-        )
-        return _read_dbapi_cursor(cursor, statements[-1], "trino", print_queries)
-    except Exception:
-        time_print(f"Failed SQL:\n{statements[-1]}", backend="trino")
-        raise
-    finally:
-        cursor.close()
 
 
 def _execute_read_gp(
@@ -207,43 +192,14 @@ def _execute_read_gp(
     gp_commit_each_statement: bool = False,
     progress: bool = False,
 ) -> pd.DataFrame:
-    time_print(
-        f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query",
-        backend="gp",
+    return get_backend_adapter("gp").execute_read_sql(
+        conn,
+        statements,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
     )
-    cursor = conn.cursor()
-    should_commit_at_end = len(statements) > 1
-    try:
-        setup_statements = statements[:-1]
-        if setup_statements and not gp_break_query:
-            setup_sql = ";\n".join(setup_statements)
-            _maybe_print_query(setup_sql, print_queries, split_preview=False)
-            run_timed_query("gp", lambda: cursor.execute(setup_sql))
-        else:
-            for statement in _iterate_statements_with_progress(
-                setup_statements,
-                "gp",
-                progress=progress,
-            ):
-                _maybe_print_query(statement, print_queries, split_preview=True)
-                run_timed_query(
-                    "gp",
-                    lambda statement=statement: cursor.execute(statement),
-                )
-                if gp_commit_each_statement:
-                    conn.commit()
-                    should_commit_at_end = False
-
-        result = _read_dbapi_cursor(cursor, statements[-1], "gp", print_queries)
-        if should_commit_at_end:
-            conn.commit()
-        return result
-    except Exception:
-        time_print(f"Failed SQL:\n{statements[-1]}", backend="gp")
-        raise
-    finally:
-        cursor.close()
 
 
 def _execute_read_ch(
@@ -252,25 +208,14 @@ def _execute_read_ch(
     print_queries: bool = False,
     progress: bool = False,
 ) -> pd.DataFrame:
-    time_print(
-        f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-        "and reading final query",
-        backend="ch",
+    return get_backend_adapter("ch").execute_read_sql(
+        client,
+        statements,
+        print_queries=print_queries,
+        gp_break_query=False,
+        gp_commit_each_statement=False,
+        progress=progress,
     )
-    try:
-        _execute_setup_statements(
-            client,
-            statements[:-1],
-            connection_type="ch",
-            execute_statement=_execute_ch_statement,
-            print_queries=print_queries,
-            progress=progress,
-        )
-        _maybe_print_query(statements[-1], print_queries, split_preview=True)
-        return run_timed_query("ch", lambda: client.query_df(statements[-1]))
-    except Exception:
-        time_print(f"Failed SQL:\n{statements[-1]}", backend="ch")
-        raise
 
 
 def _execute_setup_statements(
@@ -388,6 +333,13 @@ def _make_execute_read_backend(backend: str) -> ExecuteReadBackend:
 _EXECUTE_READ_BACKENDS: dict[str, ExecuteReadBackend] = {
     backend: _make_execute_read_backend(backend) for backend in get_backend_names()
 }
+_EXECUTE_READ_BACKENDS.update(
+    {
+        "trino": _execute_read_trino_backend,
+        "gp": _execute_read_gp_backend,
+        "ch": _execute_read_ch_backend,
+    }
+)
 
 
 def _execute_read_backend(

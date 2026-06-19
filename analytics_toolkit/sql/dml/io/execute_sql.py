@@ -38,29 +38,14 @@ def _execute_trino(
     print_queries: bool = False,
     progress: bool = False,
 ) -> Any:
-    cursor = conn.cursor()
-    statements = _split_sql_statements(query)
-    time_print(f"Executing {len(statements)} statement(s)", backend="trino")
-    statement: str | None = None
-    try:
-        for statement in _iterate_statements_with_progress(
-            statements,
-            "trino",
-            progress=progress,
-        ):
-            _maybe_print_query(statement, print_queries, split_preview=True)
-            run_timed_query(
-                "trino",
-                lambda statement=statement: _execute_trino_statement(
-                    cursor,
-                    statement,
-                ),
-            )
-    except Exception:
-        failed_query = statement if statement is not None else query
-        time_print(f"Failed SQL:\n{failed_query}", backend="trino")
-        raise
-    return None
+    return get_backend_adapter("trino").execute_sql(
+        conn,
+        query,
+        print_queries=print_queries,
+        gp_break_query=False,
+        gp_commit_each_statement=False,
+        progress=progress,
+    )
 
 
 def _execute_gp(
@@ -71,38 +56,14 @@ def _execute_gp(
     gp_commit_each_statement: bool = False,
     progress: bool = False,
 ) -> Any:
-    statement: str | None = None
-    try:
-        with conn.cursor() as cursor:
-            should_commit_at_end = True
-            if not gp_break_query:
-                time_print("Executing 1 statement set", backend="gp")
-                statement = query
-                _maybe_print_query(statement, print_queries, split_preview=False)
-                run_timed_query("gp", lambda: cursor.execute(statement))
-            else:
-                statements = _split_sql_statements(query)
-                time_print(f"Executing {len(statements)} statement(s)", backend="gp")
-                for statement in _iterate_statements_with_progress(
-                    statements,
-                    "gp",
-                    progress=progress,
-                ):
-                    _maybe_print_query(statement, print_queries, split_preview=True)
-                    run_timed_query(
-                        "gp",
-                        lambda statement=statement: cursor.execute(statement),
-                    )
-                    if gp_commit_each_statement:
-                        conn.commit()
-                        should_commit_at_end = False
-            if should_commit_at_end:
-                conn.commit()
-            return None
-    except Exception:
-        failed_query = statement if statement is not None else query
-        time_print(f"Failed SQL:\n{failed_query}", backend="gp")
-        raise
+    return get_backend_adapter("gp").execute_sql(
+        conn,
+        query,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
+    )
 
 
 def _execute_ch(
@@ -111,25 +72,14 @@ def _execute_ch(
     print_queries: bool = False,
     progress: bool = False,
 ) -> Any:
-    statements = _split_sql_statements(query)
-    time_print(f"Executing {len(statements)} statement(s)", backend="ch")
-    statement: str | None = None
-    try:
-        for statement in _iterate_statements_with_progress(
-            statements,
-            "ch",
-            progress=progress,
-        ):
-            _maybe_print_query(statement, print_queries, split_preview=True)
-            run_timed_query(
-                "ch",
-                lambda statement=statement: _execute_ch_statement(client, statement),
-            )
-    except Exception:
-        failed_query = statement if statement is not None else query
-        time_print(f"Failed SQL:\n{failed_query}", backend="ch")
-        raise
-    return None
+    return get_backend_adapter("ch").execute_sql(
+        client,
+        query,
+        print_queries=print_queries,
+        gp_break_query=False,
+        gp_commit_each_statement=False,
+        progress=progress,
+    )
 
 
 @timed_public_sql_function
@@ -421,6 +371,13 @@ def _make_execute_backend(backend: str) -> ExecuteBackend:
 _EXECUTE_BACKENDS: dict[str, ExecuteBackend] = {
     backend: _make_execute_backend(backend) for backend in get_backend_names()
 }
+_EXECUTE_BACKENDS.update(
+    {
+        "trino": _execute_trino_backend,
+        "gp": _execute_gp_backend,
+        "ch": _execute_ch_backend,
+    }
+)
 
 
 def _execute_backend(
