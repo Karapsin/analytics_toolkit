@@ -7,6 +7,7 @@ from .metrics import (
     compute_mde_sql_native,
     compute_metrics_from_sql,
     compute_test_metrics,
+    compute_test_metrics_sql_native,
     format_ab_metrics,
 )
 from .split import do_split
@@ -18,6 +19,7 @@ __all__ = [
     "compute_mde_sql_native",
     "compute_metrics_from_sql",
     "compute_test_metrics",
+    "compute_test_metrics_sql_native",
     "do_split",
     "format_ab_metrics",
 ]

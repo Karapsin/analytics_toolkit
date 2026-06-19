@@ -9,6 +9,7 @@ from .planning import (
     compute_mde_from_sql,
     compute_mde_sql_native,
 )
+from .sql_native import compute_test_metrics_sql_native
 from .bootstrap import (
     _apply_multiple_comparisons_adjustment,
     _compute_bootstrap_family_max_statistics,
@@ -97,6 +98,7 @@ __all__ = [
     "compute_mde_from_sql",
     "compute_mde_sql_native",
     "compute_test_metrics",
+    "compute_test_metrics_sql_native",
     "compute_metrics_from_sql",
     "format_ab_metrics",
     "_apply_multiple_comparisons_adjustment",
