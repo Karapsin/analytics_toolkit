@@ -8,6 +8,7 @@ import pytest
 
 import analytics_toolkit.ab_utils as ab_utils
 import analytics_toolkit.ab_utils.metrics as metrics_module
+import analytics_toolkit.ab_utils.parallel as parallel_module
 import analytics_toolkit.ab_utils.sql_native as sql_native
 
 
@@ -127,6 +128,26 @@ def _install_sql_native_fakes(
 
     monkeypatch.setattr(sql_native, "_read_sql_native_query", fake_read)
     return queries
+
+
+def _install_sql_backed_dataframe_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    df: pd.DataFrame,
+) -> list[list[dict[str, Any]]]:
+    task_batches: list[list[dict[str, Any]]] = []
+
+    def fake_async_sql(
+        tasks: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        assert kwargs["concurrency"] == 1
+        assert kwargs["fail_fast"] is True
+        assert kwargs["progress"] is False
+        task_batches.append(tasks)
+        return {str(task["name"]): df.copy() for task in tasks}
+
+    monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
+    return task_batches
 
 
 def test_compute_test_metrics_sql_native_is_exported() -> None:
@@ -261,4 +282,136 @@ def test_compute_test_metrics_sql_native_task_mapping_adds_labels(
     pd.testing.assert_frame_equal(
         result["segment_a"].drop(columns=["segment"]),
         expected,
+    )
+
+
+def test_metric_entrypoints_three_way_parity_single_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    df = _metric_df()
+    ratio_metrics = [
+        {
+            "name": "ctr_agg",
+            "numerator": "clicks",
+            "denominator": "views",
+            "level": "agg",
+        },
+        {
+            "name": "ctr_user",
+            "numerator": "clicks",
+            "denominator": "views",
+            "level": "user",
+        },
+    ]
+    expected = ab_utils.compute_test_metrics(
+        df,
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        outliers_quantile=1,
+    )
+    _install_sql_backed_dataframe_fakes(monkeypatch, df)
+    _install_sql_native_fakes(
+        monkeypatch,
+        base_stats=_base_stats_from_expected(expected),
+    )
+
+    sql_backed_result = ab_utils.compute_metrics_from_sql(
+        {"one": {"sql": "select * from mart.ab_source", "test_vs_test": False}},
+        db_key="analytics",
+        ratio_metrics=ratio_metrics,
+        outliers_quantile=1,
+        concurrency=1,
+        progress=False,
+    )
+    sql_native_result = ab_utils.compute_test_metrics_sql_native(
+        "analytics",
+        "mart.ab_source",
+        metric_columns=["orders", "clicks", "views"],
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        outliers_quantile=1,
+    )
+
+    pd.testing.assert_frame_equal(sql_backed_result["one"], expected)
+    pd.testing.assert_frame_equal(sql_native_result, expected)
+    assert list(sql_backed_result["one"].columns) == list(expected.columns)
+    assert list(sql_native_result.columns) == list(expected.columns)
+
+
+def test_metric_entrypoints_three_way_parity_task_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    df = _metric_df()
+    ratio_metrics = [
+        {
+            "name": "ctr_agg",
+            "numerator": "clicks",
+            "denominator": "views",
+            "level": "agg",
+        },
+        {
+            "name": "ctr_user",
+            "numerator": "clicks",
+            "denominator": "views",
+            "level": "user",
+        },
+    ]
+    expected_tasks = ab_utils.compute_test_metrics(
+        {
+            "segment_a": {
+                "df": df,
+                "labels": {"segment": "a"},
+                "ratio_metrics": ratio_metrics,
+                "test_vs_test": False,
+                "outliers_quantile": 1,
+            }
+        },
+        concurrency=1,
+        progress=False,
+    )
+    _install_sql_backed_dataframe_fakes(monkeypatch, df)
+    _install_sql_native_fakes(
+        monkeypatch,
+        base_stats=_base_stats_from_expected(
+            expected_tasks["segment_a"].drop(columns=["segment"])
+        ),
+    )
+
+    sql_backed_tasks = ab_utils.compute_metrics_from_sql(
+        {
+            "segment_a": {
+                "sql": "select * from mart.ab_source",
+                "labels": {"segment": "a"},
+                "test_vs_test": False,
+            }
+        },
+        db_key="analytics",
+        ratio_metrics=ratio_metrics,
+        outliers_quantile=1,
+        concurrency=1,
+        progress=False,
+    )
+    sql_native_tasks = ab_utils.compute_test_metrics_sql_native(
+        "analytics",
+        {
+            "segment_a": {
+                "source": "mart.ab_source",
+                "metric_columns": ["orders", "clicks", "views"],
+                "labels": {"segment": "a"},
+                "ratio_metrics": ratio_metrics,
+                "test_vs_test": False,
+                "outliers_quantile": 1,
+            }
+        },
+        concurrency=1,
+        progress=False,
+    )
+
+    pd.testing.assert_frame_equal(sql_backed_tasks["segment_a"], expected_tasks["segment_a"])
+    pd.testing.assert_frame_equal(sql_native_tasks["segment_a"], expected_tasks["segment_a"])
+    assert list(sql_backed_tasks["segment_a"].columns) == list(
+        expected_tasks["segment_a"].columns
+    )
+    assert list(sql_native_tasks["segment_a"].columns) == list(
+        expected_tasks["segment_a"].columns
     )

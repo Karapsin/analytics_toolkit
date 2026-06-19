@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Harden SQL transfer imports against autoreload drift.
 - Use per-worker stage tables for keyed SQL transfer concurrency.
 - Add SQL-native AB metric comparison.
+- Add three-way AB metric parity coverage.
 
 ## 1.3.10.8 - 2026-06-18
 
