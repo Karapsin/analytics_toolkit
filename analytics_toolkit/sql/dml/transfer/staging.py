@@ -25,6 +25,7 @@ def cleanup_stale_stage_tables(
     target_table: str,
     *,
     stage_tables: Sequence[str] | None = None,
+    clean_all: bool = False,
     read_retry_cnt: int = 5,
     timeout_increment: int | float = _DEFAULT_TIMEOUT_INCREMENT,
     query_label: str | None = None,
@@ -36,6 +37,7 @@ def cleanup_stale_stage_tables(
             target_table=target_table,
             connection_ref=connection_ref,
             stage_tables=stage_tables,
+            clean_all=clean_all,
             read_retry_cnt=read_retry_cnt,
             timeout_increment=timeout_increment,
             query_label=query_label,
@@ -53,6 +55,7 @@ def cleanup_stale_stage_tables_with_connection(
     connection_ref: dict[str, Any],
     *,
     stage_tables: Sequence[str] | None = None,
+    clean_all: bool = False,
     read_retry_cnt: int = 5,
     timeout_increment: int | float = _DEFAULT_TIMEOUT_INCREMENT,
     query_label: str | None = None,
@@ -61,7 +64,23 @@ def cleanup_stale_stage_tables_with_connection(
     transfer_staging_schema = config.transfer_staging_schema
     transfer_staging_username = _sanitize_transfer_staging_username(config.user)
 
-    if stage_tables is None:
+    if clean_all and stage_tables is not None:
+        raise InvalidSqlInputError(
+            "clean_all=True cannot be combined with explicit stage_tables."
+        )
+
+    if clean_all:
+        if transfer_staging_schema is None:
+            _warn_transfer_staging_schema_cleanup_not_configured(config.connection_key)
+            return
+
+        target_stages = _find_all_user_transfer_stage_tables(
+            db_key=db_key,
+            connection=connection_ref,
+            transfer_staging_schema=transfer_staging_schema,
+            transfer_staging_username=transfer_staging_username,
+        )
+    elif stage_tables is None:
         if transfer_staging_schema is None:
             _warn_transfer_staging_schema_cleanup_not_configured(config.connection_key)
             return
@@ -112,6 +131,34 @@ def _warn_transfer_staging_schema_cleanup_not_configured(db_key: str) -> None:
     _warned_transfer_staging_schema_cleanup.add(warning_key)
 
 
+def _find_all_user_transfer_stage_tables(
+    db_key: str,
+    connection: dict[str, Any],
+    transfer_staging_schema: str,
+    transfer_staging_username: str,
+) -> list[str]:
+    config = get_connection_config(db_key)
+    marker = _build_user_stage_marker(transfer_staging_username)
+    table_names = _query_transfer_stage_table_names(
+        db_key=db_key,
+        backend=config.backend,
+        connection=connection,
+        transfer_staging_schema=transfer_staging_schema,
+        table_pattern=f"%{marker}%",
+    )
+
+    return [
+        _qualify_staging_table_name(
+            db_key=db_key,
+            transfer_backend=config.backend,
+            transfer_staging_schema=transfer_staging_schema,
+            table_name=table_name,
+        )
+        for table_name in table_names
+        if marker in table_name
+    ]
+
+
 def _find_matching_transfer_stage_tables(
     db_key: str,
     target_table: str,
@@ -126,28 +173,13 @@ def _find_matching_transfer_stage_tables(
         transfer_staging_username,
     )
     like_prefix = f"{prefix}%"
-    if config.backend == "gp":
-        table_names = _query_gp_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            table_prefix=like_prefix,
-            connection=connection["connection"],
-        )
-    elif config.backend == "trino":
-        table_names = _query_trino_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            connection_key=db_key,
-            table_prefix=like_prefix,
-            connection=connection["connection"],
-        )
-    elif config.backend == "ch":
-        table_names = _query_ch_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            connection=connection["connection"],
-        )
-    else:
-        raise ValueError(
-            f"Unsupported transfer backend for staging cleanup: {config.backend}"
-        )
+    table_names = _query_transfer_stage_table_names(
+        db_key=db_key,
+        backend=config.backend,
+        connection=connection,
+        transfer_staging_schema=transfer_staging_schema,
+        table_pattern=like_prefix,
+    )
 
     return [
         _qualify_staging_table_name(
@@ -159,6 +191,34 @@ def _find_matching_transfer_stage_tables(
         for table_name in table_names
         if table_name.startswith(prefix)
     ]
+
+
+def _query_transfer_stage_table_names(
+    db_key: str,
+    backend: str,
+    connection: dict[str, Any],
+    transfer_staging_schema: str,
+    table_pattern: str,
+) -> list[str]:
+    if backend == "gp":
+        return _query_gp_stage_tables(
+            transfer_staging_schema=transfer_staging_schema,
+            table_prefix=table_pattern,
+            connection=connection["connection"],
+        )
+    if backend == "trino":
+        return _query_trino_stage_tables(
+            transfer_staging_schema=transfer_staging_schema,
+            connection_key=db_key,
+            table_prefix=table_pattern,
+            connection=connection["connection"],
+        )
+    if backend == "ch":
+        return _query_ch_stage_tables(
+            transfer_staging_schema=transfer_staging_schema,
+            connection=connection["connection"],
+        )
+    raise ValueError(f"Unsupported transfer backend for staging cleanup: {backend}")
 
 
 def _query_gp_stage_tables(
@@ -258,6 +318,10 @@ def _sanitize_transfer_staging_username(value: str) -> str:
     username = re.sub(r"[^0-9A-Za-z_]+", "_", value.strip())
     username = re.sub(r"_+", "_", username).strip("_")
     return username or "user"
+
+
+def _build_user_stage_marker(transfer_staging_username: str) -> str:
+    return f"__analytics_toolkit_{transfer_staging_username}__stage__"
 
 
 def _quote_sql_literal(value: str) -> str:

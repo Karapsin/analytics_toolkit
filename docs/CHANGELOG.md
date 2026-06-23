@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Use cancel and terminate for Greenplum query cancellation.
 - Accept scalar string SQL key columns.
 - Use fresh target connections for SQL transfer and load_df target actions.
+- Added clean_all option to SQL stale stage cleanup.
 
 ## 1.3.10.9 - 2026-06-19
 

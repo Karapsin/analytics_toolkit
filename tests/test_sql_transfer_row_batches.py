@@ -1427,6 +1427,165 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
     assert query_calls == [("transfer_schema", "target__analytics_toolkit_target_user__stage__%")]
 
 
+def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    query_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="transfer_schema",
+            user="target user",
+        ),
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "_query_gp_stage_tables",
+        lambda transfer_staging_schema, table_prefix, connection: query_calls.append(
+            (transfer_staging_schema, table_prefix)
+        )
+        or [
+            "target__analytics_toolkit_target_user__stage__match",
+            "other__analytics_toolkit_target_user__stage__match",
+            "target__analytics_toolkit_other_user__stage__ignore",
+            "plain_table",
+        ],
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="gp",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        clean_all=True,
+    )
+
+    assert discovered == [
+        "transfer_schema.target__analytics_toolkit_target_user__stage__match",
+        "transfer_schema.other__analytics_toolkit_target_user__stage__match",
+    ]
+    assert query_calls == [("transfer_schema", "%__analytics_toolkit_target_user__stage__%")]
+
+
+def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    query_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="trino",
+            transfer_staging_schema="hive.scratch",
+            user="target_user",
+        ),
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "_query_trino_stage_tables",
+        lambda transfer_staging_schema,
+        connection_key,
+        table_prefix,
+        connection: query_calls.append((transfer_staging_schema, table_prefix))
+        or [
+            "target__analytics_toolkit_target_user__stage__match",
+            "target__analytics_toolkit_other_user__stage__ignore",
+        ],
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="trino",
+        target_table="analytics.target",
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        clean_all=True,
+    )
+
+    assert discovered == ["hive.scratch.target__analytics_toolkit_target_user__stage__match"]
+    assert query_calls == [("hive.scratch", "%__analytics_toolkit_target_user__stage__%")]
+
+
+def test_cleanup_stale_stage_tables_clean_all_warns_once_when_schema_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = SimpleNamespace(
+        connection_key="clean_all_staging_warning_db",
+        backend="gp",
+        transfer_staging_schema=None,
+        user="target_user",
+    )
+    connection_ref: dict[str, Any] = {"connection": FakeTransferConnection("target")}
+    monkeypatch.setattr(staging_module, "get_connection_config", lambda db_key: config)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="clean_all_staging_warning_db",
+            target_table="schema.target",
+            connection_ref=connection_ref,
+            read_retry_cnt=1,
+            clean_all=True,
+        )
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="clean_all_staging_warning_db",
+            target_table="schema.target",
+            connection_ref=connection_ref,
+            read_retry_cnt=1,
+            clean_all=True,
+        )
+
+    assert len(caught) == 1
+    assert (
+        "clean_transfer_staging_schema is enabled, "
+        "but transfer_staging_schema is not configured for the target connection"
+        in str(caught[0].message)
+    )
+
+
+def test_cleanup_stale_stage_tables_clean_all_rejects_explicit_stage_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="transfer_schema",
+            user="target_user",
+        ),
+    )
+
+    with pytest.raises(
+        staging_module.InvalidSqlInputError,
+        match="clean_all=True cannot be combined with explicit stage_tables",
+    ):
+        staging_module.cleanup_stale_stage_tables_with_connection(
+            db_key="gp",
+            target_table="analytics.target",
+            connection_ref={"connection": object()},
+            read_retry_cnt=3,
+            clean_all=True,
+            stage_tables=["target__analytics_toolkit_target_user__stage__explicit"],
+        )
+
+
 def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
