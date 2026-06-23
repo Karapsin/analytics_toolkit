@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..backends.base import BackendCapability, WriteMode
+from .._lazy_exports import lazy_export_dir, resolve_lazy_export
 from ..backends.registry import (
     BACKEND_REGISTRY,
     backend_capability_map,
@@ -10,6 +10,13 @@ from ..execution.operation_runner import timed_public_sql_function
 
 
 BACKEND_CAPABILITIES = backend_capability_map()
+_EXPORTS = {
+    "BackendCapability": (
+        "analytics_toolkit.sql.backends.base",
+        "BackendCapability",
+    ),
+    "WriteMode": ("analytics_toolkit.sql.backends.base", "WriteMode"),
+}
 
 
 def validate_write_mode(
@@ -92,6 +99,14 @@ def format_support_matrix() -> str:
 
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
+
+
+def __getattr__(name: str):
+    return resolve_lazy_export(name, _EXPORTS, __name__)
+
+
+def __dir__() -> list[str]:
+    return lazy_export_dir(globals(), _EXPORTS)
 
 
 __all__ = [

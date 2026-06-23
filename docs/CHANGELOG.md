@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Continue SQL backend registry cleanup.
 - Moved remaining SQL backend helper ownership into adapters.
 - Fixed Greenplum transfer stage insert retries to refresh closed target connections.
+- Fix SQL backend adapter autoreload compatibility.
 
 ## 1.3.10.9 - 2026-06-19
 

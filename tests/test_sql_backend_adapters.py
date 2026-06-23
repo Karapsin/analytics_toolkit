@@ -335,6 +335,108 @@ def test_legacy_backend_imports_resolve_to_canonical_objects() -> None:
         )
 
 
+def test_backend_compatibility_class_exports_are_lazy() -> None:
+    from analytics_toolkit.sql.backends import (
+        BackendAdapter as CanonicalBackendAdapter,
+    )
+    from analytics_toolkit.sql.backends import (
+        BackendCapability as CanonicalBackendCapability,
+    )
+    from analytics_toolkit.sql.backends import (
+        ClickHouseAdapter as CanonicalClickHouseAdapter,
+    )
+    from analytics_toolkit.sql.backends import (
+        DbApiBackendAdapter as CanonicalDbApiBackendAdapter,
+    )
+    from analytics_toolkit.sql.backends import (
+        GreenplumAdapter as CanonicalGreenplumAdapter,
+    )
+    from analytics_toolkit.sql.backends import TrinoAdapter as CanonicalTrinoAdapter
+
+    class_exports = [
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "BackendAdapter",
+            CanonicalBackendAdapter,
+        ),
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "BackendCapability",
+            CanonicalBackendCapability,
+        ),
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "ClickHouseAdapter",
+            CanonicalClickHouseAdapter,
+        ),
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "DbApiBackendAdapter",
+            CanonicalDbApiBackendAdapter,
+        ),
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "GreenplumAdapter",
+            CanonicalGreenplumAdapter,
+        ),
+        (
+            "analytics_toolkit.sql.backend_adapters",
+            "TrinoAdapter",
+            CanonicalTrinoAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters",
+            "BackendAdapter",
+            CanonicalBackendAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters",
+            "BackendCapability",
+            CanonicalBackendCapability,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.base",
+            "BackendAdapter",
+            CanonicalBackendAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.base",
+            "BackendCapability",
+            CanonicalBackendCapability,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.dbapi",
+            "DbApiBackendAdapter",
+            CanonicalDbApiBackendAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.gp",
+            "GreenplumAdapter",
+            CanonicalGreenplumAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.trino",
+            "TrinoAdapter",
+            CanonicalTrinoAdapter,
+        ),
+        (
+            "analytics_toolkit.sql._backend_adapters.clickhouse",
+            "ClickHouseAdapter",
+            CanonicalClickHouseAdapter,
+        ),
+        (
+            "analytics_toolkit.sql.core.capabilities",
+            "BackendCapability",
+            CanonicalBackendCapability,
+        ),
+    ]
+
+    for module_name, export_name, canonical_object in class_exports:
+        module = importlib.import_module(module_name)
+        assert getattr(module, export_name) is canonical_object
+        assert export_name not in vars(module)
+
+
 def test_sql_backend_dispatch_uses_callable_registries() -> None:
     dispatch_functions = [
         read_sql_module._read_backend,
