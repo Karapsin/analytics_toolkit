@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Log transfer key values in keyed batch transfers.
 - Fix Greenplum extract_ddl fallback.
 - Added mandatory sql.transfer row-count validation.
+- Added ClickHouse transfer stream-read retries with smaller retry batches.
 
 ## 1.3.10.10 - 2026-06-23
 

@@ -212,6 +212,10 @@ rows = sql.transfer(
   with `LIMIT <counted_source_rows>` and temporarily disables the client
   `query_limit` while opening the stream, so connection-level query caps do not
   silently truncate transfers.
+- If a ClickHouse source stream fails mid-read with a transport/chunk error,
+  the current staged attempt is aborted before finalization. When `full_retry_cnt`
+  permits another full-transfer attempt, the retry restarts from scratch with
+  half the previous transfer batch size, down to `min_batch_size`.
 - Throughput-driven adaptation is default via
   `target_rows_per_second=True` (or omitted).
 - Rows-per-second adaptation probes smaller batches first, then larger batches

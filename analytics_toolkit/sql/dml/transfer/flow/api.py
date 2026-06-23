@@ -12,10 +12,7 @@ from ....clickhouse.options import (
     validate_ch_options_not_used,
 )
 from ....connection.config import TrinoConfig, get_connection_config
-from ....connection.errors import (
-    SqlOperationContext,
-    sql_preview,
-)
+from ....connection.errors import SqlOperationContext, sql_preview
 from ....connection.get_sql_connection import get_sql_connection
 from ....execution.operation_runner import (
     run_annotated_once,
@@ -43,10 +40,8 @@ from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
-from ...table.write_modes import (
-    build_upsert_stage_placeholder_sqls,
-    build_upsert_stage_sqls,
-)
+from ...table.write_modes import build_upsert_stage_placeholder_sqls
+from ...table.write_modes import build_upsert_stage_sqls
 from .attempt import run_transfer_attempt
 from .dry_run import (
     dry_run_stage_external_location,
@@ -56,10 +51,10 @@ from .dry_run import (
 )
 from . import options as transfer_options
 from .keys import normalize_transfer_slices
-from .parquet_stage import (
-    build_create_parquet_stage_table_sql,
-)
+from .parquet_stage import build_create_parquet_stage_table_sql
 from .source import normalize_transfer_source
+from .stream_retries import TransferStreamRetryState
+from ..io.source import TransferSourceStreamReadError
 from ..staging import _sanitize_transfer_staging_username
 from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
 from ..runtime.models import TrinoTransferMode
@@ -173,49 +168,61 @@ def transfer_table(
         f"to {options.to_db_key}: {options.target_table}"
     )
     operation_metadata = SqlOperationMetadata(query_label=options.query_label)
+    stream_retry_state = TransferStreamRetryState(options)
 
     def transfer_operation(attempt: int) -> int:
+        attempt_options = stream_retry_state.options_for_attempt()
         with tracked_sql_operation(
             metadata=operation_metadata,
             operation_name="transfer_table",
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
+            alias=attempt_options.to_db_key,
+            backend=attempt_options.to_db_backend,
             phase="transfer",
             retry_attempt=attempt,
-            query_label=options.query_label,
-            preview_sql=options.source_sql,
+            query_label=attempt_options.query_label,
+            preview_sql=attempt_options.source_sql,
         ):
-            if options.to_db_backend == "gp":
-                return run_transfer_attempt(
-                    options=options,
-                    read_retry_cnt=options.retry_cnt,
-                    insert_retry_cnt=options.retry_cnt,
-                )
-
-            def stage_restart_operation(inner_attempt: int) -> int:
-                del inner_attempt
-                try:
+            try:
+                if attempt_options.to_db_backend == "gp":
                     return run_transfer_attempt(
-                        options=options,
-                        read_retry_cnt=options.retry_cnt,
-                        insert_retry_cnt=1,
+                        options=attempt_options,
+                        read_retry_cnt=attempt_options.retry_cnt,
+                        insert_retry_cnt=attempt_options.retry_cnt,
                     )
-                except AmbiguousTableLoadError as exc:
-                    time_print(
-                        f"Discarding staged load and restarting from scratch: {exc!r}"
-                    )
-                    raise
 
-            return run_with_retry(
-                operation_name=(
-                    f"restarting staged transfer from {options.from_db_key} "
-                    f"to {options.to_db_key}: {options.target_table}"
-                ),
-                retry_cnt=options.retry_cnt,
-                timeout_increment=options.timeout_increment,
-                operation=stage_restart_operation,
-                retryable_exceptions=(AmbiguousTableLoadError,),
-            )
+                def stage_restart_operation(inner_attempt: int) -> int:
+                    del inner_attempt
+                    try:
+                        return run_transfer_attempt(
+                            options=attempt_options,
+                            read_retry_cnt=attempt_options.retry_cnt,
+                            insert_retry_cnt=1,
+                        )
+                    except AmbiguousTableLoadError as exc:
+                        time_print(
+                            "Discarding staged load and restarting from scratch: "
+                            f"{exc!r}"
+                        )
+                        raise
+
+                return run_with_retry(
+                    operation_name=(
+                        f"restarting staged transfer from {attempt_options.from_db_key} "
+                        f"to {attempt_options.to_db_key}: "
+                        f"{attempt_options.target_table}"
+                    ),
+                    retry_cnt=attempt_options.retry_cnt,
+                    timeout_increment=attempt_options.timeout_increment,
+                    operation=stage_restart_operation,
+                    retryable_exceptions=(AmbiguousTableLoadError,),
+                )
+            except TransferSourceStreamReadError as exc:
+                stream_retry_state.handle_failure(
+                    exc,
+                    attempt_options=attempt_options,
+                    attempt=attempt,
+                )
+                raise
 
     def transfer_context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(

@@ -6,11 +6,63 @@ from typing import Any
 import pandas as pd
 
 from ....backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
-from ....connection.errors import UnsupportedConnectionTypeError
+from ....connection.errors import UnsupportedConnectionTypeError, sql_preview
 from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
 from ..runtime.models import RowBatch
 from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+
+
+class TransferSourceStreamReadError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        connection_key: str,
+        backend: str,
+        query: str,
+        original_exception: Exception,
+    ) -> None:
+        self.connection_key = connection_key
+        self.backend = backend
+        self.query = query
+        self.original_exception = original_exception
+        self.target_table: str | None = None
+        self.retry_batch_size: int | None = None
+        self.full_retry_attempt: int | None = None
+        super().__init__(self._build_message())
+
+    def with_retry_context(
+        self,
+        *,
+        target_table: str,
+        retry_batch_size: int,
+        full_retry_attempt: int,
+    ) -> TransferSourceStreamReadError:
+        self.target_table = target_table
+        self.retry_batch_size = retry_batch_size
+        self.full_retry_attempt = full_retry_attempt
+        self.args = (self._build_message(),)
+        return self
+
+    def _build_message(self) -> str:
+        parts = [
+            "ClickHouse source stream read failed after the stream started",
+            f"source_db={self.connection_key}",
+            f"backend={self.backend}",
+        ]
+        if self.target_table is not None:
+            parts.append(f"target_table={self.target_table}")
+        if self.full_retry_attempt is not None:
+            parts.append(f"full_retry_attempt={self.full_retry_attempt}")
+        if self.retry_batch_size is not None:
+            parts.append(f"retry_batch_size={self.retry_batch_size}")
+        parts.extend(
+            [
+                f"source_sql={sql_preview(self.query, max_chars=500)}",
+                f"original_error={self.original_exception!r}",
+            ]
+        )
+        return "; ".join(parts)
 
 
 def iter_source_batches(
@@ -138,12 +190,19 @@ def _iter_clickhouse_batches(
 
         if pending_rows and columns is not None:
             yield RowBatch(columns=columns, rows=pending_rows)
-    except Exception:
+    except Exception as exc:
         time_print(
             f"Failed SQL while reading transfer source:\n{query}",
             connection=connection_key,
             backend="ch",
         )
+        if _is_clickhouse_stream_transport_error(exc):
+            raise TransferSourceStreamReadError(
+                connection_key=connection_key,
+                backend="ch",
+                query=query,
+                original_exception=exc,
+            ) from exc
         raise
     finally:
         if context_manager is not None:
@@ -246,3 +305,43 @@ def _drain_full_row_batches(
         batch_rows = pending_rows[:current_batch_size]
         del pending_rows[:current_batch_size]
         yield RowBatch(columns=columns, rows=batch_rows)
+
+
+def _is_clickhouse_stream_transport_error(exc: Exception) -> bool:
+    for chained_exc in _exception_chain(exc):
+        class_names = {cls.__name__ for cls in type(chained_exc).mro()}
+        if class_names & {
+            "ChunkedEncodingError",
+            "IncompleteRead",
+            "ProtocolError",
+            "ReadTimeoutError",
+        }:
+            return True
+        message = str(chained_exc).lower()
+        if any(
+            pattern in message
+            for pattern in (
+                "unexpected failure to read next chunk",
+                "incompleteread",
+                "connection broken",
+                "response ended prematurely",
+            )
+        ):
+            return True
+    return False
+
+
+def _exception_chain(exc: BaseException) -> Iterator[BaseException]:
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        yield current
+        if current.__cause__ is not None:
+            stack.append(current.__cause__)
+        if current.__context__ is not None:
+            stack.append(current.__context__)
+        stack.extend(arg for arg in current.args if isinstance(arg, BaseException))

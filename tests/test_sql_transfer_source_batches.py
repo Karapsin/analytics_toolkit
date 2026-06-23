@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -36,6 +37,41 @@ class FakeClickHouseConnection:
     def query_df_stream(self, query: str) -> FakeClickHouseStream:
         self.queries.append(query)
         self.query_limits_seen.append(self.query_limit)
+        return self.context
+
+
+class ProtocolError(Exception):
+    pass
+
+
+class FailingClickHouseStream:
+    def __init__(self, blocks: list[pd.DataFrame], error: Exception) -> None:
+        self.blocks = list(blocks)
+        self.error = error
+        self.exit_calls = 0
+
+    def __enter__(self) -> Any:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.exit_calls += 1
+
+    def __iter__(self) -> FailingClickHouseStream:
+        return self
+
+    def __next__(self) -> pd.DataFrame:
+        if self.blocks:
+            return self.blocks.pop(0)
+        raise self.error
+
+
+class FailingClickHouseConnection:
+    def __init__(self, stream: FailingClickHouseStream) -> None:
+        self.context = stream
+        self.queries: list[str] = []
+
+    def query_df_stream(self, query: str) -> FailingClickHouseStream:
+        self.queries.append(query)
         return self.context
 
 
@@ -94,3 +130,30 @@ def test_clickhouse_stream_temporarily_disables_client_query_limit() -> None:
     assert [batch.rows for batch in batches] == [[(1,), (2,)]]
     assert connection.query_limits_seen == [0]
     assert connection.query_limit == 1_728_512
+
+
+def test_clickhouse_midstream_transport_error_is_wrapped() -> None:
+    connection = FailingClickHouseConnection(
+        FailingClickHouseStream(
+            [pd.DataFrame({"id": [1]})],
+            ProtocolError("unexpected failure to read next chunk"),
+        )
+    )
+    batches = source_module.iter_source_batches(
+        "ch_source",
+        "ch",
+        {"connection": connection},
+        "select id from source",
+        batch_size=1,
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert next(batches).rows == [(1,)]
+    with pytest.raises(
+        source_module.TransferSourceStreamReadError,
+        match="ClickHouse source stream read failed",
+    ):
+        next(batches)
+
+    assert connection.context.exit_calls == 1

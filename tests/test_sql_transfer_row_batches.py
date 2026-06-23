@@ -54,6 +54,7 @@ models_module = importlib.import_module(
 retry_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.retry"
 )
+source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.source")
 
 
 class RecordingSourceCursor:
@@ -144,6 +145,10 @@ class FakeTransferConnection:
 
     def rollback(self) -> None:
         self.rollback_calls += 1
+
+
+class ProtocolError(Exception):
+    pass
 
 
 class RenderingFakeTqdm:
@@ -749,6 +754,187 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         "cleanup_stage",
         "close:source",
     ]
+
+
+def test_run_transfer_attempt_aborts_stream_failure_before_finalize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="ch",
+        validate_row_count=False,
+    )
+    stream_error = source_module.TransferSourceStreamReadError(
+        connection_key="source_db",
+        backend="ch",
+        query="select id from source_table",
+        original_exception=ProtocolError("unexpected failure to read next chunk"),
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(name="id", native_type="integer", precision=None, scale=None)
+        ],
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "load_stage_batches",
+        lambda *_args, **_kwargs: events.append("load") or (_ for _ in ()).throw(
+            stream_error
+        ),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        lambda *_args, **_kwargs: events.append("finalize"),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_stage",
+        lambda *_args, **_kwargs: events.append("cleanup"),
+    )
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: None)
+
+    with pytest.raises(source_module.TransferSourceStreamReadError):
+        attempt_module.run_transfer_attempt(
+            options=options,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    assert events == ["load", "cleanup"]
+
+
+def test_transfer_retries_clickhouse_stream_failure_with_smaller_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        from_db_key="ch_source",
+        from_db_backend="ch",
+        to_db_key="gp_target",
+        to_db_backend="gp",
+        target_table="sandbox.target",
+        batch_size=100,
+        min_batch_size=10,
+        max_batch_size=500,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=2,
+        full_timeout_increment=0,
+        progress=False,
+        validate_row_count=False,
+    )
+    attempts: list[tuple[int, int | None]] = []
+
+    monkeypatch.setattr(
+        transfer_api_module,
+        "build_transfer_options",
+        lambda **_kwargs: options,
+    )
+
+    def fake_run_transfer_attempt(
+        *,
+        options: Any,
+        read_retry_cnt: int,
+        insert_retry_cnt: int,
+    ) -> int:
+        del read_retry_cnt, insert_retry_cnt
+        attempts.append((options.batch_size, options.max_batch_size))
+        if len(attempts) == 1:
+            raise source_module.TransferSourceStreamReadError(
+                connection_key="ch_source",
+                backend="ch",
+                query=options.source_sql,
+                original_exception=ProtocolError(
+                    "unexpected failure to read next chunk"
+                ),
+            )
+        return 3
+
+    monkeypatch.setattr(
+        transfer_api_module,
+        "run_transfer_attempt",
+        fake_run_transfer_attempt,
+    )
+
+    rows = transfer_api_module.transfer_table(
+        from_db="ch_source",
+        to_db="gp_target",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+    )
+
+    assert rows == 3
+    assert attempts == [(100, 500), (50, 50)]
+
+
+def test_transfer_exhausted_clickhouse_stream_failure_reports_retry_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        from_db_key="ch_source",
+        from_db_backend="ch",
+        to_db_key="gp_target",
+        to_db_backend="gp",
+        target_table="sandbox.target",
+        batch_size=100,
+        min_batch_size=10,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+        progress=False,
+        validate_row_count=False,
+    )
+    monkeypatch.setattr(
+        transfer_api_module,
+        "build_transfer_options",
+        lambda **_kwargs: options,
+    )
+    monkeypatch.setattr(
+        transfer_api_module,
+        "run_transfer_attempt",
+        lambda **kwargs: (_ for _ in ()).throw(
+            source_module.TransferSourceStreamReadError(
+                connection_key="ch_source",
+                backend="ch",
+                query=kwargs["options"].source_sql,
+                original_exception=ProtocolError(
+                    "unexpected failure to read next chunk"
+                ),
+            )
+        ),
+    )
+
+    with pytest.raises(
+        source_module.TransferSourceStreamReadError,
+        match=(
+            "target_table=sandbox.target; full_retry_attempt=1; "
+            "retry_batch_size=100"
+        ),
+    ):
+        transfer_api_module.transfer_table(
+            from_db="ch_source",
+            to_db="gp_target",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+        )
 
 
 def test_run_transfer_attempt_validates_expected_streamed_and_stage_rows(
