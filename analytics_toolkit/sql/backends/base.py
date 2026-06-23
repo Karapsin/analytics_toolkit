@@ -472,6 +472,9 @@ class BackendAdapter:
         del connection, exc
         return True
 
+    def should_refresh_connection_before_insert_retry(self) -> bool:
+        return False
+
     def insert_dataframe_batch(
         self,
         connection: Any,

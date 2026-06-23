@@ -85,6 +85,9 @@ def insert_table_batch(
     gp_insert_chunk_size: int | None = None,
     query_label: str | None = None,
     on_progress: Callable[[int], None] | None = None,
+    connection_key: str | None = None,
+    rollback_fn: Callable[[Any], None] | None = None,
+    replace_connection_fn: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
     adapter = get_backend_adapter(backend)
@@ -124,6 +127,15 @@ def insert_table_batch(
                 raise AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
                 ) from exc
+            _replace_connection_before_next_insert_retry(
+                adapter=adapter,
+                connection_key=connection_key,
+                connection_ref=connection_ref,
+                rollback_fn=rollback_fn,
+                replace_connection_fn=replace_connection_fn,
+                attempt=attempt,
+                retry_cnt=retry_cnt,
+            )
             raise
 
     return retry_fn(
@@ -151,6 +163,9 @@ def insert_rows_batch(
     on_progress: Callable[[int], None] | None = None,
     gp_insert_page_size_getter: Callable[[], int] | None = None,
     on_gp_insert_page_success: Callable[[float, int], None] | None = None,
+    connection_key: str | None = None,
+    rollback_fn: Callable[[Any], None] | None = None,
+    replace_connection_fn: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
     adapter = get_backend_adapter(backend)
@@ -197,6 +212,15 @@ def insert_rows_batch(
                 raise AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
                 ) from exc
+            _replace_connection_before_next_insert_retry(
+                adapter=adapter,
+                connection_key=connection_key,
+                connection_ref=connection_ref,
+                rollback_fn=rollback_fn,
+                replace_connection_fn=replace_connection_fn,
+                attempt=attempt,
+                retry_cnt=retry_cnt,
+            )
             raise
 
         if on_success is not None:
@@ -209,6 +233,28 @@ def insert_rows_batch(
         timeout_increment=timeout_increment,
         operation=operation,
     )
+
+
+def _replace_connection_before_next_insert_retry(
+    *,
+    adapter: Any,
+    connection_key: str | None,
+    connection_ref: dict[str, Any],
+    rollback_fn: Callable[[Any], None] | None,
+    replace_connection_fn: Callable[[str, dict[str, Any]], None] | None,
+    attempt: int,
+    retry_cnt: int,
+) -> None:
+    if (
+        not adapter.should_refresh_connection_before_insert_retry()
+        or attempt >= retry_cnt
+        or connection_key is None
+        or replace_connection_fn is None
+    ):
+        return
+    if rollback_fn is not None:
+        rollback_fn(connection_ref["connection"])
+    replace_connection_fn(connection_key, connection_ref)
 
 
 def normalize_batch(batch: pd.DataFrame) -> pd.DataFrame:

@@ -458,6 +458,9 @@ class GreenplumAdapter(DbApiBackendAdapter):
         del connection, exc
         return False
 
+    def should_refresh_connection_before_insert_retry(self) -> bool:
+        return True
+
     def insert_dataframe_batch(
         self,
         connection: Any,

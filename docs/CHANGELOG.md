@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Tighten SQL backend registry guardrails.
 - Continue SQL backend registry cleanup.
 - Moved remaining SQL backend helper ownership into adapters.
+- Fixed Greenplum transfer stage insert retries to refresh closed target connections.
 
 ## 1.3.10.9 - 2026-06-19
 

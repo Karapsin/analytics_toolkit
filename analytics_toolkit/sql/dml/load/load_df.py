@@ -1044,6 +1044,9 @@ def _load_dataframe(
             gp_insert_chunk_size=options.gp_insert_chunk_size,
             query_label=options.query_label,
             on_progress=on_progress,
+            connection_key=options.connection_key,
+            rollback_fn=rollback_quietly,
+            replace_connection_fn=replace_connection,
         )
         if options.write_mode == "upsert":
             validate_stage_uniqueness(
@@ -1097,6 +1100,9 @@ def _load_dataframe(
         gp_insert_chunk_size=options.gp_insert_chunk_size,
         query_label=options.query_label,
         on_progress=on_progress,
+        connection_key=options.connection_key,
+        rollback_fn=rollback_quietly,
+        replace_connection_fn=replace_connection,
     )
 
 

@@ -38,7 +38,12 @@ from ..runtime.models import (
     TransferStageState,
     make_gp_insert_chunk_sizer,
 )
-from ..runtime.retry import close_connection_ref, run_with_retry
+from ..runtime.retry import (
+    close_connection_ref,
+    replace_connection,
+    rollback_quietly,
+    run_with_retry,
+)
 from ..io.source import iter_source_batches
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from ....execution.operation_runner import _format_duration
@@ -625,6 +630,9 @@ def load_stage_batches(
                     if gp_insert_chunk_sizer is not None
                     else None
                 ),
+                connection_key=options.to_db_key,
+                rollback_fn=rollback_quietly,
+                replace_connection_fn=replace_connection,
             )
             progress_tracker.complete_batch(inserted_rows)
             total_rows += inserted_rows

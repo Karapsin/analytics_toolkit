@@ -33,11 +33,17 @@ estimate_module = importlib.import_module(
 staging_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.staging"
 )
+load_sql_table_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.load.load_sql_table"
+)
 transfer_api_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.api"
 )
 models_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.models"
+)
+retry_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.runtime.retry"
 )
 
 
@@ -122,9 +128,13 @@ class FakeTransferConnection:
     def __init__(self, name: str) -> None:
         self.name = name
         self.close_calls = 0
+        self.rollback_calls = 0
 
     def close(self) -> None:
         self.close_calls += 1
+
+    def rollback(self) -> None:
+        self.rollback_calls += 1
 
 
 class RenderingFakeTqdm:
@@ -885,6 +895,169 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
     ]
     assert loaded[0]["source_conn"] != loaded[1]["source_conn"]
     assert loaded[0]["target_conn"] != loaded[1]["target_conn"]
+
+
+def test_gp_insert_rows_retry_replaces_closed_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection_ref = {"connection": FakeTransferConnection("target-0")}
+    insert_connections: list[str] = []
+    replaced_connections: list[tuple[str, str]] = []
+    success_calls: list[tuple[float, int]] = []
+
+    def fake_insert_rows_backend(
+        _backend: str,
+        connection: FakeTransferConnection,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
+        insert_connections.append(connection.name)
+        if len(insert_connections) == 1:
+            raise RuntimeError("connection already closed")
+
+    def fake_replace_connection(
+        connection_key: str,
+        connection_ref: dict[str, Any],
+    ) -> None:
+        old_connection = connection_ref["connection"]
+        replaced_connections.append((connection_key, old_connection.name))
+        old_connection.close()
+        connection_ref["connection"] = FakeTransferConnection("target-1")
+
+    monkeypatch.setattr(
+        load_sql_table_module,
+        "_insert_rows_backend",
+        fake_insert_rows_backend,
+    )
+
+    rows = load_sql_table_module.insert_rows_batch(
+        "gp",
+        connection_ref,
+        "stage_table",
+        ["id"],
+        [(1,)],
+        retry_fn=retry_module.run_with_retry,
+        retry_cnt=2,
+        timeout_increment=0,
+        connection_key="target_alias",
+        rollback_fn=retry_module.rollback_quietly,
+        replace_connection_fn=fake_replace_connection,
+        on_success=lambda duration, inserted_rows: success_calls.append(
+            (duration, inserted_rows)
+        ),
+    )
+
+    assert rows == 1
+    assert insert_connections == ["target-0", "target-1"]
+    assert replaced_connections == [("target_alias", "target-0")]
+    assert success_calls and success_calls[0][1] == 1
+    assert connection_ref["connection"].name == "target-1"
+
+
+def test_keyed_gp_worker_retry_refreshes_only_failed_worker_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(concurrency=2)
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table_created=True,
+        first_non_empty_batch=pd.DataFrame(columns=["id", "event_date"]),
+        stage_column_types={"id": "INTEGER", "event_date": "DATE"},
+        stage_table="sandbox.target__stage__abcd1234__w00000",
+        stage_tables=[
+            "sandbox.target__stage__abcd1234__w00000",
+            "sandbox.target__stage__abcd1234__w00001",
+        ],
+    )
+    worker_stage_states = attempt_module.build_keyed_worker_stage_states(
+        options=options,
+        stage_state=stage_state,
+    )
+    opened_connections: list[tuple[str, str]] = []
+    replaced_connections: list[tuple[str, str]] = []
+    insert_calls: list[tuple[str, str]] = []
+    failed_stage_tables: set[str] = set()
+    lock = threading.Lock()
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        with lock:
+            connection = FakeTransferConnection(
+                f"{connection_key}-{len(opened_connections)}"
+            )
+            opened_connections.append((connection_key, connection.name))
+            return connection
+
+    def fake_replace_connection(
+        connection_key: str,
+        connection_ref: dict[str, Any],
+    ) -> None:
+        with lock:
+            old_connection = connection_ref["connection"]
+            replacement = FakeTransferConnection(
+                f"{connection_key}-replacement-{len(replaced_connections)}"
+            )
+            replaced_connections.append((connection_key, old_connection.name))
+            old_connection.close()
+            connection_ref["connection"] = replacement
+
+    def fake_insert_rows_backend(
+        _backend: str,
+        connection: FakeTransferConnection,
+        table_name: str,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
+        with lock:
+            insert_calls.append((table_name, connection.name))
+            if table_name.endswith("w00000") and table_name not in failed_stage_tables:
+                failed_stage_tables.add(table_name)
+                raise RuntimeError("connection already closed")
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        return load_sql_table_module.insert_rows_batch(
+            "gp",
+            kwargs["connection_refs"].target,
+            kwargs["stage_state"].stage_table,
+            ["id"],
+            [(kwargs["slice_index"],)],
+            retry_fn=retry_module.run_with_retry,
+            retry_cnt=2,
+            timeout_increment=0,
+            connection_key=kwargs["options"].to_db_key,
+            rollback_fn=retry_module.rollback_quietly,
+            replace_connection_fn=fake_replace_connection,
+        )
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(
+        load_sql_table_module,
+        "_insert_rows_backend",
+        fake_insert_rows_backend,
+    )
+
+    total_rows = attempt_module.load_keyed_stage_slices(
+        options=options,
+        worker_stage_states=worker_stage_states,
+        read_retry_cnt=1,
+        insert_retry_cnt=2,
+    )
+
+    assert total_rows == 2
+    assert len(replaced_connections) == 1
+    assert replaced_connections[0][0] == "target_db"
+    assert [
+        connection_name
+        for table_name, connection_name in insert_calls
+        if table_name.endswith("w00000")
+    ] == [replaced_connections[0][1], "target_db-replacement-0"]
+    assert len(
+        {
+            connection_name
+            for table_name, connection_name in insert_calls
+            if table_name.endswith("w00001")
+        }
+    ) == 1
 
 
 def test_keyed_worker_failure_skips_finalize_and_still_cleans_stage(
