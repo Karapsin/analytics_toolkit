@@ -175,6 +175,149 @@ def test_extract_ddl_greenplum_escapes_table_name_literal(
     assert result == "CREATE TABLE mart.\"o'rders\" (id bigint);"
 
 
+def test_extract_ddl_greenplum_falls_back_to_catalog_ddl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        calls.append((connection_type, query))
+        if "pg_get_tabledef" in query:
+            raise UndefinedFunction(
+                "function pg_catalog.pg_get_tabledef(oid) does not exist",
+            )
+        if "FROM pg_catalog.pg_class AS c" in query:
+            return pd.DataFrame(
+                {
+                    "oid": ["12345"],
+                    "schema_name": ["mart"],
+                    "relation_name": ["orders"],
+                    "relkind": ["r"],
+                    "reloptions": [["appendonly=true", "orientation=column"]],
+                    "table_comment": ["Orders table"],
+                },
+            )
+        if "FROM pg_catalog.pg_attribute AS a" in query:
+            return pd.DataFrame(
+                {
+                    "attnum": [1, 2],
+                    "column_name": ["id", "payload"],
+                    "formatted_type": ["bigint", "text"],
+                    "default_expr": ["nextval('orders_id_seq'::regclass)", None],
+                    "is_not_null": [True, False],
+                    "column_comment": ["Order id", None],
+                },
+            )
+        if "FROM pg_catalog.pg_inherits AS i" in query:
+            return pd.DataFrame(columns=["parent_schema", "parent_table"])
+        if "FROM pg_catalog.pg_index AS i" in query:
+            return pd.DataFrame(
+                {
+                    "index_name": ["orders_payload_idx"],
+                    "index_def": [
+                        "CREATE INDEX orders_payload_idx "
+                        "ON mart.orders USING btree (payload)",
+                    ],
+                },
+            )
+        if "FROM pg_catalog.pg_constraint" in query:
+            return pd.DataFrame(
+                {
+                    "constraint_name": ["orders_pkey"],
+                    "constraint_type": ["p"],
+                    "constraint_def": ["PRIMARY KEY (id)"],
+                },
+            )
+        if "FROM pg_catalog.pg_proc AS p" in query:
+            return pd.DataFrame(
+                {"has_partkeydef": [True], "has_partition_def": [False]},
+            )
+        if "pg_get_partkeydef" in query:
+            return pd.DataFrame({"partition_def": ["RANGE (id)"]})
+        if "FROM gp_distribution_policy" in query:
+            return pd.DataFrame({"policy_type": ["p"], "attrnums": ["{1}"]})
+        raise AssertionError(f"Unexpected query: {query}")
+
+    monkeypatch.setattr(extract_ddl_module, "read_sql", fake_read_sql)
+
+    result = extract_ddl_module.extract_ddl("gp", "mart.orders")
+
+    assert [connection_key for connection_key, _ in calls] == ["gp"] * len(calls)
+    assert result == (
+        'CREATE TABLE "mart"."orders" (\n'
+        '    "id" bigint DEFAULT nextval(\'orders_id_seq\'::regclass) NOT NULL,\n'
+        '    "payload" text,\n'
+        '    CONSTRAINT "orders_pkey" PRIMARY KEY (id)\n'
+        ")\n"
+        "WITH (\n"
+        "    appendonly=true,\n"
+        "    orientation=column\n"
+        ")\n"
+        "PARTITION BY RANGE (id)\n"
+        'DISTRIBUTED BY ("id");\n'
+        "CREATE INDEX orders_payload_idx ON mart.orders USING btree (payload);\n"
+        'COMMENT ON TABLE "mart"."orders" IS \'Orders table\';\n'
+        'COMMENT ON COLUMN "mart"."orders"."id" IS \'Order id\';'
+    )
+
+
+def test_extract_ddl_greenplum_reraises_unrelated_undefined_function(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        del connection_type, query
+        raise UndefinedFunction("function other_helper() does not exist")
+
+    monkeypatch.setattr(extract_ddl_module, "read_sql", fake_read_sql)
+
+    with pytest.raises(UndefinedFunction, match="other_helper"):
+        extract_ddl_module.extract_ddl("gp", "mart.orders")
+
+
+def test_extract_ddl_greenplum_fallback_raises_when_table_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
+        del connection_type
+        if "pg_get_tabledef" in query:
+            raise UndefinedFunction(
+                "function pg_catalog.pg_get_tabledef(oid) does not exist",
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(extract_ddl_module, "read_sql", fake_read_sql)
+
+    with pytest.raises(ValueError, match="No metadata returned for table mart.orders"):
+        extract_ddl_module.extract_ddl("gp", "mart.orders")
+
+
+@pytest.mark.parametrize(
+    ("policy_type", "attrnums", "expected"),
+    [
+        ("p", "{1,2}", 'DISTRIBUTED BY ("id", "payload")'),
+        ("p", "{}", "DISTRIBUTED RANDOMLY"),
+        ("r", "", "DISTRIBUTED REPLICATED"),
+    ],
+)
+def test_extract_ddl_greenplum_formats_distribution_policies(
+    policy_type: str,
+    attrnums: str,
+    expected: str,
+) -> None:
+    columns = pd.DataFrame(
+        {
+            "attnum": [1, 2],
+            "column_name": ["id", "payload"],
+        },
+    )
+    policy = pd.DataFrame({"policy_type": [policy_type], "attrnums": [attrnums]})
+
+    assert (
+        extract_ddl_module._format_gp_distribution_clause(policy, columns)
+        == expected
+    )
+
+
 @pytest.mark.parametrize(
     ("tables", "error_type", "match"),
     [
@@ -216,3 +359,7 @@ def test_extract_ddl_raises_when_backend_returns_no_ddl(
 
 def _fail_read_sql(_connection_type: str, _query: str) -> pd.DataFrame:
     raise AssertionError("read_sql should not be called")
+
+
+class UndefinedFunction(Exception):
+    pgcode = "42883"

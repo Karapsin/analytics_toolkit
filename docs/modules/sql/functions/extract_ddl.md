@@ -13,6 +13,14 @@ extract_ddl(db_key: 'str', tables: 'str | Sequence[str]') -> 'str'
 - `db_key` - connection key or alias from `.connections`
 - `tables` - one table name or a sequence of table names for DDL extraction
 
+## Backend Notes
+
+Greenplum uses the native `pg_get_tabledef` helper when the cluster provides it.
+On clusters without that helper, `extract_ddl` reconstructs schema DDL from
+catalog metadata, including columns, constraints, storage options, distribution,
+indexes, partitions where discoverable, and comments. Ownership and grants are
+not included.
+
 ## Usage
 
 ```python
