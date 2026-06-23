@@ -33,6 +33,12 @@ keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.k
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
 )
+row_counts_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.row_counts"
+)
+progress_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.progress"
+)
 staging_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.staging"
 )
@@ -742,6 +748,277 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         "finalize_loaded_stage",
         "cleanup_stage",
         "close:source",
+    ]
+
+
+def test_run_transfer_attempt_validates_expected_streamed_and_stage_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="gp",
+        validate_row_count=True,
+    )
+
+    def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
+        return source_conn if connection_key == "source_db" else target_conn
+
+    def fake_create_stage_state(*_args: Any, **_kwargs: Any) -> models_module.TransferStageState:
+        events.append("create_stage_state")
+        return models_module.TransferStageState(target_exists=False)
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        events.append("load_stage_batches")
+        kwargs["stage_state"].stage_table = "sandbox.target__stage__abcd1234"
+        return 7
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(attempt_module, "create_stage_state", fake_create_stage_state)
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(name="id", native_type="integer", precision=None, scale=None)
+        ],
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda *a, **k: events.append("finalize"))
+    monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: events.append("cleanup"))
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: events.append("close"))
+    monkeypatch.setattr(
+        row_counts_module,
+        "count_source_rows",
+        lambda *_args, **_kwargs: events.append("count_source") or 7,
+    )
+    monkeypatch.setattr(
+        row_counts_module,
+        "count_table_rows",
+        lambda *_args, **_kwargs: events.append("count_stage") or 7,
+    )
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 7
+    assert options.row_count_result is not None
+    assert options.row_count_result.expected_source_rows == 7
+    assert options.row_count_result.streamed_rows == 7
+    assert options.row_count_result.stage_rows == 7
+    assert options.row_count_result.row_count_validated is True
+    assert events == [
+        "create_stage_state",
+        "count_source",
+        "load_stage_batches",
+        "count_stage",
+        "finalize",
+        "cleanup",
+        "close",
+    ]
+
+
+def test_run_transfer_attempt_fails_before_finalize_when_stage_count_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="gp",
+        validate_row_count=True,
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda connection_key: source_conn if connection_key == "source_db" else target_conn,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(name="id", native_type="integer", precision=None, scale=None)
+        ],
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        kwargs["stage_state"].stage_table = "sandbox.target__stage__abcd1234"
+        return 7
+
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        lambda *a, **k: events.append("finalize"),
+    )
+    monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: events.append("cleanup"))
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: events.append("close"))
+    monkeypatch.setattr(row_counts_module, "count_source_rows", lambda *_args, **_kwargs: 7)
+    monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 6)
+
+    with pytest.raises(
+        row_counts_module.TransferRowCountMismatchError,
+        match="expected_source_rows=7; streamed_rows=7; stage_rows=6",
+    ):
+        attempt_module.run_transfer_attempt(
+            options=options,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    assert events == ["cleanup", "close"]
+
+
+def test_clickhouse_transfer_streams_with_count_limit_when_source_has_no_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+    streamed_sql: list[str] = []
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="trino",
+        from_db_key="source_db",
+        from_db_backend="ch",
+        source_sql="select distinct magnit_id from source_table",
+        validate_row_count=True,
+        ch_count_limit_read=True,
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda connection_key: source_conn if connection_key == "source_db" else target_conn,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(name="magnit_id", native_type="UInt64", precision=None, scale=None)
+        ],
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        streamed_sql.append(kwargs["options"].source_sql)
+        kwargs["stage_state"].stage_table = "iceberg.sandbox.target__stage__abcd1234"
+        return 6_582_921
+
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda *a, **k: None)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: None)
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: None)
+    monkeypatch.setattr(
+        row_counts_module,
+        "count_source_rows",
+        lambda *_args, **_kwargs: 6_582_921,
+    )
+    monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 6_582_921)
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 6_582_921
+    assert streamed_sql == [
+        "select distinct magnit_id from source_table\nLIMIT 6582921"
+    ]
+
+
+def test_keyed_worker_validates_each_slice_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_conn = FakeTransferConnection("source")
+    count_values = iter([2, 3])
+    streamed_by_sql = {"select id from source where id = 1": 2, "select id from source where id = 2": 3}
+    options = make_progress_options(
+        from_db_key="source_db",
+        from_db_backend="gp",
+        validate_row_count=True,
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_table="sandbox.target__stage__abcd1234",
+    )
+    worker_stage_state = attempt_module.WorkerStageState(
+        worker_index=0,
+        stage_state=stage_state,
+        transfer_slices=[
+            models_module.TransferSlice(
+                index=0,
+                values=(1,),
+                predicate_sql="id = 1",
+                source_sql="select id from source where id = 1",
+                label="id=1",
+            ),
+            models_module.TransferSlice(
+                index=1,
+                values=(2,),
+                predicate_sql="id = 2",
+                source_sql="select id from source where id = 2",
+                label="id=2",
+            ),
+        ],
+    )
+
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source_conn)
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: None)
+    monkeypatch.setattr(
+        row_counts_module,
+        "count_source_rows",
+        lambda *_args, **_kwargs: next(count_values),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "load_stage_batches",
+        lambda **kwargs: streamed_by_sql[kwargs["options"].source_sql],
+    )
+
+    total_rows = attempt_module.load_keyed_stage_worker(
+        options=options,
+        worker_stage_state=worker_stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 5
+    assert [row_count.as_dict() for row_count in stage_state.slice_counts] == [
+        {
+            "index": 0,
+            "label": None,
+            "expected_rows": 2,
+            "streamed_rows": 2,
+        },
+        {
+            "index": 1,
+            "label": None,
+            "expected_rows": 3,
+            "streamed_rows": 3,
+        },
     ]
 
 
@@ -4336,7 +4613,7 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
         "desc": "transfer_table gp_sandbox.sandbox.target",
         "unit": "row",
         "disable": False,
-        "bar_format": attempt_module._TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT,
+            "bar_format": progress_module._TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT,
     }
     assert progress_bars[0].updates == [2, 1]
     assert progress_bars[0].closed is True
@@ -4558,9 +4835,9 @@ def test_load_stage_batches_estimated_total_sets_progress_bar_total(
     assert total_rows == 3
     assert progress_bars[0].kwargs["total"] == 3
     assert (
-        progress_bars[0].kwargs["bar_format"]
-        == attempt_module._TRANSFER_PROGRESS_TOTAL_FORMAT
-    )
+            progress_bars[0].kwargs["bar_format"]
+            == progress_module._TRANSFER_PROGRESS_TOTAL_FORMAT
+        )
     assert progress_bars[0].updates == [2, 1]
     assert progress_bars[0].closed is True
 
@@ -4739,7 +5016,11 @@ def test_transfer_progress_bar_formats_unknown_total_counts(monkeypatch) -> None
     progress_bars = capture_rendering_progress_bars(monkeypatch)
 
     options = make_progress_options()
-    progress_bar = attempt_module._make_transfer_progress_bar(options, total=None)
+    progress_bar = progress_module.make_transfer_progress_bar(
+        options,
+        total=None,
+        base_tqdm=attempt_module.tqdm,
+    )
     progress_bar.update(1_722_355)
 
     assert progress_bars[0].rendered == [
@@ -4752,9 +5033,10 @@ def test_transfer_progress_bar_formats_estimated_total_counts(monkeypatch) -> No
     progress_bars = capture_rendering_progress_bars(monkeypatch)
 
     options = make_progress_options()
-    progress_bar = attempt_module._make_transfer_progress_bar(
+    progress_bar = progress_module.make_transfer_progress_bar(
         options,
         total=2_000_000,
+        base_tqdm=attempt_module.tqdm,
     )
     progress_bar.update(1_722_355)
 
@@ -4768,7 +5050,11 @@ def test_transfer_progress_bar_progress_false_disables_output(monkeypatch) -> No
     progress_bars = capture_rendering_progress_bars(monkeypatch)
 
     options = make_progress_options(progress=False)
-    progress_bar = attempt_module._make_transfer_progress_bar(options, total=None)
+    progress_bar = progress_module.make_transfer_progress_bar(
+        options,
+        total=None,
+        base_tqdm=attempt_module.tqdm,
+    )
     progress_bar.update(1_722_355)
 
     assert progress_bars[0].kwargs["disable"] is True

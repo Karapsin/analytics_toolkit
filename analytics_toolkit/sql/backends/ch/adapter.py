@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from . import source_count as _source_count
 from ..base import (
     BackendAdapter,
     BackendName,
@@ -222,6 +223,12 @@ class ClickHouseAdapter(BackendAdapter):
         )
         rows = getattr(result, "result_rows", None) or []
         return int(rows[0][0]) if rows else 0
+
+    count_source_rows = _source_count.count_source_rows
+    source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read
+    disable_query_limit_for_transfer_reads = (
+        _source_count.disable_query_limit_for_transfer_reads
+    )
 
     def get_table_column_types(
         self,

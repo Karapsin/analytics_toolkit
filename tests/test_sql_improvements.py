@@ -27,6 +27,9 @@ execute_read_module = importlib.import_module(
 transfer_api_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.api"
 )
+models_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.runtime.models"
+)
 backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends")
 ddl_create_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.api"
@@ -1314,6 +1317,41 @@ def test_transfer_table_logs_source_sql_preview(monkeypatch, capsys) -> None:
     assert result == 3
     assert "[transfer_table] [trino/trino] [transfer] Finished SQL in " in output
     assert "Finished SQL statement:\nselect id from source_table" in output
+
+
+def test_transfer_return_metadata_includes_row_count_validation(monkeypatch) -> None:
+    def fake_run_transfer_attempt(**kwargs: Any) -> int:
+        object.__setattr__(
+            kwargs["options"],
+            "row_count_result",
+            models_module.TransferRowCountResult(
+                expected_source_rows=3,
+                streamed_rows=3,
+                stage_rows=3,
+                row_count_validated=True,
+            ),
+        )
+        return 3
+
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", fake_run_transfer_attempt)
+    monkeypatch.setattr(transfer_api_module, "count_table_rows", lambda *args, **kwargs: 3)
+
+    result = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+        return_metadata=True,
+    )
+
+    assert result.metadata.expected_source_rows == 3
+    assert result.metadata.streamed_rows == 3
+    assert result.metadata.stage_rows == 3
+    assert result.metadata.row_count_validated is True
 
 
 def test_create_sql_table_logs_generated_sql_preview(monkeypatch, capsys) -> None:

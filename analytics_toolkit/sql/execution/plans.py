@@ -19,7 +19,12 @@ class SqlStatement:
 @dataclass
 class SqlOperationMetadata:
     source_rows: int | None = None
+    expected_source_rows: int | None = None
+    streamed_rows: int | None = None
     staged_rows: int | None = None
+    stage_rows: int | None = None
+    row_count_validated: bool | None = None
+    transfer_slice_counts: list[dict[str, Any]] | None = None
     inserted_rows: int | None = None
     affected_rows: int | None = None
     final_target_rows: int | None = None
@@ -38,7 +43,12 @@ class SqlOperationMetadata:
     def as_dict(self) -> dict[str, Any]:
         return {
             "source_rows": self.source_rows,
+            "expected_source_rows": self.expected_source_rows,
+            "streamed_rows": self.streamed_rows,
             "staged_rows": self.staged_rows,
+            "stage_rows": self.stage_rows,
+            "row_count_validated": self.row_count_validated,
+            "transfer_slice_counts": self.transfer_slice_counts,
             "inserted_rows": self.inserted_rows,
             "affected_rows": self.affected_rows,
             "final_target_rows": self.final_target_rows,

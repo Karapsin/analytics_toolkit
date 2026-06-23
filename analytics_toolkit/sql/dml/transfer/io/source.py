@@ -23,6 +23,7 @@ def iter_source_batches(
     timeout_increment: int | float,
     query_label: str | None = None,
     get_batch_size: Callable[[], int] | None = None,
+    disable_ch_query_limit: bool = False,
 ) -> Iterator[RowBatch]:
     labeled_query = apply_query_label(query, query_label)
     batch_size_getter = get_batch_size or (lambda: batch_size)
@@ -45,6 +46,7 @@ def iter_source_batches(
             batch_size_getter,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
+            disable_query_limit=disable_ch_query_limit,
         )
         return
 
@@ -92,6 +94,7 @@ def _iter_clickhouse_batches(
     get_batch_size: Callable[[], int],
     retry_cnt: int,
     timeout_increment: int | float,
+    disable_query_limit: bool,
 ) -> Iterator[RowBatch]:
     context_manager: Any | None = None
     stream_iterator: Iterator[pd.DataFrame] | None = None
@@ -104,6 +107,7 @@ def _iter_clickhouse_batches(
             query,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
+            disable_query_limit=disable_query_limit,
         )
 
         columns: list[str] | None = None
@@ -181,9 +185,23 @@ def _start_clickhouse_stream_with_retry(
     query: str,
     retry_cnt: int,
     timeout_increment: int | float,
+    disable_query_limit: bool,
 ) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
     def operation(attempt: int) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
-        context_manager = connection_ref["connection"].query_df_stream(query)
+        connection = connection_ref["connection"]
+        original_query_limit = getattr(connection, "query_limit", None)
+        should_restore_query_limit = (
+            disable_query_limit
+            and hasattr(connection, "query_limit")
+            and original_query_limit
+        )
+        if should_restore_query_limit:
+            connection.query_limit = 0
+        try:
+            context_manager = connection.query_df_stream(query)
+        finally:
+            if should_restore_query_limit:
+                connection.query_limit = original_query_limit
         try:
             stream = context_manager.__enter__()
             iterator = iter(stream)

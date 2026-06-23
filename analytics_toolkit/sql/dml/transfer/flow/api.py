@@ -114,6 +114,8 @@ def transfer_table(
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
     trino_mode: TrinoTransferMode | None = None,
+    validate_row_count: bool = True,
+    ch_count_limit_read: bool = True,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -159,6 +161,8 @@ def transfer_table(
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
         trino_mode=trino_mode,
+        validate_row_count=validate_row_count,
+        ch_count_limit_read=ch_count_limit_read,
     )
 
     if dry_run or return_sql:
@@ -248,6 +252,18 @@ def transfer_table(
     if return_metadata:
         metadata = operation_metadata
         metadata.source_rows = total_rows
+        if options.row_count_result is not None:
+            metadata.expected_source_rows = (
+                options.row_count_result.expected_source_rows
+            )
+            metadata.streamed_rows = options.row_count_result.streamed_rows
+            metadata.stage_rows = options.row_count_result.stage_rows
+            metadata.row_count_validated = (
+                options.row_count_result.row_count_validated
+            )
+            metadata.transfer_slice_counts = (
+                options.row_count_result.slice_counts_as_dicts()
+            )
         metadata.staged_rows = total_rows
         metadata.inserted_rows = total_rows
         metadata.affected_rows = total_rows
@@ -303,6 +319,8 @@ def build_transfer_options(
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
     concurrency: int = 1,
     trino_mode: TrinoTransferMode | None = None,
+    validate_row_count: bool = True,
+    ch_count_limit_read: bool = True,
 ) -> TransferOptions:
     source_sql, source_table = normalize_transfer_source(
         from_sql=from_sql,
@@ -457,6 +475,8 @@ def build_transfer_options(
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
+        validate_row_count=validate_row_count,
+        ch_count_limit_read=ch_count_limit_read,
     )
 
     if options.from_db_key == options.to_db_key:
@@ -476,6 +496,7 @@ def build_transfer_options(
         raise ValueError("target_rows_per_second must be a boolean.")
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
+    _validate_row_count_options(options.validate_row_count, options.ch_count_limit_read)
     if options.gp_distributed_by_key is not None and options.to_db_backend != "gp":
         raise ValueError(
             "gp_distributed_by_key can only be used when to_db has type 'gp'."
@@ -519,6 +540,16 @@ def _validate_progress(progress: bool) -> None:
 def _validate_estimate_total_rows(estimate_total_rows: bool) -> None:
     if not isinstance(estimate_total_rows, bool):
         raise ValueError("estimate_total_rows must be a boolean.")
+
+
+def _validate_row_count_options(
+    validate_row_count: bool,
+    ch_count_limit_read: bool,
+) -> None:
+    if not isinstance(validate_row_count, bool):
+        raise ValueError("validate_row_count must be a boolean.")
+    if not isinstance(ch_count_limit_read, bool):
+        raise ValueError("ch_count_limit_read must be a boolean.")
 
 
 def _normalize_only_shard(ch_only_shard: bool) -> bool:
@@ -592,6 +623,8 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
             "estimate_total_rows": options.estimate_total_rows,
+            "validate_row_count": options.validate_row_count,
+            "ch_count_limit_read": options.ch_count_limit_read,
         },
         metadata=SqlOperationMetadata(
             stage_table=stage_table,

@@ -11,6 +11,37 @@ DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
 TrinoTransferMode = Literal["parquet", "values"]
 
 
+@dataclass
+class TransferSliceRowCount:
+    index: int
+    label: str | None
+    expected_rows: int
+    streamed_rows: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "label": self.label,
+            "expected_rows": self.expected_rows,
+            "streamed_rows": self.streamed_rows,
+        }
+
+
+@dataclass
+class TransferRowCountResult:
+    expected_source_rows: int
+    streamed_rows: int
+    stage_rows: int
+    row_count_validated: bool
+    slice_counts: list[TransferSliceRowCount] = field(default_factory=list)
+
+    def slice_counts_as_dicts(self) -> list[dict[str, Any]]:
+        return [
+            row_count.as_dict()
+            for row_count in sorted(self.slice_counts, key=lambda item: item.index)
+        ]
+
+
 @dataclass(frozen=True)
 class RowBatch:
     columns: list[str]
@@ -362,6 +393,8 @@ class TransferOptions:
     query_label: str | None = None
     progress: bool = False
     estimate_total_rows: bool = False
+    validate_row_count: bool = False
+    ch_count_limit_read: bool = True
     transfer_staging_schema: str | None = None
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
@@ -372,6 +405,7 @@ class TransferOptions:
     transfer_slices: list[TransferSlice] | None = None
     concurrency: int = 1
     source_table: str | None = None
+    row_count_result: TransferRowCountResult | None = None
 
 
 @dataclass
@@ -387,6 +421,12 @@ class TransferStageState:
     stage_table: str | None = None
     stage_tables: list[str] | None = None
     stage_external_location: str | None = None
+    expected_source_rows: int | None = None
+    current_expected_source_rows: int | None = None
+    streamed_rows: int | None = None
+    stage_rows: int | None = None
+    row_count_validated: bool = False
+    slice_counts: list[TransferSliceRowCount] = field(default_factory=list)
 
 
 @dataclass

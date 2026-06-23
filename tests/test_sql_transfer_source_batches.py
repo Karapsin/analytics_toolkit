@@ -30,9 +30,12 @@ class FakeClickHouseConnection:
     def __init__(self, blocks: list[pd.DataFrame]) -> None:
         self.context = FakeClickHouseStream(blocks)
         self.queries: list[str] = []
+        self.query_limit: int | None = None
+        self.query_limits_seen: list[int | None] = []
 
     def query_df_stream(self, query: str) -> FakeClickHouseStream:
         self.queries.append(query)
+        self.query_limits_seen.append(self.query_limit)
         return self.context
 
 
@@ -69,3 +72,25 @@ def test_clickhouse_batches_drain_pending_rows_without_spinning() -> None:
     assert [batch.rows for batch in batches] == [[(1,), (2,), (3,)], [(4,), (5,)]]
     assert connection.queries == ["select id from source"]
     assert connection.context.exit_calls == 1
+
+
+def test_clickhouse_stream_temporarily_disables_client_query_limit() -> None:
+    connection = FakeClickHouseConnection([pd.DataFrame({"id": [1, 2]})])
+    connection.query_limit = 1_728_512
+
+    batches = list(
+        source_module.iter_source_batches(
+            "ch",
+            "ch",
+            {"connection": connection},
+            "select id from source limit 6582921",
+            batch_size=10,
+            retry_cnt=1,
+            timeout_increment=0,
+            disable_ch_query_limit=True,
+        )
+    )
+
+    assert [batch.rows for batch in batches] == [[(1,), (2,)]]
+    assert connection.query_limits_seen == [0]
+    assert connection.query_limit == 1_728_512

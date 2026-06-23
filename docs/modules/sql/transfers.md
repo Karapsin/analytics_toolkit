@@ -10,9 +10,11 @@ entrypoint is [sql.transfer](functions/transfer.md).
 The transfer flow has four conceptual steps:
 
 1. Open source and target connections from `.connections`.
-2. Inspect source query metadata when target creation or type casts need it.
-3. Stream source rows in batches.
-4. Insert staged rows and finalize the target table.
+2. Count source rows and inspect source query metadata when target creation or
+   type casts need it.
+3. Stream source rows in batches into a stage table.
+4. Validate expected source rows, streamed rows, and actual stage-table rows,
+   then finalize the target table.
 
 For Trino targets, a target connection with both `transfer_staging_schema` and
 `transfer_staging_location` stages transfers from different connection keys
@@ -55,6 +57,11 @@ fixed.
 
 Progress totals are approximate unless a reliable total is known. Row estimates
 come from backend planners and should be treated as progress hints, not counts.
+Transfer row-count validation is separate from progress estimates and is exact:
+by default, `sql.transfer` counts the source query before loading and fails
+before target finalization when the source, streamed, and stage-table counts do
+not match. For ClickHouse sources, this also protects transfer reads from
+connection-level `query_limit` caps.
 
 ## Retries
 

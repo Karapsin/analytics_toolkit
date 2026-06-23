@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Create GP and Trino SQL transfer targets before staging rows.
 - Log transfer key values in keyed batch transfers.
 - Fix Greenplum extract_ddl fallback.
+- Added mandatory sql.transfer row-count validation.
 
 ## 1.3.10.10 - 2026-06-23
 

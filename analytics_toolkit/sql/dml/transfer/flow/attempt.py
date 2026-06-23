@@ -17,10 +17,7 @@ from ...load.load_sql_table import insert_rows_batch
 from ...table._basic_ops import insert_from_table
 from ...table.table_validation import validate_key_columns_in_columns
 from .estimate import estimate_source_rows
-from .finalize import (
-    cleanup_stage,
-    finalize_loaded_stage,
-)
+from .finalize import cleanup_stage, finalize_loaded_stage
 from .logging import (
     ProgressTracker,
     format_transfer_key_log_fragment,
@@ -44,24 +41,19 @@ from ..runtime.models import (
     make_gp_insert_chunk_sizer,
 )
 from ..runtime.retry import (
-    close_connection_ref,
-    replace_connection,
-    rollback_quietly,
-    run_with_fresh_connection,
-    run_with_retry,
+    close_connection_ref, replace_connection, rollback_quietly,
+    run_with_fresh_connection, run_with_retry,
 )
 from ..io.source import iter_source_batches
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from ....execution.operation_runner import _format_duration
-from .stage import create_stage_state, ensure_transfer_target_table, initialize_stage_for_first_batch
-
-_TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT = (
-    "{desc}: {n_pretty}{unit} [{elapsed}, {rate_fmt}{postfix}]"
-)
-_TRANSFER_PROGRESS_TOTAL_FORMAT = (
-    "{l_bar}{bar}| {n_pretty}/{total_pretty} "
-    "[{elapsed}<{remaining}, {rate_fmt}{postfix}]"
-)
+from .stage import create_stage_state, ensure_transfer_target_table
+from .stage import initialize_stage_for_first_batch
+from .row_counts import disable_query_limit_for_transfer_reads
+from .row_counts import prepare_row_count_validated_options
+from .row_counts import validate_loaded_stage_row_count, validate_slice_row_count
+from .row_counts import validate_streamed_row_count
+from .progress import format_transfer_progress_count, make_transfer_progress_bar
 
 
 def run_transfer_attempt(
@@ -129,12 +121,22 @@ def run_transfer_attempt(
                 [column.name for column in source_schema],
             ),
         )
-        total_rows = load_stage_batches(
+        load_options = prepare_row_count_validated_options(
             options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+        )
+        total_rows = load_stage_batches(
+            options=load_options,
             connection_refs=connection_refs,
             stage_state=stage_state,
             read_retry_cnt=read_retry_cnt,
             insert_retry_cnt=insert_retry_cnt,
+        )
+        validate_loaded_stage_row_count(
+            options=options, connection_refs=connection_refs,
+            stage_state=stage_state, total_rows=total_rows,
+            open_connection=get_sql_connection,
         )
         finalize_loaded_stage(
             options=options,
@@ -224,17 +226,28 @@ def run_keyed_transfer_attempt(
             options=options,
             stage_state=stage_state,
         )
+        stage_state.worker_stage_states = worker_stage_states
         total_rows = load_keyed_stage_slices(
             options=options,
             worker_stage_states=worker_stage_states,
             read_retry_cnt=read_retry_cnt,
             insert_retry_cnt=insert_retry_cnt,
         )
+        validate_streamed_row_count(
+            options=options,
+            stage_state=stage_state,
+            total_rows=total_rows,
+        )
         consolidate_keyed_worker_stages(
             options=options,
             connection_refs=connection_refs,
             worker_stage_states=worker_stage_states,
             stage_state=stage_state,
+        )
+        validate_loaded_stage_row_count(
+            options=options, connection_refs=connection_refs,
+            stage_state=stage_state, total_rows=total_rows,
+            open_connection=get_sql_connection,
         )
         finalize_loaded_stage(
             options=options,
@@ -532,7 +545,14 @@ def load_keyed_stage_worker(
                 options,
                 transfer_slice,
             )
-            total_rows += load_stage_batches(
+            worker_options = prepare_row_count_validated_options(
+                options=worker_options,
+                connection_refs=connection_refs,
+                stage_state=worker_stage_state.stage_state,
+                slice_index=transfer_slice.index,
+                transfer_key_label=transfer_key_label,
+            )
+            streamed_rows = load_stage_batches(
                 options=worker_options,
                 connection_refs=connection_refs,
                 stage_state=worker_stage_state.stage_state,
@@ -541,6 +561,14 @@ def load_keyed_stage_worker(
                 slice_index=transfer_slice.index,
                 transfer_key_label=transfer_key_label,
             )
+            validate_slice_row_count(
+                options=worker_options,
+                stage_state=worker_stage_state.stage_state,
+                slice_index=transfer_slice.index,
+                transfer_key_label=transfer_key_label,
+                streamed_rows=streamed_rows,
+            )
+            total_rows += streamed_rows
         return total_rows
     finally:
         close_connection_ref(connection_refs.source, options.from_db_key, "source")
@@ -602,7 +630,11 @@ def load_stage_batches(
             options,
             connection_refs.source["connection"],
         )
-    progress_bar = _make_transfer_progress_bar(options, total=estimated_total_rows)
+    progress_bar = make_transfer_progress_bar(
+        options,
+        total=estimated_total_rows,
+        base_tqdm=tqdm,
+    )
     progress_tracker = ProgressTracker(progress_bar)
     batch_sizer = AdaptiveBatchSizer(
         enabled=options.adaptive_batch_size,
@@ -636,6 +668,9 @@ def load_stage_batches(
             timeout_increment=options.timeout_increment,
             query_label=options.query_label,
             get_batch_size=lambda: batch_sizer.current_size,
+            disable_ch_query_limit=disable_query_limit_for_transfer_reads(
+                options.from_db_backend,
+            ),
         ):
             if batch.empty:
                 continue
@@ -734,12 +769,12 @@ def load_stage_batches(
             )
             time_print(
                 f"Transferred batch of "
-                f"{_format_transfer_progress_count(inserted_rows)} row(s) "
+                f"{format_transfer_progress_count(inserted_rows)} row(s) "
                 f"{format_transfer_key_log_fragment(transfer_key_label)}"
                 f"to {stage_state.stage_table} in "
                 f"{_format_duration(current_batch_duration_seconds)} "
                 f"({rows_per_second_text} row/s); total transferred "
-                f"{_format_transfer_progress_count(total_rows)} row(s)",
+                f"{format_transfer_progress_count(total_rows)} row(s)",
                 connection=options.to_db_key,
                 backend=options.to_db_backend,
             )
@@ -766,7 +801,11 @@ def load_parquet_stage_batches(
             options,
             connection_refs.source["connection"],
         )
-    progress_bar = _make_transfer_progress_bar(options, total=estimated_total_rows)
+    progress_bar = make_transfer_progress_bar(
+        options,
+        total=estimated_total_rows,
+        base_tqdm=tqdm,
+    )
     progress_tracker = ProgressTracker(progress_bar)
     try:
         for batch in iter_source_batches(
@@ -779,6 +818,9 @@ def load_parquet_stage_batches(
             timeout_increment=options.timeout_increment,
             query_label=options.query_label,
             get_batch_size=lambda: row_group_size,
+            disable_ch_query_limit=disable_query_limit_for_transfer_reads(
+                options.from_db_backend,
+            ),
         ):
             if batch.empty:
                 continue
@@ -818,10 +860,10 @@ def load_parquet_stage_batches(
             total_rows += inserted_rows
             time_print(
                 f"Wrote Parquet transfer batch of "
-                f"{_format_transfer_progress_count(inserted_rows)} row(s) "
+                f"{format_transfer_progress_count(inserted_rows)} row(s) "
                 f"{format_transfer_key_log_fragment(transfer_key_label)}"
                 f"to {stage_state.stage_external_location}; total transferred "
-                f"{_format_transfer_progress_count(total_rows)} row(s)",
+                f"{format_transfer_progress_count(total_rows)} row(s)",
                 connection=options.to_db_key,
                 backend=options.to_db_backend,
             )
@@ -855,40 +897,3 @@ def _initialize_parquet_stage_for_first_batch(
         connection_refs=connection_refs,
         stage_state=stage_state,
     )
-
-
-def _make_transfer_progress_bar(options: TransferOptions, *, total: int | None) -> Any:
-    progress_cls = _make_transfer_progress_bar_class(tqdm)
-    bar_format = (
-        _TRANSFER_PROGRESS_TOTAL_FORMAT
-        if total is not None
-        else _TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT
-    )
-    return progress_cls(
-        total=total,
-        desc=f"transfer_table {options.to_db_key}.{options.target_table}",
-        unit="row",
-        disable=not options.progress,
-        bar_format=bar_format,
-    )
-
-
-def _make_transfer_progress_bar_class(base_tqdm: Any) -> Any:
-    class _TransferProgressTqdm(base_tqdm):
-        @property
-        def format_dict(self) -> dict[str, Any]:
-            format_dict = super().format_dict
-            total = format_dict.get("total")
-            format_dict["n_pretty"] = _format_transfer_progress_count(
-                format_dict.get("n", self.n)
-            )
-            format_dict["total_pretty"] = (
-                "?" if total is None else _format_transfer_progress_count(total)
-            )
-            return format_dict
-
-    return _TransferProgressTqdm
-
-
-def _format_transfer_progress_count(value: Any) -> str:
-    return f"{value:_}"

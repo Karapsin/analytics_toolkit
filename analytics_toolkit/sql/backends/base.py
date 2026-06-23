@@ -4,6 +4,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from . import common_methods as _common_methods
+from . import source_count as _source_count
 from .utils import extract_row_count
 
 
@@ -177,36 +179,9 @@ class BackendAdapter:
     def execute_command(self, connection: Any, sql: str) -> Any:
         raise NotImplementedError
 
-    def execute_commands(self, connection: Any, sqls: list[str]) -> None:
-        for sql in sqls:
-            self.execute_command(connection, sql)
-
-    def read_dataframe(
-        self,
-        connection: Any,
-        query: str,
-        *,
-        print_queries: bool,
-        print_query: Callable[[str, bool], None],
-        read_dbapi_query: Callable[[Any, str], Any],
-    ) -> Any:
-        from analytics_toolkit.general import time_print
-
-        time_print("Reading DataFrame", backend=self.backend)
-        try:
-            print_query(query, print_queries)
-            return self._read_dataframe_impl(connection, query, read_dbapi_query)
-        except Exception:
-            time_print(f"Failed SQL:\n{query}", backend=self.backend)
-            raise
-
-    def _read_dataframe_impl(
-        self,
-        connection: Any,
-        query: str,
-        read_dbapi_query: Callable[[Any, str], Any],
-    ) -> Any:
-        return read_dbapi_query(connection, query)
+    execute_commands = _common_methods.execute_commands
+    read_dataframe = _common_methods.read_dataframe
+    _read_dataframe_impl = _common_methods.read_dataframe_impl
 
     def table_exists(
         self,
@@ -312,6 +287,14 @@ class BackendAdapter:
             return int(row[0]) if row else 0
         finally:
             cursor.close()
+
+    build_source_count_sql = _source_count.build_source_count_sql
+    count_source_rows = _source_count.count_source_rows
+    source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read
+    disable_query_limit_for_transfer_reads = (
+        _source_count.disable_query_limit_for_transfer_reads
+    )
+    strip_query_semicolon = _source_count.strip_query_semicolon
 
     def get_table_column_types(
         self,

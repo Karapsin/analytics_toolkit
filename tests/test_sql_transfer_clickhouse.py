@@ -42,6 +42,8 @@ class FakeSourceCursor:
 
     def execute(self, query: str) -> None:
         self.executed_queries.append(query)
+        if "COUNT(*) FROM" in query:
+            self._rows = [(len(self._rows),)]
 
     def fetchmany(self, size: int) -> list[tuple[Any, ...]]:
         batch = self._rows[:size]
@@ -87,6 +89,9 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
+        if sql.startswith("SELECT count() FROM "):
+            table_name = sql[len("SELECT count() FROM "):].strip()
+            return FakeResult([(self._inserted_rows(table_name),)])
         if sql.startswith("SELECT getMacro("):
             return FakeResult([("core",)])
         if "clusterAllReplicas" in sql and "system, one" in sql:
@@ -165,6 +170,17 @@ class FakeClickHouseClient:
             for table_name in self.created_tables
             if table_name.rsplit(".", 1)[-1] == relation_name
         )
+
+    def _inserted_rows(self, table_name: str) -> int:
+        total = 0
+        for insert in self.inserts:
+            if insert["table"] != table_name:
+                continue
+            if "data" in insert:
+                total += len(insert["data"])
+            elif "df" in insert:
+                total += len(insert["df"])
+        return total
 
 
 def _strip_query_label(sql: str) -> str:
