@@ -1046,6 +1046,7 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
                 "source_sql": kwargs["options"].source_sql,
                 "source_conn": kwargs["connection_refs"].source["connection"].name,
                 "slice_index": kwargs["slice_index"],
+                "transfer_key_label": kwargs["transfer_key_label"],
                 "stage_table": kwargs["stage_state"].stage_table,
             }
         )
@@ -1066,6 +1067,10 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
         transfer_slice.source_sql for transfer_slice in options.transfer_slices
     ]
     assert [item["slice_index"] for item in loaded] == [0, 1]
+    assert [item["transfer_key_label"] for item in loaded] == [
+        "event_date='2025-01-01'",
+        "event_date='2025-01-02'",
+    ]
     assert [item["stage_table"] for item in loaded] == [
         "sandbox.target__stage__abcd1234__w00000",
         "sandbox.target__stage__abcd1234__w00001",
@@ -3711,6 +3716,7 @@ def test_load_stage_batches_skips_gp_insert_page_sizer_for_non_gp_target(
 
 def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     source = RecordingSourceConnection(rows=[(1,), (2,), (3,)])
     connection_refs = models_module.TransferConnectionRefs(
@@ -3797,13 +3803,20 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
         stage_state=stage_state,
         read_retry_cnt=1,
         insert_retry_cnt=1,
+        transfer_key_label="event_date='2026-03-30'",
     )
 
+    output = capsys.readouterr().out
     assert total_rows == 3
     assert [batch["rows"] for batch in written_batches] == [[(1,), (2,)], [(3,)]]
     assert [batch["file_index"] for batch in written_batches] == [0, 1]
     assert all(batch["row_group_size"] == 2 for batch in written_batches)
     assert source.cursor_obj.fetch_sizes == [2, 2, 2]
+    assert (
+        "Wrote Parquet transfer batch of 2 row(s) "
+        "for event_date='2026-03-30' "
+        "to s3://bucket/tmp/analytics_toolkit_transfer/target/"
+    ) in output
 
 
 def test_keyed_parquet_writer_includes_slice_and_part_in_filename() -> None:
@@ -4394,6 +4407,73 @@ def test_load_stage_batches_formats_transferred_row_count(
         "Transferred batch of 1_000_000 row(s) "
         "to sandbox.target__stage__abcd1234 in 1 second "
         "(1,000,000.00 row/s); total transferred 1_000_000 row(s)"
+    ) in output
+
+
+def test_load_stage_batches_logs_transfer_key_label(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = RecordingSourceConnection(rows=[(1,)])
+    connection_refs = models_module.TransferConnectionRefs(
+        source={"connection": source},
+        target={"connection": object()},
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+    options = make_progress_options(progress=False)
+
+    def fake_initialize_stage_for_first_batch(
+        options: object,
+        connection_refs: object,
+        stage_state: object,
+        batch: object,
+    ) -> None:
+        del options, connection_refs
+        stage_state.first_non_empty_batch = batch.to_dataframe()
+        stage_state.stage_table = "sandbox.target__stage__abcd1234"
+
+    def fake_insert_rows_batch(
+        connection_type: str,
+        connection_ref: dict[str, Any],
+        table_name: str,
+        columns: list[str],
+        rows: list[tuple[int]],
+        **kwargs: Any,
+    ) -> int:
+        del connection_type, connection_ref, table_name, columns
+        kwargs["on_success"](1.0, len(rows))
+        return len(rows)
+
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_stage_for_first_batch",
+        fake_initialize_stage_for_first_batch,
+    )
+    monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
+
+    total_rows = attempt_module.load_stage_batches(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+        transfer_key_label="event_date='2026-03-30', user_id_suffix='0'",
+    )
+
+    output = capsys.readouterr().out
+    assert total_rows == 1
+    assert (
+        "Transferred batch of 1 row(s) "
+        "for event_date='2026-03-30', user_id_suffix='0' "
+        "to sandbox.target__stage__abcd1234"
     ) in output
 
 

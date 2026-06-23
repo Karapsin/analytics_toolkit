@@ -21,6 +21,11 @@ from .finalize import (
     cleanup_stage,
     finalize_loaded_stage,
 )
+from .logging import (
+    ProgressTracker,
+    format_transfer_key_log_fragment,
+    format_transfer_slice_log_label,
+)
 from .parquet_stage import (
     create_parquet_stage_table,
     ensure_parquet_staging_dependencies,
@@ -523,6 +528,10 @@ def load_keyed_stage_worker(
     try:
         for transfer_slice in worker_stage_state.transfer_slices:
             worker_options = replace(options, source_sql=transfer_slice.source_sql)
+            transfer_key_label = format_transfer_slice_log_label(
+                options,
+                transfer_slice,
+            )
             total_rows += load_stage_batches(
                 options=worker_options,
                 connection_refs=connection_refs,
@@ -530,6 +539,7 @@ def load_keyed_stage_worker(
                 read_retry_cnt=read_retry_cnt,
                 insert_retry_cnt=insert_retry_cnt,
                 slice_index=transfer_slice.index,
+                transfer_key_label=transfer_key_label,
             )
         return total_rows
     finally:
@@ -573,6 +583,7 @@ def load_stage_batches(
     read_retry_cnt: int,
     insert_retry_cnt: int,
     slice_index: int | None = None,
+    transfer_key_label: str | None = None,
 ) -> int:
     if options.trino_mode == "parquet":
         return load_parquet_stage_batches(
@@ -581,6 +592,7 @@ def load_stage_batches(
             stage_state=stage_state,
             read_retry_cnt=read_retry_cnt,
             slice_index=slice_index,
+            transfer_key_label=transfer_key_label,
         )
 
     total_rows = 0
@@ -591,7 +603,7 @@ def load_stage_batches(
             connection_refs.source["connection"],
         )
     progress_bar = _make_transfer_progress_bar(options, total=estimated_total_rows)
-    progress_tracker = _ProgressTracker(progress_bar)
+    progress_tracker = ProgressTracker(progress_bar)
     batch_sizer = AdaptiveBatchSizer(
         enabled=options.adaptive_batch_size,
         current_size=options.batch_size,
@@ -723,6 +735,7 @@ def load_stage_batches(
             time_print(
                 f"Transferred batch of "
                 f"{_format_transfer_progress_count(inserted_rows)} row(s) "
+                f"{format_transfer_key_log_fragment(transfer_key_label)}"
                 f"to {stage_state.stage_table} in "
                 f"{_format_duration(current_batch_duration_seconds)} "
                 f"({rows_per_second_text} row/s); total transferred "
@@ -741,6 +754,7 @@ def load_parquet_stage_batches(
     stage_state: TransferStageState,
     read_retry_cnt: int,
     slice_index: int | None = None,
+    transfer_key_label: str | None = None,
 ) -> int:
     pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
     total_rows = 0
@@ -753,7 +767,7 @@ def load_parquet_stage_batches(
             connection_refs.source["connection"],
         )
     progress_bar = _make_transfer_progress_bar(options, total=estimated_total_rows)
-    progress_tracker = _ProgressTracker(progress_bar)
+    progress_tracker = ProgressTracker(progress_bar)
     try:
         for batch in iter_source_batches(
             options.from_db_key,
@@ -805,6 +819,7 @@ def load_parquet_stage_batches(
             time_print(
                 f"Wrote Parquet transfer batch of "
                 f"{_format_transfer_progress_count(inserted_rows)} row(s) "
+                f"{format_transfer_key_log_fragment(transfer_key_label)}"
                 f"to {stage_state.stage_external_location}; total transferred "
                 f"{_format_transfer_progress_count(total_rows)} row(s)",
                 connection=options.to_db_key,
@@ -840,26 +855,6 @@ def _initialize_parquet_stage_for_first_batch(
         connection_refs=connection_refs,
         stage_state=stage_state,
     )
-
-
-class _ProgressTracker:
-    def __init__(self, progress_bar: Any) -> None:
-        self.progress_bar = progress_bar
-        self.total_rows = 0
-        self._batch_start_rows = 0
-
-    def start_batch(self) -> None:
-        self._batch_start_rows = self.total_rows
-
-    def update(self, rows: int) -> None:
-        self.total_rows += rows
-        self.progress_bar.update(rows)
-
-    def complete_batch(self, rows: int) -> None:
-        batch_progress_rows = self.total_rows - self._batch_start_rows
-        remaining_rows = rows - batch_progress_rows
-        if remaining_rows > 0:
-            self.update(remaining_rows)
 
 
 def _make_transfer_progress_bar(options: TransferOptions, *, total: int | None) -> Any:

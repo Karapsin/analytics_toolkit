@@ -182,6 +182,8 @@ rows = sql.transfer(
   final target write. The helper does not buffer all slice data in memory.
   Trino Parquet staging keeps one external stage table and uses unique staged
   files instead of concurrent SQL inserts into a shared stage table.
+- When `transfer_keys` is used, per-batch transfer logs include the active
+  transfer key values so long keyed transfers can be traced by slice.
 - `transfer_keys` expressions should be deterministic and disjoint. The library
   rejects duplicate generated key tuples, but it cannot prove that arbitrary SQL
   expressions produce non-overlapping slices.
