@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from ....connection.get_sql_connection import get_sql_connection
 from ....execution.operation_runner import _format_duration
 from analytics_toolkit.general import time_print
+
+
+T = TypeVar("T")
 
 
 def run_with_retry(
@@ -168,6 +171,19 @@ def replace_connection(connection_key: str, connection_ref: dict[str, Any]) -> N
     except Exception:
         pass
     connection_ref["connection"] = get_sql_connection(connection_key)
+
+
+def run_with_fresh_connection(
+    connection_key: str,
+    role: str,
+    operation: Callable[[dict[str, Any]], T],
+    open_connection: Callable[[str], Any] = get_sql_connection,
+) -> T:
+    connection_ref: dict[str, Any] = {"connection": open_connection(connection_key)}
+    try:
+        return operation(connection_ref)
+    finally:
+        close_connection_ref(connection_ref, connection_key, role)
 
 
 def close_connection_ref(

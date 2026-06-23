@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...load.stage import cleanup_stage_table_with_retry
+from ....connection.get_sql_connection import get_sql_connection
 from ...table.maintenance import (
     analyze_table,
     clear_ch_distributed_table_data,
@@ -17,7 +18,12 @@ from ...table.table_validation import (
 )
 from .parquet_stage import cleanup_parquet_stage_location
 from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
-from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+from ..runtime.retry import (
+    replace_connection,
+    rollback_quietly,
+    run_with_fresh_connection,
+    run_with_retry,
+)
 from ..schema import get_existing_target_insert_types
 
 
@@ -36,21 +42,29 @@ def finalize_loaded_stage(
     if stage_state.stage_table is None:
         raise RuntimeError("Expected stage table to be initialized.")
 
-    validate_stage_uniqueness(
-        connection_type=options.to_db_backend,
-        connection=connection_refs.target["connection"],
-        stage_table=stage_state.stage_table,
-        key_columns=options.key_columns,
+    _run_with_fresh_target_connection(
+        options,
+        "validate_stage",
+        lambda target_ref: validate_stage_uniqueness(
+            connection_type=options.to_db_backend,
+            connection=target_ref["connection"],
+            stage_table=stage_state.stage_table,
+            key_columns=options.key_columns,
+        ),
     )
     if options.write_mode != "upsert":
-        validate_stage_target_key_overlap(
-            connection_type=options.to_db_backend,
-            connection=connection_refs.target["connection"],
-            stage_table=stage_state.stage_table,
-            target_table=options.target_table,
-            key_columns=options.key_columns,
-            target_exists=stage_state.target_exists,
-            replace_target_table=options.replace_target_table,
+        _run_with_fresh_target_connection(
+            options,
+            "validate_stage",
+            lambda target_ref: validate_stage_target_key_overlap(
+                connection_type=options.to_db_backend,
+                connection=target_ref["connection"],
+                stage_table=stage_state.stage_table,
+                target_table=options.target_table,
+                key_columns=options.key_columns,
+                target_exists=stage_state.target_exists,
+                replace_target_table=options.replace_target_table,
+            ),
         )
     if stage_state.stage_column_types is None:
         stage_state.insert_column_types = None
@@ -58,46 +72,58 @@ def finalize_loaded_stage(
     elif stage_state.target_exists and (
         not options.replace_target_table or options.write_mode == "upsert"
     ):
-        stage_state.insert_column_types = get_existing_target_insert_types(
-            options.to_db_backend,
-            connection_refs.target["connection"],
-            options.target_table,
-            stage_state.stage_column_types,
-            connection_key=options.to_db_key,
+        stage_state.insert_column_types = _run_with_fresh_target_connection(
+            options,
+            "target_metadata",
+            lambda target_ref: get_existing_target_insert_types(
+                options.to_db_backend,
+                target_ref["connection"],
+                options.target_table,
+                stage_state.stage_column_types,
+                connection_key=options.to_db_key,
+            ),
         )
         target_column_types = None
     else:
         stage_state.insert_column_types = stage_state.stage_column_types
         target_column_types = stage_state.stage_column_types
 
-    finalize_stage_table(
-        options.to_db_backend,
-        connection_refs.target["connection"],
-        stage_table=stage_state.stage_table,
-        target_table=options.target_table,
-        replace_target_table=options.replace_target_table,
-        target_exists=stage_state.target_exists,
-        sample_batch=stage_state.first_non_empty_batch,
-        target_column_types=target_column_types,
-        insert_column_types=stage_state.insert_column_types,
-        write_mode=options.write_mode,
-        key_columns=options.key_columns,
-        gp_distributed_by_key=options.gp_distributed_by_key,
-        partition_by=options.partition_by,
-        order_by=options.order_by,
-        ch_engine=options.ch_engine,
-        ch_cluster=options.ch_cluster,
-        ch_sharding_key=options.ch_sharding_key,
-        ch_only_shard=options.ch_only_shard,
-        query_label=options.query_label,
-        connection_key=options.to_db_key,
-        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+    _run_with_fresh_target_connection(
+        options,
+        "finalize_target",
+        lambda target_ref: finalize_stage_table(
+            options.to_db_backend,
+            target_ref["connection"],
+            stage_table=stage_state.stage_table,
+            target_table=options.target_table,
+            replace_target_table=options.replace_target_table,
+            target_exists=stage_state.target_exists,
+            sample_batch=stage_state.first_non_empty_batch,
+            target_column_types=target_column_types,
+            insert_column_types=stage_state.insert_column_types,
+            write_mode=options.write_mode,
+            key_columns=options.key_columns,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
+            ch_engine=options.ch_engine,
+            ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
+            ch_only_shard=options.ch_only_shard,
+            query_label=options.query_label,
+            connection_key=options.to_db_key,
+            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+        ),
     )
-    analyze_table(
-        connection_type=options.to_db_backend,
-        connection=connection_refs.target["connection"],
-        table_name=options.target_table,
-        query_label=options.query_label,
+    _run_with_fresh_target_connection(
+        options,
+        "analyze_target",
+        lambda target_ref: analyze_table(
+            connection_type=options.to_db_backend,
+            connection=target_ref["connection"],
+            table_name=options.target_table,
+            query_label=options.query_label,
+        ),
     )
 
 
@@ -116,25 +142,37 @@ def finalize_empty_transfer(
             raise ValueError("Cannot create target table from an empty result set.")
         if options.to_db_backend == "ch":
             if options.ch_only_shard:
-                clear_target_table(
-                    options.to_db_backend,
-                    connection_refs.target["connection"],
-                    options.target_table,
-                    query_label=options.query_label,
+                _run_with_fresh_target_connection(
+                    options,
+                    "clear_target",
+                    lambda target_ref: clear_target_table(
+                        options.to_db_backend,
+                        target_ref["connection"],
+                        options.target_table,
+                        query_label=options.query_label,
+                    ),
                 )
                 return
-            clear_ch_distributed_table_data(
-                connection_refs.target["connection"],
-                options.target_table,
-                ch_cluster=options.ch_cluster,
-                query_label=options.query_label,
+            _run_with_fresh_target_connection(
+                options,
+                "clear_target",
+                lambda target_ref: clear_ch_distributed_table_data(
+                    target_ref["connection"],
+                    options.target_table,
+                    ch_cluster=options.ch_cluster,
+                    query_label=options.query_label,
+                ),
             )
             return
-        clear_target_table(
-            options.to_db_backend,
-            connection_refs.target["connection"],
-            options.target_table,
-            query_label=options.query_label,
+        _run_with_fresh_target_connection(
+            options,
+            "clear_target",
+            lambda target_ref: clear_target_table(
+                options.to_db_backend,
+                target_ref["connection"],
+                options.target_table,
+                query_label=options.query_label,
+            ),
         )
         return
 
@@ -154,17 +192,21 @@ def cleanup_stage(
     if stage_state.stage_table_created:
         try:
             for stage_table in _stage_tables_to_cleanup(stage_state):
-                cleanup_stage_table_with_retry(
-                    options.to_db_backend,
-                    options.to_db_key,
-                    connection_refs.target,
-                    stage_table,
-                    retry_fn=run_with_retry,
-                    retry_cnt=read_retry_cnt,
-                    timeout_increment=options.timeout_increment,
-                    rollback_fn=rollback_quietly,
-                    replace_connection_fn=replace_connection,
-                    query_label=options.query_label,
+                _run_with_fresh_target_connection(
+                    options,
+                    "cleanup_stage",
+                    lambda target_ref, stage_table=stage_table: cleanup_stage_table_with_retry(
+                        options.to_db_backend,
+                        options.to_db_key,
+                        target_ref,
+                        stage_table,
+                        retry_fn=run_with_retry,
+                        retry_cnt=read_retry_cnt,
+                        timeout_increment=options.timeout_increment,
+                        rollback_fn=rollback_quietly,
+                        replace_connection_fn=replace_connection,
+                        query_label=options.query_label,
+                    ),
                 )
         except Exception as exc:
             stage_cleanup_error = exc
@@ -194,3 +236,16 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
     if stage_state.stage_table is not None:
         return [stage_state.stage_table]
     return []
+
+
+def _run_with_fresh_target_connection(
+    options: TransferOptions,
+    role: str,
+    operation: Any,
+) -> Any:
+    return run_with_fresh_connection(
+        options.to_db_key,
+        role,
+        operation,
+        open_connection=get_sql_connection,
+    )

@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Fix SQL backend adapter autoreload compatibility.
 - Use cancel and terminate for Greenplum query cancellation.
 - Accept scalar string SQL key columns.
+- Use fresh target connections for SQL transfer and load_df target actions.
 
 ## 1.3.10.9 - 2026-06-19
 

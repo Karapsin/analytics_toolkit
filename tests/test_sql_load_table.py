@@ -385,26 +385,6 @@ def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
             (connection_type, connection_key, table_name),
         ),
     )
-    monkeypatch.setattr(
-        load_df_module,
-        "_cleanup_load",
-        lambda connection_ref, options, state: (
-            load_df_module.cleanup_stage_table_with_retry(
-                options.connection_backend,
-                options.connection_key,
-                connection_ref,
-                state.overlap_stage_table,
-                retry_fn=load_df_module.run_with_retry,
-                retry_cnt=1,
-                timeout_increment=0,
-                rollback_fn=load_df_module.rollback_quietly,
-                replace_connection_fn=load_df_module.replace_connection,
-                query_label=options.query_label,
-            )
-            if state is not None and state.overlap_stage_table is not None
-            else None
-        ),
-    )
 
     inserted_rows = load_df_module.load_df(
         "gp",
@@ -461,26 +441,6 @@ def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
         "cleanup_stage_table_with_retry",
         lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
             (connection_type, connection_key, table_name),
-        ),
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "_cleanup_load",
-        lambda connection_ref, options, state: (
-            load_df_module.cleanup_stage_table_with_retry(
-                options.connection_backend,
-                options.connection_key,
-                connection_ref,
-                state.overlap_stage_table,
-                retry_fn=load_df_module.run_with_retry,
-                retry_cnt=1,
-                timeout_increment=0,
-                rollback_fn=load_df_module.rollback_quietly,
-                replace_connection_fn=load_df_module.replace_connection,
-                query_label=options.query_label,
-            )
-            if state is not None and state.overlap_stage_table is not None
-            else None
         ),
     )
 
@@ -1362,7 +1322,7 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
         for command in client.commands
     )
     assert client.calls[0]["table"] == TEST_CH_TABLE
-    assert client.close_calls == 1
+    assert client.close_calls == 4
 
 
 def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> None:

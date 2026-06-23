@@ -618,7 +618,6 @@ def test_run_transfer_attempt_cleans_only_current_stage_table(
         "finalize_loaded_stage",
         "cleanup_stage",
         "close:source",
-        "close:target",
     ]
 
 
@@ -708,7 +707,6 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         "finalize_loaded_stage",
         "cleanup_stage",
         "close:source",
-        "close:target",
     ]
 
 
@@ -825,7 +823,6 @@ def test_run_keyed_transfer_attempt_uses_one_stage_finalize_and_cleanup(
         "finalize_loaded_stage",
         "cleanup_stage",
         "close:source",
-        "close:target",
     ]
 
 
@@ -861,7 +858,6 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
             {
                 "source_sql": kwargs["options"].source_sql,
                 "source_conn": kwargs["connection_refs"].source["connection"].name,
-                "target_conn": kwargs["connection_refs"].target["connection"].name,
                 "slice_index": kwargs["slice_index"],
                 "stage_table": kwargs["stage_state"].stage_table,
             }
@@ -889,12 +885,9 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
     ]
     assert opened_connections == [
         ("source_db", "source_db-0"),
-        ("target_db", "target_db-1"),
-        ("source_db", "source_db-2"),
-        ("target_db", "target_db-3"),
+        ("source_db", "source_db-1"),
     ]
     assert loaded[0]["source_conn"] != loaded[1]["source_conn"]
-    assert loaded[0]["target_conn"] != loaded[1]["target_conn"]
 
 
 def test_gp_insert_rows_retry_replaces_closed_connection(
@@ -1014,18 +1007,23 @@ def test_keyed_gp_worker_retry_refreshes_only_failed_worker_connection(
                 raise RuntimeError("connection already closed")
 
     def fake_load_stage_batches(**kwargs: Any) -> int:
-        return load_sql_table_module.insert_rows_batch(
-            "gp",
-            kwargs["connection_refs"].target,
-            kwargs["stage_state"].stage_table,
-            ["id"],
-            [(kwargs["slice_index"],)],
-            retry_fn=retry_module.run_with_retry,
-            retry_cnt=2,
-            timeout_increment=0,
-            connection_key=kwargs["options"].to_db_key,
-            rollback_fn=retry_module.rollback_quietly,
-            replace_connection_fn=fake_replace_connection,
+        return retry_module.run_with_fresh_connection(
+            kwargs["options"].to_db_key,
+            "insert_stage",
+            lambda connection_ref: load_sql_table_module.insert_rows_batch(
+                "gp",
+                connection_ref,
+                kwargs["stage_state"].stage_table,
+                ["id"],
+                [(kwargs["slice_index"],)],
+                retry_fn=retry_module.run_with_retry,
+                retry_cnt=2,
+                timeout_increment=0,
+                connection_key=kwargs["options"].to_db_key,
+                rollback_fn=retry_module.rollback_quietly,
+                replace_connection_fn=fake_replace_connection,
+            ),
+            open_connection=fake_get_sql_connection,
         )
 
     monkeypatch.setattr(attempt_module, "get_sql_connection", fake_get_sql_connection)
@@ -1293,6 +1291,11 @@ def test_consolidate_keyed_worker_stages_inserts_into_aggregate_sequentially(
         inserted.append((target_table, source_table, column_types))
 
     monkeypatch.setattr(attempt_module, "insert_from_table", fake_insert_from_table)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     attempt_module.consolidate_keyed_worker_stages(
         options=options,
@@ -1329,6 +1332,11 @@ def test_cleanup_stage_drops_each_worker_stage_once(
         finalize_module,
         "cleanup_stage_table_with_retry",
         fake_cleanup_stage_table_with_retry,
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
     )
 
     finalize_module.cleanup_stage(
@@ -2830,6 +2838,11 @@ def test_load_stage_batches_fetches_row_batches_with_adaptive_sizes(monkeypatch)
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -2903,6 +2916,11 @@ def test_load_stage_batches_uses_configured_step_for_transfer_and_gp_sizers(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -2971,6 +2989,11 @@ def test_load_stage_batches_starts_adaptive_gp_insert_pages_at_default(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3039,6 +3062,11 @@ def test_load_stage_batches_starts_adaptive_gp_insert_pages_at_explicit_size(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3108,6 +3136,11 @@ def test_load_stage_batches_keeps_gp_insert_pages_fixed_when_adaptive_disabled(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3174,6 +3207,11 @@ def test_load_stage_batches_skips_gp_insert_page_sizer_for_non_gp_target(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3262,6 +3300,11 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
         fake_write_batch_to_parquet_stage,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fail_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3371,6 +3414,11 @@ def test_load_parquet_stage_infers_schema_from_first_row_group(
         attempt_module,
         "create_parquet_stage_table",
         fake_create_parquet_stage_table,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
     )
 
     total_rows = attempt_module.load_stage_batches(
@@ -3486,6 +3534,11 @@ def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
         finalize_module,
         "cleanup_parquet_stage_location",
         lambda stage_external_location: removed.append(stage_external_location),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
     )
 
     finalize_module.cleanup_stage(
@@ -3676,6 +3729,11 @@ def test_load_stage_batches_can_adapt_to_memory_target(monkeypatch) -> None:
         fake_approx_memory_bytes,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3759,6 +3817,11 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3825,6 +3888,11 @@ def test_load_stage_batches_formats_transferred_row_count(
         fake_initialize_stage_for_first_batch,
     )
     monkeypatch.setattr(attempt_module, "insert_rows_batch", fake_insert_rows_batch)
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3908,6 +3976,11 @@ def test_load_stage_batches_estimated_total_sets_progress_bar_total(
         "insert_rows_batch",
         lambda *args, **kwargs: len(args[4]),
     )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -3990,6 +4063,11 @@ def test_load_stage_batches_estimator_failure_keeps_unknown_total(
         "insert_rows_batch",
         lambda *args, **kwargs: len(args[4]),
     )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -4070,6 +4148,11 @@ def test_load_stage_batches_progress_false_disables_bar(monkeypatch) -> None:
         attempt_module,
         "insert_rows_batch",
         lambda *args, **kwargs: len(args[4]),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
     )
 
     total_rows = attempt_module.load_stage_batches(

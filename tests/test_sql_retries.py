@@ -557,17 +557,20 @@ def test_operation_runner_does_not_rollback_non_gp_backends() -> None:
 
 
 def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
-    first_connection = FakeConnection("first")
-    second_connection = FakeConnection("second")
-    connections = [first_connection, second_connection]
+    connections: list[FakeConnection] = []
     events: list[tuple[str, str]] = []
     call_count = {"insert": 0}
     df = pd.DataFrame({"id": [1], "value": ["x"]})
 
+    def fake_get_sql_connection(_connection_type: str) -> FakeConnection:
+        connection = FakeConnection(f"conn-{len(connections)}")
+        connections.append(connection)
+        return connection
+
     monkeypatch.setattr(
         load_df_module,
         "get_sql_connection",
-        lambda connection_type: connections.pop(0),
+        fake_get_sql_connection,
     )
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
 
@@ -613,12 +616,11 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
 
     assert inserted_rows == 1
     assert events == [
-        ("create", "first"),
-        ("insert", "first"),
-        ("create", "second"),
-        ("insert", "second"),
-        ("analyze", "second"),
+        ("create", "conn-1"),
+        ("insert", "conn-2"),
+        ("create", "conn-4"),
+        ("insert", "conn-5"),
+        ("analyze", "conn-6"),
     ]
-    assert first_connection.rollback_calls == 1
-    assert first_connection.close_calls == 1
-    assert second_connection.close_calls == 1
+    assert [connection.close_calls for connection in connections] == [1] * 7
+    assert [connection.rollback_calls for connection in connections] == [0] * 7

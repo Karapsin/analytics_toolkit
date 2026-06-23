@@ -312,6 +312,11 @@ def test_transfer_upsert_duplicate_stage_keys_raise_before_finalization(
         "finalize_stage_table",
         fake_finalize_stage_table,
     )
+    monkeypatch.setattr(
+        transfer_finalize_module,
+        "get_sql_connection",
+        lambda key: object(),
+    )
 
     with pytest.raises(ValueError, match="Duplicate key"):
         transfer_finalize_module.finalize_loaded_stage(

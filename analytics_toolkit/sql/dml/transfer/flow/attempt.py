@@ -42,6 +42,7 @@ from ..runtime.retry import (
     close_connection_ref,
     replace_connection,
     rollback_quietly,
+    run_with_fresh_connection,
     run_with_retry,
 )
 from ..io.source import iter_source_batches
@@ -72,12 +73,22 @@ def run_transfer_attempt(
 
     connection_refs = TransferConnectionRefs(
         source={"connection": get_sql_connection(options.from_db_key)},
-        target={"connection": get_sql_connection(options.to_db_key)},
+        target={},
     )
     total_rows = 0
     transfer_error: Exception | None = None
     cleanup_error: Exception | None = None
-    stage_state = create_stage_state(options, connection_refs)
+    stage_state = _run_with_fresh_target_connection(
+        options,
+        "target_state",
+        lambda target_ref: create_stage_state(
+            options,
+            TransferConnectionRefs(
+                source=connection_refs.source,
+                target=target_ref,
+            ),
+        ),
+    )
 
     try:
         source_schema = inspect_source_query_schema(
@@ -127,7 +138,6 @@ def run_transfer_attempt(
             cleanup_error = exc
         finally:
             close_connection_ref(connection_refs.source, options.from_db_key, "source")
-            close_connection_ref(connection_refs.target, options.to_db_key, "target")
 
     if transfer_error is not None:
         if cleanup_error is not None:
@@ -150,12 +160,22 @@ def run_keyed_transfer_attempt(
 
     connection_refs = TransferConnectionRefs(
         source={"connection": get_sql_connection(options.from_db_key)},
-        target={"connection": get_sql_connection(options.to_db_key)},
+        target={},
     )
     total_rows = 0
     transfer_error: Exception | None = None
     cleanup_error: Exception | None = None
-    stage_state = create_stage_state(options, connection_refs)
+    stage_state = _run_with_fresh_target_connection(
+        options,
+        "target_state",
+        lambda target_ref: create_stage_state(
+            options,
+            TransferConnectionRefs(
+                source=connection_refs.source,
+                target=target_ref,
+            ),
+        ),
+    )
     worker_stage_states: list[WorkerStageState] | None = None
 
     try:
@@ -168,11 +188,18 @@ def run_keyed_transfer_attempt(
         stage_state.source_column_types = {
             column.name: column.native_type for column in source_schema
         }
-        initialize_shared_stage_for_keyed_slices(
-            options=options,
-            connection_refs=connection_refs,
-            stage_state=stage_state,
-            source_schema=source_schema,
+        _run_with_fresh_target_connection(
+            options,
+            "create_stage",
+            lambda target_ref: initialize_shared_stage_for_keyed_slices(
+                options=options,
+                connection_refs=TransferConnectionRefs(
+                    source=connection_refs.source,
+                    target=target_ref,
+                ),
+                stage_state=stage_state,
+                source_schema=source_schema,
+            ),
         )
         worker_stage_states = build_keyed_worker_stage_states(
             options=options,
@@ -210,7 +237,6 @@ def run_keyed_transfer_attempt(
             cleanup_error = exc
         finally:
             close_connection_ref(connection_refs.source, options.from_db_key, "source")
-            close_connection_ref(connection_refs.target, options.to_db_key, "target")
 
     if transfer_error is not None:
         if cleanup_error is not None:
@@ -332,6 +358,19 @@ def _uses_keyed_worker_stages(options: TransferOptions) -> bool:
         and options.trino_mode != "parquet"
         and options.concurrency > 1
         and len(options.transfer_slices) > 1
+    )
+
+
+def _run_with_fresh_target_connection(
+    options: TransferOptions,
+    role: str,
+    operation: Any,
+) -> Any:
+    return run_with_fresh_connection(
+        options.to_db_key,
+        role,
+        operation,
+        open_connection=get_sql_connection,
     )
 
 
@@ -457,7 +496,7 @@ def load_keyed_stage_worker(
 ) -> int:
     connection_refs = TransferConnectionRefs(
         source={"connection": get_sql_connection(options.from_db_key)},
-        target={"connection": get_sql_connection(options.to_db_key)},
+        target={},
     )
     total_rows = 0
     try:
@@ -474,7 +513,6 @@ def load_keyed_stage_worker(
         return total_rows
     finally:
         close_connection_ref(connection_refs.source, options.from_db_key, "source")
-        close_connection_ref(connection_refs.target, options.to_db_key, "target")
 
 
 def consolidate_keyed_worker_stages(
@@ -493,13 +531,17 @@ def consolidate_keyed_worker_stages(
         worker_stage_table = worker_stage_state.stage_state.stage_table
         if worker_stage_table is None:
             raise RuntimeError("Expected worker stage table to be initialized.")
-        insert_from_table(
-            options.to_db_backend,
-            connection_refs.target["connection"],
-            aggregate_stage_table,
-            worker_stage_table,
-            column_types=stage_state.stage_column_types,
-            query_label=options.query_label,
+        _run_with_fresh_target_connection(
+            options,
+            "consolidate_stage",
+            lambda target_ref, worker_stage_table=worker_stage_table: insert_from_table(
+                options.to_db_backend,
+                target_ref["connection"],
+                aggregate_stage_table,
+                worker_stage_table,
+                column_types=stage_state.stage_column_types,
+                query_label=options.query_label,
+            ),
         )
 
 
@@ -566,11 +608,18 @@ def load_stage_batches(
                 continue
 
             if stage_state.first_non_empty_batch is None:
-                initialize_stage_for_first_batch(
-                    options=options,
-                    connection_refs=connection_refs,
-                    stage_state=stage_state,
-                    batch=batch,
+                _run_with_fresh_target_connection(
+                    options,
+                    "create_stage",
+                    lambda target_ref: initialize_stage_for_first_batch(
+                        options=options,
+                        connection_refs=TransferConnectionRefs(
+                            source=connection_refs.source,
+                            target=target_ref,
+                        ),
+                        stage_state=stage_state,
+                        batch=batch,
+                    ),
                 )
 
             progress_tracker.start_batch()
@@ -605,34 +654,38 @@ def load_stage_batches(
                     inserted_rows=inserted_rows,
                 )
 
-            inserted_rows = insert_rows_batch(
-                options.to_db_backend,
-                connection_refs.target,
-                stage_state.stage_table,
-                batch.columns,
-                batch.rows,
-                retry_fn=run_with_retry,
-                retry_cnt=insert_retry_cnt,
-                timeout_increment=options.timeout_increment,
-                target_column_types=stage_state.stage_column_types,
-                gp_insert_chunk_size=options.gp_insert_chunk_size,
-                trino_insert_chunk_size=options.trino_insert_chunk_size,
-                query_label=options.query_label,
-                on_success=update_batch_sizer,
-                on_progress=progress_tracker.update,
-                gp_insert_page_size_getter=(
-                    (lambda: gp_insert_chunk_sizer.current_size)
-                    if gp_insert_chunk_sizer is not None
-                    else None
+            inserted_rows = _run_with_fresh_target_connection(
+                options,
+                "insert_stage",
+                lambda target_ref: insert_rows_batch(
+                    options.to_db_backend,
+                    target_ref,
+                    stage_state.stage_table,
+                    batch.columns,
+                    batch.rows,
+                    retry_fn=run_with_retry,
+                    retry_cnt=insert_retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    target_column_types=stage_state.stage_column_types,
+                    gp_insert_chunk_size=options.gp_insert_chunk_size,
+                    trino_insert_chunk_size=options.trino_insert_chunk_size,
+                    query_label=options.query_label,
+                    on_success=update_batch_sizer,
+                    on_progress=progress_tracker.update,
+                    gp_insert_page_size_getter=(
+                        (lambda: gp_insert_chunk_sizer.current_size)
+                        if gp_insert_chunk_sizer is not None
+                        else None
+                    ),
+                    on_gp_insert_page_success=(
+                        update_gp_insert_chunk_sizer
+                        if gp_insert_chunk_sizer is not None
+                        else None
+                    ),
+                    connection_key=options.to_db_key,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
                 ),
-                on_gp_insert_page_success=(
-                    update_gp_insert_chunk_sizer
-                    if gp_insert_chunk_sizer is not None
-                    else None
-                ),
-                connection_key=options.to_db_key,
-                rollback_fn=rollback_quietly,
-                replace_connection_fn=replace_connection,
             )
             progress_tracker.complete_batch(inserted_rows)
             total_rows += inserted_rows
@@ -696,11 +749,18 @@ def load_parquet_stage_batches(
                 continue
 
             if stage_state.first_non_empty_batch is None:
-                _initialize_parquet_stage_for_first_batch(
-                    options=options,
-                    connection_refs=connection_refs,
-                    stage_state=stage_state,
-                    batch=batch,
+                _run_with_fresh_target_connection(
+                    options,
+                    "create_stage",
+                    lambda target_ref: _initialize_parquet_stage_for_first_batch(
+                        options=options,
+                        connection_refs=TransferConnectionRefs(
+                            source=connection_refs.source,
+                            target=target_ref,
+                        ),
+                        stage_state=stage_state,
+                        batch=batch,
+                    ),
                 )
 
             if stage_state.stage_external_location is None:

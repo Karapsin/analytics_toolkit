@@ -16,6 +16,9 @@ transfer_api_module = importlib.import_module(
 transfer_attempt_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.attempt"
 )
+transfer_finalize_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.finalize"
+)
 
 
 TARGET_TABLE = "test_transfer_target"
@@ -189,6 +192,11 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         "get_sql_connection",
         fake_get_sql_connection,
     )
+    monkeypatch.setattr(
+        transfer_finalize_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
 
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
@@ -259,6 +267,11 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
 
     monkeypatch.setattr(
         transfer_attempt_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
+    monkeypatch.setattr(
+        transfer_finalize_module,
         "get_sql_connection",
         fake_get_sql_connection,
     )

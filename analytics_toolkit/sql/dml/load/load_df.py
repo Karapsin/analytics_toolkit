@@ -30,7 +30,7 @@ from ...ddl.schema import (
 from ...connection.config import TrinoConfig, get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import (
-    run_connection_operation,
+    run_retrying_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_progress_option,
@@ -47,7 +47,12 @@ from ...execution.plan_steps import (
     add_load_stage_step,
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ..transfer.runtime.retry import rollback_quietly, replace_connection, run_with_retry
+from ..transfer.runtime.retry import (
+    rollback_quietly,
+    replace_connection,
+    run_with_fresh_connection,
+    run_with_retry,
+)
 from ..transfer.flow.parquet_stage import (
     PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
     build_create_parquet_stage_table_sql,
@@ -145,79 +150,93 @@ def load_df(
     if dry_run or return_sql:
         return build_load_df_plan(options, df)
 
-    state_holder: dict[str, LoadState | None] = {"state": None}
     operation_metadata = SqlOperationMetadata(
         source_rows=len(df),
         query_label=options.query_label,
     )
     preview_sql = _load_df_preview_sql(options, df)
 
-    def operation(
-        connection_ref: dict[str, Any],
-        attempt: int,
-    ) -> int | SqlOperationResult:
-        with tracked_sql_operation(
-            metadata=operation_metadata,
-            operation_name="load_df",
-            alias=options.connection_key,
-            backend=options.connection_backend,
-            phase="load",
-            retry_attempt=attempt,
-            query_label=options.query_label,
-            preview_sql=preview_sql,
-        ):
-            state_holder["state"] = None
-            state = _initialize_load_state(options, connection_ref["connection"])
-            state_holder["state"] = state
-            if df.empty:
-                return _handle_empty_dataframe_load(
+    def operation(attempt: int) -> int | SqlOperationResult:
+        state: LoadState | None = None
+        try:
+            with tracked_sql_operation(
+                metadata=operation_metadata,
+                operation_name="load_df",
+                alias=options.connection_key,
+                backend=options.connection_backend,
+                phase="load",
+                retry_attempt=attempt,
+                query_label=options.query_label,
+                preview_sql=preview_sql,
+            ):
+                state = _run_load_target_action(
                     options,
-                    state,
+                    "target_state",
+                    lambda connection_ref: _initialize_load_state(
+                        options,
+                        connection_ref["connection"],
+                    ),
+                )
+                if df.empty:
+                    return _handle_empty_dataframe_load(
+                        options,
+                        state,
+                        operation_metadata=operation_metadata,
+                        return_metadata=return_metadata,
+                    )
+
+                _validate_load_dataframe(options, df)
+                _run_load_target_action(
+                    options,
+                    "prepare_target",
+                    lambda connection_ref: _prepare_load_target(
+                        options=options,
+                        state=state,
+                        connection=connection_ref["connection"],
+                        df=df,
+                    ),
+                )
+
+                progress_bar = _make_load_progress_bar(
+                    total=len(df),
+                    options=options,
+                    progress=progress,
+                )
+                progress_tracker = _ProgressTracker(progress_bar)
+                try:
+                    inserted_rows = _load_dataframe(
+                        options=options,
+                        state=state,
+                        df=df,
+                        on_progress=progress_tracker.update,
+                    )
+                    progress_tracker.complete_to(inserted_rows)
+                finally:
+                    progress_bar.close()
+
+                _run_load_target_action(
+                    options,
+                    "analyze_target",
+                    lambda connection_ref: _analyze_load_target(
+                        options,
+                        connection_ref["connection"],
+                    ),
+                )
+                time_print(
+                    f"Finished loading DataFrame into "
+                    f"{options.destination_table}: "
+                    f"{inserted_rows} row(s)"
+                )
+                return _build_load_result(
+                    options=options,
+                    state=state,
+                    source_rows=len(df),
+                    inserted_rows=inserted_rows,
                     operation_metadata=operation_metadata,
                     return_metadata=return_metadata,
                 )
-
-            _validate_load_dataframe(options, df)
-            _prepare_load_target(
-                options=options,
-                state=state,
-                connection=connection_ref["connection"],
-                df=df,
-            )
-
-            progress_bar = _make_load_progress_bar(
-                total=len(df),
-                options=options,
-                progress=progress,
-            )
-            progress_tracker = _ProgressTracker(progress_bar)
-            try:
-                inserted_rows = _load_dataframe(
-                    options=options,
-                    state=state,
-                    connection_ref=connection_ref,
-                    df=df,
-                    on_progress=progress_tracker.update,
-                )
-                progress_tracker.complete_to(inserted_rows)
-            finally:
-                progress_bar.close()
-
-            _analyze_load_target(options, connection_ref["connection"])
-            time_print(
-                f"Finished loading DataFrame into "
-                f"{options.destination_table}: "
-                f"{inserted_rows} row(s)"
-            )
-            return _build_load_result(
-                options=options,
-                state=state,
-                connection=connection_ref["connection"],
-                source_rows=len(df),
-                inserted_rows=inserted_rows,
-                operation_metadata=operation_metadata,
-                return_metadata=return_metadata,
-            )
+        finally:
+            _cleanup_load(options, state)
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
@@ -230,21 +249,14 @@ def load_df(
             sql_preview=sql_preview(options.destination_table),
         )
 
-    def cleanup(connection_ref: dict[str, Any]) -> None:
-        _cleanup_load(connection_ref, options, state_holder["state"])
-
-    return run_connection_operation(
+    return run_retrying_operation(
         operation_name=(
             f"loading DataFrame into {options.connection_key}.{options.destination_table}"
         ),
-        connection_key=options.connection_key,
-        backend=options.connection_backend,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
-        open_connection=get_sql_connection,
         operation=operation,
         context_factory=context,
-        cleanup=cleanup,
     )
 
 
@@ -613,7 +625,6 @@ def _build_load_result(
     *,
     options: LoadOptions,
     state: LoadState,
-    connection: Any,
     source_rows: int,
     inserted_rows: int,
     operation_metadata: SqlOperationMetadata,
@@ -627,7 +638,6 @@ def _build_load_result(
         metadata=_build_load_metadata(
             options=options,
             state=state,
-            connection=connection,
             source_rows=source_rows,
             inserted_rows=inserted_rows,
             operation_metadata=operation_metadata,
@@ -975,7 +985,6 @@ def _build_load_metadata(
     *,
     options: LoadOptions,
     state: LoadState,
-    connection: Any,
     source_rows: int,
     inserted_rows: int,
     operation_metadata: SqlOperationMetadata,
@@ -988,11 +997,15 @@ def _build_load_metadata(
     metadata.stage_table = state.overlap_stage_table
     metadata.stage_external_location = state.stage_external_location
     try:
-        metadata.final_target_rows = count_table_rows(
-            options.connection_backend,
-            connection,
-            options.destination_table,
-            query_label=options.query_label,
+        metadata.final_target_rows = _run_load_target_action(
+            options,
+            "target_metadata",
+            lambda connection_ref: count_table_rows(
+                options.connection_backend,
+                connection_ref["connection"],
+                options.destination_table,
+                query_label=options.query_label,
+            ),
         )
     except Exception:
         metadata.final_target_rows = None
@@ -1002,7 +1015,6 @@ def _build_load_metadata(
 def _load_dataframe(
     options: LoadOptions,
     state: LoadState,
-    connection_ref: dict[str, Any],
     df: pd.DataFrame,
     on_progress: Any | None = None,
 ) -> int:
@@ -1010,7 +1022,6 @@ def _load_dataframe(
         return _load_dataframe_via_parquet_stage(
             options=options,
             state=state,
-            connection_ref=connection_ref,
             df=df,
             on_progress=on_progress,
         )
@@ -1022,27 +1033,110 @@ def _load_dataframe(
         stage_create_kwargs: dict[str, Any] = {}
         if options.table_schema is not None:
             stage_create_kwargs["table_schema"] = options.table_schema
-        state.overlap_stage_table = create_stage_table(
-            connection_type=options.connection_backend,
-            connection=connection_ref["connection"],
-            target_table=options.destination_table,
-            batch=df,
-            gp_distributed_by_key=options.gp_distributed_by_key,
-            connection_key=options.connection_key,
-            query_label=options.query_label,
-            transfer_staging_schema=options.transfer_staging_schema,
-            transfer_staging_username=options.transfer_staging_username,
-            **stage_create_kwargs,
+        state.overlap_stage_table = _run_load_target_action(
+            options,
+            "create_stage",
+            lambda connection_ref: create_stage_table(
+                connection_type=options.connection_backend,
+                connection=connection_ref["connection"],
+                target_table=options.destination_table,
+                batch=df,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                connection_key=options.connection_key,
+                query_label=options.query_label,
+                transfer_staging_schema=options.transfer_staging_schema,
+                transfer_staging_username=options.transfer_staging_username,
+                **stage_create_kwargs,
+            ),
         )
-        insert_table_batch(
+        _run_load_target_action(
+            options,
+            "insert_stage",
+            lambda connection_ref: insert_table_batch(
+                options.connection_backend,
+                connection_ref,
+                state.overlap_stage_table,
+                df,
+                retry_fn=run_with_retry,
+                retry_cnt=1,
+                timeout_increment=0,
+                target_column_types=options.table_schema or state.target_column_types,
+                trino_insert_chunk_size=options.trino_insert_chunk_size,
+                gp_insert_chunk_size=options.gp_insert_chunk_size,
+                query_label=options.query_label,
+                on_progress=on_progress,
+                connection_key=options.connection_key,
+                rollback_fn=rollback_quietly,
+                replace_connection_fn=replace_connection,
+            ),
+        )
+        if options.write_mode == "upsert":
+            _run_load_target_action(
+                options,
+                "validate_stage",
+                lambda connection_ref: validate_stage_uniqueness(
+                    connection_type=options.connection_backend,
+                    connection=connection_ref["connection"],
+                    stage_table=state.overlap_stage_table,
+                    key_columns=options.key_columns,
+                ),
+            )
+            _run_load_target_action(
+                options,
+                "finalize_target",
+                lambda connection_ref: upsert_stage_table(
+                    options.connection_backend,
+                    connection_ref["connection"],
+                    options.destination_table,
+                    state.overlap_stage_table,
+                    columns=[str(column) for column in df.columns],
+                    key_columns=options.key_columns or [],
+                    column_types=options.table_schema or state.target_column_types,
+                    ch_cluster=options.ch_cluster,
+                    ch_only_shard=options.ch_only_shard,
+                    query_label=options.query_label,
+                ),
+            )
+            return len(df)
+
+        _run_load_target_action(
+            options,
+            "validate_stage",
+            lambda connection_ref: validate_stage_target_key_overlap(
+                connection_type=options.connection_backend,
+                connection=connection_ref["connection"],
+                stage_table=state.overlap_stage_table,
+                target_table=options.destination_table,
+                key_columns=options.key_columns,
+                target_exists=state.target_exists,
+                replace_target_table=False,
+            ),
+        )
+        _run_load_target_action(
+            options,
+            "finalize_target",
+            lambda connection_ref: insert_from_table(
+                options.connection_backend,
+                connection_ref["connection"],
+                options.destination_table,
+                state.overlap_stage_table,
+                query_label=options.query_label,
+            ),
+        )
+        return len(df)
+
+    return _run_load_target_action(
+        options,
+        "insert_target",
+        lambda connection_ref: insert_table_batch(
             options.connection_backend,
             connection_ref,
-            state.overlap_stage_table,
+            options.destination_table,
             df,
             retry_fn=run_with_retry,
             retry_cnt=1,
             timeout_increment=0,
-            target_column_types=options.table_schema or state.target_column_types,
+            target_column_types=state.target_column_types,
             trino_insert_chunk_size=options.trino_insert_chunk_size,
             gp_insert_chunk_size=options.gp_insert_chunk_size,
             query_label=options.query_label,
@@ -1050,62 +1144,7 @@ def _load_dataframe(
             connection_key=options.connection_key,
             rollback_fn=rollback_quietly,
             replace_connection_fn=replace_connection,
-        )
-        if options.write_mode == "upsert":
-            validate_stage_uniqueness(
-                connection_type=options.connection_backend,
-                connection=connection_ref["connection"],
-                stage_table=state.overlap_stage_table,
-                key_columns=options.key_columns,
-            )
-            upsert_stage_table(
-                options.connection_backend,
-                connection_ref["connection"],
-                options.destination_table,
-                state.overlap_stage_table,
-                columns=[str(column) for column in df.columns],
-                key_columns=options.key_columns or [],
-                column_types=options.table_schema or state.target_column_types,
-                ch_cluster=options.ch_cluster,
-                ch_only_shard=options.ch_only_shard,
-                query_label=options.query_label,
-            )
-            return len(df)
-
-        validate_stage_target_key_overlap(
-            connection_type=options.connection_backend,
-            connection=connection_ref["connection"],
-            stage_table=state.overlap_stage_table,
-            target_table=options.destination_table,
-            key_columns=options.key_columns,
-            target_exists=state.target_exists,
-            replace_target_table=False,
-        )
-        insert_from_table(
-            options.connection_backend,
-            connection_ref["connection"],
-            options.destination_table,
-            state.overlap_stage_table,
-            query_label=options.query_label,
-        )
-        return len(df)
-
-    return insert_table_batch(
-        options.connection_backend,
-        connection_ref,
-        options.destination_table,
-        df,
-        retry_fn=run_with_retry,
-        retry_cnt=1,
-        timeout_increment=0,
-        target_column_types=state.target_column_types,
-        trino_insert_chunk_size=options.trino_insert_chunk_size,
-        gp_insert_chunk_size=options.gp_insert_chunk_size,
-        query_label=options.query_label,
-        on_progress=on_progress,
-        connection_key=options.connection_key,
-        rollback_fn=rollback_quietly,
-        replace_connection_fn=replace_connection,
+        ),
     )
 
 
@@ -1113,12 +1152,19 @@ def _load_dataframe_via_parquet_stage(
     *,
     options: LoadOptions,
     state: LoadState,
-    connection_ref: dict[str, Any],
     df: pd.DataFrame,
     on_progress: Any | None,
 ) -> int:
     pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
-    _create_load_parquet_stage_table(options, state, connection_ref["connection"])
+    _run_load_target_action(
+        options,
+        "create_stage",
+        lambda connection_ref: _create_load_parquet_stage_table(
+            options,
+            state,
+            connection_ref["connection"],
+        ),
+    )
     if state.stage_external_location is None or state.overlap_stage_table is None:
         raise RuntimeError("Parquet load stage was not initialized.")
 
@@ -1131,11 +1177,15 @@ def _load_dataframe_via_parquet_stage(
         row_group_size=PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
         on_progress=on_progress,
     )
-    _finalize_loaded_dataframe_stage(
-        options=options,
-        state=state,
-        connection=connection_ref["connection"],
-        df=df,
+    _run_load_target_action(
+        options,
+        "finalize_target",
+        lambda connection_ref: _finalize_loaded_dataframe_stage(
+            options=options,
+            state=state,
+            connection=connection_ref["connection"],
+            df=df,
+        ),
     )
     return inserted_rows
 
@@ -1276,23 +1326,26 @@ def _validate_progress(progress: bool) -> None:
 
 
 def _cleanup_load(
-    connection_ref: dict[str, Any],
     options: LoadOptions,
     state: LoadState | None,
 ) -> None:
     if state is not None and state.overlap_stage_table is not None:
         try:
-            cleanup_stage_table_with_retry(
-                options.connection_backend,
-                options.connection_key,
-                connection_ref,
-                state.overlap_stage_table,
-                retry_fn=run_with_retry,
-                retry_cnt=options.retry_cnt,
-                timeout_increment=options.timeout_increment,
-                rollback_fn=rollback_quietly,
-                replace_connection_fn=replace_connection,
-                query_label=options.query_label,
+            _run_load_target_action(
+                options,
+                "cleanup_stage",
+                lambda connection_ref: cleanup_stage_table_with_retry(
+                    options.connection_backend,
+                    options.connection_key,
+                    connection_ref,
+                    state.overlap_stage_table,
+                    retry_fn=run_with_retry,
+                    retry_cnt=options.retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
+                    query_label=options.query_label,
+                ),
             )
         except Exception:
             time_print(
@@ -1306,13 +1359,19 @@ def _cleanup_load(
                 "Failed to delete temporary load_df Parquet stage files "
                 f"{state.stage_external_location}"
             )
-    time_print(
-        "Closing connection",
-        connection=options.connection_key,
-        backend=options.connection_backend,
-        phase="close",
+
+
+def _run_load_target_action(
+    options: LoadOptions,
+    role: str,
+    operation: Any,
+) -> Any:
+    return run_with_fresh_connection(
+        options.connection_key,
+        role,
+        operation,
+        open_connection=get_sql_connection,
     )
-    connection_ref["connection"].close()
 
 
 def _validate_dataframe_key_uniqueness(
