@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Quote discovered Greenplum stale stage cleanup names.
+
 ## 1.3.10.10 - 2026-06-23
 
 - Tighten SQL backend registry guardrails.

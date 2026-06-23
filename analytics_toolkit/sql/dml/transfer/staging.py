@@ -5,9 +5,11 @@ import warnings
 from typing import Any
 from typing import Sequence
 
+from ...backend_adapters import is_simple_identifier
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError
 from ...connection.get_sql_connection import get_sql_connection
+from ...ddl.identifiers import quote_identifier
 from ...execution.operation_runner import timed_public_sql_function
 from ..load.stage import build_stage_table_prefix, cleanup_stage_table_with_retry
 from ..table._basic_ops import split_trino_table_name
@@ -15,6 +17,7 @@ from .runtime.retry import replace_connection, rollback_quietly, run_with_retry
 
 _DEFAULT_TIMEOUT_INCREMENT = 5
 _WARNING_KEY_PREFIX = "cleanup_stale_stage_tables_no_schema::"
+_CONDITIONAL_STAGE_IDENTIFIER_QUOTE_BACKENDS = frozenset({"gp"})
 
 _warned_transfer_staging_schema_cleanup: set[str] = set()
 
@@ -316,6 +319,12 @@ def _qualify_staging_table_name(
         )
         return f"{catalog_name}.{schema_name}.{table_name}"
 
+    if _should_quote_stage_identifier_parts(transfer_backend):
+        return ".".join(
+            _quote_identifier_part_when_needed(part, transfer_backend)
+            for part in (transfer_staging_schema, table_name)
+        )
+
     return f"{transfer_staging_schema}.{table_name}"
 
 
@@ -327,6 +336,16 @@ def _sanitize_transfer_staging_username(value: str) -> str:
 
 def _build_user_stage_marker(transfer_staging_username: str) -> str:
     return f"__analytics_toolkit_{transfer_staging_username}__stage__"
+
+
+def _quote_identifier_part_when_needed(identifier: str, backend: str) -> str:
+    if is_simple_identifier(identifier):
+        return identifier
+    return quote_identifier(identifier, backend)
+
+
+def _should_quote_stage_identifier_parts(backend: str) -> bool:
+    return backend in _CONDITIONAL_STAGE_IDENTIFIER_QUOTE_BACKENDS
 
 
 def _quote_sql_literal(value: str) -> str:

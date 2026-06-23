@@ -1476,6 +1476,46 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
     assert query_calls == [("transfer_schema", "%__analytics_toolkit_target_user__stage__%")]
 
 
+def test_cleanup_stale_stage_tables_quotes_discovered_gp_stage_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered: list[str] = []
+    monkeypatch.setattr(
+        staging_module,
+        "get_connection_config",
+        lambda db_key: SimpleNamespace(
+            connection_key=db_key,
+            backend="gp",
+            transfer_staging_schema="pa_core_stage",
+            user="karapsin_de",
+        ),
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "_query_gp_stage_tables",
+        lambda transfer_staging_schema, table_prefix, connection: [
+            "26cc4c2__analytics_toolkit_karapsin_de__stage__9bd5fbfe__w00000",
+        ],
+    )
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stage_table_with_retry",
+        lambda *args, **kwargs: discovered.append(args[3]),
+    )
+
+    staging_module.cleanup_stale_stage_tables_with_connection(
+        db_key="gp",
+        target_table=None,
+        connection_ref={"connection": object()},
+        read_retry_cnt=3,
+        clean_all=True,
+    )
+
+    assert discovered == [
+        'pa_core_stage."26cc4c2__analytics_toolkit_karapsin_de__stage__9bd5fbfe__w00000"'
+    ]
+
+
 def test_cleanup_stale_stage_tables_public_clean_all_allows_missing_target_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
