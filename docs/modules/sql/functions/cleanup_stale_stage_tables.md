@@ -2,10 +2,10 @@
 
 # cleanup_stale_stage_tables
 
-Drop stale transfer staging tables for a target table on the configured backend.
+Drop stale transfer staging tables on the configured backend.
 
 ```python
-cleanup_stale_stage_tables(db_key: 'str', target_table: 'str', stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'None'
+cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'None'
 ```
 
 ## Inputs
@@ -13,7 +13,7 @@ cleanup_stale_stage_tables(db_key: 'str', target_table: 'str', stage_tables: 'Se
 ### General Inputs
 
 - `db_key` - connection key or alias that owns the staging tables
-- `target_table` - target table name whose staging tables should be cleaned
+- `target_table` - target table name whose staging tables should be cleaned; required for target-scoped discovery and optional for `clean_all=True` or explicit `stage_tables`
 - `stage_tables` - explicit fully-qualified or unqualified stage table names to drop; `None` uses discovery and an empty sequence drops nothing
 - `clean_all` - when `True`, drop all Analytics Toolkit stage tables in `transfer_staging_schema` for the configured connection user, across all target tables
 - `read_retry_cnt` - number of retries for staging-table discovery and drops
@@ -32,7 +32,6 @@ sql.cleanup_stale_stage_tables(
 
 sql.cleanup_stale_stage_tables(
     db_key="gp",
-    target_table="analytics.events",
     clean_all=True,
 )
 ```
@@ -50,8 +49,9 @@ sql.cleanup_stale_stage_tables(
 ## Notes
 
 - Uses `transfer_staging_schema` and target user metadata from `.connections` to find stage tables.
-- Passing `stage_tables=None` discovers matching stale stage tables; passing `[]`
-  drops nothing; passing explicit names drops only those requested tables.
+- Passing `stage_tables=None` with `clean_all=False` discovers matching stale
+  stage tables for `target_table`; passing `[]` drops nothing; passing explicit
+  names drops only those requested tables.
 - Passing `clean_all=True` discovers all user-owned toolkit stage tables in
   `transfer_staging_schema`, regardless of `target_table`; it cannot be combined
   with explicit `stage_tables`.

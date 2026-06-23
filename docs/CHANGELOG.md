@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.10 - 2026-06-23
 
 - Tighten SQL backend registry guardrails.
 - Continue SQL backend registry cleanup.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Accept scalar string SQL key columns.
 - Use fresh target connections for SQL transfer and load_df target actions.
 - Added clean_all option to SQL stale stage cleanup.
+- Allow clean_all stale stage cleanup without target_table.
 
 ## 1.3.10.9 - 2026-06-19
 

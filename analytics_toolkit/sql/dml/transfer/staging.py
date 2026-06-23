@@ -22,7 +22,7 @@ _warned_transfer_staging_schema_cleanup: set[str] = set()
 @timed_public_sql_function
 def cleanup_stale_stage_tables(
     db_key: str,
-    target_table: str,
+    target_table: str | None = None,
     *,
     stage_tables: Sequence[str] | None = None,
     clean_all: bool = False,
@@ -51,7 +51,7 @@ def cleanup_stale_stage_tables(
 
 def cleanup_stale_stage_tables_with_connection(
     db_key: str,
-    target_table: str,
+    target_table: str | None,
     connection_ref: dict[str, Any],
     *,
     stage_tables: Sequence[str] | None = None,
@@ -84,6 +84,11 @@ def cleanup_stale_stage_tables_with_connection(
         if transfer_staging_schema is None:
             _warn_transfer_staging_schema_cleanup_not_configured(config.connection_key)
             return
+
+        if target_table is None:
+            raise InvalidSqlInputError(
+                "target_table is required when clean_all=False and stage_tables=None."
+            )
 
         target_stages = _find_matching_transfer_stage_tables(
             db_key=db_key,
