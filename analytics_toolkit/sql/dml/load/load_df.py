@@ -95,8 +95,8 @@ def load_df(
     df: pd.DataFrame,
     append: bool = False,
     write_mode: str | None = None,
-    gp_distributed_by_key: list[str] | None = None,
-    key_columns: list[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
+    key_columns: str | Sequence[str] | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     trino_insert_chunk_size: int | None = None,
@@ -253,8 +253,8 @@ def _build_load_options(
     destination_table: str,
     append: bool,
     write_mode: str | None,
-    gp_distributed_by_key: list[str] | None,
-    key_columns: list[str] | None,
+    gp_distributed_by_key: str | Sequence[str] | None,
+    key_columns: str | Sequence[str] | None,
     trino_insert_chunk_size: int | None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
@@ -289,7 +289,10 @@ def _build_load_options(
         table_schema=normalize_table_schema(table_schema),
         append=resolved_write_mode == "append",
         write_mode=resolved_write_mode,
-        gp_distributed_by_key=_normalize_gp_distributed_by_key(gp_distributed_by_key),
+        gp_distributed_by_key=normalize_key_columns(
+            gp_distributed_by_key,
+            "gp_distributed_by_key",
+        ),
         key_columns=normalize_key_columns(key_columns),
         trino_insert_chunk_size=(
             trino_insert_chunk_size
@@ -1310,22 +1313,6 @@ def _cleanup_load(
         phase="close",
     )
     connection_ref["connection"].close()
-
-
-def _normalize_gp_distributed_by_key(
-    gp_distributed_by_key: list[str] | None,
-) -> list[str] | None:
-    if gp_distributed_by_key is None:
-        return None
-
-    normalized = [column.strip() for column in gp_distributed_by_key]
-    if not normalized:
-        raise ValueError("gp_distributed_by_key must not be empty when provided.")
-    if any(not column for column in normalized):
-        raise ValueError("gp_distributed_by_key must not contain empty column names.")
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("gp_distributed_by_key must not contain duplicate column names.")
-    return normalized
 
 
 def _validate_dataframe_key_uniqueness(

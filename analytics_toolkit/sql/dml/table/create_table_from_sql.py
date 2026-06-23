@@ -68,7 +68,7 @@ def create_table_from_sql(
     table_db: str | None = None,
     insert_data: bool = True,
     drop_target_if_exists: bool = False,
-    gp_distributed_by_key: list[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -91,7 +91,10 @@ def create_table_from_sql(
         if table_db is None
         else get_connection_config(table_db)
     )
-    gp_distribution = normalize_key_columns(gp_distributed_by_key)
+    gp_distribution = normalize_key_columns(
+        gp_distributed_by_key,
+        "gp_distributed_by_key",
+    )
     partition = normalize_ch_columns_or_expression(
         partition_by,
         "partition_by",

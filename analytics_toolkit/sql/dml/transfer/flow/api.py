@@ -92,8 +92,8 @@ def transfer_table(
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
     full_timeout_increment: int | float = 60 * 10,
-    key_columns: list[str] | None = None,
-    gp_distributed_by_key: list[str] | None = None,
+    key_columns: str | Sequence[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -284,8 +284,8 @@ def build_transfer_options(
     timeout_increment: int | float = 5,
     full_retry_cnt: int = 5,
     full_timeout_increment: int | float = 60 * 10,
-    key_columns: list[str] | None = None,
-    gp_distributed_by_key: list[str] | None = None,
+    key_columns: str | Sequence[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -425,7 +425,10 @@ def build_transfer_options(
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
         key_columns=normalize_key_columns(key_columns),
-        gp_distributed_by_key=normalize_key_columns(gp_distributed_by_key),
+        gp_distributed_by_key=normalize_key_columns(
+            gp_distributed_by_key,
+            "gp_distributed_by_key",
+        ),
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=(
             trino_insert_chunk_size

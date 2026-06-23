@@ -7,17 +7,27 @@ from ...backend_adapters import get_backend_adapter
 from analytics_toolkit.general import time_print
 
 
-def normalize_key_columns(key_columns: list[str] | None) -> list[str] | None:
+def normalize_key_columns(
+    key_columns: str | Sequence[str] | None,
+    option_name: str = "key_columns",
+) -> list[str] | None:
     if key_columns is None:
         return None
 
-    normalized = [column.strip() for column in key_columns]
+    if not isinstance(key_columns, (str, Sequence)):
+        raise ValueError(f"{option_name} must be a string or sequence of strings.")
+
+    columns = [key_columns] if isinstance(key_columns, str) else list(key_columns)
+    if any(not isinstance(column, str) for column in columns):
+        raise ValueError(f"{option_name} must contain only string column names.")
+
+    normalized = [column.strip() for column in columns]
     if not normalized:
-        raise ValueError("key_columns must not be empty when provided.")
+        raise ValueError(f"{option_name} must not be empty when provided.")
     if any(not column for column in normalized):
-        raise ValueError("key_columns must not contain empty column names.")
+        raise ValueError(f"{option_name} must not contain empty column names.")
     if len(set(normalized)) != len(normalized):
-        raise ValueError("key_columns must not contain duplicate column names.")
+        raise ValueError(f"{option_name} must not contain duplicate column names.")
     return normalized
 
 

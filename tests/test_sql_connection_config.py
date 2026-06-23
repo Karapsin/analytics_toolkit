@@ -1708,6 +1708,32 @@ def test_backend_specific_validation_uses_alias_backend(
     assert options.gp_distributed_by_key == ["id"]
 
 
+def test_transfer_options_accept_scalar_key_columns() -> None:
+    options = api_module.build_transfer_options(
+        from_db="trino",
+        to_db="gp",
+        from_sql="select 1",
+        to_table="schema.target",
+        write_mode="upsert",
+        key_columns=" id ",
+        gp_distributed_by_key=" id ",
+    )
+
+    assert options.key_columns == ["id"]
+    assert options.gp_distributed_by_key == ["id"]
+
+
+def test_transfer_options_reject_non_string_key_columns() -> None:
+    with pytest.raises(ValueError, match="gp_distributed_by_key"):
+        api_module.build_transfer_options(
+            from_db="trino",
+            to_db="gp",
+            from_sql="select 1",
+            to_table="schema.target",
+            gp_distributed_by_key=["id", 1],
+        )
+
+
 def test_create_table_sql_accepts_connection_alias() -> None:
     sql = create_sql_table_module.create_sql_table(
         db_key="gp_sandbox",
@@ -1719,6 +1745,31 @@ def test_create_table_sql_accepts_connection_alias() -> None:
 
     assert '"id" BIGINT' in sql
     assert 'DISTRIBUTED BY ("id")' in sql
+
+
+def test_create_table_sql_accepts_scalar_distribution_key() -> None:
+    sql = create_sql_table_module.create_sql_table(
+        db_key="gp",
+        table_name="schema.target",
+        df=pd.DataFrame({"description": ["x"], "value": [1]}),
+        gp_distributed_by_key=" description ",
+        only_generate_sql=True,
+    )
+
+    assert 'DISTRIBUTED BY ("description")' in sql
+
+
+def test_create_table_from_sql_dry_run_accepts_scalar_distribution_key() -> None:
+    plan = create_sql_table_module.create_sql_table(
+        db_key="gp",
+        table_name="schema.target",
+        sql="select description from source_table",
+        gp_distributed_by_key="description",
+        return_sql=True,
+    )
+
+    assert plan.operation == "create_table_from_sql"
+    assert plan.options["gp_distributed_by_key"] == ["description"]
 
 
 def test_create_table_sql_accepts_table_schema_override() -> None:

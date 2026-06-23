@@ -41,7 +41,7 @@ def create_sql_table(
     source_db: str | None = None,
     insert_data: bool = False,
     drop_target_if_exists: bool = False,
-    gp_distributed_by_key: list[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -186,7 +186,7 @@ def _create_sql_table_from_sql_source(
     source_db: str | None,
     insert_data: bool,
     drop_target_if_exists: bool,
-    gp_distributed_by_key: list[str] | None,
+    gp_distributed_by_key: str | Sequence[str] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -246,7 +246,7 @@ def _generate_create_sql_table_from_query_sql(
     table_db: str,
     table_name: str,
     sql: str,
-    gp_distributed_by_key: list[str] | None,
+    gp_distributed_by_key: str | Sequence[str] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -279,7 +279,10 @@ def _generate_create_sql_table_from_query_sql(
     source_config = get_connection_config(source_db)
     target_config = get_connection_config(table_db)
     source_sql = _normalize_single_query(sql)
-    gp_distribution = normalize_key_columns(gp_distributed_by_key)
+    gp_distribution = normalize_key_columns(
+        gp_distributed_by_key,
+        "gp_distributed_by_key",
+    )
     partition = normalize_ch_columns_or_expression(partition_by, "partition_by")
     order = normalize_ch_columns_or_expression(order_by, "order_by")
     ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
@@ -361,7 +364,7 @@ def _create_sql_table_with_connection(
     df: pd.DataFrame | None = None,
     *,
     connection_key: str | None = None,
-    gp_distributed_by_key: list[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -424,7 +427,7 @@ def _build_create_table_options(
     table_name: str,
     df: pd.DataFrame | None,
     table_schema: Mapping[str, str] | None,
-    gp_distributed_by_key: list[str] | None,
+    gp_distributed_by_key: str | Sequence[str] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -439,6 +442,8 @@ def _build_create_table_options(
     return_metadata: bool,
     option_owner: str,
 ) -> CreateSqlTableOptions:
+    from ..dml.table.table_validation import normalize_key_columns
+
     _validate_only_shard(backend, ch_only_shard, option_owner)
     create_df, normalized_schema = _resolve_create_dataframe_and_schema(
         df=df,
@@ -452,7 +457,10 @@ def _build_create_table_options(
         table_name=table_name,
         df=create_df,
         table_schema=normalized_schema,
-        gp_distributed_by_key=gp_distributed_by_key,
+        gp_distributed_by_key=normalize_key_columns(
+            gp_distributed_by_key,
+            "gp_distributed_by_key",
+        ),
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
@@ -592,7 +600,7 @@ def _build_create_table_sqls(
     df: pd.DataFrame,
     *,
     column_types: Mapping[str, str] | None = None,
-    gp_distributed_by_key: list[str] | None = None,
+    gp_distributed_by_key: str | Sequence[str] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -605,6 +613,8 @@ def _build_create_table_sqls(
     table_schema: Mapping[str, str] | None = None,
     option_owner: str = "db_key",
 ) -> list[str]:
+    from ..dml.table.table_validation import normalize_key_columns
+
     _validate_only_shard(backend, ch_only_shard, option_owner)
     resolved_column_types = (
         normalize_table_schema(table_schema, columns=df.columns)
@@ -621,7 +631,10 @@ def _build_create_table_sqls(
             backend=backend,
             table_name=table_name,
             joined_columns=joined_columns,
-            gp_distributed_by_key=gp_distributed_by_key,
+            gp_distributed_by_key=normalize_key_columns(
+                gp_distributed_by_key,
+                "gp_distributed_by_key",
+            ),
             partition_by=partition_by,
             order_by=order_by,
             ch_engine=ch_engine,

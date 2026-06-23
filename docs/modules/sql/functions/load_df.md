@@ -5,7 +5,7 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'list[str] | None' = None, key_columns: 'list[str] | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, key_columns: 'str | Sequence[str] | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -17,7 +17,7 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `df` - dataframe to load
 - `append` - historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied
 - `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
-- `key_columns` - key columns used to validate staged rows and required when `write_mode="upsert"`
+- `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `dry_run` - when `True`, return a plan without mutating the database
@@ -31,7 +31,7 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 
 ### Backend-Specific Inputs
 
-- `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
+- `gp_distributed_by_key` - distribution key column or columns for created Greenplum target tables
 - `gp_insert_chunk_size` - dataframe insert page size for Greenplum
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
 - `ch_engine` - engine to use for created ClickHouse local shard tables

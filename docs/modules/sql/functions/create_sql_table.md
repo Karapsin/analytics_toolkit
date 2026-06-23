@@ -6,7 +6,7 @@ Create a SQL table from exactly one schema source: a dataframe, a source SQL
 query, or an explicit table schema.
 
 ```python
-create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, sql: 'str | None' = None, source_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'list[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'str | int | SqlPlan | SqlOperationResult | None'
+create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, sql: 'str | None' = None, source_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'str | Sequence[str] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'str | int | SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -33,7 +33,7 @@ create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = N
 
 ### Backend-Specific Inputs
 
-- `gp_distributed_by_key` - distribution key columns for created Greenplum target tables
+- `gp_distributed_by_key` - distribution key column or columns for created Greenplum target tables
 - `ch_engine` - engine to use for created ClickHouse local shard tables
 - `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
 - `ch_sharding_key` - sharding expression used for generated ClickHouse distributed table DDL

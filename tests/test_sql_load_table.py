@@ -316,6 +316,21 @@ def test_load_df_dry_run_does_not_create_progress_bar(monkeypatch) -> None:
     assert progress_bars == []
 
 
+def test_build_load_options_accepts_scalar_key_columns() -> None:
+    options = load_df_module._build_load_options(
+        db_key="gp",
+        destination_table="sandbox.target",
+        append=False,
+        write_mode="upsert",
+        gp_distributed_by_key=" id ",
+        key_columns=" id ",
+        trino_insert_chunk_size=None,
+    )
+
+    assert options.gp_distributed_by_key == ["id"]
+    assert options.key_columns == ["id"]
+
+
 @pytest.mark.parametrize("progress", [None, 0, 1, "yes"])
 def test_load_df_validates_progress(progress: object) -> None:
     with pytest.raises(ValueError, match="progress"):
