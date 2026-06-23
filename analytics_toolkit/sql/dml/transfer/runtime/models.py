@@ -377,6 +377,8 @@ class TransferOptions:
 @dataclass
 class TransferStageState:
     target_exists: bool
+    target_existed_at_start: bool | None = None
+    target_created_by_operation: bool = False
     stage_table_created: bool = False
     first_non_empty_batch: pd.DataFrame | None = None
     source_column_types: dict[str, str | None] | None = None

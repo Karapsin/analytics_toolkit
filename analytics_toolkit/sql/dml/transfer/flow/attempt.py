@@ -48,7 +48,7 @@ from ..runtime.retry import (
 from ..io.source import iter_source_batches
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from ....execution.operation_runner import _format_duration
-from .stage import create_stage_state, initialize_stage_for_first_batch
+from .stage import create_stage_state, ensure_transfer_target_table, initialize_stage_for_first_batch
 
 _TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT = (
     "{desc}: {n_pretty}{unit} [{elapsed}, {rate_fmt}{postfix}]"
@@ -111,6 +111,19 @@ def run_transfer_attempt(
                 source_schema,
                 options.to_db_backend,
             )
+        _run_with_fresh_target_connection(
+            options,
+            "prepare_target",
+            lambda target_ref: ensure_transfer_target_table(
+                options,
+                TransferConnectionRefs(
+                    source=connection_refs.source,
+                    target=target_ref,
+                ),
+                stage_state,
+                [column.name for column in source_schema],
+            ),
+        )
         total_rows = load_stage_batches(
             options=options,
             connection_refs=connection_refs,
@@ -133,6 +146,7 @@ def run_transfer_attempt(
                 connection_refs=connection_refs,
                 stage_state=stage_state,
                 read_retry_cnt=read_retry_cnt,
+                drop_created_target=transfer_error is not None,
             )
         except Exception as exc:
             cleanup_error = exc
@@ -232,6 +246,7 @@ def run_keyed_transfer_attempt(
                 connection_refs=connection_refs,
                 stage_state=stage_state,
                 read_retry_cnt=read_retry_cnt,
+                drop_created_target=transfer_error is not None,
             )
         except Exception as exc:
             cleanup_error = exc
@@ -311,6 +326,12 @@ def initialize_shared_stage_for_keyed_slices(
         source_columns,
         "order_by",
         data_name="staged data",
+    )
+    ensure_transfer_target_table(
+        options,
+        connection_refs,
+        stage_state,
+        source_columns,
     )
 
     sample_batch = pd.DataFrame(columns=source_columns)

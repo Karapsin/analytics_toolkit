@@ -142,6 +142,7 @@ def drop_table_with_retry(
     replace_connection_fn: Any,
     query_label: str | None = None,
     if_exists: bool = True,
+    operation_label: str = "stage table",
 ) -> None:
     backend = resolve_connection_backend(connection_backend)
 
@@ -163,7 +164,7 @@ def drop_table_with_retry(
             raise
 
     retry_fn(
-        operation_name=f"dropping stage table {table_name} on {connection_key}",
+        operation_name=f"dropping {operation_label} {table_name} on {connection_key}",
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
         operation=operation,

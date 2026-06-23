@@ -70,6 +70,8 @@ rows
 - When an upsert target already exists, the existing target schema is used for
   final insert column types; otherwise the target is created from `table_schema`
   or inferred dataframe types.
+- When `load_df` creates a target table that did not exist at the start and the
+  load later fails, it drops that newly created target during cleanup.
 - Upsert requires `key_columns`. Trino uses native `MERGE`; connector support
   for `MERGE` is checked by Trino at runtime. Greenplum uses staged
   delete-and-insert. ClickHouse uses lightweight `DELETE` plus insert and does

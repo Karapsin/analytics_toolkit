@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+import pandas as pd
+
+from ....backends.registry import get_backend_capability
 from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table._basic_ops import get_trino_table_column_types, table_exists
 from ...table.table_validation import validate_key_columns_in_columns
+from ...table.write_modes import _ensure_stage_target_table
 from ..runtime.models import (
     RowBatch,
     TransferConnectionRefs,
@@ -16,14 +22,58 @@ def create_stage_state(
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
 ) -> TransferStageState:
-    return TransferStageState(
-        target_exists=table_exists(
-            options.to_db_backend,
-            connection_refs.target["connection"],
-            options.target_table,
-            connection_key=options.to_db_key,
-        )
+    target_exists = table_exists(
+        options.to_db_backend,
+        connection_refs.target["connection"],
+        options.target_table,
+        connection_key=options.to_db_key,
     )
+    return TransferStageState(
+        target_exists=target_exists,
+        target_existed_at_start=target_exists,
+    )
+
+
+def ensure_transfer_target_table(
+    options: TransferOptions,
+    connection_refs: TransferConnectionRefs,
+    stage_state: TransferStageState,
+    source_columns: list[str],
+) -> None:
+    if stage_state.target_exists:
+        return
+    if not get_backend_capability(
+        options.to_db_backend
+    ).supports_early_transfer_target_creation:
+        return
+
+    create_columns = source_columns or list(stage_state.stage_column_types or {})
+    if not create_columns:
+        raise ValueError(
+            "Cannot create target table before transfer batches because the "
+            "source query schema has no columns."
+        )
+
+    _ensure_stage_target_table(
+        backend=options.to_db_backend,
+        connection=connection_refs.target["connection"],
+        target_table=options.target_table,
+        sample_batch=pd.DataFrame(columns=create_columns),
+        target_column_types=stage_state.stage_column_types,
+        gp_distributed_by_key=options.gp_distributed_by_key,
+        partition_by=options.partition_by,
+        order_by=options.order_by,
+        ch_engine=options.ch_engine,
+        ch_cluster=options.ch_cluster,
+        ch_sharding_key=options.ch_sharding_key,
+        query_label=options.query_label,
+        connection_key=options.to_db_key,
+        ch_only_shard=options.ch_only_shard,
+    )
+    if stage_state.target_existed_at_start is None:
+        stage_state.target_existed_at_start = False
+    stage_state.target_exists = True
+    stage_state.target_created_by_operation = stage_state.target_existed_at_start is False
 
 
 def initialize_stage_for_first_batch(

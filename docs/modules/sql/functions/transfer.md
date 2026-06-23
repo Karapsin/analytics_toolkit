@@ -154,6 +154,12 @@ rows = sql.transfer(
 
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
+- For GP and Trino targets that do not exist, transfer creates the empty final
+  target before staging rows so missing target schemas or create permissions
+  fail before expensive batch work. If the transfer later fails, that target is
+  dropped only when it did not exist at the start of the transfer. ClickHouse
+  target creation stays in finalization so row-based nullability refinement is
+  preserved.
 - Provide exactly one source input: `from_sql` for custom queries or
   `from_table` for simple table copies. Passing both raises
   `Provide only one of from_sql or from_table.` Passing neither raises

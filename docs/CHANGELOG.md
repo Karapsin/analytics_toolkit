@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Quote discovered Greenplum stale stage cleanup names.
+- Create GP and Trino SQL transfer targets before staging rows.
 
 ## 1.3.10.10 - 2026-06-23
 

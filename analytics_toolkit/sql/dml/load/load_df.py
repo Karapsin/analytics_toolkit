@@ -79,6 +79,7 @@ from ..table._basic_ops import (
 )
 from ..table.maintenance import (
     analyze_table,
+    drop_table_with_retry,
 )
 from ..table.write_modes import (
     apply_target_write_mode,
@@ -158,6 +159,7 @@ def load_df(
 
     def operation(attempt: int) -> int | SqlOperationResult:
         state: LoadState | None = None
+        operation_error: Exception | None = None
         try:
             with tracked_sql_operation(
                 metadata=operation_metadata,
@@ -235,8 +237,15 @@ def load_df(
                     operation_metadata=operation_metadata,
                     return_metadata=return_metadata,
                 )
+        except Exception as exc:
+            operation_error = exc
+            raise
         finally:
-            _cleanup_load(options, state)
+            _cleanup_load(
+                options,
+                state,
+                drop_created_target=operation_error is not None,
+            )
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
@@ -509,11 +518,16 @@ def _ensure_load_target_table(
             df,
             distributed=not options.ch_only_shard,
         )
+        if not state.original_target_exists:
+            state.target_created_by_operation = True
         state.target_exists = True
         return
 
     if not state.target_exists:
         _create_load_target_table(options, state, connection, df, distributed=False)
+        if not state.original_target_exists:
+            state.target_created_by_operation = True
+        state.target_exists = True
 
 
 def _create_load_target_table(
@@ -1328,6 +1342,8 @@ def _validate_progress(progress: bool) -> None:
 def _cleanup_load(
     options: LoadOptions,
     state: LoadState | None,
+    *,
+    drop_created_target: bool = False,
 ) -> None:
     if state is not None and state.overlap_stage_table is not None:
         try:
@@ -1351,6 +1367,30 @@ def _cleanup_load(
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
             )
+    if drop_created_target and _should_drop_created_load_target(state):
+        try:
+            _run_load_target_action(
+                options,
+                "cleanup_target",
+                lambda connection_ref: drop_table_with_retry(
+                    options.connection_backend,
+                    options.connection_key,
+                    connection_ref,
+                    options.destination_table,
+                    retry_fn=run_with_retry,
+                    retry_cnt=options.retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
+                    query_label=options.query_label,
+                    operation_label="created target table",
+                ),
+            )
+        except Exception:
+            time_print(
+                f"Failed to drop load_df target table {options.destination_table} "
+                "created by this failed operation"
+            )
     if state is not None and state.stage_external_location is not None:
         try:
             cleanup_parquet_stage_location(state.stage_external_location)
@@ -1359,6 +1399,14 @@ def _cleanup_load(
                 "Failed to delete temporary load_df Parquet stage files "
                 f"{state.stage_external_location}"
             )
+
+
+def _should_drop_created_load_target(state: LoadState | None) -> bool:
+    return (
+        state is not None
+        and state.target_created_by_operation
+        and not state.original_target_exists
+    )
 
 
 def _run_load_target_action(

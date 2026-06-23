@@ -7,6 +7,7 @@ from ....connection.get_sql_connection import get_sql_connection
 from ...table.maintenance import (
     analyze_table,
     clear_ch_distributed_table_data,
+    drop_table_with_retry,
 )
 from ...table.write_modes import (
     clear_target_table,
@@ -185,9 +186,12 @@ def cleanup_stage(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     read_retry_cnt: int,
+    *,
+    drop_created_target: bool = False,
 ) -> None:
     stage_cleanup_error: Exception | None = None
     remote_cleanup_error: Exception | None = None
+    target_cleanup_error: Exception | None = None
 
     if stage_state.stage_table_created:
         try:
@@ -217,6 +221,28 @@ def cleanup_stage(
         except Exception as exc:
             remote_cleanup_error = exc
 
+    if drop_created_target and _should_drop_created_target(stage_state):
+        try:
+            _run_with_fresh_target_connection(
+                options,
+                "cleanup_target",
+                lambda target_ref: drop_table_with_retry(
+                    options.to_db_backend,
+                    options.to_db_key,
+                    target_ref,
+                    options.target_table,
+                    retry_fn=run_with_retry,
+                    retry_cnt=read_retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
+                    query_label=options.query_label,
+                    operation_label="created target table",
+                ),
+            )
+        except Exception as exc:
+            target_cleanup_error = exc
+
     if stage_cleanup_error is not None:
         if remote_cleanup_error is not None:
             from analytics_toolkit.general import time_print
@@ -225,9 +251,25 @@ def cleanup_stage(
                 "Remote Parquet stage cleanup failed while handling stage table "
                 f"cleanup error: {remote_cleanup_error!r}"
             )
+        if target_cleanup_error is not None:
+            from analytics_toolkit.general import time_print
+
+            time_print(
+                "Target cleanup failed while handling stage table cleanup error: "
+                f"{target_cleanup_error!r}"
+            )
         raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
     if remote_cleanup_error is not None:
+        if target_cleanup_error is not None:
+            from analytics_toolkit.general import time_print
+
+            time_print(
+                "Target cleanup failed while handling remote Parquet cleanup error: "
+                f"{target_cleanup_error!r}"
+            )
         raise remote_cleanup_error.with_traceback(remote_cleanup_error.__traceback__)
+    if target_cleanup_error is not None:
+        raise target_cleanup_error.with_traceback(target_cleanup_error.__traceback__)
 
 
 def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
@@ -236,6 +278,13 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
     if stage_state.stage_table is not None:
         return [stage_state.stage_table]
     return []
+
+
+def _should_drop_created_target(stage_state: TransferStageState) -> bool:
+    return (
+        stage_state.target_created_by_operation
+        and stage_state.target_existed_at_start is False
+    )
 
 
 def _run_with_fresh_target_connection(

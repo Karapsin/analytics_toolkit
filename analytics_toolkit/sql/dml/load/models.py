@@ -35,6 +35,7 @@ class LoadOptions:
 class LoadState:
     target_exists: bool
     original_target_exists: bool
+    target_created_by_operation: bool = False
     overlap_stage_table: str | None = None
     stage_external_location: str | None = None
     target_column_types: dict[str, str] | None = None

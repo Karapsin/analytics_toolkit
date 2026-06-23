@@ -598,6 +598,15 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     def fake_analyze_table(connection_type: str, connection: FakeConnection, table_name: str) -> None:
         events.append(("analyze", connection.name))
 
+    def fake_drop_table_with_retry(
+        _connection_backend: str,
+        _connection_key: str,
+        connection_ref: dict[str, FakeConnection],
+        _table_name: str,
+        **_kwargs: object,
+    ) -> None:
+        events.append(("drop", connection_ref["connection"].name))
+
     monkeypatch.setattr(
         load_df_module,
         "_create_sql_table_with_connection",
@@ -605,6 +614,11 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     )
     monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
     monkeypatch.setattr(load_df_module, "analyze_table", fake_analyze_table)
+    monkeypatch.setattr(
+        load_df_module,
+        "drop_table_with_retry",
+        fake_drop_table_with_retry,
+    )
 
     inserted_rows = load_df_module.load_df(
         "gp",
@@ -618,9 +632,10 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     assert events == [
         ("create", "conn-1"),
         ("insert", "conn-2"),
-        ("create", "conn-4"),
-        ("insert", "conn-5"),
-        ("analyze", "conn-6"),
+        ("drop", "conn-3"),
+        ("create", "conn-5"),
+        ("insert", "conn-6"),
+        ("analyze", "conn-7"),
     ]
-    assert [connection.close_calls for connection in connections] == [1] * 7
-    assert [connection.rollback_calls for connection in connections] == [0] * 7
+    assert [connection.close_calls for connection in connections] == [1] * 8
+    assert [connection.rollback_calls for connection in connections] == [0] * 8

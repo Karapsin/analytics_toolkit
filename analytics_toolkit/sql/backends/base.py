@@ -83,6 +83,7 @@ class BackendCapability:
     create_semantics: str
     type_family: str
     supported_write_modes: frozenset[WriteMode]
+    supports_early_transfer_target_creation: bool = True
 
 
 class BackendAdapter:
@@ -101,6 +102,7 @@ class BackendAdapter:
     supported_write_modes: frozenset[WriteMode] = frozenset(
         {"append", "replace", "truncate_insert", "upsert"}
     )
+    supports_early_transfer_target_creation: bool = True
 
     @property
     def name(self) -> BackendName:
@@ -122,6 +124,9 @@ class BackendAdapter:
             create_semantics=self.create_semantics,
             type_family=self.type_family,
             supported_write_modes=self.supported_write_modes,
+            supports_early_transfer_target_creation=(
+                self.supports_early_transfer_target_creation
+            ),
         )
 
     def build_connection_config(

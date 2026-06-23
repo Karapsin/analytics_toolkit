@@ -1968,3 +1968,51 @@ def test_write_dataframe_to_parquet_stage_uses_one_spooled_file(
         "s3://bucket/tmp/stage/part-00001.parquet",
     ]
     assert all(getattr(spooled_file, "closed") for _uri, spooled_file in uploaded)
+
+
+def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dropped: list[str] = []
+    options = SimpleNamespace(
+        connection_backend="gp",
+        connection_key="target_db",
+        destination_table="sandbox.target",
+        retry_cnt=1,
+        timeout_increment=1,
+        query_label=None,
+    )
+
+    monkeypatch.setattr(
+        load_df_module,
+        "_run_load_target_action",
+        lambda _options, _role, operation: operation(
+            {"connection": FakeDbapiConnection()}
+        ),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "drop_table_with_retry",
+        lambda _backend, _key, _ref, table_name, **_kwargs: dropped.append(table_name),
+    )
+
+    load_df_module._cleanup_load(
+        options,
+        load_df_module.LoadState(
+            target_exists=True,
+            original_target_exists=False,
+            target_created_by_operation=True,
+        ),
+        drop_created_target=True,
+    )
+    load_df_module._cleanup_load(
+        options,
+        load_df_module.LoadState(
+            target_exists=True,
+            original_target_exists=True,
+            target_created_by_operation=True,
+        ),
+        drop_created_target=True,
+    )
+
+    assert dropped == ["sandbox.target"]

@@ -23,6 +23,9 @@ config_module = importlib.import_module("analytics_toolkit.sql.connection.config
 finalize_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.finalize"
 )
+transfer_stage_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.stage"
+)
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
@@ -560,7 +563,17 @@ def test_run_transfer_attempt_cleans_only_current_stage_table(
 
     def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
         events.append("inspect_source_query_schema")
-        return []
+        return [
+            SimpleNamespace(
+                name="id",
+                native_type="integer",
+                precision=None,
+                scale=None,
+            )
+        ]
+
+    def fake_ensure_transfer_target_table(*_args: Any, **_kwargs: Any) -> None:
+        events.append("ensure_transfer_target_table")
 
     def fake_load_stage_batches(*_args: Any, **_kwargs: Any) -> int:
         events.append("load_stage_batches")
@@ -595,6 +608,11 @@ def test_run_transfer_attempt_cleans_only_current_stage_table(
         "inspect_source_query_schema",
         fake_inspect_source_query_schema,
     )
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_transfer_target_table",
+        fake_ensure_transfer_target_table,
+    )
     monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
     monkeypatch.setattr(
         attempt_module,
@@ -614,6 +632,7 @@ def test_run_transfer_attempt_cleans_only_current_stage_table(
     assert events == [
         "create_stage_state",
         "inspect_source_query_schema",
+        "ensure_transfer_target_table",
         "load_stage_batches",
         "finalize_loaded_stage",
         "cleanup_stage",
@@ -649,7 +668,17 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
 
     def fake_inspect_source_query_schema(*_args: Any, **_kwargs: Any) -> list[Any]:
         events.append("inspect_source_query_schema")
-        return []
+        return [
+            SimpleNamespace(
+                name="id",
+                native_type="integer",
+                precision=None,
+                scale=None,
+            )
+        ]
+
+    def fake_ensure_transfer_target_table(*_args: Any, **_kwargs: Any) -> None:
+        events.append("ensure_transfer_target_table")
 
     def fake_load_stage_batches(*_args: Any, **_kwargs: Any) -> int:
         events.append("load_stage_batches")
@@ -678,6 +707,11 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         "inspect_source_query_schema",
         fake_inspect_source_query_schema,
     )
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_transfer_target_table",
+        fake_ensure_transfer_target_table,
+    )
     monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
     monkeypatch.setattr(
         attempt_module,
@@ -703,11 +737,164 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
     assert events == [
         "create_stage_state",
         "inspect_source_query_schema",
+        "ensure_transfer_target_table",
         "load_stage_batches",
         "finalize_loaded_stage",
         "cleanup_stage",
         "close:source",
     ]
+
+
+def test_transfer_creates_missing_target_before_stage_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        target_table="sandbox.target",
+        gp_distributed_by_key=["id"],
+    )
+    stage_state = models_module.TransferStageState(
+        target_exists=False,
+        target_existed_at_start=False,
+        stage_column_types={"id": "INTEGER"},
+    )
+
+    def fake_ensure_stage_target_table(**kwargs: Any) -> bool:
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        transfer_stage_module,
+        "_ensure_stage_target_table",
+        fake_ensure_stage_target_table,
+    )
+
+    transfer_stage_module.ensure_transfer_target_table(
+        options,
+        models_module.TransferConnectionRefs(
+            target={"connection": FakeTransferConnection("target")}
+        ),
+        stage_state,
+        ["id"],
+    )
+
+    assert stage_state.target_exists is True
+    assert stage_state.target_created_by_operation is True
+    assert calls[0]["target_table"] == "sandbox.target"
+    assert calls[0]["target_column_types"] == {"id": "INTEGER"}
+    assert list(calls[0]["sample_batch"].columns) == ["id"]
+
+
+def test_run_transfer_attempt_stops_when_early_target_create_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="gp",
+        from_db_key="source_db",
+        from_db_backend="gp",
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda key: FakeTransferConnection(key),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(
+            target_exists=False,
+            target_existed_at_start=False,
+        ),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(
+                name="id",
+                native_type="integer",
+                precision=None,
+                scale=None,
+            )
+        ],
+    )
+
+    def fail_ensure_transfer_target_table(*_args: Any, **_kwargs: Any) -> None:
+        events.append("ensure_transfer_target_table")
+        raise RuntimeError("schema missing")
+
+    def fail_load_stage_batches(*_args: Any, **_kwargs: Any) -> int:
+        raise AssertionError("stage batches must not start")
+
+    def fake_cleanup_stage(*_args: Any, **kwargs: Any) -> None:
+        events.append(f"cleanup:{kwargs['drop_created_target']}")
+
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_transfer_target_table",
+        fail_ensure_transfer_target_table,
+    )
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fail_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
+
+    with pytest.raises(RuntimeError, match="schema missing"):
+        attempt_module.run_transfer_attempt(
+            options=options,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    assert events == ["ensure_transfer_target_table", "cleanup:True"]
+
+
+def test_transfer_failure_cleanup_drops_only_target_absent_at_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dropped: list[str] = []
+    options = make_progress_options(to_db_key="target_db", to_db_backend="gp")
+
+    monkeypatch.setattr(
+        finalize_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation(
+            {"connection": FakeTransferConnection("target")}
+        ),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "drop_table_with_retry",
+        lambda _backend, _key, _ref, table_name, **_kwargs: dropped.append(table_name),
+    )
+
+    finalize_module.cleanup_stage(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(),
+        stage_state=models_module.TransferStageState(
+            target_exists=True,
+            target_existed_at_start=False,
+            target_created_by_operation=True,
+        ),
+        read_retry_cnt=1,
+        drop_created_target=True,
+    )
+    finalize_module.cleanup_stage(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(),
+        stage_state=models_module.TransferStageState(
+            target_exists=True,
+            target_existed_at_start=True,
+            target_created_by_operation=True,
+        ),
+        read_retry_cnt=1,
+        drop_created_target=True,
+    )
+
+    assert dropped == [options.target_table]
 
 
 def make_keyed_options(**overrides: Any) -> Any:
@@ -1233,6 +1420,11 @@ def test_initialize_keyed_row_stages_creates_one_stage_per_worker(
         return f"stage_{kwargs['random_suffix']}"
 
     monkeypatch.setattr(attempt_module, "create_stage_table", fake_create_stage_table)
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_transfer_target_table",
+        lambda *_args, **_kwargs: None,
+    )
 
     attempt_module.initialize_shared_stage_for_keyed_slices(
         options=options,

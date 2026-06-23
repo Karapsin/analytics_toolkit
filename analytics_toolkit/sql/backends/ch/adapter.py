@@ -32,6 +32,7 @@ class ClickHouseAdapter(BackendAdapter):
     drop_semantics = "DROP TABLE IF EXISTS plus distributed pair when requested"
     create_semantics = "MergeTree or shard plus Distributed pair"
     type_family = "clickhouse"
+    supports_early_transfer_target_creation = False
 
     def build_connection_config(
         self,
