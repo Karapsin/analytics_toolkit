@@ -628,11 +628,29 @@ where usename = current_user
 
     def cancel_query_sql(self, query_id: int | str) -> str:
         normalized_id = self.normalize_query_id(query_id)
-        return f"select pg_cancel_backend({normalized_id}) as cancelled"
+        return f"""with cancel_attempt as (
+    select pg_cancel_backend({normalized_id}) as cancelled
+)
+select cancelled, pg_terminate_backend({normalized_id}) as terminated
+from cancel_attempt"""
 
     def cancel_status(self, result: Any) -> tuple[bool, str]:
         cancelled = bool(result["cancelled"].iloc[0])
         return cancelled, "cancelled" if cancelled else "not_cancelled"
+
+    def cancel_result(self, result: Any) -> dict[str, Any]:
+        cancelled = bool(result["cancelled"].iloc[0])
+        terminated = bool(result["terminated"].iloc[0])
+        status = (
+            ("cancelled" if cancelled else "not_cancelled")
+            + "_"
+            + ("terminated" if terminated else "not_terminated")
+        )
+        return {
+            "cancelled": cancelled,
+            "terminated": terminated,
+            "status": status,
+        }
 
 
 def split_gp_table_name(table_name: str) -> tuple[str, str]:

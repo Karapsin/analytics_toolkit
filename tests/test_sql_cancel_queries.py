@@ -28,6 +28,14 @@ where user = currentUser()
   and query_id != currentQueryID()"""
 
 
+def gp_cancel_terminate_sql(pid: int) -> str:
+    return f"""with cancel_attempt as (
+    select pg_cancel_backend({pid}) as cancelled
+)
+select cancelled, pg_terminate_backend({pid}) as terminated
+from cancel_attempt"""
+
+
 def test_cancel_queries_is_exported_and_gp_helper_is_removed() -> None:
     assert sql_module.cancel_queries is cancel_module.cancel_queries
     assert dml_module.cancel_queries is cancel_module.cancel_queries
@@ -83,10 +91,10 @@ def test_cancel_queries_gp_explicit_pids(
                 "query_label": query_label,
             }
         )
-        if query == "select pg_cancel_backend(42) as cancelled":
-            return pd.DataFrame({"cancelled": [True]})
-        if query == "select pg_cancel_backend(7) as cancelled":
-            return pd.DataFrame({"cancelled": [False]})
+        if query == gp_cancel_terminate_sql(42):
+            return pd.DataFrame({"cancelled": [True], "terminated": [True]})
+        if query == gp_cancel_terminate_sql(7):
+            return pd.DataFrame({"cancelled": [False], "terminated": [True]})
         raise AssertionError(f"Unexpected query: {query}")
 
     monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
@@ -101,8 +109,8 @@ def test_cancel_queries_gp_explicit_pids(
     )
 
     assert [call["query"] for call in calls] == [
-        "select pg_cancel_backend(42) as cancelled",
-        "select pg_cancel_backend(7) as cancelled",
+        gp_cancel_terminate_sql(42),
+        gp_cancel_terminate_sql(7),
     ]
     assert all(call["connection_key"] == "gp" for call in calls)
     assert all(call["print_queries"] is True for call in calls)
@@ -116,11 +124,12 @@ def test_cancel_queries_gp_explicit_pids(
                 "backend": ["gp", "gp"],
                 "query_id": [42, 7],
                 "cancel_query": [
-                    "select pg_cancel_backend(42) as cancelled",
-                    "select pg_cancel_backend(7) as cancelled",
+                    gp_cancel_terminate_sql(42),
+                    gp_cancel_terminate_sql(7),
                 ],
                 "cancelled": [True, False],
-                "status": ["cancelled", "not_cancelled"],
+                "terminated": [True, True],
+                "status": ["cancelled_terminated", "not_cancelled_terminated"],
             }
         ),
     )
@@ -143,8 +152,17 @@ def test_cancel_queries_gp_cancel_all_discovers_current_user_pids(
         calls.append(query)
         if query == GP_PID_QUERY:
             return pd.DataFrame({"query_id": [3, 1, 2]})
-        if query.startswith("select pg_cancel_backend("):
-            return pd.DataFrame({"cancelled": [query.endswith("(1) as cancelled")]})
+        if query in {
+            gp_cancel_terminate_sql(1),
+            gp_cancel_terminate_sql(2),
+            gp_cancel_terminate_sql(3),
+        }:
+            return pd.DataFrame(
+                {
+                    "cancelled": [query == gp_cancel_terminate_sql(1)],
+                    "terminated": [query != gp_cancel_terminate_sql(2)],
+                }
+            )
         raise AssertionError(f"Unexpected query: {query}")
 
     monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
@@ -153,12 +171,37 @@ def test_cancel_queries_gp_cancel_all_discovers_current_user_pids(
 
     assert calls == [
         GP_PID_QUERY,
-        "select pg_cancel_backend(3) as cancelled",
-        "select pg_cancel_backend(1) as cancelled",
-        "select pg_cancel_backend(2) as cancelled",
+        gp_cancel_terminate_sql(3),
+        gp_cancel_terminate_sql(1),
+        gp_cancel_terminate_sql(2),
     ]
     assert result["query_id"].tolist() == [3, 1, 2]
     assert result["cancelled"].tolist() == [False, True, False]
+    assert result["terminated"].tolist() == [True, True, False]
+    assert result["status"].tolist() == [
+        "not_cancelled_terminated",
+        "cancelled_terminated",
+        "not_cancelled_not_terminated",
+    ]
+
+
+def test_cancel_queries_gp_reports_cancelled_not_terminated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cancel_module,
+        "read_sql",
+        lambda *args, **kwargs: pd.DataFrame(
+            {"cancelled": [True], "terminated": [False]}
+        ),
+    )
+
+    result = cancel_module.cancel_queries("gp", [8])
+
+    assert result["query_id"].tolist() == [8]
+    assert result["cancelled"].tolist() == [True]
+    assert result["terminated"].tolist() == [False]
+    assert result["status"].tolist() == ["cancelled_not_terminated"]
 
 
 def test_cancel_queries_concurrent_path_preserves_result_order(
@@ -197,8 +240,12 @@ def test_cancel_queries_concurrent_path_preserves_result_order(
         query_label: str | None = None,
     ) -> pd.DataFrame:
         del connection_key, print_queries, retry_cnt, timeout_increment, query_label
-        if query.startswith("select pg_cancel_backend("):
-            return pd.DataFrame({"cancelled": [True]})
+        if query in {
+            gp_cancel_terminate_sql(1),
+            gp_cancel_terminate_sql(2),
+            gp_cancel_terminate_sql(3),
+        }:
+            return pd.DataFrame({"cancelled": [True], "terminated": [True]})
         raise AssertionError(f"Unexpected query: {query}")
 
     monkeypatch.setattr(cancel_module, "ThreadPoolExecutor", RecordingExecutor)
@@ -243,6 +290,7 @@ def test_cancel_queries_trino_explicit_ids_uses_kill_query(
     assert result["backend"].tolist() == ["trino", "trino"]
     assert result["query_id"].tolist() == ["20240610_1", "id'2"]
     assert result["cancelled"].tolist() == [True, True]
+    assert result["terminated"].tolist() == [None, None]
     assert result["status"].tolist() == ["submitted", "submitted"]
 
 
@@ -306,6 +354,7 @@ def test_cancel_queries_clickhouse_explicit_ids_uses_kill_query(
     assert result["backend"].tolist() == ["ch"]
     assert result["query_id"].tolist() == ["ch-a"]
     assert result["cancelled"].tolist() == [True]
+    assert result["terminated"].tolist() == [None]
     assert result["status"].tolist() == ["finished"]
 
 
@@ -359,5 +408,6 @@ def test_cancel_queries_cancel_all_empty_result_returns_expected_columns(
         "query_id",
         "cancel_query",
         "cancelled",
+        "terminated",
         "status",
     ]

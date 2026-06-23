@@ -19,6 +19,7 @@ _CANCEL_RESULT_COLUMNS = [
     "query_id",
     "cancel_query",
     "cancelled",
+    "terminated",
     "status",
 ]
 
@@ -64,13 +65,12 @@ def cancel_queries(
             timeout_increment=timeout_increment,
             query_label=query_label,
         )
-        cancelled, status = _cancel_status(backend, result)
+        cancel_result = _cancel_result(backend, result)
         return {
             "backend": backend,
             "query_id": normalized_id,
             "cancel_query": cancel_sql,
-            "cancelled": cancelled,
-            "status": status,
+            **cancel_result,
         }
 
     if concurrency == 1:
@@ -113,8 +113,8 @@ def _cancel_query_sql(backend: str, query_id: int | str) -> str:
     return get_backend_adapter(backend).cancel_query_sql(query_id)
 
 
-def _cancel_status(backend: str, result: pd.DataFrame) -> tuple[bool, str]:
-    return get_backend_adapter(backend).cancel_status(result)
+def _cancel_result(backend: str, result: pd.DataFrame) -> dict[str, Any]:
+    return get_backend_adapter(backend).cancel_result(result)
 
 
 def _normalize_query_ids(

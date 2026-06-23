@@ -14,9 +14,11 @@ maintenance jobs where the caller controls when table cleanup or analyze work
 happens.
 
 Current-user query cancellation reads active backend sessions, excludes the
-caller session, and issues cancellations with optional concurrency. For
-Greenplum, pass backend PIDs from `pg_stat_activity` as query ids. Use
-`sql.cancel_queries` for operational cleanup, not as normal flow control.
+caller session, and issues cancellation plus termination with optional
+concurrency. For Greenplum, pass backend PIDs from `pg_stat_activity` as query
+ids; `sql.cancel_queries` runs `pg_cancel_backend(pid)` followed by
+`pg_terminate_backend(pid)` for each target PID. Use `sql.cancel_queries` for
+operational cleanup, not as normal flow control.
 
 ## Table Defaults
 

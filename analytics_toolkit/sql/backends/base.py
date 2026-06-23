@@ -684,6 +684,14 @@ class BackendAdapter:
     def cancel_status(self, result: Any) -> tuple[bool, str]:
         return True, "submitted"
 
+    def cancel_result(self, result: Any) -> dict[str, Any]:
+        cancelled, status = self.cancel_status(result)
+        return {
+            "cancelled": cancelled,
+            "terminated": None,
+            "status": status,
+        }
+
     def build_stage_duplicate_keys_sql(
         self,
         stage_table: str,

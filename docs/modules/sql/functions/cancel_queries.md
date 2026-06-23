@@ -2,7 +2,9 @@
 
 # cancel_queries
 
-Cancel running queries on Greenplum, Trino, or ClickHouse.
+Cancel running queries on Greenplum, Trino, or ClickHouse. Greenplum
+cancellation first requests query cancellation and then terminates the backend
+PID.
 
 ```python
 cancel_queries(db_key: 'str', query_ids: 'int | str | Sequence[int | str] | None' = None, *, cancel_all: 'bool' = False, concurrency: 'int' = 1, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'pd.DataFrame'
@@ -34,15 +36,16 @@ print(cancelled_all)
 Output example:
 
 ```python
-cancelled[["backend", "query_id", "cancelled"]]
-#   backend                   query_id  cancelled
-# 0   trino  20260610_120000_00001_abcd1       True
+cancelled[["backend", "query_id", "cancelled", "terminated"]]
+#   backend                   query_id  cancelled terminated
+# 0   trino  20260610_120000_00001_abcd1       True       None
 ```
 
 ## Notes
 
 - Exactly one cancellation mode is required: provide `query_ids` or set `cancel_all=True`.
 - `cancel_all=True` targets current-user queries and excludes the helper's own session where the backend exposes that information.
-- Returned rows include the backend, target query id, generated cancellation SQL, cancellation flag, and backend status.
+- Greenplum uses `pg_cancel_backend(pid)` followed by `pg_terminate_backend(pid)` for each target PID.
+- Returned rows include the backend, target query id, generated cancellation SQL, cancellation flag, termination flag, and backend status.
 
 [SQL functions index](index.md)
