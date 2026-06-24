@@ -6,7 +6,7 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 
-from ..backend_adapters import get_backend_adapter, split_trino_table_name
+from ..backend_adapters import get_backend_adapter
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..connection.get_sql_connection import get_sql_connection
@@ -165,9 +165,7 @@ def _resolve_table_name(
     backend: str,
     table_name: str,
 ) -> str | None:
-    if backend != "trino":
-        return None
-    catalog, schema_name, relation_name = split_trino_table_name(
+    return get_backend_adapter(backend).resolve_table_info_table_name(
         table_name,
         connection_key=connection_key,
     )

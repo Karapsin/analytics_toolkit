@@ -287,6 +287,7 @@ def test_registered_backends_implement_full_contract() -> None:
         "insert_rows_batch",
         "running_query_ids_sql",
         "cancel_query_sql",
+        "infer_dataframe_column_type",
     }
     inherited_contract_methods = {
         "build_insert_from_stage_sql",
@@ -296,6 +297,7 @@ def test_registered_backends_implement_full_contract() -> None:
         "column_types_for_columns",
         "after_create_table",
         "refine_stage_column_types_from_rows",
+        "resolve_table_info_table_name",
         "should_ensure_load_target_table",
     }
     missing: list[str] = []
@@ -423,6 +425,26 @@ def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
         "label": "VARCHAR",
         "empty": "VARCHAR",
     }
+
+
+def test_dataframe_column_type_inference_is_adapter_owned() -> None:
+    gp_adapter = get_backend_adapter("gp")
+    trino_adapter = get_backend_adapter("trino")
+    ch_adapter = get_backend_adapter("ch")
+
+    assert gp_adapter.infer_dataframe_column_type(pd.Series([1, 2])) == "BIGINT"
+    assert (
+        gp_adapter.infer_dataframe_column_type(pd.Series([1.5, 2.5]))
+        == "DOUBLE PRECISION"
+    )
+    assert trino_adapter.infer_dataframe_column_type(pd.Series([1.5, 2.5])) == "DOUBLE"
+    assert trino_adapter.infer_dataframe_column_type(pd.Series(["a", "b"])) == "VARCHAR"
+    assert ch_adapter.infer_dataframe_column_type(pd.Series([1, None])) == (
+        "Nullable(Float64)"
+    )
+    assert ch_adapter.infer_dataframe_column_type(
+        pd.Series([Decimal("1.2"), Decimal("3.4")])
+    ) == "Float64"
 
 
 def test_backend_lookup_preserves_connection_config_errors(

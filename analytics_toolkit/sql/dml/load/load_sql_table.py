@@ -2,19 +2,13 @@ from __future__ import annotations
 
 import time
 from typing import Any, Callable, Dict, Iterator, Optional, Sequence
-from decimal import Decimal
 from itertools import islice
 
 import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
 from ...backends import get_backend_names
-from ...connection.config import (
-    TrinoConfig,
-    get_connection_config,
-    resolve_connection_backend,
-)
-from ...connection.errors import SqlConfigError
+from ...connection.config import resolve_connection_backend
 from analytics_toolkit.general import time_print
 
 
@@ -28,17 +22,13 @@ def execute_values(
     rows: Sequence[Sequence[Any]],
     page_size: int,
 ) -> Any:
-    try:
-        from psycopg2.extras import execute_values as psycopg2_execute_values
-    except ImportError as exc:
-        raise ImportError(
-            "The 'psycopg2' package is required for Greenplum batch inserts."
-        ) from exc
-    return psycopg2_execute_values(cursor, sql, rows, page_size=page_size)
+    from ...backends.gp.insert import execute_values as gp_execute_values
+
+    return gp_execute_values(cursor, sql, rows, page_size)
 
 
-DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
-DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
+from ...backends.gp.insert import DEFAULT_GP_INSERT_CHUNK_SIZE
+from ...backends.trino.insert import DEFAULT_TRINO_INSERT_CHUNK_SIZE
 BatchInsertBackend = Callable[
     [
         Any,
@@ -258,15 +248,11 @@ def _replace_connection_before_next_insert_retry(
 
 
 def normalize_batch(batch: pd.DataFrame) -> pd.DataFrame:
-    normalized = batch.copy()
-    for column_name in normalized.columns:
-        series = normalized[column_name]
-        normalized[column_name] = series.astype(object).where(series.notna(), None)
-    return normalized
+    return get_backend_adapter("gp").normalize_insert_batch(batch)
 
 
 def normalize_rows(rows: Sequence[Sequence[Any]]) -> list[tuple[Any, ...]]:
-    return [tuple(_normalize_nullable_scalar(value) for value in row) for row in rows]
+    return get_backend_adapter("gp").normalize_insert_rows(rows)
 
 
 def _insert_gp_batch(
@@ -697,44 +683,30 @@ def _insert_rows_backend(
 
 
 def normalize_ch_batch(batch: pd.DataFrame) -> pd.DataFrame:
-    map_values = getattr(batch, "map", None)
-    if map_values is None:
-        normalized = batch.applymap(_normalize_ch_scalar)
-    else:
-        normalized = map_values(_normalize_ch_scalar)
-    for column_name in normalized.columns:
-        series = normalized[column_name]
-        normalized[column_name] = series.astype(object).where(series.notna(), None)
-    return normalized
+    from ...backends.ch import insert as ch_insert
+
+    return ch_insert.normalize_batch(batch)
 
 
 def _normalize_ch_row(row: Sequence[Any]) -> tuple[Any, ...]:
-    return tuple(
-        _normalize_ch_scalar(_normalize_nullable_scalar(value)) for value in row
-    )
+    from ...backends.ch import insert as ch_insert
+
+    return ch_insert.normalize_row(row)
 
 
 def _normalize_ch_scalar(value: object) -> object:
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, list):
-        return [_normalize_ch_scalar(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_normalize_ch_scalar(item) for item in value)
-    if isinstance(value, dict):
-        return {
-            _normalize_ch_scalar(key): _normalize_ch_scalar(item)
-            for key, item in value.items()
-        }
-    return value
+    from ...backends.ch import insert as ch_insert
+
+    return ch_insert.normalize_scalar(value)
 
 
 def _iter_trino_rows(
     batch: pd.DataFrame,
     target_column_types: dict[str, str] | None,
 ) -> Iterator[tuple[Any, ...]]:
-    for row in batch.itertuples(index=False, name=None):
-        yield from _iter_trino_row_values(batch.columns, [row], target_column_types)
+    from ...backends.trino import insert as trino_insert
+
+    yield from trino_insert.iter_dataframe_rows(batch, target_column_types)
 
 
 def _iter_trino_row_values(
@@ -742,32 +714,15 @@ def _iter_trino_row_values(
     rows: Sequence[Sequence[Any]],
     target_column_types: dict[str, str] | None,
 ) -> Iterator[tuple[Any, ...]]:
-    for row in rows:
-        _validate_row_width(columns, row)
-        normalized_values = []
-        for column_name, value in zip(columns, row):
-            target_type = (
-                target_column_types.get(column_name)
-                if target_column_types is not None
-                else None
-            )
-            normalized_values.append(_normalize_trino_value(value, target_type))
-        yield tuple(normalized_values)
+    from ...backends.trino import insert as trino_insert
+
+    yield from trino_insert.iter_row_values(columns, rows, target_column_types)
 
 
 def _normalize_trino_value(value: Any, target_type: str | None) -> Any:
-    if _is_null_like(value):
-        return None
+    from ...backends.trino import insert as trino_insert
 
-    if value is None:
-        return None
-
-    normalized_target_type = (target_type or "").lower()
-    if normalized_target_type.startswith(("varchar", "char", "string")):
-        return str(value)
-    if normalized_target_type == "bigint":
-        return int(value)
-    return value
+    return trino_insert.normalize_value(value, target_type)
 
 
 def _build_trino_values_tuple(
@@ -775,21 +730,15 @@ def _build_trino_values_tuple(
     row: Sequence[Any],
     target_column_types: dict[str, str] | None,
 ) -> str:
-    _validate_row_width(columns, row)
-    values_sql = []
-    for column_name, value in zip(columns, row):
-        target_type = (
-            target_column_types.get(column_name)
-            if target_column_types is not None
-            else None
-        )
-        values_sql.append(_trino_literal(value, target_type))
-    return f"({', '.join(values_sql)})"
+    from ...backends.trino import insert as trino_insert
+
+    return trino_insert.build_values_tuple(columns, row, target_column_types)
 
 
 def _validate_row_width(columns: Sequence[str], row: Sequence[Any]) -> None:
-    if len(columns) != len(row):
-        raise ValueError("Column and row value counts must match.")
+    from ...backends.trino import insert as trino_insert
+
+    trino_insert.validate_row_width(columns, row)
 
 
 def _chunk_rows(
@@ -812,89 +761,30 @@ def _chunk_sequence(
 
 
 def _trino_literal(value: Any, target_type: str | None) -> str:
-    if value is None:
-        return "NULL"
+    from ...backends.trino import insert as trino_insert
 
-    normalized_target_type = (target_type or "").lower()
-
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-
-    if isinstance(value, pd.Timestamp):
-        if pd.isna(value):
-            return "NULL"
-        timestamp_value = value.to_pydatetime()
-        if normalized_target_type == "date":
-            return f"DATE '{timestamp_value.strftime('%Y-%m-%d')}'"
-        return f"TIMESTAMP '{timestamp_value.strftime('%Y-%m-%d %H:%M:%S.%f')}'"
-
-    if hasattr(value, "isoformat") and normalized_target_type == "date":
-        return f"DATE '{value.isoformat()}'"
-
-    if isinstance(value, str):
-        escaped = value.replace("'", "''")
-        return f"'{escaped}'"
-
-    if isinstance(value, (int, float)):
-        return str(value)
-
-    escaped = str(value).replace("'", "''")
-    if normalized_target_type:
-        return f"CAST('{escaped}' AS {target_type})"
-    return f"'{escaped}'"
+    return trino_insert.literal(value, target_type)
 
 
 def _get_trino_insert_chunk_size(
     explicit_value: int | None,
     connection_type: str = "trino",
 ) -> int:
-    if explicit_value is not None:
-        if explicit_value <= 0:
-            raise ValueError("trino_insert_chunk_size must be a positive integer.")
-        return explicit_value
+    from ...backends.trino import insert as trino_insert
 
-    try:
-        config = get_connection_config(connection_type)
-    except (SqlConfigError, UnsupportedConnectionTypeError):
-        return DEFAULT_TRINO_INSERT_CHUNK_SIZE
-    if isinstance(config, TrinoConfig) and config.insert_chunk_size is not None:
-        return config.insert_chunk_size
-    return DEFAULT_TRINO_INSERT_CHUNK_SIZE
+    return trino_insert.get_insert_chunk_size(explicit_value, connection_type)
 
 
 def _get_gp_insert_chunk_size(explicit_value: int | None) -> int:
-    if explicit_value is not None:
-        if explicit_value <= 0:
-            raise ValueError("gp_insert_chunk_size must be a positive integer.")
-        return explicit_value
-    return DEFAULT_GP_INSERT_CHUNK_SIZE
+    from ...backends.gp import insert as gp_insert
+
+    return gp_insert.get_insert_chunk_size(explicit_value)
 
 
 def _column_type_names(
     columns: Sequence[str],
     column_types: dict[str, str] | None,
 ) -> list[str] | None:
-    if column_types is None:
-        return None
-    try:
-        return [column_types[column_name] for column_name in columns]
-    except KeyError as exc:
-        raise ValueError(
-            f"Missing explicit SQL type for column {exc.args[0]!r}."
-        ) from exc
+    from ...backends.ch import insert as ch_insert
 
-
-def _normalize_nullable_scalar(value: Any) -> Any:
-    if _is_null_like(value):
-        return None
-    return value
-
-
-def _is_null_like(value: Any) -> bool:
-    if value is None:
-        return True
-
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
+    return ch_insert.column_type_names(columns, column_types)

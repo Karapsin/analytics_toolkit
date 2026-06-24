@@ -5,7 +5,9 @@ from string import Formatter
 from typing import Any
 
 from . import operations as _operations
+from . import insert as _insert
 from . import parquet_stage as _parquet_stage
+from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
 from ..models import SourceColumn
@@ -167,6 +169,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
+    infer_dataframe_column_type = _dataframe_types.infer_trino_dataframe_column_type
     build_parquet_stage_table_sql = _parquet_stage.build_parquet_stage_table_sql
     infer_parquet_stage_column_types_from_rows = (
         _parquet_stage.infer_parquet_stage_column_types_from_rows
@@ -611,37 +614,30 @@ class TrinoAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
         on_progress: Callable[[int], None] | None = None,
     ) -> None:
-        from analytics_toolkit.general import time_print
-        from ...dml.load import load_sql_table
-
-        chunk_size = load_sql_table._get_trino_insert_chunk_size(
-            trino_insert_chunk_size,
-            connection_type,
+        _insert.insert_rows(
+            self,
+            connection,
+            table_name,
+            columns,
+            rows,
+            target_column_types=target_column_types,
+            trino_insert_chunk_size=trino_insert_chunk_size,
+            connection_type=connection_type,
+            query_label=query_label,
+            on_progress=on_progress,
         )
-        cursor = connection.cursor()
-        try:
-            row_iterator = load_sql_table._iter_trino_row_values(
-                columns,
-                rows,
-                target_column_types,
-            )
-            for row_chunk in load_sql_table._chunk_rows(row_iterator, chunk_size):
-                params = [value for row in row_chunk for value in row]
-                sql = load_sql_table.build_trino_batch_insert_sql(
-                    table_name,
-                    columns,
-                    row_count=len(row_chunk),
-                    query_label=query_label,
-                )
-                time_print(
-                    f"Writing {len(row_chunk)} row(s) to table {table_name}",
-                    backend=self.backend,
-                )
-                cursor.execute(sql, params)
-                if on_progress is not None:
-                    on_progress(len(row_chunk))
-        finally:
-            cursor.close()
+
+    def resolve_table_info_table_name(
+        self,
+        table_name: str,
+        *,
+        connection_key: str,
+    ) -> str | None:
+        catalog, schema_name, relation_name = split_trino_table_name(
+            table_name,
+            connection_key=connection_key,
+        )
+        return f"{catalog}.{schema_name}.{relation_name}"
 
     def running_query_ids_sql(self) -> str:
         return """select query_id

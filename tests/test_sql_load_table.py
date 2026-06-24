@@ -28,6 +28,7 @@ ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait"
 load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
 )
+gp_insert_module = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
@@ -673,7 +674,7 @@ def test_insert_rows_batch_gp_uses_row_tuples_and_normalizes_nulls(monkeypatch) 
         captured["rows"] = list(rows)
         captured["page_size"] = page_size
 
-    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
 
     inserted_rows = load_sql_table_module.insert_rows_batch(
         connection_type="gp",
@@ -707,7 +708,7 @@ def test_insert_rows_batch_gp_honors_insert_chunk_size(monkeypatch) -> None:
             }
         )
 
-    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
 
     inserted_rows = load_sql_table_module.insert_rows_batch(
         connection_type="gp",
@@ -745,7 +746,7 @@ def test_insert_gp_rows_can_change_page_size_between_calls(monkeypatch) -> None:
             }
         )
 
-    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
 
     load_sql_table_module._insert_gp_rows(
         connection=connection,
@@ -772,9 +773,9 @@ def test_insert_gp_rows_reports_per_page_success(monkeypatch) -> None:
     def fake_execute_values(cursor, sql, rows, page_size):
         del cursor, sql, rows, page_size
 
-    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
     monkeypatch.setattr(
-        load_sql_table_module.time,
+        gp_insert_module.time,
         "perf_counter",
         lambda: next(perf_values),
     )
@@ -803,7 +804,7 @@ def test_insert_gp_rows_rolls_back_on_error(monkeypatch) -> None:
         del cursor, sql, rows, page_size
         raise RuntimeError("insert failed")
 
-    monkeypatch.setattr(load_sql_table_module, "execute_values", fake_execute_values)
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
 
     with pytest.raises(RuntimeError, match="insert failed"):
         load_sql_table_module._insert_gp_rows(

@@ -278,6 +278,7 @@ class BackendAdapter:
     )
     transfer_replace_target_phase = _adapter_defaults.transfer_replace_target_phase
     companion_table_name = _adapter_defaults.companion_table_name
+    resolve_table_info_table_name = _adapter_defaults.resolve_table_info_table_name
     rollback_quietly = _adapter_defaults.rollback_quietly
     wait_for_table_absence = _adapter_defaults.wait_for_table_absence
     build_vacuum_table_sql = _adapter_defaults.build_vacuum_table_sql

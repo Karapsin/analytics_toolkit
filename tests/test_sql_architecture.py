@@ -394,6 +394,78 @@ def test_trino_parquet_stage_sql_is_adapter_owned() -> None:
         assert adapter_method in attribute_calls
 
 
+def test_dataframe_type_inference_is_adapter_owned() -> None:
+    schema_path = SQL_ROOT / "ddl" / "schema.py"
+    text = schema_path.read_text()
+    forbidden_snippets = {
+        "def _infer_gp_type",
+        "def _infer_trino_type",
+        "def _infer_ch_type",
+        "_COLUMN_TYPE_INFERERS",
+        "isinstance(value, Decimal)",
+        "DOUBLE PRECISION",
+        "DateTime64(6)",
+        "Nullable(",
+    }
+    offenders = [
+        f"{schema_path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
+    assert offenders == []
+
+    tree = ast.parse(text, filename=str(schema_path))
+    infer_wrapper = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_infer_backend_type"
+    )
+    attribute_calls = {
+        node.func.attr
+        for node in ast.walk(infer_wrapper)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "infer_dataframe_column_type" in attribute_calls
+
+
+def test_load_insert_backend_serialization_is_adapter_owned() -> None:
+    load_path = SQL_ROOT / "dml" / "load" / "load_sql_table.py"
+    text = load_path.read_text()
+    forbidden_snippets = {
+        "psycopg2.extras",
+        "from decimal import Decimal",
+        "TrinoConfig",
+        "SqlConfigError",
+        "isinstance(value, Decimal)",
+        "normalized_target_type",
+        "to_pydatetime",
+        "applymap(_normalize_ch_scalar)",
+    }
+    offenders = [
+        f"{load_path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
+    assert offenders == []
+
+
+def test_table_info_name_resolution_is_adapter_owned() -> None:
+    table_info_path = SQL_ROOT / "metadata" / "table_info.py"
+    text = table_info_path.read_text()
+    forbidden_snippets = {
+        "split_trino_table_name",
+        'backend != "trino"',
+        'backend == "trino"',
+    }
+    offenders = [
+        f"{table_info_path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
+    assert offenders == []
+    assert "resolve_table_info_table_name" in text
+
+
 def test_upsert_backend_policy_is_capability_owned() -> None:
     assert not (SQL_ROOT / "dml" / "table" / "upsert_policy.py").exists()
 
@@ -502,6 +574,9 @@ def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> 
     forbidden_snippets = {
         "dml.transfer.schema",
         "dml.transfer import schema",
+        "dml.load import load_sql_table",
+        "dml.load.load_sql_table",
+        "load_sql_table.",
         "from ...dml.table import write_modes",
         "transfer_schema._map_to_gp_type",
         "transfer_schema._map_to_trino_type",

@@ -4,6 +4,8 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from . import operations as _operations
+from . import insert as _insert
+from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
 from ..models import SourceColumn
@@ -174,6 +176,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     validate_drop_partitions_options = _operations.validate_drop_partitions_options
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     build_create_partition_sql = _operations.build_create_partition_sql
+    infer_dataframe_column_type = _dataframe_types.infer_gp_dataframe_column_type
 
     def rollback_quietly(self, connection: Any) -> None:
         try:
@@ -520,17 +523,13 @@ class GreenplumAdapter(DbApiBackendAdapter):
             cursor.close()
 
     def normalize_insert_batch(self, batch: Any) -> Any:
-        from ...dml.load.load_sql_table import normalize_batch
-
-        return normalize_batch(batch)
+        return _insert.normalize_insert_batch(self, batch)
 
     def normalize_insert_rows(
         self,
         rows: Sequence[Sequence[Any]],
     ) -> list[tuple[Any, ...]]:
-        from ...dml.load.load_sql_table import normalize_rows
-
-        return normalize_rows(rows)
+        return _insert.normalize_insert_rows(self, rows)
 
     def should_wrap_insert_error_as_ambiguous(
         self,
@@ -631,53 +630,18 @@ class GreenplumAdapter(DbApiBackendAdapter):
         page_size_getter: Callable[[], int] | None = None,
         on_page_success: Callable[[float, int], None] | None = None,
     ) -> None:
-        import time
-        from ...dml.load import load_sql_table
-
-        row_tuples = [tuple(row) for row in rows]
-        if not row_tuples:
-            return
-
-        sql = load_sql_table.build_gp_batch_insert_sql(
+        _insert.insert_rows(
+            self,
+            connection,
             table_name,
             columns,
+            rows,
+            gp_insert_chunk_size=gp_insert_chunk_size,
             query_label=query_label,
+            on_progress=on_progress,
+            page_size_getter=page_size_getter,
+            on_page_success=on_page_success,
         )
-
-        cursor = connection.cursor()
-        try:
-            next_index = 0
-            while next_index < len(row_tuples):
-                remaining_rows = len(row_tuples) - next_index
-                configured_page_size = (
-                    page_size_getter()
-                    if page_size_getter is not None
-                    else gp_insert_chunk_size
-                )
-                page_size = min(
-                    load_sql_table._get_gp_insert_chunk_size(configured_page_size),
-                    remaining_rows,
-                )
-                row_chunk = row_tuples[next_index:next_index + page_size]
-                started_at = time.perf_counter()
-                load_sql_table.execute_values(
-                    cursor,
-                    sql,
-                    row_chunk,
-                    page_size=page_size,
-                )
-                duration_seconds = time.perf_counter() - started_at
-                if on_progress is not None:
-                    on_progress(len(row_chunk))
-                if on_page_success is not None:
-                    on_page_success(duration_seconds, len(row_chunk))
-                next_index += page_size
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            cursor.close()
 
     def type_code_name(
         self,

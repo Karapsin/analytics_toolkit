@@ -7,8 +7,10 @@ from . import operations as _operations
 from . import upsert as _upsert
 from . import source_count as _source_count
 from . import queries as _queries
+from . import insert as _insert
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
+from .. import dataframe_types as _dataframe_types
 from ..base import (
     BackendAdapter,
     BackendName,
@@ -191,6 +193,7 @@ class ClickHouseAdapter(BackendAdapter):
     )
     wait_for_table_absence = _operations.wait_for_table_absence
     estimate_source_rows = _operations.estimate_source_rows
+    infer_dataframe_column_type = _dataframe_types.infer_ch_dataframe_column_type
 
     def after_create_table(
         self,
@@ -508,9 +511,7 @@ class ClickHouseAdapter(BackendAdapter):
         batch: Any,
         on_progress: Callable[[int], None] | None = None,
     ) -> None:
-        from ...dml.load.load_sql_table import normalize_ch_batch
-
-        normalized_batch = normalize_ch_batch(batch)
+        normalized_batch = _insert.normalize_batch(batch)
         connection.insert_df(
             table=table_name,
             df=normalized_batch,
@@ -528,13 +529,11 @@ class ClickHouseAdapter(BackendAdapter):
         column_types: dict[str, str] | None,
         on_progress: Callable[[int], None] | None = None,
     ) -> None:
-        from ...dml.load.load_sql_table import _column_type_names, _normalize_ch_row
-
         connection.insert(
             table=table_name,
-            data=[_normalize_ch_row(row) for row in rows],
+            data=[_insert.normalize_row(row) for row in rows],
             column_names=list(columns),
-            column_type_names=_column_type_names(columns, column_types),
+            column_type_names=_insert.column_type_names(columns, column_types),
         )
         if on_progress is not None:
             on_progress(len(rows))

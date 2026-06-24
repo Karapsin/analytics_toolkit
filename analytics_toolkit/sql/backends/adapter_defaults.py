@@ -249,6 +249,16 @@ def companion_table_name(adapter: Any, table_name: str) -> str | None:
     return None
 
 
+def resolve_table_info_table_name(
+    adapter: Any,
+    table_name: str,
+    *,
+    connection_key: str,
+) -> str | None:
+    del adapter, table_name, connection_key
+    return None
+
+
 def rollback_quietly(adapter: Any, connection: Any) -> None:
     del adapter, connection
 
