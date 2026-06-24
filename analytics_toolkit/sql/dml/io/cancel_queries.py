@@ -9,6 +9,7 @@ import pandas as pd
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...execution.operation_runner import timed_public_sql_function
+from ...metadata.show_queries import show_queries
 from .read_sql import read_sql
 
 
@@ -91,10 +92,9 @@ def _running_query_ids(
     timeout_increment: int | float,
     query_label: str | None,
 ) -> list[int | str]:
-    query = _running_query_ids_sql(backend)
-    rows = read_sql(
+    rows = show_queries(
         connection_key,
-        query,
+        state="active",
         print_queries=print_queries,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,

@@ -656,6 +656,14 @@ class BackendAdapter:
     def running_query_ids_sql(self) -> str:
         raise NotImplementedError
 
+    def show_queries_sqls(
+        self,
+        *,
+        user: str | None,
+        states: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def normalize_query_id(self, query_id: Any) -> int | str:
         if isinstance(query_id, str):
             normalized = query_id.strip()
@@ -881,3 +889,4 @@ def _apply_query_label(sql: str, query_label: str | None) -> str:
     from ..execution.labels import apply_query_label
 
     return apply_query_label(sql, query_label)
+

@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added mandatory sql.transfer row-count validation.
 - Added ClickHouse transfer stream-read retries with smaller retry batches.
 - Handled empty missing-target SQL transfers.
+- Added SQL show_queries helper.
 
 ## 1.3.10.10 - 2026-06-23
 

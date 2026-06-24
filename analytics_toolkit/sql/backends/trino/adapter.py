@@ -4,6 +4,8 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from ..base import _apply_query_label
+from ..utils import sql_in_list as _sql_in_list
+from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
 
 
@@ -529,6 +531,68 @@ where "user" = current_user
   and state in ('QUEUED', 'RUNNING')
   and query not like '%system.runtime.queries%'"""
 
+    def show_queries_sqls(
+        self,
+        *,
+        user: str | None,
+        states: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        queries: list[dict[str, Any]] = []
+        user_filter = _user_filter('"user"', "current_user", user)
+        if "active" in states:
+            queries.append(
+                {
+                    "sql": f"""select
+    query_id,
+    "user",
+    'active' as state,
+    query,
+    cast(null as timestamp) as started_at,
+    cast(null as timestamp) as finished_at,
+    cast(null as double) as elapsed_seconds,
+    source,
+    cast(null as varchar) as database,
+    state as raw_state
+from system.runtime.queries
+where {user_filter}
+  and state in ('QUEUED', 'RUNNING')
+  and query not like '%system.runtime.queries%'""",
+                    "history": False,
+                }
+            )
+
+        history_states = [state for state in states if state != "active"]
+        if history_states:
+            state_filter = _sql_in_list(
+                "state",
+                [_trino_history_state(state) for state in history_states],
+            )
+            queries.append(
+                {
+                    "sql": f"""select
+    query_id,
+    "user",
+    case
+        when state = 'FINISHED' then 'finished'
+        when state = 'FAILED' then 'failed'
+        else lower(state)
+    end as state,
+    query,
+    cast(null as timestamp) as started_at,
+    cast(null as timestamp) as finished_at,
+    cast(null as double) as elapsed_seconds,
+    source,
+    cast(null as varchar) as database,
+    state as raw_state
+from system.runtime.queries
+where {user_filter}
+  and {state_filter}
+  and query not like '%system.runtime.queries%'""",
+                    "history": True,
+                }
+            )
+        return queries
+
     def cancel_query_sql(self, query_id: int | str) -> str:
         normalized_id = self.normalize_query_id(query_id)
         return (
@@ -536,6 +600,14 @@ where "user" = current_user
             f"query_id => {_sql_string_literal(str(normalized_id))}, "
             "message => 'Cancelled by analytics_toolkit.cancel_queries')"
         )
+
+
+def _trino_history_state(state: str) -> str:
+    if state == "finished":
+        return "FINISHED"
+    if state == "failed":
+        return "FAILED"
+    raise ValueError(f"Unsupported Trino history state: {state}")
 
 
 def split_trino_table_name(

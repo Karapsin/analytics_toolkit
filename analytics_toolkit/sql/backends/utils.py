@@ -28,6 +28,23 @@ def extract_row_count(executed: Any) -> int:
     return 0
 
 
+def user_filter(column_sql: str, current_user_sql: str, user: str | None) -> str:
+    if user is None:
+        return f"{column_sql} = {current_user_sql}"
+    return f"{column_sql} = {sql_string_literal(user)}"
+
+
+def sql_in_list(column_sql: str, values: list[str]) -> str:
+    if not values:
+        raise ValueError("values must not be empty.")
+    joined_values = ", ".join(sql_string_literal(value) for value in values)
+    return f"{column_sql} in ({joined_values})"
+
+
+def sql_string_literal(value: Any) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _extract_row_count_from_mapping(value: Mapping[str, Any]) -> int | None:
     for key in (
         "rowcount",

@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from . import source_count as _source_count
+from . import queries as _queries
 from ..base import (
     BackendAdapter,
     BackendName,
@@ -795,6 +796,8 @@ class ClickHouseAdapter(BackendAdapter):
 from system.processes
 where user = currentUser()
   and query_id != currentQueryID()"""
+
+    show_queries_sqls = _queries.show_queries_sqls
 
     def cancel_query_sql(self, query_id: int | str) -> str:
         normalized_id = self.normalize_query_id(query_id)

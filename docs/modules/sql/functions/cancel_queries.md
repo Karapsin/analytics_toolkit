@@ -45,6 +45,8 @@ cancelled[["backend", "query_id", "cancelled", "terminated"]]
 
 - Exactly one cancellation mode is required: provide `query_ids` or set `cancel_all=True`.
 - `cancel_all=True` targets current-user queries and excludes the helper's own session where the backend exposes that information.
+- `cancel_all=True` discovers target query IDs with [show_queries](show_queries.md)
+  using `state="active"`.
 - Greenplum uses `pg_cancel_backend(pid)` followed by `pg_terminate_backend(pid)` for each target PID.
 - Returned rows include the backend, target query id, generated cancellation SQL, cancellation flag, termination flag, and backend status.
 

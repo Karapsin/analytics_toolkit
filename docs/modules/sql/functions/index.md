@@ -14,6 +14,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [read](read.md) - run one query and return a dataframe
 - [execute](execute.md) - run SQL without returning a dataframe
 - [execute_read](execute_read.md) - execute setup SQL, then read the final query
+- [show_queries](show_queries.md) - list visible backend queries
 - [cancel_queries](cancel_queries.md) - cancel running backend queries
 - [load_df](load_df.md) - load a dataframe into a SQL table
 - [transfer](transfer.md) - stream query results into another table

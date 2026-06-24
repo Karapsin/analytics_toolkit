@@ -13,21 +13,6 @@ dml_module = importlib.import_module("analytics_toolkit.sql.dml")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
-GP_PID_QUERY = """select pid as query_id
-from pg_stat_activity
-where usename = current_user
-  and pid <> pg_backend_pid()"""
-TRINO_QUERY_ID_QUERY = """select query_id
-from system.runtime.queries
-where "user" = current_user
-  and state in ('QUEUED', 'RUNNING')
-  and query not like '%system.runtime.queries%'"""
-CH_QUERY_ID_QUERY = """select query_id
-from system.processes
-where user = currentUser()
-  and query_id != currentQueryID()"""
-
-
 def gp_cancel_terminate_sql(pid: int) -> str:
     return f"""with cancel_attempt as (
     select pg_cancel_backend({pid}) as cancelled
@@ -139,6 +124,28 @@ def test_cancel_queries_gp_cancel_all_discovers_current_user_pids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
+    show_calls: list[dict[str, object]] = []
+
+    def fake_show_queries(
+        db_key: str,
+        *,
+        state: str,
+        print_queries: bool,
+        retry_cnt: int,
+        timeout_increment: int | float,
+        query_label: str | None,
+    ) -> pd.DataFrame:
+        show_calls.append(
+            {
+                "db_key": db_key,
+                "state": state,
+                "print_queries": print_queries,
+                "retry_cnt": retry_cnt,
+                "timeout_increment": timeout_increment,
+                "query_label": query_label,
+            }
+        )
+        return pd.DataFrame({"query_id": [3, 1, 2]})
 
     def fake_read_sql(
         connection_key: str,
@@ -150,8 +157,6 @@ def test_cancel_queries_gp_cancel_all_discovers_current_user_pids(
     ) -> pd.DataFrame:
         del connection_key, print_queries, retry_cnt, timeout_increment, query_label
         calls.append(query)
-        if query == GP_PID_QUERY:
-            return pd.DataFrame({"query_id": [3, 1, 2]})
         if query in {
             gp_cancel_terminate_sql(1),
             gp_cancel_terminate_sql(2),
@@ -165,12 +170,29 @@ def test_cancel_queries_gp_cancel_all_discovers_current_user_pids(
             )
         raise AssertionError(f"Unexpected query: {query}")
 
+    monkeypatch.setattr(cancel_module, "show_queries", fake_show_queries)
     monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
 
-    result = cancel_module.cancel_queries("gp", cancel_all=True)
+    result = cancel_module.cancel_queries(
+        "gp",
+        cancel_all=True,
+        print_queries=True,
+        retry_cnt=2,
+        timeout_increment=0.5,
+        query_label="cancel-all",
+    )
 
+    assert show_calls == [
+        {
+            "db_key": "gp",
+            "state": "active",
+            "print_queries": True,
+            "retry_cnt": 2,
+            "timeout_increment": 0.5,
+            "query_label": "cancel-all",
+        }
+    ]
     assert calls == [
-        GP_PID_QUERY,
         gp_cancel_terminate_sql(3),
         gp_cancel_terminate_sql(1),
         gp_cancel_terminate_sql(2),
@@ -299,6 +321,12 @@ def test_cancel_queries_trino_cancel_all_discovers_current_user_queries(
 ) -> None:
     calls: list[str] = []
 
+    monkeypatch.setattr(
+        cancel_module,
+        "show_queries",
+        lambda *args, **kwargs: pd.DataFrame({"query_id": ["trino-a", "trino-b"]}),
+    )
+
     def fake_read_sql(
         connection_key: str,
         query: str,
@@ -309,8 +337,6 @@ def test_cancel_queries_trino_cancel_all_discovers_current_user_queries(
     ) -> pd.DataFrame:
         del connection_key, print_queries, retry_cnt, timeout_increment, query_label
         calls.append(query)
-        if query == TRINO_QUERY_ID_QUERY:
-            return pd.DataFrame({"query_id": ["trino-a", "trino-b"]})
         return pd.DataFrame()
 
     monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
@@ -318,7 +344,6 @@ def test_cancel_queries_trino_cancel_all_discovers_current_user_queries(
     result = cancel_module.cancel_queries("trino", cancel_all=True)
 
     assert calls == [
-        TRINO_QUERY_ID_QUERY,
         "CALL system.runtime.kill_query("
         "query_id => 'trino-a', "
         "message => 'Cancelled by analytics_toolkit.cancel_queries')",
@@ -363,6 +388,12 @@ def test_cancel_queries_clickhouse_cancel_all_discovers_current_user_queries(
 ) -> None:
     calls: list[str] = []
 
+    monkeypatch.setattr(
+        cancel_module,
+        "show_queries",
+        lambda *args, **kwargs: pd.DataFrame({"query_id": ["ch-a", "ch-b"]}),
+    )
+
     def fake_read_sql(
         connection_key: str,
         query: str,
@@ -373,8 +404,6 @@ def test_cancel_queries_clickhouse_cancel_all_discovers_current_user_queries(
     ) -> pd.DataFrame:
         del connection_key, print_queries, retry_cnt, timeout_increment, query_label
         calls.append(query)
-        if query == CH_QUERY_ID_QUERY:
-            return pd.DataFrame({"query_id": ["ch-a", "ch-b"]})
         return pd.DataFrame({"kill_status": ["waiting"]})
 
     monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
@@ -382,7 +411,6 @@ def test_cancel_queries_clickhouse_cancel_all_discovers_current_user_queries(
     result = cancel_module.cancel_queries("ch", cancel_all=True)
 
     assert calls == [
-        CH_QUERY_ID_QUERY,
         "KILL QUERY WHERE query_id = 'ch-a' SYNC",
         "KILL QUERY WHERE query_id = 'ch-b' SYNC",
     ]
@@ -396,7 +424,7 @@ def test_cancel_queries_cancel_all_empty_result_returns_expected_columns(
 ) -> None:
     monkeypatch.setattr(
         cancel_module,
-        "read_sql",
+        "show_queries",
         lambda *args, **kwargs: pd.DataFrame({"query_id": []}),
     )
 

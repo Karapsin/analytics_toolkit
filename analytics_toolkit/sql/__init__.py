@@ -15,6 +15,7 @@ from .execution.plans import (
     format_plan,
 )
 from .execution.labels import airflow_query_label
+from .metadata.show_queries import show_queries
 from .metadata.show_tables import show_tables
 from .metadata.table_info import SqlTableInfo, table_info
 from .core.types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
@@ -58,6 +59,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "gp_vacuum",
     "load_df",
     "read",
+    "show_queries",
     "show_tables",
     "table_info",
     "cleanup_stale_stage_tables",
@@ -88,6 +90,7 @@ __all__ = [
     "gp_vacuum",
     "load_df",
     "read",
+    "show_queries",
     "show_tables",
     "SqlOperationMetadata",
     "SqlOperationResult",

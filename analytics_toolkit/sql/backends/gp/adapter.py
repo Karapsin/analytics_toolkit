@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from ..base import _apply_query_label
+from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
 
 
@@ -617,6 +618,46 @@ class GreenplumAdapter(DbApiBackendAdapter):
 from pg_stat_activity
 where usename = current_user
   and pid <> pg_backend_pid()"""
+
+    def show_queries_sqls(
+        self,
+        *,
+        user: str | None,
+        states: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        queries: list[dict[str, Any]] = []
+        if "active" in states:
+            user_filter = _user_filter("usename", "current_user", user)
+            queries.append(
+                {
+                    "sql": f"""select
+    pid as query_id,
+    usename as "user",
+    'active' as state,
+    query,
+    query_start as started_at,
+    null::timestamp as finished_at,
+    extract(epoch from (now() - query_start))::double precision as elapsed_seconds,
+    application_name as source,
+    datname as database,
+    state as raw_state
+from pg_stat_activity
+where {user_filter}
+  and pid <> pg_backend_pid()
+  and state = 'active'""",
+                    "history": False,
+                }
+            )
+        unsupported_states = [state for state in states if state != "active"]
+        if unsupported_states:
+            queries.append(
+                {
+                    "sql": "",
+                    "history": True,
+                    "unsupported_states": tuple(unsupported_states),
+                }
+            )
+        return queries
 
     def normalize_query_id(self, query_id: Any) -> int | str:
         if isinstance(query_id, bool):

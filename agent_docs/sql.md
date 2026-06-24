@@ -29,3 +29,14 @@ investigation.
 - `dml/load`: dataframe loading, stage table creation, batch insertion, Trino chunking, and backend-specific scalar normalization.
 - `dml/table`: shared table existence, analyze, drop, vacuum, stage finalization, and validation helpers.
 - `dml/transfer`: staged transfer flow, source streaming, full retry/restart behavior, and connection replacement helpers.
+
+## Backend Adapter Placement
+
+- Put backend-specific SQL, system-table queries, backend state mapping, and
+  backend-specific DDL/DML fragments in the backend adapter layer under
+  `analytics_toolkit/sql/backends/` or a backend-local helper module imported by
+  that adapter.
+- Keep generic SQL helpers focused on orchestration, option normalization, retry
+  flow, dataframe normalization, and public API shape. Do not add new
+  `backend == ...` dispatch branches in generic modules unless there is already
+  an explicit local allowance and no adapter method fits.
