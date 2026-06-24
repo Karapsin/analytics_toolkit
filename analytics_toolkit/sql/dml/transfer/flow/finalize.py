@@ -8,13 +8,8 @@ from ....backends import get_backend_capability
 from ...load.stage import create_stage_table
 from ...load.stage import cleanup_stage_table_with_retry
 from ....connection.get_sql_connection import get_sql_connection
-from ...table.maintenance import (
-    analyze_table,
-    clear_ch_distributed_table_data,
-    drop_table_with_retry,
-)
+from ...table.maintenance import analyze_table, drop_table_with_retry
 from ...table.write_modes import (
-    clear_target_table,
     finalize_stage_table,
 )
 from ...table.table_validation import (
@@ -188,46 +183,6 @@ def _ensure_final_upsert_stage_table(
             transfer_staging_username=options.transfer_staging_username,
         ),
     )
-
-    if options.write_mode == "upsert":
-        return
-
-    if options.replace_target_table:
-        if options.to_db_backend == "ch":
-            if options.ch_only_shard:
-                _run_with_fresh_target_connection(
-                    options,
-                    "clear_target",
-                    lambda target_ref: clear_target_table(
-                        options.to_db_backend,
-                        target_ref["connection"],
-                        options.target_table,
-                        query_label=options.query_label,
-                    ),
-                )
-                return
-            _run_with_fresh_target_connection(
-                options,
-                "clear_target",
-                lambda target_ref: clear_ch_distributed_table_data(
-                    target_ref["connection"],
-                    options.target_table,
-                    ch_cluster=options.ch_cluster,
-                    query_label=options.query_label,
-                ),
-            )
-            return
-        _run_with_fresh_target_connection(
-            options,
-            "clear_target",
-            lambda target_ref: clear_target_table(
-                options.to_db_backend,
-                target_ref["connection"],
-                options.target_table,
-                query_label=options.query_label,
-            ),
-        )
-        return
 
 
 def _warn_empty_transfer_missing_target(options: TransferOptions) -> None:

@@ -165,6 +165,21 @@ class TrinoAdapter(DbApiBackendAdapter):
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
 
+    def estimate_source_rows(
+        self,
+        connection: Any,
+        source_sql: str,
+        *,
+        query_label: str | None = None,
+    ) -> int | None:
+        from ..source_estimate import _estimate_trino_source_rows
+
+        return _estimate_trino_source_rows(
+            connection,
+            source_sql,
+            query_label=query_label,
+        )
+
     def build_dataframe_batch_insert_sql(
         self,
         table_name: str,

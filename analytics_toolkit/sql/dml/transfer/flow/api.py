@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from ....backends import get_backend_capability
+from ....backends import get_backend_adapter, get_backend_capability
 from ....core.capabilities import validate_write_mode
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
@@ -25,12 +25,11 @@ from ....execution.operation_runner import (
 )
 from ....execution.plan_steps import (
     add_analyze_step,
-    add_clear_target_steps,
     add_cleanup_stage_step,
     add_count_step,
     add_create_table_steps,
     add_create_table_placeholder_step,
-    add_drop_target_steps,
+    add_clear_target_steps,
     add_insert_from_stage_step,
     add_load_stage_step,
 )
@@ -777,25 +776,19 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 query_label=options.query_label,
             )
     if options.write_mode == "replace":
-        if options.to_db_backend == "ch":
-            add_drop_target_steps(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                table_name=options.target_table,
-                ch_cluster=options.ch_cluster,
+        adapter = get_backend_adapter(options.to_db_backend)
+        plan.extend(
+            adapter.build_transfer_replace_target_sqls(
+                options.target_table,
                 query_label=options.query_label,
+                ch_cluster=options.ch_cluster,
                 ch_only_shard=options.ch_only_shard,
-            )
-        else:
-            add_clear_target_steps(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                table_name=options.target_table,
-                query_label=options.query_label,
-                ch_cluster=options.ch_cluster,
-            )
+            ),
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase=adapter.transfer_replace_target_phase(),
+            target_table=options.target_table,
+        )
     elif options.write_mode == "truncate_insert":
         add_clear_target_steps(
             plan,

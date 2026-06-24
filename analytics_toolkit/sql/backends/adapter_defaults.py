@@ -223,8 +223,124 @@ def build_clear_target_sqls(
     return adapter.clear_table_sqls(table_name, query_label=query_label)
 
 
+def build_transfer_replace_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    query_label: str | None = None,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+) -> list[str]:
+    return adapter.build_clear_target_sqls(
+        table_name,
+        query_label=query_label,
+        ch_cluster=ch_cluster,
+        ch_only_shard=ch_only_shard,
+    )
+
+
+def transfer_replace_target_phase(adapter: Any) -> str:
+    del adapter
+    return "clear_target"
+
+
 def companion_table_name(adapter: Any, table_name: str) -> str | None:
     del adapter, table_name
+    return None
+
+
+def rollback_quietly(adapter: Any, connection: Any) -> None:
+    del adapter, connection
+
+
+def wait_for_table_absence(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = None,
+) -> None:
+    del adapter, connection, table_name, ch_cluster
+
+
+def build_vacuum_table_sql(
+    adapter: Any,
+    table_name: str,
+    *,
+    analyze: bool = False,
+    full: bool = False,
+    verbose: bool = True,
+) -> str:
+    del adapter, table_name, analyze, full, verbose
+    raise NotImplementedError
+
+
+def vacuum_table(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    analyze: bool = False,
+    full: bool = False,
+    verbose: bool = True,
+) -> None:
+    sql = adapter.build_vacuum_table_sql(
+        table_name,
+        analyze=analyze,
+        full=full,
+        verbose=verbose,
+    )
+    previous_autocommit = getattr(connection, "autocommit", None)
+    cursor = connection.cursor()
+    try:
+        if previous_autocommit is not None:
+            connection.autocommit = True
+        cursor.execute(sql)
+    finally:
+        cursor.close()
+        if previous_autocommit is not None:
+            connection.autocommit = previous_autocommit
+
+
+def prepare_existing_target_for_create_from_sql(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    drop_target_if_exists: bool,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+    connection_key: str | None = None,
+    ch_retry_per_host_drops: bool = True,
+) -> bool:
+    del ch_only_shard, ch_retry_per_host_drops
+    if not drop_target_if_exists:
+        return False
+    from analytics_toolkit.general import time_print
+
+    time_print(
+        f"Dropping existing table {table_name}",
+        connection=connection_key or adapter.backend,
+        backend=adapter.backend,
+    )
+    adapter.drop_table(
+        connection,
+        table_name,
+        ch_cluster=ch_cluster,
+        query_label=query_label,
+    )
+    return False
+
+
+def estimate_source_rows(
+    adapter: Any,
+    connection: Any,
+    source_sql: str,
+    *,
+    query_label: str | None = None,
+) -> int | None:
+    del adapter, connection, source_sql, query_label
     return None
 
 

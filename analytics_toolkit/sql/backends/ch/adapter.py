@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from . import operations as _operations
@@ -182,8 +182,15 @@ class ClickHouseAdapter(BackendAdapter):
     build_drop_tables_sqls = _operations.build_drop_tables_sqls
     drop_table_with_options = _operations.drop_table_with_options
     build_clear_target_sqls = _operations.build_clear_target_sqls
+    build_transfer_replace_target_sqls = _operations.build_transfer_replace_target_sqls
+    transfer_replace_target_phase = _operations.transfer_replace_target_phase
     companion_table_name = _operations.companion_table_name
     build_drop_target_sqls = _operations.build_drop_target_sqls
+    prepare_existing_target_for_create_from_sql = (
+        _operations.prepare_existing_target_for_create_from_sql
+    )
+    wait_for_table_absence = _operations.wait_for_table_absence
+    estimate_source_rows = _operations.estimate_source_rows
 
     def drop_table_sql(
         self,
@@ -410,6 +417,29 @@ class ClickHouseAdapter(BackendAdapter):
         except Exception:
             time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
             raise
+
+    def iter_source_batches(
+        self,
+        *,
+        connection_key: str,
+        connection_ref: dict[str, Any],
+        query: str,
+        get_batch_size: Callable[[], int],
+        retry_cnt: int,
+        timeout_increment: int | float,
+        disable_query_limit: bool = False,
+    ) -> Iterator[Any]:
+        from ...dml.transfer.io.source import _iter_clickhouse_batches
+
+        yield from _iter_clickhouse_batches(
+            connection_key,
+            connection_ref,
+            query,
+            get_batch_size,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            disable_query_limit=disable_query_limit,
+        )
 
     def insert_dataframe_batch(
         self,

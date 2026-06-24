@@ -5,12 +5,12 @@ from typing import Any
 
 import pandas as pd
 
-from ....backend_adapters import UNSUPPORTED_BACKEND_MESSAGE
-from ....connection.errors import UnsupportedConnectionTypeError, sql_preview
+from ....backend_adapters import get_backend_adapter
+from ....connection.errors import sql_preview
 from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
 from ..runtime.models import RowBatch
-from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+from ..runtime.retry import replace_connection, run_with_retry
 
 
 class TransferSourceStreamReadError(RuntimeError):
@@ -79,30 +79,15 @@ def iter_source_batches(
 ) -> Iterator[RowBatch]:
     labeled_query = apply_query_label(query, query_label)
     batch_size_getter = get_batch_size or (lambda: batch_size)
-    if connection_backend in {"gp", "trino"}:
-        yield from _iter_dbapi_batches(
-            connection_key,
-            connection_backend,
-            connection_ref,
-            labeled_query,
-            batch_size_getter,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-        )
-        return
-    if connection_backend == "ch":
-        yield from _iter_clickhouse_batches(
-            connection_key,
-            connection_ref,
-            labeled_query,
-            batch_size_getter,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-            disable_query_limit=disable_ch_query_limit,
-        )
-        return
-
-    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
+    yield from get_backend_adapter(connection_backend).iter_source_batches(
+        connection_key=connection_key,
+        connection_ref=connection_ref,
+        query=labeled_query,
+        get_batch_size=batch_size_getter,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        disable_query_limit=disable_ch_query_limit,
+    )
 
 
 def _iter_dbapi_batches(
@@ -225,8 +210,9 @@ def _start_dbapi_query_with_retry(
             return cursor, columns
         except Exception:
             cursor.close()
-            if connection_backend == "gp":
-                rollback_quietly(connection_ref["connection"])
+            get_backend_adapter(connection_backend).rollback_quietly(
+                connection_ref["connection"]
+            )
             replace_connection(connection_key, connection_ref)
             raise
 

@@ -6,6 +6,8 @@ from typing import Any
 import pandas as pd
 import sqlparse
 
+from ...backend_adapters import get_backend_adapter
+from ...backends.ch.create_table_as import ch_create_table_as
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
@@ -43,14 +45,9 @@ from ._basic_ops import (
     insert_from_query,
     table_exists,
 )
-from .maintenance import (
-    drop_ch_distributed_table_pair,
-    drop_table,
-)
 from .models import CreateTableFromSqlOptions
 from .table_validation import normalize_key_columns, validate_key_columns_in_columns
 from analytics_toolkit.general import time_print
-from .ch_create_table_as import ch_create_table_as
 
 
 def transfer_table(**kwargs: Any) -> int:
@@ -250,56 +247,19 @@ def create_table_from_sql(
                     options.table_schema,
                     source_columns,
                 )
+            target_adapter = get_backend_adapter(target_config.backend)
             target_exists_before_drop = (
-                table_exists(
-                    target_config.backend,
+                target_adapter.prepare_existing_target_for_create_from_sql(
                     target_connection,
                     target_table,
+                    drop_target_if_exists=drop_target_if_exists,
+                    ch_cluster=ch_cluster_name,
+                    ch_only_shard=options.ch_only_shard,
+                    query_label=query_label,
                     connection_key=target_config.connection_key,
+                    ch_retry_per_host_drops=options.ch_retry_per_host_drops,
                 )
-                if target_config.backend == "ch" and drop_target_if_exists
-                else False
             )
-
-            if drop_target_if_exists:
-                if target_config.backend == "ch":
-                    if options.ch_only_shard:
-                        time_print(
-                            f"Dropping existing ClickHouse table {target_table}"
-                        )
-                        drop_table(
-                            target_config.backend,
-                            target_connection,
-                            target_table,
-                            ch_cluster=None,
-                            query_label=query_label,
-                        )
-                    else:
-                        time_print(
-                            "Dropping existing ClickHouse distributed table pair "
-                            f"{target_table}"
-                        )
-                        drop_ch_distributed_table_pair(
-                            target_connection,
-                            target_table,
-                            ch_cluster=ch_cluster_name,
-                            query_label=query_label,
-                            wait_for_absence=True,
-                            connection_key=target_config.connection_key,
-                            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                        )
-                else:
-                    time_print(
-                        f"Dropping existing table {target_table}",
-                        connection=target_config.connection_key,
-                        backend=target_config.backend,
-                    )
-                    drop_table(
-                        target_config.backend,
-                        target_connection,
-                        target_table,
-                        query_label=query_label,
-                    )
 
             create_kwargs: dict[str, object] = {
                 "table_schema": target_column_types,

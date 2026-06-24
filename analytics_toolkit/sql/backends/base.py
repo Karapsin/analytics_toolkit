@@ -264,7 +264,41 @@ class BackendAdapter:
     build_drop_target_sqls = _adapter_defaults.build_drop_target_sqls
     drop_table_with_options = _adapter_defaults.drop_table_with_options
     build_clear_target_sqls = _adapter_defaults.build_clear_target_sqls
+    build_transfer_replace_target_sqls = (
+        _adapter_defaults.build_transfer_replace_target_sqls
+    )
+    transfer_replace_target_phase = _adapter_defaults.transfer_replace_target_phase
     companion_table_name = _adapter_defaults.companion_table_name
+    rollback_quietly = _adapter_defaults.rollback_quietly
+    wait_for_table_absence = _adapter_defaults.wait_for_table_absence
+    build_vacuum_table_sql = _adapter_defaults.build_vacuum_table_sql
+    vacuum_table = _adapter_defaults.vacuum_table
+    prepare_existing_target_for_create_from_sql = (
+        _adapter_defaults.prepare_existing_target_for_create_from_sql
+    )
+    estimate_source_rows = _adapter_defaults.estimate_source_rows
+
+    def iter_source_batches(
+        self,
+        *,
+        connection_key: str,
+        connection_ref: dict[str, Any],
+        query: str,
+        get_batch_size: Callable[[], int],
+        retry_cnt: int,
+        timeout_increment: int | float,
+        disable_query_limit: bool = False,
+    ) -> Any:
+        del (
+            connection_key,
+            connection_ref,
+            query,
+            get_batch_size,
+            retry_cnt,
+            timeout_increment,
+            disable_query_limit,
+        )
+        raise NotImplementedError
 
     def build_upsert_stage_sqls(
         self,

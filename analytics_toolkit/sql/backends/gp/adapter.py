@@ -173,6 +173,48 @@ class GreenplumAdapter(DbApiBackendAdapter):
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     build_create_partition_sql = _operations.build_create_partition_sql
 
+    def rollback_quietly(self, connection: Any) -> None:
+        try:
+            connection.rollback()
+        except Exception:
+            return None
+
+    def build_vacuum_table_sql(
+        self,
+        table_name: str,
+        *,
+        analyze: bool = False,
+        full: bool = False,
+        verbose: bool = True,
+    ) -> str:
+        from ...dml.table._basic_ops import quote_qualified_table_name
+
+        qualified_table_name = quote_qualified_table_name(table_name, self.backend)
+        options: list[str] = []
+        if full:
+            options.append("FULL")
+        if verbose:
+            options.append("VERBOSE")
+        if analyze:
+            options.append("ANALYZE")
+        options_sql = f" ({', '.join(options)})" if options else ""
+        return f"VACUUM{options_sql} {qualified_table_name}"
+
+    def estimate_source_rows(
+        self,
+        connection: Any,
+        source_sql: str,
+        *,
+        query_label: str | None = None,
+    ) -> int | None:
+        from ..source_estimate import _estimate_gp_source_rows
+
+        return _estimate_gp_source_rows(
+            connection,
+            source_sql,
+            query_label=query_label,
+        )
+
     def build_dataframe_batch_insert_sql(
         self,
         table_name: str,

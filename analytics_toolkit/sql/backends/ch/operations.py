@@ -338,11 +338,130 @@ def build_clear_target_sqls(
     )
 
 
+def build_transfer_replace_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    query_label: str | None = None,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+) -> list[str]:
+    return build_drop_target_sqls(
+        adapter,
+        table_name,
+        ch_cluster=ch_cluster,
+        ch_only_shard=ch_only_shard,
+        query_label=query_label,
+    )
+
+
+def transfer_replace_target_phase(adapter: Any) -> str:
+    del adapter
+    return "drop_target"
+
+
 def companion_table_name(adapter: Any, table_name: str) -> str | None:
     del adapter
     from .ddl import build_ch_shard_table_name
 
     return build_ch_shard_table_name(table_name)
+
+
+def prepare_existing_target_for_create_from_sql(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    drop_target_if_exists: bool,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+    connection_key: str | None = None,
+    ch_retry_per_host_drops: bool = True,
+) -> bool:
+    if not drop_target_if_exists:
+        return False
+
+    from analytics_toolkit.general import time_print
+    from ...connection.get_sql_connection import get_ch_connection_for_host
+    from .lifecycle import drop_ch_distributed_table_pair
+
+    target_existed_before_drop = False
+    if not ch_only_shard:
+        target_existed_before_drop = bool(
+            adapter.table_exists(
+                connection,
+                table_name,
+                connection_key=connection_key or "ch",
+            )
+        )
+
+    if ch_only_shard:
+        time_print(f"Dropping existing ClickHouse table {table_name}")
+        adapter.drop_table(
+            connection,
+            table_name,
+            ch_cluster=None,
+            query_label=query_label,
+        )
+        return False
+
+    time_print(f"Dropping existing ClickHouse distributed table pair {table_name}")
+    per_host_connection_factory = (
+        (lambda host: get_ch_connection_for_host(connection_key, host))
+        if connection_key is not None
+        else None
+    )
+    drop_ch_distributed_table_pair(
+        connection,
+        table_name,
+        ch_cluster=ch_cluster,
+        query_label=query_label,
+        wait_for_absence=True,
+        ch_retry_per_host_drops=ch_retry_per_host_drops,
+        per_host_connection_factory=per_host_connection_factory,
+    )
+    return target_existed_before_drop
+
+
+def wait_for_table_absence(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = None,
+) -> None:
+    del adapter
+    from ...clickhouse.wait import (
+        _wait_for_ch_table_absence,
+        _wait_for_ch_table_absence_on_cluster,
+    )
+
+    if ch_cluster is None:
+        _wait_for_ch_table_absence(connection, table_name)
+        return
+    _wait_for_ch_table_absence_on_cluster(
+        connection,
+        table_name,
+        ch_cluster=ch_cluster,
+    )
+
+
+def estimate_source_rows(
+    adapter: Any,
+    connection: Any,
+    source_sql: str,
+    *,
+    query_label: str | None = None,
+) -> int | None:
+    del adapter
+    from ..source_estimate import _estimate_clickhouse_source_rows
+
+    return _estimate_clickhouse_source_rows(
+        connection,
+        source_sql,
+        query_label=query_label,
+    )
 
 
 def _first_result_value(result: Any, table_name: str) -> str:

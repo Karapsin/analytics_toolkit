@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -67,3 +67,27 @@ class DbApiBackendAdapter(BackendAdapter):
             raise
         finally:
             cursor.close()
+
+    def iter_source_batches(
+        self,
+        *,
+        connection_key: str,
+        connection_ref: dict[str, Any],
+        query: str,
+        get_batch_size: Callable[[], int],
+        retry_cnt: int,
+        timeout_increment: int | float,
+        disable_query_limit: bool = False,
+    ) -> Iterator[Any]:
+        del disable_query_limit
+        from ..dml.transfer.io.source import _iter_dbapi_batches
+
+        yield from _iter_dbapi_batches(
+            connection_key,
+            self.backend,
+            connection_ref,
+            query,
+            get_batch_size,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+        )

@@ -3,20 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from ...backend_adapters import get_backend_adapter
-from ...backends.ch.lifecycle import (
-    drop_ch_distributed_table_pair as _drop_ch_pair,
-    truncate_ch_distributed_table_pair as _truncate_ch_pair,
-)
+from ...backends.registry import get_backend_capability
 from ...connection.config import get_connection_config, resolve_connection_backend
-from ...connection.get_sql_connection import get_ch_connection_for_host, get_sql_connection
+from ...connection.get_sql_connection import get_sql_connection
 from ...connection.errors import UnsupportedConnectionTypeError
 from ...execution.operation_runner import timed_public_sql_function
 from ...execution.plans import SqlOperationMetadata, SqlPlan
 from analytics_toolkit.general import time_print
 from ._basic_ops import (
-    build_analyze_table_sql,
     build_drop_table_sql,
-    quote_qualified_table_name,
 )
 
 
@@ -29,14 +24,17 @@ def analyze_table(
     return_sql: bool = False,
 ) -> SqlPlan | None:
     backend = resolve_connection_backend(connection_type)
-    if backend == "ch":
+    if not get_backend_capability(backend).supports_analyze:
         if dry_run or return_sql:
             return SqlPlan(
                 operation="analyze_table",
                 target_alias=connection_type,
                 target_backend=backend,
                 target_table=table_name,
-                options={"skipped": True, "reason": "ClickHouse analyze is a no-op"},
+                options={
+                    "skipped": True,
+                    "reason": f"{backend} analyze is a no-op",
+                },
                 metadata=SqlOperationMetadata(
                     statement_count=0,
                     query_label=query_label,
@@ -50,8 +48,7 @@ def analyze_table(
         backend=backend,
     )
     if dry_run or return_sql:
-        sql = build_analyze_table_sql(
-            backend,
+        sql = get_backend_adapter(backend).analyze_table_sql(
             table_name,
             query_label=query_label,
         )
@@ -95,32 +92,20 @@ def gp_vacuum(
         )
 
     conn = get_sql_connection(config.connection_key)
-    qualified_table_name = quote_qualified_table_name(table_name, "gp")
-    options: list[str] = []
-    if full:
-        options.append("FULL")
-    if verbose:
-        options.append("VERBOSE")
-    if analyze:
-        options.append("ANALYZE")
-
-    options_sql = f" ({', '.join(options)})" if options else ""
-    sql = f"VACUUM{options_sql} {qualified_table_name}"
-
+    adapter = get_backend_adapter(config.backend)
     time_print(
-        f"Vacuuming table {qualified_table_name}",
+        f"Vacuuming table {table_name}",
         connection=config.connection_key,
         backend=config.backend,
     )
     try:
-        previous_autocommit = conn.autocommit
-        cursor = conn.cursor()
-        try:
-            conn.autocommit = True
-            cursor.execute(sql)
-        finally:
-            cursor.close()
-            conn.autocommit = previous_autocommit
+        adapter.vacuum_table(
+            conn,
+            table_name,
+            analyze=analyze,
+            full=full,
+            verbose=verbose,
+        )
     finally:
         time_print(
             "Closing connection",
@@ -145,6 +130,7 @@ def drop_table_with_retry(
     operation_label: str = "stage table",
 ) -> None:
     backend = resolve_connection_backend(connection_backend)
+    adapter = get_backend_adapter(backend)
 
     def operation(attempt: int) -> None:
         connection = connection_ref["connection"]
@@ -158,8 +144,7 @@ def drop_table_with_retry(
             )
             return None
         except Exception:
-            if backend == "gp":
-                rollback_fn(connection)
+            adapter.rollback_quietly(connection)
             replace_connection_fn(connection_key, connection_ref)
             raise
 
@@ -215,18 +200,12 @@ def drop_table(
         ch_cluster=ch_cluster,
         query_label=query_label,
     )
-    if backend == "ch" and wait_for_absence:
-        from ...clickhouse.wait import _wait_for_ch_table_absence
-        from ...clickhouse.wait import _wait_for_ch_table_absence_on_cluster
-
-        if ch_cluster is None:
-            _wait_for_ch_table_absence(connection, table_name)
-        else:
-            _wait_for_ch_table_absence_on_cluster(
-                connection,
-                table_name,
-                ch_cluster=ch_cluster,
-            )
+    if wait_for_absence:
+        get_backend_adapter(backend).wait_for_table_absence(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+        )
     return None
 
 def drop_ch_distributed_table_pair(
@@ -240,21 +219,22 @@ def drop_ch_distributed_table_pair(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
 ) -> None:
-    per_host_connection_factory = (
-        (lambda host: get_ch_connection_for_host(connection_key, host))
-        if connection_key is not None
-        else None
-    )
-    _drop_ch_pair(
+    adapter = get_backend_adapter("ch")
+    adapter.drop_table_with_options(
         connection,
         table_name,
+        connection_key=connection_key or "",
         ch_cluster=ch_cluster,
+        ch_drop_shard=True,
+        ch_drop_distributed=True,
         query_label=query_label,
-        wait_for_absence=wait_for_absence,
-        wait_timeout_seconds=wait_timeout_seconds,
-        wait_poll_interval_seconds=wait_poll_interval_seconds,
-        ch_retry_per_host_drops=ch_retry_per_host_drops,
-        per_host_connection_factory=per_host_connection_factory,
+        if_exists=True,
+        ch_wait_for_absence=wait_for_absence,
+        ch_wait_timeout_seconds=wait_timeout_seconds,
+        ch_wait_poll_interval_seconds=wait_poll_interval_seconds,
+        ch_retry_per_host_drops=(
+            ch_retry_per_host_drops and connection_key is not None
+        ),
     )
 
 def clear_ch_distributed_table_data(
@@ -263,9 +243,13 @@ def clear_ch_distributed_table_data(
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
 ) -> None:
-    _truncate_ch_pair(
+    adapter = get_backend_adapter("ch")
+    adapter.execute_commands(
         connection,
-        table_name,
-        ch_cluster=ch_cluster,
-        query_label=query_label,
+        adapter.build_clear_target_sqls(
+            table_name,
+            include_ch_shard=True,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+        ),
     )

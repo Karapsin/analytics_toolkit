@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Move SQL backend policy into adapters.
 - Move ClickHouse lifecycle SQL into backend adapters.
+- Move remaining SQL backend behavior into adapters.
 
 ## 1.3.10.11 - 2026-06-24
 
