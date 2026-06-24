@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
+from analytics_toolkit.general import time_print
 from ...load.stage import cleanup_stage_table_with_retry
 from ....connection.get_sql_connection import get_sql_connection
 from ...table.maintenance import (
@@ -133,14 +135,15 @@ def finalize_empty_transfer(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
 ) -> None:
+    del connection_refs
+    if not stage_state.target_exists:
+        _warn_empty_transfer_missing_target(options)
+        return
+
     if options.write_mode == "upsert":
-        if stage_state.target_exists:
-            return
-        raise ValueError("Cannot create target table from an empty result set.")
+        return
 
     if options.replace_target_table:
-        if not stage_state.target_exists:
-            raise ValueError("Cannot create target table from an empty result set.")
         if options.to_db_backend == "ch":
             if options.ch_only_shard:
                 _run_with_fresh_target_connection(
@@ -177,8 +180,19 @@ def finalize_empty_transfer(
         )
         return
 
-    if not stage_state.target_exists:
-        raise ValueError("Cannot create target table from an empty result set.")
+
+def _warn_empty_transfer_missing_target(options: TransferOptions) -> None:
+    message = (
+        "Transfer source returned zero rows and target table "
+        f"{options.target_table} does not exist; no target table was created."
+    )
+    warnings.warn(message, stacklevel=3)
+    time_print(
+        message,
+        level="warning",
+        connection=options.to_db_key,
+        backend=options.to_db_backend,
+    )
 
 
 def cleanup_stage(

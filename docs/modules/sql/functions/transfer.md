@@ -162,6 +162,8 @@ rows = sql.transfer(
   dropped only when it did not exist at the start of the transfer. ClickHouse
   target creation stays in finalization so row-based nullability refinement is
   preserved.
+- When the source returns zero rows and the target table does not exist,
+  transfer emits a warning, creates no target table, and returns `0`.
 - Provide exactly one source input: `from_sql` for custom queries or
   `from_table` for simple table copies. Passing both raises
   `Provide only one of from_sql or from_table.` Passing neither raises

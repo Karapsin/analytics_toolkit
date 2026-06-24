@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -327,3 +328,55 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
         )
         for command in target.commands
     )
+
+
+def test_transfer_table_clickhouse_empty_missing_target_warns_and_skips_creation(
+    monkeypatch,
+) -> None:
+    source = FakeSourceConnection(rows=[])
+    target = FakeClickHouseClient()
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    monkeypatch.setattr(
+        transfer_attempt_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
+    monkeypatch.setattr(
+        transfer_finalize_module,
+        "get_sql_connection",
+        fake_get_sql_connection,
+    )
+
+    with pytest.warns(
+        UserWarning,
+        match=(
+            "Transfer source returned zero rows and target table "
+            f"{TARGET_TABLE} does not exist; no target table was created."
+        ),
+    ):
+        transferred_rows = transfer_api_module.transfer_table(
+            from_db="gp",
+            to_db="ch",
+            from_sql="select month_date, users from source_table",
+            to_table=TARGET_TABLE,
+            retry_cnt=1,
+            timeout_increment=0,
+            full_retry_cnt=3,
+            full_timeout_increment=0,
+            partition_by=["month_date"],
+            order_by=["month_date"],
+        )
+
+    assert transferred_rows == 0
+    assert target.commands == []
+    assert target.inserts == []
+    assert target.created_tables == set()
+    assert source.close_calls == 1
+    assert target.close_calls >= 1
