@@ -279,6 +279,24 @@ def test_adapter_owned_sql_fragments_stay_out_of_cleaned_generic_modules() -> No
     assert offenders == []
 
 
+def test_backend_policy_sql_templates_stay_backend_owned() -> None:
+    forbidden_snippets = {
+        "TRUNCATE TABLE IF EXISTS",
+        "ALTER TABLE {table} DROP PARTITION",
+    }
+    offenders: list[str] = []
+
+    for path in SQL_ROOT.rglob("*.py"):
+        if "backends" in path.parts:
+            continue
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
 def test_clickhouse_compatibility_wrappers_do_not_own_sql() -> None:
     wrapper_paths = [
         SQL_ROOT / "ddl" / "clickhouse.py",

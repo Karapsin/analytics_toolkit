@@ -3,6 +3,16 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+EXAMPLE_UPSERT_PARTITION_DROP_SQL_TEMPLATE = (
+    "ALTER TABLE {table} DROP PARTITION "
+    "({partition_column} = {partition_value})"
+)
+
+
+def example_upsert_partition_drop_sql_template() -> str:
+    return EXAMPLE_UPSERT_PARTITION_DROP_SQL_TEMPLATE
+
+
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
     from ...connection.config import (
         TrinoConfig,

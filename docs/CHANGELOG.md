@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Move SQL backend helper ownership into adapters.
 - Move remaining SQL backend helper ownership into adapters.
 - Move SQL type and insert helper ownership into adapters.
+- Move ClickHouse truncate and Trino config SQL ownership into adapters.
 
 ## 1.3.10.11 - 2026-06-24
 

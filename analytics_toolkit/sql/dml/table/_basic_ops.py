@@ -337,12 +337,11 @@ def _truncate_ch_table(
     ch_cluster: str | None = None,
     query_label: str | None = None,
 ) -> None:
-    _execute_ch_command(
+    get_backend_adapter("ch").truncate_table(
         connection,
-        apply_query_label(
-            f"TRUNCATE TABLE IF EXISTS {table_name}{_ch_cluster_clause(ch_cluster)}",
-            query_label,
-        ),
+        table_name,
+        ch_cluster=ch_cluster,
+        query_label=query_label,
     )
 
 

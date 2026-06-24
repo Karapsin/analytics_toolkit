@@ -169,11 +169,43 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         return [
-            _apply_query_label(
-                f"TRUNCATE TABLE IF EXISTS {table_name}",
-                query_label,
+            self.build_truncate_table_sql(
+                table_name,
+                query_label=query_label,
             )
         ]
+
+    def build_truncate_table_sql(
+        self,
+        table_name: str,
+        *,
+        ch_cluster: str | None = None,
+        query_label: str | None = None,
+    ) -> str:
+        from .lifecycle import _build_truncate_ch_table_sql
+
+        return _build_truncate_ch_table_sql(
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+        )
+
+    def truncate_table(
+        self,
+        connection: Any,
+        table_name: str,
+        *,
+        ch_cluster: str | None = None,
+        query_label: str | None = None,
+    ) -> None:
+        self.execute_command(
+            connection,
+            self.build_truncate_table_sql(
+                table_name,
+                ch_cluster=ch_cluster,
+                query_label=query_label,
+            ),
+        )
 
     build_show_tables_query = _operations.build_show_tables_query
     postprocess_show_tables = _operations.postprocess_show_tables

@@ -228,6 +228,8 @@ def _print_dummy_connections_cert_instructions(certs_dir: Path) -> None:
 
 
 def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
+    from ..backends.trino.config import example_upsert_partition_drop_sql_template
+
     return {
         "gp": {
             "type": "gp",
@@ -251,8 +253,7 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
             "upsert_partition_drop_sql_template": (
-                "ALTER TABLE {table} DROP PARTITION "
-                "({partition_column} = {partition_value})"
+                example_upsert_partition_drop_sql_template()
             ),
         },
         "ch": {
@@ -269,6 +270,8 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
 
 
 def _build_dummy_airflow_connections() -> dict[str, Any]:
+    from ..backends.trino.config import example_upsert_partition_drop_sql_template
+
     return {
         "source": "airflow",
         "connections": {
@@ -279,8 +282,7 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
                 "transfer_staging_schema": "object_storage.sandbox",
                 "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
                 "upsert_partition_drop_sql_template": (
-                    "ALTER TABLE {table} DROP PARTITION "
-                    "({partition_column} = {partition_value})"
+                    example_upsert_partition_drop_sql_template()
                 ),
             },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
