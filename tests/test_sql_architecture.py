@@ -160,7 +160,7 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/dml/load/load_sql_table.py": 0,
         "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 2,
         "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 10,
-        "analytics_toolkit/sql/dml/table/drop_tables.py": 2,
+        "analytics_toolkit/sql/dml/table/drop_tables.py": 0,
         "analytics_toolkit/sql/dml/table/maintenance.py": 4,
         "analytics_toolkit/sql/dml/table/partitions.py": 7,
         "analytics_toolkit/sql/dml/table/write_modes.py": 0,
@@ -173,7 +173,7 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/dml/transfer/io/source.py": 3,
         "analytics_toolkit/sql/dml/transfer/staging.py": 5,
         "analytics_toolkit/sql/execution/operation_runner.py": 1,
-        "analytics_toolkit/sql/execution/plan_steps.py": 3,
+        "analytics_toolkit/sql/execution/plan_steps.py": 0,
         "analytics_toolkit/sql/metadata/show_tables.py": 4,
         "analytics_toolkit/sql/metadata/table_info.py": 2,
     }
@@ -270,6 +270,61 @@ def test_adapter_owned_sql_fragments_stay_out_of_cleaned_generic_modules() -> No
     offenders: list[str] = []
 
     for path in cleaned_generic_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_clickhouse_compatibility_wrappers_do_not_own_sql() -> None:
+    wrapper_paths = [
+        SQL_ROOT / "ddl" / "clickhouse.py",
+        SQL_ROOT / "clickhouse" / "lifecycle.py",
+    ]
+    forbidden_snippets = {
+        "CREATE TABLE",
+        "DROP TABLE",
+        "TRUNCATE TABLE",
+        "ENGINE =",
+        "MergeTree",
+        "Distributed(",
+        "ON CLUSTER",
+        "system.",
+    }
+    offenders: list[str] = []
+
+    for path in wrapper_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_generic_clickhouse_callers_delegate_to_adapters() -> None:
+    generic_paths = [
+        SQL_ROOT / "dml" / "table" / "drop_tables.py",
+        SQL_ROOT / "execution" / "plan_steps.py",
+        SQL_ROOT / "metadata" / "table_info.py",
+    ]
+    forbidden_snippets = {
+        "clickhouse.lifecycle",
+        "ddl.clickhouse",
+        "build_ch_",
+        "drop_ch_",
+        "truncate_ch_",
+        "get_ch_connection_for_host",
+        'backend == "ch"',
+        'backend != "ch"',
+        'config.backend == "ch"',
+        'options.backend == "ch"',
+    }
+    offenders: list[str] = []
+
+    for path in generic_paths:
         text = path.read_text()
         for snippet in forbidden_snippets:
             if snippet in text:

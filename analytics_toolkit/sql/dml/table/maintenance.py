@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...backend_adapters import get_backend_adapter
-from ...clickhouse.lifecycle import (
+from ...backends.ch.lifecycle import (
     drop_ch_distributed_table_pair as _drop_ch_pair,
     truncate_ch_distributed_table_pair as _truncate_ch_pair,
 )

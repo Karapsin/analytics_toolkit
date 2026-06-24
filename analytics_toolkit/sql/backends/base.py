@@ -260,6 +260,11 @@ class BackendAdapter:
     build_create_partition_sql = _adapter_defaults.build_create_partition_sql
     query_transfer_stage_table_names = _adapter_defaults.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _adapter_defaults.qualify_transfer_stage_table_name
+    build_drop_tables_sqls = _adapter_defaults.build_drop_tables_sqls
+    build_drop_target_sqls = _adapter_defaults.build_drop_target_sqls
+    drop_table_with_options = _adapter_defaults.drop_table_with_options
+    build_clear_target_sqls = _adapter_defaults.build_clear_target_sqls
+    companion_table_name = _adapter_defaults.companion_table_name
 
     def build_upsert_stage_sqls(
         self,

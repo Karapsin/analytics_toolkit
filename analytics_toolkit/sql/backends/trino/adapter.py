@@ -757,7 +757,7 @@ def _normalize_trino_property_entries(
     value: Sequence[str] | str | None,
     option_name: str,
 ) -> list[str]:
-    from ...ddl.clickhouse import _normalize_non_empty_string
+    from ..ch.ddl import _normalize_non_empty_string
 
     if value is None:
         return []
@@ -773,7 +773,7 @@ def _normalize_trino_property_entries(
 
 
 def _trino_string_array_sql(entries: Sequence[str]) -> str:
-    from ...ddl.clickhouse import _sql_string_literal
+    from ..ch.ddl import _sql_string_literal
 
     return "ARRAY[" + ", ".join(_sql_string_literal(entry) for entry in entries) + "]"
 

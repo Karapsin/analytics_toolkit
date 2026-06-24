@@ -6,11 +6,10 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 
-from ..backend_adapters import split_trino_table_name
+from ..backend_adapters import get_backend_adapter, split_trino_table_name
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..connection.get_sql_connection import get_sql_connection
-from ..ddl.clickhouse import build_ch_shard_table_name
 from ..dml.table._basic_ops import (
     count_table_rows,
     get_table_column_types,
@@ -100,11 +99,7 @@ def table_info(
         config.backend,
         table_name,
     )
-    shard_table = (
-        build_ch_shard_table_name(table_name)
-        if config.backend == "ch"
-        else None
-    )
+    shard_table = get_backend_adapter(config.backend).companion_table_name(table_name)
     inspection_table = resolved_table or table_name
 
     connection = get_sql_connection(config.connection_key)

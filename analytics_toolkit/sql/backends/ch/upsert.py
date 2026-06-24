@@ -114,8 +114,8 @@ def build_drop_upsert_partition_sqls(
     ch_only_shard: bool = False,
 ) -> list[str]:
     del adapter, partition_column, trino_partition_drop_sql_template
-    from ...clickhouse.lifecycle import ch_distributed_table_pair
     from .adapter import ch_cluster_clause
+    from .lifecycle import ch_distributed_table_pair
 
     drop_table = (
         target_table if ch_only_shard else ch_distributed_table_pair(target_table).shard_table

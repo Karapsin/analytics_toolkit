@@ -13,9 +13,6 @@ from ...backend_adapters import (
     split_gp_table_name,
     split_trino_table_name as _adapter_split_trino_table_name,
 )
-from ...clickhouse.lifecycle import (
-    build_drop_ch_distributed_table_pair_sqls as _build_ch_pair_drop_sqls,
-)
 from ...connection.config import resolve_connection_backend
 from ...connection.errors import InvalidSqlInputError
 from ...ddl.identifiers import quote_identifier
@@ -69,9 +66,11 @@ def build_drop_ch_distributed_table_pair_sqls(
     query_label: str | None = None,
     if_exists: bool = True,
 ) -> list[str]:
-    return _build_ch_pair_drop_sqls(
+    return get_backend_adapter("ch").build_drop_tables_sqls(
         table_name,
         ch_cluster=ch_cluster,
+        ch_drop_shard=True,
+        ch_drop_distributed=True,
         query_label=query_label,
         if_exists=if_exists,
     )

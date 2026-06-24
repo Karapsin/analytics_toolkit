@@ -130,6 +130,104 @@ def qualify_transfer_stage_table_name(
     return ".".join(_quote_identifier_part_when_needed(adapter, part) for part in parts)
 
 
+def build_drop_tables_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = "{cluster}",
+    ch_drop_shard: bool = True,
+    ch_drop_distributed: bool = True,
+    if_exists: bool = False,
+    query_label: str | None = None,
+) -> list[str]:
+    del ch_drop_shard, ch_drop_distributed
+    return [
+        adapter.drop_table_sql(
+            table_name,
+            if_exists=if_exists,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+        )
+    ]
+
+
+def build_drop_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+) -> list[str]:
+    del ch_only_shard
+    return [
+        adapter.drop_table_sql(
+            table_name,
+            if_exists=True,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+        )
+    ]
+
+
+def drop_table_with_options(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    connection_key: str,
+    ch_cluster: str | None = "{cluster}",
+    ch_drop_shard: bool = True,
+    ch_drop_distributed: bool = True,
+    ch_wait_for_absence: bool = False,
+    ch_wait_timeout_seconds: int = 300,
+    ch_wait_poll_interval_seconds: float = 1,
+    ch_retry_per_host_drops: bool = True,
+    if_exists: bool = False,
+    query_label: str | None = None,
+) -> None:
+    del (
+        ch_drop_shard,
+        ch_drop_distributed,
+        ch_wait_for_absence,
+        ch_wait_timeout_seconds,
+        ch_wait_poll_interval_seconds,
+        ch_retry_per_host_drops,
+    )
+    from analytics_toolkit.general import time_print
+
+    time_print(
+        f"Dropping table {table_name}",
+        connection=connection_key,
+        backend=adapter.backend,
+    )
+    adapter.drop_table(
+        connection,
+        table_name,
+        if_exists=if_exists,
+        ch_cluster=ch_cluster,
+        query_label=query_label,
+    )
+
+
+def build_clear_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    query_label: str | None = None,
+    include_ch_shard: bool = False,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+) -> list[str]:
+    del include_ch_shard, ch_cluster, ch_only_shard
+    return adapter.clear_table_sqls(table_name, query_label=query_label)
+
+
+def companion_table_name(adapter: Any, table_name: str) -> str | None:
+    del adapter, table_name
+    return None
+
+
 def _quote_identifier_part_when_needed(adapter: Any, identifier: str) -> str:
     if _is_simple_identifier(identifier):
         return identifier

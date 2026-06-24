@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from sqlglot import exp, parse_one
+
 
 def build_show_tables_query(
     adapter: Any,
@@ -78,9 +80,9 @@ def build_drop_partitions_sqls(
     ch_cluster: str = "{cluster}",
 ) -> list[str]:
     del adapter, partition_column, gp_truncate
-    from ...ddl.clickhouse import build_ch_shard_table_name
     from ..utils import sql_string_literal
     from .adapter import ch_cluster_clause
+    from .ddl import build_ch_shard_table_name
 
     shard_table = build_ch_shard_table_name(table)
     cluster_clause = ch_cluster_clause(ch_cluster)
@@ -119,6 +121,230 @@ def qualify_transfer_stage_table_name(
     return f"{transfer_staging_schema}.{table_name}"
 
 
+def build_drop_tables_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = "{cluster}",
+    ch_drop_shard: bool = True,
+    ch_drop_distributed: bool = True,
+    if_exists: bool = False,
+    query_label: str | None = None,
+) -> list[str]:
+    del adapter
+    from .ddl import build_ch_shard_table_name
+    from .lifecycle import (
+        build_drop_ch_distributed_table_pair_sqls,
+        build_drop_ch_table_sqls,
+    )
+
+    if _is_default_ch_shard_table_name(table_name):
+        if not ch_drop_shard:
+            raise ValueError(
+                "ch_drop_shard must be True when dropping a ClickHouse shard table."
+            )
+        return build_drop_ch_table_sqls(
+            table_name,
+            ch_cluster=None,
+            query_label=query_label,
+            if_exists=if_exists,
+        )
+    if ch_drop_distributed and ch_drop_shard:
+        return build_drop_ch_distributed_table_pair_sqls(
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+        )
+    if ch_drop_distributed:
+        return build_drop_ch_table_sqls(
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+        )
+    if ch_drop_shard:
+        return build_drop_ch_table_sqls(
+            build_ch_shard_table_name(table_name),
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+        )
+    raise ValueError(
+        "At least one of ch_drop_shard or ch_drop_distributed must be True."
+    )
+
+
+def build_drop_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    ch_cluster: str | None = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+) -> list[str]:
+    if ch_only_shard:
+        return [
+            adapter.drop_table_sql(
+                table_name,
+                if_exists=True,
+                ch_cluster=None,
+                query_label=query_label,
+            )
+        ]
+    return build_drop_tables_sqls(
+        adapter,
+        table_name,
+        ch_cluster=ch_cluster,
+        ch_drop_shard=True,
+        ch_drop_distributed=True,
+        if_exists=True,
+        query_label=query_label,
+    )
+
+
+def drop_table_with_options(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    connection_key: str,
+    ch_cluster: str | None = "{cluster}",
+    ch_drop_shard: bool = True,
+    ch_drop_distributed: bool = True,
+    ch_wait_for_absence: bool = False,
+    ch_wait_timeout_seconds: int = 300,
+    ch_wait_poll_interval_seconds: float = 1,
+    ch_retry_per_host_drops: bool = True,
+    if_exists: bool = False,
+    query_label: str | None = None,
+) -> None:
+    del adapter
+    from analytics_toolkit.general import time_print
+    from ...connection.get_sql_connection import get_ch_connection_for_host
+    from .ddl import build_ch_shard_table_name
+    from .lifecycle import drop_ch_distributed_table_pair, drop_ch_table
+
+    if _is_default_ch_shard_table_name(table_name):
+        if not ch_drop_shard:
+            raise ValueError(
+                "ch_drop_shard must be True when dropping a ClickHouse shard table."
+            )
+        time_print(
+            f"Dropping ClickHouse table {table_name}",
+            connection=connection_key,
+            backend="ch",
+        )
+        drop_ch_table(
+            connection,
+            table_name,
+            ch_cluster=None,
+            query_label=query_label,
+            if_exists=if_exists,
+            wait_for_absence=ch_wait_for_absence,
+            wait_timeout_seconds=ch_wait_timeout_seconds,
+            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+        )
+        return
+
+    if ch_drop_distributed and ch_drop_shard:
+        shard_table = build_ch_shard_table_name(table_name)
+        time_print(
+            f"Dropping ClickHouse table {table_name}",
+            connection=connection_key,
+            backend="ch",
+        )
+        time_print(
+            f"Dropping paired ClickHouse shard table {shard_table}",
+            connection=connection_key,
+            backend="ch",
+        )
+        drop_ch_distributed_table_pair(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+            wait_for_absence=ch_wait_for_absence,
+            wait_timeout_seconds=ch_wait_timeout_seconds,
+            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+            ch_retry_per_host_drops=ch_retry_per_host_drops,
+            per_host_connection_factory=(
+                lambda host: get_ch_connection_for_host(connection_key, host)
+            ),
+        )
+        return
+
+    if ch_drop_distributed:
+        time_print(
+            f"Dropping ClickHouse table {table_name}",
+            connection=connection_key,
+            backend="ch",
+        )
+        drop_ch_table(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+            wait_for_absence=ch_wait_for_absence,
+            wait_timeout_seconds=ch_wait_timeout_seconds,
+            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+        )
+        return
+
+    if ch_drop_shard:
+        shard_table = build_ch_shard_table_name(table_name)
+        time_print(
+            f"Dropping ClickHouse shard table {shard_table} for {table_name}",
+            connection=connection_key,
+            backend="ch",
+        )
+        drop_ch_table(
+            connection,
+            shard_table,
+            ch_cluster=ch_cluster,
+            query_label=query_label,
+            if_exists=if_exists,
+            wait_for_absence=ch_wait_for_absence,
+            wait_timeout_seconds=ch_wait_timeout_seconds,
+            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+        )
+        return
+
+    raise ValueError(
+        "At least one of ch_drop_shard or ch_drop_distributed must be True."
+    )
+
+
+def build_clear_target_sqls(
+    adapter: Any,
+    table_name: str,
+    *,
+    query_label: str | None = None,
+    include_ch_shard: bool = False,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+) -> list[str]:
+    if not include_ch_shard or ch_only_shard:
+        return adapter.clear_table_sqls(table_name, query_label=query_label)
+
+    from .lifecycle import build_truncate_ch_distributed_table_pair_sqls
+
+    return build_truncate_ch_distributed_table_pair_sqls(
+        table_name,
+        ch_cluster=ch_cluster,
+        query_label=query_label,
+    )
+
+
+def companion_table_name(adapter: Any, table_name: str) -> str | None:
+    del adapter
+    from .ddl import build_ch_shard_table_name
+
+    return build_ch_shard_table_name(table_name)
+
+
 def _first_result_value(result: Any, table_name: str) -> str:
     import pandas as pd
 
@@ -129,3 +355,13 @@ def _first_result_value(result: Any, table_name: str) -> str:
     if pd.isna(value):
         raise ValueError(f"No DDL returned for table {table_name}.")
     return str(value)
+
+
+def _is_default_ch_shard_table_name(table_name: str) -> bool:
+    try:
+        table = parse_one(table_name, read="clickhouse", into=exp.Table)
+    except Exception:
+        return False
+    if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
+        return False
+    return str(table.this.this).endswith("_shard")

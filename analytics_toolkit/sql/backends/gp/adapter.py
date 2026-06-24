@@ -778,7 +778,7 @@ def _build_gp_partition_by_sql(partition_by: Sequence[str] | str | None) -> str:
 
 
 def _normalize_gp_partition_column(partition_by: Sequence[str] | str) -> str:
-    from ...ddl.clickhouse import _normalize_non_empty_string
+    from ..ch.ddl import _normalize_non_empty_string
 
     if isinstance(partition_by, str):
         return _normalize_non_empty_string(partition_by, "partition_by")

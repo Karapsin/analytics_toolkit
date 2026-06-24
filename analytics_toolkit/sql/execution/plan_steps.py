@@ -133,30 +133,13 @@ def add_drop_target_steps(
     query_label: str | None = None,
     ch_only_shard: bool = False,
 ) -> None:
-    from ..dml.table._basic_ops import (
-        build_drop_ch_distributed_table_pair_sqls,
-        build_drop_table_sql,
-    )
+    from ..backends import get_backend_adapter
 
-    if backend == "ch" and not ch_only_shard:
-        plan.extend(
-            build_drop_ch_distributed_table_pair_sqls(
-                table_name,
-                ch_cluster=ch_cluster,
-                query_label=query_label,
-            ),
-            alias=alias,
-            backend=backend,
-            phase="drop_target",
-            target_table=table_name,
-        )
-        return
-
-    plan.add(
-        build_drop_table_sql(
-            backend,
+    plan.extend(
+        get_backend_adapter(backend).build_drop_target_sqls(
             table_name,
-            ch_cluster=None,
+            ch_cluster=ch_cluster,
+            ch_only_shard=ch_only_shard,
             query_label=query_label,
         ),
         alias=alias,
@@ -203,20 +186,14 @@ def build_clear_target_sqls(
     ch_cluster: str = "{cluster}",
     ch_only_shard: bool = False,
 ) -> list[str]:
-    from ..clickhouse.lifecycle import build_truncate_ch_distributed_table_pair_sqls
-    from ..dml.table._basic_ops import build_clear_table_sqls
+    from ..backends import get_backend_adapter
 
-    if backend != "ch" or not include_ch_shard or ch_only_shard:
-        return build_clear_table_sqls(
-            backend,
-            table_name,
-            query_label=query_label,
-        )
-
-    return build_truncate_ch_distributed_table_pair_sqls(
+    return get_backend_adapter(backend).build_clear_target_sqls(
         table_name,
-        ch_cluster=ch_cluster,
         query_label=query_label,
+        include_ch_shard=include_ch_shard,
+        ch_cluster=ch_cluster,
+        ch_only_shard=ch_only_shard,
     )
 
 
@@ -255,9 +232,10 @@ def add_analyze_step(
     table_name: str,
     query_label: str | None = None,
 ) -> None:
+    from ..backends import get_backend_capability
     from ..dml.table._basic_ops import build_analyze_table_sql
 
-    if backend == "ch":
+    if not get_backend_capability(backend).supports_analyze:
         return
 
     plan.add(

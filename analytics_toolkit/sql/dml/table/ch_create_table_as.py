@@ -16,7 +16,7 @@ from ...connection.get_sql_connection import (
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...clickhouse.lifecycle import (
+from ...backends.ch.lifecycle import (
     build_create_ch_distributed_table_pair_sqls,
     build_drop_ch_distributed_table_pair_sqls,
     build_drop_ch_table_sqls,
@@ -24,7 +24,7 @@ from ...clickhouse.lifecycle import (
     drop_ch_table,
 )
 from ...clickhouse.wait import _wait_for_ch_distributed_table_pair
-from ...ddl.clickhouse import (
+from ...backends.ch.ddl import (
     _normalize_non_empty_string,
     build_ch_local_create_table_sql,
     build_ch_shard_table_name,

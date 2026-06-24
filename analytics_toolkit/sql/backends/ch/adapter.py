@@ -113,7 +113,7 @@ class ClickHouseAdapter(BackendAdapter):
         ch_replace_table: bool,
     ) -> list[str]:
         del gp_distributed_by_key
-        from ...ddl.clickhouse import _build_ch_create_table_sqls
+        from .ddl import _build_ch_create_table_sqls
 
         return _build_ch_create_table_sqls(
             table_name=table_name,
@@ -179,6 +179,11 @@ class ClickHouseAdapter(BackendAdapter):
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
+    build_drop_tables_sqls = _operations.build_drop_tables_sqls
+    drop_table_with_options = _operations.drop_table_with_options
+    build_clear_target_sqls = _operations.build_clear_target_sqls
+    companion_table_name = _operations.companion_table_name
+    build_drop_target_sqls = _operations.build_drop_target_sqls
 
     def drop_table_sql(
         self,
@@ -497,7 +502,7 @@ class ClickHouseAdapter(BackendAdapter):
 
     def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
         from analytics_toolkit.general import time_print
-        from ...clickhouse.lifecycle import (
+        from .lifecycle import (
             drop_ch_distributed_table_pair,
             truncate_ch_distributed_table_pair,
         )
