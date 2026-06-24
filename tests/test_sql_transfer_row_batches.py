@@ -277,6 +277,10 @@ def make_trino_config(
         source=None,
         transfer_staging_schema=transfer_staging_schema,
         transfer_staging_location=transfer_staging_location,
+        upsert_partition_drop_sql_template=(
+            "ALTER TABLE {table} DROP PARTITION "
+            "({partition_column} = {partition_value})"
+        ),
     )
 
 
@@ -3091,7 +3095,7 @@ def test_transfer_dry_run_keyed_row_staging_uses_per_worker_stage_tables(
     )
 
 
-def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(
+def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_partition_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configs = {
@@ -3111,15 +3115,17 @@ def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_merge(
         to_table="sandbox.target",
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         table_schema={"id": "BIGINT", "amount": "DOUBLE"},
         dry_run=True,
     )
 
     assert any(
-        sql.startswith("MERGE INTO sandbox.target AS target_dst\n")
-        and "USING object_storage.sandbox.target__" in sql
+        sql.startswith('INSERT INTO sandbox.target__upsert_final__dry_run ("id", "amount")\n')
+        and "object_storage.sandbox.target__" in sql
         for sql in plan.sqls
     )
+    assert any("DROP PARTITION" in sql for sql in plan.sqls)
 
 
 def test_adaptive_batch_sizer_grows_shrinks_caps_floors_and_can_disable() -> None:

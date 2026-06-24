@@ -40,13 +40,17 @@ from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
-from ...table.write_modes import build_upsert_stage_placeholder_sqls
-from ...table.write_modes import build_upsert_stage_sqls
+from ...table.table_validation import normalize_upsert_partition_column
+from ...table.upsert_policy import (
+    is_trino_backend,
+    uses_partition_replacement_upsert,
+)
 from .attempt import run_transfer_attempt
 from .dry_run import (
+    add_insert_target_dry_run_steps,
+    add_upsert_target_dry_run_steps,
     dry_run_stage_external_location,
     dry_run_stage_table_names,
-    resolve_dry_run_upsert_columns,
     source_batches_label,
 )
 from . import options as transfer_options
@@ -88,6 +92,7 @@ def transfer_table(
     full_retry_cnt: int = 5,
     full_timeout_increment: int | float = 60 * 10,
     key_columns: str | Sequence[str] | None = None,
+    upsert_partition_column: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
@@ -138,6 +143,7 @@ def transfer_table(
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
         key_columns=key_columns,
+        upsert_partition_column=upsert_partition_column,
         gp_distributed_by_key=gp_distributed_by_key,
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=trino_insert_chunk_size,
@@ -308,6 +314,7 @@ def build_transfer_options(
     full_retry_cnt: int = 5,
     full_timeout_increment: int | float = 60 * 10,
     key_columns: str | Sequence[str] | None = None,
+    upsert_partition_column: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
@@ -340,6 +347,11 @@ def build_transfer_options(
     )
     transfer_staging_location = (
         to_config.transfer_staging_location
+        if isinstance(to_config, TrinoConfig)
+        else None
+    )
+    trino_upsert_partition_drop_sql_template = (
+        to_config.upsert_partition_drop_sql_template
         if isinstance(to_config, TrinoConfig)
         else None
     )
@@ -450,6 +462,12 @@ def build_transfer_options(
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
         key_columns=normalize_key_columns(key_columns),
+        upsert_partition_column=normalize_upsert_partition_column(
+            upsert_partition_column
+        ),
+        trino_upsert_partition_drop_sql_template=(
+            trino_upsert_partition_drop_sql_template
+        ),
         gp_distributed_by_key=normalize_key_columns(
             gp_distributed_by_key,
             "gp_distributed_by_key",
@@ -492,6 +510,24 @@ def build_transfer_options(
         raise ValueError("to_table must not be empty.")
     if options.write_mode == "upsert" and not options.key_columns:
         raise ValueError("key_columns are required for write_mode='upsert'.")
+    if (
+        options.write_mode == "upsert"
+        and uses_partition_replacement_upsert(options.to_db_backend)
+        and options.upsert_partition_column is None
+    ):
+        raise ValueError(
+            "upsert_partition_column is required for write_mode='upsert' "
+            "when to_db has type 'trino' or 'ch'."
+        )
+    if (
+        options.write_mode == "upsert"
+        and is_trino_backend(options.to_db_backend)
+        and not options.trino_upsert_partition_drop_sql_template
+    ):
+        raise ValueError(
+            "Trino write_mode='upsert' requires "
+            "upsert_partition_drop_sql_template in the target connection config."
+        )
     if options.batch_size <= 0:
         raise ValueError("batch_size must be a positive integer.")
     validate_retry_options(options.retry_cnt, options.timeout_increment)
@@ -596,6 +632,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "target_rows_per_second_window": options.target_rows_per_second_window,
             "target_rows_per_second_deadband": options.target_rows_per_second_deadband,
             "key_columns": options.key_columns,
+            "upsert_partition_column": options.upsert_partition_column,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "adaptive_gp_insert_chunk_size": options.to_db_backend == "gp"
@@ -765,83 +802,17 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             ch_only_shard=options.ch_only_shard,
         )
     if options.write_mode == "upsert":
-        columns = resolve_dry_run_upsert_columns(options)
-        upsert_sqls = (
-            build_upsert_stage_sqls(
-                options.to_db_backend,
-                options.target_table,
-                stage_table,
-                columns=columns,
-                key_columns=options.key_columns or [],
-                column_types=options.table_schema,
-                ch_cluster=options.ch_cluster,
-                ch_only_shard=options.ch_only_shard,
-                query_label=options.query_label,
-            )
-            if columns is not None
-            else build_upsert_stage_placeholder_sqls(
-                options.to_db_backend,
-                options.target_table,
-                stage_table,
-                key_columns=options.key_columns or [],
-                ch_cluster=options.ch_cluster,
-                ch_only_shard=options.ch_only_shard,
-                query_label=options.query_label,
-            )
-        )
-        plan.extend(
-            upsert_sqls,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="upsert_target",
-            target_table=options.target_table,
-        )
-    else:
-        if options.table_schema is None:
-            add_create_table_placeholder_step(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                table_name=options.target_table,
-                query_label=options.query_label,
-            )
-        else:
-            add_create_table_steps(
-                plan,
-                _build_create_table_sqls(
-                    options.to_db_backend,
-                    options.target_table,
-                    pd.DataFrame(columns=list(options.table_schema)),
-                    table_schema=options.table_schema,
-                    gp_distributed_by_key=options.gp_distributed_by_key,
-                    partition_by=options.partition_by,
-                    order_by=options.order_by,
-                    ch_engine=options.ch_engine,
-                    ch_cluster=options.ch_cluster,
-                    ch_sharding_key=options.ch_sharding_key,
-                    ch_distributed_table=(
-                        options.to_db_backend == "ch" and not options.ch_only_shard
-                    ),
-                    ch_only_shard=options.ch_only_shard,
-                    ch_replace_table=(
-                        options.to_db_backend == "ch"
-                        and options.write_mode == "replace"
-                        and not options.ch_only_shard
-                    ),
-                    query_label=options.query_label,
-                ),
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                table_name=options.target_table,
-            )
-        add_insert_from_stage_step(
+        add_upsert_target_dry_run_steps(
             plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            target_table=options.target_table,
+            options,
             stage_table=stage_table,
-            phase="insert_target",
-            query_label=options.query_label,
+            stage_tables=stage_tables,
+    )
+    else:
+        add_insert_target_dry_run_steps(
+            plan,
+            stage_table=stage_table,
+            options=options,
         )
     add_analyze_step(
         plan,
@@ -863,6 +834,16 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             alias=options.to_db_key,
             backend=options.to_db_backend,
             stage_table=worker_stage_table,
+            query_label=options.query_label,
+        )
+    if options.write_mode == "upsert" and uses_partition_replacement_upsert(
+        options.to_db_backend
+    ):
+        add_cleanup_stage_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            stage_table=f"{options.target_table}__upsert_final__dry_run",
             query_label=options.query_label,
         )
     if options.trino_mode == "parquet":

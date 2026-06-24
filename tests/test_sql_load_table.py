@@ -49,6 +49,10 @@ def _write_trino_connections(
         "catalog": "iceberg",
         "schema": "sandbox",
         "transfer_staging_schema": "object_storage.pa_core_stage",
+        "upsert_partition_drop_sql_template": (
+            "ALTER TABLE {table} DROP PARTITION "
+            "({partition_column} = {partition_value})"
+        ),
     }
     if transfer_staging_location is not None:
         config["transfer_staging_location"] = transfer_staging_location
@@ -645,15 +649,15 @@ def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_colu
         pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         retry_cnt=1,
         timeout_increment=0,
     )
 
     assert result == 2
     assert any(
-        "INSERT INTO analytics.target (`id`, `score`) "
-        "SELECT CAST(`id` AS UInt64) AS `id`, "
-        "CAST(`score` AS Int64) AS `score` "
+        "INSERT INTO analytics.target__stage__upsert (`id`, `score`) "
+        "SELECT CAST(`id` AS UInt64) AS `id`, CAST(`score` AS Int64) AS `score` "
         "FROM analytics.target__stage__upsert"
         in sql
         for sql in client.commands
@@ -1502,8 +1506,8 @@ def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
     )
 
 
-def test_finalize_stage_table_trino_upsert_uses_merge() -> None:
-    connection = FakeDbapiConnection()
+def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> None:
+    connection = FakeDbapiConnection(rows=[("2026-06-24",)])
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
     table_ops_module.finalize_stage_table(
@@ -1516,23 +1520,33 @@ def test_finalize_stage_table_trino_upsert_uses_merge() -> None:
         sample_batch=batch,
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="event_date",
+        final_upsert_stage_table="sandbox.target__final_stage",
+        trino_upsert_partition_drop_sql_template=(
+            "ALTER TABLE {table} DROP PARTITION "
+            "({partition_column} = {partition_value})"
+        ),
         insert_column_types={"id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed == [
-        'MERGE INTO sandbox.target AS target_dst\n'
-        'USING sandbox.target__stage AS stage_src\n'
-        'ON (target_dst."id" = stage_src."id" '
-        'OR (target_dst."id" IS NULL AND stage_src."id" IS NULL))\n'
-        'WHEN MATCHED THEN UPDATE SET\n'
-        '  "id" = stage_src."id",\n'
-        '  "score" = stage_src."score"\n'
-        'WHEN NOT MATCHED THEN INSERT ("id", "score")\n'
-        '  VALUES (stage_src."id", stage_src."score")'
-    ]
+    assert connection.executed[0] == (
+        'SELECT DISTINCT "event_date" FROM sandbox.target__stage'
+    )
+    assert connection.executed[1].startswith(
+        'INSERT INTO sandbox.target__final_stage ("id", "score")\n'
+        'SELECT target_dst."id", target_dst."score"\n'
+        "FROM sandbox.target AS target_dst"
+    )
+    assert connection.executed[3] == (
+        'ALTER TABLE sandbox.target DROP PARTITION ("event_date" = '
+        "'2026-06-24')"
+    )
+    assert connection.executed[4].startswith(
+        'INSERT INTO sandbox.target ("id", "score") '
+    )
 
 
-def test_finalize_stage_table_clickhouse_upsert_deletes_shard_then_inserts() -> None:
+def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None:
     client = FakeClickHouseClient()
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
@@ -1546,13 +1560,14 @@ def test_finalize_stage_table_clickhouse_upsert_deletes_shard_then_inserts() -> 
         sample_batch=batch,
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
+        final_upsert_stage_table=f"{TEST_CH_TABLE}__final_stage",
         insert_column_types={"id": "UInt64", "score": "Int64"},
         ch_cluster="core",
     )
 
-    delete_sql = next(sql for sql in client.commands if sql.startswith("DELETE FROM"))
-    assert delete_sql.startswith(f"DELETE FROM {TEST_CH_SHARD_TABLE} ON CLUSTER core")
-    assert "tuple(isNull(`id`), ifNull(toString(`id`), ''))" in delete_sql
+    drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
+    assert drop_sql == f"ALTER TABLE {TEST_CH_SHARD_TABLE} ON CLUSTER core DROP PARTITION 1"
     assert client.commands[-1].startswith(
         f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) "
     )
@@ -1572,14 +1587,16 @@ def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> N
         sample_batch=batch,
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
+        final_upsert_stage_table=f"{TEST_CH_TABLE}__final_stage",
         insert_column_types={"id": "UInt64", "score": "Int64"},
         ch_cluster="core",
         ch_only_shard=True,
     )
 
-    delete_sql = next(sql for sql in client.commands if sql.startswith("DELETE FROM"))
-    assert delete_sql.startswith(f"DELETE FROM {TEST_CH_TABLE}\n")
-    assert "ON CLUSTER" not in delete_sql
+    drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
+    assert drop_sql == f"ALTER TABLE {TEST_CH_TABLE} DROP PARTITION 1"
+    assert "ON CLUSTER" not in drop_sql
 
 
 def test_finalize_stage_table_upsert_missing_target_creates_and_inserts() -> None:
@@ -1827,6 +1844,7 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
         pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         retry_cnt=1,
         timeout_increment=0,
     )

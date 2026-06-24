@@ -31,9 +31,11 @@ from .api import (
 )
 from .table_validation import (
     normalize_key_columns,
+    normalize_upsert_partition_column,
     validate_key_columns_in_columns,
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
+    validate_upsert_partition_column_in_columns,
 )
 from .partitions import drop_partitions
 
@@ -64,8 +66,10 @@ __all__ = [
     "insert_from_query",
     "insert_from_table",
     "normalize_key_columns",
+    "normalize_upsert_partition_column",
     "table_exists",
     "validate_key_columns_in_columns",
     "validate_stage_target_key_overlap",
     "validate_stage_uniqueness",
+    "validate_upsert_partition_column_in_columns",
 ]

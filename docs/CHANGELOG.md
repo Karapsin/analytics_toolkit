@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.11 - 2026-06-24
 
 - Quote discovered Greenplum stale stage cleanup names.
 - Create GP and Trino SQL transfer targets before staging rows.
@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Added ClickHouse transfer stream-read retries with smaller retry batches.
 - Handled empty missing-target SQL transfers.
 - Added SQL show_queries helper.
+- Redesign SQL upsert finalization for Trino and ClickHouse as partition-scoped replacement.
 
 ## 1.3.10.10 - 2026-06-23
 

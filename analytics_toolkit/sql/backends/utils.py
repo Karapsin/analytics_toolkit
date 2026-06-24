@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date, datetime
 from typing import Any
 
 
@@ -43,6 +44,20 @@ def sql_in_list(column_sql: str, values: list[str]) -> str:
 
 def sql_string_literal(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def sql_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return sql_string_literal(value.isoformat())
+    return sql_string_literal(value)
 
 
 def _extract_row_count_from_mapping(value: Mapping[str, Any]) -> int | None:

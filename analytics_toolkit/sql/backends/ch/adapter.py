@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from . import upsert as _upsert
 from . import source_count as _source_count
 from . import queries as _queries
 from ..base import (
@@ -266,77 +267,9 @@ class ClickHouseAdapter(BackendAdapter):
         )
         return transfer_schema._nullable_ch_type(base_type)
 
-    def build_upsert_stage_sqls(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        columns: Sequence[str],
-        key_columns: Sequence[str],
-        column_types: dict[str, str] | None = None,
-        ch_cluster: str = "{cluster}",
-        ch_only_shard: bool = False,
-        query_label: str | None = None,
-    ) -> list[str]:
-        from ...clickhouse.lifecycle import ch_distributed_table_pair
-
-        delete_table = (
-            target_table
-            if ch_only_shard
-            else ch_distributed_table_pair(target_table).shard_table
-        )
-        return [
-            _apply_query_label(
-                self._build_delete_matching_stage_sql(
-                    delete_table,
-                    stage_table,
-                    key_columns,
-                    ch_cluster=None if ch_only_shard else ch_cluster,
-                ),
-                query_label,
-            ),
-            self.build_insert_from_stage_sql(
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=column_types,
-                query_label=query_label,
-            ),
-        ]
-
-    def build_upsert_stage_placeholder_sqls(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        key_columns: Sequence[str],
-        ch_cluster: str = "{cluster}",
-        ch_only_shard: bool = False,
-        query_label: str | None = None,
-    ) -> list[str]:
-        from ...clickhouse.lifecycle import ch_distributed_table_pair
-
-        delete_table = (
-            target_table
-            if ch_only_shard
-            else ch_distributed_table_pair(target_table).shard_table
-        )
-        return [
-            _apply_query_label(
-                self._build_delete_matching_stage_sql(
-                    delete_table,
-                    stage_table,
-                    key_columns,
-                    ch_cluster=None if ch_only_shard else ch_cluster,
-                ),
-                query_label,
-            ),
-            self.build_insert_from_stage_placeholder_sql(
-                target_table,
-                stage_table,
-                query_label=query_label,
-            ),
-        ]
+    build_upsert_stage_sqls = _upsert.build_upsert_stage_sqls
+    build_upsert_stage_placeholder_sqls = _upsert.build_upsert_stage_placeholder_sqls
+    build_drop_upsert_partition_sqls = _upsert.build_drop_upsert_partition_sqls
 
     def _build_delete_matching_stage_sql(
         self,
@@ -405,6 +338,24 @@ class ClickHouseAdapter(BackendAdapter):
             time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
             raise
         return None
+
+    def fetch_upsert_partition_values(
+        self,
+        connection: Any,
+        stage_table: str,
+        *,
+        partition_column: str,
+        incoming_stage_tables: Sequence[str] | None = None,
+    ) -> list[Any]:
+        result = connection.query(
+            self.build_upsert_partition_values_sql(
+                stage_table,
+                partition_column=partition_column,
+                incoming_stage_tables=incoming_stage_tables,
+            )
+        )
+        rows = getattr(result, "result_rows", None) or []
+        return [row[0] for row in rows]
 
     def execute_read_sql(
         self,
@@ -672,6 +623,17 @@ class ClickHouseAdapter(BackendAdapter):
                 ch_replace_table=False,
                 ch_only_shard=request.ch_only_shard,
             )
+            if request.upsert_partition_column is None:
+                raise ValueError(
+                    "upsert_partition_column is required for "
+                    "ClickHouse write_mode='upsert'."
+                )
+            partition_values = self.fetch_upsert_partition_values(
+                request.connection,
+                request.stage_table,
+                partition_column=request.upsert_partition_column,
+                incoming_stage_tables=request.incoming_stage_tables,
+            )
             for sql in self.build_upsert_stage_sqls(
                 request.target_table,
                 request.stage_table,
@@ -685,6 +647,10 @@ class ClickHouseAdapter(BackendAdapter):
                 ch_cluster=request.ch_cluster,
                 ch_only_shard=request.ch_only_shard,
                 query_label=request.query_label,
+                upsert_partition_column=request.upsert_partition_column,
+                final_stage_table=request.final_upsert_stage_table,
+                incoming_stage_tables=request.incoming_stage_tables,
+                partition_values=partition_values,
             ):
                 self.execute_command(request.connection, sql)
             return

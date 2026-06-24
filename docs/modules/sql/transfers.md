@@ -28,8 +28,8 @@ Use `write_mode` to choose finalization behavior:
 - `append` inserts staged rows into the existing target.
 - `replace` recreates or clears the target before inserting staged rows.
 - `truncate_insert` clears the existing target shape before inserting staged rows.
-- `upsert` requires `key_columns`, rejects duplicate staged keys, and replaces
-  matching target keys before inserting staged rows.
+- `upsert` requires `key_columns`, rejects duplicate staged keys, and applies
+  backend-specific replacement semantics.
 
 Use [sql.read](functions/read.md) instead when the goal is only to return a
 source query as a dataframe. Use [sql.load_df](functions/load_df.md) when
@@ -78,10 +78,13 @@ the target already exists, final stage-to-target inserts cast staged values to
 the target column types. Use `table_schema` when the target type must be
 explicit and portable inference is not enough.
 
-Upsert finalization is backend-specific. Trino uses native `MERGE`, so
-connector-specific `MERGE` support is enforced by Trino at runtime. Greenplum
-uses staged delete-and-insert. ClickHouse uses lightweight `DELETE` against the
-local shard for distributed targets, then inserts through the distributed
-target; it does not use `ReplacingMergeTree`.
+Upsert finalization is backend-specific. Greenplum uses staged
+delete-and-insert on `key_columns`. Trino and ClickHouse require
+`upsert_partition_column`, build a final increment for affected partitions, drop
+those partitions, and insert the final increment. Trino needs
+`upsert_partition_drop_sql_template` in the target connection config so the
+connector-specific partition drop syntax is explicit. Trino and ClickHouse do
+not use native `MERGE`, arbitrary key deletes, or ClickHouse lightweight key
+deletes for upsert finalization.
 
 [SQL module index](index.md)

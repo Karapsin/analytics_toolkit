@@ -35,6 +35,10 @@ DEFAULT_SQL_CONNECTIONS = {
         "password": "password",
         "catalog": "iceberg",
         "schema": "sandbox",
+        "upsert_partition_drop_sql_template": (
+            "ALTER TABLE {table} DROP PARTITION "
+            "({partition_column} = {partition_value})"
+        ),
     },
     "ch": {
         "type": "ch",

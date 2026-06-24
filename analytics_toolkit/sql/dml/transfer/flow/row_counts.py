@@ -224,14 +224,22 @@ def _count_loaded_stage_rows(
     stage_table = stage_state.stage_table
     if stage_table is None:
         raise RuntimeError("Expected stage table to be initialized.")
+    stage_tables = (
+        stage_state.stage_tables
+        if options.write_mode == "upsert" and stage_state.stage_tables is not None
+        else [stage_table]
+    )
     return run_with_fresh_connection(
         options.to_db_key,
         "validate_stage_row_count",
-        lambda target_ref: count_table_rows(
-            options.to_db_backend,
-            target_ref["connection"],
-            stage_table,
-            query_label=options.query_label,
+        lambda target_ref: sum(
+            count_table_rows(
+                options.to_db_backend,
+                target_ref["connection"],
+                current_stage_table,
+                query_label=options.query_label,
+            )
+            for current_stage_table in stage_tables
         ),
         open_connection=open_connection,
     )

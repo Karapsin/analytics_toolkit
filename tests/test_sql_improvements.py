@@ -765,10 +765,13 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
         df,
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         dry_run=True,
     )
-    assert any(sql.startswith("MERGE INTO sandbox.scores") for sql in trino_plan.sqls)
-    assert any("WHEN NOT MATCHED THEN INSERT" in sql for sql in trino_plan.sqls)
+    assert any("sandbox.scores__upsert_final__dry_run" in sql for sql in trino_plan.sqls)
+    assert any("SELECT target_dst." in sql for sql in trino_plan.sqls)
+    assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
+    assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
 
 
 def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
@@ -796,10 +799,13 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
         to_table="sandbox.scores",
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         table_schema={"id": "BIGINT", "score": "INTEGER"},
         dry_run=True,
     )
-    assert any(sql.startswith("MERGE INTO sandbox.scores") for sql in trino_plan.sqls)
+    assert any("sandbox.scores__upsert_final__dry_run" in sql for sql in trino_plan.sqls)
+    assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
+    assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
 
     ch_plan = transfer_api_module.transfer_table(
         from_db="gp",
@@ -808,15 +814,16 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
         to_table="analytics.scores",
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         table_schema={"id": "UInt64", "score": "Int64"},
         ch_cluster="analytics",
         dry_run=True,
     )
     assert any(
-        "DELETE FROM analytics.scores_shard ON CLUSTER analytics" in sql
+        "ALTER TABLE analytics.scores_shard ON CLUSTER analytics DROP PARTITION" in sql
         for sql in ch_plan.sqls
     )
-    assert any("tuple(isNull(`id`), ifNull(toString(`id`), ''))" in sql for sql in ch_plan.sqls)
+    assert not any(sql.startswith("DELETE FROM analytics.scores") for sql in ch_plan.sqls)
     assert any("INSERT INTO analytics.scores" in sql for sql in ch_plan.sqls)
 
 
@@ -828,12 +835,18 @@ def test_transfer_upsert_dry_run_infers_source_columns_without_table_schema() ->
         to_table="sandbox.scores",
         write_mode="upsert",
         key_columns=["id"],
+        upsert_partition_column="id",
         dry_run=True,
     )
 
-    merge_sql = next(sql for sql in trino_plan.sqls if sql.startswith("MERGE INTO"))
-    assert '"score" = stage_src."score"' in merge_sql
-    assert 'WHEN NOT MATCHED THEN INSERT ("id", "score")' in merge_sql
+    final_insert_sql = next(
+        sql
+        for sql in trino_plan.sqls
+        if sql.startswith('INSERT INTO sandbox.scores__upsert_final__dry_run ("id", "score")')
+        and 'SELECT "id", "score" FROM' in sql
+    )
+    assert 'SELECT CAST("id" AS BIGINT)' not in final_insert_sql
+    assert 'SELECT "id", "score" FROM' in final_insert_sql
 
     gp_plan = transfer_api_module.transfer_table(
         from_db="trino",

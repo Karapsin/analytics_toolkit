@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 from sqlglot import exp, parse_one
+import pandas as pd
 
+from ....ddl.api import _build_create_table_sqls
 from ....core.identifiers import sqlglot_dialect
+from ....execution.plan_steps import (
+    add_create_table_placeholder_step,
+    add_create_table_steps,
+    add_insert_from_stage_step,
+)
+from ....execution.plans import SqlPlan
 from ...load.stage import build_stage_table_name
+from ...table.upsert_policy import (
+    is_clickhouse_backend,
+    uses_partition_replacement_upsert,
+)
+from ...table.write_modes import (
+    build_upsert_stage_placeholder_sqls,
+    build_upsert_stage_sqls,
+)
 from .parquet_stage import build_stage_external_location
 from ..runtime.models import TransferOptions
 
@@ -80,6 +96,156 @@ def resolve_dry_run_upsert_columns(options: TransferOptions) -> list[str] | None
     return infer_source_select_columns(
         options.source_sql,
         source_backend=options.from_db_backend,
+    )
+
+
+def add_upsert_target_dry_run_steps(
+    plan: SqlPlan,
+    options: TransferOptions,
+    *,
+    stage_table: str,
+    stage_tables: list[str],
+) -> None:
+    columns = resolve_dry_run_upsert_columns(options)
+    final_stage_table = f"{options.target_table}__upsert_final__dry_run"
+    if uses_partition_replacement_upsert(options.to_db_backend):
+        _add_final_upsert_stage_create_step(plan, options, final_stage_table)
+    upsert_sqls = (
+        build_upsert_stage_sqls(
+            options.to_db_backend,
+            options.target_table,
+            stage_table,
+            columns=columns,
+            key_columns=options.key_columns or [],
+            column_types=options.table_schema,
+            ch_cluster=options.ch_cluster,
+            ch_only_shard=options.ch_only_shard,
+            query_label=options.query_label,
+            upsert_partition_column=options.upsert_partition_column,
+            final_stage_table=(
+                final_stage_table
+                if uses_partition_replacement_upsert(options.to_db_backend)
+                else None
+            ),
+            incoming_stage_tables=stage_tables,
+            trino_partition_drop_sql_template=(
+                options.trino_upsert_partition_drop_sql_template
+            ),
+        )
+        if columns is not None
+        else build_upsert_stage_placeholder_sqls(
+            options.to_db_backend,
+            options.target_table,
+            stage_table,
+            key_columns=options.key_columns or [],
+            ch_cluster=options.ch_cluster,
+            ch_only_shard=options.ch_only_shard,
+            query_label=options.query_label,
+            upsert_partition_column=options.upsert_partition_column,
+            final_stage_table=(
+                final_stage_table
+                if uses_partition_replacement_upsert(options.to_db_backend)
+                else None
+            ),
+            incoming_stage_tables=stage_tables,
+            trino_partition_drop_sql_template=(
+                options.trino_upsert_partition_drop_sql_template
+            ),
+        )
+    )
+    plan.extend(
+        upsert_sqls,
+        alias=options.to_db_key,
+        backend=options.to_db_backend,
+        phase="upsert_target",
+        target_table=options.target_table,
+    )
+
+
+def add_insert_target_dry_run_steps(
+    plan: SqlPlan,
+    options: TransferOptions,
+    *,
+    stage_table: str,
+) -> None:
+    if options.table_schema is None:
+        add_create_table_placeholder_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            table_name=options.target_table,
+            query_label=options.query_label,
+        )
+    else:
+        add_create_table_steps(
+            plan,
+            _build_create_table_sqls(
+                options.to_db_backend,
+                options.target_table,
+                pd.DataFrame(columns=list(options.table_schema)),
+                table_schema=options.table_schema,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                partition_by=options.partition_by,
+                order_by=options.order_by,
+                ch_engine=options.ch_engine,
+                ch_cluster=options.ch_cluster,
+                ch_sharding_key=options.ch_sharding_key,
+                ch_distributed_table=(
+                    is_clickhouse_backend(options.to_db_backend)
+                    and not options.ch_only_shard
+                ),
+                ch_only_shard=options.ch_only_shard,
+                ch_replace_table=(
+                    is_clickhouse_backend(options.to_db_backend)
+                    and options.write_mode == "replace"
+                    and not options.ch_only_shard
+                ),
+                query_label=options.query_label,
+            ),
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            table_name=options.target_table,
+        )
+    add_insert_from_stage_step(
+        plan,
+        alias=options.to_db_key,
+        backend=options.to_db_backend,
+        target_table=options.target_table,
+        stage_table=stage_table,
+        phase="insert_target",
+        query_label=options.query_label,
+    )
+
+
+def _add_final_upsert_stage_create_step(
+    plan: SqlPlan,
+    options: TransferOptions,
+    final_stage_table: str,
+) -> None:
+    if options.table_schema is None:
+        add_create_table_placeholder_step(
+            plan,
+            alias=options.to_db_key,
+            backend=options.to_db_backend,
+            phase="create_final_upsert_stage",
+            table_name=final_stage_table,
+            query_label=options.query_label,
+        )
+        return
+    add_create_table_steps(
+        plan,
+        _build_create_table_sqls(
+            options.to_db_backend,
+            final_stage_table,
+            pd.DataFrame(columns=list(options.table_schema)),
+            table_schema=options.table_schema,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            query_label=options.query_label,
+        ),
+        alias=options.to_db_key,
+        backend=options.to_db_backend,
+        phase="create_final_upsert_stage",
+        table_name=final_stage_table,
     )
 
 

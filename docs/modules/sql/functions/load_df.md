@@ -5,7 +5,7 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, key_columns: 'str | Sequence[str] | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -18,6 +18,7 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `append` - historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied
 - `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
 - `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
+- `upsert_partition_column` - single staged column that defines affected partitions for Trino and ClickHouse upsert replacement; required for those backends when `write_mode="upsert"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `dry_run` - when `True`, return a plan without mutating the database
@@ -65,17 +66,22 @@ rows
 ## Notes
 
 - `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
-- `write_mode="upsert"` stages incoming rows, rejects duplicate staged keys,
-  and then replaces matching target keys before inserting staged rows.
+- `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
+  before any target mutation.
 - When an upsert target already exists, the existing target schema is used for
   final insert column types; otherwise the target is created from `table_schema`
   or inferred dataframe types.
 - When `load_df` creates a target table that did not exist at the start and the
   load later fails, it drops that newly created target during cleanup.
-- Upsert requires `key_columns`. Trino uses native `MERGE`; connector support
-  for `MERGE` is checked by Trino at runtime. Greenplum uses staged
-  delete-and-insert. ClickHouse uses lightweight `DELETE` plus insert and does
-  not require `ReplacingMergeTree`.
+- Upsert requires `key_columns`. Greenplum uses staged key delete-and-insert and
+  does not require `upsert_partition_column`.
+- Trino and ClickHouse upsert require `upsert_partition_column`. They build a
+  final increment for affected partitions, drop those partitions, and insert
+  the final increment. Arbitrary key deletes and merge-style updates are avoided
+  because they are slow, connector-dependent, or mutation-heavy.
+- Trino partition upsert also requires `upsert_partition_drop_sql_template` in
+  the target connection config so connector-specific partition drop SQL is
+  explicit.
 - For Trino connections with both `transfer_staging_schema` and
   `transfer_staging_location` configured, `load_df` writes temporary Parquet
   files to the object-storage prefix, creates an external stage table in

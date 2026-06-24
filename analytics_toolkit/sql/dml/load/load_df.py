@@ -86,9 +86,15 @@ from ..table.write_modes import (
     build_upsert_stage_sqls,
     upsert_stage_table,
 )
+from ..table.upsert_policy import (
+    is_trino_backend,
+    uses_partition_replacement_upsert,
+)
 from ..table.table_validation import (
     normalize_key_columns,
+    normalize_upsert_partition_column,
     validate_key_columns_in_columns,
+    validate_upsert_partition_column_in_columns,
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
 )
@@ -103,6 +109,7 @@ def load_df(
     write_mode: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
     key_columns: str | Sequence[str] | None = None,
+    upsert_partition_column: str | None = None,
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     trino_insert_chunk_size: int | None = None,
@@ -133,6 +140,7 @@ def load_df(
         write_mode=write_mode,
         gp_distributed_by_key=gp_distributed_by_key,
         key_columns=key_columns,
+        upsert_partition_column=upsert_partition_column,
         trino_insert_chunk_size=trino_insert_chunk_size,
         partition_by=partition_by,
         order_by=order_by,
@@ -276,7 +284,8 @@ def _build_load_options(
     write_mode: str | None,
     gp_distributed_by_key: str | Sequence[str] | None,
     key_columns: str | Sequence[str] | None,
-    trino_insert_chunk_size: int | None,
+    upsert_partition_column: str | None = None,
+    trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -297,6 +306,11 @@ def _build_load_options(
     transfer_staging_location = (
         config.transfer_staging_location if isinstance(config, TrinoConfig) else None
     )
+    trino_upsert_partition_drop_sql_template = (
+        config.upsert_partition_drop_sql_template
+        if isinstance(config, TrinoConfig)
+        else None
+    )
     resolved_write_mode = _resolve_load_write_mode(
         config.backend,
         append=append,
@@ -315,6 +329,12 @@ def _build_load_options(
             "gp_distributed_by_key",
         ),
         key_columns=normalize_key_columns(key_columns),
+        upsert_partition_column=normalize_upsert_partition_column(
+            upsert_partition_column
+        ),
+        trino_upsert_partition_drop_sql_template=(
+            trino_upsert_partition_drop_sql_template
+        ),
         trino_insert_chunk_size=(
             trino_insert_chunk_size
             if trino_insert_chunk_size is not None
@@ -348,6 +368,24 @@ def _build_load_options(
         raise ValueError("destination_table must not be empty.")
     if options.write_mode == "upsert" and not options.key_columns:
         raise ValueError("key_columns are required for write_mode='upsert'.")
+    if (
+        options.write_mode == "upsert"
+        and uses_partition_replacement_upsert(options.connection_backend)
+        and options.upsert_partition_column is None
+    ):
+        raise ValueError(
+            "upsert_partition_column is required for write_mode='upsert' "
+            "when db_key has type 'trino' or 'ch'."
+        )
+    if (
+        options.write_mode == "upsert"
+        and is_trino_backend(options.connection_backend)
+        and not options.trino_upsert_partition_drop_sql_template
+    ):
+        raise ValueError(
+            "Trino write_mode='upsert' requires "
+            "upsert_partition_drop_sql_template in the target connection config."
+        )
     if options.gp_distributed_by_key and options.connection_backend != "gp":
         raise ValueError(
             "gp_distributed_by_key can only be used when db_key has type 'gp'."
@@ -452,6 +490,10 @@ def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
         validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
 
     validate_key_columns_in_columns(options.key_columns, df.columns)
+    validate_upsert_partition_column_in_columns(
+        options.upsert_partition_column,
+        df.columns,
+    )
     validate_ch_columns_in_columns(
         options.partition_by,
         df.columns,
@@ -679,6 +721,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "write_mode": options.write_mode,
             "append": options.append,
             "key_columns": options.key_columns,
+            "upsert_partition_column": options.upsert_partition_column,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
@@ -757,6 +800,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
         _add_parquet_load_plan_steps(plan, options, df, metadata)
     elif options.write_mode == "upsert":
         stage_table = f"{options.destination_table}__stage__dry_run"
+        final_stage_table = f"{options.destination_table}__upsert_final__dry_run"
         metadata.stage_table = stage_table
         add_create_table_steps(
             plan,
@@ -785,6 +829,22 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             ),
             query_label=options.query_label,
         )
+        if uses_partition_replacement_upsert(options.connection_backend):
+            add_create_table_steps(
+                plan,
+                _build_create_table_sqls(
+                    options.connection_backend,
+                    final_stage_table,
+                    df,
+                    table_schema=options.table_schema,
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                    query_label=options.query_label,
+                ),
+                alias=options.connection_key,
+                backend=options.connection_backend,
+                phase="create_final_upsert_stage",
+                table_name=final_stage_table,
+            )
         plan.extend(
             build_upsert_stage_sqls(
                 options.connection_backend,
@@ -796,6 +856,15 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 ch_cluster=options.ch_cluster,
                 ch_only_shard=options.ch_only_shard,
                 query_label=options.query_label,
+                upsert_partition_column=options.upsert_partition_column,
+                final_stage_table=(
+                    final_stage_table
+                    if uses_partition_replacement_upsert(options.connection_backend)
+                    else None
+                ),
+                trino_partition_drop_sql_template=(
+                    options.trino_upsert_partition_drop_sql_template
+                ),
             ),
             alias=options.connection_key,
             backend=options.connection_backend,
@@ -809,6 +878,14 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             stage_table=stage_table,
             query_label=options.query_label,
         )
+        if uses_partition_replacement_upsert(options.connection_backend):
+            add_cleanup_stage_step(
+                plan,
+                alias=options.connection_key,
+                backend=options.connection_backend,
+                stage_table=final_stage_table,
+                query_label=options.query_label,
+            )
     elif options.append and options.key_columns:
         stage_table = f"{options.destination_table}__stage__dry_run"
         metadata.stage_table = stage_table
@@ -952,6 +1029,22 @@ def _add_parquet_load_plan_steps(
     )
 
     if options.write_mode == "upsert":
+        final_stage_table = f"{options.destination_table}__upsert_final__dry_run"
+        if uses_partition_replacement_upsert(options.connection_backend):
+            add_create_table_steps(
+                plan,
+                _build_create_table_sqls(
+                    options.connection_backend,
+                    final_stage_table,
+                    df,
+                    table_schema=options.table_schema,
+                    query_label=options.query_label,
+                ),
+                alias=options.connection_key,
+                backend=options.connection_backend,
+                phase="create_final_upsert_stage",
+                table_name=final_stage_table,
+            )
         plan.extend(
             build_upsert_stage_sqls(
                 options.connection_backend,
@@ -961,6 +1054,15 @@ def _add_parquet_load_plan_steps(
                 key_columns=options.key_columns or [],
                 column_types=options.table_schema,
                 query_label=options.query_label,
+                upsert_partition_column=options.upsert_partition_column,
+                final_stage_table=(
+                    final_stage_table
+                    if uses_partition_replacement_upsert(options.connection_backend)
+                    else None
+                ),
+                trino_partition_drop_sql_template=(
+                    options.trino_upsert_partition_drop_sql_template
+                ),
             ),
             alias=options.connection_key,
             backend=options.connection_backend,
@@ -985,6 +1087,16 @@ def _add_parquet_load_plan_steps(
         stage_table=stage_table,
         query_label=options.query_label,
     )
+    if options.write_mode == "upsert" and uses_partition_replacement_upsert(
+        options.connection_backend
+    ):
+        add_cleanup_stage_step(
+            plan,
+            alias=options.connection_key,
+            backend=options.connection_backend,
+            stage_table=f"{options.destination_table}__upsert_final__dry_run",
+            query_label=options.query_label,
+        )
     plan.add(
         f"DELETE STAGE FILES {stage_external_location}",
         alias=options.connection_key,
@@ -1095,6 +1207,7 @@ def _load_dataframe(
                     key_columns=options.key_columns,
                 ),
             )
+            _ensure_final_upsert_stage_table(options, state, df)
             _run_load_target_action(
                 options,
                 "finalize_target",
@@ -1109,6 +1222,11 @@ def _load_dataframe(
                     ch_cluster=options.ch_cluster,
                     ch_only_shard=options.ch_only_shard,
                     query_label=options.query_label,
+                    upsert_partition_column=options.upsert_partition_column,
+                    final_stage_table=state.final_upsert_stage_table,
+                    trino_partition_drop_sql_template=(
+                        options.trino_upsert_partition_drop_sql_template
+                    ),
                 ),
             )
             return len(df)
@@ -1274,6 +1392,7 @@ def _finalize_loaded_dataframe_stage(
             key_columns=options.key_columns,
         )
         if state.original_target_exists:
+            _ensure_final_upsert_stage_table(options, state, df)
             upsert_stage_table(
                 options.connection_backend,
                 connection,
@@ -1283,6 +1402,11 @@ def _finalize_loaded_dataframe_stage(
                 key_columns=options.key_columns or [],
                 column_types=options.table_schema or state.target_column_types,
                 query_label=options.query_label,
+                upsert_partition_column=options.upsert_partition_column,
+                final_stage_table=state.final_upsert_stage_table,
+                trino_partition_drop_sql_template=(
+                    options.trino_upsert_partition_drop_sql_template
+                ),
             )
             return
 
@@ -1303,6 +1427,37 @@ def _finalize_loaded_dataframe_stage(
         options.destination_table,
         state.overlap_stage_table,
         query_label=options.query_label,
+    )
+
+
+def _ensure_final_upsert_stage_table(
+    options: LoadOptions,
+    state: LoadState,
+    df: pd.DataFrame,
+) -> None:
+    if not uses_partition_replacement_upsert(options.connection_backend):
+        return
+    if not state.original_target_exists:
+        return
+    if state.final_upsert_stage_table is not None:
+        return
+
+    create_schema = options.table_schema or state.target_column_types
+    state.final_upsert_stage_table = _run_load_target_action(
+        options,
+        "create_final_upsert_stage",
+        lambda connection_ref: create_stage_table(
+            connection_type=options.connection_backend,
+            connection=connection_ref["connection"],
+            target_table=options.destination_table,
+            batch=df,
+            column_types=create_schema,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            connection_key=options.connection_key,
+            query_label=options.query_label,
+            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_username=options.transfer_staging_username,
+        ),
     )
 
 
@@ -1366,6 +1521,29 @@ def _cleanup_load(
         except Exception:
             time_print(
                 f"Failed to drop temporary load_df stage table {state.overlap_stage_table}"
+            )
+    if state is not None and state.final_upsert_stage_table is not None:
+        try:
+            _run_load_target_action(
+                options,
+                "cleanup_final_upsert_stage",
+                lambda connection_ref: cleanup_stage_table_with_retry(
+                    options.connection_backend,
+                    options.connection_key,
+                    connection_ref,
+                    state.final_upsert_stage_table,
+                    retry_fn=run_with_retry,
+                    retry_cnt=options.retry_cnt,
+                    timeout_increment=options.timeout_increment,
+                    rollback_fn=rollback_quietly,
+                    replace_connection_fn=replace_connection,
+                    query_label=options.query_label,
+                ),
+            )
+        except Exception:
+            time_print(
+                "Failed to drop temporary load_df final upsert stage table "
+                f"{state.final_upsert_stage_table}"
             )
     if drop_created_target and _should_drop_created_load_target(state):
         try:

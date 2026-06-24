@@ -619,6 +619,10 @@ def test_generate_dummy_connections_writes_direct_file(
             "ca_certs": "trino-ca.pem",
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "upsert_partition_drop_sql_template": (
+                "ALTER TABLE {table} DROP PARTITION "
+                "({partition_column} = {partition_value})"
+            ),
         },
         "ch": {
             "type": "ch",
@@ -659,6 +663,10 @@ def test_generate_dummy_connections_writes_airflow_file(
                 "ca_certs": "trino-ca.pem",
                 "transfer_staging_schema": "object_storage.sandbox",
                 "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "upsert_partition_drop_sql_template": (
+                    "ALTER TABLE {table} DROP PARTITION "
+                    "({partition_column} = {partition_value})"
+                ),
             },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },

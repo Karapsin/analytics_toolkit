@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from string import Formatter
 from typing import Any
 
 from ..base import _apply_query_label
+from ..utils import sql_literal
 from ..utils import sql_in_list as _sql_in_list
 from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
@@ -53,6 +55,7 @@ class TrinoAdapter(DbApiBackendAdapter):
                 "schema",
                 "transfer_staging_schema",
                 "transfer_staging_location",
+                "upsert_partition_drop_sql_template",
                 "auth_mode",
                 "http_scheme",
                 "verify",
@@ -223,20 +226,31 @@ class TrinoAdapter(DbApiBackendAdapter):
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
-        del column_types, ch_cluster, ch_only_shard
-
-        return [
-            _apply_query_label(
-                self._build_merge_sql(
-                    target_table,
-                    stage_table,
-                    columns=columns,
-                    key_columns=key_columns,
-                ),
-                query_label,
+        del ch_cluster, ch_only_shard
+        if upsert_partition_column is None or final_stage_table is None:
+            raise ValueError(
+                "upsert_partition_column and final_stage_table are required for "
+                "Trino write_mode='upsert'."
             )
-        ]
+        return self.build_partition_replacement_upsert_sqls(
+            target_table,
+            stage_table,
+            final_stage_table=final_stage_table,
+            columns=columns,
+            key_columns=key_columns,
+            partition_column=upsert_partition_column,
+            column_types=column_types,
+            incoming_stage_tables=incoming_stage_tables,
+            partition_values=partition_values,
+            query_label=query_label,
+            trino_partition_drop_sql_template=trino_partition_drop_sql_template,
+        )
 
     def build_upsert_stage_placeholder_sqls(
         self,
@@ -247,18 +261,84 @@ class TrinoAdapter(DbApiBackendAdapter):
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
         del ch_cluster, ch_only_shard
+        if upsert_partition_column is None or final_stage_table is None:
+            raise ValueError(
+                "upsert_partition_column and final_stage_table are required for "
+                "Trino write_mode='upsert'."
+            )
 
         return [
+            self.build_preserved_target_rows_insert_sql(
+                target_table,
+                stage_table,
+                final_stage_table=final_stage_table,
+                columns=["<source query columns>"],
+                key_columns=key_columns,
+                partition_column=upsert_partition_column,
+                incoming_stage_tables=incoming_stage_tables,
+                query_label=query_label,
+            ),
+            self.build_incoming_rows_insert_sql(
+                final_stage_table,
+                stage_table,
+                columns=["<source query columns>"],
+                column_types=None,
+                incoming_stage_tables=incoming_stage_tables,
+                query_label=query_label,
+            ),
+            *self.build_drop_upsert_partition_sqls(
+                target_table,
+                partition_column=upsert_partition_column,
+                partition_values=partition_values,
+                query_label=query_label,
+                trino_partition_drop_sql_template=trino_partition_drop_sql_template,
+            ),
+            self.build_insert_from_stage_placeholder_sql(
+                target_table,
+                final_stage_table,
+                query_label=query_label,
+            ),
+        ]
+
+    def build_drop_upsert_partition_sqls(
+        self,
+        target_table: str,
+        *,
+        partition_column: str,
+        partition_values: Sequence[Any] | None,
+        query_label: str | None = None,
+        trino_partition_drop_sql_template: str | None = None,
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+    ) -> list[str]:
+        del ch_cluster, ch_only_shard
+        template = _validate_trino_partition_drop_template(
+            trino_partition_drop_sql_template
+        )
+        values = list(partition_values) if partition_values is not None else [
+            "<affected partition value>"
+        ]
+        return [
             _apply_query_label(
-                self._build_merge_placeholder_sql(
-                    target_table,
-                    stage_table,
-                    key_columns=key_columns,
+                template.format(
+                    table=target_table,
+                    partition_column=self.quote_identifier(partition_column),
+                    partition_value=(
+                        value
+                        if isinstance(value, str) and value.startswith("<")
+                        else sql_literal(value)
+                    ),
                 ),
                 query_label,
             )
+            for value in values
         ]
 
     def _build_merge_sql(
@@ -731,3 +811,30 @@ def _map_to_trino_type(
             return "TIMESTAMP WITH TIME ZONE"
         return "TIMESTAMP"
     return "VARCHAR"
+
+
+def _validate_trino_partition_drop_template(template: str | None) -> str:
+    if not template:
+        raise ValueError(
+            "Trino write_mode='upsert' requires "
+            "upsert_partition_drop_sql_template in the target connection config."
+        )
+    allowed = {"table", "partition_column", "partition_value"}
+    used: set[str] = set()
+    for _, field_name, _, _ in Formatter().parse(template):
+        if field_name is None:
+            continue
+        root_name = field_name.split(".", 1)[0].split("[", 1)[0]
+        if root_name not in allowed:
+            raise ValueError(
+                "upsert_partition_drop_sql_template contains unsupported "
+                f"placeholder {{{field_name}}}."
+            )
+        used.add(root_name)
+    missing = allowed - used
+    if missing:
+        raise ValueError(
+            "upsert_partition_drop_sql_template must contain placeholders: "
+            + ", ".join(f"{{{name}}}" for name in sorted(allowed))
+        )
+    return template

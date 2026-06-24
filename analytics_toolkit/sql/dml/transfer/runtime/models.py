@@ -364,6 +364,8 @@ class TransferOptions:
     full_retry_cnt: int = 5
     full_timeout_increment: int | float = 60 * 10
     key_columns: list[str] | None = None
+    upsert_partition_column: str | None = None
+    trino_upsert_partition_drop_sql_template: str | None = None
     gp_distributed_by_key: list[str] | None = None
     gp_insert_chunk_size: int | None = None
     trino_insert_chunk_size: int | None = None
@@ -420,6 +422,7 @@ class TransferStageState:
     insert_column_types: dict[str, str] | None = None
     stage_table: str | None = None
     stage_tables: list[str] | None = None
+    final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     expected_source_rows: int | None = None
     current_expected_source_rows: int | None = None

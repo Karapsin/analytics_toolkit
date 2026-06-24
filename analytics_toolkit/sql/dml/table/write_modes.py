@@ -110,6 +110,11 @@ def build_upsert_stage_sqls(
     ch_cluster: str = "{cluster}",
     ch_only_shard: bool = False,
     query_label: str | None = None,
+    upsert_partition_column: str | None = None,
+    final_stage_table: str | None = None,
+    incoming_stage_tables: Sequence[str] | None = None,
+    partition_values: Sequence[Any] | None = None,
+    trino_partition_drop_sql_template: str | None = None,
 ) -> list[str]:
     backend = resolve_connection_backend(connection_type)
     if not key_columns:
@@ -126,6 +131,11 @@ def build_upsert_stage_sqls(
         ch_cluster=ch_cluster,
         ch_only_shard=ch_only_shard,
         query_label=query_label,
+        upsert_partition_column=upsert_partition_column,
+        final_stage_table=final_stage_table,
+        incoming_stage_tables=incoming_stage_tables,
+        partition_values=partition_values,
+        trino_partition_drop_sql_template=trino_partition_drop_sql_template,
     )
 
 
@@ -138,6 +148,11 @@ def build_upsert_stage_placeholder_sqls(
     ch_cluster: str = "{cluster}",
     ch_only_shard: bool = False,
     query_label: str | None = None,
+    upsert_partition_column: str | None = None,
+    final_stage_table: str | None = None,
+    incoming_stage_tables: Sequence[str] | None = None,
+    partition_values: Sequence[Any] | None = None,
+    trino_partition_drop_sql_template: str | None = None,
 ) -> list[str]:
     backend = resolve_connection_backend(connection_type)
     if not key_columns:
@@ -150,6 +165,11 @@ def build_upsert_stage_placeholder_sqls(
         ch_cluster=ch_cluster,
         ch_only_shard=ch_only_shard,
         query_label=query_label,
+        upsert_partition_column=upsert_partition_column,
+        final_stage_table=final_stage_table,
+        incoming_stage_tables=incoming_stage_tables,
+        partition_values=partition_values,
+        trino_partition_drop_sql_template=trino_partition_drop_sql_template,
     )
 
 
@@ -165,12 +185,24 @@ def upsert_stage_table(
     ch_cluster: str = "{cluster}",
     ch_only_shard: bool = False,
     query_label: str | None = None,
+    upsert_partition_column: str | None = None,
+    final_stage_table: str | None = None,
+    incoming_stage_tables: Sequence[str] | None = None,
+    trino_partition_drop_sql_template: str | None = None,
 ) -> None:
     backend = resolve_connection_backend(connection_type)
     time_print(
         f"Upserting staged rows from {stage_table} into {target_table}",
         backend=backend,
     )
+    partition_values = None
+    if upsert_partition_column is not None:
+        partition_values = get_backend_adapter(backend).fetch_upsert_partition_values(
+            connection,
+            stage_table,
+            partition_column=upsert_partition_column,
+            incoming_stage_tables=incoming_stage_tables,
+        )
     for sql in build_upsert_stage_sqls(
         backend,
         target_table,
@@ -181,6 +213,11 @@ def upsert_stage_table(
         ch_cluster=ch_cluster,
         ch_only_shard=ch_only_shard,
         query_label=query_label,
+        upsert_partition_column=upsert_partition_column,
+        final_stage_table=final_stage_table,
+        incoming_stage_tables=incoming_stage_tables,
+        partition_values=partition_values,
+        trino_partition_drop_sql_template=trino_partition_drop_sql_template,
     ):
         get_backend_adapter(backend).execute_command(connection, sql)
 
@@ -321,6 +358,10 @@ def finalize_stage_table(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
     ch_only_shard: bool = False,
+    upsert_partition_column: str | None = None,
+    final_upsert_stage_table: str | None = None,
+    incoming_stage_tables: list[str] | None = None,
+    trino_upsert_partition_drop_sql_template: str | None = None,
 ) -> None:
     backend = resolve_connection_backend(connection_type)
     time_print(
@@ -350,6 +391,12 @@ def finalize_stage_table(
             connection_key=connection_key,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
             ch_only_shard=ch_only_shard,
+            upsert_partition_column=upsert_partition_column,
+            final_upsert_stage_table=final_upsert_stage_table,
+            incoming_stage_tables=incoming_stage_tables,
+            trino_upsert_partition_drop_sql_template=(
+                trino_upsert_partition_drop_sql_template
+            ),
         )
     )
 

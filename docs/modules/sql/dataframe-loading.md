@@ -12,8 +12,7 @@ Use `write_mode` when the intended mutation matters:
 - `append` keeps existing rows and inserts the dataframe rows.
 - `replace` recreates or clears the target using the historical replace path.
 - `truncate_insert` keeps the existing table shape, clears rows, then inserts.
-- `upsert` stages rows and replaces target rows with matching `key_columns`
-  before inserting the staged rows.
+- `upsert` stages rows and applies backend-specific replacement semantics.
 
 The older `append` flag still works, but `write_mode` is clearer in shared code.
 Do not mix both unless you are preserving compatibility with an existing call.
@@ -36,6 +35,11 @@ already exists, its schema is used for final insert column types. If the target
 table does not exist, the load creates it from `table_schema` or inferred
 dataframe types and inserts the dataframe rows normally.
 
+For Trino and ClickHouse upsert, `upsert_partition_column` is also required and
+must name one dataframe column. That column defines the partition replacement
+boundary; it is not inferred from `partition_by`, which only controls table
+creation shape.
+
 ## Backend Notes
 
 Greenplum dataframe inserts use chunked `execute_values` statements. Tune the
@@ -43,14 +47,15 @@ insert chunk size for very wide rows or constrained VMEM environments.
 
 Trino sends parameterized multi-row insert statements. A connection-level insert
 chunk size can be set in `.connections`, and call-level settings can override
-it. Trino upsert uses native `MERGE`; connector-specific `MERGE` limitations
-surface as backend errors.
+it. Trino upsert builds a final increment for affected partitions and requires
+`upsert_partition_drop_sql_template` in `.connections` so connector-specific
+partition drop SQL is explicit.
 
 ClickHouse targets normally create and maintain a distributed/shard table pair.
 Use `ch_only_shard=True` only when the target should intentionally be a local
-ClickHouse table. ClickHouse upsert uses lightweight `DELETE` against the shard
-or local target followed by insert through the target table; it does not use
-`ReplacingMergeTree`.
+ClickHouse table. ClickHouse upsert builds a final increment for affected
+partitions, drops those partitions from the shard or local target, and inserts
+through the target table.
 
 Greenplum upsert deletes matching keys from the target using the stage table
 and then inserts the staged rows.

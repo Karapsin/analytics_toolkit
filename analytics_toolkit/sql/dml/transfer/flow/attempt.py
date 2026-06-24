@@ -16,8 +16,10 @@ from ...load.stage import create_stage_table
 from ...load.load_sql_table import insert_rows_batch
 from ...table._basic_ops import insert_from_table
 from ...table.table_validation import validate_key_columns_in_columns
+from ...table.table_validation import validate_upsert_partition_column_in_columns
 from .estimate import estimate_source_rows
 from .finalize import cleanup_stage, finalize_loaded_stage
+from .keyed import WorkerStageState, build_keyed_worker_stage_states
 from .logging import (
     ProgressTracker,
     format_transfer_key_log_fragment,
@@ -222,10 +224,8 @@ def run_keyed_transfer_attempt(
                 source_schema=source_schema,
             ),
         )
-        worker_stage_states = build_keyed_worker_stage_states(
-            options=options,
-            stage_state=stage_state,
-        )
+        stage_state.transfer_slices = options.transfer_slices
+        worker_stage_states = build_keyed_worker_stage_states(stage_state=stage_state)
         stage_state.worker_stage_states = worker_stage_states
         total_rows = load_keyed_stage_slices(
             options=options,
@@ -282,19 +282,6 @@ def run_keyed_transfer_attempt(
     return total_rows
 
 
-class WorkerStageState:
-    def __init__(
-        self,
-        *,
-        worker_index: int,
-        stage_state: TransferStageState,
-        transfer_slices: list[TransferSlice],
-    ) -> None:
-        self.worker_index = worker_index
-        self.stage_state = stage_state
-        self.transfer_slices = transfer_slices
-
-
 def initialize_shared_stage_for_keyed_slices(
     *,
     options: TransferOptions,
@@ -327,6 +314,10 @@ def initialize_shared_stage_for_keyed_slices(
 
     validate_key_columns_in_columns(
         options.key_columns,
+        source_columns,
+    )
+    validate_upsert_partition_column_in_columns(
+        options.upsert_partition_column,
         source_columns,
     )
     validate_key_columns_in_columns(
@@ -452,49 +443,6 @@ def _commit_if_supported(connection: Any) -> None:
         commit()
 
 
-def build_keyed_worker_stage_states(
-    *,
-    options: TransferOptions,
-    stage_state: TransferStageState,
-) -> list[WorkerStageState]:
-    transfer_slices = options.transfer_slices or []
-    stage_tables = stage_state.stage_tables or (
-        [stage_state.stage_table] if stage_state.stage_table is not None else []
-    )
-    worker_count = len(stage_tables)
-    if worker_count == 0:
-        raise RuntimeError("Expected stage table to be initialized.")
-    return [
-        WorkerStageState(
-            worker_index=worker_index,
-            stage_state=_copy_stage_state_for_worker(
-                stage_state,
-                stage_table=stage_tables[worker_index],
-            ),
-            transfer_slices=transfer_slices[worker_index::worker_count],
-        )
-        for worker_index in range(worker_count)
-    ]
-
-
-def _copy_stage_state_for_worker(
-    stage_state: TransferStageState,
-    *,
-    stage_table: str,
-) -> TransferStageState:
-    return TransferStageState(
-        target_exists=stage_state.target_exists,
-        stage_table_created=stage_state.stage_table_created,
-        first_non_empty_batch=stage_state.first_non_empty_batch,
-        source_column_types=stage_state.source_column_types,
-        stage_column_types=stage_state.stage_column_types,
-        insert_column_types=stage_state.insert_column_types,
-        stage_table=stage_table,
-        stage_tables=[stage_table],
-        stage_external_location=stage_state.stage_external_location,
-    )
-
-
 def load_keyed_stage_slices(
     *,
     options: TransferOptions,
@@ -581,6 +529,8 @@ def consolidate_keyed_worker_stages(
     worker_stage_states: list[WorkerStageState],
     stage_state: TransferStageState,
 ) -> None:
+    if options.write_mode == "upsert":
+        return
     if len(worker_stage_states) <= 1:
         return
     aggregate_stage_table = stage_state.stage_table
@@ -889,6 +839,10 @@ def _initialize_parquet_stage_for_first_batch(
 
     validate_key_columns_in_columns(
         options.key_columns,
+        batch.columns,
+    )
+    validate_upsert_partition_column_in_columns(
+        options.upsert_partition_column,
         batch.columns,
     )
     stage_state.first_non_empty_batch = sample_dataframe_from_batch(batch)

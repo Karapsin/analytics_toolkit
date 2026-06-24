@@ -243,8 +243,21 @@ class GreenplumAdapter(DbApiBackendAdapter):
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
-        del ch_cluster, ch_only_shard
+        del (
+            ch_cluster,
+            ch_only_shard,
+            upsert_partition_column,
+            final_stage_table,
+            incoming_stage_tables,
+            partition_values,
+            trino_partition_drop_sql_template,
+        )
 
         return [
             _apply_query_label(
@@ -273,8 +286,21 @@ class GreenplumAdapter(DbApiBackendAdapter):
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
-        del ch_cluster, ch_only_shard
+        del (
+            ch_cluster,
+            ch_only_shard,
+            upsert_partition_column,
+            final_stage_table,
+            incoming_stage_tables,
+            partition_values,
+            trino_partition_drop_sql_template,
+        )
 
         return [
             _apply_query_label(

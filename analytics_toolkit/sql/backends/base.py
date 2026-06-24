@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from . import common_methods as _common_methods
 from . import source_count as _source_count
+from . import upsert as _upsert
+from . import validation as _validation
 from .utils import extract_row_count
 
 
@@ -68,6 +70,10 @@ class StageFinalizationRequest:
     connection_key: str | None = None
     ch_retry_per_host_drops: bool = True
     ch_only_shard: bool = False
+    upsert_partition_column: str | None = None
+    final_upsert_stage_table: str | None = None
+    incoming_stage_tables: list[str] | None = None
+    trino_upsert_partition_drop_sql_template: str | None = None
 
 
 @dataclass(frozen=True)
@@ -322,6 +328,11 @@ class BackendAdapter:
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
         raise NotImplementedError
 
@@ -334,8 +345,43 @@ class BackendAdapter:
         ch_cluster: str = "{cluster}",
         ch_only_shard: bool = False,
         query_label: str | None = None,
+        upsert_partition_column: str | None = None,
+        final_stage_table: str | None = None,
+        incoming_stage_tables: Sequence[str] | None = None,
+        partition_values: Sequence[Any] | None = None,
+        trino_partition_drop_sql_template: str | None = None,
     ) -> list[str]:
         raise NotImplementedError
+
+    build_upsert_partition_values_sql = _upsert.build_upsert_partition_values_sql
+    fetch_upsert_partition_values = _upsert.fetch_upsert_partition_values
+    build_partition_replacement_upsert_sqls = _upsert.build_partition_replacement_upsert_sqls
+    build_preserved_target_rows_insert_sql = _upsert.build_preserved_target_rows_insert_sql
+    build_incoming_rows_insert_sql = _upsert.build_incoming_rows_insert_sql
+
+    def build_drop_upsert_partition_sqls(
+        self,
+        target_table: str,
+        *,
+        partition_column: str,
+        partition_values: Sequence[Any] | None,
+        query_label: str | None = None,
+        trino_partition_drop_sql_template: str | None = None,
+        ch_cluster: str = "{cluster}",
+        ch_only_shard: bool = False,
+    ) -> list[str]:
+        del (
+            target_table,
+            partition_column,
+            partition_values,
+            query_label,
+            trino_partition_drop_sql_template,
+            ch_cluster,
+            ch_only_shard,
+        )
+        raise NotImplementedError
+
+    _incoming_stage_source_sql = _upsert.incoming_stage_source_sql
 
     def build_insert_from_stage_sql(
         self,
@@ -578,6 +624,15 @@ class BackendAdapter:
                 )
                 return
 
+            partition_values = None
+            if request.upsert_partition_column is not None:
+                partition_values = self.fetch_upsert_partition_values(
+                    request.connection,
+                    request.stage_table,
+                    partition_column=request.upsert_partition_column,
+                    incoming_stage_tables=request.incoming_stage_tables,
+                )
+
             for sql in self.build_upsert_stage_sqls(
                 request.target_table,
                 request.stage_table,
@@ -591,6 +646,13 @@ class BackendAdapter:
                 ch_cluster=request.ch_cluster,
                 ch_only_shard=request.ch_only_shard,
                 query_label=request.query_label,
+                upsert_partition_column=request.upsert_partition_column,
+                final_stage_table=request.final_upsert_stage_table,
+                incoming_stage_tables=request.incoming_stage_tables,
+                partition_values=partition_values,
+                trino_partition_drop_sql_template=(
+                    request.trino_upsert_partition_drop_sql_template
+                ),
             ):
                 self.execute_command(request.connection, sql)
             return
@@ -688,70 +750,16 @@ class BackendAdapter:
             "status": status,
         }
 
-    def build_stage_duplicate_keys_sql(
-        self,
-        stage_table: str,
-        key_columns: Sequence[str],
-    ) -> str:
-        key_sql = self.column_list_sql(key_columns)
-        return (
-            f"SELECT 1 FROM {stage_table} "
-            f"GROUP BY {key_sql} "
-            "HAVING COUNT(*) > 1 "
-            "LIMIT 1"
-        )
-
-    def build_stage_target_key_overlap_sql(
-        self,
-        stage_table: str,
-        target_table: str,
-        key_columns: Sequence[str],
-    ) -> str:
-        join_condition = " AND ".join(
-            self.null_safe_key_equality("stage_src", "target_dst", column_name)
-            for column_name in key_columns
-        )
-        return (
-            "SELECT 1 "
-            f"FROM {stage_table} AS stage_src "
-            f"INNER JOIN {target_table} AS target_dst ON {join_condition} "
-            "LIMIT 1"
-        )
-
-    def stage_has_duplicate_keys(
-        self,
-        connection: Any,
-        stage_table: str,
-        key_columns: Sequence[str],
-    ) -> bool:
-        return self.query_has_rows(
-            connection,
-            self.build_stage_duplicate_keys_sql(stage_table, key_columns),
-        )
-
-    def stage_keys_overlap_target(
-        self,
-        connection: Any,
-        stage_table: str,
-        target_table: str,
-        key_columns: Sequence[str],
-    ) -> bool:
-        return self.query_has_rows(
-            connection,
-            self.build_stage_target_key_overlap_sql(
-                stage_table,
-                target_table,
-                key_columns,
-            ),
-        )
-
-    def query_has_rows(self, connection: Any, sql: str) -> bool:
-        cursor = connection.cursor()
-        try:
-            cursor.execute(sql)
-            return cursor.fetchone() is not None
-        finally:
-            cursor.close()
+    build_stage_duplicate_keys_sql = _validation.build_stage_duplicate_keys_sql
+    build_stage_duplicate_keys_sql_for_tables = (
+        _validation.build_stage_duplicate_keys_sql_for_tables
+    )
+    build_stage_target_key_overlap_sql = (
+        _validation.build_stage_target_key_overlap_sql
+    )
+    stage_has_duplicate_keys = _validation.stage_has_duplicate_keys
+    stage_keys_overlap_target = _validation.stage_keys_overlap_target
+    query_has_rows = _validation.query_has_rows
 
     def build_insert_from_table_sql(
         self,
@@ -889,4 +897,3 @@ def _apply_query_label(sql: str, query_label: str | None) -> str:
     from ..execution.labels import apply_query_label
 
     return apply_query_label(sql, query_label)
-

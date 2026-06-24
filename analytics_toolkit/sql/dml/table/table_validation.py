@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ...backend_adapters import get_backend_adapter
+from ...backends import is_simple_identifier
 from analytics_toolkit.general import time_print
 
 
@@ -47,19 +48,60 @@ def validate_key_columns_in_columns(
         )
 
 
+def normalize_upsert_partition_column(
+    upsert_partition_column: str | None,
+) -> str | None:
+    if upsert_partition_column is None:
+        return None
+    if not isinstance(upsert_partition_column, str):
+        raise ValueError("upsert_partition_column must be a string column name.")
+    normalized = upsert_partition_column.strip()
+    if not normalized:
+        raise ValueError("upsert_partition_column must not be empty when provided.")
+    if not is_simple_identifier(normalized):
+        raise ValueError(
+            "upsert_partition_column must be a single column name, not a SQL expression."
+        )
+    return normalized
+
+
+def validate_upsert_partition_column_in_columns(
+    upsert_partition_column: str | None,
+    columns: Sequence[str],
+) -> None:
+    if upsert_partition_column is None:
+        return
+
+    available_columns = {str(column) for column in columns}
+    if upsert_partition_column not in available_columns:
+        raise ValueError(
+            "upsert_partition_column was not found in the staged data: "
+            f"{upsert_partition_column}"
+        )
+
+
 def validate_stage_uniqueness(
     connection_type: str,
     connection: Any,
     stage_table: str,
     key_columns: list[str] | None,
+    stage_tables: Sequence[str] | None = None,
 ) -> None:
     if not key_columns:
         return
 
+    stage_table_label = ", ".join(stage_tables) if stage_tables else stage_table
     time_print(
-        f"Validating uniqueness for stage table {stage_table} using key_columns={key_columns}"
+        f"Validating uniqueness for stage table {stage_table_label} "
+        f"using key_columns={key_columns}"
     )
-    if _stage_has_duplicate_keys(connection_type, connection, stage_table, key_columns):
+    if _stage_has_duplicate_keys(
+        connection_type,
+        connection,
+        stage_table,
+        key_columns,
+        stage_tables=stage_tables,
+    ):
         raise ValueError(
             "Duplicate key values found in staged data for key_columns: "
             + ", ".join(key_columns)
@@ -99,7 +141,16 @@ def _stage_has_duplicate_keys(
     connection: Any,
     stage_table: str,
     key_columns: Sequence[str],
+    stage_tables: Sequence[str] | None = None,
 ) -> bool:
+    if stage_tables is not None:
+        return get_backend_adapter(connection_type).query_has_rows(
+            connection,
+            get_backend_adapter(connection_type).build_stage_duplicate_keys_sql_for_tables(
+                stage_tables,
+                key_columns,
+            ),
+        )
     return get_backend_adapter(connection_type).stage_has_duplicate_keys(
         connection,
         stage_table,

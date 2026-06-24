@@ -4,6 +4,7 @@ import warnings
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from ...load.stage import create_stage_table
 from ...load.stage import cleanup_stage_table_with_retry
 from ....connection.get_sql_connection import get_sql_connection
 from ...table.maintenance import (
@@ -53,6 +54,9 @@ def finalize_loaded_stage(
             connection=target_ref["connection"],
             stage_table=stage_state.stage_table,
             key_columns=options.key_columns,
+            stage_tables=(
+                stage_state.stage_tables if options.write_mode == "upsert" else None
+            ),
         ),
     )
     if options.write_mode != "upsert":
@@ -91,6 +95,8 @@ def finalize_loaded_stage(
         stage_state.insert_column_types = stage_state.stage_column_types
         target_column_types = stage_state.stage_column_types
 
+    _ensure_final_upsert_stage_table(options, stage_state)
+
     _run_with_fresh_target_connection(
         options,
         "finalize_target",
@@ -116,6 +122,14 @@ def finalize_loaded_stage(
             query_label=options.query_label,
             connection_key=options.to_db_key,
             ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+            upsert_partition_column=options.upsert_partition_column,
+            final_upsert_stage_table=stage_state.final_upsert_stage_table,
+            incoming_stage_tables=(
+                stage_state.stage_tables if options.write_mode == "upsert" else None
+            ),
+            trino_upsert_partition_drop_sql_template=(
+                options.trino_upsert_partition_drop_sql_template
+            ),
         ),
     )
     _run_with_fresh_target_connection(
@@ -139,6 +153,40 @@ def finalize_empty_transfer(
     if not stage_state.target_exists:
         _warn_empty_transfer_missing_target(options)
         return
+
+
+def _ensure_final_upsert_stage_table(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+) -> None:
+    if options.write_mode != "upsert":
+        return
+    if options.to_db_backend not in {"trino", "ch"}:
+        return
+    if not stage_state.target_exists:
+        return
+    if stage_state.final_upsert_stage_table is not None:
+        return
+    if stage_state.first_non_empty_batch is None:
+        raise RuntimeError("Expected a sample batch for final upsert stage creation.")
+
+    create_schema = stage_state.insert_column_types or stage_state.stage_column_types
+    stage_state.final_upsert_stage_table = _run_with_fresh_target_connection(
+        options,
+        "create_final_upsert_stage",
+        lambda target_ref: create_stage_table(
+            connection_type=options.to_db_backend,
+            connection=target_ref["connection"],
+            target_table=options.target_table,
+            batch=stage_state.first_non_empty_batch,
+            column_types=create_schema,
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            connection_key=options.to_db_key,
+            query_label=options.query_label,
+            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_username=options.transfer_staging_username,
+        ),
+    )
 
     if options.write_mode == "upsert":
         return
@@ -287,11 +335,14 @@ def cleanup_stage(
 
 
 def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
+    stage_tables: list[str] = []
     if stage_state.stage_tables is not None:
-        return list(dict.fromkeys(stage_state.stage_tables))
-    if stage_state.stage_table is not None:
-        return [stage_state.stage_table]
-    return []
+        stage_tables.extend(stage_state.stage_tables)
+    elif stage_state.stage_table is not None:
+        stage_tables.append(stage_state.stage_table)
+    if stage_state.final_upsert_stage_table is not None:
+        stage_tables.append(stage_state.final_upsert_stage_table)
+    return list(dict.fromkeys(stage_tables))
 
 
 def _should_drop_created_target(stage_state: TransferStageState) -> bool:

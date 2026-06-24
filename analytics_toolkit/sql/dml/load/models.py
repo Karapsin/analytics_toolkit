@@ -13,6 +13,8 @@ class LoadOptions:
     write_mode: str = "replace"
     gp_distributed_by_key: list[str] | None = None
     key_columns: list[str] | None = None
+    upsert_partition_column: str | None = None
+    trino_upsert_partition_drop_sql_template: str | None = None
     trino_insert_chunk_size: int | None = None
     gp_insert_chunk_size: int | None = None
     partition_by: list[str] | str | None = None
@@ -37,5 +39,6 @@ class LoadState:
     original_target_exists: bool
     target_created_by_operation: bool = False
     overlap_stage_table: str | None = None
+    final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     target_column_types: dict[str, str] | None = None

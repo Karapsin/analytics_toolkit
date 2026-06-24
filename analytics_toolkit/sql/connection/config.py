@@ -68,6 +68,7 @@ class TrinoConfig:
     source: str | None
     transfer_staging_schema: str | None
     transfer_staging_location: str | None
+    upsert_partition_drop_sql_template: str | None = None
 
 
 @dataclass(frozen=True)
@@ -249,6 +250,10 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "ca_certs": "trino-ca.pem",
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "upsert_partition_drop_sql_template": (
+                "ALTER TABLE {table} DROP PARTITION "
+                "({partition_column} = {partition_value})"
+            ),
         },
         "ch": {
             "type": "ch",
@@ -273,6 +278,10 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
                 "ca_certs": "trino-ca.pem",
                 "transfer_staging_schema": "object_storage.sandbox",
                 "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "upsert_partition_drop_sql_template": (
+                    "ALTER TABLE {table} DROP PARTITION "
+                    "({partition_column} = {partition_value})"
+                ),
             },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
         },

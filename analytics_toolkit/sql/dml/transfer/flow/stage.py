@@ -7,7 +7,10 @@ from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table._basic_ops import get_trino_table_column_types, table_exists
-from ...table.table_validation import validate_key_columns_in_columns
+from ...table.table_validation import (
+    validate_key_columns_in_columns,
+    validate_upsert_partition_column_in_columns,
+)
 from ...table.write_modes import _ensure_stage_target_table
 from ..runtime.models import (
     RowBatch,
@@ -99,6 +102,10 @@ def initialize_stage_for_first_batch(
     stage_state.first_non_empty_batch = sample_batch
     validate_key_columns_in_columns(
         options.key_columns,
+        batch.columns,
+    )
+    validate_upsert_partition_column_in_columns(
+        options.upsert_partition_column,
         batch.columns,
     )
     validate_key_columns_in_columns(

@@ -28,10 +28,11 @@ and backend dispatch share the same canonical backend list.
 | `trino` | `CREATE TABLE` with Parquet/object-store layout | `DROP TABLE IF EXISTS` | `DELETE FROM` | `append`, `replace`, `truncate_insert`, `upsert` |
 | `ch` | `MergeTree` shard plus optional `Distributed` pair | `DROP TABLE IF EXISTS`, plus distributed pair handling when requested | `TRUNCATE TABLE IF EXISTS` | `append`, `replace`, `truncate_insert`, `upsert` |
 
-`upsert` requires `key_columns`. Trino uses native `MERGE`, subject to
-connector support at runtime. Greenplum uses staged delete-and-insert.
-ClickHouse uses lightweight `DELETE` plus insert and does not require
-`ReplacingMergeTree`.
+`upsert` requires `key_columns`. Greenplum uses staged delete-and-insert and
+does not require partition replacement. Trino and ClickHouse require
+`upsert_partition_column`, build a final increment for affected partitions,
+drop those partitions, and insert the final increment. Trino also requires
+`upsert_partition_drop_sql_template` in the target connection config.
 
 ## Public Helper Coverage
 
