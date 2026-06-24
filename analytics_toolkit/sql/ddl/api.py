@@ -16,7 +16,6 @@ from ..execution.operation_runner import (
     validate_retry_options,
 )
 from ..execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ..clickhouse.wait import _wait_for_ch_distributed_table_pair
 from analytics_toolkit.general import time_print
 from .builders import (
     _apply_query_label_to_sqls,
@@ -583,15 +582,16 @@ def _execute_create_sql_table(
         query_label=options.query_label,
         preview_sql=create_sqls[0] if create_sqls else None,
     ):
-        get_backend_adapter(options.backend).execute_commands(connection, create_sqls)
-        if options.backend == "ch":
-            if options.ch_distributed_table and not options.ch_only_shard:
-                _wait_for_ch_distributed_table_pair(
-                    connection,
-                    options.table_name,
-                    ch_cluster=options.ch_cluster,
-                    expected_column_types=expected_ch_column_types,
-                )
+        adapter = get_backend_adapter(options.backend)
+        adapter.execute_commands(connection, create_sqls)
+        adapter.after_create_table(
+            connection,
+            options.table_name,
+            ch_cluster=options.ch_cluster,
+            ch_distributed_table=options.ch_distributed_table,
+            ch_only_shard=options.ch_only_shard,
+            expected_column_types=expected_ch_column_types,
+        )
 
 
 def _build_create_table_sqls(

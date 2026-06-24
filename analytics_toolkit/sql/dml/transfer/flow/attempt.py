@@ -8,6 +8,7 @@ import uuid
 import pandas as pd
 from tqdm import tqdm
 
+from ....backend_adapters import get_backend_adapter
 from ....clickhouse.options import validate_ch_columns_in_columns
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
@@ -28,7 +29,6 @@ from .logging import (
 from .parquet_stage import (
     create_parquet_stage_table,
     ensure_parquet_staging_dependencies,
-    infer_trino_column_types_from_rows,
     parquet_row_group_size,
     sample_dataframe_from_batch,
     write_batch_to_parquet_stage,
@@ -835,7 +835,10 @@ def _initialize_parquet_stage_for_first_batch(
             batch.columns,
         )
     elif stage_state.stage_column_types is None:
-        stage_state.stage_column_types = infer_trino_column_types_from_rows(batch)
+        stage_state.stage_column_types = (
+            get_backend_adapter(options.to_db_backend)
+            .infer_parquet_stage_column_types_from_rows(batch)
+        )
 
     validate_key_columns_in_columns(
         options.key_columns,

@@ -192,6 +192,28 @@ class ClickHouseAdapter(BackendAdapter):
     wait_for_table_absence = _operations.wait_for_table_absence
     estimate_source_rows = _operations.estimate_source_rows
 
+    def after_create_table(
+        self,
+        connection: Any,
+        table_name: str,
+        *,
+        ch_cluster: str = "{cluster}",
+        ch_distributed_table: bool = False,
+        ch_only_shard: bool = False,
+        expected_column_types: dict[str, str] | None = None,
+    ) -> None:
+        from .wait import after_create_table
+
+        after_create_table(
+            self,
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+            ch_distributed_table=ch_distributed_table,
+            ch_only_shard=ch_only_shard,
+            expected_column_types=expected_column_types,
+        )
+
     def drop_table_sql(
         self,
         table_name: str,
@@ -844,4 +866,3 @@ def is_simple_identifier(identifier: str) -> bool:
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
-

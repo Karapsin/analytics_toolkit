@@ -8,7 +8,7 @@ from typing import Any
 from .adapter import ch_cluster_clause
 from ..registry import get_backend_adapter
 from ...clickhouse.options import DEFAULT_CH_PER_HOST_DROP_WORKERS
-from ...clickhouse.wait import (
+from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
     _resolve_ch_cluster_name_for_wait,

@@ -5,6 +5,7 @@ from string import Formatter
 from typing import Any
 
 from . import operations as _operations
+from . import parquet_stage as _parquet_stage
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
 from ..models import SourceColumn
@@ -166,6 +167,11 @@ class TrinoAdapter(DbApiBackendAdapter):
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
+    build_parquet_stage_table_sql = _parquet_stage.build_parquet_stage_table_sql
+    infer_parquet_stage_column_types_from_rows = (
+        _parquet_stage.infer_parquet_stage_column_types_from_rows
+    )
+    parquet_stage_target_table_base = _parquet_stage.parquet_stage_target_table_base
 
     def estimate_source_rows(
         self,

@@ -423,6 +423,27 @@ def estimate_source_rows(
     return None
 
 
+def after_create_table(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    ch_cluster: str = "{cluster}",
+    ch_distributed_table: bool = False,
+    ch_only_shard: bool = False,
+    expected_column_types: dict[str, str] | None = None,
+) -> None:
+    del (
+        adapter,
+        connection,
+        table_name,
+        ch_cluster,
+        ch_distributed_table,
+        ch_only_shard,
+        expected_column_types,
+    )
+
+
 def _quote_identifier_part_when_needed(adapter: Any, identifier: str) -> str:
     if _is_simple_identifier(identifier):
         return identifier

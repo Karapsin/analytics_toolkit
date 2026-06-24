@@ -286,6 +286,7 @@ class BackendAdapter:
         _adapter_defaults.prepare_existing_target_for_create_from_sql
     )
     estimate_source_rows = _adapter_defaults.estimate_source_rows
+    after_create_table = _adapter_defaults.after_create_table
 
     def iter_source_batches(
         self,

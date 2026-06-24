@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Move ClickHouse lifecycle SQL into backend adapters.
 - Move remaining SQL backend behavior into adapters.
 - Move SQL backend helper ownership into adapters.
+- Move remaining SQL backend helper ownership into adapters.
 
 ## 1.3.10.11 - 2026-06-24
 

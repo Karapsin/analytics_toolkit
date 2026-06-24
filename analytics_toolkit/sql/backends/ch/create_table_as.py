@@ -23,7 +23,7 @@ from .lifecycle import (
     drop_ch_distributed_table_pair,
     drop_ch_table,
 )
-from ...clickhouse.wait import _wait_for_ch_distributed_table_pair
+from .wait import _wait_for_ch_distributed_table_pair
 from .ddl import (
     _normalize_non_empty_string,
     build_ch_local_create_table_sql,

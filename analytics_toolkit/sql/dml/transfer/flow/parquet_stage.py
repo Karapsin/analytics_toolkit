@@ -5,16 +5,11 @@ import shutil
 import tempfile
 import uuid
 from collections.abc import Mapping
-from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 import pandas as pd
-from sqlglot import exp, parse_one
 
 from ....backend_adapters import get_backend_adapter
-from ....ddl.identifiers import quote_identifier
-from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
 from ...load.stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
@@ -72,13 +67,14 @@ def create_parquet_stage_table(
             continue
 
         stage_external_location = build_stage_external_location(options)
-        create_sql = build_create_parquet_stage_table_sql(
+        adapter = get_backend_adapter(options.to_db_backend)
+        create_sql = adapter.build_parquet_stage_table_sql(
             stage_table,
             stage_state.stage_column_types,
             stage_external_location,
             query_label=options.query_label,
         )
-        get_backend_adapter("trino").execute_command(
+        adapter.execute_command(
             connection_refs.target["connection"],
             create_sql,
         )
@@ -100,21 +96,12 @@ def build_create_parquet_stage_table_sql(
     *,
     query_label: str | None = None,
 ) -> str:
-    if column_types:
-        columns_sql = ", ".join(
-            f"{quote_identifier(column_name, 'trino')} {column_type}"
-            for column_name, column_type in column_types.items()
-        )
-    else:
-        columns_sql = "<source query schema>"
-    sql = (
-        f"CREATE TABLE {stage_table} ({columns_sql}) "
-        "WITH ("
-        "format = 'PARQUET', "
-        f"external_location = {_trino_string_literal(stage_external_location)}"
-        ")"
+    return get_backend_adapter("trino").build_parquet_stage_table_sql(
+        stage_table,
+        column_types,
+        stage_external_location,
+        query_label=query_label,
     )
-    return apply_query_label(sql, query_label)
 
 
 def build_stage_external_location(
@@ -125,7 +112,9 @@ def build_stage_external_location(
     if not options.transfer_staging_location:
         raise ValueError("transfer_staging_location is required.")
     base_location = options.transfer_staging_location.rstrip("/")
-    target_base = _target_table_base(_stage_target_table_name(options))
+    target_base = get_backend_adapter("trino").parquet_stage_target_table_base(
+        _stage_target_table_name(options)
+    )
     username = options.transfer_staging_username or "unknown"
     resolved_suffix = stage_suffix or uuid.uuid4().hex
     return (
@@ -291,50 +280,7 @@ def sample_dataframe_from_batch(batch: RowBatch) -> pd.DataFrame:
 
 
 def infer_trino_column_types_from_rows(batch: RowBatch) -> dict[str, str]:
-    inferred: dict[str, str] = {}
-    for index, column_name in enumerate(batch.columns):
-        inferred[column_name] = _infer_trino_type_from_values(
-            row[index] for row in batch.rows
-        )
-    return inferred
-
-
-def _infer_trino_type_from_values(values: Any) -> str:
-    for value in values:
-        if value is None:
-            continue
-        try:
-            if bool(pd.isna(value)):
-                continue
-        except (TypeError, ValueError):
-            pass
-        if isinstance(value, bool):
-            return "BOOLEAN"
-        if isinstance(value, int):
-            return "BIGINT"
-        if isinstance(value, float):
-            return "DOUBLE"
-        if isinstance(value, Decimal):
-            sign, digits, exponent = value.as_tuple()
-            del sign
-            precision = min(max(len(digits), 1), 38)
-            scale = min(max(-exponent, 0), precision)
-            return f"DECIMAL({precision}, {scale})"
-        if isinstance(value, datetime):
-            return "TIMESTAMP"
-        if isinstance(value, date):
-            return "DATE"
-        if isinstance(value, (bytes, bytearray, memoryview)):
-            return "VARBINARY"
-        return "VARCHAR"
-    return "VARCHAR"
-
-
-def _target_table_base(target_table: str) -> str:
-    table = parse_one(target_table, read="trino", into=exp.Table)
-    if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
-        raise ValueError(f"Invalid target table name: {target_table}")
-    return str(table.this.this)
+    return get_backend_adapter("trino").infer_parquet_stage_column_types_from_rows(batch)
 
 
 def _stage_target_table_name(options: Any) -> str:
@@ -345,10 +291,6 @@ def _stage_target_table_name(options: Any) -> str:
     if destination_table is not None:
         return destination_table
     raise ValueError("Parquet staging options must include a target table name.")
-
-
-def _trino_string_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
 
 
 def _spooled_file_rolled_to_disk(spooled_file: Any) -> bool:

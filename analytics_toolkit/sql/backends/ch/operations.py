@@ -432,7 +432,7 @@ def wait_for_table_absence(
     ch_cluster: str | None = None,
 ) -> None:
     del adapter
-    from ...clickhouse.wait import (
+    from .wait import (
         _wait_for_ch_table_absence,
         _wait_for_ch_table_absence_on_cluster,
     )

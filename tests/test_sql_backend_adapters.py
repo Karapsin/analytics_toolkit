@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib
 import inspect
 import threading
+from datetime import date, datetime
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -33,6 +36,7 @@ table_basic_ops_module = importlib.import_module(
 )
 ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.clickhouse.lifecycle")
 ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
+ch_backend_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
 
 
 class RecordingClickHouseClient:
@@ -179,20 +183,25 @@ def test_table_ops_reexports_split_basic_helpers() -> None:
         assert getattr(table_ops_module, name) is getattr(table_basic_ops_module, name)
 
 
-def test_clickhouse_wait_helpers_are_lifecycle_owned_with_ddl_shims() -> None:
+def test_clickhouse_wait_helpers_are_backend_owned_with_ddl_shims() -> None:
     assert (
         ch_lifecycle_module._wait_for_ch_distributed_table_pair
-        is ch_wait_module._wait_for_ch_distributed_table_pair
+        is ch_backend_wait_module._wait_for_ch_distributed_table_pair
     )
     assert (
         ch_lifecycle_module._wait_for_ch_distributed_table_pair_absence
-        is ch_wait_module._wait_for_ch_distributed_table_pair_absence
+        is ch_backend_wait_module._wait_for_ch_distributed_table_pair_absence
     )
     assert (
         ch_lifecycle_module._query_ch_cluster_table_rows
-        is ch_wait_module._query_ch_cluster_table_rows
+        is ch_backend_wait_module._query_ch_cluster_table_rows
+    )
+    assert (
+        ch_wait_module._wait_for_ch_distributed_table_pair
+        is ch_backend_wait_module._wait_for_ch_distributed_table_pair
     )
     assert "from .wait import" in inspect.getsource(ch_lifecycle_module)
+    assert "from ..backends.ch.wait import" in inspect.getsource(ch_wait_module)
 
 
 def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
@@ -285,6 +294,7 @@ def test_registered_backends_implement_full_contract() -> None:
         "build_create_from_sql_target_create_kwargs",
         "build_load_target_create_kwargs",
         "column_types_for_columns",
+        "after_create_table",
         "refine_stage_column_types_from_rows",
         "should_ensure_load_target_table",
     }
@@ -357,6 +367,62 @@ def test_target_create_kwargs_are_backend_adapter_owned() -> None:
         drop_target_if_exists=True,
         target_exists_before_drop=True,
     )["ch_distributed_table"] is False
+
+
+def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
+    adapter = get_backend_adapter("trino")
+    create_sql = adapter.build_parquet_stage_table_sql(
+        "hive.tmp.stage",
+        {"id": "BIGINT", "amount": "DECIMAL(3, 2)", "label": "VARCHAR"},
+        "s3://bucket/stage/target's/",
+        query_label="load-parquet",
+    )
+
+    assert create_sql == (
+        "/* analytics_toolkit query_label=load-parquet */\n"
+        'CREATE TABLE hive.tmp.stage ("id" BIGINT, "amount" DECIMAL(3, 2), '
+        '"label" VARCHAR) WITH (format = \'PARQUET\', '
+        "external_location = 's3://bucket/stage/target''s/')"
+    )
+    assert adapter.parquet_stage_target_table_base("catalog.schema.target") == "target"
+
+    batch = SimpleNamespace(
+        columns=[
+            "flag",
+            "id",
+            "ratio",
+            "amount",
+            "created_at",
+            "event_dt",
+            "payload",
+            "label",
+            "empty",
+        ],
+        rows=[
+            (
+                True,
+                7,
+                1.25,
+                Decimal("1.23"),
+                datetime(2026, 1, 2, 3, 4, 5),
+                date(2026, 1, 2),
+                b"x",
+                "ok",
+                None,
+            )
+        ],
+    )
+    assert adapter.infer_parquet_stage_column_types_from_rows(batch) == {
+        "flag": "BOOLEAN",
+        "id": "BIGINT",
+        "ratio": "DOUBLE",
+        "amount": "DECIMAL(3, 2)",
+        "created_at": "TIMESTAMP",
+        "event_dt": "DATE",
+        "payload": "VARBINARY",
+        "label": "VARCHAR",
+        "empty": "VARCHAR",
+    }
 
 
 def test_backend_lookup_preserves_connection_config_errors(

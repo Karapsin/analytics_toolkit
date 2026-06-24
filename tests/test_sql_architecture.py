@@ -283,6 +283,7 @@ def test_clickhouse_compatibility_wrappers_do_not_own_sql() -> None:
     wrapper_paths = [
         SQL_ROOT / "ddl" / "clickhouse.py",
         SQL_ROOT / "clickhouse" / "lifecycle.py",
+        SQL_ROOT / "clickhouse" / "wait.py",
         SQL_ROOT / "dml" / "table" / "ch_create_table_as.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "estimate.py",
     ]
@@ -318,6 +319,7 @@ def test_generic_clickhouse_callers_delegate_to_adapters() -> None:
     ]
     forbidden_snippets = {
         "clickhouse.lifecycle",
+        "clickhouse.wait",
         "ddl.clickhouse",
         "build_ch_",
         "drop_ch_",
@@ -337,6 +339,59 @@ def test_generic_clickhouse_callers_delegate_to_adapters() -> None:
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
 
     assert offenders == []
+
+
+def test_clickhouse_backend_modules_do_not_import_legacy_wait_shim() -> None:
+    offenders: list[str] = []
+    for path in (SQL_ROOT / "backends" / "ch").rglob("*.py"):
+        text = path.read_text()
+        if "clickhouse.wait" in text:
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    if "clickhouse.wait" in (SQL_ROOT / "ddl" / "api.py").read_text():
+        offenders.append("analytics_toolkit/sql/ddl/api.py")
+
+    assert offenders == []
+
+
+def test_trino_parquet_stage_sql_is_adapter_owned() -> None:
+    generic_path = SQL_ROOT / "dml" / "transfer" / "flow" / "parquet_stage.py"
+    text = generic_path.read_text()
+    forbidden_snippets = {
+        "format = 'PARQUET'",
+        "external_location = '",
+        "parse_one",
+        "sqlglot",
+        "Decimal",
+        "datetime",
+        "_infer_trino_type_from_values",
+    }
+    offenders = [
+        f"{generic_path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
+    assert offenders == []
+
+    tree = ast.parse(text, filename=str(generic_path))
+    wrapper_methods = {
+        "build_create_parquet_stage_table_sql": "build_parquet_stage_table_sql",
+        "build_stage_external_location": "parquet_stage_target_table_base",
+        "infer_trino_column_types_from_rows": (
+            "infer_parquet_stage_column_types_from_rows"
+        ),
+    }
+    for wrapper_name, adapter_method in wrapper_methods.items():
+        wrapper = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == wrapper_name
+        )
+        attribute_calls = {
+            node.func.attr
+            for node in ast.walk(wrapper)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert adapter_method in attribute_calls
 
 
 def test_upsert_backend_policy_is_capability_owned() -> None:
