@@ -55,6 +55,9 @@ retry_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.retry"
 )
 source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.source")
+backend_adapters_module = importlib.import_module(
+    "analytics_toolkit.sql.backend_adapters"
+)
 
 
 class RecordingSourceCursor:
@@ -2064,15 +2067,15 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
         ),
     )
     monkeypatch.setattr(
-        staging_module,
-        "_query_gp_stage_tables",
-        lambda transfer_staging_schema, table_prefix, connection: query_calls.append(
-            (transfer_staging_schema, table_prefix)
-        )
-        or [
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
+            query_calls.append((transfer_staging_schema, table_pattern))
+            or [
             "target__analytics_toolkit_target_user__stage__match",
             "other__analytics_toolkit_target_user__stage__ignore",
-        ],
+            ]
+        ),
     )
     monkeypatch.setattr(
         staging_module,
@@ -2107,17 +2110,17 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
         ),
     )
     monkeypatch.setattr(
-        staging_module,
-        "_query_gp_stage_tables",
-        lambda transfer_staging_schema, table_prefix, connection: query_calls.append(
-            (transfer_staging_schema, table_prefix)
-        )
-        or [
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
+            query_calls.append((transfer_staging_schema, table_pattern))
+            or [
             "target__analytics_toolkit_target_user__stage__match",
             "other__analytics_toolkit_target_user__stage__match",
             "target__analytics_toolkit_other_user__stage__ignore",
             "plain_table",
-        ],
+            ]
+        ),
     )
     monkeypatch.setattr(
         staging_module,
@@ -2155,9 +2158,9 @@ def test_cleanup_stale_stage_tables_quotes_discovered_gp_stage_names(
         ),
     )
     monkeypatch.setattr(
-        staging_module,
-        "_query_gp_stage_tables",
-        lambda transfer_staging_schema, table_prefix, connection: [
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        lambda connection, *, connection_key, transfer_staging_schema, table_pattern: [
             "26cc4c2__analytics_toolkit_karapsin_de__stage__9bd5fbfe__w00000",
         ],
     )
@@ -2197,9 +2200,9 @@ def test_cleanup_stale_stage_tables_public_clean_all_allows_missing_target_table
         ),
     )
     monkeypatch.setattr(
-        staging_module,
-        "_query_gp_stage_tables",
-        lambda transfer_staging_schema, table_prefix, connection: [
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        lambda connection, *, connection_key, transfer_staging_schema, table_pattern: [
             "target__analytics_toolkit_target_user__stage__match",
         ],
     )
@@ -2231,16 +2234,15 @@ def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
         ),
     )
     monkeypatch.setattr(
-        staging_module,
-        "_query_trino_stage_tables",
-        lambda transfer_staging_schema,
-        connection_key,
-        table_prefix,
-        connection: query_calls.append((transfer_staging_schema, table_prefix))
-        or [
+        backend_adapters_module.get_backend_adapter("trino"),
+        "query_transfer_stage_table_names",
+        lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
+            query_calls.append((transfer_staging_schema, table_pattern))
+            or [
             "target__analytics_toolkit_target_user__stage__match",
             "target__analytics_toolkit_other_user__stage__ignore",
-        ],
+            ]
+        ),
     )
     monkeypatch.setattr(
         staging_module,
@@ -2390,14 +2392,16 @@ def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discover
     discovered: list[str] = []
     query_called = 0
 
-    def fake_query_gp_stage_tables(
-        transfer_staging_schema: str,
-        table_prefix: str,
+    def fake_query_stage_tables(
         connection: Any,
+        *,
+        connection_key: str,
+        transfer_staging_schema: str,
+        table_pattern: str,
     ) -> list[str]:
         nonlocal query_called
         query_called += 1
-        del transfer_staging_schema, table_prefix, connection
+        del connection, connection_key, transfer_staging_schema, table_pattern
         raise AssertionError("query should not be used for explicit stage tables")
 
     monkeypatch.setattr(
@@ -2410,7 +2414,11 @@ def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discover
             user="target_user",
         ),
     )
-    monkeypatch.setattr(staging_module, "_query_gp_stage_tables", fake_query_gp_stage_tables)
+    monkeypatch.setattr(
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        fake_query_stage_tables,
+    )
     monkeypatch.setattr(
         staging_module,
         "cleanup_stage_table_with_retry",
@@ -2441,14 +2449,16 @@ def test_cleanup_stale_stage_tables_empty_explicit_list_drops_nothing(
     cleanup_called = 0
     query_called = 0
 
-    def fake_query_gp_stage_tables(
-        transfer_staging_schema: str,
-        table_prefix: str,
+    def fake_query_stage_tables(
         connection: Any,
+        *,
+        connection_key: str,
+        transfer_staging_schema: str,
+        table_pattern: str,
     ) -> list[str]:
         nonlocal query_called
         query_called += 1
-        del transfer_staging_schema, table_prefix, connection
+        del connection, connection_key, transfer_staging_schema, table_pattern
         return ["target__analytics_toolkit_target_user__stage__stale"]
 
     def fake_cleanup_stage_table_with_retry(*_args: Any, **_kwargs: Any) -> None:
@@ -2465,7 +2475,11 @@ def test_cleanup_stale_stage_tables_empty_explicit_list_drops_nothing(
             user="target_user",
         ),
     )
-    monkeypatch.setattr(staging_module, "_query_gp_stage_tables", fake_query_gp_stage_tables)
+    monkeypatch.setattr(
+        backend_adapters_module.get_backend_adapter("gp"),
+        "query_transfer_stage_table_names",
+        fake_query_stage_tables,
+    )
     monkeypatch.setattr(
         staging_module,
         "cleanup_stage_table_with_retry",

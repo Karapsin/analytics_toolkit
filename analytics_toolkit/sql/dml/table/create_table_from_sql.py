@@ -263,26 +263,21 @@ def create_table_from_sql(
 
             create_kwargs: dict[str, object] = {
                 "table_schema": target_column_types,
-                "gp_distributed_by_key": gp_distribution,
-                "ch_engine": ch_engine_name,
-                "ch_cluster": ch_cluster_name,
-                "ch_sharding_key": ch_sharding_key,
-                "ch_distributed_table": (
-                    target_config.backend == "ch" and not options.ch_only_shard
-                ),
-                "ch_only_shard": options.ch_only_shard,
-                "ch_replace_table": (
-                    target_config.backend == "ch"
-                    and not options.ch_only_shard
-                    and drop_target_if_exists
-                    and target_exists_before_drop
-                ),
                 "query_label": query_label,
             }
-            if partition is not None:
-                create_kwargs["partition_by"] = partition
-            if order is not None:
-                create_kwargs["order_by"] = order
+            create_kwargs.update(
+                target_adapter.build_create_from_sql_target_create_kwargs(
+                    gp_distributed_by_key=gp_distribution,
+                    partition_by=partition,
+                    order_by=order,
+                    ch_engine=ch_engine_name,
+                    ch_cluster=ch_cluster_name,
+                    ch_sharding_key=ch_sharding_key,
+                    ch_only_shard=options.ch_only_shard,
+                    drop_target_if_exists=drop_target_if_exists,
+                    target_exists_before_drop=target_exists_before_drop,
+                )
+            )
 
             _create_sql_table_with_connection(
                 target_config.backend,
@@ -440,6 +435,19 @@ def _build_create_table_from_sql_plan(
             query_label=query_label,
         )
     else:
+        create_kwargs = get_backend_adapter(
+            target_backend
+        ).build_create_from_sql_target_create_kwargs(
+            gp_distributed_by_key=gp_distributed_by_key,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_only_shard=ch_only_shard,
+            drop_target_if_exists=drop_target_if_exists,
+            target_exists_before_drop=False,
+        )
         add_create_table_steps(
             plan,
             _build_create_table_sqls(
@@ -447,15 +455,8 @@ def _build_create_table_from_sql_plan(
                 target_table,
                 pd.DataFrame(columns=list(table_schema)),
                 table_schema=table_schema,
-                gp_distributed_by_key=gp_distributed_by_key,
-                partition_by=partition_by,
-                order_by=order_by,
-                ch_engine=ch_engine,
-                ch_cluster=ch_cluster,
-                ch_sharding_key=ch_sharding_key,
-                ch_distributed_table=target_backend == "ch" and not ch_only_shard,
-                ch_only_shard=ch_only_shard,
                 query_label=query_label,
+                **create_kwargs,
             ),
             alias=target_key,
             backend=target_backend,

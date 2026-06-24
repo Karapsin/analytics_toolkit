@@ -7,6 +7,8 @@ from . import operations as _operations
 from . import upsert as _upsert
 from . import source_count as _source_count
 from . import queries as _queries
+from . import source_schema as _ch_source_schema
+from . import target_create as _target_create
 from ..base import (
     BackendAdapter,
     BackendName,
@@ -21,8 +23,6 @@ ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
     "distributed_ddl_output_mode": "none",
 }
-_CLICKHOUSE_MAX_DECIMAL_PRECISION = 76
-
 
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
@@ -270,24 +270,11 @@ class ClickHouseAdapter(BackendAdapter):
         result = connection.query(sql)
         return bool(getattr(result, "result_rows", None) or [])
 
-    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
-        from ...dml.transfer.schema import _inspect_ch_source_schema
-
-        return _inspect_ch_source_schema(connection, query)
-
-    def map_source_type_to_target(self, column: Any) -> str:
-        from ...dml.transfer import schema as transfer_schema
-
-        source_type = transfer_schema._normalize_type_name(column.native_type)
-        precision, scale = transfer_schema._type_precision_scale(column, source_type)
-        kind = transfer_schema._classify_source_type(source_type)
-        base_type = _map_to_ch_base_type(
-            kind,
-            source_type,
-            precision,
-            scale,
-        )
-        return transfer_schema._nullable_ch_type(base_type)
+    inspect_source_query_schema = _ch_source_schema.inspect_source_query_schema
+    map_source_type_to_target = _ch_source_schema.map_source_type_to_target
+    refine_stage_column_types_from_rows = (
+        _ch_source_schema.refine_stage_column_types_from_rows
+    )
 
     build_upsert_stage_sqls = _upsert.build_upsert_stage_sqls
     build_upsert_stage_placeholder_sqls = _upsert.build_upsert_stage_placeholder_sqls
@@ -802,6 +789,12 @@ class ClickHouseAdapter(BackendAdapter):
             query_label=query_label,
         )
 
+    should_ensure_load_target_table = _target_create.should_ensure_load_target_table
+    build_load_target_create_kwargs = _target_create.build_load_target_create_kwargs
+    build_create_from_sql_target_create_kwargs = (
+        _target_create.build_create_from_sql_target_create_kwargs
+    )
+
     def running_query_ids_sql(self) -> str:
         return """select query_id
 from system.processes
@@ -852,49 +845,3 @@ def is_simple_identifier(identifier: str) -> bool:
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
-
-def _map_to_ch_base_type(
-    kind: str,
-    source_type: str,
-    precision: int | None,
-    scale: int | None,
-) -> str:
-    from ...dml.transfer.schema import _decimal_type
-
-    if kind == "binary":
-        return "String"
-    if kind == "boolean":
-        return "Bool"
-    if kind == "integer":
-        if source_type.startswith("u"):
-            if "8" in source_type:
-                return "UInt8"
-            if "16" in source_type:
-                return "UInt16"
-            if "32" in source_type:
-                return "UInt32"
-            return "UInt64"
-        if "8" in source_type and "64" not in source_type:
-            return "Int8"
-        if "16" in source_type or "small" in source_type:
-            return "Int16"
-        if "32" in source_type or source_type in {"integer", "int", "int4"}:
-            return "Int32"
-        return "Int64"
-    if kind == "float":
-        if source_type in {"real", "float4", "float32"}:
-            return "Float32"
-        return "Float64"
-    if kind == "decimal":
-        return _decimal_type(
-            "Decimal",
-            precision,
-            scale,
-            fallback="Decimal(38, 10)",
-            max_precision=_CLICKHOUSE_MAX_DECIMAL_PRECISION,
-        )
-    if kind == "date":
-        return "Date"
-    if kind == "timestamp":
-        return "DateTime64(6)"
-    return "String"

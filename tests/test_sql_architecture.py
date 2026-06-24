@@ -156,26 +156,26 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/ddl/builders.py": 1,
         "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
         "analytics_toolkit/sql/dml/io/execute_sql.py": 0,
-        "analytics_toolkit/sql/dml/load/load_df.py": 11,
+        "analytics_toolkit/sql/dml/load/load_df.py": 5,
         "analytics_toolkit/sql/dml/load/load_sql_table.py": 0,
         "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 0,
-        "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 8,
+        "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 5,
         "analytics_toolkit/sql/dml/table/drop_tables.py": 0,
         "analytics_toolkit/sql/dml/table/maintenance.py": 1,
-        "analytics_toolkit/sql/dml/table/partitions.py": 7,
+        "analytics_toolkit/sql/dml/table/partitions.py": 1,
         "analytics_toolkit/sql/dml/table/write_modes.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/api.py": 6,
         "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 1,
         "analytics_toolkit/sql/dml/transfer/flow/estimate.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/finalize.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/options.py": 2,
-        "analytics_toolkit/sql/dml/transfer/flow/stage.py": 2,
+        "analytics_toolkit/sql/dml/transfer/flow/stage.py": 1,
         "analytics_toolkit/sql/dml/transfer/io/source.py": 0,
-        "analytics_toolkit/sql/dml/transfer/staging.py": 5,
-        "analytics_toolkit/sql/execution/operation_runner.py": 1,
+        "analytics_toolkit/sql/dml/transfer/staging.py": 0,
+        "analytics_toolkit/sql/execution/operation_runner.py": 0,
         "analytics_toolkit/sql/execution/plan_steps.py": 0,
         "analytics_toolkit/sql/metadata/show_tables.py": 4,
-        "analytics_toolkit/sql/metadata/table_info.py": 2,
+        "analytics_toolkit/sql/metadata/table_info.py": 1,
     }
     needles = (
         'backend == "',
@@ -262,6 +262,7 @@ def test_adapter_owned_sql_fragments_stay_out_of_cleaned_generic_modules() -> No
         "system.tables",
         "information_schema.tables",
         "pg_catalog",
+        "DESCRIBE TABLE (",
         "DROP PARTITION",
         "TRUNCATE PARTITION",
         "ADD PARTITION",
@@ -422,15 +423,6 @@ def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
             "_build_trino_merge_sql",
             "_ensure_ch_distributed_target_pair",
         },
-        "analytics_toolkit/sql/dml/transfer/schema.py": {
-            "_inspect_ch_source_schema",
-            "_map_to_ch_base_type",
-            "_map_to_gp_type",
-            "_map_to_trino_type",
-            "_nullable_ch_type",
-            "_unwrap_nullable_ch_type",
-            "refine_ch_column_types_nullability_from_rows",
-        },
     }
     backend_tokens = ("_ch", "_gp", "_trino")
     offenders: list[str] = []
@@ -453,6 +445,8 @@ def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
 
 def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> None:
     forbidden_snippets = {
+        "dml.transfer.schema",
+        "dml.transfer import schema",
         "from ...dml.table import write_modes",
         "transfer_schema._map_to_gp_type",
         "transfer_schema._map_to_trino_type",
@@ -468,6 +462,24 @@ def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> 
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
 
     assert offenders == []
+
+
+def test_transfer_schema_backend_compatibility_wrapper_delegates_to_adapter() -> None:
+    schema_path = SQL_ROOT / "dml" / "transfer" / "schema.py"
+    tree = ast.parse(schema_path.read_text(), filename=str(schema_path))
+    wrapper = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "refine_ch_column_types_nullability_from_rows"
+    )
+
+    call_names = {
+        node.func.id
+        for node in ast.walk(wrapper)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert call_names == {"refine_stage_column_types_from_rows"}
 
 
 def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:

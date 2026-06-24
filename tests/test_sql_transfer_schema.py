@@ -33,6 +33,13 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
+        if sql == "DESCRIBE TABLE (select id, amount from source)":
+            return FakeResult(
+                [
+                    ("id", "UInt64"),
+                    ("amount", "Nullable(Decimal(18, 4))"),
+                ]
+            )
         if sql == "DESCRIBE TABLE target":
             return FakeResult(
                 [
@@ -41,6 +48,66 @@ class FakeClickHouseClient:
                 ]
             )
         return FakeResult([])
+
+
+class FakeDbapiCursor:
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+        self.closed = False
+        self.description = [
+            ("id", 23, None, None, None, None),
+            ("amount", 1700, None, None, 12, 2),
+        ]
+
+    def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeDbapiConnection:
+    def __init__(self) -> None:
+        self.cursor_obj = FakeDbapiCursor()
+
+    def cursor(self) -> FakeDbapiCursor:
+        return self.cursor_obj
+
+
+def test_inspect_dbapi_source_schema_is_adapter_owned() -> None:
+    connection = FakeDbapiConnection()
+
+    result = schema_module.inspect_source_query_schema(
+        "gp",
+        connection,
+        "select id, amount from source;",
+    )
+
+    assert result == [
+        schema_module.SourceColumn("id", "integer"),
+        schema_module.SourceColumn("amount", "numeric(12,2)", precision=12, scale=2),
+    ]
+    assert connection.cursor_obj.executed == [
+        "SELECT * FROM (select id, amount from source) "
+        "AS source_schema_probe WHERE 1 = 0"
+    ]
+    assert connection.cursor_obj.closed is True
+
+
+def test_inspect_clickhouse_source_schema_is_adapter_owned() -> None:
+    client = FakeClickHouseClient()
+
+    result = schema_module.inspect_source_query_schema(
+        "ch",
+        client,
+        "select id, amount from source;",
+    )
+
+    assert result == [
+        schema_module.SourceColumn("id", "UInt64"),
+        schema_module.SourceColumn("amount", "Nullable(Decimal(18, 4))"),
+    ]
+    assert client.queries == ["DESCRIBE TABLE (select id, amount from source)"]
 
 
 def test_map_source_schema_to_target_preserves_common_types() -> None:
@@ -185,6 +252,20 @@ def test_refine_clickhouse_nullability_from_rows() -> None:
         "amount": "Nullable(Decimal(12, 2))",
         "label": "String",
     }
+
+
+def test_refine_stage_column_types_noops_for_non_clickhouse_backends() -> None:
+    column_types = {"id": "INTEGER"}
+
+    assert (
+        schema_module.refine_stage_column_types_from_rows(
+            "gp",
+            column_types,
+            ["id"],
+            [(None,)],
+        )
+        is column_types
+    )
 
 
 def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(

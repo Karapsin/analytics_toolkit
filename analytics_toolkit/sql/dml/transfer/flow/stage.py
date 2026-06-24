@@ -18,7 +18,7 @@ from ..runtime.models import (
     TransferOptions,
     TransferStageState,
 )
-from ..schema import refine_ch_column_types_nullability_from_rows
+from ..schema import refine_stage_column_types_from_rows
 
 
 def create_stage_state(
@@ -90,8 +90,9 @@ def initialize_stage_for_first_batch(
             options.table_schema,
             batch.columns,
         )
-    elif options.to_db_backend == "ch":
-        stage_state.stage_column_types = refine_ch_column_types_nullability_from_rows(
+    else:
+        stage_state.stage_column_types = refine_stage_column_types_from_rows(
+            options.to_db_backend,
             stage_state.stage_column_types,
             batch.columns,
             batch.rows,

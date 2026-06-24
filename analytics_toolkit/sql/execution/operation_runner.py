@@ -187,8 +187,9 @@ def run_connection_operation(
             return operation(connection_ref, attempt)
         except Exception as exc:
             annotate_sql_exception(exc, context_factory(attempt))
-            if backend == "gp":
-                _rollback_quietly(connection_ref["connection"])
+            from ..backend_adapters import get_backend_adapter
+
+            get_backend_adapter(backend).rollback_quietly(connection_ref["connection"])
             raise
         finally:
             if cleanup is None:

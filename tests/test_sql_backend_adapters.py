@@ -282,7 +282,11 @@ def test_registered_backends_implement_full_contract() -> None:
     inherited_contract_methods = {
         "build_insert_from_stage_sql",
         "build_insert_from_stage_placeholder_sql",
+        "build_create_from_sql_target_create_kwargs",
+        "build_load_target_create_kwargs",
         "column_types_for_columns",
+        "refine_stage_column_types_from_rows",
+        "should_ensure_load_target_table",
     }
     missing: list[str] = []
     for backend_name, backend in BACKEND_REGISTRY.items():
@@ -298,6 +302,61 @@ def test_registered_backends_implement_full_contract() -> None:
                 missing.append(f"{backend_name}.{method_name}")
 
     assert missing == []
+
+
+def test_target_create_kwargs_are_backend_adapter_owned() -> None:
+    gp_adapter = get_backend_adapter("gp")
+    ch_adapter = get_backend_adapter("ch")
+
+    assert gp_adapter.should_ensure_load_target_table(target_exists=True) is False
+    assert gp_adapter.build_load_target_create_kwargs(
+        gp_distributed_by_key=["id"],
+        partition_by="dt",
+        order_by=None,
+        ch_engine="ReplicatedMergeTree",
+        ch_cluster="{cluster}",
+        ch_sharding_key="rand()",
+        ch_only_shard=False,
+        write_mode="replace",
+        original_target_exists=True,
+    ) == {
+        "gp_distributed_by_key": ["id"],
+        "partition_by": "dt",
+    }
+
+    assert ch_adapter.should_ensure_load_target_table(target_exists=True) is True
+    assert ch_adapter.build_load_target_create_kwargs(
+        gp_distributed_by_key=None,
+        partition_by="toYYYYMM(dt)",
+        order_by=["id"],
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="id",
+        ch_only_shard=False,
+        write_mode="replace",
+        original_target_exists=True,
+    ) == {
+        "gp_distributed_by_key": None,
+        "partition_by": "toYYYYMM(dt)",
+        "order_by": ["id"],
+        "ch_engine": "MergeTree",
+        "ch_cluster": "cluster",
+        "ch_sharding_key": "id",
+        "ch_distributed_table": True,
+        "ch_only_shard": False,
+        "ch_replace_table": True,
+    }
+    assert ch_adapter.build_create_from_sql_target_create_kwargs(
+        gp_distributed_by_key=None,
+        partition_by=None,
+        order_by=None,
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="id",
+        ch_only_shard=True,
+        drop_target_if_exists=True,
+        target_exists_before_drop=True,
+    )["ch_distributed_table"] is False
 
 
 def test_backend_lookup_preserves_connection_config_errors(

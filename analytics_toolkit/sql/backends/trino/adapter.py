@@ -5,7 +5,9 @@ from string import Formatter
 from typing import Any
 
 from . import operations as _operations
+from .. import source_schema as _source_schema
 from ..base import _apply_query_label
+from ..models import SourceColumn
 from ..utils import sql_literal
 from ..utils import sql_in_list as _sql_in_list
 from ..utils import user_filter as _user_filter
@@ -229,17 +231,21 @@ class TrinoAdapter(DbApiBackendAdapter):
         finally:
             cursor.close()
 
-    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
-        from ...dml.transfer.schema import _inspect_dbapi_source_schema
+    def inspect_source_query_schema(
+        self,
+        connection: Any,
+        query: str,
+    ) -> list[SourceColumn]:
+        return _source_schema.inspect_dbapi_source_schema(
+            connection,
+            query,
+            type_code_name=self.type_code_name,
+        )
 
-        return _inspect_dbapi_source_schema(self.backend, connection, query)
-
-    def map_source_type_to_target(self, column: Any) -> str:
-        from ...dml.transfer import schema as transfer_schema
-
-        source_type = transfer_schema._normalize_type_name(column.native_type)
-        precision, scale = transfer_schema._type_precision_scale(column, source_type)
-        kind = transfer_schema._classify_source_type(source_type)
+    def map_source_type_to_target(self, column: SourceColumn) -> str:
+        source_type = _source_schema.normalize_type_name(column.native_type)
+        precision, scale = _source_schema.type_precision_scale(column, source_type)
+        kind = _source_schema.classify_source_type(source_type)
         return _map_to_trino_type(kind, source_type, precision, scale)
 
     def build_upsert_stage_sqls(
@@ -803,8 +809,6 @@ def _map_to_trino_type(
     precision: int | None,
     scale: int | None,
 ) -> str:
-    from ...dml.transfer.schema import _decimal_type
-
     if kind == "binary":
         return "VARBINARY"
     if kind == "boolean":
@@ -824,7 +828,7 @@ def _map_to_trino_type(
             return "REAL"
         return "DOUBLE"
     if kind == "decimal":
-        return _decimal_type(
+        return _source_schema.decimal_type(
             "DECIMAL",
             precision,
             scale,

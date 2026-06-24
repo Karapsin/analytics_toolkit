@@ -557,24 +557,14 @@ def _ensure_load_target_table(
     connection: Any,
     df: pd.DataFrame,
 ) -> None:
-    if options.connection_backend == "ch":
-        _create_load_target_table(
-            options,
-            state,
-            connection,
-            df,
-            distributed=not options.ch_only_shard,
-        )
-        if not state.original_target_exists:
-            state.target_created_by_operation = True
-        state.target_exists = True
+    adapter = get_backend_adapter(options.connection_backend)
+    if not adapter.should_ensure_load_target_table(state.target_exists):
         return
 
-    if not state.target_exists:
-        _create_load_target_table(options, state, connection, df, distributed=False)
-        if not state.original_target_exists:
-            state.target_created_by_operation = True
-        state.target_exists = True
+    _create_load_target_table(options, state, connection, df)
+    if not state.original_target_exists:
+        state.target_created_by_operation = True
+    state.target_exists = True
 
 
 def _create_load_target_table(
@@ -582,61 +572,25 @@ def _create_load_target_table(
     state: LoadState,
     connection: Any,
     df: pd.DataFrame,
-    *,
-    distributed: bool,
 ) -> None:
     create_kwargs: dict[str, Any] = {}
     if options.query_label is not None:
         create_kwargs["query_label"] = options.query_label
     if options.table_schema is not None:
         create_kwargs["table_schema"] = options.table_schema
-
-    if distributed:
-        _create_sql_table_with_connection(
-            options.connection_backend,
-            connection,
-            options.destination_table,
-            None if options.table_schema is not None else df,
-            connection_key=options.connection_key,
+    create_kwargs.update(
+        get_backend_adapter(options.connection_backend).build_load_target_create_kwargs(
             gp_distributed_by_key=options.gp_distributed_by_key,
             partition_by=options.partition_by,
             order_by=options.order_by,
             ch_engine=options.ch_engine,
             ch_cluster=options.ch_cluster,
             ch_sharding_key=options.ch_sharding_key,
-            ch_distributed_table=True,
-            ch_only_shard=False,
-            ch_replace_table=(
-                options.write_mode == "replace" and state.original_target_exists
-            ),
-            **create_kwargs,
+            ch_only_shard=options.ch_only_shard,
+            write_mode=options.write_mode,
+            original_target_exists=state.original_target_exists,
         )
-        return
-
-    if options.connection_backend == "ch" and options.ch_only_shard:
-        _create_sql_table_with_connection(
-            options.connection_backend,
-            connection,
-            options.destination_table,
-            None if options.table_schema is not None else df,
-            connection_key=options.connection_key,
-            gp_distributed_by_key=options.gp_distributed_by_key,
-            partition_by=options.partition_by,
-            order_by=options.order_by,
-            ch_engine=options.ch_engine,
-            ch_cluster=options.ch_cluster,
-            ch_sharding_key=options.ch_sharding_key,
-            ch_distributed_table=False,
-            ch_only_shard=True,
-            ch_replace_table=False,
-            **create_kwargs,
-        )
-        return
-
-    if options.partition_by is not None:
-        create_kwargs["partition_by"] = options.partition_by
-    if options.order_by is not None:
-        create_kwargs["order_by"] = options.order_by
+    )
 
     _create_sql_table_with_connection(
         options.connection_backend,
@@ -644,7 +598,6 @@ def _create_load_target_table(
         options.destination_table,
         None if options.table_schema is not None else df,
         connection_key=options.connection_key,
-        gp_distributed_by_key=options.gp_distributed_by_key,
         **create_kwargs,
     )
 
@@ -765,13 +718,34 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             table_name=options.destination_table,
             query_label=options.query_label,
             include_ch_shard=(
-                options.connection_backend == "ch" and not options.ch_only_shard
+                get_backend_capability(
+                    options.connection_backend
+                ).supports_distributed_tables
+                and not options.ch_only_shard
             ),
             ch_cluster=options.ch_cluster,
             ch_only_shard=options.ch_only_shard,
         )
 
-    if options.write_mode in {"replace", "truncate_insert"} or options.connection_backend == "ch":
+    if (
+        options.write_mode in {"replace", "truncate_insert"}
+        or get_backend_adapter(options.connection_backend).should_ensure_load_target_table(
+            target_exists=True
+        )
+    ):
+        create_kwargs = get_backend_adapter(
+            options.connection_backend
+        ).build_load_target_create_kwargs(
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
+            ch_engine=options.ch_engine,
+            ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
+            ch_only_shard=options.ch_only_shard,
+            write_mode=options.write_mode,
+            original_target_exists=options.write_mode == "replace",
+        )
         add_create_table_steps(
             plan,
             _build_create_table_sqls(
@@ -779,22 +753,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 options.destination_table,
                 df,
                 table_schema=options.table_schema,
-                gp_distributed_by_key=options.gp_distributed_by_key,
-                partition_by=options.partition_by,
-                order_by=options.order_by,
-                ch_engine=options.ch_engine,
-                ch_cluster=options.ch_cluster,
-                ch_sharding_key=options.ch_sharding_key,
-                ch_distributed_table=(
-                    options.connection_backend == "ch" and not options.ch_only_shard
-                ),
-                ch_only_shard=options.ch_only_shard,
-                ch_replace_table=(
-                    options.connection_backend == "ch"
-                    and options.write_mode == "replace"
-                    and not options.ch_only_shard
-                ),
                 query_label=options.query_label,
+                **create_kwargs,
             ),
             alias=options.connection_key,
             backend=options.connection_backend,

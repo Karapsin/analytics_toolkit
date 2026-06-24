@@ -12,6 +12,7 @@ from .models import BackendCapability
 from .models import BackendName
 from .models import StageFinalizationRequest
 from .models import StageTargetTableRequest
+from .models import SourceColumn
 from .models import TargetWriteModeRequest
 from .models import WriteMode
 from .utils import extract_row_count
@@ -246,11 +247,19 @@ class BackendAdapter:
     ) -> dict[str, str]:
         raise NotImplementedError
 
-    def inspect_source_query_schema(self, connection: Any, query: str) -> list[Any]:
+    def inspect_source_query_schema(
+        self,
+        connection: Any,
+        query: str,
+    ) -> list[SourceColumn]:
         raise NotImplementedError
 
-    def map_source_type_to_target(self, column: Any) -> str:
+    def map_source_type_to_target(self, column: SourceColumn) -> str:
         raise NotImplementedError
+
+    refine_stage_column_types_from_rows = (
+        _adapter_defaults.refine_stage_column_types_from_rows
+    )
 
     build_show_tables_query = _adapter_defaults.build_show_tables_query
     postprocess_show_tables = _adapter_defaults.postprocess_show_tables
@@ -436,6 +445,12 @@ class BackendAdapter:
                 + ", ".join(missing_columns)
             )
         return {column: column_types[column] for column in columns}
+
+    should_ensure_load_target_table = _adapter_defaults.should_ensure_load_target_table
+    build_load_target_create_kwargs = _adapter_defaults.build_load_target_create_kwargs
+    build_create_from_sql_target_create_kwargs = (
+        _adapter_defaults.build_create_from_sql_target_create_kwargs
+    )
 
     def planned_execute_statements(
         self,

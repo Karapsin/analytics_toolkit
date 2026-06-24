@@ -9,6 +9,14 @@ BackendName = str
 
 
 @dataclass(frozen=True)
+class SourceColumn:
+    name: str
+    native_type: str | None = None
+    precision: int | None = None
+    scale: int | None = None
+
+
+@dataclass(frozen=True)
 class TargetWriteModeRequest:
     connection: Any
     table_name: str

@@ -253,6 +253,85 @@ def rollback_quietly(adapter: Any, connection: Any) -> None:
     del adapter, connection
 
 
+def refine_stage_column_types_from_rows(
+    adapter: Any,
+    column_types: dict[str, str] | None,
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+) -> dict[str, str] | None:
+    del adapter, columns, rows
+    return column_types
+
+
+def should_ensure_load_target_table(adapter: Any, target_exists: bool) -> bool:
+    del adapter
+    return not target_exists
+
+
+def build_load_target_create_kwargs(
+    adapter: Any,
+    *,
+    gp_distributed_by_key: list[str] | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    ch_only_shard: bool,
+    write_mode: str,
+    original_target_exists: bool,
+) -> dict[str, Any]:
+    del (
+        adapter,
+        ch_engine,
+        ch_cluster,
+        ch_sharding_key,
+        ch_only_shard,
+        write_mode,
+        original_target_exists,
+    )
+    create_kwargs: dict[str, Any] = {
+        "gp_distributed_by_key": gp_distributed_by_key,
+    }
+    if partition_by is not None:
+        create_kwargs["partition_by"] = partition_by
+    if order_by is not None:
+        create_kwargs["order_by"] = order_by
+    return create_kwargs
+
+
+def build_create_from_sql_target_create_kwargs(
+    adapter: Any,
+    *,
+    gp_distributed_by_key: list[str] | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    ch_only_shard: bool,
+    drop_target_if_exists: bool,
+    target_exists_before_drop: bool,
+) -> dict[str, Any]:
+    del (
+        adapter,
+        ch_engine,
+        ch_cluster,
+        ch_sharding_key,
+        ch_only_shard,
+        drop_target_if_exists,
+        target_exists_before_drop,
+    )
+    create_kwargs: dict[str, Any] = {
+        "gp_distributed_by_key": gp_distributed_by_key,
+    }
+    if partition_by is not None:
+        create_kwargs["partition_by"] = partition_by
+    if order_by is not None:
+        create_kwargs["order_by"] = order_by
+    return create_kwargs
+
+
 def wait_for_table_absence(
     adapter: Any,
     connection: Any,

@@ -205,52 +205,11 @@ def _query_transfer_stage_table_names(
     transfer_staging_schema: str,
     table_pattern: str,
 ) -> list[str]:
-    normalized_backend = backend.lower()
-    if normalized_backend == "gp":
-        return _query_gp_stage_tables(
-            transfer_staging_schema,
-            table_pattern,
-            connection,
-        )
-    if normalized_backend == "trino":
-        return _query_trino_stage_tables(
-            transfer_staging_schema,
-            db_key,
-            table_pattern,
-            connection,
-        )
     return get_backend_adapter(backend).query_transfer_stage_table_names(
         connection["connection"],
         connection_key=db_key,
         transfer_staging_schema=transfer_staging_schema,
         table_pattern=table_pattern,
-    )
-
-
-def _query_gp_stage_tables(
-    transfer_staging_schema: str,
-    table_prefix: str,
-    connection: dict[str, Any],
-) -> list[str]:
-    return get_backend_adapter("gp").query_transfer_stage_table_names(
-        connection["connection"],
-        connection_key="gp",
-        transfer_staging_schema=transfer_staging_schema,
-        table_pattern=table_prefix,
-    )
-
-
-def _query_trino_stage_tables(
-    transfer_staging_schema: str,
-    connection_key: str,
-    table_prefix: str,
-    connection: dict[str, Any],
-) -> list[str]:
-    return get_backend_adapter("trino").query_transfer_stage_table_names(
-        connection["connection"],
-        connection_key=connection_key,
-        transfer_staging_schema=transfer_staging_schema,
-        table_pattern=table_prefix,
     )
 
 
