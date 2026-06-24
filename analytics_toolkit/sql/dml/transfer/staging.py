@@ -5,19 +5,16 @@ import warnings
 from typing import Any
 from typing import Sequence
 
-from ...backend_adapters import is_simple_identifier
+from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError
 from ...connection.get_sql_connection import get_sql_connection
-from ...ddl.identifiers import quote_identifier
 from ...execution.operation_runner import timed_public_sql_function
 from ..load.stage import build_stage_table_prefix, cleanup_stage_table_with_retry
-from ..table._basic_ops import split_trino_table_name
 from .runtime.retry import replace_connection, rollback_quietly, run_with_retry
 
 _DEFAULT_TIMEOUT_INCREMENT = 5
 _WARNING_KEY_PREFIX = "cleanup_stale_stage_tables_no_schema::"
-_CONDITIONAL_STAGE_IDENTIFIER_QUOTE_BACKENDS = frozenset({"gp"})
 
 _warned_transfer_staging_schema_cleanup: set[str] = set()
 
@@ -208,86 +205,53 @@ def _query_transfer_stage_table_names(
     transfer_staging_schema: str,
     table_pattern: str,
 ) -> list[str]:
-    if backend == "gp":
+    normalized_backend = backend.lower()
+    if normalized_backend == "gp":
         return _query_gp_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            table_prefix=table_pattern,
-            connection=connection["connection"],
+            transfer_staging_schema,
+            table_pattern,
+            connection,
         )
-    if backend == "trino":
+    if normalized_backend == "trino":
         return _query_trino_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            connection_key=db_key,
-            table_prefix=table_pattern,
-            connection=connection["connection"],
+            transfer_staging_schema,
+            db_key,
+            table_pattern,
+            connection,
         )
-    if backend == "ch":
-        return _query_ch_stage_tables(
-            transfer_staging_schema=transfer_staging_schema,
-            connection=connection["connection"],
-        )
-    raise ValueError(f"Unsupported transfer backend for staging cleanup: {backend}")
+    return get_backend_adapter(backend).query_transfer_stage_table_names(
+        connection["connection"],
+        connection_key=db_key,
+        transfer_staging_schema=transfer_staging_schema,
+        table_pattern=table_pattern,
+    )
 
 
 def _query_gp_stage_tables(
     transfer_staging_schema: str,
     table_prefix: str,
-    *,
-    connection: Any,
+    connection: dict[str, Any],
 ) -> list[str]:
-    cursor = _require_cursor(connection)
-    try:
-        cursor.execute(
-            """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = %s
-              AND table_name LIKE %s
-            """.strip(),
-            (transfer_staging_schema, table_prefix),
-        )
-        return [str(row[0]) for row in (cursor.fetchall() or [])]
-    finally:
-        cursor.close()
+    return get_backend_adapter("gp").query_transfer_stage_table_names(
+        connection["connection"],
+        connection_key="gp",
+        transfer_staging_schema=transfer_staging_schema,
+        table_pattern=table_prefix,
+    )
 
 
 def _query_trino_stage_tables(
     transfer_staging_schema: str,
     connection_key: str,
     table_prefix: str,
-    *,
-    connection: Any,
+    connection: dict[str, Any],
 ) -> list[str]:
-    catalog_name, schema_name, _ = split_trino_table_name(
-        f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
+    return get_backend_adapter("trino").query_transfer_stage_table_names(
+        connection["connection"],
         connection_key=connection_key,
+        transfer_staging_schema=transfer_staging_schema,
+        table_pattern=table_prefix,
     )
-    cursor = _require_cursor(connection)
-    try:
-        cursor.execute(
-            f"""
-            SELECT table_name
-            FROM {catalog_name}.information_schema.tables
-            WHERE table_schema = ?
-              AND table_name LIKE ?
-            """.strip(),
-            (schema_name, table_prefix),
-        )
-        return [str(row[0]) for row in (cursor.fetchall() or [])]
-    finally:
-        cursor.close()
-
-
-def _query_ch_stage_tables(
-    transfer_staging_schema: str,
-    *,
-    connection: Any,
-) -> list[str]:
-    result = _require_query(connection).query(
-        "SELECT name FROM system.tables WHERE database = "
-        f"{_quote_sql_literal(transfer_staging_schema)}"
-    )
-    return [str(row[0]) for row in (result.result_rows or [])]
 
 
 def _is_fully_qualified_stage_table_name(
@@ -309,23 +273,11 @@ def _qualify_staging_table_name(
             "Unqualified stage table names require transfer_staging_schema."
         )
 
-    if transfer_backend == "ch":
-        return f"{transfer_staging_schema}.{table_name}"
-
-    if transfer_backend == "trino":
-        catalog_name, schema_name, _ = split_trino_table_name(
-            f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
-            connection_key=db_key,
-        )
-        return f"{catalog_name}.{schema_name}.{table_name}"
-
-    if _should_quote_stage_identifier_parts(transfer_backend):
-        return ".".join(
-            _quote_identifier_part_when_needed(part, transfer_backend)
-            for part in (transfer_staging_schema, table_name)
-        )
-
-    return f"{transfer_staging_schema}.{table_name}"
+    return get_backend_adapter(transfer_backend).qualify_transfer_stage_table_name(
+        db_key,
+        transfer_staging_schema,
+        table_name,
+    )
 
 
 def _sanitize_transfer_staging_username(value: str) -> str:
@@ -336,29 +288,3 @@ def _sanitize_transfer_staging_username(value: str) -> str:
 
 def _build_user_stage_marker(transfer_staging_username: str) -> str:
     return f"__analytics_toolkit_{transfer_staging_username}__stage__"
-
-
-def _quote_identifier_part_when_needed(identifier: str, backend: str) -> str:
-    if is_simple_identifier(identifier):
-        return identifier
-    return quote_identifier(identifier, backend)
-
-
-def _should_quote_stage_identifier_parts(backend: str) -> bool:
-    return backend in _CONDITIONAL_STAGE_IDENTIFIER_QUOTE_BACKENDS
-
-
-def _quote_sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _require_cursor(connection: object) -> Any:
-    if not hasattr(connection, "cursor"):
-        raise TypeError("Target connection must provide a cursor() method.")
-    return connection.cursor()
-
-
-def _require_query(connection: object):
-    if not hasattr(connection, "query"):
-        raise TypeError("Target connection must provide a query() method.")
-    return connection

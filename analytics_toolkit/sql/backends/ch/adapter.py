@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from . import operations as _operations
 from . import upsert as _upsert
 from . import source_count as _source_count
 from . import queries as _queries
@@ -36,6 +37,8 @@ class ClickHouseAdapter(BackendAdapter):
     create_semantics = "MergeTree or shard plus Distributed pair"
     type_family = "clickhouse"
     supports_early_transfer_target_creation = False
+    upsert_strategy = "partition_replace"
+    requires_upsert_partition_column = True
 
     def build_connection_config(
         self,
@@ -169,6 +172,13 @@ class ClickHouseAdapter(BackendAdapter):
                 query_label,
             )
         ]
+
+    build_show_tables_query = _operations.build_show_tables_query
+    postprocess_show_tables = _operations.postprocess_show_tables
+    extract_table_ddl = _operations.extract_table_ddl
+    build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
+    query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
+    qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
 
     def drop_table_sql(
         self,

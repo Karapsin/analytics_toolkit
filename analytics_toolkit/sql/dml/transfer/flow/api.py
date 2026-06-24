@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from ....backends import get_backend_capability
 from ....core.capabilities import validate_write_mode
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
@@ -41,10 +42,6 @@ from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns
 from ...table.table_validation import normalize_upsert_partition_column
-from ...table.upsert_policy import (
-    is_trino_backend,
-    uses_partition_replacement_upsert,
-)
 from .attempt import run_transfer_attempt
 from .dry_run import (
     add_insert_target_dry_run_steps,
@@ -512,7 +509,7 @@ def build_transfer_options(
         raise ValueError("key_columns are required for write_mode='upsert'.")
     if (
         options.write_mode == "upsert"
-        and uses_partition_replacement_upsert(options.to_db_backend)
+        and _uses_partition_replacement_upsert(options.to_db_backend)
         and options.upsert_partition_column is None
     ):
         raise ValueError(
@@ -521,7 +518,7 @@ def build_transfer_options(
         )
     if (
         options.write_mode == "upsert"
-        and is_trino_backend(options.to_db_backend)
+        and _requires_upsert_partition_drop_template(options.to_db_backend)
         and not options.trino_upsert_partition_drop_sql_template
     ):
         raise ValueError(
@@ -599,6 +596,14 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
     if not isinstance(ch_only_shard, bool):
         raise ValueError("ch_only_shard must be a boolean.")
     return ch_only_shard
+
+
+def _uses_partition_replacement_upsert(backend: str) -> bool:
+    return get_backend_capability(backend).upsert_strategy == "partition_replace"
+
+
+def _requires_upsert_partition_drop_template(backend: str) -> bool:
+    return get_backend_capability(backend).requires_upsert_partition_drop_template
 
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
@@ -836,7 +841,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             stage_table=worker_stage_table,
             query_label=options.query_label,
         )
-    if options.write_mode == "upsert" and uses_partition_replacement_upsert(
+    if options.write_mode == "upsert" and _uses_partition_replacement_upsert(
         options.to_db_backend
     ):
         add_cleanup_stage_step(

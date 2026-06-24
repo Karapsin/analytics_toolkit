@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_capability
 from ...core.capabilities import validate_write_mode
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
@@ -85,10 +86,6 @@ from ..table.write_modes import (
     apply_target_write_mode,
     build_upsert_stage_sqls,
     upsert_stage_table,
-)
-from ..table.upsert_policy import (
-    is_trino_backend,
-    uses_partition_replacement_upsert,
 )
 from ..table.table_validation import (
     normalize_key_columns,
@@ -370,7 +367,7 @@ def _build_load_options(
         raise ValueError("key_columns are required for write_mode='upsert'.")
     if (
         options.write_mode == "upsert"
-        and uses_partition_replacement_upsert(options.connection_backend)
+        and _uses_partition_replacement_upsert(options.connection_backend)
         and options.upsert_partition_column is None
     ):
         raise ValueError(
@@ -379,7 +376,7 @@ def _build_load_options(
         )
     if (
         options.write_mode == "upsert"
-        and is_trino_backend(options.connection_backend)
+        and _requires_upsert_partition_drop_template(options.connection_backend)
         and not options.trino_upsert_partition_drop_sql_template
     ):
         raise ValueError(
@@ -431,6 +428,14 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
     if not isinstance(ch_only_shard, bool):
         raise ValueError("ch_only_shard must be a boolean.")
     return ch_only_shard
+
+
+def _uses_partition_replacement_upsert(backend: str) -> bool:
+    return get_backend_capability(backend).upsert_strategy == "partition_replace"
+
+
+def _requires_upsert_partition_drop_template(backend: str) -> bool:
+    return get_backend_capability(backend).requires_upsert_partition_drop_template
 
 
 def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
@@ -829,7 +834,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             ),
             query_label=options.query_label,
         )
-        if uses_partition_replacement_upsert(options.connection_backend):
+        if _uses_partition_replacement_upsert(options.connection_backend):
             add_create_table_steps(
                 plan,
                 _build_create_table_sqls(
@@ -859,7 +864,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=(
                     final_stage_table
-                    if uses_partition_replacement_upsert(options.connection_backend)
+                    if _uses_partition_replacement_upsert(options.connection_backend)
                     else None
                 ),
                 trino_partition_drop_sql_template=(
@@ -878,7 +883,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             stage_table=stage_table,
             query_label=options.query_label,
         )
-        if uses_partition_replacement_upsert(options.connection_backend):
+        if _uses_partition_replacement_upsert(options.connection_backend):
             add_cleanup_stage_step(
                 plan,
                 alias=options.connection_key,
@@ -1030,7 +1035,7 @@ def _add_parquet_load_plan_steps(
 
     if options.write_mode == "upsert":
         final_stage_table = f"{options.destination_table}__upsert_final__dry_run"
-        if uses_partition_replacement_upsert(options.connection_backend):
+        if _uses_partition_replacement_upsert(options.connection_backend):
             add_create_table_steps(
                 plan,
                 _build_create_table_sqls(
@@ -1057,7 +1062,7 @@ def _add_parquet_load_plan_steps(
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=(
                     final_stage_table
-                    if uses_partition_replacement_upsert(options.connection_backend)
+                    if _uses_partition_replacement_upsert(options.connection_backend)
                     else None
                 ),
                 trino_partition_drop_sql_template=(
@@ -1087,7 +1092,7 @@ def _add_parquet_load_plan_steps(
         stage_table=stage_table,
         query_label=options.query_label,
     )
-    if options.write_mode == "upsert" and uses_partition_replacement_upsert(
+    if options.write_mode == "upsert" and _uses_partition_replacement_upsert(
         options.connection_backend
     ):
         add_cleanup_stage_step(
@@ -1435,7 +1440,7 @@ def _ensure_final_upsert_stage_table(
     state: LoadState,
     df: pd.DataFrame,
 ) -> None:
-    if not uses_partition_replacement_upsert(options.connection_backend):
+    if not _uses_partition_replacement_upsert(options.connection_backend):
         return
     if not state.original_target_exists:
         return

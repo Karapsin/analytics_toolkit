@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from string import Formatter
 from typing import Any
 
+from . import operations as _operations
 from ..base import _apply_query_label
 from ..utils import sql_literal
 from ..utils import sql_in_list as _sql_in_list
@@ -25,6 +26,10 @@ class TrinoAdapter(DbApiBackendAdapter):
     drop_semantics = "DROP TABLE IF EXISTS"
     create_semantics = "CREATE TABLE WITH parquet/object-store layout"
     type_family = "trino"
+    upsert_strategy = "partition_replace"
+    requires_upsert_partition_column = True
+    requires_upsert_partition_drop_template = True
+    supports_show_tables_catalog_filter = True
 
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)
@@ -152,6 +157,13 @@ class TrinoAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         return [_apply_query_label(f"DELETE FROM {table_name}", query_label)]
+
+    build_show_tables_query = _operations.build_show_tables_query
+    extract_table_ddl = _operations.extract_table_ddl
+    validate_drop_partitions_options = _operations.validate_drop_partitions_options
+    build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
+    query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
+    qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
 
     def build_dataframe_batch_insert_sql(
         self,

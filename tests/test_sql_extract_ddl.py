@@ -9,6 +9,7 @@ from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 
 extract_ddl_module = importlib.import_module("analytics_toolkit.sql.ddl.extract_ddl")
+gp_ddl_module = importlib.import_module("analytics_toolkit.sql.backends.gp.ddl")
 ddl_module = importlib.import_module("analytics_toolkit.sql.ddl")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
@@ -313,7 +314,7 @@ def test_extract_ddl_greenplum_formats_distribution_policies(
     policy = pd.DataFrame({"policy_type": [policy_type], "attrnums": [attrnums]})
 
     assert (
-        extract_ddl_module._format_gp_distribution_clause(policy, columns)
+        gp_ddl_module.format_gp_distribution_clause(policy, columns)
         == expected
     )
 

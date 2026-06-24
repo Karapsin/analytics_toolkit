@@ -4,6 +4,7 @@ import warnings
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from ....backends import get_backend_capability
 from ...load.stage import create_stage_table
 from ...load.stage import cleanup_stage_table_with_retry
 from ....connection.get_sql_connection import get_sql_connection
@@ -161,7 +162,7 @@ def _ensure_final_upsert_stage_table(
 ) -> None:
     if options.write_mode != "upsert":
         return
-    if options.to_db_backend not in {"trino", "ch"}:
+    if not _uses_partition_replacement_upsert(options.to_db_backend):
         return
     if not stage_state.target_exists:
         return
@@ -241,6 +242,10 @@ def _warn_empty_transfer_missing_target(options: TransferOptions) -> None:
         connection=options.to_db_key,
         backend=options.to_db_backend,
     )
+
+
+def _uses_partition_replacement_upsert(backend: str) -> bool:
+    return get_backend_capability(backend).upsert_strategy == "partition_replace"
 
 
 def cleanup_stage(

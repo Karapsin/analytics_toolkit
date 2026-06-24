@@ -1,97 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from . import common_methods as _common_methods
+from . import adapter_defaults as _adapter_defaults
 from . import source_count as _source_count
 from . import upsert as _upsert
 from . import validation as _validation
+from .models import BackendCapability
+from .models import BackendName
+from .models import StageFinalizationRequest
+from .models import StageTargetTableRequest
+from .models import TargetWriteModeRequest
+from .models import WriteMode
 from .utils import extract_row_count
-
-
-WriteMode = Literal["append", "replace", "truncate_insert", "upsert"]
-BackendName = str
-
-
-@dataclass(frozen=True)
-class TargetWriteModeRequest:
-    connection: Any
-    table_name: str
-    write_mode: str
-    target_exists: bool
-    replace_existing_non_ch: str
-    ch_cluster: str = "{cluster}"
-    connection_label: str | None = None
-    drop_missing_ch_truncate_target: bool = True
-    query_label: str | None = None
-    connection_key: str | None = None
-    ch_retry_per_host_drops: bool = True
-    ch_only_shard: bool = False
-
-
-@dataclass(frozen=True)
-class StageTargetTableRequest:
-    connection: Any
-    target_table: str
-    sample_batch: Any
-    target_column_types: Mapping[str, str] | None
-    gp_distributed_by_key: list[str] | None
-    partition_by: list[str] | str | None
-    order_by: list[str] | str | None
-    ch_engine: str
-    ch_cluster: str
-    ch_sharding_key: str
-    query_label: str | None
-    connection_key: str | None
-    ch_only_shard: bool = False
-
-
-@dataclass(frozen=True)
-class StageFinalizationRequest:
-    connection: Any
-    stage_table: str
-    target_table: str
-    replace_target_table: bool
-    target_exists: bool
-    sample_batch: Any
-    target_column_types: Mapping[str, str] | None = None
-    insert_column_types: Mapping[str, str] | None = None
-    write_mode: str = "replace"
-    key_columns: list[str] | None = None
-    gp_distributed_by_key: list[str] | None = None
-    partition_by: list[str] | str | None = None
-    order_by: list[str] | str | None = None
-    ch_engine: str = "ReplicatedMergeTree"
-    ch_cluster: str = "{cluster}"
-    ch_sharding_key: str = "rand()"
-    query_label: str | None = None
-    connection_key: str | None = None
-    ch_retry_per_host_drops: bool = True
-    ch_only_shard: bool = False
-    upsert_partition_column: str | None = None
-    final_upsert_stage_table: str | None = None
-    incoming_stage_tables: list[str] | None = None
-    trino_upsert_partition_drop_sql_template: str | None = None
-
-
-@dataclass(frozen=True)
-class BackendCapability:
-    name: BackendName
-    display_name: str
-    sqlglot_dialect: str
-    identifier_quote: str
-    supports_transactions: bool
-    supports_analyze: bool
-    uses_stage_tables: bool
-    supports_distributed_tables: bool
-    truncate_semantics: str
-    drop_semantics: str
-    create_semantics: str
-    type_family: str
-    supported_write_modes: frozenset[WriteMode]
-    supports_early_transfer_target_creation: bool = True
 
 
 class BackendAdapter:
@@ -111,6 +34,10 @@ class BackendAdapter:
         {"append", "replace", "truncate_insert", "upsert"}
     )
     supports_early_transfer_target_creation: bool = True
+    upsert_strategy: str = "key_delete_insert"
+    requires_upsert_partition_column: bool = False
+    requires_upsert_partition_drop_template: bool = False
+    supports_show_tables_catalog_filter: bool = False
 
     @property
     def name(self) -> BackendName:
@@ -134,6 +61,14 @@ class BackendAdapter:
             supported_write_modes=self.supported_write_modes,
             supports_early_transfer_target_creation=(
                 self.supports_early_transfer_target_creation
+            ),
+            upsert_strategy=self.upsert_strategy,
+            requires_upsert_partition_column=self.requires_upsert_partition_column,
+            requires_upsert_partition_drop_template=(
+                self.requires_upsert_partition_drop_template
+            ),
+            supports_show_tables_catalog_filter=(
+                self.supports_show_tables_catalog_filter
             ),
         )
 
@@ -316,6 +251,15 @@ class BackendAdapter:
 
     def map_source_type_to_target(self, column: Any) -> str:
         raise NotImplementedError
+
+    build_show_tables_query = _adapter_defaults.build_show_tables_query
+    postprocess_show_tables = _adapter_defaults.postprocess_show_tables
+    extract_table_ddl = _adapter_defaults.extract_table_ddl
+    validate_drop_partitions_options = _adapter_defaults.validate_drop_partitions_options
+    build_drop_partitions_sqls = _adapter_defaults.build_drop_partitions_sqls
+    build_create_partition_sql = _adapter_defaults.build_create_partition_sql
+    query_transfer_stage_table_names = _adapter_defaults.query_transfer_stage_table_names
+    qualify_transfer_stage_table_name = _adapter_defaults.qualify_transfer_stage_table_name
 
     def build_upsert_stage_sqls(
         self,

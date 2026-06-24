@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Move SQL backend policy into adapters.
+
 ## 1.3.10.11 - 2026-06-24
 
 - Quote discovered Greenplum stale stage cleanup names.

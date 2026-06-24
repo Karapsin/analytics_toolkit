@@ -251,6 +251,53 @@ def test_generic_sql_modules_do_not_pin_literal_backend_sets() -> None:
     assert offenders == []
 
 
+def test_adapter_owned_sql_fragments_stay_out_of_cleaned_generic_modules() -> None:
+    cleaned_generic_paths = [
+        SQL_ROOT / "metadata" / "show_tables.py",
+        SQL_ROOT / "ddl" / "extract_ddl.py",
+        SQL_ROOT / "dml" / "table" / "partitions.py",
+        SQL_ROOT / "dml" / "transfer" / "staging.py",
+    ]
+    forbidden_snippets = {
+        "system.tables",
+        "information_schema.tables",
+        "pg_catalog",
+        "DROP PARTITION",
+        "TRUNCATE PARTITION",
+        "ADD PARTITION",
+        "DELETE FROM {table}",
+    }
+    offenders: list[str] = []
+
+    for path in cleaned_generic_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_upsert_backend_policy_is_capability_owned() -> None:
+    assert not (SQL_ROOT / "dml" / "table" / "upsert_policy.py").exists()
+
+    forbidden_snippets = {
+        "is_trino_backend",
+        "is_clickhouse_backend",
+        "PARTITION_REPLACEMENT_UPSERT_BACKENDS",
+    }
+    offenders: list[str] = []
+    for path in SQL_ROOT.rglob("*.py"):
+        if "backends" in path.parts:
+            continue
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
 def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
     allowed_helper_defs = {
         "analytics_toolkit/sql/dml/io/execute_read.py": {

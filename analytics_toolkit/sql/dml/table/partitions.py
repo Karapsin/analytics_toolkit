@@ -6,12 +6,8 @@ from datetime import date, datetime, timedelta
 import re
 from typing import Any
 
-from ...backend_adapters import (
-    UNSUPPORTED_BACKEND_MESSAGE,
-    ch_cluster_clause,
-    get_backend_adapter,
-)
-from ...connection.config import get_connection_config, resolve_connection_backend
+from ...backend_adapters import get_backend_adapter
+from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -19,7 +15,6 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...ddl.clickhouse import build_ch_shard_table_name
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -68,21 +63,19 @@ def build_drop_many_partitions_sqls(
     ch_cluster: str = "{cluster}",
     query_label: str | None = None,
 ) -> list[str]:
-    backend = resolve_connection_backend(connection_type)
+    adapter = get_backend_adapter(connection_type)
     target_table = _validate_non_empty_table_name(table)
     partition_keys = _validate_partition_keys(partition_keys_list)
     normalized_trino_partition_column = _normalize_partition_column(
         trino_partition_column
     )
-    _validate_drop_many_partitions_options(
-        backend,
-        trino_partition_column=normalized_trino_partition_column,
+    adapter.validate_drop_partitions_options(
+        partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
     )
     return [
         apply_query_label(sql, query_label)
-        for sql in _build_drop_many_partitions_sqls_for_backend(
-            backend,
+        for sql in adapter.build_drop_partitions_sqls(
             target_table,
             partition_keys,
             partition_column=normalized_trino_partition_column,
@@ -115,7 +108,13 @@ def _build_gp_create_partitions_sqls(
     )
     return [
         apply_query_label(
-            _build_gp_create_partition_sql(target_table, partition),
+            get_backend_adapter("gp").build_create_partition_sql(
+                target_table,
+                name=partition.name,
+                start=partition.start,
+                end=partition.end,
+                value=partition.value,
+            ),
             query_label,
         )
         for partition in partitions
@@ -463,9 +462,8 @@ def _build_drop_many_partitions_options(
     normalized_trino_partition_column = _normalize_partition_column(
         trino_partition_column
     )
-    _validate_drop_many_partitions_options(
-        config.backend,
-        trino_partition_column=normalized_trino_partition_column,
+    get_backend_adapter(config.backend).validate_drop_partitions_options(
+        partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
     )
     return DropManyPartitionsOptions(
@@ -482,42 +480,6 @@ def _build_drop_many_partitions_options(
         return_metadata=return_metadata,
         query_label=query_label,
     )
-
-def _build_drop_many_partitions_sqls_for_backend(
-    backend: str,
-    table: str,
-    partition_keys: list[str],
-    *,
-    partition_column: str | None,
-    gp_truncate: bool,
-    ch_cluster: str,
-) -> list[str]:
-    if backend == "gp":
-        action = "TRUNCATE" if gp_truncate else "DROP"
-        return [
-            f"ALTER TABLE {table} {action} PARTITION FOR ({_sql_string_literal(key)})"
-            for key in partition_keys
-        ]
-    if backend == "trino":
-        if partition_column is None:
-            raise InvalidSqlInputError(
-                "trino_partition_column is required for Trino partition deletes."
-            )
-        partition_values = ", ".join(
-            f"DATE {_sql_string_literal(key)}" for key in partition_keys
-        )
-        return [
-            f"DELETE FROM {table}\nWHERE {partition_column} IN ({partition_values})"
-        ]
-    if backend == "ch":
-        shard_table = build_ch_shard_table_name(table)
-        cluster_clause = ch_cluster_clause(ch_cluster)
-        return [
-            f"ALTER TABLE {shard_table}{cluster_clause} "
-            f"DROP PARTITION {_sql_string_literal(key)}"
-            for key in partition_keys
-        ]
-    raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 def _normalize_gp_create_partitions(
     *,
@@ -749,25 +711,6 @@ def _validate_gp_partition_identifier(value: Any, argument_name: str) -> str:
         )
     return normalized
 
-def _build_gp_create_partition_sql(
-    table: str,
-    partition: _GpPartitionDefinition,
-) -> str:
-    if partition.value is not None:
-        return (
-            f"ALTER TABLE {table} ADD PARTITION {partition.name} "
-            f"VALUES ({_sql_string_literal(partition.value)})"
-        )
-    if partition.start is None or partition.end is None:
-        raise InvalidSqlInputError(
-            "Range partitions require both start and end values."
-        )
-    return (
-        f"ALTER TABLE {table} ADD PARTITION {partition.name} "
-        f"START ({_sql_string_literal(partition.start)}) INCLUSIVE "
-        f"END ({_sql_string_literal(partition.end)}) EXCLUSIVE"
-    )
-
 def _validate_non_empty_table_name(table: str) -> str:
     normalized = str(table).strip()
     if not normalized:
@@ -795,25 +738,3 @@ def _normalize_partition_column(partition_column: str | None) -> str | None:
         return None
     normalized = str(partition_column).strip()
     return normalized or None
-
-def _validate_drop_many_partitions_options(
-    backend: str,
-    *,
-    trino_partition_column: str | None,
-    gp_truncate: bool,
-) -> None:
-    if gp_truncate and backend != "gp":
-        raise UnsupportedConnectionTypeError(
-            "gp_truncate=True is only supported for Greenplum connections."
-        )
-    if backend == "trino" and trino_partition_column is None:
-        raise InvalidSqlInputError(
-            "trino_partition_column is required for Trino partition deletes."
-        )
-    if backend != "trino" and trino_partition_column is not None:
-        raise InvalidSqlInputError(
-            "trino_partition_column is only supported for Trino partition deletes."
-        )
-
-def _sql_string_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"

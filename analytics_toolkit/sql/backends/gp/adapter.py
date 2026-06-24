@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from . import operations as _operations
 from ..base import _apply_query_label
 from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
@@ -165,6 +166,12 @@ class GreenplumAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> list[str]:
         return [_apply_query_label(f"TRUNCATE TABLE {table_name}", query_label)]
+
+    build_show_tables_query = _operations.build_show_tables_query
+    extract_table_ddl = _operations.extract_table_ddl
+    validate_drop_partitions_options = _operations.validate_drop_partitions_options
+    build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
+    build_create_partition_sql = _operations.build_create_partition_sql
 
     def build_dataframe_batch_insert_sql(
         self,
