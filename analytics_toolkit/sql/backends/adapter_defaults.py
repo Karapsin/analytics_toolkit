@@ -231,6 +231,13 @@ def build_transfer_replace_target_sqls(
     ch_cluster: str = "{cluster}",
     ch_only_shard: bool = False,
 ) -> list[str]:
+    if adapter.transfer_replace_existing_non_ch() == "drop":
+        return adapter.build_drop_target_sqls(
+            table_name,
+            query_label=query_label,
+            ch_cluster=ch_cluster,
+            ch_only_shard=ch_only_shard,
+        )
     return adapter.build_clear_target_sqls(
         table_name,
         query_label=query_label,
@@ -240,8 +247,14 @@ def build_transfer_replace_target_sqls(
 
 
 def transfer_replace_target_phase(adapter: Any) -> str:
-    del adapter
+    if adapter.transfer_replace_existing_non_ch() == "drop":
+        return "drop_target"
     return "clear_target"
+
+
+def transfer_replace_existing_non_ch(adapter: Any) -> str:
+    del adapter
+    return "clear"
 
 
 def companion_table_name(adapter: Any, table_name: str) -> str | None:

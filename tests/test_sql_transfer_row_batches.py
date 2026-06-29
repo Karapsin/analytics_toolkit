@@ -2893,6 +2893,8 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
         and "__analytics_toolkit_target_user__stage__dryrun/" in sql
         for sql in plan.sqls
     )
+    assert "DROP TABLE IF EXISTS sandbox.target" in plan.sqls
+    assert "DELETE FROM sandbox.target" not in plan.sqls
     assert any(sql.startswith("INSERT INTO sandbox.target") for sql in plan.sqls)
     assert any(
         sql.startswith("DROP TABLE IF EXISTS object_storage.sandbox")

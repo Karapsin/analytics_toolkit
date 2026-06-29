@@ -277,6 +277,7 @@ class BackendAdapter:
         _adapter_defaults.build_transfer_replace_target_sqls
     )
     transfer_replace_target_phase = _adapter_defaults.transfer_replace_target_phase
+    transfer_replace_existing_non_ch = _adapter_defaults.transfer_replace_existing_non_ch
     companion_table_name = _adapter_defaults.companion_table_name
     resolve_table_info_table_name = _adapter_defaults.resolve_table_info_table_name
     rollback_quietly = _adapter_defaults.rollback_quietly
@@ -664,7 +665,7 @@ class BackendAdapter:
                     table_name=request.target_table,
                     write_mode=request.write_mode,
                     target_exists=target_exists,
-                    replace_existing_non_ch="clear",
+                    replace_existing_non_ch=self.transfer_replace_existing_non_ch(),
                     ch_cluster=request.ch_cluster,
                     query_label=request.query_label,
                     connection_key=request.connection_key,

@@ -1477,6 +1477,52 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     )
 
 
+def test_finalize_stage_table_trino_replace_recreates_target() -> None:
+    connection = FakeDbapiConnection()
+    batch = pd.DataFrame(
+        {
+            "contact_id": ["1"],
+            "first_game_dt": [date(2026, 1, 1)],
+            "last_game_dt": [date(2026, 1, 2)],
+        }
+    )
+    column_types = {
+        "contact_id": "VARCHAR",
+        "first_game_dt": "DATE",
+        "last_game_dt": "DATE",
+    }
+
+    table_ops_module.finalize_stage_table(
+        connection_type="trino",
+        connection=connection,
+        stage_table="iceberg.pa_core_stage.target__stage",
+        target_table="iceberg.pa_core_sandbox.target",
+        replace_target_table=True,
+        target_exists=True,
+        sample_batch=batch,
+        target_column_types=column_types,
+        insert_column_types=column_types,
+    )
+
+    assert connection.executed[0] == "DROP TABLE IF EXISTS iceberg.pa_core_sandbox.target"
+    assert connection.executed[1].startswith(
+        'CREATE TABLE iceberg.pa_core_sandbox.target ("contact_id" VARCHAR, '
+        '"first_game_dt" DATE, "last_game_dt" DATE)'
+    )
+    assert connection.executed[2] == (
+        'INSERT INTO iceberg.pa_core_sandbox.target ("contact_id", '
+        '"first_game_dt", "last_game_dt") '
+        'SELECT CAST("contact_id" AS VARCHAR) AS "contact_id", '
+        'CAST("first_game_dt" AS DATE) AS "first_game_dt", '
+        'CAST("last_game_dt" AS DATE) AS "last_game_dt" '
+        "FROM iceberg.pa_core_stage.target__stage"
+    )
+    assert not any(
+        sql.startswith("DELETE FROM iceberg.pa_core_sandbox.target")
+        for sql in connection.executed
+    )
+
+
 def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
     connection = FakeDbapiConnection()
     batch = pd.DataFrame({"id": [1], "sub_id": [None], "score": [10]})
