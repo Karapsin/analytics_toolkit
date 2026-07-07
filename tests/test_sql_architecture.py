@@ -133,6 +133,25 @@ def test_sql_backend_registry_is_canonical_backend_list() -> None:
     } == BACKEND_CAPABILITIES
 
 
+def test_generic_identifier_helpers_use_backend_adapters() -> None:
+    capability_imports = (
+        "get_backend_capability",
+        "BACKEND_CAPABILITIES",
+        ".core.capabilities",
+        ".capabilities import",
+    )
+    helper_paths = {
+        SQL_ROOT / "core" / "identifiers.py",
+        SQL_ROOT / "ddl" / "identifiers.py",
+    }
+
+    for path in helper_paths:
+        text = path.read_text()
+        assert "get_backend_adapter" in text
+        for needle in capability_imports:
+            assert needle not in text
+
+
 def test_sql_backend_compatibility_shims_do_not_own_implementations() -> None:
     shim_paths = {
         SQL_ROOT / "backend_adapters.py",
@@ -398,12 +417,82 @@ def test_generic_load_and_transfer_do_not_import_concrete_config_policy() -> Non
     checked_paths = [
         SQL_ROOT / "dml" / "load" / "load_df.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "dry_run.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "finalize.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "stage.py",
     ]
+    forbidden_snippets = {
+        "TrinoConfig",
+        "get_backend_capability",
+        "upsert_strategy",
+        "supports_distributed_tables",
+        "supports_early_transfer_target_creation",
+        "_requires_upsert_partition_drop_template",
+        "_supports_distributed_table_targets",
+        "_uses_partition_replacement_upsert",
+    }
+    offenders: list[str] = []
+    for path in checked_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_trino_insert_chunk_size_validation_is_adapter_owned() -> None:
+    checked_paths = [
+        SQL_ROOT / "dml" / "load" / "load_df.py",
+        SQL_ROOT / "dml" / "table" / "create_table_from_sql.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+    ]
+    forbidden_snippets = {
+        "trino_insert_chunk_size is not None and",
+        "trino_insert_chunk_size <= 0",
+    }
+    offenders: list[str] = []
+    for path in checked_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_show_tables_catalog_filter_policy_is_adapter_owned() -> None:
+    path = SQL_ROOT / "metadata" / "show_tables.py"
+    text = path.read_text()
+    forbidden_snippets = {
+        "get_backend_capability",
+        "supports_show_tables_catalog_filter",
+    }
+
     offenders = [
-        str(path.relative_to(PROJECT_ROOT))
-        for path in checked_paths
-        if "TrinoConfig" in path.read_text()
+        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
     ]
+
+    assert offenders == []
+
+
+def test_generic_analyze_support_policy_is_adapter_owned() -> None:
+    checked_paths = [
+        SQL_ROOT / "execution" / "plan_steps.py",
+        SQL_ROOT / "dml" / "table" / "maintenance.py",
+    ]
+    forbidden_snippets = {
+        "get_backend_capability",
+        "supports_analyze",
+    }
+    offenders: list[str] = []
+    for path in checked_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
 
     assert offenders == []
 
@@ -495,6 +584,8 @@ def test_dataframe_type_inference_is_adapter_owned() -> None:
     schema_path = SQL_ROOT / "ddl" / "schema.py"
     text = schema_path.read_text()
     forbidden_snippets = {
+        "_build_expected_ch_column_types",
+        'get_backend_adapter("ch")',
         "def _infer_gp_type",
         "def _infer_trino_type",
         "def _infer_ch_type",
@@ -585,31 +676,9 @@ def test_upsert_backend_policy_is_capability_owned() -> None:
 
 def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
     allowed_helper_defs = {
-        "analytics_toolkit/sql/dml/io/execute_read.py": {
-            "_execute_read_ch",
-            "_execute_read_ch_backend",
-            "_execute_read_gp",
-            "_execute_read_gp_backend",
-            "_execute_read_trino",
-            "_execute_read_trino_backend",
-        },
         "analytics_toolkit/sql/dml/io/execute_sql.py": {
-            "_execute_ch",
-            "_execute_ch_backend",
             "_execute_ch_statement",
-            "_execute_gp",
-            "_execute_gp_backend",
-            "_execute_trino",
-            "_execute_trino_backend",
             "_execute_trino_statement",
-        },
-        "analytics_toolkit/sql/dml/io/read_sql.py": {
-            "_read_ch",
-            "_read_ch_backend",
-            "_read_gp",
-            "_read_gp_backend",
-            "_read_trino",
-            "_read_trino_backend",
         },
         "analytics_toolkit/sql/dml/load/load_sql_table.py": {
             "_build_trino_values_tuple",
@@ -618,17 +687,11 @@ def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
             "_get_gp_insert_chunk_size",
             "_get_trino_insert_chunk_size",
             "_insert_ch_batch",
-            "_insert_ch_batch_backend",
             "_insert_ch_rows",
-            "_insert_ch_rows_backend",
             "_insert_gp_batch",
-            "_insert_gp_batch_backend",
             "_insert_gp_rows",
-            "_insert_gp_rows_backend",
             "_insert_trino_batch",
-            "_insert_trino_batch_backend",
             "_insert_trino_rows",
-            "_insert_trino_rows_backend",
             "_iter_trino_row_values",
             "_iter_trino_rows",
             "_normalize_ch_row",
@@ -665,6 +728,65 @@ def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
                 offenders.append(f"{relative}: {node.name}")
 
     assert offenders == []
+
+
+def test_generic_io_backend_dispatch_is_adapter_owned() -> None:
+    checked_paths = [
+        SQL_ROOT / "dml" / "io" / "read_sql.py",
+        SQL_ROOT / "dml" / "io" / "execute_sql.py",
+        SQL_ROOT / "dml" / "io" / "execute_read.py",
+    ]
+    forbidden_snippets = {
+        "_READ_BACKENDS",
+        "_EXECUTE_BACKENDS",
+        "_EXECUTE_READ_BACKENDS",
+        'get_backend_adapter("trino")',
+        'get_backend_adapter("gp")',
+        'get_backend_adapter("ch")',
+        "def _read_trino",
+        "def _read_gp",
+        "def _read_ch",
+        "def _execute_trino(",
+        "def _execute_gp(",
+        "def _execute_ch(",
+        "def _execute_read_trino",
+        "def _execute_read_gp",
+        "def _execute_read_ch",
+    }
+    offenders: list[str] = []
+
+    for path in checked_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_load_sql_insert_dispatch_is_adapter_owned() -> None:
+    path = SQL_ROOT / "dml" / "load" / "load_sql_table.py"
+    text = path.read_text()
+    forbidden_snippets = {
+        "_BATCH_INSERT_BACKENDS",
+        "_ROW_INSERT_BACKENDS",
+        "_make_batch_insert_backend",
+        "_make_row_insert_backend",
+        "def _insert_trino_batch_backend",
+        "def _insert_gp_batch_backend",
+        "def _insert_ch_batch_backend",
+        "def _insert_trino_rows_backend",
+        "def _insert_gp_rows_backend",
+        "def _insert_ch_rows_backend",
+    }
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
+    assert offenders == []
+    assert "get_backend_adapter(backend).insert_dataframe_batch" in text
+    assert "get_backend_adapter(backend).insert_rows_batch" in text
 
 
 def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> None:

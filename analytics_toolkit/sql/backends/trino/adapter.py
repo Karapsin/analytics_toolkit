@@ -175,6 +175,16 @@ class TrinoAdapter(DbApiBackendAdapter):
         del write_mode, original_target_exists
         return True
 
+    def validate_trino_insert_chunk_size_option(
+        self,
+        value: int | None,
+        *,
+        option_owner: str,
+    ) -> None:
+        del option_owner
+        if value is not None and value <= 0:
+            raise ValueError("trino_insert_chunk_size must be a positive integer.")
+
     build_show_tables_query = _operations.build_show_tables_query
     extract_table_ddl = _operations.extract_table_ddl
     target_connection_defaults = _operations.target_connection_defaults

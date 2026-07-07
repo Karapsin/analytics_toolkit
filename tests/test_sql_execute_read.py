@@ -210,21 +210,21 @@ def test_execute_read_retries_with_fresh_connection(
     def fake_execute_read_ch(
         client: FakeClickHouseClient,
         statements: list[str],
+        *,
         print_queries: bool = True,
+        gp_break_query: bool = False,
+        gp_commit_each_statement: bool = False,
         progress: bool = True,
     ) -> pd.DataFrame:
-        del progress
+        del statements, gp_break_query, gp_commit_each_statement, progress
         attempts.append(client)
         print_flags.append(print_queries)
         if client is first_connection:
             raise RuntimeError("temporary failure")
         return client.result
 
-    monkeypatch.setattr(
-        execute_read_module,
-        "_execute_read_ch",
-        fake_execute_read_ch,
-    )
+    ch_adapter = execute_read_module.get_backend_adapter("ch")
+    monkeypatch.setattr(ch_adapter, "execute_read_sql", fake_execute_read_ch)
 
     result = execute_read_module.execute_read(
         "ch",

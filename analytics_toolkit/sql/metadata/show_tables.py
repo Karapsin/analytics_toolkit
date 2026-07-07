@@ -7,7 +7,7 @@ from typing import cast
 import pandas as pd
 import sqlparse
 
-from ..backends import get_backend_adapter, get_backend_capability
+from ..backends import get_backend_adapter
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..dml.io.read_sql import read_sql
@@ -36,7 +36,7 @@ def show_tables(
         "ch_distributed_table_stats",
     )
     config = get_connection_config(db_key)
-    capability = get_backend_capability(config.backend)
+    adapter = get_backend_adapter(config.backend)
     schema_filter = _validate_optional_string(schema, "schema")
     table_name_filter = _validate_table_names(table_name, schema_filter)
     conditions_filter = _validate_conditions(conditions)
@@ -46,13 +46,12 @@ def show_tables(
     )
     if (
         trino_catalog_filter is not None
-        and not capability.supports_show_tables_catalog_filter
+        and not adapter.allows_show_tables_catalog_filter()
     ):
         raise InvalidSqlInputError(
             "trino_catalog is only supported for Trino connections."
         )
 
-    adapter = get_backend_adapter(config.backend)
     query = adapter.build_show_tables_query(
         config,
         schema_filter,

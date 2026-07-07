@@ -109,9 +109,8 @@ def create_table_from_sql(
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key,
         ch_only_shard=ch_only_shard,
+        trino_insert_chunk_size=trino_insert_chunk_size,
     )
-    if trino_insert_chunk_size is not None and trino_insert_chunk_size <= 0:
-        raise ValueError("trino_insert_chunk_size must be a positive integer.")
     target_adapter = get_backend_adapter(target_config.backend)
     retry_per_host_drops = target_adapter.resolve_ch_retry_per_host_drops(
         bool(ch_retry_per_host_drops)
@@ -513,10 +512,15 @@ def _validate_backend_options(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_only_shard: bool,
+    trino_insert_chunk_size: int | None,
 ) -> None:
     target_adapter = get_backend_adapter(target_backend)
     target_adapter.validate_gp_distributed_by_key_option(
         gp_distributed_by_key,
+        option_owner="table_db",
+    )
+    target_adapter.validate_trino_insert_chunk_size_option(
+        trino_insert_chunk_size,
         option_owner="table_db",
     )
     target_adapter.validate_ch_create_table_options(

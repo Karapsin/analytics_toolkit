@@ -6,6 +6,16 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Moved generic SQL analyze support policy behind backend adapters.
+- Adapterized SQL transfer early target creation policy.
+- Keep SQL upsert planning policy adapter-owned.
+- Adapterized generic SQL IO dispatch.
+- Adapterized SQL load insert dispatch.
+- Adapterized SQL identifier quote and dialect policy.
+- Adapterized ClickHouse expected column metadata implementation.
+
+## 1.3.10.13 - 2026-07-07
+
 - Adapterized Greenplum stage table identifier policy.
 - Adapterized create_table_from_sql direct insert policy.
 - Adapterized ClickHouse create-table expected column metadata policy.
@@ -13,6 +23,9 @@ Generated from package version bumps and recent commit history.
 - Adapterized SQL query create-table target policy.
 - Adapterized ClickHouse create-table option policy.
 - Adapterized Greenplum transfer insert-page sizing policy.
+- Adapterized Trino insert chunk-size option validation.
+- Adapterized SQL upsert capability policy hooks.
+- Adapterized SQL show_tables catalog filter policy.
 
 ## 1.3.10.12 - 2026-07-07
 

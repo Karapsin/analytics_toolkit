@@ -24,22 +24,6 @@ def _build_column_definitions(
         column_defs.append(f"{quote_identifier(column_name, backend)} {db_type}")
     return ", ".join(column_defs)
 
-def _build_expected_ch_column_types(
-    batch: pd.DataFrame,
-    column_types: Mapping[str, str] | None,
-) -> dict[str, str]:
-    expected: dict[str, str] = {}
-    for column_name in batch.columns:
-        column_key = str(column_name)
-        expected[column_key] = (
-            _explicit_column_type(column_types, column_key)
-            if column_types is not None
-            else get_backend_adapter("ch").infer_dataframe_column_type(
-                batch[column_name]
-            )
-        )
-    return expected
-
 def build_table_schema_column_definitions(
     connection_type: str,
     table_schema: Mapping[str, str],

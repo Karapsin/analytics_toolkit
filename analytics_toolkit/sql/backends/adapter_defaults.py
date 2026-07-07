@@ -51,6 +51,14 @@ def postprocess_show_tables(
     return tables
 
 
+def allows_show_tables_catalog_filter(adapter: Any) -> bool:
+    return bool(adapter.supports_show_tables_catalog_filter)
+
+
+def should_analyze_table(adapter: Any) -> bool:
+    return bool(adapter.supports_analyze)
+
+
 def extract_table_ddl(
     adapter: Any,
     connection_key: str,
@@ -356,6 +364,22 @@ def target_connection_defaults(adapter: Any, config: Any) -> TargetConnectionDef
     return TargetConnectionDefaults()
 
 
+def uses_partition_replacement_upsert(adapter: Any) -> bool:
+    return adapter.upsert_strategy == "partition_replace"
+
+
+def needs_upsert_partition_drop_template(adapter: Any) -> bool:
+    return bool(adapter.requires_upsert_partition_drop_template)
+
+
+def supports_distributed_table_targets(adapter: Any) -> bool:
+    return bool(adapter.supports_distributed_tables)
+
+
+def can_create_transfer_target_before_batches(adapter: Any) -> bool:
+    return bool(adapter.supports_early_transfer_target_creation)
+
+
 def validate_ch_create_table_options(
     adapter: Any,
     *,
@@ -461,6 +485,17 @@ def validate_gp_insert_chunk_size_option(
             f"gp_insert_chunk_size can only be used when {option_owner} "
             "has type 'gp'."
         )
+
+
+def validate_trino_insert_chunk_size_option(
+    adapter: Any,
+    value: int | None,
+    *,
+    option_owner: str,
+) -> None:
+    del adapter, option_owner
+    if value is not None and value <= 0:
+        raise ValueError("trino_insert_chunk_size must be a positive integer.")
 
 
 def resolve_transfer_staging_mode(

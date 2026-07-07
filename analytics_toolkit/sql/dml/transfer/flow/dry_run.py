@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlglot import exp, parse_one
 import pandas as pd
 
-from ....backends import get_backend_capability
+from ....backends import get_backend_adapter
 from ....ddl.api import _build_create_table_sqls
 from ....core.identifiers import sqlglot_dialect
 from ....execution.plan_steps import (
@@ -103,9 +103,13 @@ def add_upsert_target_dry_run_steps(
     stage_table: str,
     stage_tables: list[str],
 ) -> None:
+    target_adapter = get_backend_adapter(options.to_db_backend)
+    uses_partition_replacement_upsert = (
+        target_adapter.uses_partition_replacement_upsert()
+    )
     columns = resolve_dry_run_upsert_columns(options)
     final_stage_table = f"{options.target_table}__upsert_final__dry_run"
-    if _uses_partition_replacement_upsert(options.to_db_backend):
+    if uses_partition_replacement_upsert:
         _add_final_upsert_stage_create_step(plan, options, final_stage_table)
     upsert_sqls = (
         build_upsert_stage_sqls(
@@ -120,9 +124,7 @@ def add_upsert_target_dry_run_steps(
             query_label=options.query_label,
             upsert_partition_column=options.upsert_partition_column,
             final_stage_table=(
-                final_stage_table
-                if _uses_partition_replacement_upsert(options.to_db_backend)
-                else None
+                final_stage_table if uses_partition_replacement_upsert else None
             ),
             incoming_stage_tables=stage_tables,
             trino_partition_drop_sql_template=(
@@ -140,9 +142,7 @@ def add_upsert_target_dry_run_steps(
             query_label=options.query_label,
             upsert_partition_column=options.upsert_partition_column,
             final_stage_table=(
-                final_stage_table
-                if _uses_partition_replacement_upsert(options.to_db_backend)
-                else None
+                final_stage_table if uses_partition_replacement_upsert else None
             ),
             incoming_stage_tables=stage_tables,
             trino_partition_drop_sql_template=(
@@ -165,6 +165,7 @@ def add_insert_target_dry_run_steps(
     *,
     stage_table: str,
 ) -> None:
+    target_adapter = get_backend_adapter(options.to_db_backend)
     if options.table_schema is None:
         add_create_table_placeholder_step(
             plan,
@@ -188,12 +189,12 @@ def add_insert_target_dry_run_steps(
                 ch_cluster=options.ch_cluster,
                 ch_sharding_key=options.ch_sharding_key,
                 ch_distributed_table=(
-                    _supports_distributed_tables(options.to_db_backend)
+                    target_adapter.supports_distributed_table_targets()
                     and not options.ch_only_shard
                 ),
                 ch_only_shard=options.ch_only_shard,
                 ch_replace_table=(
-                    _supports_distributed_tables(options.to_db_backend)
+                    target_adapter.supports_distributed_table_targets()
                     and options.write_mode == "replace"
                     and not options.ch_only_shard
                 ),
@@ -244,14 +245,6 @@ def _add_final_upsert_stage_create_step(
         phase="create_final_upsert_stage",
         table_name=final_stage_table,
     )
-
-
-def _uses_partition_replacement_upsert(backend: str) -> bool:
-    return get_backend_capability(backend).upsert_strategy == "partition_replace"
-
-
-def _supports_distributed_tables(backend: str) -> bool:
-    return get_backend_capability(backend).supports_distributed_tables
 
 
 def infer_source_select_columns(

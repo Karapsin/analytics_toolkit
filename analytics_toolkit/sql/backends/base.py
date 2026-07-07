@@ -3,18 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from . import common_methods as _common_methods
-from . import adapter_defaults as _adapter_defaults
+from . import adapter_defaults as _adapter_defaults, common_methods as _common_methods
 from . import source_count as _source_count
 from . import upsert as _upsert
 from . import validation as _validation
-from .models import BackendCapability
-from .models import BackendName
-from .models import StageFinalizationRequest
-from .models import StageTargetTableRequest
-from .models import SourceColumn
-from .models import TargetWriteModeRequest
-from .models import WriteMode
+from .models import BackendCapability, BackendName, SourceColumn, WriteMode
+from .models import StageFinalizationRequest, StageTargetTableRequest, TargetWriteModeRequest
 from .utils import extract_row_count
 
 
@@ -32,8 +26,7 @@ class BackendAdapter:
     create_semantics: str
     type_family: str
     supported_write_modes: frozenset[WriteMode] = frozenset(
-        {"append", "replace", "truncate_insert", "upsert"}
-    )
+        {"append", "replace", "truncate_insert", "upsert"})
     supports_early_transfer_target_creation: bool = True
     upsert_strategy: str = "key_delete_insert"
     requires_upsert_partition_column: bool = False
@@ -68,9 +61,7 @@ class BackendAdapter:
             requires_upsert_partition_drop_template=(
                 self.requires_upsert_partition_drop_template
             ),
-            supports_show_tables_catalog_filter=(
-                self.supports_show_tables_catalog_filter
-            ),
+            supports_show_tables_catalog_filter=self.supports_show_tables_catalog_filter,
         )
 
     def build_connection_config(
@@ -193,6 +184,8 @@ class BackendAdapter:
     ) -> str:
         return _apply_query_label(f"ANALYZE {table_name}", query_label)
 
+    should_analyze_table = _adapter_defaults.should_analyze_table
+
     def analyze_table(
         self,
         connection: Any,
@@ -261,6 +254,9 @@ class BackendAdapter:
 
     build_show_tables_query = _adapter_defaults.build_show_tables_query
     postprocess_show_tables = _adapter_defaults.postprocess_show_tables
+    allows_show_tables_catalog_filter = (
+        _adapter_defaults.allows_show_tables_catalog_filter
+    )
     extract_table_ddl = _adapter_defaults.extract_table_ddl
     validate_drop_partitions_options = _adapter_defaults.validate_drop_partitions_options
     build_drop_partitions_sqls = _adapter_defaults.build_drop_partitions_sqls
@@ -499,9 +495,14 @@ class BackendAdapter:
     transfer_attempt_policy = _adapter_defaults.transfer_attempt_policy
     transfer_insert_page_sizing = _adapter_defaults.transfer_insert_page_sizing
     requires_load_target_column_metadata = _adapter_defaults.requires_load_target_column_metadata
+    uses_partition_replacement_upsert = _adapter_defaults.uses_partition_replacement_upsert
+    needs_upsert_partition_drop_template = _adapter_defaults.needs_upsert_partition_drop_template
+    supports_distributed_table_targets = _adapter_defaults.supports_distributed_table_targets
+    can_create_transfer_target_before_batches = _adapter_defaults.can_create_transfer_target_before_batches
     resolve_ch_retry_per_host_drops = _adapter_defaults.resolve_ch_retry_per_host_drops
     validate_gp_distributed_by_key_option = _adapter_defaults.validate_gp_distributed_by_key_option
     validate_gp_insert_chunk_size_option = _adapter_defaults.validate_gp_insert_chunk_size_option
+    validate_trino_insert_chunk_size_option = _adapter_defaults.validate_trino_insert_chunk_size_option
     resolve_transfer_staging_mode = _adapter_defaults.resolve_transfer_staging_mode
     create_table_from_sql_fast_path = _adapter_defaults.create_table_from_sql_fast_path
     should_insert_create_table_from_sql_directly = (
@@ -888,9 +889,8 @@ class BackendAdapter:
         )
 
     def quote_identifier(self, identifier: str) -> str:
-        from ..core.identifiers import quote_identifier_part
-
-        return quote_identifier_part(identifier, self.backend)
+        escaped = identifier.replace(self.identifier_quote, self.identifier_quote * 2)
+        return f"{self.identifier_quote}{escaped}{self.identifier_quote}"
 
 
 def _apply_query_label(sql: str, query_label: str | None) -> str:

@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from ....backends import get_backend_adapter, get_backend_capability
+from ....backends import get_backend_adapter
 from ....core.capabilities import validate_write_mode
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
@@ -500,7 +500,7 @@ def build_transfer_options(
         raise ValueError("key_columns are required for write_mode='upsert'.")
     if (
         options.write_mode == "upsert"
-        and _uses_partition_replacement_upsert(options.to_db_backend)
+        and target_adapter.uses_partition_replacement_upsert()
         and options.upsert_partition_column is None
     ):
         raise ValueError(
@@ -509,7 +509,7 @@ def build_transfer_options(
         )
     if (
         options.write_mode == "upsert"
-        and _requires_upsert_partition_drop_template(options.to_db_backend)
+        and target_adapter.needs_upsert_partition_drop_template()
         and not options.trino_upsert_partition_drop_sql_template
     ):
         raise ValueError(
@@ -536,8 +536,10 @@ def build_transfer_options(
         options.gp_insert_chunk_size,
         option_owner="to_db",
     )
-    if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
-        raise ValueError("trino_insert_chunk_size must be a positive integer.")
+    target_adapter.validate_trino_insert_chunk_size_option(
+        options.trino_insert_chunk_size,
+        option_owner="to_db",
+    )
     target_adapter.validate_ch_create_table_options(
         option_owner="to_db",
         partition_by=options.partition_by,
@@ -585,20 +587,16 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
     return ch_only_shard
 
 
-def _uses_partition_replacement_upsert(backend: str) -> bool:
-    return get_backend_capability(backend).upsert_strategy == "partition_replace"
-
-
-def _requires_upsert_partition_drop_template(backend: str) -> bool:
-    return get_backend_capability(backend).requires_upsert_partition_drop_template
-
-
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
+    target_adapter = get_backend_adapter(options.to_db_backend)
+    uses_partition_replacement_upsert = (
+        target_adapter.uses_partition_replacement_upsert()
+    )
     stage_tables = dry_run_stage_table_names(options)
     stage_table = stage_tables[0]
-    insert_page_sizing = get_backend_adapter(
-        options.to_db_backend,
-    ).transfer_insert_page_sizing(gp_insert_chunk_size=options.gp_insert_chunk_size)
+    insert_page_sizing = target_adapter.transfer_insert_page_sizing(
+        gp_insert_chunk_size=options.gp_insert_chunk_size
+    )
     stage_external_location = (
         dry_run_stage_external_location(options)
         if options.trino_mode == "parquet"
@@ -826,9 +824,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             stage_table=worker_stage_table,
             query_label=options.query_label,
         )
-    if options.write_mode == "upsert" and _uses_partition_replacement_upsert(
-        options.to_db_backend
-    ):
+    if options.write_mode == "upsert" and uses_partition_replacement_upsert:
         add_cleanup_stage_step(
             plan,
             alias=options.to_db_key,

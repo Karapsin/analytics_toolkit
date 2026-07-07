@@ -3,7 +3,6 @@ from __future__ import annotations
 import pandas as pd
 
 from ....backends import get_backend_adapter
-from ....backends.registry import get_backend_capability
 from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
@@ -46,9 +45,9 @@ def ensure_transfer_target_table(
 ) -> None:
     if stage_state.target_exists:
         return
-    if not get_backend_capability(
-        options.to_db_backend
-    ).supports_early_transfer_target_creation:
+    if not get_backend_adapter(
+        options.to_db_backend,
+    ).can_create_transfer_target_before_batches():
         return
 
     create_columns = source_columns or list(stage_state.stage_column_types or {})

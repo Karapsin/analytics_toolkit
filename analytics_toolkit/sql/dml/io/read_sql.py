@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 import sqlparse
 
 from ...backend_adapters import get_backend_adapter
-from ...backends import get_backend_names
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -14,7 +13,7 @@ from ...connection.errors import (
 )
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
-from ...connection.protocols import ClickHouseClient, DbApiConnection
+from ...connection.protocols import DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -26,51 +25,6 @@ from ...execution.plans import SqlOperationMetadata, SqlOperationResult
 from ...execution.query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .models import ReadSqlOptions
-
-
-ReadBackend = Callable[[Any, str, bool], pd.DataFrame]
-
-
-def _read_trino(
-    conn: DbApiConnection,
-    query: str,
-    print_queries: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("trino").read_dataframe(
-        conn,
-        query,
-        print_queries=print_queries,
-        print_query=_maybe_print_query,
-        read_dbapi_query=_read_dbapi_query,
-    )
-
-
-def _read_gp(
-    conn: DbApiConnection,
-    query: str,
-    print_queries: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("gp").read_dataframe(
-        conn,
-        query,
-        print_queries=print_queries,
-        print_query=_maybe_print_query,
-        read_dbapi_query=_read_dbapi_query,
-    )
-
-
-def _read_ch(
-    client: ClickHouseClient,
-    query: str,
-    print_queries: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("ch").read_dataframe(
-        client,
-        query,
-        print_queries=print_queries,
-        print_query=_maybe_print_query,
-        read_dbapi_query=_read_dbapi_query,
-    )
 
 
 def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
@@ -248,59 +202,6 @@ def _maybe_print_query(query: str, print_queries: bool) -> None:
         time_print(f"Executing query:\n{statement_to_print}")
 
 
-def _read_trino_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-) -> pd.DataFrame:
-    return _read_trino(connection, sql, print_queries)
-
-
-def _read_gp_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-) -> pd.DataFrame:
-    return _read_gp(connection, sql, print_queries)
-
-
-def _read_ch_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-) -> pd.DataFrame:
-    return _read_ch(connection, sql, print_queries)
-
-
-def _make_read_backend(backend: str) -> ReadBackend:
-    def read_backend(
-        connection: Any,
-        sql: str,
-        print_queries: bool = False,
-    ) -> pd.DataFrame:
-        return get_backend_adapter(backend).read_dataframe(
-            connection,
-            sql,
-            print_queries=print_queries,
-            print_query=_maybe_print_query,
-            read_dbapi_query=_read_dbapi_query,
-        )
-
-    return read_backend
-
-
-_READ_BACKENDS: dict[str, ReadBackend] = {
-    backend: _make_read_backend(backend) for backend in get_backend_names()
-}
-_READ_BACKENDS.update(
-    {
-        "trino": _read_trino_backend,
-        "gp": _read_gp_backend,
-        "ch": _read_ch_backend,
-    }
-)
-
-
 def _read_backend(
     backend: str,
     connection: Any,
@@ -308,12 +209,13 @@ def _read_backend(
     *,
     print_queries: bool,
 ) -> pd.DataFrame:
-    read_backend = _READ_BACKENDS.get(backend) or _make_read_backend(backend)
     return run_timed_query(
         backend,
-        lambda: read_backend(
+        lambda: get_backend_adapter(backend).read_dataframe(
             connection,
             sql,
-            print_queries,
+            print_queries=print_queries,
+            print_query=_maybe_print_query,
+            read_dbapi_query=_read_dbapi_query,
         ),
     )

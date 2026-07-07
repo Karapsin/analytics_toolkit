@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 import sqlparse
 from tqdm import tqdm
 
 from ...backend_adapters import get_backend_adapter
-from ...backends import get_backend_names
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -14,7 +13,6 @@ from ...connection.errors import (
 )
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
-from ...connection.protocols import ClickHouseClient, DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -27,59 +25,6 @@ from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...execution.query_timing import run_timed_query
 from analytics_toolkit.general import time_print
 from .models import ExecuteSqlOptions
-
-
-ExecuteBackend = Callable[[Any, str, bool, bool, bool, bool], Any]
-
-
-def _execute_trino(
-    conn: DbApiConnection,
-    query: str,
-    print_queries: bool = False,
-    progress: bool = False,
-) -> Any:
-    return get_backend_adapter("trino").execute_sql(
-        conn,
-        query,
-        print_queries=print_queries,
-        gp_break_query=False,
-        gp_commit_each_statement=False,
-        progress=progress,
-    )
-
-
-def _execute_gp(
-    conn: DbApiConnection,
-    query: str,
-    print_queries: bool = False,
-    gp_break_query: bool = False,
-    gp_commit_each_statement: bool = False,
-    progress: bool = False,
-) -> Any:
-    return get_backend_adapter("gp").execute_sql(
-        conn,
-        query,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        progress=progress,
-    )
-
-
-def _execute_ch(
-    client: ClickHouseClient,
-    query: str,
-    print_queries: bool = False,
-    progress: bool = False,
-) -> Any:
-    return get_backend_adapter("ch").execute_sql(
-        client,
-        query,
-        print_queries=print_queries,
-        gp_break_query=False,
-        gp_commit_each_statement=False,
-        progress=progress,
-    )
 
 
 @timed_public_sql_function
@@ -295,91 +240,6 @@ def _validate_progress(progress: bool) -> None:
     validate_progress_option(progress)
 
 
-def _execute_trino_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> Any:
-    del gp_break_query, gp_commit_each_statement
-    return _execute_trino(
-        connection,
-        sql,
-        print_queries=print_queries,
-        progress=progress,
-    )
-
-
-def _execute_gp_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> Any:
-    return _execute_gp(
-        connection,
-        sql,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        progress=progress,
-    )
-
-
-def _execute_ch_backend(
-    connection: Any,
-    sql: str,
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> Any:
-    del gp_break_query, gp_commit_each_statement
-    return _execute_ch(
-        connection,
-        sql,
-        print_queries=print_queries,
-        progress=progress,
-    )
-
-
-def _make_execute_backend(backend: str) -> ExecuteBackend:
-    def execute_backend(
-        connection: Any,
-        sql: str,
-        print_queries: bool,
-        gp_break_query: bool,
-        gp_commit_each_statement: bool,
-        progress: bool,
-    ) -> Any:
-        return get_backend_adapter(backend).execute_sql(
-            connection,
-            sql,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
-        )
-
-    return execute_backend
-
-
-_EXECUTE_BACKENDS: dict[str, ExecuteBackend] = {
-    backend: _make_execute_backend(backend) for backend in get_backend_names()
-}
-_EXECUTE_BACKENDS.update(
-    {
-        "trino": _execute_trino_backend,
-        "gp": _execute_gp_backend,
-        "ch": _execute_ch_backend,
-    }
-)
-
-
 def _execute_backend(
     backend: str,
     connection: Any,
@@ -390,12 +250,11 @@ def _execute_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> Any:
-    execute_backend = _EXECUTE_BACKENDS.get(backend) or _make_execute_backend(backend)
-    return execute_backend(
+    return get_backend_adapter(backend).execute_sql(
         connection,
         sql,
-        print_queries,
-        gp_break_query,
-        gp_commit_each_statement,
-        progress,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
     )

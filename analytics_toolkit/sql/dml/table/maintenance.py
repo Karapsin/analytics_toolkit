@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from ...backend_adapters import get_backend_adapter
-from ...backends.registry import get_backend_capability
 from ...connection.config import get_connection_config, resolve_connection_backend
 from ...connection.get_sql_connection import get_sql_connection
 from ...connection.errors import UnsupportedConnectionTypeError
@@ -24,7 +23,8 @@ def analyze_table(
     return_sql: bool = False,
 ) -> SqlPlan | None:
     backend = resolve_connection_backend(connection_type)
-    if not get_backend_capability(backend).supports_analyze:
+    adapter = get_backend_adapter(backend)
+    if not adapter.should_analyze_table():
         if dry_run or return_sql:
             return SqlPlan(
                 operation="analyze_table",
@@ -48,7 +48,7 @@ def analyze_table(
         backend=backend,
     )
     if dry_run or return_sql:
-        sql = get_backend_adapter(backend).analyze_table_sql(
+        sql = adapter.analyze_table_sql(
             table_name,
             query_label=query_label,
         )
@@ -70,12 +70,13 @@ def analyze_table(
             target_table=table_name,
         )
         return plan
-    get_backend_adapter(backend).analyze_table(
+    adapter.analyze_table(
         connection,
         table_name,
         query_label=query_label,
     )
     return None
+
 
 @timed_public_sql_function
 def gp_vacuum(

@@ -17,13 +17,32 @@ def expected_create_table_column_types(
     ch_distributed_table: bool,
     ch_only_shard: bool,
 ) -> dict[str, str] | None:
-    del adapter
     if not ch_distributed_table or ch_only_shard:
         return None
 
-    from ...ddl.schema import _build_expected_ch_column_types
+    expected: dict[str, str] = {}
+    for column_name in batch.columns:
+        column_key = str(column_name)
+        expected[column_key] = (
+            _explicit_column_type(column_types, column_key)
+            if column_types is not None
+            else adapter.infer_dataframe_column_type(batch[column_name])
+        )
+    return expected
 
-    return _build_expected_ch_column_types(batch, column_types)
+
+def _explicit_column_type(
+    column_types: dict[str, str],
+    column_name: str,
+) -> str:
+    try:
+        db_type = column_types[column_name]
+    except KeyError as exc:
+        raise ValueError(f"Missing explicit SQL type for column {column_name!r}.") from exc
+    normalized = db_type.strip()
+    if not normalized:
+        raise ValueError(f"SQL type for column {column_name!r} must not be empty.")
+    return normalized
 
 
 def build_load_target_create_kwargs(

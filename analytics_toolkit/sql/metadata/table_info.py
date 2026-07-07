@@ -169,4 +169,3 @@ def _resolve_table_name(
         table_name,
         connection_key=connection_key,
     )
-    return f"{catalog}.{schema_name}.{relation_name}"

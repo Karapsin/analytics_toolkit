@@ -266,6 +266,15 @@ def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
         "OR (stage_src.`id` IS NULL AND target_dst.`id` IS NULL)) "
         "LIMIT 1"
     )
+    assert get_backend_adapter("gp").quote_identifier('a"b') == '"a""b"'
+    assert get_backend_adapter("trino").quote_identifier('a"b') == '"a""b"'
+    assert get_backend_adapter("ch").quote_identifier("a`b") == "`a``b`"
+
+
+def test_backend_adapters_own_analyze_support_policy() -> None:
+    assert get_backend_adapter("gp").should_analyze_table() is True
+    assert get_backend_adapter("trino").should_analyze_table() is True
+    assert get_backend_adapter("ch").should_analyze_table() is False
 
 
 def test_registered_backends_implement_full_contract() -> None:
@@ -293,6 +302,8 @@ def test_registered_backends_implement_full_contract() -> None:
     inherited_contract_methods = {
         "build_insert_from_stage_sql",
         "build_insert_from_stage_placeholder_sql",
+        "allows_show_tables_catalog_filter",
+        "can_create_transfer_target_before_batches",
         "create_table_from_sql_fast_path",
         "build_create_from_sql_target_create_kwargs",
         "build_load_target_create_kwargs",
@@ -301,18 +312,23 @@ def test_registered_backends_implement_full_contract() -> None:
         "expected_create_table_column_types",
         "requires_load_target_column_metadata",
         "refine_stage_column_types_from_rows",
+        "needs_upsert_partition_drop_template",
         "resolve_ch_retry_per_host_drops",
         "resolve_transfer_stage_column_types",
         "resolve_transfer_staging_mode",
         "resolve_table_info_table_name",
+        "should_analyze_table",
         "should_ensure_load_target_table",
         "should_insert_create_table_from_sql_directly",
+        "supports_distributed_table_targets",
         "target_connection_defaults",
         "transfer_attempt_policy",
         "transfer_insert_page_sizing",
+        "uses_partition_replacement_upsert",
         "validate_ch_create_table_options",
         "validate_gp_distributed_by_key_option",
         "validate_gp_insert_chunk_size_option",
+        "validate_trino_insert_chunk_size_option",
     }
     missing: list[str] = []
     for backend_name, backend in BACKEND_REGISTRY.items():
@@ -384,6 +400,21 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
         write_mode="upsert",
         original_target_exists=True,
     ) is True
+    assert gp_adapter.uses_partition_replacement_upsert() is False
+    assert trino_adapter.uses_partition_replacement_upsert() is True
+    assert ch_adapter.uses_partition_replacement_upsert() is True
+    assert gp_adapter.needs_upsert_partition_drop_template() is False
+    assert trino_adapter.needs_upsert_partition_drop_template() is True
+    assert ch_adapter.needs_upsert_partition_drop_template() is False
+    assert gp_adapter.supports_distributed_table_targets() is False
+    assert trino_adapter.supports_distributed_table_targets() is False
+    assert ch_adapter.supports_distributed_table_targets() is True
+    assert gp_adapter.can_create_transfer_target_before_batches() is True
+    assert trino_adapter.can_create_transfer_target_before_batches() is True
+    assert ch_adapter.can_create_transfer_target_before_batches() is False
+    assert gp_adapter.allows_show_tables_catalog_filter() is False
+    assert trino_adapter.allows_show_tables_catalog_filter() is True
+    assert ch_adapter.allows_show_tables_catalog_filter() is False
     assert gp_adapter.resolve_ch_retry_per_host_drops(True) is False
     assert trino_adapter.resolve_ch_retry_per_host_drops(True) is False
     assert ch_adapter.resolve_ch_retry_per_host_drops(True) is True
@@ -425,6 +456,15 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
         )
     with pytest.raises(ValueError, match="to_db has type 'gp'"):
         ch_adapter.validate_gp_insert_chunk_size_option(1000, option_owner="to_db")
+    trino_adapter.validate_trino_insert_chunk_size_option(100, option_owner="to_db")
+    with pytest.raises(ValueError, match="positive integer"):
+        trino_adapter.validate_trino_insert_chunk_size_option(0, option_owner="to_db")
+    gp_adapter.validate_trino_insert_chunk_size_option(1000, option_owner="to_db")
+    ch_adapter.validate_trino_insert_chunk_size_option(1000, option_owner="to_db")
+    with pytest.raises(ValueError, match="positive integer"):
+        gp_adapter.validate_trino_insert_chunk_size_option(0, option_owner="to_db")
+    with pytest.raises(ValueError, match="positive integer"):
+        ch_adapter.validate_trino_insert_chunk_size_option(0, option_owner="to_db")
     ch_adapter.validate_ch_create_table_options(
         option_owner="to_db",
         partition_by=["dt"],
@@ -783,7 +823,7 @@ def test_backend_compatibility_class_exports_are_lazy() -> None:
         assert export_name not in vars(module)
 
 
-def test_sql_backend_dispatch_uses_callable_registries() -> None:
+def test_sql_backend_dispatch_uses_adapter_boundary() -> None:
     dispatch_functions = [
         read_sql_module._read_backend,
         execute_sql_module._execute_backend,
@@ -794,29 +834,23 @@ def test_sql_backend_dispatch_uses_callable_registries() -> None:
     for function in dispatch_functions:
         assert "globals()[" not in inspect.getsource(function)
 
-    expected_backends = set(get_backend_names())
-
-    assert set(read_sql_module._READ_BACKENDS) == expected_backends
-    assert all(callable(callback) for callback in read_sql_module._READ_BACKENDS.values())
-    assert set(execute_sql_module._EXECUTE_BACKENDS) == expected_backends
-    assert all(
-        callable(callback)
-        for callback in execute_sql_module._EXECUTE_BACKENDS.values()
+    assert "get_backend_adapter" in inspect.getsource(read_sql_module._read_backend)
+    assert "get_backend_adapter" in inspect.getsource(
+        execute_sql_module._execute_backend
     )
-    assert set(execute_read_module._EXECUTE_READ_BACKENDS) == expected_backends
-    assert all(
-        callable(callback)
-        for callback in execute_read_module._EXECUTE_READ_BACKENDS.values()
+    assert "get_backend_adapter" in inspect.getsource(
+        execute_read_module._execute_read_backend
     )
-    assert set(load_sql_table_module._BATCH_INSERT_BACKENDS) == expected_backends
-    assert all(
-        callable(callback)
-        for callback in load_sql_table_module._BATCH_INSERT_BACKENDS.values()
+    assert not hasattr(read_sql_module, "_READ_BACKENDS")
+    assert not hasattr(execute_sql_module, "_EXECUTE_BACKENDS")
+    assert not hasattr(execute_read_module, "_EXECUTE_READ_BACKENDS")
+    assert not hasattr(load_sql_table_module, "_BATCH_INSERT_BACKENDS")
+    assert not hasattr(load_sql_table_module, "_ROW_INSERT_BACKENDS")
+    assert "get_backend_adapter" in inspect.getsource(
+        load_sql_table_module._insert_batch_backend
     )
-    assert set(load_sql_table_module._ROW_INSERT_BACKENDS) == expected_backends
-    assert all(
-        callable(callback)
-        for callback in load_sql_table_module._ROW_INSERT_BACKENDS.values()
+    assert "get_backend_adapter" in inspect.getsource(
+        load_sql_table_module._insert_rows_backend
     )
 
 

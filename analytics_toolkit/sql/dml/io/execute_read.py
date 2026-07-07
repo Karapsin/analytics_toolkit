@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable, List
+from typing import Any, List
 
 import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
-from ...backends import get_backend_names
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
@@ -13,7 +12,6 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...connection.protocols import ClickHouseClient, DbApiConnection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     run_connection_operation,
@@ -31,9 +29,6 @@ from .execute_sql import (
     _validate_progress,
 )
 from .models import ExecuteReadOptions
-
-
-ExecuteReadBackend = Callable[[Any, List[str], bool, bool, bool, bool], pd.DataFrame]
 
 
 @timed_public_sql_function
@@ -168,56 +163,6 @@ def _build_execute_read_options(
     )
 
 
-def _execute_read_trino(
-    conn: DbApiConnection,
-    statements: list[str],
-    print_queries: bool = False,
-    progress: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("trino").execute_read_sql(
-        conn,
-        statements,
-        print_queries=print_queries,
-        gp_break_query=False,
-        gp_commit_each_statement=False,
-        progress=progress,
-    )
-
-
-def _execute_read_gp(
-    conn: DbApiConnection,
-    statements: list[str],
-    print_queries: bool = False,
-    gp_break_query: bool = False,
-    gp_commit_each_statement: bool = False,
-    progress: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("gp").execute_read_sql(
-        conn,
-        statements,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        progress=progress,
-    )
-
-
-def _execute_read_ch(
-    client: ClickHouseClient,
-    statements: list[str],
-    print_queries: bool = False,
-    progress: bool = False,
-) -> pd.DataFrame:
-    return get_backend_adapter("ch").execute_read_sql(
-        client,
-        statements,
-        print_queries=print_queries,
-        gp_break_query=False,
-        gp_commit_each_statement=False,
-        progress=progress,
-    )
-
-
 def _execute_setup_statements(
     executor: Any,
     statements: list[str],
@@ -257,91 +202,6 @@ def _read_dbapi_cursor(
     return run_timed_query(connection_type, read_query)
 
 
-def _execute_read_trino_backend(
-    connection: Any,
-    statements: list[str],
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> pd.DataFrame:
-    del gp_break_query, gp_commit_each_statement
-    return _execute_read_trino(
-        connection,
-        statements,
-        print_queries=print_queries,
-        progress=progress,
-    )
-
-
-def _execute_read_gp_backend(
-    connection: Any,
-    statements: list[str],
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> pd.DataFrame:
-    return _execute_read_gp(
-        connection,
-        statements,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        progress=progress,
-    )
-
-
-def _execute_read_ch_backend(
-    connection: Any,
-    statements: list[str],
-    print_queries: bool,
-    gp_break_query: bool,
-    gp_commit_each_statement: bool,
-    progress: bool,
-) -> pd.DataFrame:
-    del gp_break_query, gp_commit_each_statement
-    return _execute_read_ch(
-        connection,
-        statements,
-        print_queries=print_queries,
-        progress=progress,
-    )
-
-
-def _make_execute_read_backend(backend: str) -> ExecuteReadBackend:
-    def execute_read_backend(
-        connection: Any,
-        statements: list[str],
-        print_queries: bool,
-        gp_break_query: bool,
-        gp_commit_each_statement: bool,
-        progress: bool,
-    ) -> pd.DataFrame:
-        return get_backend_adapter(backend).execute_read_sql(
-            connection,
-            statements,
-            print_queries=print_queries,
-            gp_break_query=gp_break_query,
-            gp_commit_each_statement=gp_commit_each_statement,
-            progress=progress,
-        )
-
-    return execute_read_backend
-
-
-_EXECUTE_READ_BACKENDS: dict[str, ExecuteReadBackend] = {
-    backend: _make_execute_read_backend(backend) for backend in get_backend_names()
-}
-_EXECUTE_READ_BACKENDS.update(
-    {
-        "trino": _execute_read_trino_backend,
-        "gp": _execute_read_gp_backend,
-        "ch": _execute_read_ch_backend,
-    }
-)
-
-
 def _execute_read_backend(
     backend: str,
     connection: Any,
@@ -352,14 +212,11 @@ def _execute_read_backend(
     gp_commit_each_statement: bool,
     progress: bool,
 ) -> pd.DataFrame:
-    execute_read_backend = (
-        _EXECUTE_READ_BACKENDS.get(backend) or _make_execute_read_backend(backend)
-    )
-    return execute_read_backend(
+    return get_backend_adapter(backend).execute_read_sql(
         connection,
         statements,
-        print_queries,
-        gp_break_query,
-        gp_commit_each_statement,
-        progress,
+        print_queries=print_queries,
+        gp_break_query=gp_break_query,
+        gp_commit_each_statement=gp_commit_each_statement,
+        progress=progress,
     )

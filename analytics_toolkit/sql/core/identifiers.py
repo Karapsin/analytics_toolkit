@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 from sqlglot import exp, parse_one
 
-from .capabilities import get_backend_capability
-from ..connection.config import BackendName, resolve_connection_backend
+from ..backends import get_backend_adapter
 
 
 @dataclass(frozen=True)
@@ -15,8 +14,7 @@ class TableIdentifier:
 
     @classmethod
     def parse(cls, table_name: str, connection_type: str) -> "TableIdentifier":
-        backend = resolve_connection_backend(connection_type)
-        dialect = get_backend_capability(backend).sqlglot_dialect
+        dialect = get_backend_adapter(connection_type).sqlglot_dialect
         table = parse_one(table_name, read=dialect, into=exp.Table)
         if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
             raise ValueError(f"Invalid table name: {table_name}")
@@ -42,16 +40,14 @@ class TableIdentifier:
         )
 
     def render(self, connection_type: str) -> str:
-        backend = resolve_connection_backend(connection_type)
         return ".".join(
-            quote_identifier_part(part, backend, quoted=quoted)
+            quote_identifier_part(part, connection_type, quoted=quoted)
             for part, quoted in zip(self.parts, self.quoted)
         )
 
     def render_quoted(self, connection_type: str) -> str:
-        backend = resolve_connection_backend(connection_type)
         return ".".join(
-            quote_identifier_part(part, backend, quoted=True)
+            quote_identifier_part(part, connection_type, quoted=True)
             for part in self.parts
         )
 
@@ -66,16 +62,13 @@ def quote_identifier_part(
     *,
     quoted: bool = True,
 ) -> str:
-    backend = resolve_connection_backend(connection_type)
     if not quoted:
         return identifier
-    quote_char = get_backend_capability(backend).identifier_quote
-    escaped = identifier.replace(quote_char, quote_char * 2)
-    return f"{quote_char}{escaped}{quote_char}"
+    return get_backend_adapter(connection_type).quote_identifier(identifier)
 
 
 def sqlglot_dialect(connection_type: str) -> str:
-    return get_backend_capability(connection_type).sqlglot_dialect
+    return get_backend_adapter(connection_type).sqlglot_dialect
 
 
 def _table_identifiers(table: exp.Table) -> list[exp.Identifier]:

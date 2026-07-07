@@ -4,21 +4,16 @@ from collections.abc import Sequence
 
 from sqlglot import exp, parse_one
 
-from ..connection.config import resolve_connection_backend
-from ..core.capabilities import get_backend_capability
+from ..backends import get_backend_adapter
 
 
 def column_list_sql(columns: Sequence[str], connection_type: str) -> str:
-    backend = resolve_connection_backend(connection_type)
     return ", ".join(
-        quote_identifier(column_name, backend) for column_name in columns
+        quote_identifier(column_name, connection_type) for column_name in columns
     )
 
 def quote_identifier(identifier: str, connection_type: str) -> str:
-    backend = resolve_connection_backend(connection_type)
-    quote_char = get_backend_capability(backend).identifier_quote
-    escaped = identifier.replace(quote_char, quote_char * 2)
-    return f"{quote_char}{escaped}{quote_char}"
+    return get_backend_adapter(connection_type).quote_identifier(identifier)
 
 def _add_table_identifier_suffix(table_name: str, suffix: str, dialect: str) -> str:
     table = _parse_table_name(table_name, dialect)

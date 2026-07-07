@@ -232,10 +232,11 @@ def add_analyze_step(
     table_name: str,
     query_label: str | None = None,
 ) -> None:
-    from ..backends import get_backend_capability
+    from ..backends import get_backend_adapter
     from ..dml.table._basic_ops import build_analyze_table_sql
 
-    if not get_backend_capability(backend).supports_analyze:
+    adapter = get_backend_adapter(backend)
+    if not adapter.should_analyze_table():
         return
 
     plan.add(

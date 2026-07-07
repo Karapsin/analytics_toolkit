@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, Iterator, Optional, Sequence
 from itertools import islice
+from typing import Any, Callable, Iterator, Sequence
 
 import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
-from ...backends import get_backend_names
 from ...connection.config import resolve_connection_backend
 from analytics_toolkit.general import time_print
 
@@ -29,37 +28,6 @@ def execute_values(
 
 from ...backends.gp.insert import DEFAULT_GP_INSERT_CHUNK_SIZE
 from ...backends.trino.insert import DEFAULT_TRINO_INSERT_CHUNK_SIZE
-BatchInsertBackend = Callable[
-    [
-        Any,
-        str,
-        pd.DataFrame,
-        Optional[Dict[str, str]],
-        Optional[int],
-        Optional[int],
-        str,
-        Optional[str],
-        Optional[Callable[[int], None]],
-    ],
-    None,
-]
-RowInsertBackend = Callable[
-    [
-        Any,
-        str,
-        Sequence[str],
-        Sequence[Sequence[Any]],
-        Optional[Dict[str, str]],
-        Optional[int],
-        Optional[int],
-        str,
-        Optional[str],
-        Optional[Callable[[int], None]],
-        Optional[Callable[[], int]],
-        Optional[Callable[[float, int], None]],
-    ],
-    None,
-]
 
 
 def insert_table_batch(
@@ -405,219 +373,6 @@ def _insert_ch_rows(
     )
 
 
-def _insert_gp_batch_backend(
-    connection: Any,
-    table_name: str,
-    batch: pd.DataFrame,
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-) -> None:
-    del target_column_types, trino_insert_chunk_size, connection_type
-    _insert_gp_batch(
-        connection,
-        table_name,
-        batch,
-        gp_insert_chunk_size=gp_insert_chunk_size,
-        query_label=query_label,
-        on_progress=on_progress,
-    )
-
-
-def _insert_trino_batch_backend(
-    connection: Any,
-    table_name: str,
-    batch: pd.DataFrame,
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-) -> None:
-    del gp_insert_chunk_size
-    _insert_trino_batch(
-        connection,
-        table_name,
-        batch,
-        target_column_types=target_column_types,
-        trino_insert_chunk_size=trino_insert_chunk_size,
-        connection_type=connection_type,
-        query_label=query_label,
-        on_progress=on_progress,
-    )
-
-
-def _insert_ch_batch_backend(
-    connection: Any,
-    table_name: str,
-    batch: pd.DataFrame,
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-) -> None:
-    del target_column_types, trino_insert_chunk_size, gp_insert_chunk_size
-    del connection_type, query_label
-    _insert_ch_batch(connection, table_name, batch, on_progress=on_progress)
-
-
-def _insert_gp_rows_backend(
-    connection: Any,
-    table_name: str,
-    columns: Sequence[str],
-    rows: Sequence[Sequence[Any]],
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-    gp_insert_page_size_getter: Callable[[], int] | None,
-    on_gp_insert_page_success: Callable[[float, int], None] | None,
-) -> None:
-    del target_column_types, trino_insert_chunk_size, connection_type
-    _insert_gp_rows(
-        connection,
-        table_name,
-        columns,
-        rows,
-        gp_insert_chunk_size=gp_insert_chunk_size,
-        query_label=query_label,
-        on_progress=on_progress,
-        page_size_getter=gp_insert_page_size_getter,
-        on_page_success=on_gp_insert_page_success,
-    )
-
-
-def _insert_trino_rows_backend(
-    connection: Any,
-    table_name: str,
-    columns: Sequence[str],
-    rows: Sequence[Sequence[Any]],
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-    gp_insert_page_size_getter: Callable[[], int] | None,
-    on_gp_insert_page_success: Callable[[float, int], None] | None,
-) -> None:
-    del gp_insert_chunk_size, gp_insert_page_size_getter, on_gp_insert_page_success
-    _insert_trino_rows(
-        connection,
-        table_name,
-        columns,
-        rows,
-        target_column_types=target_column_types,
-        trino_insert_chunk_size=trino_insert_chunk_size,
-        connection_type=connection_type,
-        query_label=query_label,
-        on_progress=on_progress,
-    )
-
-
-def _insert_ch_rows_backend(
-    connection: Any,
-    table_name: str,
-    columns: Sequence[str],
-    rows: Sequence[Sequence[Any]],
-    target_column_types: dict[str, str] | None,
-    trino_insert_chunk_size: int | None,
-    gp_insert_chunk_size: int | None,
-    connection_type: str,
-    query_label: str | None,
-    on_progress: Callable[[int], None] | None,
-    gp_insert_page_size_getter: Callable[[], int] | None,
-    on_gp_insert_page_success: Callable[[float, int], None] | None,
-) -> None:
-    del trino_insert_chunk_size, gp_insert_chunk_size, connection_type, query_label
-    del gp_insert_page_size_getter, on_gp_insert_page_success
-    _insert_ch_rows(
-        connection,
-        table_name,
-        columns,
-        rows,
-        target_column_types,
-        on_progress=on_progress,
-    )
-
-
-def _make_batch_insert_backend(backend: str) -> BatchInsertBackend:
-    def insert_backend(
-        connection: Any,
-        table_name: str,
-        batch: pd.DataFrame,
-        target_column_types: Optional[Dict[str, str]],
-        trino_insert_chunk_size: Optional[int],
-        gp_insert_chunk_size: Optional[int],
-        connection_type: str,
-        query_label: Optional[str],
-        on_progress: Optional[Callable[[int], None]],
-    ) -> None:
-        get_backend_adapter(backend).insert_dataframe_batch(
-            connection,
-            table_name,
-            batch,
-            target_column_types=target_column_types,
-            trino_insert_chunk_size=trino_insert_chunk_size,
-            gp_insert_chunk_size=gp_insert_chunk_size,
-            connection_type=connection_type,
-            query_label=query_label,
-            on_progress=on_progress,
-        )
-
-    return insert_backend
-
-
-def _make_row_insert_backend(backend: str) -> RowInsertBackend:
-    def insert_backend(
-        connection: Any,
-        table_name: str,
-        columns: Sequence[str],
-        rows: Sequence[Sequence[Any]],
-        target_column_types: Optional[Dict[str, str]],
-        trino_insert_chunk_size: Optional[int],
-        gp_insert_chunk_size: Optional[int],
-        connection_type: str,
-        query_label: Optional[str],
-        on_progress: Optional[Callable[[int], None]],
-        gp_insert_page_size_getter: Optional[Callable[[], int]],
-        on_gp_insert_page_success: Optional[Callable[[float, int], None]],
-    ) -> None:
-        get_backend_adapter(backend).insert_rows_batch(
-            connection,
-            table_name,
-            columns,
-            rows,
-            target_column_types=target_column_types,
-            trino_insert_chunk_size=trino_insert_chunk_size,
-            gp_insert_chunk_size=gp_insert_chunk_size,
-            connection_type=connection_type,
-            query_label=query_label,
-            on_progress=on_progress,
-            gp_insert_page_size_getter=gp_insert_page_size_getter,
-            on_gp_insert_page_success=on_gp_insert_page_success,
-        )
-
-    return insert_backend
-
-
-_BATCH_INSERT_BACKENDS: dict[str, BatchInsertBackend] = {
-    backend: _make_batch_insert_backend(backend) for backend in get_backend_names()
-}
-
-_ROW_INSERT_BACKENDS: dict[str, RowInsertBackend] = {
-    backend: _make_row_insert_backend(backend) for backend in get_backend_names()
-}
-
-
 def _insert_batch_backend(
     backend: str,
     connection: Any,
@@ -631,19 +386,16 @@ def _insert_batch_backend(
     query_label: str | None,
     on_progress: Callable[[int], None] | None,
 ) -> None:
-    insert_backend = _BATCH_INSERT_BACKENDS.get(backend) or _make_batch_insert_backend(
-        backend
-    )
-    insert_backend(
+    get_backend_adapter(backend).insert_dataframe_batch(
         connection,
         table_name,
         batch,
-        target_column_types,
-        trino_insert_chunk_size,
-        gp_insert_chunk_size,
-        connection_type,
-        query_label,
-        on_progress,
+        target_column_types=target_column_types,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        connection_type=connection_type,
+        query_label=query_label,
+        on_progress=on_progress,
     )
 
 
@@ -663,22 +415,19 @@ def _insert_rows_backend(
     gp_insert_page_size_getter: Callable[[], int] | None = None,
     on_gp_insert_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
-    insert_backend = _ROW_INSERT_BACKENDS.get(backend) or _make_row_insert_backend(
-        backend
-    )
-    insert_backend(
+    get_backend_adapter(backend).insert_rows_batch(
         connection,
         table_name,
         columns,
         rows,
-        target_column_types,
-        trino_insert_chunk_size,
-        gp_insert_chunk_size,
-        connection_type,
-        query_label,
-        on_progress,
-        gp_insert_page_size_getter,
-        on_gp_insert_page_success,
+        target_column_types=target_column_types,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        connection_type=connection_type,
+        query_label=query_label,
+        on_progress=on_progress,
+        gp_insert_page_size_getter=gp_insert_page_size_getter,
+        on_gp_insert_page_success=on_gp_insert_page_success,
     )
 
 

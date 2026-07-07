@@ -71,14 +71,23 @@ def test_read_sql_retries_whole_flow_with_fresh_gp_connection(monkeypatch) -> No
         lambda connection_type: connections.pop(0),
     )
 
-    def fake_read_gp(conn: FakeConnection, query: str, print_queries: bool = True) -> pd.DataFrame:
+    def fake_read_gp(
+        conn: FakeConnection,
+        query: str,
+        *,
+        print_queries: bool = True,
+        print_query: object | None = None,
+        read_dbapi_query: object | None = None,
+    ) -> pd.DataFrame:
+        del query, print_query, read_dbapi_query
         attempts.append(conn.name)
         print_flags.append(print_queries)
         if conn.name == "first":
             raise RuntimeError("temporary failure")
         return expected
 
-    monkeypatch.setattr(read_sql_module, "_read_gp", fake_read_gp)
+    gp_adapter = read_sql_module.get_backend_adapter("gp")
+    monkeypatch.setattr(gp_adapter, "read_dataframe", fake_read_gp)
 
     result = read_sql_module.read_sql(
         "gp",
@@ -107,11 +116,20 @@ def test_read_sql_does_not_retry_undefined_table(monkeypatch) -> None:
         lambda connection_type: connections.pop(0),
     )
 
-    def fake_read_gp(conn: FakeConnection, query: str, print_queries: bool = True) -> pd.DataFrame:
+    def fake_read_gp(
+        conn: FakeConnection,
+        query: str,
+        *,
+        print_queries: bool = True,
+        print_query: object | None = None,
+        read_dbapi_query: object | None = None,
+    ) -> pd.DataFrame:
+        del query, print_queries, print_query, read_dbapi_query
         attempts.append(conn.name)
         raise FakeUndefinedTableError('relation "missing_table" does not exist')
 
-    monkeypatch.setattr(read_sql_module, "_read_gp", fake_read_gp)
+    gp_adapter = read_sql_module.get_backend_adapter("gp")
+    monkeypatch.setattr(gp_adapter, "read_dataframe", fake_read_gp)
 
     try:
         read_sql_module.read_sql(
@@ -144,13 +162,22 @@ def test_read_sql_does_not_retry_undefined_object(monkeypatch) -> None:
         lambda connection_type: connections.pop(0),
     )
 
-    def fake_read_gp(conn: FakeConnection, query: str, print_queries: bool = True) -> pd.DataFrame:
+    def fake_read_gp(
+        conn: FakeConnection,
+        query: str,
+        *,
+        print_queries: bool = True,
+        print_query: object | None = None,
+        read_dbapi_query: object | None = None,
+    ) -> pd.DataFrame:
+        del query, print_queries, print_query, read_dbapi_query
         attempts.append(conn.name)
         raise FakeUndefinedObjectError(
             'type "string" does not exist\nLINE 24: cast(start_dt as string)'
         )
 
-    monkeypatch.setattr(read_sql_module, "_read_gp", fake_read_gp)
+    gp_adapter = read_sql_module.get_backend_adapter("gp")
+    monkeypatch.setattr(gp_adapter, "read_dataframe", fake_read_gp)
 
     try:
         read_sql_module.read_sql(
@@ -186,6 +213,7 @@ def test_execute_read_does_not_retry_ambiguous_column(monkeypatch) -> None:
     def fake_execute_read_gp(
         conn: FakeConnection,
         statements: list[str],
+        *,
         print_queries: bool = False,
         gp_break_query: bool = False,
         gp_commit_each_statement: bool = False,
@@ -197,7 +225,8 @@ def test_execute_read_does_not_retry_ambiguous_column(monkeypatch) -> None:
             'column reference "is_qr_plus" is ambiguous\nLINE 55:     is_qr_plus,'
         )
 
-    monkeypatch.setattr(execute_read_module, "_execute_read_gp", fake_execute_read_gp)
+    gp_adapter = execute_read_module.get_backend_adapter("gp")
+    monkeypatch.setattr(gp_adapter, "execute_read_sql", fake_execute_read_gp)
 
     try:
         execute_read_module.execute_read(
@@ -256,16 +285,20 @@ def test_execute_sql_retries_whole_flow_with_fresh_connection(monkeypatch) -> No
     def fake_execute_trino(
         conn: FakeConnection,
         query: str,
+        *,
         print_queries: bool = True,
+        gp_break_query: bool = False,
+        gp_commit_each_statement: bool = False,
         progress: bool = True,
     ) -> None:
-        del progress
+        del query, gp_break_query, gp_commit_each_statement, progress
         attempts.append(conn.name)
         print_flags.append(print_queries)
         if conn.name == "first":
             raise RuntimeError("temporary failure")
 
-    monkeypatch.setattr(execute_sql_module, "_execute_trino", fake_execute_trino)
+    trino_adapter = execute_sql_module.get_backend_adapter("trino")
+    monkeypatch.setattr(trino_adapter, "execute_sql", fake_execute_trino)
 
     execute_sql_module.execute_sql(
         "trino",
