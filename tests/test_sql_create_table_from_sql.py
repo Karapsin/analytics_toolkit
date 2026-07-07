@@ -474,16 +474,20 @@ def test_create_table_from_sql_inserts_by_default(monkeypatch) -> None:
     assert connection.executed[-1].startswith("INSERT INTO sandbox.target_table")
 
 
-def test_create_table_from_sql_same_clickhouse_delegates_to_internal_ctas(
+def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
     monkeypatch,
 ) -> None:
     calls: list[dict[str, object]] = []
 
-    def fake_ch_create_table_as(*args: object, **kwargs: object) -> object:
-        calls.append({"args": args, **kwargs})
-        return "delegated"
+    def fake_fast_path(**kwargs: object) -> tuple[bool, object]:
+        calls.append(kwargs)
+        return True, "delegated"
 
-    monkeypatch.setattr(create_module, "ch_create_table_as", fake_ch_create_table_as)
+    monkeypatch.setattr(
+        create_module.get_backend_adapter("ch"),
+        "create_table_from_sql_fast_path",
+        fake_fast_path,
+    )
     monkeypatch.setattr(
         create_module,
         "get_sql_connection",
@@ -503,7 +507,11 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_internal_ctas(
     assert result == "delegated"
     assert calls == [
         {
-            "args": ("ch", "analytics.events", "select id, amount from source_table"),
+            "source_backend": "ch",
+            "source_key": "ch",
+            "target_key": "ch",
+            "target_table": "analytics.events",
+            "source_sql": "select id, amount from source_table",
             "partition_by": None,
             "order_by": ["id"],
             "ch_engine": "ReplicatedMergeTree",

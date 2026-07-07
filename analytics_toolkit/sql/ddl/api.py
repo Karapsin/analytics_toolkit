@@ -25,7 +25,6 @@ from .builders import (
 from .models import CreateSqlTableOptions
 from .schema import (
     _build_column_definitions,
-    _build_expected_ch_column_types,
     normalize_table_schema,
 )
 
@@ -258,7 +257,6 @@ def _generate_create_sql_table_from_query_sql(
         normalize_ch_columns_or_expression,
         normalize_ch_string,
         validate_ch_columns_in_columns,
-        validate_ch_options_not_used,
     )
     from ..dml.table.create_table_from_sql import (
         _normalize_only_shard,
@@ -277,6 +275,7 @@ def _generate_create_sql_table_from_query_sql(
 
     source_config = get_connection_config(source_db)
     target_config = get_connection_config(table_db)
+    target_adapter = get_backend_adapter(target_config.backend)
     source_sql = _normalize_single_query(sql)
     gp_distribution = normalize_key_columns(
         gp_distributed_by_key,
@@ -289,12 +288,11 @@ def _generate_create_sql_table_from_query_sql(
     ch_sharding_key_name = normalize_ch_string(ch_sharding_key, "ch_sharding_key")
     only_shard = _normalize_only_shard(ch_only_shard)
 
-    if gp_distribution and target_config.backend != "gp":
-        raise ValueError(
-            "gp_distributed_by_key can only be used when db_key has type 'gp'."
-        )
-    validate_ch_options_not_used(
-        target_backend=target_config.backend,
+    target_adapter.validate_gp_distributed_by_key_option(
+        gp_distribution,
+        option_owner="db_key",
+    )
+    target_adapter.validate_ch_create_table_options(
         option_owner="db_key",
         partition_by=partition,
         order_by=order,
@@ -333,21 +331,25 @@ def _generate_create_sql_table_from_query_sql(
         source_schema,
         target_config.backend,
     )
-    create_sqls = _build_create_table_sqls(
-        target_config.backend,
-        table_name,
-        pd.DataFrame(columns=source_columns),
-        table_schema=target_column_types,
+    create_kwargs = target_adapter.build_create_from_sql_target_create_kwargs(
         gp_distributed_by_key=gp_distribution,
         partition_by=partition,
         order_by=order,
         ch_engine=ch_engine_name,
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key_name,
-        ch_distributed_table=target_config.backend == "ch" and not only_shard,
         ch_only_shard=only_shard,
+        drop_target_if_exists=False,
+        target_exists_before_drop=False,
+    )
+    create_sqls = _build_create_table_sqls(
+        target_config.backend,
+        table_name,
+        pd.DataFrame(columns=source_columns),
+        table_schema=target_column_types,
         query_label=query_label,
         option_owner="db_key",
+        **create_kwargs,
     )
     return _format_sql_statements(create_sqls)
 
@@ -554,19 +556,6 @@ def _execute_create_sql_table(
     metadata: SqlOperationMetadata,
     retry_attempt: int | None,
 ) -> None:
-    expected_ch_column_types = (
-        _build_expected_ch_column_types(
-            options.df,
-            options.table_schema,
-        )
-        if (
-            options.backend == "ch"
-            and options.ch_distributed_table
-            and not options.ch_only_shard
-        )
-        else None
-    )
-
     time_print(
         f"Creating target table {options.table_name}",
         connection=options.connection_key,
@@ -583,6 +572,12 @@ def _execute_create_sql_table(
         preview_sql=create_sqls[0] if create_sqls else None,
     ):
         adapter = get_backend_adapter(options.backend)
+        expected_column_types = adapter.expected_create_table_column_types(
+            options.df,
+            options.table_schema,
+            ch_distributed_table=options.ch_distributed_table,
+            ch_only_shard=options.ch_only_shard,
+        )
         adapter.execute_commands(connection, create_sqls)
         adapter.after_create_table(
             connection,
@@ -590,7 +585,7 @@ def _execute_create_sql_table(
             ch_cluster=options.ch_cluster,
             ch_distributed_table=options.ch_distributed_table,
             ch_only_shard=options.ch_only_shard,
-            expected_column_types=expected_ch_column_types,
+            expected_column_types=expected_column_types,
         )
 
 

@@ -7,12 +7,10 @@ import pandas as pd
 import sqlparse
 
 from ...backend_adapters import get_backend_adapter
-from ...backends.ch.create_table_as import ch_create_table_as
 from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
     validate_ch_columns_in_columns,
-    validate_ch_options_not_used,
 )
 from ...connection.config import get_connection_config
 from ...connection.errors import (
@@ -114,8 +112,9 @@ def create_table_from_sql(
     )
     if trino_insert_chunk_size is not None and trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
-    retry_per_host_drops = target_config.backend == "ch" and bool(
-        ch_retry_per_host_drops
+    target_adapter = get_backend_adapter(target_config.backend)
+    retry_per_host_drops = target_adapter.resolve_ch_retry_per_host_drops(
+        bool(ch_retry_per_host_drops)
     )
     options = CreateTableFromSqlOptions(
         source_key=source_config.connection_key,
@@ -142,30 +141,29 @@ def create_table_from_sql(
         query_label=query_label,
     )
 
-    if (
-        options.source_backend == "ch"
-        and options.target_backend == "ch"
-        and options.source_key == options.target_key
-    ):
-        return ch_create_table_as(
-            options.target_key,
-            options.target_table,
-            options.source_sql,
-            partition_by=options.partition_by,
-            order_by=options.order_by,
-            ch_engine=options.ch_engine,
-            ch_cluster=options.ch_cluster,
-            ch_sharding_key=options.ch_sharding_key,
-            ch_only_shard=options.ch_only_shard,
-            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-            insert_data=options.insert_data,
-            drop_target_if_exists=options.drop_target_if_exists,
-            dry_run=options.dry_run,
-            return_sql=options.return_sql,
-            query_label=options.query_label,
-            return_metadata=options.return_metadata,
-            table_schema=options.table_schema,
-        )
+    fast_path_applied, fast_path_result = target_adapter.create_table_from_sql_fast_path(
+        source_backend=options.source_backend,
+        source_key=options.source_key,
+        target_key=options.target_key,
+        target_table=options.target_table,
+        source_sql=options.source_sql,
+        partition_by=options.partition_by,
+        order_by=options.order_by,
+        ch_engine=options.ch_engine,
+        ch_cluster=options.ch_cluster,
+        ch_sharding_key=options.ch_sharding_key,
+        ch_only_shard=options.ch_only_shard,
+        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+        insert_data=options.insert_data,
+        drop_target_if_exists=options.drop_target_if_exists,
+        dry_run=options.dry_run,
+        return_sql=options.return_sql,
+        query_label=options.query_label,
+        return_metadata=options.return_metadata,
+        table_schema=options.table_schema,
+    )
+    if fast_path_applied:
+        return fast_path_result
 
     if options.dry_run or options.return_sql:
         return _build_create_table_from_sql_plan(
@@ -296,7 +294,11 @@ def create_table_from_sql(
                     )
                 return None
 
-            if source_config.backend == target_config.backend:
+            if target_adapter.should_insert_create_table_from_sql_directly(
+                source_backend=source_config.backend,
+                source_key=source_config.connection_key,
+                target_key=target_config.connection_key,
+            ):
                 inserted_rows = insert_from_query(
                     target_config.backend,
                     target_connection,
@@ -512,12 +514,12 @@ def _validate_backend_options(
     ch_sharding_key: str,
     ch_only_shard: bool,
 ) -> None:
-    if gp_distributed_by_key and target_backend != "gp":
-        raise ValueError(
-            "gp_distributed_by_key can only be used when table_db has type 'gp'."
-        )
-    validate_ch_options_not_used(
-        target_backend=target_backend,
+    target_adapter = get_backend_adapter(target_backend)
+    target_adapter.validate_gp_distributed_by_key_option(
+        gp_distributed_by_key,
+        option_owner="table_db",
+    )
+    target_adapter.validate_ch_create_table_options(
         option_owner="table_db",
         partition_by=partition_by,
         order_by=order_by,

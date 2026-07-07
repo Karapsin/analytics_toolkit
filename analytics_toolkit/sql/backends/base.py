@@ -233,9 +233,7 @@ class BackendAdapter:
     build_source_count_sql = _source_count.build_source_count_sql
     count_source_rows = _source_count.count_source_rows
     source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read
-    disable_query_limit_for_transfer_reads = (
-        _source_count.disable_query_limit_for_transfer_reads
-    )
+    disable_query_limit_for_transfer_reads = _source_count.disable_query_limit_for_transfer_reads
     strip_query_semicolon = _source_count.strip_query_semicolon
 
     def get_table_column_types(
@@ -269,6 +267,7 @@ class BackendAdapter:
     build_create_partition_sql = _adapter_defaults.build_create_partition_sql
     query_transfer_stage_table_names = _adapter_defaults.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _adapter_defaults.qualify_transfer_stage_table_name
+    stage_base_identifier = _adapter_defaults.stage_base_identifier
     build_drop_tables_sqls = _adapter_defaults.build_drop_tables_sqls
     build_drop_target_sqls = _adapter_defaults.build_drop_target_sqls
     drop_table_with_options = _adapter_defaults.drop_table_with_options
@@ -279,6 +278,8 @@ class BackendAdapter:
     transfer_replace_target_phase = _adapter_defaults.transfer_replace_target_phase
     transfer_replace_existing_non_ch = _adapter_defaults.transfer_replace_existing_non_ch
     companion_table_name = _adapter_defaults.companion_table_name
+    target_connection_defaults = _adapter_defaults.target_connection_defaults
+    validate_ch_create_table_options = _adapter_defaults.validate_ch_create_table_options
     resolve_table_info_table_name = _adapter_defaults.resolve_table_info_table_name
     rollback_quietly = _adapter_defaults.rollback_quietly
     wait_for_table_absence = _adapter_defaults.wait_for_table_absence
@@ -289,6 +290,7 @@ class BackendAdapter:
     )
     estimate_source_rows = _adapter_defaults.estimate_source_rows
     after_create_table = _adapter_defaults.after_create_table
+    expected_create_table_column_types = _adapter_defaults.expected_create_table_column_types
 
     def iter_source_batches(
         self,
@@ -490,25 +492,22 @@ class BackendAdapter:
     ) -> Any:
         raise NotImplementedError
 
-    def normalize_insert_batch(self, batch: Any) -> Any:
-        return batch
-
-    def normalize_insert_rows(
-        self,
-        rows: Sequence[Sequence[Any]],
-    ) -> list[tuple[Any, ...]]:
-        return [tuple(row) for row in rows]
-
-    def should_wrap_insert_error_as_ambiguous(
-        self,
-        connection: Any,
-        exc: Exception,
-    ) -> bool:
-        del connection, exc
-        return True
-
-    def should_refresh_connection_before_insert_retry(self) -> bool:
-        return False
+    normalize_insert_batch = _adapter_defaults.normalize_insert_batch
+    normalize_insert_rows = _adapter_defaults.normalize_insert_rows
+    should_wrap_insert_error_as_ambiguous = _adapter_defaults.should_wrap_insert_error_as_ambiguous
+    should_refresh_connection_before_insert_retry = _adapter_defaults.should_refresh_connection_before_insert_retry
+    transfer_attempt_policy = _adapter_defaults.transfer_attempt_policy
+    transfer_insert_page_sizing = _adapter_defaults.transfer_insert_page_sizing
+    requires_load_target_column_metadata = _adapter_defaults.requires_load_target_column_metadata
+    resolve_ch_retry_per_host_drops = _adapter_defaults.resolve_ch_retry_per_host_drops
+    validate_gp_distributed_by_key_option = _adapter_defaults.validate_gp_distributed_by_key_option
+    validate_gp_insert_chunk_size_option = _adapter_defaults.validate_gp_insert_chunk_size_option
+    resolve_transfer_staging_mode = _adapter_defaults.resolve_transfer_staging_mode
+    create_table_from_sql_fast_path = _adapter_defaults.create_table_from_sql_fast_path
+    should_insert_create_table_from_sql_directly = (
+        _adapter_defaults.should_insert_create_table_from_sql_directly
+    )
+    resolve_transfer_stage_column_types = _adapter_defaults.resolve_transfer_stage_column_types
 
     def insert_dataframe_batch(
         self,

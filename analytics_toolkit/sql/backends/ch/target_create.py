@@ -9,6 +9,23 @@ def should_ensure_load_target_table(adapter: Any, target_exists: bool) -> bool:
     return True
 
 
+def expected_create_table_column_types(
+    adapter: Any,
+    batch: Any,
+    column_types: dict[str, str] | None,
+    *,
+    ch_distributed_table: bool,
+    ch_only_shard: bool,
+) -> dict[str, str] | None:
+    del adapter
+    if not ch_distributed_table or ch_only_shard:
+        return None
+
+    from ...ddl.schema import _build_expected_ch_column_types
+
+    return _build_expected_ch_column_types(batch, column_types)
+
+
 def build_load_target_create_kwargs(
     adapter: Any,
     *,

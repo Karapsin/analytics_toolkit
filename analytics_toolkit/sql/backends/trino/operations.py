@@ -3,7 +3,59 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from ..models import TargetConnectionDefaults
 from ..utils import sql_literal
+
+
+def target_connection_defaults(adapter: Any, config: Any) -> TargetConnectionDefaults:
+    del adapter
+    return TargetConnectionDefaults(
+        insert_chunk_size=config.insert_chunk_size,
+        transfer_staging_location=config.transfer_staging_location,
+        upsert_partition_drop_sql_template=config.upsert_partition_drop_sql_template,
+    )
+
+
+def resolve_transfer_staging_mode(
+    adapter: Any,
+    requested_mode: Any,
+    *,
+    transfer_staging_schema: str | None,
+    transfer_staging_location: str | None,
+) -> Any:
+    del adapter
+    if requested_mode is None:
+        if transfer_staging_schema is not None and transfer_staging_location is not None:
+            return "parquet"
+        return "values"
+    if requested_mode not in {"parquet", "values"}:
+        raise ValueError("trino_mode must be one of: 'parquet', 'values'.")
+    if requested_mode == "parquet" and transfer_staging_schema is None:
+        raise ValueError("trino_mode='parquet' requires transfer_staging_schema on to_db.")
+    if requested_mode == "parquet" and transfer_staging_location is None:
+        raise ValueError("trino_mode='parquet' requires transfer_staging_location on to_db.")
+    return requested_mode
+
+
+def resolve_transfer_stage_column_types(
+    adapter: Any,
+    connection: Any,
+    stage_table: str,
+    *,
+    connection_key: str,
+    current_column_types: dict[str, str] | None,
+) -> dict[str, str] | None:
+    del adapter
+    if current_column_types is not None:
+        return current_column_types
+
+    from ...dml.table._basic_ops import get_trino_table_column_types
+
+    return get_trino_table_column_types(
+        connection,
+        stage_table,
+        connection_key=connection_key,
+    )
 
 
 def build_show_tables_query(

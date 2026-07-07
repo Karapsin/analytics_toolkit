@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ....backends import get_backend_adapter
 from ....backends.registry import get_backend_capability
 from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
-from ...table._basic_ops import get_trino_table_column_types, table_exists
+from ...table._basic_ops import table_exists
 from ...table.table_validation import (
     validate_key_columns_in_columns,
     validate_upsert_partition_column_in_columns,
@@ -138,9 +139,11 @@ def initialize_stage_for_first_batch(
         transfer_staging_username=options.transfer_staging_username,
     )
     stage_state.stage_table_created = True
-    if options.to_db_backend == "trino" and stage_state.stage_column_types is None:
-        stage_state.stage_column_types = get_trino_table_column_types(
-            connection_refs.target["connection"],
-            stage_state.stage_table,
-            connection_key=options.to_db_key,
-        )
+    stage_state.stage_column_types = get_backend_adapter(
+        options.to_db_backend,
+    ).resolve_transfer_stage_column_types(
+        connection_refs.target["connection"],
+        stage_state.stage_table,
+        connection_key=options.to_db_key,
+        current_column_types=stage_state.stage_column_types,
+    )

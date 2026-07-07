@@ -5,10 +5,13 @@ from typing import Any
 
 from . import operations as _operations
 from . import insert as _insert
+from . import stage as _stage
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
 from ..models import SourceColumn
+from ..models import TransferAttemptPolicy
+from ..models import TransferInsertPageSizing
 from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
 
@@ -33,6 +36,7 @@ _GP_OID_TYPES = {
     3802: "jsonb",
 }
 _GP_MAX_NUMERIC_PRECISION = 1000
+GP_IDENTIFIER_MAX_BYTES = _stage.GP_IDENTIFIER_MAX_BYTES
 
 
 class GreenplumAdapter(DbApiBackendAdapter):
@@ -46,6 +50,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     drop_semantics = "DROP TABLE IF EXISTS"
     create_semantics = "CREATE TABLE with append-only columnar storage"
     type_family = "postgres"
+    supports_create_table_order_by = False
 
     def __init__(self) -> None:
         super().__init__(backend="gp", commit_commands=True)
@@ -177,6 +182,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     build_create_partition_sql = _operations.build_create_partition_sql
     infer_dataframe_column_type = _dataframe_types.infer_gp_dataframe_column_type
+    stage_base_identifier = _stage.stage_base_identifier
 
     def rollback_quietly(self, connection: Any) -> None:
         try:
@@ -541,6 +547,42 @@ class GreenplumAdapter(DbApiBackendAdapter):
 
     def should_refresh_connection_before_insert_retry(self) -> bool:
         return True
+
+    def transfer_attempt_policy(self, retry_cnt: int) -> TransferAttemptPolicy:
+        return TransferAttemptPolicy(
+            insert_retry_cnt=retry_cnt,
+            retry_ambiguous_stage_load=False,
+        )
+
+    def transfer_insert_page_sizing(
+        self,
+        *,
+        gp_insert_chunk_size: int | None,
+    ) -> TransferInsertPageSizing:
+        initial_size = gp_insert_chunk_size or _insert.DEFAULT_GP_INSERT_CHUNK_SIZE
+        return TransferInsertPageSizing(
+            initial_size=initial_size,
+            min_size=min(1_000, initial_size),
+            max_size=max(100_000, initial_size * 4),
+        )
+
+    def validate_gp_distributed_by_key_option(
+        self,
+        value: Sequence[str] | None,
+        *,
+        option_owner: str,
+    ) -> None:
+        del value, option_owner
+
+    def validate_gp_insert_chunk_size_option(
+        self,
+        value: int | None,
+        *,
+        option_owner: str,
+    ) -> None:
+        del option_owner
+        if value is not None and value <= 0:
+            raise ValueError("gp_insert_chunk_size must be a positive integer.")
 
     def insert_dataframe_batch(
         self,

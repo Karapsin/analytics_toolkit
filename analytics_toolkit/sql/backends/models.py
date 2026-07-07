@@ -17,6 +17,26 @@ class SourceColumn:
 
 
 @dataclass(frozen=True)
+class TransferAttemptPolicy:
+    insert_retry_cnt: int
+    retry_ambiguous_stage_load: bool = True
+
+
+@dataclass(frozen=True)
+class TransferInsertPageSizing:
+    initial_size: int
+    min_size: int
+    max_size: int
+
+
+@dataclass(frozen=True)
+class TargetConnectionDefaults:
+    insert_chunk_size: int | None = None
+    transfer_staging_location: str | None = None
+    upsert_partition_drop_sql_template: str | None = None
+
+
+@dataclass(frozen=True)
 class TargetWriteModeRequest:
     connection: Any
     table_name: str

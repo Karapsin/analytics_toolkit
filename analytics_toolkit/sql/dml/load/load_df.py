@@ -13,7 +13,6 @@ from ...clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
     validate_ch_columns_in_columns,
-    validate_ch_options_not_used,
 )
 from ...connection.errors import (
     SqlOperationContext,
@@ -28,7 +27,7 @@ from ...ddl.schema import (
     normalize_table_schema,
     validate_table_schema_columns,
 )
-from ...connection.config import TrinoConfig, get_connection_config
+from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import (
     run_retrying_operation,
@@ -297,23 +296,16 @@ def _build_load_options(
     timeout_increment: int | float = 5,
 ) -> LoadOptions:
     config = get_connection_config(db_key)
-    configured_trino_insert_chunk_size = (
-        config.insert_chunk_size if isinstance(config, TrinoConfig) else None
-    )
-    transfer_staging_location = (
-        config.transfer_staging_location if isinstance(config, TrinoConfig) else None
-    )
-    trino_upsert_partition_drop_sql_template = (
-        config.upsert_partition_drop_sql_template
-        if isinstance(config, TrinoConfig)
-        else None
-    )
+    adapter = get_backend_adapter(config.backend)
+    target_defaults = adapter.target_connection_defaults(config)
     resolved_write_mode = _resolve_load_write_mode(
         config.backend,
         append=append,
         write_mode=write_mode,
     )
-    retry_per_host_drops = config.backend == "ch" and bool(ch_retry_per_host_drops)
+    retry_per_host_drops = adapter.resolve_ch_retry_per_host_drops(
+        bool(ch_retry_per_host_drops)
+    )
     options = LoadOptions(
         connection_key=config.connection_key,
         connection_backend=config.backend,
@@ -330,12 +322,12 @@ def _build_load_options(
             upsert_partition_column
         ),
         trino_upsert_partition_drop_sql_template=(
-            trino_upsert_partition_drop_sql_template
+            target_defaults.upsert_partition_drop_sql_template
         ),
         trino_insert_chunk_size=(
             trino_insert_chunk_size
             if trino_insert_chunk_size is not None
-            else configured_trino_insert_chunk_size
+            else target_defaults.insert_chunk_size
         ),
         partition_by=normalize_ch_columns_or_expression(
             partition_by,
@@ -350,12 +342,15 @@ def _build_load_options(
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
         transfer_staging_schema=config.transfer_staging_schema,
-        transfer_staging_location=transfer_staging_location,
+        transfer_staging_location=target_defaults.transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(config.user),
         use_parquet_staging=(
-            config.backend == "trino"
-            and config.transfer_staging_schema is not None
-            and transfer_staging_location is not None
+            adapter.resolve_transfer_staging_mode(
+                None,
+                transfer_staging_schema=config.transfer_staging_schema,
+                transfer_staging_location=target_defaults.transfer_staging_location,
+            )
+            == "parquet"
         ),
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -383,21 +378,17 @@ def _build_load_options(
             "Trino write_mode='upsert' requires "
             "upsert_partition_drop_sql_template in the target connection config."
         )
-    if options.gp_distributed_by_key and options.connection_backend != "gp":
-        raise ValueError(
-            "gp_distributed_by_key can only be used when db_key has type 'gp'."
-        )
-    if options.gp_insert_chunk_size is not None:
-        if options.connection_backend != "gp":
-            raise ValueError(
-                "gp_insert_chunk_size can only be used when db_key has type 'gp'."
-            )
-        if options.gp_insert_chunk_size <= 0:
-            raise ValueError("gp_insert_chunk_size must be a positive integer.")
+    adapter.validate_gp_distributed_by_key_option(
+        options.gp_distributed_by_key,
+        option_owner="db_key",
+    )
+    adapter.validate_gp_insert_chunk_size_option(
+        options.gp_insert_chunk_size,
+        option_owner="db_key",
+    )
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
-    validate_ch_options_not_used(
-        target_backend=options.connection_backend,
+    adapter.validate_ch_create_table_options(
         option_owner="db_key",
         partition_by=options.partition_by,
         order_by=options.order_by,
@@ -607,8 +598,11 @@ def _load_target_column_metadata(
     state: LoadState,
     connection: Any,
 ) -> None:
-    if options.connection_backend == "trino" or (
-        options.write_mode == "upsert" and state.original_target_exists
+    if get_backend_adapter(
+        options.connection_backend,
+    ).requires_load_target_column_metadata(
+        write_mode=options.write_mode,
+        original_target_exists=state.original_target_exists,
     ):
         state.target_column_types = get_table_column_types(
             options.connection_backend,

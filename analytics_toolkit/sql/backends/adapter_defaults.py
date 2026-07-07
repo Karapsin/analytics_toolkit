@@ -3,6 +3,19 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+import pandas as pd
+
+from .models import (
+    TargetConnectionDefaults,
+    TransferAttemptPolicy,
+    TransferInsertPageSizing,
+)
+
+
+_DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
+_DEFAULT_CH_CLUSTER = "{cluster}"
+_DEFAULT_CH_SHARDING_KEY = "rand()"
+
 
 def build_show_tables_query(
     adapter: Any,
@@ -128,6 +141,16 @@ def qualify_transfer_stage_table_name(
     del connection_key
     parts = (transfer_staging_schema, table_name)
     return ".".join(_quote_identifier_part_when_needed(adapter, part) for part in parts)
+
+
+def stage_base_identifier(
+    adapter: Any,
+    base_identifier: str,
+    transfer_staging_username: str | None,
+    stage_suffix: str,
+) -> str:
+    del adapter, transfer_staging_username, stage_suffix
+    return base_identifier
 
 
 def build_drop_tables_sqls(
@@ -321,6 +344,193 @@ def build_load_target_create_kwargs(
     if order_by is not None:
         create_kwargs["order_by"] = order_by
     return create_kwargs
+
+
+def transfer_attempt_policy(adapter: Any, retry_cnt: int) -> TransferAttemptPolicy:
+    del adapter, retry_cnt
+    return TransferAttemptPolicy(insert_retry_cnt=1, retry_ambiguous_stage_load=True)
+
+
+def target_connection_defaults(adapter: Any, config: Any) -> TargetConnectionDefaults:
+    del adapter, config
+    return TargetConnectionDefaults()
+
+
+def validate_ch_create_table_options(
+    adapter: Any,
+    *,
+    option_owner: str,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
+    ch_engine: str,
+    ch_cluster: str,
+    ch_sharding_key: str,
+    ch_only_shard: bool = False,
+) -> None:
+    del partition_by
+    if not isinstance(ch_only_shard, bool):
+        raise ValueError("ch_only_shard must be a boolean.")
+    if not getattr(adapter, "supports_ch_create_table_options", False):
+        if (
+            not getattr(adapter, "supports_create_table_order_by", True)
+            and order_by is not None
+        ):
+            raise ValueError(
+                f"order_by is not supported when {option_owner} has type "
+                f"'{adapter.backend}'."
+            )
+    else:
+        return
+    if ch_only_shard:
+        raise ValueError(
+            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
+        )
+    if ch_engine != _DEFAULT_CH_ENGINE:
+        raise ValueError(
+            f"ch_engine can only be used when {option_owner} has type 'ch'."
+        )
+    if ch_cluster != _DEFAULT_CH_CLUSTER:
+        raise ValueError(
+            f"ch_cluster can only be used when {option_owner} has type 'ch'."
+        )
+    if ch_sharding_key != _DEFAULT_CH_SHARDING_KEY:
+        raise ValueError(
+            f"ch_sharding_key can only be used when {option_owner} has type 'ch'."
+        )
+
+
+def transfer_insert_page_sizing(
+    adapter: Any,
+    *,
+    gp_insert_chunk_size: int | None,
+) -> TransferInsertPageSizing | None:
+    del adapter, gp_insert_chunk_size
+    return None
+
+
+def requires_load_target_column_metadata(
+    adapter: Any,
+    *,
+    write_mode: str,
+    original_target_exists: bool,
+) -> bool:
+    del adapter
+    return write_mode == "upsert" and original_target_exists
+
+
+def resolve_ch_retry_per_host_drops(adapter: Any, requested: bool) -> bool:
+    del adapter, requested
+    return False
+
+
+def expected_create_table_column_types(
+    adapter: Any,
+    batch: pd.DataFrame,
+    column_types: dict[str, str] | None,
+    *,
+    ch_distributed_table: bool,
+    ch_only_shard: bool,
+) -> dict[str, str] | None:
+    del adapter, batch, column_types, ch_distributed_table, ch_only_shard
+    return None
+
+
+def validate_gp_distributed_by_key_option(
+    adapter: Any,
+    value: Sequence[str] | None,
+    *,
+    option_owner: str,
+) -> None:
+    del adapter
+    if value is not None:
+        raise ValueError(
+            f"gp_distributed_by_key can only be used when {option_owner} "
+            "has type 'gp'."
+        )
+
+
+def validate_gp_insert_chunk_size_option(
+    adapter: Any,
+    value: int | None,
+    *,
+    option_owner: str,
+) -> None:
+    del adapter
+    if value is not None:
+        raise ValueError(
+            f"gp_insert_chunk_size can only be used when {option_owner} "
+            "has type 'gp'."
+        )
+
+
+def resolve_transfer_staging_mode(
+    adapter: Any,
+    requested_mode: Any,
+    *,
+    transfer_staging_schema: str | None,
+    transfer_staging_location: str | None,
+) -> Any:
+    del adapter, transfer_staging_schema, transfer_staging_location
+    if requested_mode is None:
+        return None
+    if requested_mode not in {"parquet", "values"}:
+        raise ValueError("trino_mode must be one of: 'parquet', 'values'.")
+    raise ValueError("trino_mode can only be used when to_db has type 'trino'.")
+
+
+def create_table_from_sql_fast_path(adapter: Any, **kwargs: Any) -> tuple[bool, Any]:
+    del adapter, kwargs
+    return False, None
+
+
+def should_insert_create_table_from_sql_directly(
+    adapter: Any,
+    *,
+    source_backend: str,
+    source_key: str,
+    target_key: str,
+) -> bool:
+    del source_key, target_key
+    return source_backend == adapter.backend
+
+
+def resolve_transfer_stage_column_types(
+    adapter: Any,
+    connection: Any,
+    stage_table: str,
+    *,
+    connection_key: str,
+    current_column_types: dict[str, str] | None,
+) -> dict[str, str] | None:
+    del adapter, connection, stage_table, connection_key
+    return current_column_types
+
+
+def normalize_insert_batch(adapter: Any, batch: Any) -> Any:
+    del adapter
+    return batch
+
+
+def normalize_insert_rows(
+    adapter: Any,
+    rows: Sequence[Sequence[Any]],
+) -> list[tuple[Any, ...]]:
+    del adapter
+    return [tuple(row) for row in rows]
+
+
+def should_wrap_insert_error_as_ambiguous(
+    adapter: Any,
+    connection: Any,
+    exc: Exception,
+) -> bool:
+    del adapter, connection, exc
+    return True
+
+
+def should_refresh_connection_before_insert_retry(adapter: Any) -> bool:
+    del adapter
+    return False
 
 
 def build_create_from_sql_target_create_kwargs(

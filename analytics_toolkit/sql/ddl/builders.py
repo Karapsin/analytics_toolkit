@@ -8,12 +8,15 @@ from ..execution.labels import apply_query_label
 
 
 def _validate_only_shard(backend: str, ch_only_shard: bool, option_owner: str) -> None:
-    if not isinstance(ch_only_shard, bool):
-        raise ValueError("ch_only_shard must be a boolean.")
-    if ch_only_shard and backend != "ch":
-        raise ValueError(
-            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
-        )
+    get_backend(backend).validate_ch_create_table_options(
+        option_owner=option_owner,
+        partition_by=None,
+        order_by=None,
+        ch_engine="ReplicatedMergeTree",
+        ch_cluster="{cluster}",
+        ch_sharding_key="rand()",
+        ch_only_shard=ch_only_shard,
+    )
 
 
 def _build_backend_create_table_sqls(

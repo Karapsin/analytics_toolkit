@@ -6,6 +6,16 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Adapterized Greenplum stage table identifier policy.
+- Adapterized create_table_from_sql direct insert policy.
+- Adapterized ClickHouse create-table expected column metadata policy.
+- Adapterized Trino load and transfer connection defaults.
+- Adapterized SQL query create-table target policy.
+- Adapterized ClickHouse create-table option policy.
+- Adapterized Greenplum transfer insert-page sizing policy.
+
+## 1.3.10.12 - 2026-07-07
+
 - Move SQL backend policy into adapters.
 - Move ClickHouse lifecycle SQL into backend adapters.
 - Move remaining SQL backend behavior into adapters.
@@ -14,6 +24,8 @@ Generated from package version bumps and recent commit history.
 - Move SQL type and insert helper ownership into adapters.
 - Move ClickHouse truncate and Trino config SQL ownership into adapters.
 - Fixed Trino transfer replace to recreate target tables before staged inserts.
+- Adapterized SQL transfer/load backend policy hooks.
+- Adapterized SQL backend option policy hooks.
 
 ## 1.3.10.11 - 2026-06-24
 

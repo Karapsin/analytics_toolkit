@@ -151,25 +151,25 @@ def test_sql_backend_compatibility_shims_do_not_own_implementations() -> None:
 
 def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
     allowed_counts = {
-        "analytics_toolkit/sql/clickhouse/options.py": 2,
-        "analytics_toolkit/sql/ddl/api.py": 4,
-        "analytics_toolkit/sql/ddl/builders.py": 1,
+        "analytics_toolkit/sql/clickhouse/options.py": 0,
+        "analytics_toolkit/sql/ddl/api.py": 0,
+        "analytics_toolkit/sql/ddl/builders.py": 0,
         "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
         "analytics_toolkit/sql/dml/io/execute_sql.py": 0,
-        "analytics_toolkit/sql/dml/load/load_df.py": 5,
+        "analytics_toolkit/sql/dml/load/load_df.py": 0,
         "analytics_toolkit/sql/dml/load/load_sql_table.py": 0,
         "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 0,
-        "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 5,
+        "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 0,
         "analytics_toolkit/sql/dml/table/drop_tables.py": 0,
         "analytics_toolkit/sql/dml/table/maintenance.py": 1,
         "analytics_toolkit/sql/dml/table/partitions.py": 1,
         "analytics_toolkit/sql/dml/table/write_modes.py": 0,
-        "analytics_toolkit/sql/dml/transfer/flow/api.py": 6,
-        "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 1,
+        "analytics_toolkit/sql/dml/transfer/flow/api.py": 0,
+        "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/estimate.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/finalize.py": 0,
-        "analytics_toolkit/sql/dml/transfer/flow/options.py": 2,
-        "analytics_toolkit/sql/dml/transfer/flow/stage.py": 1,
+        "analytics_toolkit/sql/dml/transfer/flow/options.py": 0,
+        "analytics_toolkit/sql/dml/transfer/flow/stage.py": 0,
         "analytics_toolkit/sql/dml/transfer/io/source.py": 0,
         "analytics_toolkit/sql/dml/transfer/staging.py": 0,
         "analytics_toolkit/sql/execution/operation_runner.py": 0,
@@ -355,6 +355,85 @@ def test_generic_clickhouse_callers_delegate_to_adapters() -> None:
         for snippet in forbidden_snippets:
             if snippet in text:
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_stage_table_identifier_backend_policy_is_adapter_owned() -> None:
+    text = (SQL_ROOT / "dml" / "load" / "stage.py").read_text()
+    forbidden_snippets = {
+        'connection_type != "gp"',
+        "GP_IDENTIFIER_MAX_BYTES",
+        "hashlib.sha1",
+    }
+
+    offenders = [snippet for snippet in forbidden_snippets if snippet in text]
+
+    assert offenders == []
+
+
+def test_transfer_insert_page_sizing_policy_is_adapter_owned() -> None:
+    checked_paths = [
+        SQL_ROOT / "dml" / "transfer" / "runtime" / "models.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "attempt.py",
+    ]
+    forbidden_snippets = {
+        "DEFAULT_GP_INSERT_CHUNK_SIZE",
+        "make_gp_insert_chunk_sizer",
+        "supports_adaptive_transfer_insert_page_size",
+    }
+    offenders: list[str] = []
+
+    for path in checked_paths:
+        text = path.read_text()
+        for snippet in forbidden_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_generic_load_and_transfer_do_not_import_concrete_config_policy() -> None:
+    checked_paths = [
+        SQL_ROOT / "dml" / "load" / "load_df.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+    ]
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in checked_paths
+        if "TrinoConfig" in path.read_text()
+    ]
+
+    assert offenders == []
+
+
+def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
+    branch_checked_paths = [
+        SQL_ROOT / "clickhouse" / "options.py",
+        SQL_ROOT / "ddl" / "api.py",
+        SQL_ROOT / "dml" / "load" / "load_df.py",
+        SQL_ROOT / "dml" / "table" / "create_table_from_sql.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+    ]
+    generic_callers = branch_checked_paths[1:]
+    branch_snippets = {
+        'target_backend == "ch"',
+        'target_backend == "gp"',
+        'backend != "ch"',
+    }
+    offenders: list[str] = []
+    for path in branch_checked_paths:
+        text = path.read_text()
+        for snippet in branch_snippets:
+            if snippet in text:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+    for path in generic_callers:
+        text = path.read_text()
+        if "validate_ch_options_not_used" in text:
+            offenders.append(
+                f"{path.relative_to(PROJECT_ROOT)}: validate_ch_options_not_used"
+            )
 
     assert offenders == []
 

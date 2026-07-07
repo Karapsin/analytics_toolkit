@@ -166,8 +166,20 @@ class TrinoAdapter(DbApiBackendAdapter):
     def transfer_replace_existing_non_ch(self) -> str:
         return "drop"
 
+    def requires_load_target_column_metadata(
+        self,
+        *,
+        write_mode: str,
+        original_target_exists: bool,
+    ) -> bool:
+        del write_mode, original_target_exists
+        return True
+
     build_show_tables_query = _operations.build_show_tables_query
     extract_table_ddl = _operations.extract_table_ddl
+    target_connection_defaults = _operations.target_connection_defaults
+    resolve_transfer_staging_mode = _operations.resolve_transfer_staging_mode
+    resolve_transfer_stage_column_types = _operations.resolve_transfer_stage_column_types
     validate_drop_partitions_options = _operations.validate_drop_partitions_options
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names

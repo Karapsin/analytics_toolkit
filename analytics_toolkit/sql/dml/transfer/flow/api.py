@@ -10,9 +10,8 @@ from ....core.capabilities import validate_write_mode
 from ....clickhouse.options import (
     normalize_ch_columns_or_expression,
     normalize_ch_string,
-    validate_ch_options_not_used,
 )
-from ....connection.config import TrinoConfig, get_connection_config
+from ....connection.config import get_connection_config
 from ....connection.errors import SqlOperationContext, sql_preview
 from ....connection.get_sql_connection import get_sql_connection
 from ....execution.operation_runner import (
@@ -56,7 +55,7 @@ from .source import normalize_transfer_source
 from .stream_retries import TransferStreamRetryState
 from ..io.source import TransferSourceStreamReadError
 from ..staging import _sanitize_transfer_staging_username
-from ..runtime.models import DEFAULT_GP_INSERT_CHUNK_SIZE, TransferOptions
+from ..runtime.models import TransferOptions
 from ..runtime.models import TrinoTransferMode
 from ..runtime.retry import run_with_retry
 
@@ -174,6 +173,9 @@ def transfer_table(
 
     def transfer_operation(attempt: int) -> int:
         attempt_options = stream_retry_state.options_for_attempt()
+        attempt_policy = get_backend_adapter(
+            attempt_options.to_db_backend,
+        ).transfer_attempt_policy(attempt_options.retry_cnt)
         with tracked_sql_operation(
             metadata=operation_metadata,
             operation_name="transfer_table",
@@ -185,11 +187,11 @@ def transfer_table(
             preview_sql=attempt_options.source_sql,
         ):
             try:
-                if attempt_options.to_db_backend == "gp":
+                if not attempt_policy.retry_ambiguous_stage_load:
                     return run_transfer_attempt(
                         options=attempt_options,
                         read_retry_cnt=attempt_options.retry_cnt,
-                        insert_retry_cnt=attempt_options.retry_cnt,
+                        insert_retry_cnt=attempt_policy.insert_retry_cnt,
                     )
 
                 def stage_restart_operation(inner_attempt: int) -> int:
@@ -198,7 +200,7 @@ def transfer_table(
                         return run_transfer_attempt(
                             options=attempt_options,
                             read_retry_cnt=attempt_options.retry_cnt,
-                            insert_retry_cnt=1,
+                            insert_retry_cnt=attempt_policy.insert_retry_cnt,
                         )
                     except AmbiguousTableLoadError as exc:
                         time_print(
@@ -338,24 +340,12 @@ def build_transfer_options(
     )
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
-    configured_trino_insert_chunk_size = (
-        to_config.insert_chunk_size if isinstance(to_config, TrinoConfig) else None
-    )
-    transfer_staging_location = (
-        to_config.transfer_staging_location
-        if isinstance(to_config, TrinoConfig)
-        else None
-    )
-    trino_upsert_partition_drop_sql_template = (
-        to_config.upsert_partition_drop_sql_template
-        if isinstance(to_config, TrinoConfig)
-        else None
-    )
-    resolved_trino_mode = transfer_options.resolve_trino_mode(
+    target_adapter = get_backend_adapter(to_config.backend)
+    target_defaults = target_adapter.target_connection_defaults(to_config)
+    resolved_trino_mode = target_adapter.resolve_transfer_staging_mode(
         trino_mode,
-        target_backend=to_config.backend,
         transfer_staging_schema=to_config.transfer_staging_schema,
-        transfer_staging_location=transfer_staging_location,
+        transfer_staging_location=target_defaults.transfer_staging_location,
     )
     resolved_write_mode = _resolve_transfer_write_mode(
         to_config.backend,
@@ -411,7 +401,9 @@ def build_transfer_options(
             adaptive_batch_size_step,
         )
     )
-    retry_per_host_drops = to_config.backend == "ch" and bool(ch_retry_per_host_drops)
+    retry_per_host_drops = target_adapter.resolve_ch_retry_per_host_drops(
+        bool(ch_retry_per_host_drops)
+    )
     (
         normalized_transfer_keys,
         normalized_transfer_key_expressions,
@@ -462,7 +454,7 @@ def build_transfer_options(
             upsert_partition_column
         ),
         trino_upsert_partition_drop_sql_template=(
-            trino_upsert_partition_drop_sql_template
+            target_defaults.upsert_partition_drop_sql_template
         ),
         gp_distributed_by_key=normalize_key_columns(
             gp_distributed_by_key,
@@ -472,7 +464,7 @@ def build_transfer_options(
         trino_insert_chunk_size=(
             trino_insert_chunk_size
             if trino_insert_chunk_size is not None
-            else configured_trino_insert_chunk_size
+            else target_defaults.insert_chunk_size
         ),
         partition_by=normalize_ch_columns_or_expression(
             partition_by,
@@ -485,7 +477,7 @@ def build_transfer_options(
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
-        transfer_staging_location=transfer_staging_location,
+        transfer_staging_location=target_defaults.transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         trino_mode=resolved_trino_mode,
         transfer_keys=normalized_transfer_keys,
@@ -536,21 +528,17 @@ def build_transfer_options(
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
     _validate_row_count_options(options.validate_row_count, options.ch_count_limit_read)
-    if options.gp_distributed_by_key is not None and options.to_db_backend != "gp":
-        raise ValueError(
-            "gp_distributed_by_key can only be used when to_db has type 'gp'."
-        )
-    if options.gp_insert_chunk_size is not None:
-        if options.to_db_backend != "gp":
-            raise ValueError(
-                "gp_insert_chunk_size can only be used when to_db has type 'gp'."
-            )
-        if options.gp_insert_chunk_size <= 0:
-            raise ValueError("gp_insert_chunk_size must be a positive integer.")
+    target_adapter.validate_gp_distributed_by_key_option(
+        options.gp_distributed_by_key,
+        option_owner="to_db",
+    )
+    target_adapter.validate_gp_insert_chunk_size_option(
+        options.gp_insert_chunk_size,
+        option_owner="to_db",
+    )
     if options.trino_insert_chunk_size is not None and options.trino_insert_chunk_size <= 0:
         raise ValueError("trino_insert_chunk_size must be a positive integer.")
-    validate_ch_options_not_used(
-        target_backend=options.to_db_backend,
+    target_adapter.validate_ch_create_table_options(
         option_owner="to_db",
         partition_by=options.partition_by,
         order_by=options.order_by,
@@ -608,6 +596,9 @@ def _requires_upsert_partition_drop_template(backend: str) -> bool:
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     stage_tables = dry_run_stage_table_names(options)
     stage_table = stage_tables[0]
+    insert_page_sizing = get_backend_adapter(
+        options.to_db_backend,
+    ).transfer_insert_page_sizing(gp_insert_chunk_size=options.gp_insert_chunk_size)
     stage_external_location = (
         dry_run_stage_external_location(options)
         if options.trino_mode == "parquet"
@@ -639,11 +630,12 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "upsert_partition_column": options.upsert_partition_column,
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
-            "adaptive_gp_insert_chunk_size": options.to_db_backend == "gp"
-            and options.adaptive_batch_size,
+            "adaptive_gp_insert_chunk_size": (
+                insert_page_sizing is not None and options.adaptive_batch_size
+            ),
             "initial_gp_insert_chunk_size": (
-                (options.gp_insert_chunk_size or DEFAULT_GP_INSERT_CHUNK_SIZE)
-                if options.to_db_backend == "gp"
+                insert_page_sizing.initial_size
+                if insert_page_sizing is not None
                 else None
             ),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,

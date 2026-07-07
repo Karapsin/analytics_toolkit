@@ -44,29 +44,17 @@ def validate_ch_options_not_used(
     ch_sharding_key: str,
     ch_only_shard: bool = False,
 ) -> None:
-    if target_backend == "gp" and order_by is not None:
-        raise ValueError(
-            f"order_by is not supported when {option_owner} has type 'gp'."
-        )
-    if target_backend == "ch":
-        return
+    from ..backends import get_backend_adapter
 
-    if ch_only_shard:
-        raise ValueError(
-            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
-        )
-    if ch_engine != DEFAULT_CH_ENGINE:
-        raise ValueError(
-            f"ch_engine can only be used when {option_owner} has type 'ch'."
-        )
-    if ch_cluster != DEFAULT_CH_CLUSTER:
-        raise ValueError(
-            f"ch_cluster can only be used when {option_owner} has type 'ch'."
-        )
-    if ch_sharding_key != DEFAULT_CH_SHARDING_KEY:
-        raise ValueError(
-            f"ch_sharding_key can only be used when {option_owner} has type 'ch'."
-        )
+    get_backend_adapter(target_backend).validate_ch_create_table_options(
+        option_owner=option_owner,
+        partition_by=partition_by,
+        order_by=order_by,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_only_shard=ch_only_shard,
+    )
 
 
 def validate_ch_columns_in_columns(

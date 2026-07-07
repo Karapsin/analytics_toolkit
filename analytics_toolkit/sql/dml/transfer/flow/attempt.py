@@ -40,7 +40,6 @@ from ..runtime.models import (
     TransferOptions,
     TransferSlice,
     TransferStageState,
-    make_gp_insert_chunk_sizer,
 )
 from ..runtime.retry import (
     close_connection_ref, replace_connection, rollback_quietly,
@@ -602,10 +601,19 @@ def load_stage_batches(
         min_target_memory_bytes=options.min_batch_memory_bytes,
         max_target_memory_bytes=options.max_batch_memory_bytes,
     )
-    gp_insert_chunk_sizer = (
-        make_gp_insert_chunk_sizer(options)
-        if options.to_db_backend == "gp"
-        else None
+    insert_page_sizing = get_backend_adapter(
+        options.to_db_backend,
+    ).transfer_insert_page_sizing(gp_insert_chunk_size=options.gp_insert_chunk_size)
+    gp_insert_chunk_sizer = None if insert_page_sizing is None else AdaptiveBatchSizer(
+        enabled=options.adaptive_batch_size,
+        current_size=insert_page_sizing.initial_size,
+        min_size=insert_page_sizing.min_size,
+        max_size=insert_page_sizing.max_size,
+        target_seconds=options.target_batch_seconds,
+        optimize_by_rows_per_second=True,
+        target_rows_per_second_window=options.target_rows_per_second_window,
+        target_rows_per_second_deadband=options.target_rows_per_second_deadband,
+        adaptive_batch_size_step=options.adaptive_batch_size_step,
     )
     try:
         for batch in iter_source_batches(

@@ -13,6 +13,7 @@ import pytest
 from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
 from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
 from analytics_toolkit.sql.backends.base import BackendAdapter
+from analytics_toolkit.sql.backends.gp.adapter import GP_IDENTIFIER_MAX_BYTES
 from analytics_toolkit.sql.backends.registry import get_backend_capability
 from analytics_toolkit.sql.connection.errors import (
     SqlConfigError,
@@ -292,13 +293,26 @@ def test_registered_backends_implement_full_contract() -> None:
     inherited_contract_methods = {
         "build_insert_from_stage_sql",
         "build_insert_from_stage_placeholder_sql",
+        "create_table_from_sql_fast_path",
         "build_create_from_sql_target_create_kwargs",
         "build_load_target_create_kwargs",
         "column_types_for_columns",
         "after_create_table",
+        "expected_create_table_column_types",
+        "requires_load_target_column_metadata",
         "refine_stage_column_types_from_rows",
+        "resolve_ch_retry_per_host_drops",
+        "resolve_transfer_stage_column_types",
+        "resolve_transfer_staging_mode",
         "resolve_table_info_table_name",
         "should_ensure_load_target_table",
+        "should_insert_create_table_from_sql_directly",
+        "target_connection_defaults",
+        "transfer_attempt_policy",
+        "transfer_insert_page_sizing",
+        "validate_ch_create_table_options",
+        "validate_gp_distributed_by_key_option",
+        "validate_gp_insert_chunk_size_option",
     }
     missing: list[str] = []
     for backend_name, backend in BACKEND_REGISTRY.items():
@@ -314,6 +328,191 @@ def test_registered_backends_implement_full_contract() -> None:
                 missing.append(f"{backend_name}.{method_name}")
 
     assert missing == []
+
+
+def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
+    gp_adapter = get_backend_adapter("gp")
+    trino_adapter = get_backend_adapter("trino")
+    ch_adapter = get_backend_adapter("ch")
+
+    assert (
+        gp_adapter.target_connection_defaults(SimpleNamespace()).insert_chunk_size
+        is None
+    )
+    trino_defaults = trino_adapter.target_connection_defaults(
+        SimpleNamespace(
+            insert_chunk_size=123,
+            transfer_staging_location="s3://bucket/stage",
+            upsert_partition_drop_sql_template="DELETE FROM {table}",
+        )
+    )
+    assert trino_defaults.insert_chunk_size == 123
+    assert trino_defaults.transfer_staging_location == "s3://bucket/stage"
+    assert trino_defaults.upsert_partition_drop_sql_template == "DELETE FROM {table}"
+
+    gp_policy = gp_adapter.transfer_attempt_policy(retry_cnt=5)
+    assert gp_policy.insert_retry_cnt == 5
+    assert gp_policy.retry_ambiguous_stage_load is False
+    gp_sizing = gp_adapter.transfer_insert_page_sizing(gp_insert_chunk_size=None)
+    assert gp_sizing is not None
+    assert gp_sizing.initial_size == 10_000
+    assert gp_sizing.min_size == 1_000
+    assert gp_sizing.max_size == 100_000
+    explicit_gp_sizing = gp_adapter.transfer_insert_page_sizing(
+        gp_insert_chunk_size=50_000,
+    )
+    assert explicit_gp_sizing is not None
+    assert explicit_gp_sizing.initial_size == 50_000
+    assert explicit_gp_sizing.min_size == 1_000
+    assert explicit_gp_sizing.max_size == 200_000
+
+    for adapter in (trino_adapter, ch_adapter):
+        policy = adapter.transfer_attempt_policy(retry_cnt=5)
+        assert policy.insert_retry_cnt == 1
+        assert policy.retry_ambiguous_stage_load is True
+        assert adapter.transfer_insert_page_sizing(gp_insert_chunk_size=None) is None
+
+    assert trino_adapter.requires_load_target_column_metadata(
+        write_mode="replace",
+        original_target_exists=False,
+    ) is True
+    assert gp_adapter.requires_load_target_column_metadata(
+        write_mode="replace",
+        original_target_exists=True,
+    ) is False
+    assert gp_adapter.requires_load_target_column_metadata(
+        write_mode="upsert",
+        original_target_exists=True,
+    ) is True
+    assert gp_adapter.resolve_ch_retry_per_host_drops(True) is False
+    assert trino_adapter.resolve_ch_retry_per_host_drops(True) is False
+    assert ch_adapter.resolve_ch_retry_per_host_drops(True) is True
+    assert ch_adapter.resolve_ch_retry_per_host_drops(False) is False
+    create_batch = pd.DataFrame({"id": [1], "label": ["a"]})
+    assert gp_adapter.expected_create_table_column_types(
+        create_batch,
+        {"id": "BIGINT", "label": "TEXT"},
+        ch_distributed_table=True,
+        ch_only_shard=False,
+    ) is None
+    assert ch_adapter.expected_create_table_column_types(
+        create_batch,
+        {"id": "UInt64", "label": "String"},
+        ch_distributed_table=True,
+        ch_only_shard=False,
+    ) == {"id": "UInt64", "label": "String"}
+    assert ch_adapter.expected_create_table_column_types(
+        create_batch,
+        {"id": "UInt64", "label": "String"},
+        ch_distributed_table=False,
+        ch_only_shard=False,
+    ) is None
+    assert ch_adapter.expected_create_table_column_types(
+        create_batch,
+        {"id": "UInt64", "label": "String"},
+        ch_distributed_table=True,
+        ch_only_shard=True,
+    ) is None
+
+    gp_adapter.validate_gp_distributed_by_key_option(["id"], option_owner="to_db")
+    gp_adapter.validate_gp_insert_chunk_size_option(1, option_owner="to_db")
+    with pytest.raises(ValueError, match="positive integer"):
+        gp_adapter.validate_gp_insert_chunk_size_option(0, option_owner="to_db")
+    with pytest.raises(ValueError, match="to_db has type 'gp'"):
+        trino_adapter.validate_gp_distributed_by_key_option(
+            ["id"],
+            option_owner="to_db",
+        )
+    with pytest.raises(ValueError, match="to_db has type 'gp'"):
+        ch_adapter.validate_gp_insert_chunk_size_option(1000, option_owner="to_db")
+    ch_adapter.validate_ch_create_table_options(
+        option_owner="to_db",
+        partition_by=["dt"],
+        order_by=["id"],
+        ch_engine="ReplacingMergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="cityHash64(id)",
+        ch_only_shard=True,
+    )
+    with pytest.raises(ValueError, match="ch_only_shard must be a boolean"):
+        ch_adapter.validate_ch_create_table_options(
+            option_owner="to_db",
+            partition_by=None,
+            order_by=None,
+            ch_engine="ReplacingMergeTree",
+            ch_cluster="cluster",
+            ch_sharding_key="cityHash64(id)",
+            ch_only_shard="yes",  # type: ignore[arg-type]
+        )
+    trino_adapter.validate_ch_create_table_options(
+        option_owner="to_db",
+        partition_by=["dt"],
+        order_by=["id"],
+        ch_engine="ReplicatedMergeTree",
+        ch_cluster="{cluster}",
+        ch_sharding_key="rand()",
+        ch_only_shard=False,
+    )
+    with pytest.raises(ValueError, match="to_db has type 'ch'"):
+        trino_adapter.validate_ch_create_table_options(
+            option_owner="to_db",
+            partition_by=None,
+            order_by=None,
+            ch_engine="ReplacingMergeTree",
+            ch_cluster="{cluster}",
+            ch_sharding_key="rand()",
+            ch_only_shard=False,
+        )
+    with pytest.raises(ValueError, match="to_db has type 'gp'"):
+        gp_adapter.validate_ch_create_table_options(
+            option_owner="to_db",
+            partition_by=None,
+            order_by=["id"],
+            ch_engine="ReplicatedMergeTree",
+            ch_cluster="{cluster}",
+            ch_sharding_key="rand()",
+            ch_only_shard=False,
+        )
+
+    assert (
+        trino_adapter.resolve_transfer_staging_mode(
+            None,
+            transfer_staging_schema="tmp",
+            transfer_staging_location="s3://bucket/prefix",
+        )
+        == "parquet"
+    )
+    assert (
+        trino_adapter.resolve_transfer_staging_mode(
+            None,
+            transfer_staging_schema=None,
+            transfer_staging_location=None,
+        )
+        == "values"
+    )
+    with pytest.raises(ValueError, match="requires transfer_staging_location"):
+        trino_adapter.resolve_transfer_staging_mode(
+            "parquet",
+            transfer_staging_schema="tmp",
+            transfer_staging_location=None,
+        )
+    with pytest.raises(ValueError, match="can only be used"):
+        ch_adapter.resolve_transfer_staging_mode(
+            "values",
+            transfer_staging_schema=None,
+            transfer_staging_location=None,
+        )
+
+    assert gp_adapter.should_insert_create_table_from_sql_directly(
+        source_backend="gp",
+        source_key="source_gp",
+        target_key="target_gp",
+    ) is True
+    assert gp_adapter.should_insert_create_table_from_sql_directly(
+        source_backend="trino",
+        source_key="source_trino",
+        target_key="target_gp",
+    ) is False
 
 
 def test_target_create_kwargs_are_backend_adapter_owned() -> None:
@@ -1056,6 +1255,33 @@ def test_backend_adapters_execute_validation_queries_per_backend() -> None:
         "OR (stage_src.`id` IS NULL AND target_dst.`id` IS NULL)) "
         "LIMIT 1"
     )
+
+
+def test_stage_base_identifier_policy_is_adapter_owned() -> None:
+    assert (
+        get_backend_adapter("trino").stage_base_identifier("target", None, "abcd")
+        == "target"
+    )
+    assert (
+        get_backend_adapter("ch").stage_base_identifier("target", "loader", "abcd")
+        == "target"
+    )
+
+
+def test_gp_stage_base_identifier_keeps_marker_within_backend_limit() -> None:
+    adapter = get_backend_adapter("gp")
+
+    identifier = adapter.stage_base_identifier(
+        "very_long_target_table_name_for_monthly_analytics_exports",
+        "karapsin_de",
+        "4f99601c",
+    )
+    stage_identifier = (
+        f"{identifier}__analytics_toolkit_karapsin_de__stage__4f99601c"
+    )
+
+    assert len(stage_identifier.encode()) <= GP_IDENTIFIER_MAX_BYTES
+    assert stage_identifier.endswith("__stage__4f99601c")
 
 
 def test_dbapi_backend_adapter_rolls_back_failed_committed_commands() -> None:

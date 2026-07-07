@@ -3,11 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from . import operations as _operations
-from . import upsert as _upsert
-from . import source_count as _source_count
-from . import queries as _queries
-from . import insert as _insert
+from . import create_table_from_sql as _create_table_from_sql, operations as _operations
+from . import source_count as _source_count, upsert as _upsert
+from . import insert as _insert, queries as _queries
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
 from .. import dataframe_types as _dataframe_types
@@ -25,7 +23,6 @@ ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
     "distributed_ddl_output_mode": "none",
 }
-
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
     display_name = "ClickHouse"
@@ -41,6 +38,9 @@ class ClickHouseAdapter(BackendAdapter):
     supports_early_transfer_target_creation = False
     upsert_strategy = "partition_replace"
     requires_upsert_partition_column = True
+    supports_ch_create_table_options = True
+    resolve_ch_retry_per_host_drops = staticmethod(bool)
+    create_table_from_sql_fast_path = _create_table_from_sql.create_table_from_sql_fast_path
 
     def build_connection_config(
         self,
@@ -847,6 +847,7 @@ class ClickHouseAdapter(BackendAdapter):
     build_create_from_sql_target_create_kwargs = (
         _target_create.build_create_from_sql_target_create_kwargs
     )
+    expected_create_table_column_types = _target_create.expected_create_table_column_types
 
     def running_query_ids_sql(self) -> str:
         return """select query_id

@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 schema_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.schema")
 stage_module = importlib.import_module("analytics_toolkit.sql.dml.load.stage")
+gp_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.gp.adapter")
 transfer_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.stage"
 )
@@ -200,7 +201,7 @@ def test_build_stage_table_name_keeps_gp_identifier_within_limit() -> None:
     )
 
     stage_identifier = stage_name.split(".")[-1]
-    assert len(stage_identifier.encode()) <= stage_module.GP_IDENTIFIER_MAX_BYTES
+    assert len(stage_identifier.encode()) <= gp_adapter_module.GP_IDENTIFIER_MAX_BYTES
     assert stage_identifier.endswith("__stage__4f99601c")
     assert stage_identifier.startswith("karap")
     assert not stage_identifier.startswith("karapsin_temp_users_po__")
@@ -215,7 +216,7 @@ def test_build_stage_table_name_keeps_gp_identifier_within_limit_without_usernam
     )
 
     stage_identifier = stage_name.split(".")[-1]
-    assert len(stage_identifier.encode()) <= stage_module.GP_IDENTIFIER_MAX_BYTES
+    assert len(stage_identifier.encode()) <= gp_adapter_module.GP_IDENTIFIER_MAX_BYTES
     assert stage_identifier.endswith("__stage__4f99601c")
     assert "__analytics_toolkit_" not in stage_identifier
     assert not stage_identifier.startswith(
