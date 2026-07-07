@@ -7,12 +7,6 @@ import pandas as pd
 from tqdm import tqdm
 
 from ...backend_adapters import get_backend_adapter
-from ...core.capabilities import validate_write_mode
-from ...clickhouse.options import (
-    normalize_ch_columns_or_expression,
-    normalize_ch_string,
-    validate_ch_columns_in_columns,
-)
 from ...connection.errors import (
     SqlOperationContext,
     sql_preview,
@@ -328,14 +322,20 @@ def _build_load_options(
             if trino_insert_chunk_size is not None
             else target_defaults.insert_chunk_size
         ),
-        partition_by=normalize_ch_columns_or_expression(
+        partition_by=adapter.normalize_ch_columns_or_expression(
             partition_by,
             "partition_by",
         ),
-        order_by=normalize_ch_columns_or_expression(order_by, "order_by"),
-        ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
-        ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
-        ch_sharding_key=normalize_ch_string(ch_sharding_key, "ch_sharding_key"),
+        order_by=adapter.normalize_ch_columns_or_expression(
+            order_by,
+            "order_by",
+        ),
+        ch_engine=adapter.normalize_ch_string(ch_engine, "ch_engine"),
+        ch_cluster=adapter.normalize_ch_string(ch_cluster, "ch_cluster"),
+        ch_sharding_key=adapter.normalize_ch_string(
+            ch_sharding_key,
+            "ch_sharding_key",
+        ),
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         query_label=query_label,
@@ -410,7 +410,7 @@ def _resolve_load_write_mode(
     if write_mode is None:
         return "append" if append else "replace"
 
-    normalized = validate_write_mode(connection_backend, write_mode)
+    normalized = get_backend_adapter(connection_backend).validate_write_mode(write_mode)
     if append and normalized != "append":
         raise ValueError("append=True cannot be combined with write_mode other than 'append'.")
     return normalized
@@ -483,13 +483,13 @@ def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
         options.upsert_partition_column,
         df.columns,
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.connection_backend).validate_ch_columns_in_columns(
         options.partition_by,
         df.columns,
         "partition_by",
         data_name="staged data",
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.connection_backend).validate_ch_columns_in_columns(
         options.order_by,
         df.columns,
         "order_by",
@@ -935,7 +935,7 @@ def _add_parquet_load_plan_steps(
     adapter = get_backend_adapter(options.connection_backend)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
     stage_table = build_stage_table_name(
-        "trino",
+        options.connection_backend,
         options.destination_table,
         transfer_staging_schema=options.transfer_staging_schema,
         transfer_staging_username=options.transfer_staging_username,
@@ -1285,13 +1285,13 @@ def _create_load_parquet_stage_table(
 
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
         stage_table = build_stage_table_name(
-            "trino",
+            options.connection_backend,
             options.destination_table,
             transfer_staging_schema=options.transfer_staging_schema,
             transfer_staging_username=options.transfer_staging_username,
         )
         if table_exists(
-            "trino",
+            options.connection_backend,
             connection,
             stage_table,
             connection_key=options.connection_key,
@@ -1310,7 +1310,10 @@ def _create_load_parquet_stage_table(
             stage_external_location,
             query_label=options.query_label,
         )
-        get_backend_adapter("trino").execute_command(connection, create_sql)
+        get_backend_adapter(options.connection_backend).execute_command(
+            connection,
+            create_sql,
+        )
         state.overlap_stage_table = stage_table
         state.stage_external_location = stage_external_location
         return

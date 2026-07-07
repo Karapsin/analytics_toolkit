@@ -4,6 +4,7 @@ from .._lazy_exports import lazy_export_dir, resolve_lazy_export
 from ..backends.registry import (
     BACKEND_REGISTRY,
     backend_capability_map,
+    get_backend_adapter,
     get_backend_capability,
 )
 from ..execution.operation_runner import timed_public_sql_function
@@ -25,18 +26,10 @@ def validate_write_mode(
     *,
     option_name: str = "write_mode",
 ) -> WriteMode:
-    normalized = write_mode.strip().lower()
-    if normalized not in {"append", "replace", "truncate_insert", "upsert"}:
-        raise ValueError(
-            f"{option_name} must be one of: append, replace, truncate_insert, upsert."
-        )
-
-    capability = get_backend_capability(connection_type_or_key)
-    if normalized not in capability.supported_write_modes:
-        raise ValueError(
-            f"{capability.display_name} does not support {option_name}={normalized!r}."
-        )
-    return normalized  # type: ignore[return-value]
+    return get_backend_adapter(connection_type_or_key).validate_write_mode(
+        write_mode,
+        option_name=option_name,
+    )
 
 
 @timed_public_sql_function

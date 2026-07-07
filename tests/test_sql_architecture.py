@@ -424,6 +424,7 @@ def test_generic_load_and_transfer_do_not_import_concrete_config_policy() -> Non
     forbidden_snippets = {
         "TrinoConfig",
         "get_backend_capability",
+        "core.capabilities import validate_write_mode",
         "upsert_strategy",
         "supports_distributed_tables",
         "supports_early_transfer_target_creation",
@@ -437,6 +438,25 @@ def test_generic_load_and_transfer_do_not_import_concrete_config_policy() -> Non
         for snippet in forbidden_snippets:
             if snippet in text:
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
+
+    assert offenders == []
+
+
+def test_parquet_load_stage_uses_target_backend_adapter() -> None:
+    path = SQL_ROOT / "dml" / "load" / "load_df.py"
+    text = path.read_text()
+    forbidden_snippets = {
+        'get_backend_adapter("trino")',
+        'table_exists(\n            "trino"',
+        'build_stage_table_name(\n        "trino"',
+        'build_stage_table_name(\n            "trino"',
+    }
+
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
+        for snippet in forbidden_snippets
+        if snippet in text
+    ]
 
     assert offenders == []
 
@@ -503,7 +523,9 @@ def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
         SQL_ROOT / "ddl" / "api.py",
         SQL_ROOT / "dml" / "load" / "load_df.py",
         SQL_ROOT / "dml" / "table" / "create_table_from_sql.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "attempt.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "stage.py",
     ]
     generic_callers = branch_checked_paths[1:]
     branch_snippets = {
@@ -523,6 +545,8 @@ def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
             offenders.append(
                 f"{path.relative_to(PROJECT_ROOT)}: validate_ch_options_not_used"
             )
+        if "clickhouse.options" in text:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: clickhouse.options")
 
     assert offenders == []
 
@@ -768,6 +792,8 @@ def test_load_sql_insert_dispatch_is_adapter_owned() -> None:
     path = SQL_ROOT / "dml" / "load" / "load_sql_table.py"
     text = path.read_text()
     forbidden_snippets = {
+        "DEFAULT_GP_INSERT_CHUNK_SIZE",
+        "DEFAULT_TRINO_INSERT_CHUNK_SIZE",
         "_BATCH_INSERT_BACKENDS",
         "_ROW_INSERT_BACKENDS",
         "_make_batch_insert_backend",

@@ -59,6 +59,72 @@ def should_analyze_table(adapter: Any) -> bool:
     return bool(adapter.supports_analyze)
 
 
+def validate_write_mode(
+    adapter: Any,
+    write_mode: str,
+    *,
+    option_name: str = "write_mode",
+) -> str:
+    normalized = write_mode.strip().lower()
+    if normalized not in {"append", "replace", "truncate_insert", "upsert"}:
+        raise ValueError(
+            f"{option_name} must be one of: append, replace, truncate_insert, upsert."
+        )
+
+    if normalized not in adapter.supported_write_modes:
+        raise ValueError(
+            f"{adapter.display_name} does not support {option_name}={normalized!r}."
+        )
+    return normalized
+
+
+def normalize_ch_columns_or_expression(
+    adapter: Any,
+    value: Sequence[str] | str | None,
+    option_name: str,
+) -> list[str] | str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return normalize_ch_string(adapter, value, option_name)
+
+    normalized = [normalize_ch_string(adapter, column, option_name) for column in value]
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty when provided.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{option_name} must not contain duplicate column names.")
+    return normalized
+
+
+def normalize_ch_string(adapter: Any, value: str, option_name: str) -> str:
+    del adapter
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{option_name} must not be empty.")
+    return normalized
+
+
+def validate_ch_columns_in_columns(
+    adapter: Any,
+    value: list[str] | str | None,
+    columns: Sequence[str],
+    option_name: str,
+    *,
+    data_name: str,
+) -> None:
+    del adapter
+    if value is None or isinstance(value, str):
+        return
+
+    available_columns = {str(column) for column in columns}
+    missing_columns = [column for column in value if column not in available_columns]
+    if missing_columns:
+        raise ValueError(
+            f"{option_name} columns were not found in the {data_name}: "
+            + ", ".join(missing_columns)
+        )
+
+
 def extract_table_ddl(
     adapter: Any,
     connection_key: str,

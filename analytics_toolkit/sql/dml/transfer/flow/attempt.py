@@ -9,7 +9,6 @@ import pandas as pd
 from tqdm import tqdm
 
 from ....backend_adapters import get_backend_adapter
-from ....clickhouse.options import validate_ch_columns_in_columns
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
 from analytics_toolkit.general import time_print
@@ -323,13 +322,13 @@ def initialize_shared_stage_for_keyed_slices(
         options.gp_distributed_by_key,
         source_columns,
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.partition_by,
         source_columns,
         "partition_by",
         data_name="staged data",
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.order_by,
         source_columns,
         "order_by",

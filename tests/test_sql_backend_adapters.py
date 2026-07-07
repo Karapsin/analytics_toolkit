@@ -313,6 +313,8 @@ def test_registered_backends_implement_full_contract() -> None:
         "requires_load_target_column_metadata",
         "refine_stage_column_types_from_rows",
         "needs_upsert_partition_drop_template",
+        "normalize_ch_columns_or_expression",
+        "normalize_ch_string",
         "resolve_ch_retry_per_host_drops",
         "resolve_transfer_stage_column_types",
         "resolve_transfer_staging_mode",
@@ -326,9 +328,11 @@ def test_registered_backends_implement_full_contract() -> None:
         "transfer_insert_page_sizing",
         "uses_partition_replacement_upsert",
         "validate_ch_create_table_options",
+        "validate_ch_columns_in_columns",
         "validate_gp_distributed_by_key_option",
         "validate_gp_insert_chunk_size_option",
         "validate_trino_insert_chunk_size_option",
+        "validate_write_mode",
     }
     missing: list[str] = []
     for backend_name, backend in BACKEND_REGISTRY.items():
@@ -415,6 +419,37 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     assert gp_adapter.allows_show_tables_catalog_filter() is False
     assert trino_adapter.allows_show_tables_catalog_filter() is True
     assert ch_adapter.allows_show_tables_catalog_filter() is False
+    assert gp_adapter.validate_write_mode("append") == "append"
+    assert trino_adapter.validate_write_mode("UPSERT") == "upsert"
+    with pytest.raises(ValueError, match="must be one of"):
+        ch_adapter.validate_write_mode("merge")
+    original_gp_modes = gp_adapter.supported_write_modes
+    gp_adapter.supported_write_modes = frozenset({"append"})
+    try:
+        with pytest.raises(ValueError, match="Greenplum does not support"):
+            gp_adapter.validate_write_mode("upsert")
+    finally:
+        gp_adapter.supported_write_modes = original_gp_modes
+    assert ch_adapter.normalize_ch_string(" id ", "order_by") == "id"
+    assert ch_adapter.normalize_ch_columns_or_expression(
+        [" id ", "dt"],
+        "order_by",
+    ) == ["id", "dt"]
+    with pytest.raises(ValueError, match="duplicate column names"):
+        ch_adapter.normalize_ch_columns_or_expression(["id", " id "], "order_by")
+    ch_adapter.validate_ch_columns_in_columns(
+        ["id"],
+        ["id", "dt"],
+        "order_by",
+        data_name="staged data",
+    )
+    with pytest.raises(ValueError, match="missing"):
+        ch_adapter.validate_ch_columns_in_columns(
+            ["missing"],
+            ["id"],
+            "order_by",
+            data_name="staged data",
+        )
     assert gp_adapter.resolve_ch_retry_per_host_drops(True) is False
     assert trino_adapter.resolve_ch_retry_per_host_drops(True) is False
     assert ch_adapter.resolve_ch_retry_per_host_drops(True) is True

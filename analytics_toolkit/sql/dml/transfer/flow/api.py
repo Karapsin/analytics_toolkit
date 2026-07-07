@@ -6,11 +6,6 @@ from typing import Any
 import pandas as pd
 
 from ....backends import get_backend_adapter
-from ....core.capabilities import validate_write_mode
-from ....clickhouse.options import (
-    normalize_ch_columns_or_expression,
-    normalize_ch_string,
-)
 from ....connection.config import get_connection_config
 from ....connection.errors import SqlOperationContext, sql_preview
 from ....connection.get_sql_connection import get_sql_connection
@@ -466,14 +461,20 @@ def build_transfer_options(
             if trino_insert_chunk_size is not None
             else target_defaults.insert_chunk_size
         ),
-        partition_by=normalize_ch_columns_or_expression(
+        partition_by=target_adapter.normalize_ch_columns_or_expression(
             partition_by,
             "partition_by",
         ),
-        order_by=normalize_ch_columns_or_expression(order_by, "order_by"),
-        ch_engine=normalize_ch_string(ch_engine, "ch_engine"),
-        ch_cluster=normalize_ch_string(ch_cluster, "ch_cluster"),
-        ch_sharding_key=normalize_ch_string(ch_sharding_key, "ch_sharding_key"),
+        order_by=target_adapter.normalize_ch_columns_or_expression(
+            order_by,
+            "order_by",
+        ),
+        ch_engine=target_adapter.normalize_ch_string(ch_engine, "ch_engine"),
+        ch_cluster=target_adapter.normalize_ch_string(ch_cluster, "ch_cluster"),
+        ch_sharding_key=target_adapter.normalize_ch_string(
+            ch_sharding_key,
+            "ch_sharding_key",
+        ),
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
@@ -559,7 +560,7 @@ def _resolve_transfer_write_mode(
 ) -> str:
     if write_mode is None:
         return "replace"
-    return validate_write_mode(to_db_backend, write_mode)
+    return get_backend_adapter(to_db_backend).validate_write_mode(write_mode)
 
 
 def _validate_progress(progress: bool) -> None:

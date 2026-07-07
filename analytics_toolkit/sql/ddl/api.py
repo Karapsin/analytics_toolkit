@@ -253,11 +253,6 @@ def _generate_create_sql_table_from_query_sql(
     ch_only_shard: bool,
     query_label: str | None,
 ) -> str:
-    from ..clickhouse.options import (
-        normalize_ch_columns_or_expression,
-        normalize_ch_string,
-        validate_ch_columns_in_columns,
-    )
     from ..dml.table.create_table_from_sql import (
         _normalize_only_shard,
         _normalize_single_query,
@@ -281,11 +276,17 @@ def _generate_create_sql_table_from_query_sql(
         gp_distributed_by_key,
         "gp_distributed_by_key",
     )
-    partition = normalize_ch_columns_or_expression(partition_by, "partition_by")
-    order = normalize_ch_columns_or_expression(order_by, "order_by")
-    ch_engine_name = normalize_ch_string(ch_engine, "ch_engine")
-    ch_cluster_name = normalize_ch_string(ch_cluster, "ch_cluster")
-    ch_sharding_key_name = normalize_ch_string(ch_sharding_key, "ch_sharding_key")
+    partition = target_adapter.normalize_ch_columns_or_expression(
+        partition_by,
+        "partition_by",
+    )
+    order = target_adapter.normalize_ch_columns_or_expression(order_by, "order_by")
+    ch_engine_name = target_adapter.normalize_ch_string(ch_engine, "ch_engine")
+    ch_cluster_name = target_adapter.normalize_ch_string(ch_cluster, "ch_cluster")
+    ch_sharding_key_name = target_adapter.normalize_ch_string(
+        ch_sharding_key,
+        "ch_sharding_key",
+    )
     only_shard = _normalize_only_shard(ch_only_shard)
 
     target_adapter.validate_gp_distributed_by_key_option(
@@ -315,13 +316,13 @@ def _generate_create_sql_table_from_query_sql(
     source_columns = [column.name for column in source_schema]
     _validate_source_columns(source_columns)
     validate_key_columns_in_columns(gp_distribution, source_columns)
-    validate_ch_columns_in_columns(
+    target_adapter.validate_ch_columns_in_columns(
         partition,
         source_columns,
         "partition_by",
         data_name="source query",
     )
-    validate_ch_columns_in_columns(
+    target_adapter.validate_ch_columns_in_columns(
         order,
         source_columns,
         "order_by",

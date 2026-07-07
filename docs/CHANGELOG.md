@@ -6,6 +6,10 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Removed hard-coded Trino parquet load adapter use.
+
+## 1.3.10.14 - 2026-07-07
+
 - Moved generic SQL analyze support policy behind backend adapters.
 - Adapterized SQL transfer early target creation policy.
 - Keep SQL upsert planning policy adapter-owned.
@@ -13,6 +17,9 @@ Generated from package version bumps and recent commit history.
 - Adapterized SQL load insert dispatch.
 - Adapterized SQL identifier quote and dialect policy.
 - Adapterized ClickHouse expected column metadata implementation.
+- Adapterized SQL write-mode validation.
+- Kept SQL insert chunk defaults backend-owned.
+- Adapterized SQL ClickHouse option normalization.
 
 ## 1.3.10.13 - 2026-07-07
 

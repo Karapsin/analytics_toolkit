@@ -25,14 +25,12 @@ class BackendAdapter:
     drop_semantics: str
     create_semantics: str
     type_family: str
-    supported_write_modes: frozenset[WriteMode] = frozenset(
-        {"append", "replace", "truncate_insert", "upsert"})
+    supported_write_modes: frozenset[WriteMode] = frozenset({"append", "replace", "truncate_insert", "upsert"})
     supports_early_transfer_target_creation: bool = True
     upsert_strategy: str = "key_delete_insert"
     requires_upsert_partition_column: bool = False
     requires_upsert_partition_drop_template: bool = False
     supports_show_tables_catalog_filter: bool = False
-
     @property
     def name(self) -> BackendName:
         return self.backend
@@ -197,7 +195,10 @@ class BackendAdapter:
             connection,
             self.analyze_table_sql(table_name, query_label=query_label),
         )
-
+    validate_write_mode = _adapter_defaults.validate_write_mode
+    normalize_ch_columns_or_expression = _adapter_defaults.normalize_ch_columns_or_expression
+    normalize_ch_string = _adapter_defaults.normalize_ch_string
+    validate_ch_columns_in_columns = _adapter_defaults.validate_ch_columns_in_columns
     def count_table_rows_sql(
         self,
         table_name: str,

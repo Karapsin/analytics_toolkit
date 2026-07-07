@@ -3,7 +3,6 @@ from __future__ import annotations
 import pandas as pd
 
 from ....backends import get_backend_adapter
-from ....clickhouse.options import validate_ch_columns_in_columns
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table._basic_ops import table_exists
@@ -113,13 +112,13 @@ def initialize_stage_for_first_batch(
         options.gp_distributed_by_key,
         batch.columns,
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.partition_by,
         batch.columns,
         "partition_by",
         data_name="staged data",
     )
-    validate_ch_columns_in_columns(
+    get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.order_by,
         batch.columns,
         "order_by",

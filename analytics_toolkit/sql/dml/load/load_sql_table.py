@@ -26,10 +26,6 @@ def execute_values(
     return gp_execute_values(cursor, sql, rows, page_size)
 
 
-from ...backends.gp.insert import DEFAULT_GP_INSERT_CHUNK_SIZE
-from ...backends.trino.insert import DEFAULT_TRINO_INSERT_CHUNK_SIZE
-
-
 def insert_table_batch(
     connection_type: str,
     connection_ref: dict[str, Any],

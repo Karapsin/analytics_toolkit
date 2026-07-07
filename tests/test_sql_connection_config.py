@@ -1921,11 +1921,15 @@ def test_trino_insert_chunk_size_comes_from_connection_config(
 
 
 def test_legacy_trino_insert_chunk_size_env_is_ignored(monkeypatch) -> None:
+    from analytics_toolkit.sql.backends.trino.insert import (
+        DEFAULT_TRINO_INSERT_CHUNK_SIZE,
+    )
+
     monkeypatch.setenv("TRINO_INSERT_CHUNK_SIZE", "2")
 
     assert (
         load_sql_table_module._get_trino_insert_chunk_size(None, "trino")
-        == load_sql_table_module.DEFAULT_TRINO_INSERT_CHUNK_SIZE
+        == DEFAULT_TRINO_INSERT_CHUNK_SIZE
     )
 
 

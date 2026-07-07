@@ -13,24 +13,18 @@ def normalize_ch_columns_or_expression(
     value: Sequence[str] | str | None,
     option_name: str,
 ) -> list[str] | str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return normalize_ch_string(value, option_name)
+    from ..backends import get_backend_adapter
 
-    normalized = [normalize_ch_string(column, option_name) for column in value]
-    if not normalized:
-        raise ValueError(f"{option_name} must not be empty when provided.")
-    if len(set(normalized)) != len(normalized):
-        raise ValueError(f"{option_name} must not contain duplicate column names.")
-    return normalized
+    return get_backend_adapter("ch").normalize_ch_columns_or_expression(
+        value,
+        option_name,
+    )
 
 
 def normalize_ch_string(value: str, option_name: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError(f"{option_name} must not be empty.")
-    return normalized
+    from ..backends import get_backend_adapter
+
+    return get_backend_adapter("ch").normalize_ch_string(value, option_name)
 
 
 def validate_ch_options_not_used(
@@ -64,13 +58,11 @@ def validate_ch_columns_in_columns(
     *,
     data_name: str,
 ) -> None:
-    if value is None or isinstance(value, str):
-        return
+    from ..backends import get_backend_adapter
 
-    available_columns = {str(column) for column in columns}
-    missing_columns = [column for column in value if column not in available_columns]
-    if missing_columns:
-        raise ValueError(
-            f"{option_name} columns were not found in the {data_name}: "
-            + ", ".join(missing_columns)
-        )
+    get_backend_adapter("ch").validate_ch_columns_in_columns(
+        value,
+        columns,
+        option_name,
+        data_name=data_name,
+    )
