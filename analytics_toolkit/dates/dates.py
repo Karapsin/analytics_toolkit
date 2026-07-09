@@ -106,6 +106,48 @@ def add_quarters(
     return _format_output(result, output_string)
 
 
+def is_greater(
+    dt: DateInput,
+    other_dt: DateInput,
+    inclusive: bool = False,
+) -> bool:
+    left = _to_date(dt)
+    right = _to_date(other_dt)
+    if inclusive:
+        return left >= right
+    return left > right
+
+
+def is_less(
+    dt: DateInput,
+    other_dt: DateInput,
+    inclusive: bool = False,
+) -> bool:
+    left = _to_date(dt)
+    right = _to_date(other_dt)
+    if inclusive:
+        return left <= right
+    return left < right
+
+
+def is_between(
+    dt: DateInput,
+    start_dt: DateInput,
+    end_dt: DateInput,
+    inclusive: bool = True,
+) -> bool:
+    value = _to_date(dt)
+    start_date = _to_date(start_dt)
+    end_date = _to_date(end_dt)
+
+    if end_date < start_date:
+        raise ValueError("end_dt must be greater than or equal to start_dt.")
+
+    if inclusive:
+        return start_date <= value <= end_date
+    return start_date < value < end_date
+
+
 def get_today(output_string: bool = True) -> str | datetime:
     return _format_output(date.today(), output_string)
 

@@ -15,6 +15,9 @@ the helpers most likely to be used in normal workflows appear first.
 - [add_weeks](add-weeks.md) - move by whole weeks
 - [add_months](add-months.md) - move by whole months
 - [add_quarters](add-quarters.md) - move by whole quarters
+- [is_greater](is-greater.md) - compare whether one date is after another
+- [is_less](is-less.md) - compare whether one date is before another
+- [is_between](is-between.md) - check whether a date falls within a range
 - [sanitize_date](sanitize-date.md) - format dates as `YYYYMMDD`
 
 ## Other Functions

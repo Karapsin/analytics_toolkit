@@ -92,3 +92,49 @@ def test_period_sequences_are_aligned_to_period_start(interval: str, period: str
             interval=interval,
         )
     assert all(value == dates_module.first_day(value, period=period) for value in values)
+
+
+def test_is_greater_supports_strict_and_inclusive_comparison() -> None:
+    assert dates_module.is_greater("2026-05-19", "2026-05-18")
+    assert not dates_module.is_greater("2026-05-18", "2026-05-18")
+    assert dates_module.is_greater("2026-05-18", "2026-05-18", inclusive=True)
+    assert not dates_module.is_greater("2026-05-17", "2026-05-18", inclusive=True)
+
+
+def test_is_less_supports_strict_and_inclusive_comparison() -> None:
+    assert dates_module.is_less("2026-05-17", "2026-05-18")
+    assert not dates_module.is_less("2026-05-18", "2026-05-18")
+    assert dates_module.is_less("2026-05-18", "2026-05-18", inclusive=True)
+    assert not dates_module.is_less("2026-05-19", "2026-05-18", inclusive=True)
+
+
+def test_date_comparison_helpers_accept_date_and_datetime_inputs() -> None:
+    assert dates_module.is_greater(date(2026, 5, 19), datetime(2026, 5, 18, 23, 59))
+    assert dates_module.is_less(datetime(2026, 5, 17, 23, 59), date(2026, 5, 18))
+    assert dates_module.is_between(
+        datetime(2026, 5, 18, 12, 30),
+        date(2026, 5, 18),
+        date(2026, 5, 19),
+    )
+
+
+def test_is_between_supports_inclusive_and_exclusive_bounds() -> None:
+    assert dates_module.is_between("2026-05-18", "2026-05-18", "2026-05-20")
+    assert dates_module.is_between("2026-05-20", "2026-05-18", "2026-05-20")
+    assert dates_module.is_between("2026-05-19", "2026-05-18", "2026-05-20", inclusive=False)
+    assert not dates_module.is_between("2026-05-18", "2026-05-18", "2026-05-20", inclusive=False)
+    assert not dates_module.is_between("2026-05-20", "2026-05-18", "2026-05-20", inclusive=False)
+
+
+def test_is_between_rejects_reversed_bounds() -> None:
+    with pytest.raises(ValueError, match="end_dt must be greater than or equal to start_dt"):
+        dates_module.is_between("2026-05-18", "2026-05-20", "2026-05-18")
+
+
+def test_date_comparison_helpers_are_reexported() -> None:
+    assert date_functions.is_greater("2026-05-19", "2026-05-18")
+    assert date_functions.is_less("2026-05-17", "2026-05-18")
+    assert date_functions.is_between("2026-05-18", "2026-05-18", "2026-05-20")
+    assert "is_greater" in dates_module.__all__
+    assert "is_less" in dates_module.__all__
+    assert "is_between" in dates_module.__all__
