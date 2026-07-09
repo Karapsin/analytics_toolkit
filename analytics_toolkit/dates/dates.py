@@ -70,6 +70,19 @@ def last_day(
     return _format_output(result, output_string)
 
 
+def period_bounds(
+    dt: DateInput,
+    period: str = "month",
+    output_string: bool = True,
+) -> tuple[str, str] | tuple[datetime, datetime]:
+    normalized_period = _normalize_period(period)
+    value = _to_date(dt)
+    return (
+        _format_output(_period_start(value, normalized_period), output_string),
+        _format_output(_period_end(value, normalized_period), output_string),
+    )
+
+
 def add_days(
     dt: DateInput,
     n: int,
@@ -148,6 +161,68 @@ def is_between(
     return start_date < value < end_date
 
 
+def is_same_period(
+    left_dt: DateInput,
+    right_dt: DateInput,
+    period: str = "month",
+) -> bool:
+    normalized_period = _normalize_period(period)
+    return _period_start(_to_date(left_dt), normalized_period) == _period_start(
+        _to_date(right_dt),
+        normalized_period,
+    )
+
+
+def days_between(
+    start_dt: DateInput,
+    end_dt: DateInput,
+    inclusive: bool = False,
+) -> int:
+    delta = (_to_date(end_dt) - _to_date(start_dt)).days
+    if not inclusive:
+        return delta
+    if delta < 0:
+        return delta - 1
+    return delta + 1
+
+
+def periods_between(
+    start_dt: DateInput,
+    end_dt: DateInput,
+    interval: str = "months",
+) -> int:
+    normalized_interval = _normalize_period_interval(interval)
+    period = _period_from_interval(normalized_interval)
+    start_date = _period_start(_to_date(start_dt), period)
+    end_date = _period_start(_to_date(end_dt), period)
+
+    if normalized_interval == "weeks":
+        return (end_date - start_date).days // 7
+
+    month_delta = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month
+    if normalized_interval == "quarters":
+        return month_delta // 3
+    return month_delta
+
+
+def is_period_start(
+    dt: DateInput,
+    period: str = "month",
+) -> bool:
+    normalized_period = _normalize_period(period)
+    value = _to_date(dt)
+    return value == _period_start(value, normalized_period)
+
+
+def is_period_end(
+    dt: DateInput,
+    period: str = "month",
+) -> bool:
+    normalized_period = _normalize_period(period)
+    value = _to_date(dt)
+    return value == _period_end(value, normalized_period)
+
+
 def get_today(output_string: bool = True) -> str | datetime:
     return _format_output(date.today(), output_string)
 
@@ -210,6 +285,21 @@ def _normalize_period(period: str) -> OutputPeriod:
     if normalized == "quarter":
         return "quarter"
     raise ValueError("period must be one of: 'week', 'month', 'quarter'.")
+
+
+def _normalize_period_interval(interval: str) -> OutputInterval:
+    normalized_interval = _normalize_interval(interval)
+    if normalized_interval == "days":
+        raise ValueError("interval must be one of: 'weeks', 'months', 'quarters'.")
+    return normalized_interval
+
+
+def _period_from_interval(interval: OutputInterval) -> OutputPeriod:
+    if interval == "weeks":
+        return "week"
+    if interval == "quarters":
+        return "quarter"
+    return "month"
 
 
 def _period_start(value: date, period: OutputPeriod) -> date:
