@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Added date comparison helpers.
 - Added additional date period helpers.
 - Added analytics_toolkit.datetime timestamp helpers.
+- Added opt-in here path resolution to read_file.
 
 ## 1.3.10.14 - 2026-07-07
 

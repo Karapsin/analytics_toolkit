@@ -168,8 +168,13 @@ def _looks_like_stdlib_path(path: Path) -> bool:
     return False
 
 
-def read_file(file_path: str, params_dict: dict[str, Any] | None = None) -> str:
-    path = Path(file_path).expanduser()
+def read_file(
+    file_path: str,
+    params_dict: dict[str, Any] | None = None,
+    *,
+    here: bool = False,
+) -> str:
+    path = Path(globals()["here"](file_path) if here else file_path).expanduser()
     if not path.exists():
         raise InvalidSqlInputError(f"SQL file does not exist: {file_path}")
 
