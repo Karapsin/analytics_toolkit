@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Removed hard-coded Trino parquet load adapter use.
 - Added date comparison helpers.
 - Added additional date period helpers.
+- Added analytics_toolkit.datetime timestamp helpers.
 
 ## 1.3.10.14 - 2026-07-07
 

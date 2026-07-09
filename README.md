@@ -37,6 +37,7 @@ pip install git+https://github.com/Karapsin/analytics_toolkit.git
 - `analytics_toolkit.sql_format`: SQL formatting, CTE rewrite, and Greenplum temp-table rewrite helpers.
 - `analytics_toolkit.excel`: Excel report helpers for long-format dataframes.
 - `analytics_toolkit.dates`: date and period helpers.
+- `analytics_toolkit.datetime`: timestamp helpers that preserve time components.
 - `analytics_toolkit.general`: shared logging and file path helpers.
 
 ## SQL Workflows
@@ -163,6 +164,31 @@ next_run = add_days("2026-06-08", 1)
 - `first_day` / `last_day`: get week, month, or quarter boundaries.
 - `add_days`, `add_weeks`, `add_months`, `add_quarters`: shift dates.
 - `sanitize_date`: convert a date to compact `YYYYMMDD` text.
+
+## Datetime Helpers
+
+[All datetime functions](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/datetime/functions/index.md)
+
+[Datetime helpers guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/datetime/index.md)
+
+Datetime helpers preserve timestamp components for second-level reporting,
+windowing, and scheduling workflows. Use them when calendar date truncation from
+`analytics_toolkit.dates` is not desired.
+
+```python
+from analytics_toolkit import datetime as dttm
+
+next_run = dttm.add_days("2026-01-01 12:13:15", 1)
+# "2026-01-02 12:13:15"
+
+hour_window = dttm.datetime_bounds("2026-01-01 12:13:15", period="hour")
+# ("2026-01-01 12:00:00", "2026-01-01 12:59:59")
+```
+
+- `add_seconds`, `add_minutes`, `add_hours`, `add_days`, `add_weeks`, `add_months`, `add_quarters`: shift timestamps.
+- `datetime_bounds`: get minute, hour, day, week, month, or quarter timestamp boundaries.
+- `gen_datetimes_list`: build timestamp sequences.
+- `format_datetime` / `sanitize_datetime`: format timestamps for display, SQL, or filenames.
 
 ## Documentation
 

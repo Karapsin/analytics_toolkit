@@ -9,6 +9,7 @@ This folder contains one folder per public module:
 - [AB utilities index](ab_utils/index.md)
 - [Excel helpers index](excel/index.md)
 - [Date helpers index](dates/index.md)
+- [Datetime helpers index](datetime/index.md)
 
 Open the module folder's `index.md` first. It is the navigation page for that
 module. Each module index links to its function reference first and then to
