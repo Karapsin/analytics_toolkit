@@ -12,6 +12,7 @@ from analytics_toolkit.general import (
     get_time_print_level,
     get_time_print_sink,
     set_time_print_clock,
+    set_connections_path,
     set_time_print_level,
     set_time_print_sink,
     time_print,
@@ -286,6 +287,8 @@ def test_time_print_public_reexports_are_preserved() -> None:
     assert general_module.set_time_print_sink is set_time_print_sink
     assert general_module.get_time_print_sink is get_time_print_sink
     assert general_module.set_time_print_clock is set_time_print_clock
+    assert general_module.set_connections_path is set_connections_path
+    assert "set_connections_path" in general_module.__all__
     assert general_module.time_print_context is time_print_context
     assert sql_module.time_print is time_print
     assert sql_module.set_time_print_sink is set_time_print_sink

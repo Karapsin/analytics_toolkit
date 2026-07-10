@@ -9,6 +9,20 @@ the current working directory upward through parent directories. Public SQL
 functions accept a key from that file; backend behavior is selected from the
 key's `type`.
 
+When runtime code cannot rely on the current working directory, set the file
+explicitly before calling SQL helpers:
+
+```python
+from analytics_toolkit import general, sql
+
+general.set_connections_path("/opt/airflow/dags/project/.connections")
+df = sql.read("trino", "select 1")
+```
+
+The path must point to an existing `.connections` file. Its directory is used
+for relative certificate paths. Call `general.set_connections_path(None)` to
+restore the default current-working-directory search.
+
 Call [sql.generate_dummy_connections](functions/generate_dummy_connections.md)()
 to write a starter direct `./.connections` file in the current working
 directory. Use
@@ -175,6 +189,11 @@ Airflow-source entries support resolver objects for optional connection extras.
 Use `{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
 `extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
+
+Airflow task working directories can differ from the DAG project root. If the
+default search from the current working directory upward cannot find the
+Airflow-source file, call `general.set_connections_path("/path/to/.connections")`
+before the SQL helper call.
 
 Once this file is present, DAG code can call SQL helpers directly. The common
 entrypoints are [sql.execute](functions/execute.md),

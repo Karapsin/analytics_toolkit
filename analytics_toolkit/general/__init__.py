@@ -1,3 +1,4 @@
+from .connections import set_connections_path
 from .logging import (
     get_time_print_level,
     get_time_print_sink,
@@ -22,6 +23,7 @@ __all__ = [
     "here",
     "read_file",
     "set_time_print_clock",
+    "set_connections_path",
     "set_time_print_level",
     "set_time_print_sink",
     "time_print",

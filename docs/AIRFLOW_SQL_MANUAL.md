@@ -70,7 +70,9 @@ clients until a runtime helper resolves a connection or opens a client.
 ## Airflow `.connections`
 
 Put an Airflow-source `.connections` file in a directory visible from the task
-working directory, usually the DAG project root:
+working directory, usually the DAG project root. By default,
+`analytics_toolkit` searches for `.connections` in the current working
+directory first, then walks upward through parent directories:
 
 ```json
 {
@@ -143,6 +145,21 @@ toolkit alias should be different:
   }
 }
 ```
+
+If an Airflow worker starts tasks from a different current working directory,
+set the file explicitly before calling SQL helpers:
+
+```python
+from analytics_toolkit import general, sql
+
+general.set_connections_path("/opt/airflow/dags/project/.connections")
+df = sql.read("airflow_trino", "select 1")
+```
+
+The path must point to an existing `.connections` file. Its directory is also
+used for relative certificate paths such as `.certs/trino-ca.pem`. Call
+`general.set_connections_path(None)` to restore the default current working
+directory search.
 
 ## Greenplum
 

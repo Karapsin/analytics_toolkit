@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Added additional date period helpers.
 - Added analytics_toolkit.datetime timestamp helpers.
 - Added opt-in here path resolution to read_file.
+- Added general.set_connections_path for explicit SQL .connections file selection.
 
 ## 1.3.10.14 - 2026-07-07
 

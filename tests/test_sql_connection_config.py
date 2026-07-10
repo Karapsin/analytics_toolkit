@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import analytics_toolkit.general as general_module
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -169,6 +170,159 @@ def _install_fake_trino(
     )
     monkeypatch.setitem(sys.modules, "trino", fake_trino)
     monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+
+
+def test_connections_file_lookup_searches_from_cwd_to_parents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_dir = tmp_path / "project"
+    runtime_dir = project_dir / "dags" / "task"
+    runtime_dir.mkdir(parents=True)
+    connections_path = project_dir / ".connections"
+    connections_path.write_text(
+        json.dumps(
+            {
+                "parent_gp": {
+                    "type": "gp",
+                    "host": "parent-gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(runtime_dir)
+
+    config = config_module.get_connection_config("parent_gp")
+
+    assert config_module.get_connections_file_path() == connections_path
+    assert config.host == "parent-gp.example"
+
+
+def test_set_connections_path_override_wins_over_cwd_connections(
+    tmp_path: Path,
+) -> None:
+    override_dir = tmp_path / "airflow_project"
+    override_dir.mkdir()
+    override_path = override_dir / ".connections"
+    override_path.write_text(
+        json.dumps(
+            {
+                "override_gp": {
+                    "type": "gp",
+                    "host": "override-gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        selected_path = general_module.set_connections_path(override_path)
+        config = config_module.get_connection_config("override_gp")
+
+        assert selected_path == override_path.resolve()
+        assert config_module.get_connections_file_path() == override_path.resolve()
+        assert config.host == "override-gp.example"
+    finally:
+        general_module.set_connections_path(None)
+
+
+def test_set_connections_path_none_restores_default_lookup(tmp_path: Path) -> None:
+    override_dir = tmp_path / "airflow_project"
+    override_dir.mkdir()
+    override_path = override_dir / ".connections"
+    override_path.write_text(
+        json.dumps(
+            {
+                "override_gp": {
+                    "type": "gp",
+                    "host": "override-gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    general_module.set_connections_path(override_path)
+    reset_path = general_module.set_connections_path(None)
+
+    assert reset_path is None
+    assert config_module.get_connections_file_path() == tmp_path / ".connections"
+    assert config_module.get_connection_config("gp").host == "gp.example"
+
+
+@pytest.mark.parametrize(
+    "path_factory",
+    [
+        lambda root: root / "connections.json",
+        lambda root: root / "missing" / ".connections",
+        lambda root: root / "directory" / ".connections",
+    ],
+)
+def test_set_connections_path_rejects_invalid_paths(
+    tmp_path: Path,
+    path_factory: Callable[[Path], Path],
+) -> None:
+    invalid_path = path_factory(tmp_path)
+    if invalid_path.name == "connections.json":
+        invalid_path.write_text("{}", encoding="utf-8")
+    elif invalid_path.parent.name == "directory":
+        invalid_path.mkdir(parents=True)
+
+    with pytest.raises(ValueError):
+        general_module.set_connections_path(invalid_path)
+
+    assert general_module.set_connections_path(None) is None
+
+
+def test_set_connections_path_uses_selected_directory_for_certificates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override_dir = tmp_path / "airflow_project"
+    certs_dir = override_dir / ".certs"
+    certs_dir.mkdir(parents=True)
+    ca_path = certs_dir / "gp-ca.pem"
+    ca_path.write_text("GP CA\n", encoding="utf-8")
+    override_path = override_dir / ".connections"
+    override_path.write_text(
+        json.dumps(
+            {
+                "gp_ssl": {
+                    "type": "gp",
+                    "host": "override-gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                    "ca_certs": "gp-ca.pem",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    connect_calls: list[dict[str, object]] = []
+    fake_psycopg2 = types.SimpleNamespace(
+        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+    )
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+
+    try:
+        general_module.set_connections_path(override_path)
+        connection_module.get_sql_connection("gp_ssl")
+
+        assert connect_calls[0]["sslrootcert"] == str(ca_path.resolve())
+    finally:
+        general_module.set_connections_path(None)
 
 
 def test_connection_alias_resolves_backend() -> None:

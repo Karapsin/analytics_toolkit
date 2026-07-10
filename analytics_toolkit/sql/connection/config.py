@@ -16,6 +16,7 @@ from ..backends.registry import (
     require_backend_name,
 )
 from ..execution.operation_runner import timed_public_sql_function
+from analytics_toolkit.general.connections import get_connections_path_override
 
 
 BackendName = str
@@ -529,6 +530,10 @@ def get_connections_file_path() -> Path:
 
 
 def _find_connections_file_path() -> Path | None:
+    override_path = get_connections_path_override()
+    if override_path is not None:
+        return override_path
+
     current_dir = Path.cwd().resolve()
     for directory in (current_dir, *current_dir.parents):
         connections_path = directory / CONNECTIONS_FILE_NAME
