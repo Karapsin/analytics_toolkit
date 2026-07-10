@@ -11,7 +11,9 @@ from .logging import (
 from . import read_file as _read_file_module
 
 here = _read_file_module.here
+from_here = _read_file_module.from_here
 read_file = _read_file_module.read_file
+read_file_here = _read_file_module.read_file_here
 write_file = _read_file_module.write_file
 # Preserve the public function export while keeping monkeypatch dotted paths that
 # traverse analytics_toolkit.general.read_file.inspect working.
@@ -20,8 +22,10 @@ read_file.inspect = _read_file_module.inspect
 __all__ = [
     "get_time_print_level",
     "get_time_print_sink",
+    "from_here",
     "here",
     "read_file",
+    "read_file_here",
     "set_time_print_clock",
     "set_connections_path",
     "set_time_print_level",

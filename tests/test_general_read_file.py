@@ -4,8 +4,10 @@ import __main__
 from collections import namedtuple
 from pathlib import Path
 
+import pytest
+
 import analytics_toolkit.general as general
-from analytics_toolkit.general import here, write_file
+from analytics_toolkit.general import from_here, here, read_file_here, write_file
 from analytics_toolkit.general.read_file import read_file
 from analytics_toolkit.general.read_file import _resolve_base_dir
 
@@ -199,9 +201,74 @@ def test_here_keeps_unique_basename_recursive_lookup_for_compatibility(
     assert resolved == str(expected)
 
 
-def test_general_here_export_and_read_file_inspect_are_compatible() -> None:
+def test_from_here_zero_matches_here_with_base_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    script_dir = tmp_path / "project" / "dags" / "tasks"
+    script_dir.mkdir(parents=True)
+    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+
+    assert from_here("queries/orders.sql", 0) == here("queries/orders.sql")
+
+
+def test_from_here_resolves_parent_directory(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    script_dir = tmp_path / "project" / "tasks"
+    script_dir.mkdir(parents=True)
+    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+
+    resolved = from_here(".connections", 1)
+
+    assert resolved == str(tmp_path / "project" / ".connections")
+
+
+def test_from_here_resolves_multiple_parent_levels(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    script_dir = tmp_path / "project" / "dags" / "tasks"
+    script_dir.mkdir(parents=True)
+    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+
+    resolved = from_here(".connections", 2)
+
+    assert resolved == str(tmp_path / "project" / ".connections")
+
+
+def test_from_here_uses_cwd_without_base_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delattr(__main__, "__file__", raising=False)
+    _mock_stack(monkeypatch, RUNTIME_STACK)
+
+    resolved = from_here(".connections", 1)
+
+    assert resolved == str(tmp_path.parent / ".connections")
+
+
+def test_from_here_rejects_negative_levels() -> None:
+    with pytest.raises(ValueError, match="levels_up"):
+        from_here(".connections", -1)
+
+
+@pytest.mark.parametrize("levels_up", [1.0, "1", True])
+def test_from_here_rejects_non_integer_levels(levels_up: object) -> None:
+    with pytest.raises(TypeError, match="levels_up"):
+        from_here(".connections", levels_up)  # type: ignore[arg-type]
+
+
+def test_general_path_helper_exports_are_compatible() -> None:
     assert general.here is here
+    assert general.from_here is from_here
+    assert general.read_file_here is read_file_here
     assert general.read_file.inspect is not None
+    assert "from_here" in general.__all__
+    assert "read_file_here" in general.__all__
 
 
 def test_read_file_keeps_cwd_relative_default(monkeypatch, tmp_path: Path) -> None:
@@ -233,6 +300,38 @@ def test_read_file_can_resolve_relative_to_here(
     monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
 
     assert read_file("sql/query.sql", {"value": 1}, here=True) == "select 1"
+
+
+def test_read_file_here_matches_read_file_with_here(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    cwd = tmp_path / "runtime"
+    script_dir = tmp_path / "dag_task"
+    query_dir = script_dir / "sql"
+    cwd.mkdir()
+    query_dir.mkdir(parents=True)
+    (query_dir / "query.sql").write_text("select 1", encoding="utf-8")
+    monkeypatch.chdir(cwd)
+    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+
+    assert read_file_here("sql/query.sql") == read_file("sql/query.sql", here=True)
+
+
+def test_read_file_here_preserves_params(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    cwd = tmp_path / "runtime"
+    script_dir = tmp_path / "dag_task"
+    query_dir = script_dir / "sql"
+    cwd.mkdir()
+    query_dir.mkdir(parents=True)
+    (query_dir / "query.sql").write_text("select {value}", encoding="utf-8")
+    monkeypatch.chdir(cwd)
+    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+
+    assert read_file_here("sql/query.sql", {"value": 42}) == "select 42"
 
 
 def test_write_file_writes_utf8_text(tmp_path: Path) -> None:

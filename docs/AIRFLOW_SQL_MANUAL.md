@@ -150,16 +150,22 @@ If an Airflow worker starts tasks from a different current working directory,
 set the file explicitly before calling SQL helpers:
 
 ```python
-from analytics_toolkit import general, sql
+from analytics_toolkit import sql
+from analytics_toolkit.general import from_here, here, read_file_here, set_connections_path
 
-general.set_connections_path("/opt/airflow/dags/project/.connections")
-df = sql.read("airflow_trino", "select 1")
+set_connections_path(from_here(".connections", 1))
+
+query = read_file_here("queries/orders.sql")
+df = sql.read("airflow_trino", query)
 ```
 
 The path must point to an existing `.connections` file. Its directory is also
 used for relative certificate paths such as `.certs/trino-ca.pem`. Call
-`general.set_connections_path(None)` to restore the default current working
-directory search.
+`set_connections_path(None)` to restore the default current working directory
+search. `from_here(".connections", 1)` is useful when DAG task code lives one
+directory below the DAG project root and `.connections` is stored in that
+parent directory; `levels_up=0` means the same base as `here()`, and
+`levels_up=1` means one parent directory.
 
 ## Greenplum
 

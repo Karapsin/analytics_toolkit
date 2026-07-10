@@ -44,21 +44,55 @@ _FALLBACK_STDLIB_MODULE_NAMES = frozenset(
 
 
 def here(filename: str) -> str:
+    normalized_name, base_dir = _resolve_here_parts(filename)
+    return str(base_dir / normalized_name)
+
+
+def from_here(filename: str, levels_up: int = 0) -> str:
+    if type(levels_up) is not int:
+        raise TypeError("levels_up must be an integer.")
+    if levels_up < 0:
+        raise ValueError("levels_up must be greater than or equal to 0.")
+    if levels_up == 0:
+        return here(filename)
+
+    normalized_name = Path(filename.replace("\\", "/"))
+    base_dir = _resolve_base_dir() or Path.cwd()
+    for _ in range(levels_up):
+        base_dir = base_dir.parent
+
+    return str(base_dir / normalized_name)
+
+
+def _resolve_here_parts(filename: str) -> tuple[Path, Path]:
     normalized_name = Path(filename.replace("\\", "/"))
 
     base_dir = _resolve_base_dir()
     if base_dir is not None:
-        return str(base_dir / normalized_name)
+        return normalized_name, base_dir
 
     cwd_candidate = Path.cwd() / normalized_name
     if cwd_candidate.exists():
-        return str(cwd_candidate)
+        return normalized_name, Path.cwd()
 
     recursive_match = _find_unique_recursive_match(Path.cwd(), normalized_name)
     if recursive_match is not None:
-        return str(recursive_match)
+        return normalized_name, _base_dir_for_recursive_match(
+            recursive_match,
+            normalized_name,
+        )
 
-    return str(cwd_candidate)
+    return normalized_name, Path.cwd()
+
+
+def _base_dir_for_recursive_match(
+    recursive_match: Path,
+    normalized_name: Path,
+) -> Path:
+    base_dir = recursive_match
+    for _ in normalized_name.parts:
+        base_dir = base_dir.parent
+    return base_dir
 
 
 def _resolve_base_dir() -> Path | None:
@@ -187,6 +221,13 @@ def read_file(
         return text
 
     return text.format(**params_dict)
+
+
+def read_file_here(
+    file_path: str,
+    params_dict: dict[str, Any] | None = None,
+) -> str:
+    return read_file(file_path, params_dict, here=True)
 
 
 def write_file(file_path: str, text: str) -> None:
