@@ -103,6 +103,7 @@ def _validate_task_sequence(
         raise ValueError("tasks must be a non-empty sequence.")
 
     task_defs: list[tuple[str, str, dict[str, Any]]] = []
+    task_names: set[str] = set()
     for index, spec in enumerate(tasks):
         if not isinstance(spec, Mapping):
             raise TypeError(f"Task at index {index} must be a mapping.")
@@ -112,6 +113,9 @@ def _validate_task_sequence(
             raise ValueError(
                 f"Task at index {index} has invalid name; expected a non-empty string."
             )
+        if task_name in task_names:
+            raise ValueError(f"Duplicate SQL task name: {task_name!r}.")
+        task_names.add(task_name)
         task_defs.append(
             _validate_task_spec(
                 task_name,
@@ -224,11 +228,7 @@ def _validate_pipeline_task(name: str, kwargs: dict[str, Any]) -> dict[str, Any]
 
 
 def _validate_concurrency(concurrency: int) -> None:
-    if (
-        not isinstance(concurrency, int)
-        or isinstance(concurrency, bool)
-        or concurrency < 1
-    ):
+    if concurrency.__class__ is not int or concurrency < 1:
         raise ValueError("concurrency must be an integer >= 1.")
 
 
@@ -237,20 +237,12 @@ def _validate_optional_soft_concurrency_cap(
 ) -> None:
     if soft_concurrency_cap is None:
         return
-    if (
-        not isinstance(soft_concurrency_cap, int)
-        or isinstance(soft_concurrency_cap, bool)
-        or soft_concurrency_cap < 1
-    ):
+    if soft_concurrency_cap.__class__ is not int or soft_concurrency_cap < 1:
         raise ValueError("soft_concurrency_cap must be an integer >= 1.")
 
 
 def _validate_hard_concurrency_cap(hard_concurrency_cap: int) -> None:
-    if (
-        not isinstance(hard_concurrency_cap, int)
-        or isinstance(hard_concurrency_cap, bool)
-        or hard_concurrency_cap < 1
-    ):
+    if hard_concurrency_cap.__class__ is not int or hard_concurrency_cap < 1:
         raise ValueError("hard_concurrency_cap must be an integer >= 1.")
 
 

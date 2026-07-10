@@ -76,6 +76,8 @@ def _validate_multiple_comparisons_parameters(
     if bootstrap_random_state is not None:
         if isinstance(bootstrap_random_state, bool) or not isinstance(bootstrap_random_state, int):
             raise TypeError("bootstrap_random_state must be an integer or None.")
+        if bootstrap_random_state < 0:
+            raise ValueError("bootstrap_random_state must be non-negative or None.")
     if isinstance(bootstrap_n_jobs, bool) or not isinstance(bootstrap_n_jobs, int):
         raise TypeError("bootstrap_n_jobs must be an integer.")
     if bootstrap_n_jobs <= 0:

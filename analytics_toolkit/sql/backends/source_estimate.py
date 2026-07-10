@@ -241,7 +241,7 @@ def _is_simple_clickhouse_select(source_sql: str) -> bool:
 
     if not isinstance(tree, exp.Select):
         return False
-    if tree.args.get("with_") is not None:
+    if tree.args.get("with_") is not None or tree.args.get("with") is not None:
         return False
     if list(tree.find_all(exp.Join)) or list(tree.find_all(exp.Subquery)):
         return False

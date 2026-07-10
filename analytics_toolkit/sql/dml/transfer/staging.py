@@ -10,6 +10,7 @@ from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function
+from ...execution.validation import validate_non_negative_number, validate_positive_int
 from ..load.stage import build_stage_table_prefix, cleanup_stage_table_with_retry
 from .runtime.retry import replace_connection, rollback_quietly, run_with_retry
 
@@ -30,6 +31,7 @@ def cleanup_stale_stage_tables(
     timeout_increment: int | float = _DEFAULT_TIMEOUT_INCREMENT,
     query_label: str | None = None,
 ) -> None:
+    _validate_cleanup_retry_options(read_retry_cnt, timeout_increment)
     connection_ref = {"connection": get_sql_connection(db_key)}
     try:
         cleanup_stale_stage_tables_with_connection(
@@ -60,6 +62,7 @@ def cleanup_stale_stage_tables_with_connection(
     timeout_increment: int | float = _DEFAULT_TIMEOUT_INCREMENT,
     query_label: str | None = None,
 ) -> None:
+    _validate_cleanup_retry_options(read_retry_cnt, timeout_increment)
     config = get_connection_config(db_key)
     transfer_staging_schema = config.transfer_staging_schema
     transfer_staging_username = _sanitize_transfer_staging_username(config.user)
@@ -122,6 +125,14 @@ def cleanup_stale_stage_tables_with_connection(
             replace_connection_fn=replace_connection,
             query_label=query_label,
         )
+
+
+def _validate_cleanup_retry_options(
+    read_retry_cnt: int,
+    timeout_increment: int | float,
+) -> None:
+    validate_positive_int(read_retry_cnt, "read_retry_cnt")
+    validate_non_negative_number(timeout_increment, "timeout_increment")
 
 
 def _warn_transfer_staging_schema_cleanup_not_configured(db_key: str) -> None:

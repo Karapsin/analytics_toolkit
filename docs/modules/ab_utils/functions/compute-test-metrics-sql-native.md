@@ -28,6 +28,8 @@ compute_test_metrics_sql_native(
     bootstrap_random_state=0,
     bootstrap_n_jobs=1,
     bootstrap_progress=False,
+    bootstrap_large_source_row_threshold=100000,
+    bootstrap_large_source_resamples_per_query=10,
     outliers_quantile=0.999,
     outliers_policy="non_zero_truncate",
     concurrency=1,
@@ -57,7 +59,17 @@ compute_test_metrics_sql_native(
 - `metric_columns` - optional mean metric columns; when omitted, numeric non-reserved columns are inferred where metadata is available
 - `ratio_metrics` - optional ratio metric specifications
 - `test_vs_test` - whether to compare test groups against each other
-- `multiple_comparisons_adjustment` - whether to read deterministic SQL bootstrap summaries
+- `multiple_comparisons_adjustment` - whether to compute centered, studentized
+  SQL bootstrap max-T adjustment
+- `multiple_comparisons_adjustment_resamples` - total bootstrap replicate count
+- `bootstrap_random_state` - non-negative deterministic bootstrap seed, or `None` to choose
+  one seed for the whole call
+- `bootstrap_n_jobs` - must be `1`; SQL-native bootstrap batches run sequentially
+- `bootstrap_progress` - whether to show progress across bootstrap query batches
+- `bootstrap_large_source_row_threshold` - validated source row count at which
+  the large-source per-query cap applies
+- `bootstrap_large_source_resamples_per_query` - maximum resamples in each
+  large-source query, subject to the sampled-row budget
 - `outliers_quantile` - upper-tail cutoff quantile
 - `outliers_policy` - `"non_zero_truncate"`, `"truncate"`, or `"drop"`
 - `concurrency` - task fan-out when `source` is a task mapping
@@ -109,5 +121,21 @@ result[["metric_name", "metric_type", "group_1", "group_2", "p-value"]]
 - Bootstrap summaries are deterministic for a fixed `bootstrap_random_state`,
   but they are backend-native and not bit-for-bit identical to NumPy bootstrap
   samples
+- Bootstrap rows are resampled within their observed groups, preserving group
+  sizes and complete metric-component rows. Every replicate recomputes pooled
+  outlier handling and uses `(bootstrap delta - observed delta) / bootstrap
+  standard error` for the metric-family max-T distribution.
+- `bootstrap_adj_p` uses `(1 + exceedances) / (1 + valid family replicates)`.
+  A family replicate is discarded when any observed-valid comparison has a
+  non-finite centered statistic; discarded replicates warn, and no valid family
+  replicates produces `NaN`.
+- Small sources use up to 250 resamples per query while targeting at most about
+  five million sampled rows. Sources at or above
+  `bootstrap_large_source_row_threshold` additionally use
+  `bootstrap_large_source_resamples_per_query` as a cap. Batches are always
+  sequential and return only compact counts and moments to Python.
+- Multi-query bootstrap assumes the filtered source remains unchanged until all
+  batches finish. A warning reports the batch count and largest sampled-row
+  estimate when more than one query is required.
 
 [All AB functions](index.md)

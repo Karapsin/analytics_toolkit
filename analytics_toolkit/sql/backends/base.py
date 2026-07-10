@@ -62,11 +62,7 @@ class BackendAdapter:
             supports_show_tables_catalog_filter=self.supports_show_tables_catalog_filter,
         )
 
-    def build_connection_config(
-        self,
-        connection_key: str,
-        raw_config: dict[str, Any],
-    ) -> Any:
+    def build_connection_config(self, connection_key: str, raw_config: dict[str, Any]) -> Any:
         raise NotImplementedError
 
     def copy_airflow_fields(
@@ -506,6 +502,9 @@ class BackendAdapter:
     validate_trino_insert_chunk_size_option = _adapter_defaults.validate_trino_insert_chunk_size_option
     resolve_transfer_staging_mode = _adapter_defaults.resolve_transfer_staging_mode
     create_table_from_sql_fast_path = _adapter_defaults.create_table_from_sql_fast_path
+    uses_create_table_from_sql_fast_path = (
+        _adapter_defaults.uses_create_table_from_sql_fast_path
+    )
     should_insert_create_table_from_sql_directly = (
         _adapter_defaults.should_insert_create_table_from_sql_directly
     )

@@ -58,8 +58,9 @@ PYTHON314="$(pyenv_python 3.14.5)"
 
 "${script_dir}/scripts/check_package_metadata.sh"
 "${script_dir}/scripts/check_readme_dependencies.sh"
+python -m release_routines.lib.check_minimum_constraints
 "${script_dir}/scripts/check_docs_coverage.sh"
 "${script_dir}/scripts/check_docs_links.sh"
 python -m compileall analytics_toolkit tests
 pytest -q
-tox -e py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest
+tox -e lint,type,coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest

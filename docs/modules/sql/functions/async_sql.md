@@ -46,5 +46,8 @@ orders.head()
 ## Notes
 
 - The function itself is synchronous from the caller perspective; it returns a result dictionary.
+- Task names must be unique. This includes collisions with generated names such
+  as `task_1` for an unnamed task at index `1`; duplicates are rejected before
+  any task starts.
 
 [SQL functions index](index.md)

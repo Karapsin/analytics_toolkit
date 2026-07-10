@@ -754,31 +754,9 @@ def split_trino_table_name(
     table_name: str,
     connection_key: str = "trino",
 ) -> tuple[str, str, str]:
-    from ...connection.config import TrinoConfig, get_connection_config
+    from ...core.identifiers import split_trino_table_name as _split_trino_table_name
 
-    parts = [part.strip() for part in table_name.split(".") if part.strip()]
-    if len(parts) == 3:
-        return parts[0], parts[1], parts[2]
-
-    config = get_connection_config(connection_key)
-    if not isinstance(config, TrinoConfig):
-        raise ValueError("Invalid Trino configuration.")
-
-    if len(parts) == 2:
-        if not config.catalog:
-            raise ValueError(
-                f"Trino table operations for schema-qualified names require "
-                f".connections['{config.connection_key}'].catalog."
-            )
-        return config.catalog, parts[0], parts[1]
-    if len(parts) == 1:
-        if not config.catalog or not config.schema:
-            raise ValueError(
-                f"Trino table operations for unqualified names require "
-                f".connections['{config.connection_key}'].catalog and schema."
-            )
-        return config.catalog, config.schema, parts[0]
-    raise ValueError(f"Invalid table name: {table_name}")
+    return _split_trino_table_name(table_name, connection_key=connection_key)
 
 
 def _build_trino_table_properties(

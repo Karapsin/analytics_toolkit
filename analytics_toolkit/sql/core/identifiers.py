@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError
 
 from ..backends import get_backend_adapter
 
@@ -15,7 +16,10 @@ class TableIdentifier:
     @classmethod
     def parse(cls, table_name: str, connection_type: str) -> "TableIdentifier":
         dialect = get_backend_adapter(connection_type).sqlglot_dialect
-        table = parse_one(table_name, read=dialect, into=exp.Table)
+        try:
+            table = parse_one(table_name, read=dialect, into=exp.Table)
+        except ParseError as exc:
+            raise ValueError(f"Invalid table name: {table_name}") from exc
         if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
             raise ValueError(f"Invalid table name: {table_name}")
 
@@ -69,6 +73,52 @@ def quote_identifier_part(
 
 def sqlglot_dialect(connection_type: str) -> str:
     return get_backend_adapter(connection_type).sqlglot_dialect
+
+
+def split_gp_table_name(table_name: str) -> tuple[str, str]:
+    try:
+        identifier = TableIdentifier.parse(table_name, "gp")
+    except ValueError as exc:
+        raise ValueError(f"Invalid Greenplum table name: {table_name}") from exc
+    if len(identifier.parts) == 1:
+        return "public", identifier.relation
+    if len(identifier.parts) == 2:
+        return identifier.parts[0], identifier.relation
+    raise ValueError(f"Invalid Greenplum table name: {table_name}")
+
+
+def split_trino_table_name(
+    table_name: str,
+    connection_key: str = "trino",
+) -> tuple[str, str, str]:
+    from ..connection.config import TrinoConfig, get_connection_config
+
+    try:
+        parts = TableIdentifier.parse(table_name, "trino").parts
+    except ValueError as exc:
+        raise ValueError(f"Invalid table name: {table_name}") from exc
+    if len(parts) == 3:
+        return parts[0], parts[1], parts[2]
+
+    config = get_connection_config(connection_key)
+    if not isinstance(config, TrinoConfig):
+        raise ValueError("Invalid Trino configuration.")
+
+    if len(parts) == 2:
+        if not config.catalog:
+            raise ValueError(
+                f"Trino table operations for schema-qualified names require "
+                f".connections['{config.connection_key}'].catalog."
+            )
+        return config.catalog, parts[0], parts[1]
+    if len(parts) == 1:
+        if not config.catalog or not config.schema:
+            raise ValueError(
+                f"Trino table operations for unqualified names require "
+                f".connections['{config.connection_key}'].catalog and schema."
+            )
+        return config.catalog, config.schema, parts[0]
+    raise ValueError(f"Invalid table name: {table_name}")
 
 
 def _table_identifiers(table: exp.Table) -> list[exp.Identifier]:

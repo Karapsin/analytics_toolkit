@@ -348,8 +348,6 @@ def test_registered_backends_implement_full_contract() -> None:
                 missing.append(f"{backend_name}.{method_name}")
 
     assert missing == []
-
-
 def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     gp_adapter = get_backend_adapter("gp")
     trino_adapter = get_backend_adapter("trino")

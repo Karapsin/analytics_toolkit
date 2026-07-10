@@ -103,7 +103,7 @@ def _compute_mde_from_standard_error(
 
 
 def _compute_studentized_statistic(delta_abs: float, standard_error: float) -> float:
-    if math.isnan(delta_abs) or math.isnan(standard_error) or standard_error <= 0:
+    if not math.isfinite(delta_abs) or not math.isfinite(standard_error) or standard_error <= 0:
         return math.nan
     return delta_abs / standard_error
 

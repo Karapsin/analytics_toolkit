@@ -15,7 +15,6 @@ from ....execution.operation_runner import (
     timed_public_sql_function,
     tracked_sql_operation,
     validate_progress_option,
-    validate_retry_options,
 )
 from ....execution.plan_steps import (
     add_analyze_step,
@@ -329,6 +328,27 @@ def build_transfer_options(
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
 ) -> TransferOptions:
+    transfer_options.validate_transfer_runtime_options(
+        batch_size=batch_size,
+        min_batch_size=min_batch_size,
+        max_batch_size=max_batch_size,
+        adaptive_batch_size_step=adaptive_batch_size_step,
+        target_batch_seconds=target_batch_seconds,
+        min_batch_seconds=min_batch_seconds,
+        max_batch_seconds=max_batch_seconds,
+        target_batch_memory_mb=target_batch_memory_mb,
+        min_batch_memory_mb=min_batch_memory_mb,
+        max_batch_memory_mb=max_batch_memory_mb,
+        target_rows_per_second_window=target_rows_per_second_window,
+        target_rows_per_second_deadband=target_rows_per_second_deadband,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        full_retry_cnt=full_retry_cnt,
+        full_timeout_increment=full_timeout_increment,
+        gp_insert_chunk_size=gp_insert_chunk_size,
+        trino_insert_chunk_size=trino_insert_chunk_size,
+        concurrency=concurrency,
+    )
     source_sql, source_table = normalize_transfer_source(
         from_sql=from_sql,
         from_table=from_table,
@@ -517,13 +537,6 @@ def build_transfer_options(
             "Trino write_mode='upsert' requires "
             "upsert_partition_drop_sql_template in the target connection config."
         )
-    if options.batch_size <= 0:
-        raise ValueError("batch_size must be a positive integer.")
-    validate_retry_options(options.retry_cnt, options.timeout_increment)
-    if options.full_retry_cnt < 1:
-        raise ValueError("full_retry_cnt must be at least 1.")
-    if options.full_timeout_increment < 0:
-        raise ValueError("full_timeout_increment must be non-negative.")
     if not isinstance(options.target_rows_per_second, bool):
         raise ValueError("target_rows_per_second must be a boolean.")
     _validate_progress(options.progress)

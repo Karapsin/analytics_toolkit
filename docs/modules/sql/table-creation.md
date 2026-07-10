@@ -25,6 +25,17 @@ the target is created with [sql.transfer](functions/transfer.md). If Python
 already owns the rows, [sql.load_df](functions/load_df.md) is usually the
 simpler workflow.
 
+Each SQL-source retry uses fresh source and target connections and repeats
+metadata inspection. A cross-backend insert delegates with one inner transfer
+attempt so retries remain bounded by `retry_cnt`. Partial targets owned by a
+failed attempt are removed before another attempt; a cleanup failure stops the
+workflow rather than risking duplicate rows.
+
+Qualified table names are parsed structurally. Quoted dots remain part of one
+identifier, for example `"schema.with.dot"."table.with.dot"`. Unqualified
+Greenplum names retain the `public` default; Trino names retain the configured
+catalog and schema defaults.
+
 ## Backend Shape
 
 Greenplum created tables default to append-only column-oriented storage and

@@ -4,6 +4,16 @@ from collections.abc import Sequence
 from typing import Any
 
 
+def uses_create_table_from_sql_fast_path(
+    adapter: Any,
+    *,
+    source_backend: str,
+    source_key: str,
+    target_key: str,
+) -> bool:
+    return source_backend == adapter.backend and source_key == target_key
+
+
 def create_table_from_sql_fast_path(
     adapter: Any,
     *,

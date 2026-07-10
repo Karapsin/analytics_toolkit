@@ -39,8 +39,10 @@ The reported `mde_abs` and `mde_relative` use a normal approximation based on
 observed group variances and sample sizes. When CUPED input is provided, CUPED
 standard errors, p-values, and MDE columns are added without aborting the whole
 metric computation when a single CUPED metric cannot be built. Bootstrap
-multiple-comparison adjustment adds empirical `bootstrap_adj_p` and
-`s.e. bootstrap` outputs when enabled.
+multiple-comparison adjustment adds weak-null max-T `bootstrap_adj_p` and
+`s.e. bootstrap` outputs when enabled. It resamples complete user rows within
+their observed groups, recomputes pooled outlier handling in each replicate,
+and adjusts across all observed-valid comparisons for each metric.
 
 Use [Interpreting Metric Output](interpreting-metric-output.md) for the meaning
 of the output columns and [Presentation Formatting](presentation-formatting.md)

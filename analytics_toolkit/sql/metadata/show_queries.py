@@ -7,7 +7,7 @@ import pandas as pd
 
 from ..backend_adapters import get_backend_adapter
 from ..connection.config import get_connection_config
-from ..execution.operation_runner import timed_public_sql_function
+from ..execution.operation_runner import timed_public_sql_function, validate_retry_options
 
 
 QUERY_STATE_VALUES = {"active", "finished", "failed"}
@@ -37,6 +37,7 @@ def show_queries(
     timeout_increment: int | float = 5,
     query_label: str | None = None,
 ) -> pd.DataFrame:
+    validate_retry_options(retry_cnt, timeout_increment)
     config = get_connection_config(db_key)
     states = normalize_query_states(state)
     frames: list[pd.DataFrame] = []

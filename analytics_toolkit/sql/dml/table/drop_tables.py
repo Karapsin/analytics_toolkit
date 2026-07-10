@@ -6,6 +6,7 @@ from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
+from ...execution.validation import validate_positive_int, validate_positive_number
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.general import time_print
 from .models import ChDropTableOptions
@@ -29,6 +30,11 @@ def drop_tables(
     return_metadata: bool = False,
     query_label: str | None = None,
 ) -> SqlPlan | SqlOperationResult | None:
+    validate_positive_int(ch_wait_timeout_seconds, "ch_wait_timeout_seconds")
+    validate_positive_number(
+        ch_wait_poll_interval_seconds,
+        "ch_wait_poll_interval_seconds",
+    )
     config = get_connection_config(db_key)
     target_tables = _normalize_target_tables(table)
     options = ChDropTableOptions(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from . import create_table_from_sql as _create_table_from_sql, operations as _operations
+from . import create_table_from_sql as _create_from_sql, operations as _operations
 from . import source_count as _source_count, upsert as _upsert
 from . import insert as _insert, queries as _queries
 from . import source_schema as _ch_source_schema
@@ -23,6 +23,8 @@ ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
     "distributed_ddl_output_mode": "none",
 }
+
+
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
     display_name = "ClickHouse"
@@ -40,13 +42,10 @@ class ClickHouseAdapter(BackendAdapter):
     requires_upsert_partition_column = True
     supports_ch_create_table_options = True
     resolve_ch_retry_per_host_drops = staticmethod(bool)
-    create_table_from_sql_fast_path = _create_table_from_sql.create_table_from_sql_fast_path
+    create_table_from_sql_fast_path = _create_from_sql.create_table_from_sql_fast_path
+    uses_create_table_from_sql_fast_path = _create_from_sql.uses_create_table_from_sql_fast_path
 
-    def build_connection_config(
-        self,
-        connection_key: str,
-        raw_config: dict[str, Any],
-    ) -> Any:
+    def build_connection_config(self, connection_key: str, raw_config: dict[str, Any]) -> Any:
         from .config import build_config
 
         return build_config(connection_key, raw_config)

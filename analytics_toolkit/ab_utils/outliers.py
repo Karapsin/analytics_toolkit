@@ -55,6 +55,7 @@ def _build_outlier_context(
                 outliers_quantile,
                 outliers_policy,
             ),
+            "quantile": outliers_quantile,
             "policy": outliers_policy,
         }
 
@@ -93,6 +94,7 @@ def _build_outlier_context(
             outliers_quantile,
             outliers_policy,
         ),
+        "quantile": outliers_quantile,
         "policy": outliers_policy,
     }
 

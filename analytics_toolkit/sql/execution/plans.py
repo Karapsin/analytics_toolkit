@@ -150,10 +150,11 @@ def format_plan(
     include_sql: bool = True,
     max_sql_chars: int = 160,
 ) -> str:
+    from .validation import validate_positive_int
+
     if not isinstance(plan, SqlPlan):
         raise TypeError("plan must be a SqlPlan.")
-    if max_sql_chars <= 0:
-        raise ValueError("max_sql_chars must be positive.")
+    validate_positive_int(max_sql_chars, "max_sql_chars")
 
     lines = [
         f"SqlPlan: {plan.operation}",

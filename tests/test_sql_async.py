@@ -1260,6 +1260,26 @@ def test_async_sql_validates_task_input(
         async_module.async_sql(tasks)
 
 
+@pytest.mark.parametrize(
+    "tasks",
+    [
+        [
+            {"name": "duplicate", "type": "read", "db_key": "gp", "query": "select 1"},
+            {"name": "duplicate", "type": "read", "db_key": "gp", "query": "select 2"},
+        ],
+        [
+            {"name": "task_1", "type": "read", "db_key": "gp", "query": "select 1"},
+            {"type": "read", "db_key": "gp", "query": "select 2"},
+        ],
+    ],
+)
+def test_async_sql_rejects_duplicate_task_names(
+    tasks: list[dict[str, Any]],
+) -> None:
+    with pytest.raises(ValueError, match="Duplicate SQL task name"):
+        async_module.async_sql(tasks)
+
+
 @pytest.mark.parametrize("concurrency", [0, -1, True, 1.5])
 def test_async_sql_validates_concurrency(concurrency: Any) -> None:
     tasks = [

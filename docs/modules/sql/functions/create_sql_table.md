@@ -96,8 +96,20 @@ ddl
 
 ## Notes
 
-- The public helper opens and closes its own connection and retries the whole create operation.
+- The public helper opens and closes its own connections and retries the whole
+  create operation. For SQL schema sources, each attempt starts again with
+  source schema inspection, then target creation and the optional insert.
+- Cross-backend SQL inserts use a single inner transfer attempt so
+  `retry_cnt` controls the total number of whole-operation attempts rather than
+  multiplying nested retry counts.
+- A failed attempt removes a target created by that attempt before retrying. If
+  cleanup cannot be confirmed, the operation stops instead of retrying against
+  a partial target; pre-existing targets are never removed unless
+  `drop_target_if_exists=True`.
 - Pass exactly one of `df`, `sql`, or `table_schema`.
 - `only_generate_sql=True` with `sql` inspects source query metadata but does not create, drop, or insert data.
+- `retry_cnt` must be a built-in positive integer. `timeout_increment` must be
+  a finite non-negative real number; the same validation applies to dry runs
+  and generated-SQL paths.
 
 [SQL functions index](index.md)

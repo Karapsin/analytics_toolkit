@@ -15,7 +15,6 @@ from ...backend_adapters import (
 )
 from ...connection.config import resolve_connection_backend
 from ...connection.errors import InvalidSqlInputError
-from ...ddl.identifiers import quote_identifier
 from ...execution.labels import apply_query_label
 
 
@@ -321,14 +320,17 @@ def split_trino_table_name(
 
 
 def quote_qualified_table_name(table_name: str, connection_type: str) -> str:
-    parts = [part.strip() for part in table_name.split(".")]
-    if not parts or any(not part for part in parts):
+    from ...core.identifiers import TableIdentifier
+
+    try:
+        identifier = TableIdentifier.parse(table_name, connection_type)
+    except ValueError as exc:
         raise InvalidSqlInputError("Table name must be a non-empty identifier.")
-    if len(parts) > 3:
+    if len(identifier.parts) > 3:
         raise InvalidSqlInputError(
             "Table name must be unqualified or dot-qualified up to three parts."
         )
-    return ".".join(quote_identifier(part, connection_type) for part in parts)
+    return identifier.render_quoted(connection_type)
 
 
 def _truncate_ch_table(

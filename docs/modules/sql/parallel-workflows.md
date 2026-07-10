@@ -16,6 +16,9 @@ passed to the matching synchronous helper, such as
 [sql.execute_read](functions/execute_read.md),
 [sql.load_df](functions/load_df.md), or [sql.transfer](functions/transfer.md).
 Named tasks make result dictionaries stable and easier to inspect.
+Every effective task name must be unique. Unnamed tasks receive `task_<index>`;
+an explicit name that collides with one of those generated names is also
+rejected before dispatch.
 
 Use fail-fast behavior when one failed task invalidates the batch. Disable it
 when partial results are acceptable and failures should be reported per task.

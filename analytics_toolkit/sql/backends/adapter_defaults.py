@@ -584,6 +584,17 @@ def create_table_from_sql_fast_path(adapter: Any, **kwargs: Any) -> tuple[bool, 
     return False, None
 
 
+def uses_create_table_from_sql_fast_path(
+    adapter: Any,
+    *,
+    source_backend: str,
+    source_key: str,
+    target_key: str,
+) -> bool:
+    del adapter, source_backend, source_key, target_key
+    return False
+
+
 def should_insert_create_table_from_sql_directly(
     adapter: Any,
     *,

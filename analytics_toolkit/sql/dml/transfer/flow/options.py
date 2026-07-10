@@ -2,12 +2,89 @@ from __future__ import annotations
 
 import math
 from numbers import Real
+from typing import Any
 
 from ....backends import get_backend_adapter
+from ....execution.operation_runner import validate_retry_options
+from ....execution.validation import (
+    validate_non_negative_number,
+    validate_optional_positive_int,
+    validate_optional_positive_number,
+    validate_positive_int,
+    validate_positive_number,
+)
 from ..runtime.models import TrinoTransferMode
 
 
 _DEFAULT_TARGET_BATCH_SECONDS = 10.0
+
+
+def validate_transfer_runtime_options(
+    *,
+    batch_size: Any,
+    min_batch_size: Any,
+    max_batch_size: Any,
+    adaptive_batch_size_step: Any,
+    target_batch_seconds: Any,
+    min_batch_seconds: Any,
+    max_batch_seconds: Any,
+    target_batch_memory_mb: Any,
+    min_batch_memory_mb: Any,
+    max_batch_memory_mb: Any,
+    target_rows_per_second_window: Any,
+    target_rows_per_second_deadband: Any,
+    retry_cnt: Any,
+    timeout_increment: Any,
+    full_retry_cnt: Any,
+    full_timeout_increment: Any,
+    gp_insert_chunk_size: Any,
+    trino_insert_chunk_size: Any,
+    concurrency: Any,
+) -> None:
+    validate_positive_int(batch_size, "batch_size")
+    validate_positive_int(min_batch_size, "min_batch_size")
+    validate_optional_positive_int(max_batch_size, "max_batch_size")
+    step = validate_positive_number(
+        adaptive_batch_size_step,
+        "adaptive_batch_size_step",
+    )
+    if step >= 1:
+        raise ValueError(
+            "adaptive_batch_size_step must be a finite number greater than 0 "
+            "and less than 1."
+        )
+    for value, option_name in (
+        (target_batch_seconds, "target_batch_seconds"),
+        (min_batch_seconds, "min_batch_seconds"),
+        (max_batch_seconds, "max_batch_seconds"),
+        (target_batch_memory_mb, "target_batch_memory_mb"),
+        (min_batch_memory_mb, "min_batch_memory_mb"),
+        (max_batch_memory_mb, "max_batch_memory_mb"),
+    ):
+        validate_optional_positive_number(value, option_name)
+    validate_positive_int(
+        target_rows_per_second_window,
+        "target_rows_per_second_window",
+    )
+    validate_non_negative_number(
+        target_rows_per_second_deadband,
+        "target_rows_per_second_deadband",
+    )
+    validate_retry_options(retry_cnt, timeout_increment)
+    validate_positive_int(full_retry_cnt, "full_retry_cnt")
+    validate_non_negative_number(
+        full_timeout_increment,
+        "full_timeout_increment",
+    )
+    validate_optional_positive_int(
+        gp_insert_chunk_size,
+        "gp_insert_chunk_size",
+    )
+    validate_optional_positive_int(
+        trino_insert_chunk_size,
+        "trino_insert_chunk_size",
+    )
+    validate_positive_int(concurrency, "concurrency")
 
 
 def resolve_trino_mode(

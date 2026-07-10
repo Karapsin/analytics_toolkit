@@ -7,7 +7,6 @@ from typing import Any
 
 from .adapter import ch_cluster_clause
 from ..registry import get_backend_adapter
-from ...clickhouse.options import DEFAULT_CH_PER_HOST_DROP_WORKERS
 from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
@@ -156,6 +155,8 @@ def drop_ch_distributed_table_pair(
                     f"{exc} ch_retry_per_host_drops=True requires a per-host "
                     "ClickHouse connection factory."
                 ) from exc
+
+        from ...clickhouse.options import DEFAULT_CH_PER_HOST_DROP_WORKERS
 
         _drop_ch_distributed_table_pair_on_cluster_hosts(
             connection,

@@ -45,5 +45,8 @@ result["orders"].head()
 ## Notes
 
 - Use the same task specification shape as `async_sql`.
+- Task names must be unique. This includes collisions with generated names such
+  as `task_1` for an unnamed task at index `1`; duplicates are rejected before
+  any task starts.
 
 [SQL functions index](index.md)

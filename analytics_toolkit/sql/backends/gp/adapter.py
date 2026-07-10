@@ -782,12 +782,9 @@ from cancel_attempt"""
 
 
 def split_gp_table_name(table_name: str) -> tuple[str, str]:
-    parts = [part.strip().strip('"') for part in table_name.split(".") if part.strip()]
-    if len(parts) == 1:
-        return "public", parts[0]
-    if len(parts) == 2:
-        return parts[0], parts[1]
-    raise ValueError(f"Invalid Greenplum table name: {table_name}")
+    from ...core.identifiers import split_gp_table_name as _split_gp_table_name
+
+    return _split_gp_table_name(table_name)
 
 
 def format_gp_information_schema_type(

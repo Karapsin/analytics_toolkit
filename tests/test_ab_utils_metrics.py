@@ -4,18 +4,17 @@ import inspect
 import math
 import threading
 import time
+import warnings
 from types import SimpleNamespace
 from typing import Any, Sequence
-import warnings
 
+import analytics_toolkit.ab_utils as ab_utils
+import analytics_toolkit.ab_utils.bootstrap as bootstrap_module
+import analytics_toolkit.ab_utils.metrics as ab_metrics
+import analytics_toolkit.ab_utils.planning as planning_module
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import ttest_ind
-
-import analytics_toolkit.ab_utils as ab_utils
-import analytics_toolkit.ab_utils.metrics as ab_metrics
-import analytics_toolkit.ab_utils.planning as planning_module
 from analytics_toolkit.ab_utils import (
     RatioMetricSpec,
     compute_mde,
@@ -26,8 +25,6 @@ from analytics_toolkit.ab_utils import (
 from analytics_toolkit.ab_utils.metrics import (
     DEFAULT_ALPHA,
     DEFAULT_POWER,
-    _apply_outliers_to_agg_ratio_components,
-    _apply_outliers_to_values,
     _build_comparisons,
     _build_metric_definitions,
     _build_metric_row,
@@ -39,13 +36,12 @@ from analytics_toolkit.ab_utils.metrics import (
     _compute_cuped_statistics,
     _compute_cuped_statistics_from_frame,
     _compute_mde_from_standard_error,
-    _compute_studentized_statistic,
-    _compute_ttest_stat_and_p_value,
     _get_numeric_metric_series,
     _normalize_ratio_metrics,
     _prepare_cuped_context,
     _prepare_metric_context,
 )
+from scipy.stats import ttest_ind
 
 
 def test_compute_test_metrics_bootstrap_progress_defaults_to_false() -> None:
@@ -56,13 +52,9 @@ def test_compute_test_metrics_bootstrap_progress_defaults_to_false() -> None:
 
 def test_compute_mde_start_dt_is_required() -> None:
     assert inspect.signature(compute_mde).parameters["start_dt"].default is inspect._empty
+    assert inspect.signature(compute_mde_from_sql).parameters["start_dt"].default is inspect._empty
     assert (
-        inspect.signature(compute_mde_from_sql).parameters["start_dt"].default
-        is inspect._empty
-    )
-    assert (
-        inspect.signature(compute_mde_sql_native).parameters["start_dt"].default
-        is inspect._empty
+        inspect.signature(compute_mde_sql_native).parameters["start_dt"].default is inspect._empty
     )
 
 
@@ -77,8 +69,7 @@ def test_ab_metric_outlier_policy_defaults_to_non_zero_truncate() -> None:
         == "non_zero_truncate"
     )
     assert (
-        inspect.signature(compute_mde).parameters["outliers_policy"].default
-        == "non_zero_truncate"
+        inspect.signature(compute_mde).parameters["outliers_policy"].default == "non_zero_truncate"
     )
     assert (
         inspect.signature(compute_mde_from_sql).parameters["outliers_policy"].default
@@ -109,7 +100,20 @@ def _build_sample_metrics_df() -> pd.DataFrame:
                 "test_b",
             ],
             "orders": [10, 12, 9, np.nan, 13, 15, 11, 14, 8, 10, 9, 11],
-            "gmv": [100.0, 120.0, 95.0, 110.0, 130.0, 145.0, 118.0, 140.0, 92.0, 105.0, 99.0, 108.0],
+            "gmv": [
+                100.0,
+                120.0,
+                95.0,
+                110.0,
+                130.0,
+                145.0,
+                118.0,
+                140.0,
+                92.0,
+                105.0,
+                99.0,
+                108.0,
+            ],
             "clicks": [5, 3, 4, 2, 7, 5, 6, 8, 4, 5, 3, 4],
             "impressions": [10, 8, 0, 4, 14, 10, 12, 16, 8, 10, 6, 8],
         }
@@ -334,9 +338,7 @@ def _assert_cuped_row_matches_frame(
     assert row["s.e. CUPED"] == pytest.approx(expected_standard_error)
     assert row["p-value CUPED"] == pytest.approx(expected_p_value)
     assert row["mde_abs CUPED"] == pytest.approx(expected_mde_abs)
-    assert row["mde_relative CUPED"] == pytest.approx(
-        expected_mde_abs / row["metric_control"]
-    )
+    assert row["mde_relative CUPED"] == pytest.approx(expected_mde_abs / row["metric_control"])
 
 
 def _manual_cuped_adjusted_variance(
@@ -359,159 +361,166 @@ def _manual_agg_ratio_linearized_values(
     return values
 
 
-def _legacy_metric_test_statistic(
-    df: pd.DataFrame,
-    group_column: str,
-    baseline_group: str,
-    test_group: str,
-    metric_definition: dict[str, object],
-    outlier_context: dict[str, object] | None = None,
-) -> float:
-    if metric_definition["kind"] == "mean":
-        metric_values = _get_numeric_metric_series(df, str(metric_definition["column"]))
-        metric_values, _ = _apply_outliers_to_values(metric_values, outlier_context)
-        baseline_values = metric_values[df[group_column] == baseline_group].dropna()
-        test_values = metric_values[df[group_column] == test_group].dropna()
-        statistic, _ = _compute_ttest_stat_and_p_value(baseline_values, test_values)
-        return statistic
-
-    ratio_spec = dict(metric_definition["ratio_spec"])
-    numerator = _get_numeric_metric_series(df, ratio_spec["numerator"])
-    denominator = _get_numeric_metric_series(df, ratio_spec["denominator"])
-    valid_mask = _build_ratio_valid_mask(
-        numerator=numerator,
-        denominator=denominator,
-        level=ratio_spec["level"],
-    )
-
-    if ratio_spec["level"] == "user":
-        ratio_values = pd.Series(np.nan, index=df.index, dtype=float)
-        ratio_values.loc[valid_mask] = numerator.loc[valid_mask] / denominator.loc[valid_mask]
-        ratio_values, _ = _apply_outliers_to_values(ratio_values, outlier_context)
-        baseline_values = ratio_values[df[group_column] == baseline_group].dropna()
-        test_values = ratio_values[df[group_column] == test_group].dropna()
-        statistic, _ = _compute_ttest_stat_and_p_value(baseline_values, test_values)
-        return statistic
-
-    numerator, denominator, _ = _apply_outliers_to_agg_ratio_components(
-        numerator=numerator,
-        denominator=denominator,
-        outlier_context=outlier_context,
-    )
-    valid_mask = _build_ratio_valid_mask(
-        numerator=numerator,
-        denominator=denominator,
-        level=ratio_spec["level"],
-    )
-    baseline_mask = (df[group_column] == baseline_group) & valid_mask
-    test_mask = (df[group_column] == test_group) & valid_mask
-    baseline_frame = pd.DataFrame(
-        {"numerator": numerator[baseline_mask], "denominator": denominator[baseline_mask]}
-    )
-    test_frame = pd.DataFrame(
-        {"numerator": numerator[test_mask], "denominator": denominator[test_mask]}
-    )
-    baseline_stats = _compute_agg_ratio_group_stats(baseline_frame)
-    test_stats = _compute_agg_ratio_group_stats(test_frame)
-    if math.isnan(test_stats["ratio"]) or math.isnan(baseline_stats["ratio"]):
-        return math.nan
-
-    delta_abs = test_stats["ratio"] - baseline_stats["ratio"]
-    se_diff = _compute_agg_ratio_diff_standard_error(
-        baseline_frame=baseline_frame,
-        baseline_ratio=baseline_stats["ratio"],
-        test_frame=test_frame,
-        test_ratio=test_stats["ratio"],
-    )
-    return _compute_studentized_statistic(delta_abs, se_diff)
-
-
-def _legacy_bootstrap_adjustment(
+def _manual_centered_bootstrap_adjustment(
     df: pd.DataFrame,
     *,
     group: str,
     control: str,
-    user_id: str,
-    ratio_metrics: list[dict[str, object]] | None,
+    metric_kind: str,
+    metric_columns: tuple[str, ...],
     test_vs_test: bool,
     resamples: int,
+    random_state: int,
     outliers_quantile: float = 0.999,
     outliers_policy: str = "truncate",
-) -> pd.DataFrame:
-    metric_columns = [column for column in df.columns if column not in {group, user_id}]
-    ratio_specs = _normalize_ratio_metrics(df, ratio_metrics, reserved_columns={group, user_id})
-    metric_definitions = _build_metric_definitions(metric_columns, ratio_specs)
-    outlier_contexts = _build_outlier_contexts(
-        df=df,
-        metric_definitions=metric_definitions,
-        outliers_quantile=outliers_quantile,
-        outliers_policy=outliers_policy,
-    )
+) -> dict[tuple[str, str], tuple[float, float]]:
     group_names = df[group].drop_duplicates().tolist()
-    comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
-    include_groups = len(group_names) > 2
+    test_groups = sorted(name for name in group_names if name != control)
+    comparisons = [(name, control) for name in test_groups]
+    if test_vs_test:
+        comparisons.extend(
+            (test_groups[left], test_groups[right])
+            for left in range(len(test_groups))
+            for right in range(left + 1, len(test_groups))
+        )
 
-    family_max_statistics: dict[str, list[float]] = {
-        str(metric_definition["metric_key"]): []
-        for metric_definition in metric_definitions
+    observed = {
+        comparison: _manual_metric_delta_and_se(
+            df,
+            group=group,
+            comparison=comparison,
+            metric_kind=metric_kind,
+            metric_columns=metric_columns,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+        for comparison in comparisons
     }
-    rng = np.random.default_rng(0)
-
-    for _ in range(resamples):
-        sample_indices = rng.integers(0, len(df), size=len(df))
-        bootstrap_df = df.iloc[sample_indices].reset_index(drop=True).copy()
-        for metric_definition in metric_definitions:
-            metric_key = str(metric_definition["metric_key"])
-            comparison_statistics: list[float] = []
-            for test_group, baseline_group in comparisons:
-                statistic = _legacy_metric_test_statistic(
-                    bootstrap_df,
-                    group_column=group,
-                    baseline_group=baseline_group,
-                    test_group=test_group,
-                    metric_definition=metric_definition,
-                    outlier_context=outlier_contexts[str(metric_definition["metric_key"])],
-                )
-                if not math.isnan(statistic):
-                    comparison_statistics.append(abs(statistic))
-            family_max_statistics[metric_key].append(
-                max(comparison_statistics) if comparison_statistics else math.nan
+    observed_valid = [
+        comparison
+        for comparison, (delta, standard_error) in observed.items()
+        if math.isfinite(delta) and math.isfinite(standard_error) and standard_error > 0
+    ]
+    deltas = {comparison: [] for comparison in comparisons}
+    family_max_statistics: list[float] = []
+    for seed in np.random.SeedSequence(random_state).spawn(resamples):
+        rng = np.random.default_rng(seed)
+        sampled = pd.concat(
+            [
+                group_frame.iloc[rng.integers(0, len(group_frame), size=len(group_frame))]
+                for _, group_frame in df.groupby(group, sort=False)
+            ],
+            ignore_index=True,
+        )
+        centered_statistics: list[float] = []
+        family_valid = bool(observed_valid)
+        for comparison in comparisons:
+            delta, standard_error = _manual_metric_delta_and_se(
+                sampled,
+                group=group,
+                comparison=comparison,
+                metric_kind=metric_kind,
+                metric_columns=metric_columns,
+                outliers_quantile=outliers_quantile,
+                outliers_policy=outliers_policy,
             )
-
-    rows: list[dict[str, object]] = []
-    for test_group, baseline_group in comparisons:
-        for metric_definition in metric_definitions:
-            metric_key = str(metric_definition["metric_key"])
-            observed_stat = _legacy_metric_test_statistic(
-                df,
-                group_column=group,
-                baseline_group=baseline_group,
-                test_group=test_group,
-                metric_definition=metric_definition,
-                outlier_context=outlier_contexts[metric_key],
-            )
-            if math.isnan(observed_stat):
-                adjusted_p = math.nan
+            deltas[comparison].append(delta)
+            if comparison not in observed_valid:
+                continue
+            centered = (delta - observed[comparison][0]) / standard_error
+            if math.isfinite(centered):
+                centered_statistics.append(abs(centered))
             else:
-                bootstrap_stats = [
-                    value for value in family_max_statistics[metric_key] if not math.isnan(value)
-                ]
-                adjusted_p = (
-                    sum(value >= abs(observed_stat) for value in bootstrap_stats) / len(bootstrap_stats)
-                    if bootstrap_stats
-                    else math.nan
-                )
+                family_valid = False
+        family_max_statistics.append(
+            max(centered_statistics)
+            if family_valid and len(centered_statistics) == len(observed_valid)
+            else math.nan
+        )
 
-            row = {"metric_name": metric_key, "bootstrap_adj_p": adjusted_p}
-            if include_groups:
-                row["group_1"] = test_group
-                row["group_2"] = baseline_group
-            rows.append(row)
+    finite_max_statistics = [value for value in family_max_statistics if math.isfinite(value)]
+    result: dict[tuple[str, str], tuple[float, float]] = {}
+    for comparison in comparisons:
+        observed_delta, observed_se = observed[comparison]
+        observed_stat = observed_delta / observed_se
+        adjusted_p = (
+            (1 + sum(value >= abs(observed_stat) for value in finite_max_statistics))
+            / (1 + len(finite_max_statistics))
+            if finite_max_statistics and math.isfinite(observed_stat)
+            else math.nan
+        )
+        finite_deltas = [value for value in deltas[comparison] if math.isfinite(value)]
+        bootstrap_se = float(np.std(finite_deltas, ddof=1)) if len(finite_deltas) >= 2 else math.nan
+        result[comparison] = adjusted_p, bootstrap_se
+    return result
 
-    columns = ["metric_name", "bootstrap_adj_p"]
-    if include_groups:
-        columns = ["group_1", "group_2", *columns]
-    return pd.DataFrame(rows, columns=columns)
+
+def _manual_metric_delta_and_se(
+    df: pd.DataFrame,
+    *,
+    group: str,
+    comparison: tuple[str, str],
+    metric_kind: str,
+    metric_columns: tuple[str, ...],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> tuple[float, float]:
+    test_group, baseline_group = comparison
+    if metric_kind == "mean":
+        values = df[metric_columns[0]].astype(float).copy()
+    else:
+        numerator = df[metric_columns[0]].astype(float).copy()
+        denominator = df[metric_columns[1]].astype(float).copy()
+        ratio_mask = numerator.notna() & denominator.notna() & (denominator > 0)
+        values = pd.Series(np.nan, index=df.index, dtype=float)
+        values.loc[ratio_mask] = numerator.loc[ratio_mask] / denominator.loc[ratio_mask]
+
+    cutoff_values = values.dropna()
+    if outliers_policy == "non_zero_truncate":
+        cutoff_values = cutoff_values[cutoff_values != 0]
+    cutoff = float(cutoff_values.quantile(outliers_quantile))
+    outliers = values.notna() & (values > cutoff)
+    if metric_kind in {"mean", "user"}:
+        if outliers_policy in {"truncate", "non_zero_truncate"}:
+            values.loc[outliers] = cutoff
+        else:
+            values.loc[outliers] = np.nan
+        baseline = values[df[group] == baseline_group].dropna().to_numpy()
+        test = values[df[group] == test_group].dropna().to_numpy()
+        if baseline.size < 2 or test.size < 2:
+            return math.nan, math.nan
+        delta = float(test.mean() - baseline.mean())
+        standard_error = math.sqrt(
+            float(baseline.var(ddof=1)) / baseline.size + float(test.var(ddof=1)) / test.size
+        )
+        return delta, standard_error
+
+    if outliers_policy in {"truncate", "non_zero_truncate"}:
+        numerator.loc[outliers] = cutoff * denominator.loc[outliers]
+    else:
+        numerator.loc[outliers] = np.nan
+        denominator.loc[outliers] = np.nan
+    valid = numerator.notna() & denominator.notna()
+    group_estimates: dict[str, tuple[float, float]] = {}
+    for group_name in (baseline_group, test_group):
+        mask = valid & (df[group] == group_name)
+        group_numerator = numerator.loc[mask].to_numpy()
+        group_denominator = denominator.loc[mask].to_numpy()
+        if group_numerator.size < 2 or group_denominator.sum() <= 0:
+            group_estimates[group_name] = (math.nan, math.nan)
+            continue
+        ratio = float(group_numerator.sum() / group_denominator.sum())
+        centered = group_numerator - ratio * group_denominator
+        variance = float(centered.var(ddof=1)) / (
+            group_numerator.size * float(group_denominator.mean()) ** 2
+        )
+        group_estimates[group_name] = ratio, variance
+    baseline_ratio, baseline_variance = group_estimates[baseline_group]
+    test_ratio, test_variance = group_estimates[test_group]
+    return (
+        test_ratio - baseline_ratio,
+        math.sqrt(baseline_variance + test_variance),
+    )
 
 
 def test_compute_test_metrics_prints_progress_logs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -556,43 +565,281 @@ def test_compute_test_metrics_prints_progress_logs(capsys: pytest.CaptureFixture
     assert "compute_test_metrics: metric orders (mean)" in output
     assert "compute_test_metrics: metric ctr (ratio)" in output
     assert "compute_test_metrics: CUPED orders (mean)" in output
-    assert (
-        "compute_test_metrics: bootstrap adjustment start resamples=3 n_jobs=1"
-        in output
-    )
+    assert "compute_test_metrics: bootstrap adjustment start resamples=3 n_jobs=1" in output
     assert "compute_test_metrics: bootstrap adjustment complete" in output
     assert f"compute_test_metrics: finish rows={len(result)}" in output
 
 
-def test_compute_test_metrics_matches_legacy_bootstrap_adjustment_single_thread() -> None:
-    df = _build_sample_metrics_df()
+@pytest.mark.parametrize(
+    "outliers_policy",
+    ["truncate", "drop", "non_zero_truncate"],
+)
+def test_compute_test_metrics_matches_centered_bootstrap_oracle(
+    outliers_policy: str,
+) -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": range(36),
+            "group_name": ["control"] * 12 + ["test_a"] * 12 + ["test_b"] * 12,
+            "orders": [
+                0,
+                0,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                30,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                35,
+                1,
+                3,
+                5,
+                7,
+                9,
+                11,
+                13,
+                15,
+                17,
+                19,
+                21,
+                40,
+            ],
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        multiple_comparisons_adjustment=True,
+        multiple_comparisons_adjustment_resamples=80,
+        bootstrap_random_state=11,
+        bootstrap_n_jobs=1,
+        outliers_quantile=0.8,
+        outliers_policy=outliers_policy,
+    )
+    expected = _manual_centered_bootstrap_adjustment(
+        df,
+        group="group_name",
+        control="control",
+        metric_kind="mean",
+        metric_columns=("orders",),
+        test_vs_test=True,
+        resamples=80,
+        random_state=11,
+        outliers_quantile=0.8,
+        outliers_policy=outliers_policy,
+    )
+
+    for row in result.to_dict("records"):
+        expected_p, expected_se = expected[(row["group_1"], row["group_2"])]
+        assert row["bootstrap_adj_p"] == pytest.approx(expected_p)
+        assert row["s.e. bootstrap"] == pytest.approx(expected_se)
+
+
+@pytest.mark.parametrize("ratio_level", ["user", "agg"])
+def test_compute_test_metrics_ratio_bootstrap_matches_independent_oracle(
+    ratio_level: str,
+) -> None:
+    denominator = np.tile(np.array([5.0, 8.0, 10.0, 12.0, 15.0, 20.0]), 8)
+    numerator = np.concatenate(
+        [
+            denominator[:24] * np.linspace(0.1, 0.9, 24),
+            denominator[24:] * np.linspace(0.2, 1.1, 24),
+        ]
+    )
+    numerator[-1] = denominator[-1] * 8
+    df = pd.DataFrame(
+        {
+            "user_id": range(48),
+            "group_name": ["control"] * 24 + ["test"] * 24,
+            "clicks": numerator,
+            "impressions": denominator,
+        }
+    )
     ratio_metrics = [
-        {"name": "ctr_user", "numerator": "clicks", "denominator": "impressions"},
-        {"name": "ctr_agg", "numerator": "clicks", "denominator": "impressions", "level": "agg"},
+        {
+            "name": "ctr",
+            "numerator": "clicks",
+            "denominator": "impressions",
+            "level": ratio_level,
+        }
     ]
 
     result = compute_test_metrics(
         df,
         ratio_metrics=ratio_metrics,
+        test_vs_test=False,
         multiple_comparisons_adjustment=True,
-        multiple_comparisons_adjustment_resamples=40,
-        bootstrap_random_state=0,
-        bootstrap_n_jobs=1,
+        multiple_comparisons_adjustment_resamples=60,
+        bootstrap_random_state=23,
+        outliers_quantile=0.85,
+        outliers_policy="truncate",
     )
-    legacy = _legacy_bootstrap_adjustment(
+    expected = _manual_centered_bootstrap_adjustment(
         df,
         group="group_name",
         control="control",
-        user_id="user_id",
-        ratio_metrics=ratio_metrics,
-        test_vs_test=True,
-        resamples=40,
+        metric_kind=ratio_level,
+        metric_columns=("clicks", "impressions"),
+        test_vs_test=False,
+        resamples=60,
+        random_state=23,
+        outliers_quantile=0.85,
+        outliers_policy="truncate",
+    )[("test", "control")]
+
+    ratio_row = result[result["metric_name"] == "ctr"].iloc[0]
+    assert ratio_row["bootstrap_adj_p"] == pytest.approx(expected[0])
+    assert ratio_row["s.e. bootstrap"] == pytest.approx(expected[1])
+
+
+def test_compute_test_metrics_centered_bootstrap_extreme_effect_reaches_finite_floor() -> None:
+    control = np.linspace(-1.0, 1.0, 50)
+    test = np.linspace(99.0, 101.0, 50)
+    df = pd.DataFrame(
+        {
+            "user_id": range(100),
+            "group_name": ["control"] * 50 + ["test"] * 50,
+            "value": np.concatenate([control, test]),
+        }
     )
 
-    pd.testing.assert_series_equal(result["metric_name"], legacy["metric_name"])
-    pd.testing.assert_series_equal(result["group_1"], legacy["group_1"])
-    pd.testing.assert_series_equal(result["group_2"], legacy["group_2"])
-    np.testing.assert_allclose(result["bootstrap_adj_p"], legacy["bootstrap_adj_p"], equal_nan=True)
+    result = compute_test_metrics(
+        df,
+        test_vs_test=False,
+        multiple_comparisons_adjustment=True,
+        multiple_comparisons_adjustment_resamples=199,
+        bootstrap_random_state=7,
+        outliers_quantile=1,
+    )
+
+    row = result.iloc[0]
+    assert row["p-value"] < 1e-50
+    assert row["bootstrap_adj_p"] == pytest.approx(1 / 200)
+
+
+def test_compute_test_metrics_centered_bootstrap_is_one_for_exact_null() -> None:
+    values = np.linspace(-2.0, 2.0, 40)
+    df = pd.DataFrame(
+        {
+            "user_id": range(80),
+            "group_name": ["control"] * 40 + ["test"] * 40,
+            "value": np.concatenate([values, values]),
+        }
+    )
+
+    result = compute_test_metrics(
+        df,
+        test_vs_test=False,
+        multiple_comparisons_adjustment=True,
+        multiple_comparisons_adjustment_resamples=99,
+        bootstrap_random_state=5,
+        outliers_quantile=1,
+    )
+
+    assert result.iloc[0]["bootstrap_adj_p"] == 1
+
+
+def test_compute_test_metrics_rejects_infinite_observed_standard_error() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": range(4),
+            "group_name": ["control", "control", "test", "test"],
+            "value": [1e308, -1e308, 1e308, -1e308],
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = compute_test_metrics(
+            df,
+            test_vs_test=False,
+            multiple_comparisons_adjustment=True,
+            multiple_comparisons_adjustment_resamples=9,
+            bootstrap_random_state=1,
+            outliers_quantile=1,
+        )
+
+    row = result.iloc[0]
+    assert math.isinf(float(row["s.e."]))
+    assert math.isnan(float(row["bootstrap_adj_p"]))
+
+
+def test_compute_test_metrics_warns_when_no_family_resample_is_valid() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": range(4),
+            "group_name": ["control", "control", "test", "test"],
+            "value": [0.0, 1.0, 0.2, 1.2],
+        }
+    )
+
+    with pytest.warns(
+        RuntimeWarning,
+        match="Bootstrap discarded 1 of 1 resamples for metric 'value'",
+    ):
+        result = compute_test_metrics(
+            df,
+            test_vs_test=False,
+            multiple_comparisons_adjustment=True,
+            multiple_comparisons_adjustment_resamples=1,
+            bootstrap_random_state=0,
+            outliers_quantile=1,
+        )
+
+    assert math.isnan(float(result.iloc[0]["bootstrap_adj_p"]))
+    assert math.isnan(float(result.iloc[0]["s.e. bootstrap"]))
+
+
+def test_compute_test_metrics_aggregate_ratio_bootstrap_is_scale_invariant() -> None:
+    df = pd.DataFrame(
+        {
+            "user_id": range(60),
+            "group_name": ["control"] * 30 + ["test"] * 30,
+            "clicks": np.linspace(1.0, 30.0, 60),
+            "impressions": np.linspace(10.0, 90.0, 60),
+        }
+    )
+    ratio_metrics = [
+        {
+            "name": "ctr",
+            "numerator": "clicks",
+            "denominator": "impressions",
+            "level": "agg",
+        }
+    ]
+    kwargs = {
+        "ratio_metrics": ratio_metrics,
+        "test_vs_test": False,
+        "multiple_comparisons_adjustment": True,
+        "multiple_comparisons_adjustment_resamples": 75,
+        "bootstrap_random_state": 29,
+        "outliers_quantile": 1,
+    }
+
+    original = compute_test_metrics(df, **kwargs)
+    scaled_df = df.copy()
+    scaled_df[["clicks", "impressions"]] *= 100
+    scaled = compute_test_metrics(scaled_df, **kwargs)
+    original_ratio = original[original["metric_name"] == "ctr"].iloc[0]
+    scaled_ratio = scaled[scaled["metric_name"] == "ctr"].iloc[0]
+
+    assert scaled_ratio["bootstrap_adj_p"] == pytest.approx(original_ratio["bootstrap_adj_p"])
+    assert scaled_ratio["s.e. bootstrap"] == pytest.approx(original_ratio["s.e. bootstrap"])
 
 
 def test_compute_test_metrics_adds_metric_control_and_metric_test_columns() -> None:
@@ -728,9 +975,7 @@ def test_compute_mde_estimates_mean_metric_from_user_day_window() -> None:
         metric_exp=user_values,
         metric_pre=pre_values,
     )
-    expected_cuped_se = math.sqrt(
-        (expected_cuped_variance / 6) + (expected_cuped_variance / 4)
-    )
+    expected_cuped_se = math.sqrt((expected_cuped_variance / 6) + (expected_cuped_variance / 4))
     expected_cuped_mde = _compute_mde_from_standard_error(
         standard_error=expected_cuped_se,
         alpha=DEFAULT_ALPHA,
@@ -767,9 +1012,7 @@ def test_compute_mde_accepts_explicit_list_grids_sorted_unique() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 2
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 2),
             "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 6.0],
         }
     )
@@ -840,9 +1083,7 @@ def test_compute_mde_accepts_max_aggregation_for_mean_metric() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         }
     )
@@ -909,9 +1150,7 @@ def test_compute_mde_sum_aggregation_list_makes_other_metrics_use_max() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "orders": [
                 1.0,
                 2.0,
@@ -951,9 +1190,7 @@ def test_compute_mde_accepts_ratio_spec_dataclass_for_user_ratio() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "clicks": [
                 1.0,
                 1.0,
@@ -1002,9 +1239,7 @@ def test_compute_mde_applies_aggregation_policy_to_user_ratio_components() -> No
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             "visits": [10.0] * 12,
         }
@@ -1039,9 +1274,7 @@ def test_compute_mde_computes_agg_ratio_delta_method_unit_variance() -> None:
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "clicks": [
                 1.0,
                 1.0,
@@ -1107,9 +1340,7 @@ def test_compute_mde_applies_aggregation_policy_to_agg_ratio_components() -> Non
     df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "converted": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             "visits": [10.0] * 12,
         }
@@ -1185,11 +1416,11 @@ def test_compute_mde_defaults_to_first_historical_date_and_accepts_start_dt() ->
         default_result = compute_mde(
             df,
             user_id="user_id",
-                metric_columns=["orders"],
-                group_sizes=[10],
-                exp_days=[2],
-                start_dt=None,
-                outliers_quantile=1,
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[2],
+            start_dt=None,
+            outliers_quantile=1,
         )
     explicit_result = compute_mde(
         df,
@@ -1304,11 +1535,11 @@ def test_compute_mde_warns_and_returns_nan_when_cuped_window_is_unavailable() ->
         result = compute_mde(
             df,
             user_id="user_id",
-                metric_columns=["orders"],
-                group_sizes=[10],
-                exp_days=[2],
-                start_dt=None,
-                outliers_quantile=1,
+            metric_columns=["orders"],
+            group_sizes=[10],
+            exp_days=[2],
+            start_dt=None,
+            outliers_quantile=1,
         )
 
     row = _single_metric_row(result, "orders")
@@ -1344,9 +1575,7 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
     source_df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
         }
     )
@@ -1404,12 +1633,12 @@ def test_compute_mde_from_sql_matches_dataframe_path(monkeypatch: pytest.MonkeyP
             query = task["query"]
             assert isinstance(query, str)
             queries.append(query)
-            if 'CAST("dt" AS DATE) >= DATE \'2024-01-03\'' in query:
+            if "CAST(\"dt\" AS DATE) >= DATE '2024-01-03'" in query:
                 frames[str(task["name"])] = pd.DataFrame(
                     {"user_id": [1, 2, 3], "orders": [7.0, 14.0, 23.0]}
                 )
                 continue
-            if 'CAST("dt" AS DATE) >= DATE \'2024-01-01\'' in query:
+            if "CAST(\"dt\" AS DATE) >= DATE '2024-01-01'" in query:
                 frames[str(task["name"])] = pd.DataFrame(
                     {"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]}
                 )
@@ -1746,9 +1975,7 @@ def test_compute_mde_sql_native_uses_compact_sql_stats(
     source_df = pd.DataFrame(
         {
             "user_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3
-            ),
+            "dt": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"] * 3),
             "orders": [1.0, 2.0, 3.0, 4.0, 3.0, 4.0, 6.0, 8.0, 5.0, 6.0, 10.0, 13.0],
         }
     )
@@ -1947,9 +2174,7 @@ def test_compute_mde_from_sql_applies_where_to_validation_and_windows(
             assert isinstance(query, str)
             queries.append(query)
             assert "(country = 'US')" in query
-            frames[str(task["name"])] = pd.DataFrame(
-                {"user_id": [1, 2], "orders": [10.0, 12.0]}
-            )
+            frames[str(task["name"])] = pd.DataFrame({"user_id": [1, 2], "orders": [10.0, 12.0]})
         return frames
 
     monkeypatch.setattr("analytics_toolkit.ab_utils.planning.sql_facade.read", fake_read)
@@ -2078,14 +2303,10 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
                 max_active_loads = max(max_active_loads, active_loads)
             try:
                 time.sleep(0.02)
-                if 'CAST("dt" AS DATE) < DATE \'2024-01-02\'' in query:
-                    frame = pd.DataFrame(
-                        {"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]}
-                    )
-                elif 'CAST("dt" AS DATE) < DATE \'2024-01-03\'' in query:
-                    frame = pd.DataFrame(
-                        {"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]}
-                    )
+                if "CAST(\"dt\" AS DATE) < DATE '2024-01-02'" in query:
+                    frame = pd.DataFrame({"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]})
+                elif "CAST(\"dt\" AS DATE) < DATE '2024-01-03'" in query:
+                    frame = pd.DataFrame({"user_id": [1, 2, 3], "orders": [3.0, 7.0, 11.0]})
                 else:
                     raise AssertionError(f"Unexpected aggregate query:\n{query}")
                 return str(task["name"]), frame
@@ -2155,9 +2376,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
     assert max_active_compute_tasks == 2
     assert sorted(compute_calls) == [(1, 10), (1, 20), (2, 10), (2, 20)]
     cuped_warnings = [
-        warning
-        for warning in caught
-        if "Could not compute CUPED MDE" in str(warning.message)
+        warning for warning in caught if "Could not compute CUPED MDE" in str(warning.message)
     ]
     assert len(cuped_warnings) == 2
 
@@ -2450,7 +2669,9 @@ def test_compute_mde_rejects_invalid_user_day_grain() -> None:
     missing_user = pd.DataFrame(
         {"user_id": [1, None], "dt": ["2024-01-01", "2024-01-01"], "orders": [1.0, 2.0]}
     )
-    missing_date = pd.DataFrame({"user_id": [1, 2], "dt": ["2024-01-01", None], "orders": [1.0, 2.0]})
+    missing_date = pd.DataFrame(
+        {"user_id": [1, 2], "dt": ["2024-01-01", None], "orders": [1.0, 2.0]}
+    )
     invalid_date = pd.DataFrame(
         {"user_id": [1, 2], "dt": ["2024-01-01", "not-a-date"], "orders": [1.0, 2.0]}
     )
@@ -2848,20 +3069,21 @@ def test_compute_test_metrics_agg_ratio_default_non_zero_truncate() -> None:
     assert row["metric_test"] == pytest.approx(2.0)
 
 
-@pytest.mark.filterwarnings(
-    "ignore:Precision loss occurred in moment calculation:RuntimeWarning"
-)
-def test_compute_test_metrics_parallel_bootstrap_is_reproducible() -> None:
+@pytest.mark.filterwarnings("ignore:Precision loss occurred in moment calculation:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Bootstrap discarded .* resamples:RuntimeWarning")
+def test_compute_test_metrics_bootstrap_is_deterministic_across_executors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     df = _build_sample_metrics_df()
 
-    first = compute_test_metrics(
+    serial = compute_test_metrics(
         df,
         multiple_comparisons_adjustment=True,
         multiple_comparisons_adjustment_resamples=30,
         bootstrap_random_state=17,
-        bootstrap_n_jobs=2,
+        bootstrap_n_jobs=1,
     )
-    second = compute_test_metrics(
+    process = compute_test_metrics(
         df,
         multiple_comparisons_adjustment=True,
         multiple_comparisons_adjustment_resamples=30,
@@ -2869,13 +3091,26 @@ def test_compute_test_metrics_parallel_bootstrap_is_reproducible() -> None:
         bootstrap_n_jobs=2,
     )
 
-    pd.testing.assert_frame_equal(first, second)
-    assert first.columns[first.columns.get_loc("p-value") + 1] == "s.e. bootstrap"
-    assert first.columns[first.columns.get_loc("s.e. bootstrap") + 1] == "bootstrap_adj_p"
-    orders_row = first[
-        (first["group_1"] == "test_a")
-        & (first["group_2"] == "control")
-        & (first["metric_name"] == "orders")
+    def unavailable_process_pool(*args: object, **kwargs: object) -> None:
+        raise PermissionError("process pools unavailable")
+
+    monkeypatch.setattr(bootstrap_module, "ProcessPoolExecutor", unavailable_process_pool)
+    thread_fallback = compute_test_metrics(
+        df,
+        multiple_comparisons_adjustment=True,
+        multiple_comparisons_adjustment_resamples=30,
+        bootstrap_random_state=17,
+        bootstrap_n_jobs=2,
+    )
+
+    pd.testing.assert_frame_equal(serial, process)
+    pd.testing.assert_frame_equal(serial, thread_fallback)
+    assert serial.columns[serial.columns.get_loc("p-value") + 1] == "s.e. bootstrap"
+    assert serial.columns[serial.columns.get_loc("s.e. bootstrap") + 1] == "bootstrap_adj_p"
+    orders_row = serial[
+        (serial["group_1"] == "test_a")
+        & (serial["group_2"] == "control")
+        & (serial["metric_name"] == "orders")
     ].iloc[0]
     assert not math.isnan(float(orders_row["s.e. bootstrap"]))
 
@@ -2898,7 +3133,16 @@ def test_compute_test_metrics_accepts_bootstrap_progress() -> None:
 @pytest.mark.parametrize(
     ("kwargs", "error_type", "message"),
     [
-        ({"bootstrap_random_state": True}, TypeError, "bootstrap_random_state must be an integer or None"),
+        (
+            {"bootstrap_random_state": True},
+            TypeError,
+            "bootstrap_random_state must be an integer or None",
+        ),
+        (
+            {"bootstrap_random_state": -1},
+            ValueError,
+            "bootstrap_random_state must be non-negative or None",
+        ),
         ({"bootstrap_n_jobs": 0}, ValueError, "bootstrap_n_jobs must be positive"),
         ({"bootstrap_n_jobs": True}, TypeError, "bootstrap_n_jobs must be an integer"),
         ({"bootstrap_progress": 1}, TypeError, "bootstrap_progress must be a boolean"),
@@ -2992,10 +3236,7 @@ def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
     assert result.columns[result.columns.get_loc("p-value") + 1] == "s.e. CUPED"
     assert result.columns[result.columns.get_loc("s.e. CUPED") + 1] == "p-value CUPED"
     assert result.columns[result.columns.get_loc("p-value CUPED") + 1] == "mde_abs CUPED"
-    assert (
-        result.columns[result.columns.get_loc("mde_abs CUPED") + 1]
-        == "mde_relative CUPED"
-    )
+    assert result.columns[result.columns.get_loc("mde_abs CUPED") + 1] == "mde_relative CUPED"
     orders_row = result[result["metric_name"] == "orders"].iloc[0]
     expected_mde_abs = _compute_mde_from_standard_error(
         standard_error=orders_row["s.e. CUPED"],
@@ -3172,7 +3413,9 @@ def test_compute_test_metrics_cuped_warns_when_no_overlapping_observations() -> 
         }
     )
 
-    with pytest.warns(UserWarning, match="no overlapping non-missing experiment/pre-experiment observations"):
+    with pytest.warns(
+        UserWarning, match="no overlapping non-missing experiment/pre-experiment observations"
+    ):
         result = compute_test_metrics(
             df,
             control="control",
@@ -3201,7 +3444,9 @@ def test_compute_test_metrics_cuped_warns_when_too_few_usable_observations() -> 
         }
     )
 
-    with pytest.warns(UserWarning, match="not enough overlapping observations to run the CUPED t-test"):
+    with pytest.warns(
+        UserWarning, match="not enough overlapping observations to run the CUPED t-test"
+    ):
         result = compute_test_metrics(
             df,
             control="control",
@@ -3225,7 +3470,16 @@ def test_compute_test_metrics_cuped_uses_only_overlapping_nonmissing_users() -> 
     pre_df = pd.DataFrame(
         {
             "user_id": [999, 6, 4, 5, 2, 1, 3, 1000],
-            "group_name": ["control", "test", "test", "test", "control", "control", "control", "test"],
+            "group_name": [
+                "control",
+                "test",
+                "test",
+                "test",
+                "control",
+                "control",
+                "control",
+                "test",
+            ],
             "orders": [16.0, 16.0, 14.0, np.nan, 9.0, 8.0, 16.0, 16.0],
         }
     )

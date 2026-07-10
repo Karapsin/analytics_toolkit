@@ -8,7 +8,7 @@ import pandas as pd
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
-from ...execution.operation_runner import timed_public_sql_function
+from ...execution.operation_runner import timed_public_sql_function, validate_retry_options
 from ...metadata.show_queries import show_queries
 from .read_sql import read_sql
 
@@ -38,6 +38,7 @@ def cancel_queries(
     query_label: str | None = None,
 ) -> pd.DataFrame:
     _validate_concurrency(concurrency)
+    validate_retry_options(retry_cnt, timeout_increment)
     config = get_connection_config(db_key)
     connection_key = config.connection_key
     backend = config.backend
@@ -147,9 +148,5 @@ def _normalize_backend_query_id(backend: str, query_id: Any) -> int | str:
 
 
 def _validate_concurrency(concurrency: int) -> None:
-    if (
-        isinstance(concurrency, bool)
-        or not isinstance(concurrency, int)
-        or concurrency < 1
-    ):
+    if concurrency.__class__ is not int or concurrency < 1:
         raise ValueError("concurrency must be an integer >= 1.")

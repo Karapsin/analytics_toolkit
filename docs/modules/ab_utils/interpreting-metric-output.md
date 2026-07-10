@@ -26,12 +26,29 @@ the main call, include the control label, and keep overlapping users in the same
 groups. If a metric cannot be built from the pre-experiment dataframe, CUPED
 statistics and CUPED MDE columns are set to `NaN` and a warning is emitted.
 
-`bootstrap_adj_p` is computed per metric using a bootstrap max-statistic
-procedure. Rows are resampled with replacement from the observed dataframe, each
-sampled row keeps its original group label, and the maximum absolute comparison
-statistic across enabled comparisons is collected. Treat it as a
-bootstrap-adjusted stability measure rather than a strict null-calibrated
-multiple-testing p-value.
+`bootstrap_adj_p` is a weak-null, max-T adjusted p-value computed separately for
+each metric. Complete user rows are resampled with replacement inside their
+observed groups, so group sizes and numerator/denominator pairing stay fixed.
+Every replicate recomputes the pooled outlier cutoff and the full metric
+estimator. Its centered statistic is
+`(bootstrap delta - observed delta) / bootstrap standard error`, and the largest
+absolute statistic across that metric's enabled, observed-valid comparisons is
+used for adjustment.
+
+A replicate contributes to `bootstrap_adj_p` only when every observed-valid
+comparison in the metric family has a finite centered statistic. Discarded
+replicates emit a warning; when no family replicate is valid, the adjusted
+p-value is `NaN`. The calculation uses the finite-sample correction
+`(1 + exceedances) / (1 + valid replicates)`, so a finite run never reports a
+zero adjusted p-value. `s.e. bootstrap` is the sample standard deviation of the
+finite bootstrap deltas for that row and does not require the whole family to be
+valid. A fixed `bootstrap_random_state` produces the same replicates regardless
+of worker count or process-to-thread fallback.
+
+The procedure assumes independent one-row-per-user observations and stable
+group assignments. As with other studentized bootstrap methods, very small or
+degenerate groups can produce non-finite replicate standard errors and reduce
+the effective resample count.
 
 [format_ab_metrics](functions/format-ab-metrics.md) always adds a first
 `group_size` row inside each `label_cols` group. Group-size counts must be

@@ -29,6 +29,7 @@ from ...execution.operation_runner import (
     validate_progress_option,
     validate_retry_options,
 )
+from ...execution.validation import validate_optional_positive_int
 from ...execution.plan_steps import (
     add_analyze_step,
     add_clear_target_steps,
@@ -120,6 +121,14 @@ def load_df(
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
     validate_retry_options(retry_cnt, timeout_increment)
+    validate_optional_positive_int(
+        trino_insert_chunk_size,
+        "trino_insert_chunk_size",
+    )
+    validate_optional_positive_int(
+        gp_insert_chunk_size,
+        "gp_insert_chunk_size",
+    )
     _validate_progress(progress)
 
     options = _build_load_options(

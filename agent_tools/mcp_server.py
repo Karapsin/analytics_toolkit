@@ -107,13 +107,14 @@ TEST_COMMANDS = {
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_ab_utils_format.py tests/test_ab_utils_split.py tests/test_ab_utils_parallel.py",
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_ab_utils_format.py tests/test_ab_utils_split.py tests/test_ab_utils_parallel.py tests/test_ab_utils_sql_native.py",
             "args": [
                 "pytest",
                 "-q",
                 "tests/test_ab_utils_format.py",
                 "tests/test_ab_utils_split.py",
                 "tests/test_ab_utils_parallel.py",
+                "tests/test_ab_utils_sql_native.py",
             ],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },

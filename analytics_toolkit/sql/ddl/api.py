@@ -57,6 +57,7 @@ def create_sql_table(
     return_metadata: bool = False,
     table_schema: Mapping[str, str] | None = None,
 ) -> str | SqlPlan | SqlOperationResult | int | None:
+    validate_retry_options(retry_cnt, timeout_increment)
     _validate_create_schema_sources(
         df=df,
         sql=sql,
@@ -87,7 +88,6 @@ def create_sql_table(
         )
 
     config = get_connection_config(db_key)
-    validate_retry_options(retry_cnt, timeout_increment)
     options = _build_create_table_options(
         connection_key=config.connection_key,
         backend=config.backend,
@@ -213,6 +213,8 @@ def _create_sql_table_from_sql_source(
             ch_sharding_key=ch_sharding_key,
             ch_only_shard=ch_only_shard,
             query_label=query_label,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
         )
 
     from ..dml.table.create_table_from_sql import create_table_from_sql
@@ -235,6 +237,8 @@ def _create_sql_table_from_sql_source(
         return_sql=return_sql,
         return_metadata=return_metadata,
         query_label=query_label,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
     )
 
 
@@ -252,6 +256,8 @@ def _generate_create_sql_table_from_query_sql(
     ch_sharding_key: str,
     ch_only_shard: bool,
     query_label: str | None,
+    retry_cnt: int,
+    timeout_increment: int | float,
 ) -> str:
     from ..dml.table.create_table_from_sql import (
         _normalize_only_shard,
@@ -303,15 +309,38 @@ def _generate_create_sql_table_from_query_sql(
         ch_only_shard=only_shard,
     )
 
-    source_connection = get_sql_connection(source_config.connection_key)
-    try:
-        source_schema = inspect_source_query_schema(
-            source_config.backend,
-            source_connection,
-            apply_query_label(source_sql, query_label),
-        )
-    finally:
-        source_connection.close()
+    def inspect_schema(attempt: int) -> list[Any]:
+        del attempt
+        source_connection = get_sql_connection(source_config.connection_key)
+        try:
+            return inspect_source_query_schema(
+                source_config.backend,
+                source_connection,
+                apply_query_label(source_sql, query_label),
+            )
+        finally:
+            source_connection.close()
+
+    from ..execution.operation_runner import run_retrying_operation
+
+    source_schema = run_retrying_operation(
+        operation_name=(
+            f"inspecting query schema on {source_config.connection_key} "
+            f"({source_config.backend})"
+        ),
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        operation=inspect_schema,
+        context_factory=lambda attempt: SqlOperationContext(
+            operation="create_sql_table",
+            alias=source_config.connection_key,
+            backend=source_config.backend,
+            phase="inspect_schema",
+            target_table=table_name,
+            retry_attempt=attempt,
+            sql_preview=sql_preview(source_sql),
+        ),
+    )
 
     source_columns = [column.name for column in source_schema]
     _validate_source_columns(source_columns)

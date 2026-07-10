@@ -56,5 +56,8 @@ SQL plan: drop_tables
 
 - ClickHouse-specific flags control whether the distributed table, shard table, or both are dropped.
 - Plain `DROP TABLE` is the default; set `if_exists=True` to keep the historical safe-drop form.
+- `ch_wait_timeout_seconds` must be a built-in positive integer, and
+  `ch_wait_poll_interval_seconds` must be a finite positive real number. These
+  values are validated even when returning a dry-run plan.
 
 [SQL functions index](index.md)

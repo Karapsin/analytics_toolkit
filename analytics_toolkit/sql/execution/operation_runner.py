@@ -9,6 +9,7 @@ from analytics_toolkit.general import time_print, time_print_context
 
 from ..connection.errors import SqlOperationContext, annotate_sql_exception
 from .plans import SqlOperationMetadata
+from .validation import validate_non_negative_number, validate_positive_int
 
 
 T = TypeVar("T")
@@ -156,10 +157,16 @@ def validate_retry_options(
     retry_cnt: int,
     timeout_increment: int | float,
 ) -> None:
-    if retry_cnt < 1:
-        raise ValueError("retry_cnt must be at least 1.")
-    if timeout_increment < 0:
-        raise ValueError("timeout_increment must be non-negative.")
+    try:
+        validate_positive_int(retry_cnt, "retry_cnt")
+    except ValueError as exc:
+        raise ValueError("retry_cnt must be an integer of at least 1.") from exc
+    try:
+        validate_non_negative_number(timeout_increment, "timeout_increment")
+    except ValueError as exc:
+        raise ValueError(
+            "timeout_increment must be a finite non-negative number."
+        ) from exc
 
 
 def validate_progress_option(progress: bool) -> None:

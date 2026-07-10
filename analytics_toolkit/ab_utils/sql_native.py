@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import math
+import secrets
 import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -43,6 +44,12 @@ from .planning import (
 )
 from .ratio import _normalize_ratio_metrics
 from .rows import _build_comparisons, _build_metric_definitions
+from .sql_bootstrap import (
+    _build_sql_native_bootstrap_query as _build_sql_native_bootstrap_batch_query,
+    _plan_sql_native_bootstrap_batches,
+    _reduce_sql_native_bootstrap_batches,
+    _validate_sql_native_bootstrap_batch_options,
+)
 from .stats import (
     _both_present,
     _compute_group_diff_standard_error,
@@ -59,6 +66,8 @@ from .validation import (
 
 
 _SOURCE_TYPES = frozenset({"table", "sql"})
+_DEFAULT_BOOTSTRAP_LARGE_SOURCE_ROW_THRESHOLD = 100_000
+_DEFAULT_BOOTSTRAP_LARGE_SOURCE_RESAMPLES_PER_QUERY = 10
 _SQL_NATIVE_TASK_FIELDS = frozenset(
     {
         "source",
@@ -81,6 +90,8 @@ _SQL_NATIVE_TASK_FIELDS = frozenset(
         "bootstrap_random_state",
         "bootstrap_n_jobs",
         "bootstrap_progress",
+        "bootstrap_large_source_row_threshold",
+        "bootstrap_large_source_resamples_per_query",
         "outliers_quantile",
         "outliers_policy",
         "print_queries",
@@ -113,6 +124,10 @@ def compute_test_metrics_sql_native(
     bootstrap_random_state: int | None = 0,
     bootstrap_n_jobs: int = 1,
     bootstrap_progress: bool = False,
+    bootstrap_large_source_row_threshold: int = (_DEFAULT_BOOTSTRAP_LARGE_SOURCE_ROW_THRESHOLD),
+    bootstrap_large_source_resamples_per_query: int = (
+        _DEFAULT_BOOTSTRAP_LARGE_SOURCE_RESAMPLES_PER_QUERY
+    ),
     outliers_quantile: float = 0.999,
     outliers_policy: str = "non_zero_truncate",
     concurrency: int = 1,
@@ -141,12 +156,12 @@ def compute_test_metrics_sql_native(
         "ratio_metrics": ratio_metrics,
         "test_vs_test": test_vs_test,
         "multiple_comparisons_adjustment": multiple_comparisons_adjustment,
-        "multiple_comparisons_adjustment_resamples": (
-            multiple_comparisons_adjustment_resamples
-        ),
+        "multiple_comparisons_adjustment_resamples": (multiple_comparisons_adjustment_resamples),
         "bootstrap_random_state": bootstrap_random_state,
         "bootstrap_n_jobs": bootstrap_n_jobs,
         "bootstrap_progress": bootstrap_progress,
+        "bootstrap_large_source_row_threshold": bootstrap_large_source_row_threshold,
+        "bootstrap_large_source_resamples_per_query": (bootstrap_large_source_resamples_per_query),
         "outliers_quantile": outliers_quantile,
         "outliers_policy": outliers_policy,
         "print_queries": print_queries,
@@ -197,6 +212,8 @@ def _compute_test_metrics_sql_native_single(
     bootstrap_random_state: int | None,
     bootstrap_n_jobs: int,
     bootstrap_progress: bool,
+    bootstrap_large_source_row_threshold: int,
+    bootstrap_large_source_resamples_per_query: int,
     outliers_quantile: float,
     outliers_policy: str,
     print_queries: bool,
@@ -211,6 +228,12 @@ def _compute_test_metrics_sql_native_single(
         bootstrap_random_state=bootstrap_random_state,
         bootstrap_n_jobs=bootstrap_n_jobs,
         bootstrap_progress=bootstrap_progress,
+    )
+    if bootstrap_n_jobs != 1:
+        raise ValueError("SQL-native bootstrap is sequential; bootstrap_n_jobs must be 1.")
+    _validate_sql_native_bootstrap_batch_options(
+        row_threshold=bootstrap_large_source_row_threshold,
+        resamples_per_query=bootstrap_large_source_resamples_per_query,
     )
     _validate_outlier_parameters(
         outliers_quantile=outliers_quantile,
@@ -278,6 +301,7 @@ def _compute_test_metrics_sql_native_single(
         query_label=query_label,
     )
     _validate_sql_native_source_stats(validation, group=group, control=control, user_id=user_id)
+    source_row_count = _coerce_sql_int(validation.iloc[0].get("row_count"))
     group_names = _read_sql_native_groups(
         db_key=db_key,
         backend=source_ref.backend,
@@ -333,21 +357,24 @@ def _compute_test_metrics_sql_native_single(
         else None
     )
     bootstrap_stats = (
-        _read_sql_native_query(
+        _compute_sql_native_bootstrap_stats(
             db_key=db_key,
-            query=_build_sql_native_bootstrap_query(
-                backend=source_ref.backend,
-                source_sql=source_ref.source_sql,
-                sql_where=source_ref.sql_where,
-                group=group,
-                user_id=user_id,
-                comparisons=comparisons,
-                metric_definitions=metric_definitions,
-                outliers_quantile=float(outliers_quantile),
-                outliers_policy=normalized_outliers_policy,
-                resamples=multiple_comparisons_adjustment_resamples,
-                random_state=bootstrap_random_state,
-            ),
+            backend=source_ref.backend,
+            source_sql=source_ref.source_sql,
+            sql_where=source_ref.sql_where,
+            group=group,
+            user_id=user_id,
+            comparisons=comparisons,
+            metric_definitions=metric_definitions,
+            group_stats=base_stats,
+            outliers_quantile=float(outliers_quantile),
+            outliers_policy=normalized_outliers_policy,
+            resamples=multiple_comparisons_adjustment_resamples,
+            random_state=bootstrap_random_state,
+            source_row_count=source_row_count,
+            large_source_row_threshold=bootstrap_large_source_row_threshold,
+            large_source_resamples_per_query=(bootstrap_large_source_resamples_per_query),
+            show_progress=bootstrap_progress,
             print_queries=print_queries,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
@@ -476,9 +503,7 @@ def _resolve_metric_columns(
     excluded = {group, user_id}
     candidates = [column for column in columns if column not in excluded]
     typed_candidates = [
-        column
-        for column in candidates
-        if _is_sql_numeric_type(str(column_types.get(column, "")))
+        column for column in candidates if _is_sql_numeric_type(str(column_types.get(column, "")))
     ]
     return typed_candidates if typed_candidates else candidates
 
@@ -752,10 +777,7 @@ def _build_sql_native_value_group_ctes(
         cutoff_expression="cutoff.cutoff",
         outliers_policy=outliers_policy,
     )
-    outlier_expr = (
-        "CASE WHEN cutoff.cutoff IS NOT NULL AND value > cutoff.cutoff "
-        "THEN 1 ELSE 0 END"
-    )
+    outlier_expr = "CASE WHEN cutoff.cutoff IS NOT NULL AND value > cutoff.cutoff THEN 1 ELSE 0 END"
     return [
         f"""
 source AS (
@@ -814,7 +836,7 @@ def _build_sql_native_agg_ratio_group_ctes(
     ratio_value = (
         "CASE WHEN "
         f"{numerator} IS NOT NULL AND {denominator} IS NOT NULL "
-        f"AND {denominator} <> 0 THEN {numerator} / {denominator} "
+        f"AND {denominator} > 0 THEN {numerator} / {denominator} "
         "ELSE NULL END"
     )
     cutoff_filter = _sql_native_cutoff_filter("ratio_value", outliers_policy)
@@ -832,8 +854,7 @@ def _build_sql_native_agg_ratio_group_ctes(
         outliers_policy=outliers_policy,
     )
     outlier_expr = (
-        "CASE WHEN cutoff.cutoff IS NOT NULL AND ratio_value > cutoff.cutoff "
-        "THEN 1 ELSE 0 END"
+        "CASE WHEN cutoff.cutoff IS NOT NULL AND ratio_value > cutoff.cutoff THEN 1 ELSE 0 END"
     )
     return [
         f"""
@@ -1170,29 +1191,162 @@ def _build_sql_native_bootstrap_query(
     outliers_policy: str,
     resamples: int,
     random_state: int | None,
+    resample_start: int = 1,
+    observed_statistics: Mapping[tuple[str, str, str], tuple[float, float]] | None = None,
 ) -> str:
-    del source_sql, sql_where, group, user_id, comparisons, metric_definitions
-    del outliers_quantile, outliers_policy
-    seed = 0 if random_state is None else int(random_state)
-    if backend == "gp":
-        generator = f"generate_series(1, {int(resamples)})"
-    elif backend == "ch":
-        generator = f"numbers({int(resamples)})"
-    else:
-        generator = f"UNNEST(sequence(1, {int(resamples)}))"
-    return f"""
-/* analytics_toolkit_ab_sql_native_bootstrap seed={seed} backend={backend}
-   The executable backend query is intentionally generated by the caller's SQL
-   adapter in compact-summary form; user-grain rows must not be returned. */
-SELECT
-    CAST(NULL AS VARCHAR) AS metric_name,
-    CAST(NULL AS VARCHAR) AS group_1,
-    CAST(NULL AS VARCHAR) AS group_2,
-    CAST(NULL AS DOUBLE) AS se_bootstrap,
-    CAST(NULL AS DOUBLE) AS bootstrap_adj_p
-FROM {generator} AS bootstrap_resamples
-WHERE 1 = 0
-""".strip()
+    return _build_sql_native_bootstrap_batch_query(
+        backend=backend,
+        source_sql=source_sql,
+        sql_where=sql_where,
+        group=group,
+        user_id=user_id,
+        comparisons=comparisons,
+        metric_definitions=metric_definitions,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+        resamples=resamples,
+        random_state=random_state,
+        resample_start=resample_start,
+        observed_statistics=observed_statistics,
+    )
+
+
+def _compute_sql_native_bootstrap_stats(
+    *,
+    db_key: str,
+    backend: str,
+    source_sql: str,
+    sql_where: str | None,
+    group: str,
+    user_id: str,
+    comparisons: Sequence[tuple[str, str]],
+    metric_definitions: Sequence[dict[str, object]],
+    group_stats: pd.DataFrame,
+    outliers_quantile: float,
+    outliers_policy: str,
+    resamples: int,
+    random_state: int | None,
+    source_row_count: int,
+    large_source_row_threshold: int,
+    large_source_resamples_per_query: int,
+    show_progress: bool,
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+) -> pd.DataFrame:
+    observed_statistics = _build_sql_native_observed_statistics(
+        group_stats=group_stats,
+        metric_definitions=metric_definitions,
+        comparisons=comparisons,
+    )
+    batches = _plan_sql_native_bootstrap_batches(
+        row_count=source_row_count,
+        resamples=resamples,
+        large_source_row_threshold=large_source_row_threshold,
+        large_source_resamples_per_query=large_source_resamples_per_query,
+    )
+    if len(batches) > 1:
+        largest_batch = max(count for _, count in batches)
+        warnings.warn(
+            f"SQL-native bootstrap will execute {len(batches)} sequential queries "
+            f"for {resamples} resamples (up to approximately "
+            f"{source_row_count * largest_batch:,} sampled rows per query). "
+            "Keep the source stable until all batches finish.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+    seed = secrets.randbits(63) if random_state is None else random_state
+    batch_frames: list[tuple[int, pd.DataFrame]] = []
+    progress_bar = tqdm(
+        batches,
+        desc="SQL-native bootstrap",
+        unit="query",
+        disable=not show_progress,
+    )
+    for resample_start, batch_size in progress_bar:
+        frame = _read_sql_native_query(
+            db_key=db_key,
+            query=_build_sql_native_bootstrap_query(
+                backend=backend,
+                source_sql=source_sql,
+                sql_where=sql_where,
+                group=group,
+                user_id=user_id,
+                comparisons=comparisons,
+                metric_definitions=metric_definitions,
+                outliers_quantile=outliers_quantile,
+                outliers_policy=outliers_policy,
+                resamples=batch_size,
+                random_state=seed,
+                resample_start=resample_start,
+                observed_statistics=observed_statistics,
+            ),
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+        batch_frames.append((batch_size, frame))
+    return _reduce_sql_native_bootstrap_batches(
+        batches=batch_frames,
+        observed_statistics=observed_statistics,
+    )
+
+
+def _build_sql_native_observed_statistics(
+    *,
+    group_stats: pd.DataFrame,
+    metric_definitions: Sequence[dict[str, object]],
+    comparisons: Sequence[tuple[str, str]],
+) -> dict[tuple[str, str, str], tuple[float, float]]:
+    stats_by_key = {
+        (str(row["metric_name"]), str(row["group_name"])): row for _, row in group_stats.iterrows()
+    }
+    observed: dict[tuple[str, str, str], tuple[float, float]] = {}
+    for metric_definition in metric_definitions:
+        metric_name = str(metric_definition["metric_key"])
+        is_agg_ratio = (
+            metric_definition["kind"] == "ratio"
+            and dict(metric_definition["ratio_spec"])["level"] == "agg"
+        )
+        for test_group, baseline_group in comparisons:
+            baseline = stats_by_key.get(
+                (metric_name, baseline_group),
+                pd.Series(dtype=object),
+            )
+            test = stats_by_key.get(
+                (metric_name, test_group),
+                pd.Series(dtype=object),
+            )
+            baseline_mean = _coerce_sql_float(baseline.get("metric_value"))
+            test_mean = _coerce_sql_float(test.get("metric_value"))
+            delta = (
+                test_mean - baseline_mean if _both_present(test_mean, baseline_mean) else math.nan
+            )
+            baseline_variance = _coerce_sql_float(baseline.get("variance_value"))
+            test_variance = _coerce_sql_float(test.get("variance_value"))
+            if is_agg_ratio:
+                standard_error = (
+                    math.sqrt(baseline_variance + test_variance)
+                    if math.isfinite(baseline_variance)
+                    and math.isfinite(test_variance)
+                    and baseline_variance + test_variance > 0
+                    else math.nan
+                )
+            else:
+                standard_error = _compute_group_diff_standard_error(
+                    baseline_variance=baseline_variance,
+                    baseline_n=_coerce_sql_int(baseline.get("n")),
+                    test_variance=test_variance,
+                    test_n=_coerce_sql_int(test.get("n")),
+                )
+            observed[(metric_name, test_group, baseline_group)] = (
+                delta,
+                standard_error,
+            )
+    return observed
 
 
 def _finalize_sql_native_metric_result(
@@ -1208,8 +1362,7 @@ def _finalize_sql_native_metric_result(
     include_bootstrap: bool,
 ) -> pd.DataFrame:
     stats_by_key = {
-        (str(row["metric_name"]), row["group_name"]): row
-        for _, row in group_stats.iterrows()
+        (str(row["metric_name"]), row["group_name"]): row for _, row in group_stats.iterrows()
     }
     cuped_by_key = (
         {
@@ -1404,9 +1557,7 @@ def _add_sql_native_cuped_fields(
             baseline_mean = _coerce_sql_float(cuped_row.get("metric_control"))
             test_mean = _coerce_sql_float(cuped_row.get("metric_test"))
             delta_abs = (
-                test_mean - baseline_mean
-                if _both_present(test_mean, baseline_mean)
-                else math.nan
+                test_mean - baseline_mean if _both_present(test_mean, baseline_mean) else math.nan
             )
             se = _compute_group_diff_standard_error(
                 baseline_variance=baseline_variance,
@@ -1472,10 +1623,7 @@ def _compute_welch_p_value_from_summary(
     baseline_term = baseline_variance / baseline_n
     test_term = test_variance / test_n
     numerator = (baseline_term + test_term) ** 2
-    denominator = (
-        (baseline_term**2 / (baseline_n - 1))
-        + (test_term**2 / (test_n - 1))
-    )
+    denominator = (baseline_term**2 / (baseline_n - 1)) + (test_term**2 / (test_n - 1))
     if denominator <= 0 or math.isnan(denominator):
         return math.nan
     degrees = numerator / denominator
@@ -1587,9 +1735,7 @@ def _validate_sql_native_tasks(
             raise TypeError(f"Task {name!r} must be a mapping.")
         unknown = sorted(set(spec) - _SQL_NATIVE_TASK_FIELDS)
         if unknown:
-            raise TypeError(
-                f"Task {name!r} got unexpected field(s): {', '.join(unknown)}."
-            )
+            raise TypeError(f"Task {name!r} got unexpected field(s): {', '.join(unknown)}.")
         kwargs = dict(defaults)
         kwargs.update(spec)
         if "source" not in kwargs or kwargs["source"] is None:

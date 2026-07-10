@@ -1,0 +1,2256 @@
+{
+  "schema_version": 1,
+  "targets": {
+    "mypy": [
+      "analytics_toolkit"
+    ],
+    "ruff": [
+      "analytics_toolkit",
+      "tests",
+      "agent_tools",
+      "release_routines"
+    ]
+  },
+  "tools": {
+    "mypy": {
+      "analytics_toolkit/ab_utils/api.py": {
+        "arg-type": 15
+      },
+      "analytics_toolkit/ab_utils/bootstrap.py": {
+        "arg-type": 5,
+        "attr-defined": 1,
+        "call-overload": 15,
+        "type-arg": 15,
+        "var-annotated": 12
+      },
+      "analytics_toolkit/ab_utils/cuped.py": {
+        "call-overload": 1
+      },
+      "analytics_toolkit/ab_utils/outliers.py": {
+        "arg-type": 5,
+        "call-overload": 1
+      },
+      "analytics_toolkit/ab_utils/parallel.py": {
+        "assignment": 2,
+        "call-arg": 1,
+        "index": 1,
+        "no-redef": 1
+      },
+      "analytics_toolkit/ab_utils/planning.py": {
+        "arg-type": 14,
+        "attr-defined": 4,
+        "call-overload": 7,
+        "index": 1,
+        "no-any-return": 1
+      },
+      "analytics_toolkit/ab_utils/ratio.py": {
+        "no-any-return": 2,
+        "type-arg": 7
+      },
+      "analytics_toolkit/ab_utils/rows.py": {
+        "arg-type": 4,
+        "assignment": 2,
+        "call-overload": 3,
+        "type-arg": 2,
+        "var-annotated": 7
+      },
+      "analytics_toolkit/ab_utils/split.py": {
+        "arg-type": 4,
+        "list-item": 1,
+        "no-any-return": 3,
+        "type-arg": 3,
+        "var-annotated": 1
+      },
+      "analytics_toolkit/ab_utils/sql_native.py": {
+        "arg-type": 10,
+        "call-overload": 4,
+        "no-any-return": 1
+      },
+      "analytics_toolkit/ab_utils/stats.py": {
+        "type-arg": 2
+      },
+      "analytics_toolkit/cli.py": {
+        "union-attr": 1
+      },
+      "analytics_toolkit/dates/dates.py": {
+        "arg-type": 6,
+        "no-any-return": 4,
+        "return-value": 1
+      },
+      "analytics_toolkit/datetime/datetime.py": {
+        "arg-type": 2,
+        "no-any-return": 4,
+        "return-value": 1
+      },
+      "analytics_toolkit/excel/long_format.py": {
+        "no-untyped-def": 2,
+        "operator": 4
+      },
+      "analytics_toolkit/general/__init__.py": {
+        "attr-defined": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/__init__.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/base.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/clickhouse.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/dbapi.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/gp.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/trino.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/backend_adapters.py": {
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/backends/__init__.py": {
+        "attr-defined": 2
+      },
+      "analytics_toolkit/sql/backends/adapter_defaults.py": {
+        "no-any-return": 6
+      },
+      "analytics_toolkit/sql/backends/ch/adapter.py": {
+        "arg-type": 7,
+        "assignment": 3,
+        "attr-defined": 4,
+        "misc": 1,
+        "override": 2
+      },
+      "analytics_toolkit/sql/backends/ch/ddl.py": {
+        "name-defined": 1
+      },
+      "analytics_toolkit/sql/backends/ch/lifecycle.py": {
+        "attr-defined": 2
+      },
+      "analytics_toolkit/sql/backends/ch/operations.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/backends/ch/upsert.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/backends/ch/wait.py": {
+        "assignment": 1
+      },
+      "analytics_toolkit/sql/backends/dbapi.py": {
+        "attr-defined": 1
+      },
+      "analytics_toolkit/sql/backends/gp/adapter.py": {
+        "misc": 2,
+        "override": 3
+      },
+      "analytics_toolkit/sql/backends/registry.py": {
+        "attr-defined": 2,
+        "redundant-cast": 3
+      },
+      "analytics_toolkit/sql/backends/source_estimate.py": {
+        "arg-type": 2
+      },
+      "analytics_toolkit/sql/backends/trino/adapter.py": {
+        "misc": 1,
+        "override": 3
+      },
+      "analytics_toolkit/sql/backends/trino/config.py": {
+        "arg-type": 1,
+        "assignment": 1,
+        "no-untyped-call": 1,
+        "union-attr": 1
+      },
+      "analytics_toolkit/sql/backends/trino/parquet_stage.py": {
+        "operator": 1
+      },
+      "analytics_toolkit/sql/backends/validation.py": {
+        "no-any-return": 3
+      },
+      "analytics_toolkit/sql/connection/config.py": {
+        "import-not-found": 1,
+        "no-any-return": 1,
+        "redundant-cast": 1
+      },
+      "analytics_toolkit/sql/connection/get_sql_connection.py": {
+        "import-not-found": 1
+      },
+      "analytics_toolkit/sql/core/capabilities.py": {
+        "name-defined": 1,
+        "no-untyped-def": 1
+      },
+      "analytics_toolkit/sql/ddl/schema.py": {
+        "arg-type": 1,
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/io/cancel_queries.py": {
+        "no-any-return": 4
+      },
+      "analytics_toolkit/sql/dml/io/execute_read.py": {
+        "misc": 1
+      },
+      "analytics_toolkit/sql/dml/io/execute_sql.py": {
+        "name-defined": 1,
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/load/load_df.py": {
+        "no-any-return": 2
+      },
+      "analytics_toolkit/sql/dml/load/load_sql_table.py": {
+        "no-any-return": 5
+      },
+      "analytics_toolkit/sql/dml/load/stage.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/table/__init__.py": {
+        "attr-defined": 20
+      },
+      "analytics_toolkit/sql/dml/table/_basic_ops.py": {
+        "no-any-return": 25
+      },
+      "analytics_toolkit/sql/dml/table/ch_create_table_as.py": {
+        "attr-defined": 14
+      },
+      "analytics_toolkit/sql/dml/table/create_table_from_sql.py": {
+        "arg-type": 6
+      },
+      "analytics_toolkit/sql/dml/table/drop_tables.py": {
+        "arg-type": 2
+      },
+      "analytics_toolkit/sql/dml/table/table_validation.py": {
+        "no-any-return": 4
+      },
+      "analytics_toolkit/sql/dml/table/write_modes.py": {
+        "attr-defined": 3,
+        "no-any-return": 13
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/api.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/attempt.py": {
+        "arg-type": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/keyed.py": {
+        "attr-defined": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/options.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/parquet_stage.py": {
+        "no-any-return": 4
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/progress.py": {
+        "misc": 1,
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/row_counts.py": {
+        "no-any-return": 4
+      },
+      "analytics_toolkit/sql/dml/transfer/io/source.py": {
+        "no-any-return": 2
+      },
+      "analytics_toolkit/sql/dml/transfer/schema.py": {
+        "no-any-return": 3
+      },
+      "analytics_toolkit/sql/dml/transfer/staging.py": {
+        "no-any-return": 2
+      },
+      "analytics_toolkit/sql/execution/operation_runner.py": {
+        "assignment": 1,
+        "comparison-overlap": 1,
+        "no-any-return": 2
+      },
+      "analytics_toolkit/sql/metadata/show_tables.py": {
+        "arg-type": 2
+      },
+      "analytics_toolkit/sql/metadata/table_info.py": {
+        "no-any-return": 1
+      },
+      "analytics_toolkit/sql/orchestration/async_sql.py": {
+        "assignment": 2,
+        "no-redef": 1
+      },
+      "analytics_toolkit/sql/orchestration/parallel_sql.py": {
+        "assignment": 2,
+        "call-arg": 1
+      },
+      "analytics_toolkit/sql_format/__init__.py": {
+        "arg-type": 1,
+        "no-any-return": 1,
+        "return-value": 2
+      }
+    },
+    "ruff": {
+      "agent_tools/docs_assistant.py": {
+        "C901": 2,
+        "EM101": 6,
+        "EM102": 2,
+        "EXE001": 1,
+        "I001": 1,
+        "PERF401": 2,
+        "PLR0912": 1,
+        "PLR2004": 2,
+        "PLW2901": 1,
+        "S324": 1,
+        "TRY003": 8,
+        "TRY004": 2,
+        "UP012": 1,
+        "UP037": 1
+      },
+      "agent_tools/mcp_server.py": {
+        "ARG001": 1,
+        "BLE001": 3,
+        "C401": 1,
+        "C901": 1,
+        "DTZ011": 3,
+        "E402": 2,
+        "E501": 45,
+        "EM101": 7,
+        "EM102": 2,
+        "EXE001": 1,
+        "FBT001": 5,
+        "FBT002": 4,
+        "PERF401": 1,
+        "PIE810": 2,
+        "PLR0911": 4,
+        "PLR0913": 2,
+        "PLR1714": 1,
+        "PLR2004": 4,
+        "PTH105": 1,
+        "RUF005": 1,
+        "RUF059": 1,
+        "S108": 10,
+        "TRY003": 9
+      },
+      "analytics_toolkit/ab_utils/api.py": {
+        "C901": 2,
+        "EM101": 3,
+        "EM102": 4,
+        "FBT001": 8,
+        "FBT002": 8,
+        "PLC0415": 1,
+        "PLR0912": 2,
+        "PLR0913": 3,
+        "PLR0915": 1,
+        "PLR2004": 2,
+        "SIM102": 1,
+        "TRY003": 7
+      },
+      "analytics_toolkit/ab_utils/bootstrap.py": {
+        "EM101": 2,
+        "FBT001": 5,
+        "PLR0913": 3,
+        "PLR2004": 1,
+        "PYI055": 2,
+        "TRY003": 2
+      },
+      "analytics_toolkit/ab_utils/cuped.py": {
+        "E501": 7,
+        "PLR0913": 4,
+        "S101": 1
+      },
+      "analytics_toolkit/ab_utils/formatter.py": {
+        "C901": 1,
+        "EM101": 13,
+        "EM102": 9,
+        "FBT001": 3,
+        "FBT002": 1,
+        "PLR0913": 2,
+        "PLR0915": 1,
+        "TC003": 1,
+        "TRY003": 22,
+        "TRY004": 3
+      },
+      "analytics_toolkit/ab_utils/metrics.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/ab_utils/outliers.py": {
+        "FBT003": 2
+      },
+      "analytics_toolkit/ab_utils/parallel.py": {
+        "B007": 1,
+        "B010": 1,
+        "BLE001": 1,
+        "C901": 1,
+        "EM101": 10,
+        "EM102": 19,
+        "FBT001": 1,
+        "I001": 1,
+        "PLR0912": 1,
+        "PLR0913": 2,
+        "PLR0915": 1,
+        "TC002": 1,
+        "TRY003": 29,
+        "TRY004": 2,
+        "UP037": 1
+      },
+      "analytics_toolkit/ab_utils/planning.py": {
+        "ARG001": 1,
+        "C420": 1,
+        "EM101": 21,
+        "EM102": 31,
+        "I001": 1,
+        "PERF401": 2,
+        "PLR0911": 1,
+        "PLR0913": 23,
+        "PLR2004": 3,
+        "PYI041": 8,
+        "RET504": 1,
+        "S608": 17,
+        "TC003": 1,
+        "TRY003": 52
+      },
+      "analytics_toolkit/ab_utils/ratio.py": {
+        "C901": 1,
+        "E501": 3,
+        "EM102": 8,
+        "PLR2004": 1,
+        "PLW2901": 1,
+        "TRY003": 8
+      },
+      "analytics_toolkit/ab_utils/rows.py": {
+        "E501": 1,
+        "EM101": 1,
+        "F401": 2,
+        "FBT001": 1,
+        "FBT002": 1,
+        "I001": 1,
+        "PLR0913": 4,
+        "PLR2004": 1,
+        "PLW0108": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/ab_utils/split.py": {
+        "C420": 2,
+        "E501": 1,
+        "EM101": 31,
+        "EM102": 9,
+        "FBT001": 1,
+        "FBT002": 1,
+        "PERF401": 1,
+        "PLR0913": 1,
+        "TRY003": 40
+      },
+      "analytics_toolkit/ab_utils/sql_bootstrap.py": {
+        "C901": 1,
+        "EM101": 19,
+        "EM102": 6,
+        "PLR0912": 1,
+        "PLR0913": 4,
+        "PLR2004": 1,
+        "S608": 17,
+        "TC006": 4,
+        "TRY003": 25,
+        "UP032": 3
+      },
+      "analytics_toolkit/ab_utils/sql_native.py": {
+        "ARG001": 1,
+        "C901": 1,
+        "EM101": 16,
+        "EM102": 14,
+        "FURB110": 1,
+        "I001": 1,
+        "PERF203": 1,
+        "PLR0912": 1,
+        "PLR0913": 20,
+        "PLR0915": 1,
+        "PLR2004": 2,
+        "PYI041": 6,
+        "S608": 13,
+        "TRY003": 30
+      },
+      "analytics_toolkit/ab_utils/stats.py": {
+        "EM102": 1,
+        "PLR2004": 5,
+        "TC002": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/ab_utils/validation.py": {
+        "E501": 2,
+        "EM101": 13,
+        "EM102": 6,
+        "FBT001": 2,
+        "TC002": 1,
+        "TRY003": 19
+      },
+      "analytics_toolkit/cli.py": {
+        "E402": 2,
+        "I001": 1,
+        "TC003": 1
+      },
+      "analytics_toolkit/dates/__init__.py": {
+        "RUF022": 1
+      },
+      "analytics_toolkit/dates/dates.py": {
+        "DTZ011": 1,
+        "EM101": 6,
+        "FBT001": 15,
+        "FBT002": 14,
+        "S311": 1,
+        "TRY003": 6
+      },
+      "analytics_toolkit/dates/functions.py": {
+        "F401": 19
+      },
+      "analytics_toolkit/datetime/__init__.py": {
+        "A005": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/datetime/datetime.py": {
+        "EM101": 5,
+        "FBT001": 18,
+        "FBT002": 16,
+        "PLR0911": 2,
+        "TRY003": 5
+      },
+      "analytics_toolkit/datetime/functions.py": {
+        "F401": 20
+      },
+      "analytics_toolkit/excel/__init__.py": {
+        "RUF022": 1
+      },
+      "analytics_toolkit/excel/long_format.py": {
+        "E501": 10,
+        "EM101": 6,
+        "EM102": 11,
+        "FBT001": 9,
+        "FBT002": 5,
+        "I001": 1,
+        "PD010": 1,
+        "PERF401": 1,
+        "PLR0913": 9,
+        "PLR2004": 2,
+        "SIM108": 1,
+        "TRY003": 17
+      },
+      "analytics_toolkit/general/__init__.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/general/connections.py": {
+        "EM102": 2,
+        "I001": 1,
+        "PLW0603": 2,
+        "TRY003": 2
+      },
+      "analytics_toolkit/general/logging.py": {
+        "B039": 1,
+        "EM101": 6,
+        "EM102": 2,
+        "I001": 1,
+        "PLR0913": 1,
+        "PLW0603": 4,
+        "TC003": 2,
+        "TRY003": 8,
+        "TRY004": 1
+      },
+      "analytics_toolkit/general/read_file.py": {
+        "EM101": 2,
+        "EM102": 1,
+        "I001": 1,
+        "PLC0415": 2,
+        "S108": 1,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/__init__.py": {
+        "F401": 2,
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/_backend_adapters/__init__.py": {
+        "I001": 1,
+        "RUF022": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/base.py": {
+        "F822": 4,
+        "I001": 1,
+        "RUF022": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/clickhouse.py": {
+        "F822": 4,
+        "I001": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/dbapi.py": {
+        "F822": 1,
+        "I001": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/gp.py": {
+        "F822": 3,
+        "I001": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/registry.py": {
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/trino.py": {
+        "F822": 2,
+        "I001": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/_backend_adapters/utils.py": {
+        "TID252": 1
+      },
+      "analytics_toolkit/sql/_lazy_exports.py": {
+        "EM102": 1,
+        "I001": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backend_adapters.py": {
+        "F822": 17,
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/backends/__init__.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/backends/adapter_defaults.py": {
+        "ARG001": 1,
+        "EM101": 6,
+        "EM102": 12,
+        "FBT001": 2,
+        "I001": 1,
+        "PLC0415": 3,
+        "PLR0913": 12,
+        "TC002": 1,
+        "TC003": 2,
+        "TID252": 1,
+        "TRY003": 18,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/backends/base.py": {
+        "ARG002": 1,
+        "E501": 4,
+        "EM101": 3,
+        "EM102": 1,
+        "I001": 1,
+        "PLC0415": 5,
+        "PLR0913": 9,
+        "PYI041": 1,
+        "S608": 4,
+        "TC003": 3,
+        "TID252": 4,
+        "TRY003": 4
+      },
+      "analytics_toolkit/sql/backends/ch/adapter.py": {
+        "EM101": 3,
+        "I001": 4,
+        "PLC0415": 19,
+        "PLR0911": 1,
+        "PLR0913": 9,
+        "PLR1711": 1,
+        "PLR2004": 1,
+        "PYI041": 1,
+        "RET501": 1,
+        "S608": 2,
+        "TC003": 3,
+        "TID252": 18,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/backends/ch/config.py": {
+        "C901": 1,
+        "EM101": 1,
+        "FBT003": 2,
+        "PLC0415": 3,
+        "TID252": 11,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/ch/create_table_as.py": {
+        "B010": 1,
+        "BLE001": 2,
+        "C901": 1,
+        "EM101": 6,
+        "EM102": 1,
+        "FBT001": 1,
+        "I001": 1,
+        "PLR0912": 1,
+        "PLR0913": 2,
+        "PLR0915": 1,
+        "Q003": 2,
+        "TC003": 1,
+        "TID252": 16,
+        "TRY003": 7,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/backends/ch/create_table_from_sql.py": {
+        "PLC0415": 1,
+        "PLR0913": 1,
+        "TC003": 1
+      },
+      "analytics_toolkit/sql/backends/ch/ddl.py": {
+        "EM102": 3,
+        "F821": 1,
+        "FBT001": 2,
+        "FBT002": 2,
+        "I001": 1,
+        "PLR0913": 3,
+        "TC003": 1,
+        "TID252": 5,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/backends/ch/insert.py": {
+        "EM102": 1,
+        "TC003": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/ch/lifecycle.py": {
+        "BLE001": 3,
+        "EM102": 3,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 5,
+        "TC003": 2,
+        "TID252": 3,
+        "TRY003": 3,
+        "TRY300": 1
+      },
+      "analytics_toolkit/sql/backends/ch/metadata.py": {
+        "BLE001": 2,
+        "C901": 2,
+        "I001": 1,
+        "PD008": 2,
+        "PLR2004": 2,
+        "S112": 1,
+        "S608": 1,
+        "TC006": 2,
+        "TID252": 1
+      },
+      "analytics_toolkit/sql/backends/ch/operations.py": {
+        "BLE001": 1,
+        "EM101": 5,
+        "EM102": 2,
+        "I001": 2,
+        "PD009": 1,
+        "PLC0415": 22,
+        "PLR0913": 6,
+        "S608": 1,
+        "TC003": 2,
+        "TID252": 8,
+        "TRY003": 7
+      },
+      "analytics_toolkit/sql/backends/ch/queries.py": {
+        "S608": 2,
+        "TC003": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/backends/ch/source_count.py": {
+        "BLE001": 1
+      },
+      "analytics_toolkit/sql/backends/ch/source_schema.py": {
+        "C901": 1,
+        "PLR0911": 1,
+        "PLR0912": 1,
+        "TC001": 1,
+        "TC003": 1,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/backends/ch/target_create.py": {
+        "EM102": 2,
+        "FBT001": 1,
+        "PLR0913": 2,
+        "TC003": 1,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/ch/upsert.py": {
+        "EM101": 2,
+        "PLC0415": 2,
+        "PLR0913": 3,
+        "TC003": 1,
+        "TID252": 2,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/ch/wait.py": {
+        "BLE001": 5,
+        "EM102": 4,
+        "I001": 1,
+        "PLR0913": 3,
+        "PLR2004": 6,
+        "RUF005": 2,
+        "TC003": 2,
+        "TID252": 1,
+        "TRY003": 4
+      },
+      "analytics_toolkit/sql/backends/common_methods.py": {
+        "ARG001": 1,
+        "PLC0415": 1,
+        "PLR0913": 1
+      },
+      "analytics_toolkit/sql/backends/dbapi.py": {
+        "PLC0415": 1,
+        "PLR0913": 1,
+        "PYI041": 1,
+        "TC003": 3,
+        "TID252": 1,
+        "TRY300": 2
+      },
+      "analytics_toolkit/sql/backends/gp/adapter.py": {
+        "BLE001": 1,
+        "C901": 2,
+        "EM101": 5,
+        "FURB171": 2,
+        "I001": 3,
+        "PLC0415": 15,
+        "PLR0911": 2,
+        "PLR0912": 1,
+        "PLR0913": 9,
+        "RET501": 1,
+        "S608": 4,
+        "TC003": 2,
+        "TID252": 22,
+        "TRY003": 5,
+        "TRY004": 1,
+        "TRY300": 1
+      },
+      "analytics_toolkit/sql/backends/gp/config.py": {
+        "EM101": 1,
+        "PLC0415": 2,
+        "TID252": 12,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/gp/ddl.py": {
+        "EM102": 5,
+        "PD009": 1,
+        "S608": 6,
+        "TC006": 10,
+        "TID252": 2,
+        "TRY003": 5
+      },
+      "analytics_toolkit/sql/backends/gp/insert.py": {
+        "EM101": 2,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 2,
+        "TC003": 2,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/gp/operations.py": {
+        "EM101": 3,
+        "PLC0415": 5,
+        "PLR0913": 3,
+        "TC003": 2,
+        "TID252": 5,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/backends/gp/stage.py": {
+        "EM101": 1,
+        "I001": 1,
+        "S324": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/metadata.py": {
+        "S608": 3
+      },
+      "analytics_toolkit/sql/backends/models.py": {
+        "I001": 1
+      },
+      "analytics_toolkit/sql/backends/registry.py": {
+        "B904": 1,
+        "EM102": 2,
+        "I001": 1,
+        "PLC0415": 4,
+        "TC003": 1,
+        "TC006": 3,
+        "TID252": 4,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/source_count.py": {
+        "B009": 1,
+        "EM101": 1,
+        "I001": 1,
+        "S608": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/source_estimate.py": {
+        "BLE001": 3,
+        "C901": 1,
+        "EM101": 1,
+        "I001": 1,
+        "PLR0911": 1,
+        "PLR2004": 1,
+        "PLW2901": 1,
+        "RUF046": 1,
+        "TC001": 1,
+        "TID252": 3,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/source_schema.py": {
+        "C420": 1,
+        "PLR0911": 1,
+        "S608": 1,
+        "TC003": 2
+      },
+      "analytics_toolkit/sql/backends/trino/adapter.py": {
+        "C901": 1,
+        "EM101": 5,
+        "EM102": 4,
+        "I001": 3,
+        "PLC0415": 11,
+        "PLR0911": 1,
+        "PLR0912": 1,
+        "PLR0913": 10,
+        "S608": 8,
+        "TC001": 1,
+        "TC003": 2,
+        "TID252": 18,
+        "TRY003": 9
+      },
+      "analytics_toolkit/sql/backends/trino/config.py": {
+        "EM101": 1,
+        "EM102": 1,
+        "I001": 2,
+        "PLC0415": 4,
+        "TID252": 9,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/trino/insert.py": {
+        "EM101": 2,
+        "I001": 1,
+        "PLC0415": 3,
+        "PLR0911": 1,
+        "PLR0913": 2,
+        "TC003": 3,
+        "TID252": 4,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/backends/trino/operations.py": {
+        "EM101": 6,
+        "EM102": 3,
+        "PD009": 1,
+        "PLC0415": 8,
+        "PLR0913": 2,
+        "S608": 2,
+        "TC003": 2,
+        "TID252": 6,
+        "TRY003": 9
+      },
+      "analytics_toolkit/sql/backends/trino/parquet_stage.py": {
+        "C901": 1,
+        "EM102": 1,
+        "PLR0911": 1,
+        "TC003": 1,
+        "TID252": 1,
+        "TRY003": 1,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/backends/upsert.py": {
+        "EM101": 1,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 3,
+        "S608": 4,
+        "SLF001": 1,
+        "TC003": 2,
+        "TID252": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/utils.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/backends/validation.py": {
+        "ARG001": 1,
+        "S608": 4,
+        "TC003": 1
+      },
+      "analytics_toolkit/sql/clickhouse/__init__.py": {
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/clickhouse/lifecycle.py": {
+        "RUF022": 1,
+        "TID252": 17
+      },
+      "analytics_toolkit/sql/clickhouse/options.py": {
+        "I001": 1,
+        "PLC0415": 4,
+        "PLR0913": 1,
+        "TC003": 1,
+        "TID252": 4
+      },
+      "analytics_toolkit/sql/clickhouse/wait.py": {
+        "I001": 1,
+        "RUF022": 1,
+        "TID252": 20
+      },
+      "analytics_toolkit/sql/connection/__init__.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/connection/config.py": {
+        "BLE001": 1,
+        "EM101": 4,
+        "EM102": 41,
+        "FBT001": 2,
+        "FBT002": 1,
+        "FURB110": 2,
+        "I001": 1,
+        "PERF203": 1,
+        "PLC0415": 4,
+        "T201": 4,
+        "TC003": 3,
+        "TC006": 1,
+        "TID252": 7,
+        "TRY003": 45
+      },
+      "analytics_toolkit/sql/connection/errors.py": {
+        "B010": 2,
+        "BLE001": 1
+      },
+      "analytics_toolkit/sql/connection/get_sql_connection.py": {
+        "EM101": 1,
+        "EM102": 5,
+        "I001": 1,
+        "PLC0415": 1,
+        "TID252": 2,
+        "TRY003": 6
+      },
+      "analytics_toolkit/sql/connection/protocols.py": {
+        "TC003": 1
+      },
+      "analytics_toolkit/sql/core/capabilities.py": {
+        "F821": 1,
+        "F822": 2,
+        "FBT001": 1,
+        "I001": 1,
+        "TID252": 7
+      },
+      "analytics_toolkit/sql/core/identifiers.py": {
+        "EM101": 2,
+        "EM102": 10,
+        "PLC0415": 1,
+        "PLR2004": 3,
+        "TID252": 3,
+        "TRY003": 12,
+        "TRY004": 3,
+        "UP037": 2
+      },
+      "analytics_toolkit/sql/ddl/__init__.py": {
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/ddl/api.py": {
+        "EM101": 5,
+        "I001": 1,
+        "PLC0415": 8,
+        "PLR0913": 6,
+        "PYI041": 3,
+        "TC003": 2,
+        "TID252": 26,
+        "TRY003": 5
+      },
+      "analytics_toolkit/sql/ddl/builders.py": {
+        "FBT001": 1,
+        "PLR0913": 1,
+        "TC003": 1,
+        "TID252": 4
+      },
+      "analytics_toolkit/sql/ddl/clickhouse.py": {
+        "TID252": 10
+      },
+      "analytics_toolkit/sql/ddl/extract_ddl.py": {
+        "EM101": 4,
+        "EM102": 3,
+        "PD009": 1,
+        "TID252": 5,
+        "TRY003": 7
+      },
+      "analytics_toolkit/sql/ddl/identifiers.py": {
+        "EM102": 2,
+        "TC003": 1,
+        "TID252": 1,
+        "TRY003": 2,
+        "TRY004": 2
+      },
+      "analytics_toolkit/sql/ddl/models.py": {
+        "TC002": 1,
+        "TC003": 1
+      },
+      "analytics_toolkit/sql/ddl/schema.py": {
+        "EM101": 2,
+        "EM102": 7,
+        "TID252": 2,
+        "TRY003": 9
+      },
+      "analytics_toolkit/sql/dml/io/__init__.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/dml/io/cancel_queries.py": {
+        "EM101": 7,
+        "I001": 1,
+        "PLR0913": 2,
+        "PYI041": 2,
+        "TID252": 5,
+        "TRY003": 7
+      },
+      "analytics_toolkit/sql/dml/io/execute_read.py": {
+        "EM101": 2,
+        "F401": 1,
+        "FBT001": 6,
+        "FBT002": 5,
+        "I001": 1,
+        "PLR0913": 4,
+        "PYI041": 2,
+        "TID252": 14,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/dml/io/execute_sql.py": {
+        "EM101": 1,
+        "F401": 1,
+        "F821": 1,
+        "FBT001": 10,
+        "FBT002": 7,
+        "I001": 1,
+        "PLR0913": 3,
+        "PYI041": 2,
+        "TID252": 16,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/dml/io/read_sql.py": {
+        "EM101": 2,
+        "FBT001": 4,
+        "FBT002": 3,
+        "I001": 1,
+        "PLR0913": 4,
+        "PYI041": 4,
+        "TC001": 1,
+        "TID252": 15,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/dml/load/load_df.py": {
+        "BLE001": 5,
+        "EM101": 14,
+        "FBT001": 12,
+        "FBT002": 9,
+        "I001": 1,
+        "PLR0913": 3,
+        "PYI041": 2,
+        "S608": 1,
+        "TC003": 1,
+        "TID252": 53,
+        "TRY003": 14,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/dml/load/load_sql_table.py": {
+        "EM101": 1,
+        "EM102": 2,
+        "I001": 1,
+        "PLC0415": 13,
+        "PLR0913": 10,
+        "PYI041": 2,
+        "SLF001": 6,
+        "TC002": 1,
+        "TID252": 15,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/dml/load/stage.py": {
+        "EM102": 5,
+        "I001": 1,
+        "PLR0913": 2,
+        "PYI041": 1,
+        "TC002": 1,
+        "TC003": 1,
+        "TID252": 6,
+        "TRY003": 5,
+        "TRY004": 2
+      },
+      "analytics_toolkit/sql/dml/table/__init__.py": {
+        "I001": 1,
+        "RUF022": 1
+      },
+      "analytics_toolkit/sql/dml/table/_basic_ops.py": {
+        "B904": 1,
+        "EM101": 2,
+        "F841": 1,
+        "FBT001": 1,
+        "FBT002": 1,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 2,
+        "PLR2004": 1,
+        "SLF001": 1,
+        "TC003": 1,
+        "TID252": 12,
+        "TRY003": 2
+      },
+      "analytics_toolkit/sql/dml/table/api.py": {
+        "F401": 47,
+        "Q000": 1
+      },
+      "analytics_toolkit/sql/dml/table/ch_create_table_as.py": {
+        "TID252": 1
+      },
+      "analytics_toolkit/sql/dml/table/create_table_from_sql.py": {
+        "BLE001": 3,
+        "C901": 1,
+        "EM101": 6,
+        "EM102": 1,
+        "FBT001": 1,
+        "PLC0415": 1,
+        "PLR0911": 1,
+        "PLR0912": 1,
+        "PLR0913": 4,
+        "PLR0915": 1,
+        "PYI041": 1,
+        "TC003": 1,
+        "TID252": 28,
+        "TRY003": 7,
+        "TRY004": 1,
+        "TRY300": 3,
+        "TRY301": 1
+      },
+      "analytics_toolkit/sql/dml/table/drop_tables.py": {
+        "EM101": 2,
+        "EM102": 1,
+        "I001": 1,
+        "PLR0913": 1,
+        "TC003": 1,
+        "TID252": 10,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/dml/table/maintenance.py": {
+        "ARG001": 2,
+        "EM102": 1,
+        "FBT001": 12,
+        "FBT002": 12,
+        "I001": 1,
+        "PLR0913": 4,
+        "PYI041": 1,
+        "RET501": 1,
+        "TID252": 8,
+        "TRY003": 1,
+        "TRY300": 1
+      },
+      "analytics_toolkit/sql/dml/table/models.py": {
+        "TC003": 1
+      },
+      "analytics_toolkit/sql/dml/table/partitions.py": {
+        "EM101": 14,
+        "EM102": 13,
+        "FBT001": 2,
+        "FBT002": 2,
+        "I001": 1,
+        "PLR0913": 8,
+        "PLR2004": 2,
+        "PYI041": 4,
+        "SIM101": 1,
+        "TID252": 15,
+        "TRY003": 27
+      },
+      "analytics_toolkit/sql/dml/table/table_validation.py": {
+        "EM101": 3,
+        "EM102": 6,
+        "FBT001": 2,
+        "I001": 1,
+        "PLR0913": 1,
+        "TID252": 2,
+        "TRY003": 9,
+        "TRY004": 2
+      },
+      "analytics_toolkit/sql/dml/table/write_modes.py": {
+        "EM101": 3,
+        "FBT001": 6,
+        "FBT002": 4,
+        "I001": 1,
+        "PLR0913": 9,
+        "SLF001": 5,
+        "TC002": 1,
+        "TC003": 2,
+        "TID252": 7,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/api.py": {
+        "BLE001": 2,
+        "C901": 2,
+        "EM101": 10,
+        "FBT001": 24,
+        "FBT002": 19,
+        "I001": 1,
+        "PLR0912": 1,
+        "PLR0913": 2,
+        "PYI041": 4,
+        "S110": 1,
+        "S608": 1,
+        "SIM105": 1,
+        "TC003": 2,
+        "TID252": 32,
+        "TRY003": 10,
+        "TRY004": 5
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/attempt.py": {
+        "ARG001": 1,
+        "B023": 5,
+        "BLE001": 4,
+        "EM101": 6,
+        "F401": 1,
+        "F821": 1,
+        "I001": 1,
+        "PLR0913": 2,
+        "TID252": 23,
+        "TRY003": 6
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/dry_run.py": {
+        "BLE001": 3,
+        "I001": 1,
+        "TC001": 2,
+        "TID252": 11
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/estimate.py": {
+        "RUF100": 1,
+        "TID252": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/finalize.py": {
+        "ARG001": 1,
+        "BLE001": 3,
+        "C901": 1,
+        "EM101": 3,
+        "I001": 1,
+        "PLC0415": 3,
+        "PLR0912": 1,
+        "TC001": 3,
+        "TID252": 17,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/keyed.py": {
+        "EM101": 1,
+        "TID252": 3,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/keys.py": {
+        "C901": 1,
+        "EM101": 22,
+        "EM102": 5,
+        "I001": 1,
+        "PLR0911": 1,
+        "S608": 1,
+        "SIM108": 1,
+        "TID252": 1,
+        "TRY003": 27,
+        "TRY004": 5
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/logging.py": {
+        "TC001": 2,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/options.py": {
+        "C901": 1,
+        "EM101": 22,
+        "EM102": 2,
+        "I001": 1,
+        "PLR0912": 1,
+        "PLR0913": 2,
+        "PLR2004": 1,
+        "TC001": 1,
+        "TID252": 8,
+        "TRY003": 24,
+        "TRY004": 7
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/parquet_stage.py": {
+        "EM101": 5,
+        "EM102": 1,
+        "I001": 1,
+        "PLC0415": 3,
+        "PLR0913": 2,
+        "SIM115": 2,
+        "TC001": 4,
+        "TC003": 1,
+        "TID252": 8,
+        "TRY003": 6
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/progress.py": {
+        "I001": 1,
+        "TC001": 1,
+        "TID252": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/row_counts.py": {
+        "EM101": 4,
+        "I001": 1,
+        "PLR0913": 1,
+        "TID252": 12,
+        "TRY003": 4
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/source.py": {
+        "EM101": 4,
+        "S608": 1,
+        "TRY003": 4
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/stage.py": {
+        "EM101": 1,
+        "TID252": 12,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/stream_retries.py": {
+        "TC001": 2,
+        "TID252": 2
+      },
+      "analytics_toolkit/sql/dml/transfer/io/source.py": {
+        "ARG001": 2,
+        "FBT001": 3,
+        "FBT002": 1,
+        "I001": 1,
+        "PLR0913": 5,
+        "PYI041": 5,
+        "TC002": 1,
+        "TC003": 2,
+        "TID252": 6,
+        "TRY300": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/runtime/models.py": {
+        "I001": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/runtime/retry.py": {
+        "BLE001": 3,
+        "EM102": 1,
+        "I001": 1,
+        "PERF203": 1,
+        "PLR0913": 1,
+        "PYI041": 1,
+        "S110": 1,
+        "SIM105": 1,
+        "TC003": 1,
+        "TID252": 2,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/schema.py": {
+        "TC001": 1,
+        "TC003": 1,
+        "TID252": 3
+      },
+      "analytics_toolkit/sql/dml/transfer/staging.py": {
+        "B028": 1,
+        "BLE001": 1,
+        "EM101": 3,
+        "I001": 1,
+        "PLR0913": 2,
+        "PYI041": 3,
+        "S110": 1,
+        "SIM105": 1,
+        "TID252": 9,
+        "TRY003": 3
+      },
+      "analytics_toolkit/sql/execution/labels.py": {
+        "EM101": 1,
+        "I001": 1,
+        "PLR0913": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/execution/operation_runner.py": {
+        "B010": 1,
+        "EM101": 3,
+        "FBT001": 1,
+        "I001": 1,
+        "PLC0415": 3,
+        "PLR0913": 4,
+        "PYI041": 3,
+        "TC006": 1,
+        "TID252": 5,
+        "TRY003": 3,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/execution/plan_steps.py": {
+        "PLC0415": 8,
+        "PLR0913": 9,
+        "S608": 1,
+        "TC001": 1,
+        "TC003": 1,
+        "TID252": 8
+      },
+      "analytics_toolkit/sql/execution/plans.py": {
+        "EM101": 1,
+        "PLC0415": 1,
+        "PLR0913": 2,
+        "PLR2004": 1,
+        "TRY003": 1
+      },
+      "analytics_toolkit/sql/execution/query_timing.py": {
+        "I001": 1,
+        "TC003": 1,
+        "TRY203": 1
+      },
+      "analytics_toolkit/sql/execution/validation.py": {
+        "EM102": 5,
+        "TRY003": 5,
+        "TRY004": 2
+      },
+      "analytics_toolkit/sql/metadata/__init__.py": {
+        "I001": 1
+      },
+      "analytics_toolkit/sql/metadata/show_queries.py": {
+        "EM101": 4,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 3,
+        "PYI041": 3,
+        "TID252": 5,
+        "TRY003": 4,
+        "TRY004": 2
+      },
+      "analytics_toolkit/sql/metadata/show_tables.py": {
+        "EM101": 8,
+        "EM102": 3,
+        "FBT001": 2,
+        "FBT002": 1,
+        "I001": 1,
+        "PLR0913": 1,
+        "PLR2004": 1,
+        "RUF046": 2,
+        "TC006": 1,
+        "TID252": 5,
+        "TRY003": 11
+      },
+      "analytics_toolkit/sql/metadata/table_info.py": {
+        "EM101": 2,
+        "FBT001": 1,
+        "FBT002": 1,
+        "TID252": 8,
+        "TRY003": 2,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql/orchestration/async_sql.py": {
+        "BLE001": 1,
+        "C901": 1,
+        "EM102": 1,
+        "F401": 1,
+        "I001": 1,
+        "PLR0913": 2,
+        "TC003": 4,
+        "TID252": 6,
+        "TRY003": 1,
+        "UP037": 1
+      },
+      "analytics_toolkit/sql/orchestration/parallel_sql.py": {
+        "BLE001": 1,
+        "EM101": 2,
+        "EM102": 1,
+        "F401": 1,
+        "I001": 1,
+        "PLR0912": 1,
+        "PLR0913": 1,
+        "TC003": 2,
+        "TID252": 6,
+        "TRY003": 3,
+        "UP037": 1
+      },
+      "analytics_toolkit/sql/orchestration/pipeline.py": {
+        "B004": 1
+      },
+      "analytics_toolkit/sql/orchestration/tasks.py": {
+        "B010": 4,
+        "BLE001": 1,
+        "EM101": 5,
+        "EM102": 13,
+        "FBT001": 1,
+        "TID252": 1,
+        "TRY003": 18,
+        "TRY004": 1
+      },
+      "analytics_toolkit/sql_format/__init__.py": {
+        "EM101": 19,
+        "EM102": 17,
+        "FBT001": 1,
+        "I001": 1,
+        "PERF401": 1,
+        "PLR0913": 5,
+        "SIM103": 1,
+        "TRY003": 36,
+        "TRY004": 5
+      },
+      "release_routines/lib/check_docs_coverage.py": {
+        "I001": 1
+      },
+      "release_routines/lib/check_docs_links.py": {
+        "I001": 1,
+        "PERF401": 1
+      },
+      "release_routines/lib/check_package_metadata.py": {
+        "EM101": 1,
+        "EM102": 1,
+        "TRY003": 2
+      },
+      "release_routines/lib/check_readme_dependencies.py": {
+        "EM102": 6,
+        "TRY003": 6
+      },
+      "release_routines/lib/project_metadata.py": {
+        "C901": 1,
+        "E501": 1,
+        "EM101": 2,
+        "EM102": 3,
+        "PLR2004": 1,
+        "TRY003": 5
+      },
+      "release_routines/lib/testpypi_metadata.py": {
+        "EM101": 2,
+        "PLR2004": 1,
+        "TRY003": 2
+      },
+      "tests/conftest.py": {
+        "TC003": 1
+      },
+      "tests/sql_fakes.py": {
+        "PLR0911": 1,
+        "PYI034": 1
+      },
+      "tests/test_ab_utils_format.py": {
+        "I001": 1
+      },
+      "tests/test_ab_utils_metrics.py": {
+        "C901": 1,
+        "EM101": 3,
+        "EM102": 9,
+        "PLR0402": 1,
+        "PLR0913": 3,
+        "PLR0915": 2,
+        "TRY003": 12
+      },
+      "tests/test_ab_utils_parallel.py": {
+        "RUF043": 2
+      },
+      "tests/test_ab_utils_split.py": {
+        "I001": 1,
+        "PLR0402": 1,
+        "PT006": 1,
+        "PT011": 4
+      },
+      "tests/test_agent_tools_mcp.py": {
+        "E501": 14,
+        "EM101": 2,
+        "EM102": 1,
+        "FLY002": 1,
+        "PT011": 1,
+        "Q003": 1,
+        "TRY003": 3
+      },
+      "tests/test_coverage_backend_insert_schema.py": {
+        "E501": 1,
+        "I001": 1,
+        "PIE810": 1
+      },
+      "tests/test_coverage_load_sql_table.py": {
+        "I001": 1,
+        "PLR0913": 1,
+        "PT028": 2,
+        "TC003": 1
+      },
+      "tests/test_dates.py": {
+        "DTZ001": 11,
+        "E501": 1,
+        "I001": 1,
+        "PT030": 3
+      },
+      "tests/test_datetime.py": {
+        "DTZ001": 6,
+        "I001": 1
+      },
+      "tests/test_excel_long_format.py": {
+        "E501": 3,
+        "I001": 1,
+        "TC003": 1
+      },
+      "tests/test_general_logging.py": {
+        "DTZ001": 2,
+        "I001": 1,
+        "SIM117": 1
+      },
+      "tests/test_general_read_file.py": {
+        "I001": 1,
+        "PLR0402": 1,
+        "PYI024": 1
+      },
+      "tests/test_rag_docs.py": {
+        "E501": 2,
+        "FLY002": 8,
+        "I001": 1,
+        "PLC0415": 2,
+        "Q003": 2
+      },
+      "tests/test_sql_architecture.py": {
+        "BLE001": 1,
+        "I001": 1,
+        "PERF203": 1,
+        "PERF401": 13,
+        "PLC0415": 7,
+        "PLW2901": 1,
+        "SIM300": 1,
+        "TC002": 1
+      },
+      "tests/test_sql_async.py": {
+        "C416": 1,
+        "EM101": 1,
+        "EM102": 1,
+        "I001": 1,
+        "PLR0913": 2,
+        "PLR1711": 1,
+        "RET501": 1,
+        "RUF043": 2,
+        "SIM300": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_backend_adapters.py": {
+        "C901": 3,
+        "DTZ001": 1,
+        "EM101": 2,
+        "I001": 1,
+        "PLC0415": 6,
+        "PLR0911": 3,
+        "PLR0915": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_cancel_queries.py": {
+        "EM102": 3,
+        "I001": 1,
+        "PLR0913": 8,
+        "PT006": 1,
+        "PYI034": 1,
+        "PYI041": 8,
+        "RUF012": 2,
+        "TRY003": 3
+      },
+      "tests/test_sql_ch_create_table_as.py": {
+        "EM102": 1,
+        "PLR0911": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_connection_config.py": {
+        "A002": 2,
+        "EM101": 1,
+        "I001": 1,
+        "PLC0415": 1,
+        "PLR0913": 1,
+        "PLW0108": 3,
+        "PT011": 1,
+        "RUF043": 1,
+        "TC003": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_create_table_from_sql.py": {
+        "EM101": 10,
+        "EM102": 8,
+        "F811": 1,
+        "PLR0911": 1,
+        "SIM117": 2,
+        "TRY003": 18
+      },
+      "tests/test_sql_drop_many_partitions.py": {
+        "I001": 1
+      },
+      "tests/test_sql_drop_tables.py": {
+        "E402": 1,
+        "I001": 1
+      },
+      "tests/test_sql_execute_read.py": {
+        "EM101": 1,
+        "F401": 1,
+        "PLR0913": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_extract_ddl.py": {
+        "C901": 1,
+        "EM101": 4,
+        "EM102": 1,
+        "I001": 1,
+        "N818": 1,
+        "PLR0911": 1,
+        "RUF043": 2,
+        "TRY003": 5
+      },
+      "tests/test_sql_format.py": {
+        "PLC0415": 42,
+        "PT011": 4
+      },
+      "tests/test_sql_gp_create_partitions.py": {
+        "EM101": 1,
+        "I001": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_improvements.py": {
+        "F401": 1,
+        "FLY002": 1,
+        "I001": 1,
+        "RUF015": 1,
+        "UP037": 1
+      },
+      "tests/test_sql_load_table.py": {
+        "B009": 1,
+        "DTZ011": 1,
+        "E501": 10,
+        "EM101": 3,
+        "EM102": 5,
+        "PLC0207": 3,
+        "PLR0911": 1,
+        "PLW0108": 1,
+        "TRY003": 8
+      },
+      "tests/test_sql_parallel.py": {
+        "C416": 1,
+        "EM101": 1,
+        "EM102": 1,
+        "I001": 1,
+        "PLR0913": 2,
+        "RUF043": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_public_facade_smoke.py": {
+        "I001": 1,
+        "TC003": 1
+      },
+      "tests/test_sql_retries.py": {
+        "E501": 2,
+        "EM101": 25,
+        "N818": 3,
+        "PLR0913": 3,
+        "PT017": 1,
+        "PYI034": 1,
+        "Q000": 1,
+        "TRY003": 25
+      },
+      "tests/test_sql_show_queries.py": {
+        "EM101": 1,
+        "I001": 1,
+        "PLR0913": 1,
+        "PT006": 1,
+        "PYI041": 1,
+        "Q000": 1,
+        "TRY003": 1
+      },
+      "tests/test_sql_show_tables.py": {
+        "EM101": 1,
+        "EM102": 2,
+        "I001": 1,
+        "TRY003": 3
+      },
+      "tests/test_sql_transfer_clickhouse.py": {
+        "EM102": 3,
+        "PLR0911": 1,
+        "TC002": 1,
+        "TRY003": 3
+      },
+      "tests/test_sql_transfer_row_batches.py": {
+        "C901": 3,
+        "DTZ001": 1,
+        "E501": 4,
+        "EM101": 15,
+        "EM102": 3,
+        "I001": 1,
+        "PD011": 3,
+        "PLW0108": 22,
+        "PT006": 2,
+        "PT018": 1,
+        "RUF043": 1,
+        "TRY003": 18
+      },
+      "tests/test_sql_transfer_schema.py": {
+        "EM101": 2,
+        "PT017": 1,
+        "TRY003": 2
+      },
+      "tests/test_sql_transfer_source_batches.py": {
+        "EM101": 1,
+        "PYI036": 2,
+        "TRY003": 1
+      }
+    },
+    "ruff_format": {
+      "agent_tools/docs_assistant.py": {
+        "FORMAT": 1
+      },
+      "agent_tools/mcp_server.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/api.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/cuped.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/formatter.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/parallel.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/planning.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/ratio.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/rows.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/split.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/ab_utils/validation.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/excel/long_format.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/general/connections.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/general/logging.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/general/read_file.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/_lazy_exports.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/adapter_defaults.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/base.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/adapter.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/create_table_as.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/ddl.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/insert.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/lifecycle.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/metadata.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/operations.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/source_count.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/upsert.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/ch/wait.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/dataframe_types.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/adapter.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/config.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/ddl.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/insert.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/operations.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/gp/stage.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/metadata.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/registry.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/source_count.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/source_estimate.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/source_schema.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/trino/adapter.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/trino/config.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/trino/insert.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/trino/operations.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/trino/parquet_stage.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/upsert.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/backends/validation.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/connection/config.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/connection/get_sql_connection.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/core/capabilities.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/core/identifiers.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/ddl/api.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/ddl/identifiers.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/ddl/schema.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/io/execute_read.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/io/read_sql.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/load/load_df.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/load/load_sql_table.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/load/stage.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/api.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/drop_tables.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/maintenance.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/partitions.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/table_validation.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/table/write_modes.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/api.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/attempt.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/dry_run.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/finalize.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/keyed.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/keys.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/options.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/parquet_stage.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/progress.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/row_counts.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/flow/stream_retries.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/io/source.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/runtime/models.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/runtime/retry.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/schema.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/dml/transfer/staging.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/execution/labels.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/execution/operation_runner.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/execution/plan_steps.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/execution/plans.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/execution/query_timing.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/metadata/show_queries.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/metadata/show_tables.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/orchestration/async_sql.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/orchestration/parallel_sql.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql/orchestration/tasks.py": {
+        "FORMAT": 1
+      },
+      "analytics_toolkit/sql_format/__init__.py": {
+        "FORMAT": 1
+      },
+      "release_routines/lib/check_docs_links.py": {
+        "FORMAT": 1
+      },
+      "release_routines/lib/check_readme_dependencies.py": {
+        "FORMAT": 1
+      },
+      "release_routines/lib/project_metadata.py": {
+        "FORMAT": 1
+      },
+      "tests/conftest.py": {
+        "FORMAT": 1
+      },
+      "tests/sql_fakes.py": {
+        "FORMAT": 1
+      },
+      "tests/test_ab_utils_format.py": {
+        "FORMAT": 1
+      },
+      "tests/test_ab_utils_parallel.py": {
+        "FORMAT": 1
+      },
+      "tests/test_ab_utils_split.py": {
+        "FORMAT": 1
+      },
+      "tests/test_agent_tools_mcp.py": {
+        "FORMAT": 1
+      },
+      "tests/test_coverage_backend_insert_schema.py": {
+        "FORMAT": 1
+      },
+      "tests/test_dates.py": {
+        "FORMAT": 1
+      },
+      "tests/test_datetime.py": {
+        "FORMAT": 1
+      },
+      "tests/test_excel_long_format.py": {
+        "FORMAT": 1
+      },
+      "tests/test_general_logging.py": {
+        "FORMAT": 1
+      },
+      "tests/test_general_read_file.py": {
+        "FORMAT": 1
+      },
+      "tests/test_rag_docs.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_architecture.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_async.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_backend_adapters.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_cancel_queries.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_ch_create_table_as.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_connection_config.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_drop_many_partitions.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_drop_tables.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_execute_read.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_extract_ddl.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_format.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_gp_create_partitions.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_identifiers.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_improvements.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_load_table.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_numeric_validation.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_parallel.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_public_facade_smoke.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_retries.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_show_queries.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_transfer_clickhouse.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_transfer_row_batches.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_transfer_schema.py": {
+        "FORMAT": 1
+      },
+      "tests/test_sql_transfer_source_batches.py": {
+        "FORMAT": 1
+      }
+    }
+  }
+}

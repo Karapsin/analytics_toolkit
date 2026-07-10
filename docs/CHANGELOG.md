@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added opt-in here path resolution to read_file.
 - Added general.set_connections_path for explicit SQL .connections file selection.
 - Added from_here and read_file_here general path helpers.
+- Calibrated bootstrap inference, hardened SQL workflows, and added quality gates.
 
 ## 1.3.10.14 - 2026-07-07
 

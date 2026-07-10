@@ -9,9 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-create_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.create_table_from_sql"
-)
+create_module = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -73,6 +71,12 @@ class FakeDbapiConnection:
         self.close_calls += 1
 
 
+class CloseFailDbapiConnection(FakeDbapiConnection):
+    def close(self) -> None:
+        self.close_calls += 1
+        raise RuntimeError("connection close failed")
+
+
 class FakeClickHouseClient:
     def __init__(self, insert_rowcount: int = 0) -> None:
         self.insert_rowcount = insert_rowcount
@@ -109,7 +113,7 @@ class FakeClickHouseClient:
         if "clusterAllReplicas" in sql:
             return FakeResult([(len(self.created_tables),)])
         if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE "):].strip()
+            table_name = sql[len("EXISTS TABLE ") :].strip()
             return FakeResult([(int(table_name in self.created_tables),)])
         return FakeResult([])
 
@@ -119,11 +123,11 @@ class FakeClickHouseClient:
     def _track_table_ddl(self, sql: str) -> None:
         body = _strip_query_label(sql)
         if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body[len("CREATE TABLE IF NOT EXISTS "):].split()[0]
+            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0]
             self.created_tables.add(table_name)
             return
         if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body[len("DROP TABLE IF EXISTS "):].split()[0]
+            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0]
             self.created_tables.discard(table_name)
 
     def _cluster_table_count(self, sql: str) -> int:
@@ -173,8 +177,7 @@ def test_schema_only_creation_uses_native_metadata_types(monkeypatch) -> None:
 
     assert result is None
     assert connection.executed[0] == (
-        "SELECT * FROM (select id, amount from source_table) "
-        "AS source_schema_probe WHERE 1 = 0"
+        "SELECT * FROM (select id, amount from source_table) AS source_schema_probe WHERE 1 = 0"
     )
     assert any(
         sql.startswith("CREATE TABLE sandbox.target_table")
@@ -342,9 +345,7 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
     assert "`amount` Nullable(Decimal(12, 2))" in shard_sql
     assert "PARTITION BY `dt`" in shard_sql
     assert "ORDER BY (`dt`, `id`)" in shard_sql
-    assert local_shard_sql.startswith(
-        "CREATE TABLE IF NOT EXISTS analytics.events_shard"
-    )
+    assert local_shard_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
     assert "ON CLUSTER" not in local_shard_sql
     assert distributed_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
     assert "ENGINE = Distributed(" in distributed_sql
@@ -478,6 +479,7 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
     monkeypatch,
 ) -> None:
     calls: list[dict[str, object]] = []
+    probe_connection = FakeClickHouseClient()
 
     def fake_fast_path(**kwargs: object) -> tuple[bool, object]:
         calls.append(kwargs)
@@ -491,7 +493,7 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
     monkeypatch.setattr(
         create_module,
         "get_sql_connection",
-        lambda connection_key: pytest.fail("connection should not be opened"),
+        lambda connection_key: probe_connection,
     )
 
     result = create_module.create_table_from_sql(
@@ -505,6 +507,7 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
     )
 
     assert result == "delegated"
+    assert probe_connection.close_calls == 1
     assert calls == [
         {
             "source_backend": "ch",
@@ -578,6 +581,10 @@ def test_insert_data_cross_backend_delegates_to_transfer_after_creation(
             "ch_engine": "ReplicatedMergeTree",
             "ch_cluster": "{cluster}",
             "ch_sharding_key": "rand()",
+            "retry_cnt": 1,
+            "timeout_increment": 0,
+            "full_retry_cnt": 1,
+            "full_timeout_increment": 0,
         }
     ]
     assert any(
@@ -724,3 +731,400 @@ def test_create_table_from_sql_validates_empty_inputs(monkeypatch) -> None:
 
     with pytest.raises(create_module.InvalidSqlInputError, match="exactly one"):
         create_module.create_table_from_sql("gp", "target", "select 1; select 2")
+
+
+def test_create_table_from_sql_retries_schema_inspection_with_fresh_connections(
+    monkeypatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+    inspection_calls = 0
+    inspect_source_query_schema = create_module.inspect_source_query_schema
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        assert connection_key == "gp"
+        connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+        connections.append(connection)
+        return connection
+
+    def flaky_inspect_source_query_schema(*args: object, **kwargs: object) -> object:
+        nonlocal inspection_calls
+        inspection_calls += 1
+        if inspection_calls == 1:
+            raise RuntimeError("temporary schema inspection failure")
+        return inspect_source_query_schema(*args, **kwargs)
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(
+        create_module,
+        "inspect_source_query_schema",
+        flaky_inspect_source_query_schema,
+    )
+
+    result = create_module.create_table_from_sql(
+        "gp",
+        "sandbox.target_table",
+        "select id, amount from source_table",
+        insert_data=False,
+        retry_cnt=2,
+        timeout_increment=0,
+    )
+
+    assert result is None
+    assert inspection_calls == 2
+    assert len(connections) == 2
+    assert [connection.close_calls for connection in connections] == [1, 1]
+    assert not any(sql.startswith("CREATE TABLE") for sql in connections[0].executed)
+    assert any(
+        sql.startswith("CREATE TABLE sandbox.target_table") for sql in connections[1].executed
+    )
+
+
+def test_create_table_from_sql_cleans_direct_insert_before_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+    target_exists = False
+    create_calls = 0
+    insert_calls = 0
+    cleanup_calls = 0
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        assert connection_key == "gp"
+        connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+        connections.append(connection)
+        return connection
+
+    def fake_create(*args: object, **kwargs: object) -> None:
+        nonlocal create_calls, target_exists
+        create_calls += 1
+        target_exists = True
+
+    def flaky_insert(*args: object, **kwargs: object) -> int:
+        nonlocal insert_calls
+        insert_calls += 1
+        if insert_calls == 1:
+            raise RuntimeError("temporary insert failure")
+        return 4
+
+    def fake_drop(**kwargs: object) -> None:
+        nonlocal cleanup_calls, target_exists
+        cleanup_calls += 1
+        target_exists = False
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(
+        create_module,
+        "table_exists",
+        lambda *args, **kwargs: target_exists,
+    )
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(create_module, "insert_from_query", flaky_insert)
+    monkeypatch.setattr(create_module, "_drop_attempt_target", fake_drop)
+
+    result = create_module.create_table_from_sql(
+        "gp",
+        "sandbox.target_table",
+        "select id, amount from source_table",
+        retry_cnt=2,
+        timeout_increment=0,
+    )
+
+    assert result == 4
+    assert create_calls == 2
+    assert insert_calls == 2
+    assert cleanup_calls == 1
+    assert target_exists is True
+    assert len(connections) == 2
+    assert [connection.close_calls for connection in connections] == [1, 1]
+
+
+def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+    create_calls = 0
+    insert_calls = 0
+    cleanup_calls = 0
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        assert connection_key == "gp"
+        connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+        connections.append(connection)
+        return connection
+
+    def fake_create(*args: object, **kwargs: object) -> None:
+        nonlocal create_calls
+        create_calls += 1
+
+    def fail_insert(*args: object, **kwargs: object) -> int:
+        nonlocal insert_calls
+        insert_calls += 1
+        raise RuntimeError("original insert failure")
+
+    def fail_cleanup(**kwargs: object) -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        raise RuntimeError("cleanup failure")
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(create_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(create_module, "insert_from_query", fail_insert)
+    monkeypatch.setattr(create_module, "_drop_attempt_target", fail_cleanup)
+
+    with pytest.warns(RuntimeWarning, match="Could not remove partial target"):
+        with pytest.raises(RuntimeError, match="original insert failure"):
+            create_module.create_table_from_sql(
+                "gp",
+                "sandbox.target_table",
+                "select id, amount from source_table",
+                retry_cnt=3,
+                timeout_increment=0,
+            )
+
+    assert create_calls == 1
+    assert insert_calls == 1
+    assert cleanup_calls == 2
+    assert len(connections) == 2
+    assert [connection.close_calls for connection in connections] == [1, 1]
+
+
+def test_create_table_from_sql_cleans_cross_backend_transfer_before_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_connections: list[FakeDbapiConnection] = []
+    target_connections: list[FakeClickHouseClient] = []
+    transfer_calls: list[dict[str, object]] = []
+    target_exists = False
+    cleanup_calls = 0
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+            source_connections.append(connection)
+            return connection
+        if connection_key == "ch":
+            connection = FakeClickHouseClient()
+            target_connections.append(connection)
+            return connection
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    def fake_create(*args: object, **kwargs: object) -> None:
+        nonlocal target_exists
+        target_exists = True
+
+    def flaky_transfer(**kwargs: object) -> int:
+        transfer_calls.append(kwargs)
+        if len(transfer_calls) == 1:
+            raise RuntimeError("temporary transfer failure")
+        return 7
+
+    def fake_drop(**kwargs: object) -> None:
+        nonlocal cleanup_calls, target_exists
+        cleanup_calls += 1
+        target_exists = False
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(
+        create_module,
+        "table_exists",
+        lambda *args, **kwargs: target_exists,
+    )
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(create_module, "transfer_table", flaky_transfer)
+    monkeypatch.setattr(create_module, "_drop_attempt_target", fake_drop)
+
+    result = create_module.create_table_from_sql(
+        "gp",
+        "analytics.events",
+        "select id, amount from source_table",
+        table_db="ch",
+        retry_cnt=2,
+        timeout_increment=0,
+    )
+
+    assert result == 7
+    assert cleanup_calls == 1
+    assert target_exists is True
+    assert len(transfer_calls) == 2
+    assert all(call["retry_cnt"] == 1 for call in transfer_calls)
+    assert all(call["full_retry_cnt"] == 1 for call in transfer_calls)
+    assert len(source_connections) == 2
+    assert len(target_connections) == 3
+    assert all(connection.close_calls == 1 for connection in source_connections)
+    assert all(connection.close_calls == 1 for connection in target_connections)
+
+
+def test_create_table_from_sql_cleans_fast_path_before_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeClickHouseClient] = []
+    fast_path_calls = 0
+    cleanup_calls = 0
+    target_exists = False
+
+    def fake_get_sql_connection(connection_key: str) -> FakeClickHouseClient:
+        assert connection_key == "ch"
+        connection = FakeClickHouseClient()
+        connections.append(connection)
+        return connection
+
+    def flaky_fast_path(**kwargs: object) -> tuple[bool, object]:
+        nonlocal fast_path_calls, target_exists
+        fast_path_calls += 1
+        target_exists = True
+        if fast_path_calls == 1:
+            raise RuntimeError("temporary ClickHouse insert failure")
+        return True, "created"
+
+    def fake_drop(**kwargs: object) -> None:
+        nonlocal cleanup_calls, target_exists
+        cleanup_calls += 1
+        target_exists = False
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(
+        create_module,
+        "table_exists",
+        lambda *args, **kwargs: target_exists,
+    )
+    monkeypatch.setattr(
+        create_module.get_backend_adapter("ch"),
+        "create_table_from_sql_fast_path",
+        flaky_fast_path,
+    )
+    monkeypatch.setattr(create_module, "_drop_attempt_target", fake_drop)
+
+    result = create_module.create_table_from_sql(
+        "ch",
+        "analytics.events",
+        "select id, amount from source_table",
+        retry_cnt=2,
+        timeout_increment=0,
+    )
+
+    assert result == "created"
+    assert fast_path_calls == 2
+    assert cleanup_calls == 1
+    assert target_exists is True
+    assert len(connections) == 3
+    assert all(connection.close_calls == 1 for connection in connections)
+
+
+def test_create_table_from_sql_does_not_retry_or_drop_preexisting_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    create_calls = 0
+
+    def fail_create(*args: object, **kwargs: object) -> None:
+        nonlocal create_calls
+        create_calls += 1
+        raise RuntimeError("target already exists")
+
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+    monkeypatch.setattr(
+        create_module,
+        "table_exists",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fail_create)
+    monkeypatch.setattr(
+        create_module,
+        "_drop_attempt_target",
+        lambda **kwargs: pytest.fail("pre-existing target must not be dropped"),
+    )
+
+    with pytest.raises(RuntimeError, match="target already exists"):
+        create_module.create_table_from_sql(
+            "gp",
+            "sandbox.target_table",
+            "select id, amount from source_table",
+            retry_cnt=3,
+            timeout_increment=0,
+        )
+
+    assert create_calls == 1
+    assert connection.close_calls == 1
+
+
+def test_create_table_from_sql_close_failure_does_not_mask_success_or_leak_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    target = CloseFailDbapiConnection()
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        return source if connection_key == "gp" else target
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+
+    with pytest.warns(RuntimeWarning, match="Could not close SQL connection 'trino'"):
+        result = create_module.create_table_from_sql(
+            "gp",
+            "sandbox.target_table",
+            "select id, amount from source_table",
+            table_db="trino",
+            insert_data=False,
+            retry_cnt=2,
+            timeout_increment=0,
+        )
+
+    assert result is None
+    assert target.close_calls == 1
+    assert source.close_calls == 1
+
+
+def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+    create_calls = 0
+    insert_calls = 0
+    cleanup_calls = 0
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        assert connection_key == "gp"
+        connection = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+        connections.append(connection)
+        return connection
+
+    def fake_create(*args: object, **kwargs: object) -> None:
+        nonlocal create_calls
+        create_calls += 1
+
+    def fail_insert(*args: object, **kwargs: object) -> int:
+        nonlocal insert_calls
+        insert_calls += 1
+        raise RuntimeError("temporary insert failure")
+
+    def fail_cleanup(**kwargs: object) -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        raise RuntimeError("cleanup unavailable")
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(create_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(create_module, "insert_from_query", fail_insert)
+    monkeypatch.setattr(create_module, "_drop_attempt_target", fail_cleanup)
+
+    with pytest.warns(RuntimeWarning, match="Could not remove partial target"):
+        with pytest.raises(RuntimeError, match="temporary insert failure"):
+            create_module.create_table_from_sql(
+                "gp",
+                "sandbox.target_table",
+                "select id, amount from source_table",
+                retry_cnt=3,
+                timeout_increment=0,
+            )
+
+    assert create_calls == 1
+    assert insert_calls == 1
+    assert cleanup_calls == 2
+    assert len(connections) == 2
+    assert [connection.close_calls for connection in connections] == [1, 1]

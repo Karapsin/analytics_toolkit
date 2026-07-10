@@ -75,3 +75,80 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["analytics_toolkit*"]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 100
+src = ["analytics_toolkit", "tests", "agent_tools", "release_routines"]
+extend-exclude = [
+  ".mypy_cache",
+  ".pytest_cache",
+  ".rag_index",
+  ".ruff_cache",
+  ".tox",
+  ".venv",
+  "build",
+  "dist",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "ANN",    # Strict mypy owns production annotation coverage.
+  "COM812", # Conflicts with the formatter.
+  "D",      # Public documentation is enforced by the docs coverage checker.
+  "ISC001", # Conflicts with the formatter.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"analytics_toolkit/cli.py" = ["T201"]
+"agent_tools/**/*.py" = ["S603", "S607", "T201"]
+"release_routines/**/*.py" = ["S603", "S607", "T201"]
+"tests/**/*.py" = ["ARG", "FBT", "PLR2004", "S", "SLF001"]
+
+[tool.mypy]
+python_version = "3.8"
+strict = true
+pretty = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+  "clickhouse_connect.*",
+  "dateutil.*",
+  "fsspec.*",
+  "lz4.*",
+  "openpyxl.*",
+  "orjson.*",
+  "pandas.*",
+  "psycopg2.*",
+  "pyarrow.*",
+  "pytz.*",
+  "requests.*",
+  "s3fs.*",
+  "scipy.*",
+  "sqlglot.*",
+  "sqlparse.*",
+  "tqdm.*",
+  "trino.*",
+  "zstandard.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["analytics_toolkit"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]

@@ -44,7 +44,7 @@ compute_test_metrics(
 - `mde_power` - statistical power used for MDE calculation
 - `multiple_comparisons_adjustment` - whether to add bootstrap-adjusted outputs
 - `multiple_comparisons_adjustment_resamples` - bootstrap resample count
-- `bootstrap_random_state` - bootstrap random seed, or `None`
+- `bootstrap_random_state` - non-negative bootstrap random seed, or `None`
 - `bootstrap_n_jobs` - number of bootstrap workers
 - `bootstrap_progress` - whether to show bootstrap progress
 - `outliers_quantile` - upper-tail cutoff quantile, where `1` leaves the maximum value unmodified
@@ -113,6 +113,21 @@ result["segment_a"][["segment", "metric_name", "group_1", "group_2", "p-value"]]
 #   segment metric_name  group_1  group_2  p-value
 # 0       a      orders   test_1  control    0.041
 ```
+
+## Bootstrap adjustment
+
+When multiple-comparison adjustment is enabled, bootstrap resampling is
+stratified by the observed experiment group and preserves complete user rows.
+The pooled outlier cutoff and metric estimator are recomputed in every
+replicate. `bootstrap_adj_p` uses a centered, studentized max-T distribution
+across all observed-valid comparisons for the same metric, with the
+finite-sample correction `(1 + exceedances) / (1 + valid replicates)`.
+
+Replicates with a non-finite centered statistic for any observed-valid
+comparison are discarded from that metric's max-T family and produce a warning.
+If none remain, `bootstrap_adj_p` is `NaN`. `s.e. bootstrap` remains the sample
+standard deviation of each row's finite bootstrap deltas. Fixed seeds are
+deterministic across worker counts and process-to-thread fallback.
 
 ## Notes
 
