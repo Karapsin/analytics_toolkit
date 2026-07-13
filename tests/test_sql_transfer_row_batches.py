@@ -31,6 +31,9 @@ transfer_stage_module = importlib.import_module(
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
+transfer_options_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.options"
+)
 keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keys")
 estimate_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.estimate"
@@ -5676,3 +5679,168 @@ def test_count_loaded_stage_rows_empty_missing_and_format_fallback() -> None:
             open_connection=lambda _key: object(),
         )
     assert row_counts_module._format_row_count("unknown") == "unknown"
+
+
+@pytest.mark.parametrize("value", [True, "1", 0, -1, float("inf")])
+def test_resolve_target_batch_memory_rejects_invalid_values(value: Any) -> None:
+    with pytest.raises(ValueError, match="target_batch_memory_mb"):
+        transfer_options_module.resolve_target_batch_memory(value)
+
+
+def test_transfer_option_memory_resolvers_return_bytes_and_validate_bounds() -> None:
+    assert transfer_options_module.resolve_target_batch_memory(None) == (None, None)
+    assert transfer_options_module.resolve_target_batch_memory(0.5) == (0.5, 524_288)
+    assert transfer_options_module.resolve_target_batch_memory_limits(
+        min_batch_memory_mb=0.25,
+        max_batch_memory_mb=0.5,
+    ) == (0.25, 262_144, 0.5, 524_288)
+    with pytest.raises(ValueError, match="min_batch_memory_mb"):
+        transfer_options_module.resolve_target_batch_memory_limits(
+            min_batch_memory_mb=2,
+            max_batch_memory_mb=1,
+        )
+
+
+@pytest.mark.parametrize("value", [True, 1.5, 0, -1])
+def test_resolve_target_rows_per_second_window_rejects_invalid(value: Any) -> None:
+    with pytest.raises(ValueError, match="target_rows_per_second_window"):
+        transfer_options_module.resolve_target_rows_per_second_window(value)
+
+
+@pytest.mark.parametrize("value", [True, "0", -0.1, float("nan")])
+def test_resolve_target_rows_per_second_deadband_rejects_invalid(value: Any) -> None:
+    with pytest.raises(ValueError, match="target_rows_per_second_deadband"):
+        transfer_options_module.resolve_target_rows_per_second_deadband(value)
+
+
+@pytest.mark.parametrize("value", [True, "0.1", 0, 1, float("inf")])
+def test_resolve_adaptive_batch_size_step_rejects_invalid(value: Any) -> None:
+    with pytest.raises(ValueError, match="adaptive_batch_size_step"):
+        transfer_options_module.resolve_adaptive_batch_size_step(value)
+
+
+def test_resolve_target_adaptation_mode_branches() -> None:
+    with pytest.raises(ValueError, match="target_rows_per_second"):
+        transfer_options_module.resolve_target_adaptation_mode(
+            adaptive_batch_size=True,
+            target_rows_per_second=1,
+            target_batch_seconds=None,
+            target_batch_memory_mb=None,
+        )
+    assert transfer_options_module.resolve_target_adaptation_mode(
+        adaptive_batch_size=False,
+        target_rows_per_second=True,
+        target_batch_seconds=1,
+        target_batch_memory_mb=1,
+    ) is True
+    with pytest.raises(ValueError, match="Only one"):
+        transfer_options_module.resolve_target_adaptation_mode(
+            adaptive_batch_size=True,
+            target_rows_per_second=False,
+            target_batch_seconds=1,
+            target_batch_memory_mb=None,
+        )
+    assert transfer_options_module.resolve_target_adaptation_mode(
+        adaptive_batch_size=True,
+        target_rows_per_second=True,
+        target_batch_seconds=None,
+        target_batch_memory_mb=1,
+    ) is False
+    assert transfer_options_module.resolve_target_adaptation_mode(
+        adaptive_batch_size=True,
+        target_rows_per_second=True,
+        target_batch_seconds=1,
+        target_batch_memory_mb=None,
+    ) is False
+
+
+def test_resolve_adaptive_batch_bounds_defaults_clamps_and_validates() -> None:
+    assert transfer_options_module.resolve_adaptive_batch_bounds(
+        batch_size=500,
+        min_batch_size=1_000,
+        max_batch_size=None,
+        target_batch_seconds=None,
+        min_batch_seconds=12,
+        max_batch_seconds=15,
+        adaptive_batch_size=True,
+    ) == (500, 2_000, 12.0, 12.0, 15.0)
+    assert transfer_options_module.resolve_adaptive_batch_bounds(
+        batch_size=500,
+        min_batch_size=100,
+        max_batch_size=None,
+        target_batch_seconds=20,
+        min_batch_seconds=None,
+        max_batch_seconds=15,
+        adaptive_batch_size=True,
+        unlimited_default_max=True,
+    ) == (100, None, 15.0, None, 15.0)
+    with pytest.raises(ValueError, match="min_batch_seconds"):
+        transfer_options_module.resolve_adaptive_batch_bounds(
+            batch_size=10,
+            min_batch_size=1,
+            max_batch_size=20,
+            target_batch_seconds=10,
+            min_batch_seconds=20,
+            max_batch_seconds=10,
+            adaptive_batch_size=True,
+        )
+
+
+@pytest.mark.parametrize("value", [True, "1", 0, float("nan")])
+def test_resolve_positive_number_rejects_invalid(value: Any) -> None:
+    with pytest.raises(ValueError, match="limit"):
+        transfer_options_module.resolve_positive_number(value, "limit")
+
+
+def test_resolve_trino_mode_delegates_to_target_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[Any, str | None, str | None]] = []
+    monkeypatch.setattr(
+        transfer_options_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            resolve_transfer_staging_mode=lambda mode, **kwargs: calls.append(
+                (mode, kwargs["transfer_staging_schema"], kwargs["transfer_staging_location"])
+            )
+            or "parquet"
+        ),
+    )
+    assert transfer_options_module.resolve_trino_mode(
+        "auto",
+        target_backend="trino",
+        transfer_staging_schema="scratch",
+        transfer_staging_location="s3://bucket",
+    ) == "parquet"
+    assert calls == [("auto", "scratch", "s3://bucket")]
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"adaptive_batch_size": 1}, "adaptive_batch_size"),
+        ({"batch_size": 0}, "batch_size"),
+        ({"min_batch_size": 0}, "min_batch_size"),
+        ({"max_batch_size": 0}, "max_batch_size"),
+        ({"target_batch_seconds": "bad"}, "target_batch_seconds"),
+        ({"target_batch_seconds": 0}, "target_batch_seconds"),
+        ({"batch_size": 20, "max_batch_size": 10}, "max_batch_size"),
+        ({"min_batch_size": 20, "max_batch_size": 30}, "min_batch_size"),
+    ],
+)
+def test_resolve_adaptive_batch_bounds_rejects_invalid_combinations(
+    override: dict[str, Any],
+    message: str,
+) -> None:
+    values: dict[str, Any] = {
+        "batch_size": 10,
+        "min_batch_size": 1,
+        "max_batch_size": 20,
+        "target_batch_seconds": 10,
+        "min_batch_seconds": None,
+        "max_batch_seconds": None,
+        "adaptive_batch_size": True,
+    }
+    values.update(override)
+    with pytest.raises(ValueError, match=message):
+        transfer_options_module.resolve_adaptive_batch_bounds(**values)

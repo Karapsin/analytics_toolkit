@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Raised SQL formatting coverage and added automatic one-way coverage-floor ratcheting.
 - Raised SQL connection and DDL coverage with behavioral tests.
 - Raised SQL transfer finalization and row-count coverage.
+- Completed SQL transfer option boundary coverage and removed an unreachable check.
 
 ## 1.3.10.15 - 2026-07-13
 

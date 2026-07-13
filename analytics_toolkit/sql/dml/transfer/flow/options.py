@@ -206,11 +206,6 @@ def resolve_adaptive_batch_bounds(
         raise ValueError("min_batch_size must be less than or equal to batch_size.")
     if resolved_max_batch_size is not None and batch_size > resolved_max_batch_size:
         raise ValueError("max_batch_size must be greater than or equal to batch_size.")
-    if (
-        resolved_max_batch_size is not None
-        and resolved_min_batch_size > resolved_max_batch_size
-    ):
-        raise ValueError("min_batch_size must be less than or equal to max_batch_size.")
     return (
         resolved_min_batch_size,
         resolved_max_batch_size,
