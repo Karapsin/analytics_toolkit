@@ -6,10 +6,8 @@ import sys
 import types
 from pathlib import Path
 
-import pytest
-
 import analytics_toolkit.cli as cli_module
-from analytics_toolkit.cli import main
+import pytest
 from agent_tools.docs_assistant import (
     _split_text,
     ask_docs,
@@ -19,6 +17,7 @@ from agent_tools.docs_assistant import (
     index_freshness_warnings,
     search_docs,
 )
+from analytics_toolkit.cli import main
 
 
 def test_discover_markdown_files_includes_readme_and_docs_only(tmp_path: Path) -> None:
@@ -28,14 +27,10 @@ def test_discover_markdown_files_includes_readme_and_docs_only(tmp_path: Path) -
     (root / "docs").mkdir()
     (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
     (root / "agent_docs").mkdir()
-    (root / "agent_docs" / "development.md").write_text(
-        "# Development\n", encoding="utf-8"
-    )
+    (root / "agent_docs" / "development.md").write_text("# Development\n", encoding="utf-8")
     (root / "agent_tools").mkdir()
     (root / "agent_tools" / "README.md").write_text("# Agent Tools\n", encoding="utf-8")
-    (root / "agent_tools" / "internal.md").write_text(
-        "# Internal Tool Notes\n", encoding="utf-8"
-    )
+    (root / "agent_tools" / "internal.md").write_text("# Internal Tool Notes\n", encoding="utf-8")
     (root / "analytics_toolkit").mkdir()
     (root / "analytics_toolkit" / "internal.md").write_text("# Internal\n", encoding="utf-8")
 
@@ -198,29 +193,35 @@ def test_agent_docs_cli_indexes_searches_and_answers_with_sources(
     index_output = capsys.readouterr().out
     assert "Indexed" in index_output
 
-    assert docs_main(
-        [
-            "search",
-            "How do I configure Trino?",
-            "--index-dir",
-            str(index_dir),
-            "--top-k",
-            "1",
-        ]
-    ) == 0
+    assert (
+        docs_main(
+            [
+                "search",
+                "How do I configure Trino?",
+                "--index-dir",
+                str(index_dir),
+                "--top-k",
+                "1",
+            ]
+        )
+        == 0
+    )
     search_output = capsys.readouterr().out
     assert "docs/modules/sql/configuration.md:L" in search_output
     assert "source=public_docs" in search_output
 
-    assert docs_main(
-        [
-            "ask",
-            "--no-llm",
-            "How do I configure Trino?",
-            "--index-dir",
-            str(index_dir),
-        ]
-    ) == 0
+    assert (
+        docs_main(
+            [
+                "ask",
+                "--no-llm",
+                "How do I configure Trino?",
+                "--index-dir",
+                str(index_dir),
+            ]
+        )
+        == 0
+    )
     ask_output = capsys.readouterr().out
     assert "Most relevant passages" in ask_output
     assert "Sources:" in ask_output
@@ -249,33 +250,39 @@ def test_agent_docs_cli_warns_when_index_sources_are_stale(
     stale_mtime_ns = current_mtime_ns + 10_000_000_000
     os.utime(agent_tools_readme, ns=(stale_mtime_ns, stale_mtime_ns))
 
-    assert docs_main(
-        [
-            "search",
-            "docs_assistant RAG workflow",
-            "--index-dir",
-            str(index_dir),
-            "--top-k",
-            "1",
-        ]
-    ) == 0
+    assert (
+        docs_main(
+            [
+                "search",
+                "docs_assistant RAG workflow",
+                "--index-dir",
+                str(index_dir),
+                "--top-k",
+                "1",
+            ]
+        )
+        == 0
+    )
     search_output = capsys.readouterr()
     assert "agent_tools/README.md:L" in search_output.out
     assert "Warning: Docs index is stale: agent_tools/README.md changed after indexing." in (
         search_output.err
     )
 
-    assert docs_main(
-        [
-            "ask",
-            "--no-llm",
-            "how to run no-llm ask",
-            "--index-dir",
-            str(index_dir),
-            "--top-k",
-            "1",
-        ]
-    ) == 0
+    assert (
+        docs_main(
+            [
+                "ask",
+                "--no-llm",
+                "how to run no-llm ask",
+                "--index-dir",
+                str(index_dir),
+                "--top-k",
+                "1",
+            ]
+        )
+        == 0
+    )
     ask_output = capsys.readouterr()
     assert "agent_tools/README.md:L" in ask_output.out
     assert "Warning: Docs index is stale: agent_tools/README.md changed after indexing." in (
@@ -327,6 +334,76 @@ def test_cli_prefers_local_package_path_for_console_namespace_parent(
     assert package.__path__[1:] == [str(shadow_package)]
 
 
+def test_public_cli_help_support_matrix_and_path_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert main([]) == 2
+    assert "usage: analytics-toolkit" in capsys.readouterr().out
+
+    monkeypatch.setattr(cli_module, "format_support_matrix", lambda: "matrix")
+    assert main(["sql", "support-matrix"]) == 0
+    assert capsys.readouterr().out == "matrix\n"
+
+    child = tmp_path / "child.txt"
+    monkeypatch.chdir(tmp_path)
+    assert cli_module._display_path(child) == "child.txt"
+    assert cli_module._display_path(Path("/outside.txt")) == "/outside.txt"
+
+
+def test_public_cli_validate_prints_success_and_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    results = [
+        types.SimpleNamespace(
+            valid=True,
+            backend="gp",
+            connected=True,
+            connection_key="warehouse",
+            error=None,
+        ),
+        types.SimpleNamespace(
+            valid=False,
+            backend=None,
+            connected=False,
+            connection_key="missing",
+            error="not configured",
+        ),
+    ]
+    calls: list[tuple[object, bool]] = []
+    monkeypatch.setattr(
+        cli_module,
+        "validate_connections",
+        lambda keys, connect: calls.append((keys, connect)) or results,
+    )
+
+    assert main(["sql", "validate", "warehouse", "missing", "--connect"]) == 1
+    assert calls == [(["warehouse", "missing"], True)]
+    assert capsys.readouterr().out.splitlines() == [
+        "OK warehouse backend=gp connected=yes",
+        "ERROR missing backend=- connected=no error=not configured",
+    ]
+
+
+def test_cli_path_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "analytics_toolkit", types.SimpleNamespace())
+    cli_module._prefer_local_package_path()
+
+    original_resolve = Path.resolve
+
+    def failing_resolve(path: Path, *args: object, **kwargs: object) -> Path:
+        if str(path) == "bad":
+            message = "unreadable"
+            raise OSError(message)
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", failing_resolve)
+    assert cli_module._same_path("bad", "bad")
+    assert not cli_module._same_path("bad", "other")
+
+
 def _write_sample_docs(root: Path) -> Path:
     root.mkdir()
     (root / "README.md").write_text(
@@ -364,8 +441,8 @@ def _write_sample_docs(root: Path) -> Path:
                 "Use docs_assistant.py for local RAG documentation retrieval.",
                 "",
                 "Run `python agent_tools/docs_assistant.py index` before search.",
-                "Run `python agent_tools/docs_assistant.py search \"topic\" --top-k 5`.",
-                "Run `python agent_tools/docs_assistant.py ask --no-llm \"question\"`.",
+                'Run `python agent_tools/docs_assistant.py search "topic" --top-k 5`.',
+                'Run `python agent_tools/docs_assistant.py ask --no-llm "question"`.',
             ]
         ),
         encoding="utf-8",

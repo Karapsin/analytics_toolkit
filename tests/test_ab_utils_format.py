@@ -5,7 +5,6 @@ import importlib
 import numpy as np
 import pandas as pd
 import pytest
-
 from analytics_toolkit.ab_utils import format_ab_metrics
 
 
@@ -52,6 +51,31 @@ def test_format_ab_metrics_defaults_to_metric_value_table() -> None:
         }
     )
     pd.testing.assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("label_cols", "message"),
+    [
+        ("segment", "must be a list"),
+        (["segment", "segment"], "must not contain duplicates"),
+        ([1], "only column names"),
+        (["missing"], "Missing label"),
+    ],
+)
+def test_formatter_rejects_invalid_label_columns(label_cols: object, message: str) -> None:
+    formatter = importlib.import_module("analytics_toolkit.ab_utils.formatter")
+    with pytest.raises(ValueError, match=message):
+        formatter._validate_label_cols(_build_metric_rows(), label_cols)
+
+
+@pytest.mark.parametrize(
+    ("output_type", "message"),
+    [([], "non-empty"), (["p_values", "p_values"], "duplicates")],
+)
+def test_formatter_rejects_empty_or_duplicate_outputs(output_type: list[str], message: str) -> None:
+    formatter = importlib.import_module("analytics_toolkit.ab_utils.formatter")
+    with pytest.raises(ValueError, match=message):
+        formatter._validate_output_type(output_type)
 
 
 def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
@@ -246,9 +270,10 @@ def test_format_ab_metrics_puts_group_size_first_in_each_label_block() -> None:
         label_key: label_keys.index(label_key) for label_key in dict.fromkeys(label_keys)
     }
 
-    assert [
-        result.iloc[position]["metric"] for position in first_positions.values()
-    ] == ["group_size", "group_size"]
+    assert [result.iloc[position]["metric"] for position in first_positions.values()] == [
+        "group_size",
+        "group_size",
+    ]
 
 
 def test_format_ab_metrics_supports_multiple_output_types() -> None:

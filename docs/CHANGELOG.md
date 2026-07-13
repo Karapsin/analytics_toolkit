@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Added exact statement, branch, combined, and prefix coverage enforcement.
+
 ## 1.3.10.15 - 2026-07-13
 
 - Removed hard-coded Trino parquet load adapter use.

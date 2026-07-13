@@ -11,6 +11,7 @@ __pycache__/
 .rag_index/
 .tox/
 .coverage
+coverage.json
 htmlcov/
 build/
 dist/

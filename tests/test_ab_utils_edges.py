@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
+from analytics_toolkit.ab_utils import api as api_module
 from analytics_toolkit.ab_utils import bootstrap as bootstrap_module
 from analytics_toolkit.ab_utils import ratio as ratio_module
 from analytics_toolkit.ab_utils import split as split_module
@@ -39,6 +40,103 @@ def test_studentized_statistic_rejects_non_finite_inputs(
     standard_error: float,
 ) -> None:
     assert math.isnan(stats_module._compute_studentized_statistic(delta, standard_error))
+
+
+def test_stats_helpers_cover_empty_and_degenerate_samples() -> None:
+    assert math.isnan(stats_module._safe_mean(pd.Series(dtype=float)))
+    assert math.isnan(stats_module._compute_sample_variance(pd.Series([1.0])))
+    assert math.isnan(stats_module._compute_sample_variance(pd.Series([math.nan, math.nan])))
+    assert math.isnan(stats_module._compute_group_diff_standard_error(1.0, 0, 1.0, 2))
+    assert math.isnan(stats_module._compute_group_diff_standard_error(math.nan, 2, 1.0, 2))
+    assert all(
+        math.isnan(value)
+        for value in stats_module._compute_ttest_stat_and_p_value(
+            pd.Series([1.0]), pd.Series([2.0])
+        )
+    )
+    assert math.isnan(
+        stats_module._compute_mde_abs(pd.Series([1.0, 1.0]), pd.Series([math.nan, math.nan]))
+    )
+    statistic, p_value = stats_module._compute_ttest_stat_and_p_value_arrays(
+        np.array([1.0, 2.0]), np.array([2.0, 3.0])
+    )
+    assert math.isfinite(statistic)
+    assert 0 <= p_value <= 1
+
+
+def test_numeric_metric_validation_and_safe_relative_edges() -> None:
+    with pytest.raises(TypeError, match="contains non-numeric"):
+        stats_module._get_numeric_metric_series(pd.DataFrame({"metric": [1, "bad"]}), "metric")
+    assert math.isnan(stats_module._safe_relative(math.nan, 1.0))
+    assert math.isnan(stats_module._safe_relative(1.0, math.nan))
+    assert math.isnan(stats_module._safe_relative(1.0, 0.0))
+    assert stats_module._safe_relative(4.0, 2.0) == 2.0
+
+
+def test_changed_metric_defaults_preserves_every_explicit_override() -> None:
+    pre_exp = pd.DataFrame({"id": [1]})
+    ratio_metrics = [{"name": "ratio", "numerator": "a", "denominator": "b"}]
+
+    assert api_module._changed_metric_defaults(
+        group="arm",
+        control="baseline",
+        user_id="id",
+        mde_alpha=0.01,
+        mde_power=0.9,
+        ratio_metrics=ratio_metrics,
+        test_vs_test=False,
+        multiple_comparisons_adjustment=True,
+        multiple_comparisons_adjustment_resamples=99,
+        bootstrap_random_state=None,
+        bootstrap_n_jobs=2,
+        bootstrap_progress=True,
+        pre_exp_metrics_df=pre_exp,
+        outliers_quantile=0.95,
+        outliers_policy="truncate",
+    ) == {
+        "group": "arm",
+        "control": "baseline",
+        "user_id": "id",
+        "mde_alpha": 0.01,
+        "mde_power": 0.9,
+        "ratio_metrics": ratio_metrics,
+        "test_vs_test": False,
+        "multiple_comparisons_adjustment": True,
+        "multiple_comparisons_adjustment_resamples": 99,
+        "bootstrap_random_state": None,
+        "bootstrap_n_jobs": 2,
+        "bootstrap_progress": True,
+        "pre_exp_metrics_df": pre_exp,
+        "outliers_quantile": 0.95,
+        "outliers_policy": "truncate",
+    }
+
+
+@pytest.mark.parametrize("case", ["null_user", "duplicate_user", "null_group"])
+def test_compute_test_metrics_rejects_invalid_identity_columns(case: str) -> None:
+    frame = pd.DataFrame(
+        {"user_id": [1, 2], "group_name": ["control", "test"], "metric": [1.0, 2.0]}
+    )
+    if case == "null_user":
+        frame.loc[1, "user_id"] = np.nan
+    elif case == "duplicate_user":
+        frame["user_id"] = [1, 1]
+    else:
+        frame.loc[1, "group_name"] = None
+
+    with pytest.raises(ValueError, match="must"):
+        api_module._compute_test_metrics_dataframe(frame)
+
+
+def test_compute_test_metrics_rejects_missing_metric_and_control() -> None:
+    with pytest.raises(ValueError, match="at least one metric"):
+        api_module._compute_test_metrics_dataframe(
+            pd.DataFrame({"user_id": [1, 2], "group_name": ["control", "test"]})
+        )
+    with pytest.raises(ValueError, match="Control label"):
+        api_module._compute_test_metrics_dataframe(
+            pd.DataFrame({"user_id": [1, 2], "group_name": ["a", "b"], "metric": [1.0, 2.0]})
+        )
 
 
 @pytest.mark.parametrize(

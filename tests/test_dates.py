@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import warnings
 from contextlib import nullcontext
 from datetime import date, datetime
 
-import pytest
-
 import analytics_toolkit.dates as dates_module
 import analytics_toolkit.dates.functions as date_functions
+import pytest
 from analytics_toolkit.dates.dates import sanitize_date
 
 
@@ -61,7 +61,9 @@ def test_quarter_sequence_truncates_bounds_with_warnings() -> None:
         ("quarters", None),
     ],
 )
-def test_generated_date_sequences_are_monotonic(interval: str, expected_step_days: int | None) -> None:
+def test_generated_date_sequences_are_monotonic(
+    interval: str, expected_step_days: int | None
+) -> None:
     warning_context = nullcontext() if interval == "days" else pytest.warns(UserWarning)
     with warning_context:
         values = dates_module.gen_dates_list(
@@ -180,6 +182,61 @@ def test_days_between_supports_inclusive_counts() -> None:
     assert dates_module.days_between("2026-05-01", "2026-05-01", inclusive=True) == 1
 
 
+def test_date_arithmetic_and_today_support_datetime_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FixedDate(date):
+        @classmethod
+        def today(cls) -> FixedDate:
+            return cls(2026, 7, 13)
+
+    monkeypatch.setattr("analytics_toolkit.dates.dates.date", FixedDate)
+
+    assert dates_module.add_days("2026-05-18", 2, output_string=False) == datetime(  # noqa: DTZ001
+        2026, 5, 20
+    )
+    assert dates_module.add_weeks("2026-05-20", 1, output_string=False) == datetime(  # noqa: DTZ001
+        2026, 5, 25
+    )
+    assert dates_module.add_months("2026-05-20", -1, output_string=False) == datetime(  # noqa: DTZ001
+        2026, 4, 1
+    )
+    assert dates_module.get_today(output_string=False) == datetime(  # noqa: DTZ001
+        2026, 7, 13
+    )
+
+
+def test_empty_date_sequence_and_invalid_normalizers() -> None:
+    assert dates_module.gen_dates_list("2026-05-20", "2026-05-18") == []
+    with pytest.raises(ValueError, match="interval must be one of"):
+        dates_module.gen_dates_list("2026-05-18", "2026-05-20", interval="hours")
+    with pytest.raises(ValueError, match="period must be one of"):
+        dates_module.first_day("2026-05-18", period="year")
+    with pytest.raises(ValueError, match=r"weeks.*months.*quarters"):
+        dates_module.periods_between("2026-05-18", "2026-05-20", interval="days")
+
+
+def test_aligned_period_sequence_does_not_warn() -> None:
+    with warnings.catch_warnings(record=True) as warning_info:
+        assert dates_module.gen_dates_list("2026-05-18", "2026-05-25", interval="weeks") == [
+            "2026-05-18",
+            "2026-05-25",
+        ]
+    assert not warning_info
+
+
+def test_get_random_day_covers_bounds_and_reversed_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("analytics_toolkit.dates.dates.random.randint", lambda start, end: end)
+    assert dates_module.get_random_day("2026-05-18", "2026-05-20") == "2026-05-20"
+    assert dates_module.get_random_day("2026-05-18", "2026-05-20", output_string=False) == datetime(  # noqa: DTZ001
+        2026, 5, 20
+    )
+    with pytest.raises(ValueError, match="end_dt must be greater"):
+        dates_module.get_random_day("2026-05-20", "2026-05-18")
+
+
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [
@@ -189,11 +246,14 @@ def test_days_between_supports_inclusive_counts() -> None:
     ],
 )
 def test_periods_between_normalizes_to_period_starts(interval: str, expected: int) -> None:
-    assert dates_module.periods_between(
-        "2026-02-15",
-        "2026-05-20",
-        interval=interval,
-    ) == expected
+    assert (
+        dates_module.periods_between(
+            "2026-02-15",
+            "2026-05-20",
+            interval=interval,
+        )
+        == expected
+    )
 
 
 def test_periods_between_returns_signed_counts() -> None:
@@ -222,10 +282,13 @@ def test_period_helpers_accept_date_and_datetime_inputs() -> None:
     assert dates_module.period_bounds(date(2026, 5, 18)) == ("2026-05-01", "2026-05-31")
     assert dates_module.is_same_period(datetime(2026, 5, 18, 23, 59), date(2026, 5, 1))
     assert dates_module.days_between(date(2026, 5, 1), datetime(2026, 5, 3, 23, 59)) == 2
-    assert dates_module.periods_between(
-        datetime(2026, 2, 15, 12, 30),
-        date(2026, 5, 20),
-    ) == 3
+    assert (
+        dates_module.periods_between(
+            datetime(2026, 2, 15, 12, 30),
+            date(2026, 5, 20),
+        )
+        == 3
+    )
     assert dates_module.is_period_start(datetime(2026, 5, 1, 23, 59))
     assert dates_module.is_period_end(datetime(2026, 5, 31, 23, 59))
 
