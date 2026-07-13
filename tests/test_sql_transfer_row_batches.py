@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import importlib
 import io
 import threading
@@ -4585,7 +4586,7 @@ def test_write_batch_to_parquet_stage_uses_one_spooled_file_without_getvalue(
     uploads: list[tuple[str, Any]] = []
 
     class FakeSpooledFile:
-        _rolled = False
+        _rolled = True
 
         def __init__(self, max_size: int) -> None:
             nonlocal active_spooled_files, max_active_spooled_files
@@ -5844,3 +5845,218 @@ def test_resolve_adaptive_batch_bounds_rejects_invalid_combinations(
     values.update(override)
     with pytest.raises(ValueError, match=message):
         transfer_options_module.resolve_adaptive_batch_bounds(**values)
+
+
+@pytest.mark.parametrize(
+    ("options_override", "stage_types", "message"),
+    [
+        ({"transfer_staging_schema": None}, {"id": "BIGINT"}, "schema"),
+        ({"transfer_staging_location": None}, {"id": "BIGINT"}, "location"),
+        ({}, None, "source schema"),
+    ],
+)
+def test_create_parquet_stage_table_validates_required_inputs(
+    options_override: dict[str, Any],
+    stage_types: dict[str, str] | None,
+    message: str,
+) -> None:
+    values: dict[str, Any] = {
+        "to_db_key": "trino",
+        "to_db_backend": "trino",
+        "transfer_staging_schema": "scratch",
+        "transfer_staging_location": "s3://bucket/stage",
+    }
+    values.update(options_override)
+    options = make_progress_options(**values)
+    with pytest.raises(ValueError, match=message):
+        parquet_stage_module.create_parquet_stage_table(
+            options,
+            models_module.TransferConnectionRefs(target={"connection": object()}),
+            models_module.TransferStageState(
+                target_exists=False,
+                stage_column_types=stage_types,
+            ),
+        )
+
+
+def test_create_parquet_stage_table_reports_collision_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        to_db_key="trino",
+        to_db_backend="trino",
+        transfer_staging_schema="scratch",
+        transfer_staging_location="s3://bucket/stage",
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(parquet_stage_module, "STAGE_TABLE_NAME_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "build_stage_table_name",
+        lambda *_a, **_k: "scratch.collision",
+    )
+    monkeypatch.setattr(parquet_stage_module, "table_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(parquet_stage_module, "time_print", messages.append)
+
+    with pytest.raises(RuntimeError, match="unique stage table"):
+        parquet_stage_module.create_parquet_stage_table(
+            options,
+            models_module.TransferConnectionRefs(target={"connection": object()}),
+            models_module.TransferStageState(
+                target_exists=False,
+                stage_column_types={"id": "BIGINT"},
+            ),
+        )
+    assert len(messages) == 2
+
+
+def test_parquet_location_row_group_and_target_name_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            parquet_stage_target_table_base=lambda table: table.replace(".", "_")
+        ),
+    )
+    options = SimpleNamespace(
+        transfer_staging_location="s3://bucket/base/",
+        transfer_staging_username=None,
+        destination_table="schema.target",
+    )
+    assert parquet_stage_module.build_stage_external_location(
+        options,
+        stage_suffix="fixed",
+    ) == "s3://bucket/base/schema_target/__analytics_toolkit_unknown__stage__fixed/"
+    assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=0)) == 1
+    assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=60_000)) == 50_000
+    with pytest.raises(ValueError, match="staging_location"):
+        parquet_stage_module.build_stage_external_location(
+            SimpleNamespace(transfer_staging_location=None)
+        )
+    with pytest.raises(ValueError, match="target table"):
+        parquet_stage_module._stage_target_table_name(SimpleNamespace())
+
+
+def test_write_empty_parquet_batch_and_dataframe_are_noops() -> None:
+    assert parquet_stage_module.write_batch_to_parquet_stage(
+        models_module.RowBatch(columns=["id"], rows=[]),
+        file_index=0,
+        stage_external_location="s3://bucket/stage",
+        pa=object(),
+        pq=object(),
+        fsspec_module=object(),
+        row_group_size=1,
+    ) == 0
+    assert parquet_stage_module.write_dataframe_to_parquet_stage(
+        pd.DataFrame(),
+        stage_external_location="s3://bucket/stage",
+        pa=object(),
+        pq=object(),
+        fsspec_module=object(),
+        row_group_size=1,
+    ) == 0
+
+
+def test_write_dataframe_to_parquet_stage_chunks_progress_and_collects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uploads: list[str] = []
+    progress: list[int] = []
+    collected: list[bool] = []
+    fake_pa = SimpleNamespace(
+        Table=SimpleNamespace(from_pandas=lambda chunk, preserve_index: list(chunk["id"]))
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "write_arrow_table_to_parquet",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "upload_spooled_file",
+        lambda _fs, _file, uri: uploads.append(uri),
+    )
+    monkeypatch.setattr(parquet_stage_module, "_spooled_file_rolled_to_disk", lambda _file: True)
+    monkeypatch.setattr(parquet_stage_module.gc, "collect", lambda: collected.append(True))
+
+    written = parquet_stage_module.write_dataframe_to_parquet_stage(
+        pd.DataFrame({"id": [1, 2, 3]}),
+        stage_external_location="s3://bucket/stage/",
+        pa=fake_pa,
+        pq=object(),
+        fsspec_module=object(),
+        row_group_size=2,
+        on_progress=progress.append,
+    )
+
+    assert written == 3
+    assert progress == [2, 1]
+    assert uploads == [
+        "s3://bucket/stage/part-00000.parquet",
+        "s3://bucket/stage/part-00001.parquet",
+    ]
+    assert collected == [True, True]
+
+
+def test_cleanup_and_infer_parquet_helpers_delegate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed: list[tuple[str, bool]] = []
+    fs = SimpleNamespace(rm=lambda path, recursive: removed.append((path, recursive)))
+    fsspec_module = SimpleNamespace(
+        core=SimpleNamespace(url_to_fs=lambda uri: (fs, uri[len("s3://") :]))
+    )
+    parquet_stage_module.cleanup_parquet_stage_location(
+        "s3://bucket/stage",
+        fsspec_module=fsspec_module,
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            infer_parquet_stage_column_types_from_rows=lambda batch: {batch.columns[0]: "BIGINT"}
+        ),
+    )
+    batch = models_module.RowBatch(columns=["id"], rows=[(1,)])
+    assert parquet_stage_module.infer_trino_column_types_from_rows(batch) == {"id": "BIGINT"}
+    assert removed == [("bucket/stage", True)]
+
+
+def test_parquet_dependencies_and_default_cleanup_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pa, pq, fsspec_module = parquet_stage_module.ensure_parquet_staging_dependencies()
+    assert pa.__name__ == "pyarrow"
+    assert pq.__name__ == "pyarrow.parquet"
+    assert fsspec_module.__name__ == "fsspec"
+
+    removed: list[tuple[str, bool]] = []
+    fs = SimpleNamespace(rm=lambda path, recursive: removed.append((path, recursive)))
+    fake_fsspec = SimpleNamespace(
+        core=SimpleNamespace(url_to_fs=lambda _uri: (fs, "bucket/default"))
+    )
+    monkeypatch.setattr(
+        parquet_stage_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: (object(), object(), fake_fsspec),
+    )
+    parquet_stage_module.cleanup_parquet_stage_location("s3://bucket/default")
+    assert removed == [("bucket/default", True)]
+
+
+def test_parquet_dependency_import_error_is_actionable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import = builtins.__import__
+
+    def fail_fsspec(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "fsspec":
+            message = "missing fsspec"
+            raise ImportError(message)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_fsspec)
+    with pytest.raises(ImportError, match="pyarrow, fsspec, and s3fs"):
+        parquet_stage_module.ensure_parquet_staging_dependencies()
