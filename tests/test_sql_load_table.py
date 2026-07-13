@@ -2081,3 +2081,175 @@ def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
     )
 
     assert dropped == ["sandbox.target"]
+
+
+def test_load_df_rejects_non_dataframe_before_connection_lookup() -> None:
+    with pytest.raises(TypeError, match="pandas DataFrame"):
+        load_df_module.load_df("gp", "sandbox.target", [{"id": 1}])
+
+
+def test_load_write_mode_and_clickhouse_shard_validation() -> None:
+    assert (
+        load_df_module._resolve_load_write_mode(
+            "gp",
+            append=False,
+            write_mode=None,
+        )
+        == "replace"
+    )
+    assert (
+        load_df_module._resolve_load_write_mode(
+            "gp",
+            append=True,
+            write_mode=None,
+        )
+        == "append"
+    )
+    with pytest.raises(ValueError, match="append=True cannot be combined"):
+        load_df_module._resolve_load_write_mode(
+            "gp",
+            append=True,
+            write_mode="replace",
+        )
+    with pytest.raises(ValueError, match="ch_only_shard must be a boolean"):
+        load_df_module._normalize_only_shard(1)
+
+
+@pytest.mark.parametrize("write_mode", ["append", "upsert"])
+def test_empty_existing_load_returns_metadata(write_mode: str) -> None:
+    metadata = load_df_module.SqlOperationMetadata()
+    result = load_df_module._handle_empty_dataframe_load(
+        SimpleNamespace(
+            append=write_mode == "append",
+            write_mode=write_mode,
+            destination_table="sandbox.target",
+        ),
+        load_df_module.LoadState(
+            target_exists=True,
+            original_target_exists=True,
+        ),
+        operation_metadata=metadata,
+        return_metadata=True,
+    )
+
+    assert result.rows == 0
+    assert result.metadata is metadata
+    assert metadata.inserted_rows == 0
+    assert metadata.affected_rows == 0
+
+
+def test_empty_dataframe_cannot_create_or_replace_target() -> None:
+    with pytest.raises(ValueError, match="empty DataFrame"):
+        load_df_module._handle_empty_dataframe_load(
+            SimpleNamespace(
+                append=False,
+                write_mode="replace",
+                destination_table="sandbox.target",
+            ),
+            load_df_module.LoadState(
+                target_exists=False,
+                original_target_exists=False,
+            ),
+            operation_metadata=load_df_module.SqlOperationMetadata(),
+            return_metadata=False,
+        )
+
+
+def test_dataframe_key_uniqueness_rejects_duplicate_keys() -> None:
+    with pytest.raises(ValueError, match=r"Duplicate key values.*id, region"):
+        load_df_module._validate_dataframe_key_uniqueness(
+            pd.DataFrame(
+                {
+                    "id": [1, 1],
+                    "region": ["north", "north"],
+                }
+            ),
+            ["id", "region"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("options", "target_types", "message"),
+    [
+        (
+            {"transfer_staging_schema": None, "transfer_staging_location": "s3://x"},
+            {"id": "BIGINT"},
+            "transfer_staging_schema",
+        ),
+        (
+            {"transfer_staging_schema": "stage", "transfer_staging_location": None},
+            {"id": "BIGINT"},
+            "transfer_staging_location",
+        ),
+        (
+            {
+                "transfer_staging_schema": "stage",
+                "transfer_staging_location": "s3://x",
+            },
+            None,
+            "Could not resolve target schema",
+        ),
+    ],
+)
+def test_create_load_parquet_stage_requires_complete_configuration(
+    options: dict[str, object],
+    target_types: dict[str, str] | None,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        load_df_module._create_load_parquet_stage_table(
+            load_df_module.LoadOptions(
+                connection_key="trino",
+                connection_backend="trino",
+                destination_table="sandbox.target",
+                transfer_staging_schema=options["transfer_staging_schema"],
+                transfer_staging_location=options["transfer_staging_location"],
+            ),
+            load_df_module.LoadState(
+                target_exists=True,
+                original_target_exists=True,
+                target_column_types=target_types,
+            ),
+            object(),
+        )
+
+
+def test_cleanup_load_reports_each_best_effort_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "_run_load_target_action",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_parquet_stage_location",
+        lambda location: (_ for _ in ()).throw(RuntimeError("delete failed")),
+    )
+    monkeypatch.setattr(load_df_module, "time_print", messages.append)
+
+    load_df_module._cleanup_load(
+        load_df_module.LoadOptions(
+            connection_key="gp",
+            connection_backend="gp",
+            destination_table="sandbox.target",
+        ),
+        load_df_module.LoadState(
+            target_exists=True,
+            original_target_exists=False,
+            target_created_by_operation=True,
+            overlap_stage_table="sandbox.overlap_stage",
+            final_upsert_stage_table="sandbox.final_stage",
+            stage_external_location="s3://bucket/stage/",
+        ),
+        drop_created_target=True,
+    )
+
+    assert messages == [
+        "Failed to drop temporary load_df stage table sandbox.overlap_stage",
+        "Failed to drop temporary load_df final upsert stage table sandbox.final_stage",
+        "Failed to drop load_df target table sandbox.target created by this failed operation",
+        "Failed to delete temporary load_df Parquet stage files s3://bucket/stage/",
+    ]

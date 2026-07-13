@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.16 - 2026-07-13
 
 - Added exact statement, branch, combined, and prefix coverage enforcement.
 - Raised AB utility coverage and fixed NaT MDE validation.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Completed Parquet transfer staging coverage.
 - Completed SQL transfer source streaming coverage.
 - Raised SQL transfer attempt orchestration coverage.
+- Expanded SQL dataframe loading coverage.
 
 ## 1.3.10.15 - 2026-07-13
 
