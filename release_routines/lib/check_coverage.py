@@ -38,6 +38,13 @@ class OpportunityCounts:
         covered, total = self.opportunities(metric)
         return 100.0 if total == 0 else covered * 100.0 / total
 
+    def floored_percentage(self, metric: str) -> float:
+        """Return a deterministic percentage rounded down to two decimals."""
+        covered, total = self.opportunities(metric)
+        if total == 0:
+            return 100.0
+        return (covered * 10_000 // total) / 100
+
     def opportunities(self, metric: str) -> tuple[int, int]:
         if metric == "statements":
             return self.covered_statements, self.statements
@@ -200,6 +207,42 @@ def evaluate(
     return lines, failures
 
 
+def ratchet_targets(
+    path: Path,
+    files: Mapping[str, OpportunityCounts],
+    overall_targets: Mapping[str, float],
+    prefix_targets: Mapping[str, Mapping[str, float]],
+) -> list[str]:
+    """Raise existing floors to measured values without ever lowering them."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _fail(f"Cannot read coverage targets {path}: {exc}", cause=exc)
+
+    overall = OpportunityCounts()
+    for counts in files.values():
+        overall += counts
+    scopes = [("overall", overall, overall_targets)]
+    scopes.extend(
+        (prefix, aggregate_prefix(files, prefix), targets)
+        for prefix, targets in prefix_targets.items()
+    )
+
+    changes: list[str] = []
+    for label, counts, targets in scopes:
+        target_payload = payload["overall"] if label == "overall" else payload["prefixes"][label]
+        for metric, current in targets.items():
+            measured_floor = counts.floored_percentage(metric)
+            if measured_floor <= current:
+                continue
+            target_payload[metric] = measured_floor
+            changes.append(f"{label} {metric}: {current:.2f}% -> {measured_floor:.2f}%")
+
+    if changes:
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return changes
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Enforce exact coverage opportunity floors.")
     parser.add_argument("report", nargs="?", default="coverage.json", type=Path)
@@ -207,6 +250,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--targets",
         default=Path("release_routines/coverage_targets.json"),
         type=Path,
+    )
+    parser.add_argument(
+        "--update-targets",
+        action="store_true",
+        help="raise existing floors to measured values rounded down to two decimals",
     )
     args = parser.parse_args(argv)
     try:
@@ -219,6 +267,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if failures:
         print("Coverage floors missed:\n" + "\n".join(failures))
         return 1
+    if args.update_targets:
+        try:
+            changes = ratchet_targets(args.targets, files, overall, prefixes)
+        except CoverageGateError as exc:
+            parser.exit(2, f"coverage gate input error: {exc}\n")
+        if changes:
+            print("Coverage targets raised; review and rerun:\n" + "\n".join(changes))
+            return 1
     return 0
 
 

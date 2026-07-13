@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Added exact statement, branch, combined, and prefix coverage enforcement.
 - Raised AB utility coverage and fixed NaT MDE validation.
+- Raised SQL formatting coverage and added automatic one-way coverage-floor ratcheting.
 
 ## 1.3.10.15 - 2026-07-13
 

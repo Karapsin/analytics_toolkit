@@ -110,3 +110,82 @@ def test_malformed_reports_are_rejected(tmp_path: Path, payload: object) -> None
 
     with pytest.raises(check_coverage.CoverageGateError):
         check_coverage.load_report(report)
+
+
+def test_gate_ratchets_targets_downward_rounded_and_requires_rerun(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = _write(
+        tmp_path / "coverage.json",
+        {"files": {"analytics_toolkit/sql/a.py": _file(3, 0, 4, 1)}},
+    )
+    targets = _write(
+        tmp_path / "targets.json",
+        {
+            "overall": {"statements": 90, "branches": 70, "combined": 80},
+            "prefixes": {"sql": {"combined": 80}},
+        },
+    )
+
+    assert (
+        check_coverage.main(
+            [
+                str(report),
+                "--targets",
+                str(targets),
+                "--update-targets",
+            ]
+        )
+        == 1
+    )
+    updated = json.loads(targets.read_text(encoding="utf-8"))
+    assert updated["overall"] == {
+        "statements": 100.0,
+        "branches": 75.0,
+        "combined": 85.71,
+    }
+    assert updated["prefixes"]["sql"] == {"combined": 85.71}
+    assert "Coverage targets raised; review and rerun" in capsys.readouterr().out
+
+    assert (
+        check_coverage.main(
+            [
+                str(report),
+                "--targets",
+                str(targets),
+                "--update-targets",
+            ]
+        )
+        == 0
+    )
+
+
+def test_gate_does_not_lower_or_rewrite_targets_after_regression(
+    tmp_path: Path,
+) -> None:
+    report = _write(
+        tmp_path / "coverage.json",
+        {"files": {"analytics_toolkit/sql/a.py": _file(10, 2, 4, 2)}},
+    )
+    targets = _write(
+        tmp_path / "targets.json",
+        {
+            "overall": {"statements": 90, "branches": 60, "combined": 80},
+            "prefixes": {},
+        },
+    )
+    original = targets.read_text(encoding="utf-8")
+
+    assert (
+        check_coverage.main(
+            [
+                str(report),
+                "--targets",
+                str(targets),
+                "--update-targets",
+            ]
+        )
+        == 1
+    )
+    assert targets.read_text(encoding="utf-8") == original
