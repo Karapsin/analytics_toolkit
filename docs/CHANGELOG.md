@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Added exact statement, branch, combined, and prefix coverage enforcement.
+- Raised AB utility coverage and fixed NaT MDE validation.
 
 ## 1.3.10.15 - 2026-07-13
 

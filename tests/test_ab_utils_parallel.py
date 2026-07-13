@@ -15,6 +15,139 @@ parallel_module = importlib.import_module("analytics_toolkit.ab_utils.parallel")
 async_sql_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 
 
+def test_executor_shutdown_falls_back_without_cancel_futures() -> None:
+    class LegacyExecutor:
+        def __init__(self) -> None:
+            self.calls: list[tuple[bool, bool | None]] = []
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool | None = None) -> None:
+            self.calls.append((wait, cancel_futures))
+            if cancel_futures is not None:
+                message = "legacy shutdown"
+                raise TypeError(message)
+
+    executor = LegacyExecutor()
+    parallel_module._shutdown_executor(executor, wait=False, cancel_futures=True)
+    assert executor.calls == [(False, True), (False, None)]
+
+
+def test_nested_concurrency_state_tightens_soft_cap_and_can_raise_hard_cap() -> None:
+    active = parallel_module._ConcurrencyState(
+        effective_concurrency=2,
+        hard_cap=4,
+        soft_cap=4,
+        semaphores=(),
+    )
+    token = parallel_module._CONCURRENCY_STATE.set(active)
+    try:
+        tightened = parallel_module._build_concurrency_state(
+            concurrency=2,
+            soft_concurrency_cap=2,
+            hard_concurrency_cap=10,
+        )
+        raised = parallel_module._build_concurrency_state(
+            concurrency=2,
+            soft_concurrency_cap=None,
+            hard_concurrency_cap=6,
+        )
+    finally:
+        parallel_module._CONCURRENCY_STATE.reset(token)
+
+    assert tightened.effective_concurrency == 4
+    assert tightened.soft_cap == 2
+    assert tightened.hard_cap == 4
+    assert len(tightened.semaphores) == 1
+    assert raised.hard_cap == 6
+    assert raised.soft_cap == 4
+
+
+def test_metric_exception_annotation_tolerates_read_only_exception() -> None:
+    class ReadOnlyError(Exception):
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "analytics_toolkit_metric_task_name":
+                message = "read only"
+                raise RuntimeError(message)
+            super().__setattr__(name, value)
+
+    error = ReadOnlyError("failure")
+    parallel_module._annotate_metric_exception(error, "task")
+    assert not hasattr(error, "analytics_toolkit_metric_task_name")
+
+
+def test_parallel_default_validation_reports_multiple_unknown_fields() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword arguments"):
+        parallel_module._validate_metric_defaults({"unknown_a": 1, "unknown_b": 2})
+    with pytest.raises(TypeError, match="unexpected task defaults"):
+        parallel_module._validate_metric_task_defaults({"unknown_a": 1, "unknown_b": 2})
+
+
+def test_parallel_validation_rejects_nonmapping_and_single_unknown_default() -> None:
+    with pytest.raises(TypeError, match="tasks must be a non-empty mapping"):
+        parallel_module._validate_tasks([], metric_defaults={})
+    with pytest.raises(TypeError, match="unexpected task default"):
+        parallel_module._validate_metric_task_defaults({"unknown": 1})
+
+
+def test_sql_metric_failure_log_routing_ignores_unrelated_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        parallel_module,
+        "_log_sql_metric_task_failure",
+        lambda **kwargs: logged.append(kwargs),
+    )
+    tasks = [("task", {}, "SELECT metric", "SELECT pre", None)]
+
+    parallel_module._log_sql_metric_task_failure_from_exception(ValueError("plain"), tasks)
+    named = ValueError("load failed")
+    named.analytics_toolkit_sql_task_name = "task:pre_exp_sql"
+    parallel_module._log_sql_metric_task_failure_from_exception(named, tasks)
+    unmatched = ValueError("unmatched")
+    unmatched.analytics_toolkit_sql_task_name = "other:sql"
+    parallel_module._log_sql_metric_task_failure_from_exception(unmatched, tasks)
+
+    assert logged == [
+        {
+            "name": "task",
+            "failed_field": "pre_exp_sql",
+            "error": "load failed",
+            "sql": "SELECT metric",
+            "pre_exp_sql": "SELECT pre",
+        }
+    ]
+    assert parallel_module._sql_read_task_field(None) is None
+    assert parallel_module._sql_read_task_field("task:other") is None
+
+
+def test_sql_metric_compute_failure_log_routing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        parallel_module,
+        "_log_sql_metric_compute_failure",
+        lambda **kwargs: logged.append(kwargs),
+    )
+    tasks = [("task", {}, "SELECT metric", None, None)]
+    parallel_module._log_sql_metric_compute_failure_from_exception(ValueError("plain"), tasks)
+    named = ValueError("compute failed")
+    named.analytics_toolkit_metric_task_name = "task"
+    parallel_module._log_sql_metric_compute_failure_from_exception(named, tasks)
+    unmatched = ValueError("unmatched")
+    unmatched.analytics_toolkit_metric_task_name = "other"
+    parallel_module._log_sql_metric_compute_failure_from_exception(unmatched, tasks)
+
+    assert logged == [
+        {
+            "name": "task",
+            "error": "compute failed",
+            "sql": "SELECT metric",
+            "pre_exp_sql": None,
+        }
+    ]
+
+
 def test_compute_metrics_from_sql_is_exported() -> None:
     assert ab_utils_module.compute_metrics_from_sql is parallel_module.compute_metrics_from_sql
     assert metrics_module.compute_metrics_from_sql is parallel_module.compute_metrics_from_sql
@@ -318,17 +451,11 @@ def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
 
 
 def test_parallel_compute_metrics_hard_cap_rejects_unthrottled_concurrency() -> None:
-    tasks = {
-        f"task_{index}": {"df": pd.DataFrame()}
-        for index in range(11)
-    }
+    tasks = {f"task_{index}": {"df": pd.DataFrame()} for index in range(11)}
 
     with pytest.raises(
         ValueError,
-        match=(
-            "effective concurrency exceeds hard_concurrency_cap.*"
-            "soft_concurrency_cap"
-        ),
+        match=("effective concurrency exceeds hard_concurrency_cap.*soft_concurrency_cap"),
     ):
         ab_utils_module.compute_test_metrics(
             tasks,
@@ -767,9 +894,7 @@ def test_parallel_compute_metrics_from_sql_uses_db_key_for_async_read_dispatch(
     )
 
     pd.testing.assert_frame_equal(result["segment"], metric_df)
-    assert read_calls == [
-        {"db_key": "analytics_prod", "query": "select * from experiment"}
-    ]
+    assert read_calls == [{"db_key": "analytics_prod", "query": "select * from experiment"}]
     assert len(compute_calls) == 1
     assert compute_calls[0]["segment"]["df"] is experiment_df
 
@@ -952,10 +1077,7 @@ def test_parallel_compute_metrics_from_sql_passes_start_comments(
         tasks: dict[str, dict[str, Any]],
         **kwargs: Any,
     ) -> dict[str, pd.DataFrame]:
-        return {
-            name: pd.DataFrame({"task": [name]})
-            for name in tasks
-        }
+        return {name: pd.DataFrame({"task": [name]}) for name in tasks}
 
     monkeypatch.setattr(parallel_module, "async_sql", fake_async_sql)
     monkeypatch.setattr(
@@ -1279,9 +1401,7 @@ def test_parallel_compute_metrics_from_sql_fail_fast_false_prints_compute_errors
     )
 
     pd.testing.assert_frame_equal(result["ok"], computed)
-    assert result["broken"] == (
-        "Control label 'control' was not found in column 'group_name'."
-    )
+    assert result["broken"] == ("Control label 'control' was not found in column 'group_name'.")
     output = capsys.readouterr().out
     assert "task 'broken' failed during metric computation" in output
     assert "Experiment SQL:\nselect * from experiment_source" in output

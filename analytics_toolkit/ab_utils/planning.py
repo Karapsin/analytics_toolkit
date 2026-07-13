@@ -1409,12 +1409,12 @@ def _normalize_start_dt(start_dt: object) -> pd.Timestamp:
     if isinstance(start_dt, bool):
         raise TypeError("start_dt must be a datelike value.")
     try:
-        normalized = pd.Timestamp(start_dt).normalize()
+        timestamp = pd.Timestamp(start_dt)
     except (TypeError, ValueError) as exc:
         raise ValueError("start_dt must be a datelike value.") from exc
-    if pd.isna(normalized):
+    if pd.isna(timestamp):
         raise ValueError("start_dt must be a datelike value.")
-    return normalized
+    return timestamp.normalize()
 
 
 def _build_mde_planning_row(

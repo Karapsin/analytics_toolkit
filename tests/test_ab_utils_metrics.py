@@ -63,6 +63,171 @@ def test_compute_mde_from_sql_concurrency_defaults_to_one() -> None:
     assert inspect.signature(compute_mde_sql_native).parameters["concurrency"].default == 1
 
 
+@pytest.mark.parametrize("value", [True, [], pd.NaT])
+def test_mde_start_date_normalization_rejects_invalid_values(value: object) -> None:
+    error = TypeError if value is True else ValueError
+    with pytest.raises(error, match="start_dt must be a datelike value"):
+        planning_module._normalize_start_dt(value)
+
+
+def test_mde_metric_column_normalization_rejects_duplicates_and_missing() -> None:
+    frame = pd.DataFrame({"user": [1], "dt": ["2026-01-01"], "metric": [1.0]})
+    kwargs = {
+        "df": frame,
+        "ratio_specs": [],
+        "user_id": "user",
+        "date_column": "dt",
+    }
+    with pytest.raises(ValueError, match="must not contain duplicates"):
+        planning_module._normalize_metric_columns(metric_columns=["metric", "metric"], **kwargs)
+    with pytest.raises(ValueError, match="Missing metric"):
+        planning_module._normalize_metric_columns(metric_columns=["missing"], **kwargs)
+
+
+def test_mde_positive_grid_rejects_conflicting_empty_and_incomplete_inputs() -> None:
+    names = {
+        "values_name": "values",
+        "min_name": "minimum",
+        "max_name": "maximum",
+        "step_name": "step",
+    }
+    with pytest.raises(ValueError, match="cannot be combined"):
+        planning_module._resolve_positive_int_grid(
+            values=[1], min_value=1, max_value=None, step=None, **names
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        planning_module._resolve_positive_int_grid(
+            values=[], min_value=None, max_value=None, step=None, **names
+        )
+    with pytest.raises(ValueError, match="Either values"):
+        planning_module._resolve_positive_int_grid(
+            values=None, min_value=1, max_value=None, step=1, **names
+        )
+    with pytest.raises(ValueError, match="less than or equal"):
+        planning_module._resolve_positive_int_grid(
+            values=None, min_value=3, max_value=1, step=1, **names
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [(True, TypeError), (1.5, TypeError), (0, ValueError), (-1, ValueError)],
+)
+def test_mde_positive_integer_validation(value: object, error: type[Exception]) -> None:
+    with pytest.raises(error, match="positive integers"):
+        planning_module._validate_positive_int(value, "value")
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        (True, TypeError),
+        ("0.5", TypeError),
+        (math.inf, ValueError),
+        (0, ValueError),
+        (1, ValueError),
+    ],
+)
+def test_mde_control_share_validation(value: object, error: type[Exception]) -> None:
+    with pytest.raises(error, match="control_share"):
+        planning_module._validate_control_share(value)
+
+
+def test_mde_split_rejects_empty_arm() -> None:
+    with pytest.raises(ValueError, match="one control and one test"):
+        planning_module._build_planned_split(group_size=1, control_share=0.5)
+
+
+@pytest.mark.parametrize(
+    ("frame", "message"),
+    [
+        (pd.DataFrame(), "at least one user-day"),
+        (pd.DataFrame({"dt": ["2026-01-01"]}), "Column 'user' was not found"),
+        (pd.DataFrame({"user": [1]}), "Column 'dt' was not found"),
+        (
+            pd.DataFrame({"user": [None], "dt": ["2026-01-01"]}),
+            "user.*missing values",
+        ),
+        (pd.DataFrame({"user": [1], "dt": [None]}), "dt.*missing values"),
+        (pd.DataFrame({"user": [1], "dt": ["not-a-date"]}), "datelike values"),
+        (
+            pd.DataFrame({"user": [1, 1], "dt": ["2026-01-01", "2026-01-01"]}),
+            "unique user-day rows",
+        ),
+    ],
+)
+def test_prepare_mde_user_day_frame_rejects_invalid_rows(frame: pd.DataFrame, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        planning_module._prepare_mde_user_day_frame(df=frame, user_id="user", date_column="dt")
+
+
+def test_mde_sql_where_and_required_column_validation() -> None:
+    with pytest.raises(TypeError, match="string or None"):
+        planning_module._normalize_sql_where(1)
+    with pytest.raises(ValueError, match="must not be empty"):
+        planning_module._normalize_sql_where("  ")
+    with pytest.raises(ValueError, match="Column 'user'"):
+        planning_module._validate_sql_source_required_columns(
+            column_names=["dt"], user_id="user", date_column="dt"
+        )
+    with pytest.raises(ValueError, match="Column 'dt'"):
+        planning_module._validate_sql_source_required_columns(
+            column_names=["user"], user_id="user", date_column="dt"
+        )
+
+
+def test_mde_sql_result_and_date_coercion_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(TypeError, match="did not return a dataframe"):
+        planning_module._normalize_sql_mde_window_frame(
+            result=[], user_id="user", columns=["metric"]
+        )
+    monkeypatch.setattr(planning_module.sql_facade, "read", lambda *args, **kwargs: [])
+    with pytest.raises(TypeError, match="did not return a dataframe"):
+        planning_module._read_sql_mde_query(
+            db_key="db",
+            query="SELECT 1",
+            print_queries=False,
+            retry_cnt=0,
+            timeout_increment=0,
+            query_label=None,
+        )
+    with pytest.raises(ValueError, match="minimum date is missing"):
+        planning_module._coerce_sql_date(None, "minimum date")
+    with pytest.raises(ValueError, match="must be datelike"):
+        planning_module._coerce_sql_date(object(), "minimum date")
+
+
+def test_mde_aggregation_name_and_query_policy_failures() -> None:
+    assert (
+        planning_module._validate_mde_aggregation_metric_names(
+            values=None, name="metrics", metric_columns={"a"}
+        )
+        == set()
+    )
+    with pytest.raises(ValueError, match="duplicates"):
+        planning_module._validate_mde_aggregation_metric_names(
+            values=["a", "a"], name="metrics", metric_columns={"a"}
+        )
+    with pytest.raises(ValueError, match="unknown metric"):
+        planning_module._validate_mde_aggregation_metric_names(
+            values=["b"], name="metrics", metric_columns={"a"}
+        )
+    with pytest.raises(AssertionError, match="Unexpected MDE aggregation policy"):
+        planning_module._build_sql_mde_user_window_query(
+            backend="gp",
+            source='"public"."events"',
+            sql_where=None,
+            user_id="user",
+            date_column="dt",
+            columns=["metric"],
+            aggregation_policies={"metric": "median"},
+            start_date=pd.Timestamp("2026-01-01"),
+            days=7,
+        )
+
+
 def test_ab_metric_outlier_policy_defaults_to_non_zero_truncate() -> None:
     assert (
         inspect.signature(compute_test_metrics).parameters["outliers_policy"].default

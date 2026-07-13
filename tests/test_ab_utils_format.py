@@ -78,6 +78,28 @@ def test_formatter_rejects_empty_or_duplicate_outputs(output_type: list[str], me
         formatter._validate_output_type(output_type)
 
 
+def test_significant_delta_requires_configuration() -> None:
+    formatter = importlib.import_module("analytics_toolkit.ab_utils.formatter")
+    with pytest.raises(ValueError, match="Significance configuration is required"):
+        formatter._significant_delta_value(
+            source_row=pd.Series({"delta": 1.0}),
+            value_col="delta",
+            significance_source_column=None,
+            significance_alpha=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [(np.nan, np.nan, True), (np.nan, 1.0, False), (1.0, np.nan, False)],
+)
+def test_formatter_value_equality_handles_missing_values(
+    left: float, right: float, expected: bool
+) -> None:
+    formatter = importlib.import_module("analytics_toolkit.ab_utils.formatter")
+    assert formatter._values_equal(left, right) is expected
+
+
 def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
     df = pd.DataFrame(
         {

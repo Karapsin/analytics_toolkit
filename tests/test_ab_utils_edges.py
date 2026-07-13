@@ -10,8 +10,11 @@ import pandas as pd
 import pytest
 from analytics_toolkit.ab_utils import api as api_module
 from analytics_toolkit.ab_utils import bootstrap as bootstrap_module
+from analytics_toolkit.ab_utils import cuped as cuped_module
+from analytics_toolkit.ab_utils import outliers as outliers_module
 from analytics_toolkit.ab_utils import ratio as ratio_module
 from analytics_toolkit.ab_utils import split as split_module
+from analytics_toolkit.ab_utils import sql_bootstrap as sql_bootstrap_module
 from analytics_toolkit.ab_utils import sql_native
 from analytics_toolkit.ab_utils import stats as stats_module
 from analytics_toolkit.ab_utils import validation as validation_module
@@ -110,6 +113,237 @@ def test_changed_metric_defaults_preserves_every_explicit_override() -> None:
         "outliers_quantile": 0.95,
         "outliers_policy": "truncate",
     }
+
+
+def test_cuped_p_value_wrapper_and_prepared_context_failures() -> None:
+    frame = pd.DataFrame(
+        {
+            "user": [1, 2, 3, 4],
+            "group": ["control", "control", "test", "test"],
+            "metric": [1.0, 2.0, 2.0, 4.0],
+        }
+    )
+    pre = pd.DataFrame({"user": [1, 2, 3, 4], "metric": [1.0, 2.0, 1.5, 3.0]})
+    metric = {"kind": "mean", "metric_key": "metric", "column": "metric"}
+
+    p_value = cuped_module._compute_cuped_p_value(
+        frame,
+        pre,
+        "group",
+        "user",
+        "control",
+        "test",
+        metric,
+    )
+    assert 0 <= p_value <= 1
+
+    comparison = frame[["user", "group"]]
+    built, reason = cuped_module._build_cuped_frame_from_prepared_context(
+        comparison,
+        "user",
+        {"exp_values": None, "exp_error": "missing experiment"},
+    )
+    assert built is None
+    assert "missing experiment" in str(reason)
+
+
+@pytest.mark.parametrize("missing_side", ["experiment", "pre"])
+def test_cuped_frame_reports_missing_metric_values(missing_side: str) -> None:
+    experiment = pd.DataFrame({"user": [1], "group": ["control"], "metric": [1.0]})
+    pre = pd.DataFrame({"user": [1], "metric": [1.0]})
+    if missing_side == "experiment":
+        experiment = experiment.drop(columns="metric")
+    else:
+        pre = pre.drop(columns="metric")
+
+    built, reason = cuped_module._build_cuped_frame(
+        experiment,
+        pre,
+        "user",
+        "group",
+        "control",
+        "test",
+        {"kind": "mean", "metric_key": "metric", "column": "metric"},
+    )
+    assert built is None
+    expected_side = "pre-experiment" if missing_side == "pre" else missing_side
+    assert f"{expected_side} metric values are unavailable" in str(reason)
+
+
+def test_cuped_frame_reports_no_overlap_and_missing_ratio_columns() -> None:
+    experiment = pd.DataFrame({"user": [1], "group": ["control"], "metric": [1.0]})
+    pre = pd.DataFrame({"user": [2], "metric": [2.0]})
+    built, reason = cuped_module._build_cuped_frame(
+        experiment,
+        pre,
+        "user",
+        "group",
+        "control",
+        "test",
+        {"kind": "mean", "metric_key": "metric", "column": "metric"},
+    )
+    assert built is None
+    assert "no overlapping" in str(reason)
+
+    values, error = cuped_module._build_metric_values_by_user(
+        pd.DataFrame({"user": [1], "numerator": [1.0]}),
+        "user",
+        {
+            "kind": "ratio",
+            "metric_key": "ratio",
+            "ratio_spec": {
+                "numerator": "numerator",
+                "denominator": "denominator",
+                "level": "agg",
+            },
+        },
+        "value",
+    )
+    assert values.empty
+    assert "denominator" in str(error)
+
+
+def test_cuped_aggregate_ratio_reports_invalid_denominator() -> None:
+    values, error = cuped_module._build_metric_values_by_user(
+        pd.DataFrame({"user": [1, 2], "numerator": [1.0, 2.0], "denominator": [0.0, 0.0]}),
+        "user",
+        {
+            "kind": "ratio",
+            "metric_key": "ratio",
+            "ratio_spec": {
+                "numerator": "numerator",
+                "denominator": "denominator",
+                "level": "agg",
+            },
+        },
+        "value",
+    )
+    assert values.empty
+    assert error is not None
+
+
+def test_cuped_p_value_from_prepared_frame_wrapper() -> None:
+    frame = pd.DataFrame(
+        {
+            "group": ["control", "control", "test", "test"],
+            "metric_exp": [1.0, 2.0, 3.0, 5.0],
+            "metric_pre": [1.0, 2.0, 2.0, 4.0],
+        }
+    )
+    p_value, reason = cuped_module._compute_cuped_p_value_from_frame(
+        frame, "group", "control", "test"
+    )
+    assert 0 <= p_value <= 1
+    assert reason is None
+
+
+def test_outlier_context_missing_columns_and_empty_cutoff_paths() -> None:
+    mean_metric = {"kind": "mean", "metric_key": "metric", "column": "metric"}
+    assert (
+        outliers_module._build_outlier_context(
+            pd.DataFrame({"other": [1.0]}), mean_metric, 0.99, "truncate", allow_missing=True
+        )
+        is None
+    )
+    with pytest.raises(KeyError, match="metric"):
+        outliers_module._build_outlier_context(
+            pd.DataFrame({"other": [1.0]}), mean_metric, 0.99, "truncate"
+        )
+
+    ratio_metric = {
+        "kind": "ratio",
+        "metric_key": "ratio",
+        "ratio_spec": {"numerator": "num", "denominator": "den", "level": "agg"},
+    }
+    assert (
+        outliers_module._build_outlier_context(
+            pd.DataFrame({"num": [1.0]}),
+            ratio_metric,
+            0.99,
+            "truncate",
+            allow_missing=True,
+        )
+        is None
+    )
+    with pytest.raises(KeyError, match="den"):
+        outliers_module._build_outlier_context(
+            pd.DataFrame({"num": [1.0]}), ratio_metric, 0.99, "truncate"
+        )
+    assert math.isnan(
+        outliers_module._compute_outlier_cutoff(
+            pd.Series([0.0, math.nan]), 0.99, "non_zero_truncate"
+        )
+    )
+
+
+def test_outlier_masks_and_removal_policy_edges() -> None:
+    values = pd.Series([1.0, 10.0])
+    no_context = outliers_module._build_value_outlier_mask(values, None)
+    nan_context = outliers_module._build_value_outlier_mask(
+        values, {"cutoff": math.nan, "policy": "truncate"}
+    )
+    assert not no_context.any()
+    assert not nan_context.any()
+
+    transformed, mask = outliers_module._apply_outliers_to_values(
+        values, {"cutoff": 2.0, "policy": "remove"}
+    )
+    assert mask.tolist() == [False, True]
+    assert math.isnan(transformed.iloc[1])
+
+    numerator = pd.Series([1.0, 10.0])
+    denominator = pd.Series([1.0, 1.0])
+    assert not outliers_module._build_agg_ratio_outlier_mask(numerator, denominator, None).any()
+    assert not outliers_module._build_agg_ratio_outlier_mask(
+        numerator, denominator, {"cutoff": math.nan, "policy": "truncate"}
+    ).any()
+    transformed_num, transformed_den, ratio_mask = (
+        outliers_module._apply_outliers_to_agg_ratio_components(
+            numerator,
+            denominator,
+            {"cutoff": 2.0, "policy": "remove"},
+        )
+    )
+    assert ratio_mask.tolist() == [False, True]
+    assert math.isnan(transformed_num.iloc[1])
+    assert math.isnan(transformed_den.iloc[1])
+    assert math.isnan(outliers_module._get_outlier_cutoff(None))
+
+
+def test_bootstrap_context_records_nonfinite_delta_and_no_outlier_context() -> None:
+    context = {
+        "comparisons": [("test", "control")],
+        "metric_contexts": [{"metric_key": "metric"}],
+    }
+    bootstrap_module._replace_observed_statistics_from_rows(
+        context,
+        [{"_metric_key": "metric", "_comparison_key": ("test", "control"), "delta_abs": math.nan}],
+        {("test", "control"): 0},
+    )
+    assert context["metric_contexts"][0]["observed_valid_comparisons"] == []
+
+    prepared = bootstrap_module._prepare_bootstrap_context(
+        pd.DataFrame({"group": ["control", "test"], "metric": [1.0, 2.0]}),
+        "group",
+        [{"kind": "mean", "metric_key": "metric", "column": "metric"}],
+        [("test", "control")],
+    )
+    assert prepared["metric_contexts"][0]["outlier_context"] is None
+
+
+def test_sql_bootstrap_merges_repeated_metric_discard_counts() -> None:
+    accumulators = {
+        ("metric", "a", "control"): {"requested": 10.0, "family_n": 8.0},
+        ("metric", "b", "control"): {"requested": 12.0, "family_n": 7.0},
+    }
+    observed = {
+        ("metric", "a", "control"): (1.0, 1.0),
+        ("metric", "b", "control"): (1.0, 1.0),
+    }
+    with pytest.warns(RuntimeWarning, match="discarded 5 of 12"):
+        sql_bootstrap_module._warn_discarded_sql_native_bootstrap_replicates(
+            accumulators, observed_statistics=observed
+        )
 
 
 @pytest.mark.parametrize("case", ["null_user", "duplicate_user", "null_group"])
