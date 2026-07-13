@@ -14,7 +14,13 @@ from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend
 from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
 from analytics_toolkit.sql.backends.base import BackendAdapter
 from analytics_toolkit.sql.backends.gp.adapter import GP_IDENTIFIER_MAX_BYTES
-from analytics_toolkit.sql.backends.registry import get_backend_capability
+from analytics_toolkit.sql.backends.registry import (
+    backend_capability_map,
+    get_backend_capability,
+    normalize_backend_name,
+    require_backend_name,
+    supported_backend_message,
+)
 from analytics_toolkit.sql.connection.errors import (
     SqlConfigError,
     UnsupportedConnectionTypeError,
@@ -38,6 +44,16 @@ table_basic_ops_module = importlib.import_module(
 ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.clickhouse.lifecycle")
 ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
 ch_backend_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
+backend_registry_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.registry"
+)
+backend_validation_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.validation"
+)
+backend_source_count_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.source_count"
+)
+gp_stage_module = importlib.import_module("analytics_toolkit.sql.backends.gp.stage")
 
 
 class RecordingClickHouseClient:
@@ -1421,3 +1437,297 @@ def test_backend_adapter_insert_from_query_returns_backend_row_counts() -> None:
         "SELECT CAST(`id` AS Nullable(Int64)) AS `id` "
         "FROM (select id from source) AS source_query"
     )
+
+
+def test_backend_registry_normalizes_aliases_and_reports_supported_names() -> None:
+    assert normalize_backend_name(" PostgreSQL ") == "gp"
+    assert normalize_backend_name("clickhouse-connect") == "ch"
+    assert require_backend_name(" TRINO ", connection_key="warehouse") == "trino"
+    assert supported_backend_message() == "Expected one of: ch, gp, trino."
+    assert set(backend_capability_map()) == {"ch", "gp", "trino"}
+
+    with pytest.raises(UnsupportedConnectionTypeError, match="backend 'Oracle'"):
+        normalize_backend_name("Oracle")
+    with pytest.raises(
+        UnsupportedConnectionTypeError,
+        match=r"connection 'warehouse'.*unsupported type 'postgres'",
+    ):
+        require_backend_name("postgres", connection_key="warehouse")
+
+
+def test_backend_registry_rejects_invalid_backend_returned_by_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_module = importlib.import_module(
+        "analytics_toolkit.sql.connection.config"
+    )
+    monkeypatch.setattr(
+        config_module,
+        "get_connection_backend",
+        lambda connection_key: "oracle",
+    )
+
+    with pytest.raises(
+        UnsupportedConnectionTypeError,
+        match="Unsupported connection type",
+    ):
+        backend_registry_module.get_backend("warehouse")
+
+
+def test_backend_validation_builds_multi_stage_duplicate_query() -> None:
+    adapter = get_backend_adapter("gp")
+
+    assert adapter.build_stage_duplicate_keys_sql_for_tables(
+        ["stage.first", "stage.second"],
+        ["id", "region"],
+    ) == (
+        "SELECT 1 FROM (\n"
+        'SELECT "id", "region" FROM stage.first\n'
+        "UNION ALL\n"
+        'SELECT "id", "region" FROM stage.second\n'
+        ') AS stage_src GROUP BY "id", "region" '
+        "HAVING COUNT(*) > 1 LIMIT 1"
+    )
+
+
+def test_backend_validation_query_closes_cursor_when_execute_fails() -> None:
+    query_error = RuntimeError("query failed")
+
+    class Cursor:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, sql: str) -> None:
+            raise query_error
+
+        def close(self) -> None:
+            self.closed = True
+
+    cursor = Cursor()
+    connection = SimpleNamespace(cursor=lambda: cursor)
+
+    with pytest.raises(RuntimeError, match="query failed"):
+        backend_validation_module.query_has_rows(
+            get_backend_adapter("gp"),
+            connection,
+            "SELECT 1",
+        )
+
+    assert cursor.closed is True
+
+
+def test_backend_read_dataframe_logs_failed_sql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    general_module = importlib.import_module("analytics_toolkit.general")
+    messages: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        general_module,
+        "time_print",
+        lambda message, backend=None: messages.append((message, backend)),
+    )
+
+    with pytest.raises(RuntimeError, match="read failed"):
+        get_backend_adapter("gp").read_dataframe(
+            object(),
+            "SELECT secret FROM source",
+            print_queries=False,
+            print_query=lambda query, enabled: None,
+            read_dbapi_query=lambda connection, query: (_ for _ in ()).throw(
+                RuntimeError("read failed")
+            ),
+        )
+
+    assert messages == [
+        ("Reading DataFrame", "gp"),
+        ("Failed SQL:\nSELECT secret FROM source", "gp"),
+    ]
+
+
+class _SourceCountCursor:
+    def __init__(
+        self,
+        *,
+        fetchone: object | None = None,
+        fetchall: object | None = None,
+        rows: list[tuple[int, ...]] | None = None,
+    ) -> None:
+        if fetchone is not None:
+            self.fetchone = fetchone
+        if fetchall is not None:
+            self.fetchall = fetchall
+        if rows is not None:
+            self._rows = rows
+
+
+def test_source_count_helpers_cover_cursor_shapes_and_labels() -> None:
+    assert get_backend_adapter("gp").strip_query_semicolon(" SELECT 1;  ") == "SELECT 1"
+    assert backend_source_count_module.fetch_first_row(
+        _SourceCountCursor(fetchone=lambda: (7,))
+    ) == (7,)
+    assert backend_source_count_module.fetch_first_row(
+        _SourceCountCursor(fetchall=lambda: [(8,), (9,)])
+    ) == (8,)
+    assert backend_source_count_module.fetch_first_row(
+        _SourceCountCursor(fetchall=list)
+    ) is None
+    assert backend_source_count_module.fetch_first_row(
+        _SourceCountCursor(rows=[(10,)])
+    ) == (10,)
+    assert backend_source_count_module.fetch_first_row(
+        _SourceCountCursor(rows=[])
+    ) is None
+    with pytest.raises(TypeError, match="Cursor must provide"):
+        backend_source_count_module.fetch_first_row(object())
+
+    assert get_backend_adapter("gp").build_source_count_sql(
+        "SELECT * FROM source;",
+        query_label="count */ safely",
+    ) == (
+        "/* analytics_toolkit query_label=count * / safely */\n"
+        "SELECT COUNT(*) FROM (SELECT * FROM source) AS source_count_probe"
+    )
+
+
+@pytest.mark.parametrize(
+    ("series", "gp_type", "ch_type"),
+    [
+        (pd.Series([True, False]), "BOOLEAN", "Bool"),
+        (
+            pd.Series(pd.to_datetime(["2026-01-01", "2026-01-02"])),
+            "TIMESTAMP",
+            "DateTime64(6)",
+        ),
+        (pd.Series([date(2026, 1, 1), date(2026, 1, 2)]), "DATE", "Date"),
+    ],
+)
+def test_dataframe_type_inference_covers_temporal_and_boolean_types(
+    series: pd.Series,
+    gp_type: str,
+    ch_type: str,
+) -> None:
+    assert get_backend_adapter("gp").infer_dataframe_column_type(series) == gp_type
+    assert get_backend_adapter("ch").infer_dataframe_column_type(series) == ch_type
+
+
+def test_dbapi_execute_commands_rolls_back_and_closes_on_later_failure() -> None:
+    command_error = RuntimeError("command failed")
+
+    class Cursor:
+        def __init__(self, connection: Connection) -> None:
+            self.connection = connection
+
+        def execute(self, sql: str) -> None:
+            self.connection.executed.append(sql)
+            if sql == "bad":
+                raise command_error
+
+        def close(self) -> None:
+            self.connection.closed = True
+
+    class Connection:
+        def __init__(self) -> None:
+            self.executed: list[str] = []
+            self.rollback_calls = 0
+            self.closed = False
+
+        def cursor(self) -> Cursor:
+            return Cursor(self)
+
+        def rollback(self) -> None:
+            self.rollback_calls += 1
+
+    connection = Connection()
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        get_backend_adapter("gp").execute_commands(connection, ["good", "bad"])
+
+    assert connection.executed == ["good", "bad"]
+    assert connection.rollback_calls == 1
+    assert connection.closed is True
+
+
+def test_noncommitting_dbapi_failures_do_not_require_rollback() -> None:
+    execute_error = RuntimeError("failed")
+
+    class Cursor:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, sql: str) -> None:
+            raise execute_error
+
+        def close(self) -> None:
+            self.closed = True
+
+    cursor = Cursor()
+    connection = SimpleNamespace(cursor=lambda: cursor)
+    adapter = get_backend_adapter("trino")
+
+    with pytest.raises(RuntimeError, match="failed"):
+        adapter.execute_command(connection, "SELECT 1")
+    assert cursor.closed is True
+
+    cursor.closed = False
+    with pytest.raises(RuntimeError, match="failed"):
+        adapter.execute_commands(connection, ["SELECT 2"])
+    assert cursor.closed is True
+
+
+def test_dbapi_insert_from_query_rolls_back_failed_committed_insert() -> None:
+    insert_error = RuntimeError("insert failed")
+
+    class Cursor:
+        def __init__(self, connection: Connection) -> None:
+            self.connection = connection
+
+        def execute(self, sql: str) -> None:
+            self.connection.sql = sql
+            raise insert_error
+
+        def close(self) -> None:
+            self.connection.closed = True
+
+    class Connection:
+        def __init__(self) -> None:
+            self.sql = ""
+            self.rollback_calls = 0
+            self.closed = False
+
+        def cursor(self) -> Cursor:
+            return Cursor(self)
+
+        def rollback(self) -> None:
+            self.rollback_calls += 1
+
+    connection = Connection()
+
+    with pytest.raises(RuntimeError, match="insert failed"):
+        get_backend_adapter("gp").insert_from_query(
+            connection,
+            "target",
+            "SELECT id FROM source",
+            {"id": "BIGINT"},
+        )
+
+    assert connection.sql.startswith("INSERT INTO target")
+    assert connection.rollback_calls == 1
+    assert connection.closed is True
+
+
+def test_gp_stage_identifier_rejects_marker_larger_than_identifier_limit() -> None:
+    with pytest.raises(ValueError, match="marker is too long"):
+        get_backend_adapter("gp").stage_base_identifier(
+            "target",
+            "x" * GP_IDENTIFIER_MAX_BYTES,
+            "suffix",
+        )
+
+
+def test_gp_identifier_byte_helpers_cover_tiny_and_multibyte_limits() -> None:
+    assert gp_stage_module._fit_identifier_bytes("very-long-name", 4) == "458f"
+    assert gp_stage_module._truncate_identifier_bytes("short", 10) == "short"
+    assert gp_stage_module._truncate_identifier_bytes(
+        "\u0430\u0431\u0432",
+        5,
+    ) == "\u0430\u0431"

@@ -1,8 +1,8 @@
 {
   "overall": {
-    "combined": 93.78,
-    "statements": 95.08,
-    "branches": 89.95
+    "combined": 94.06,
+    "statements": 95.32,
+    "branches": 90.31
   },
   "prefixes": {
     "ab_utils": {
