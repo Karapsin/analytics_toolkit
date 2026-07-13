@@ -8,13 +8,17 @@ import subprocess
 import sys
 import types
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
+import analytics_toolkit.general as general_module
 import pandas as pd
 import pytest
-
-import analytics_toolkit.general as general_module
-from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+from analytics_toolkit.sql.connection.errors import (
+    InvalidSqlInputError,
+    SqlConfigError,
+    UnsupportedConnectionTypeError,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -25,6 +29,12 @@ connection_module = importlib.import_module(
 api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
 create_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.ddl.api"
+)
+operation_runner_module = importlib.import_module(
+    "analytics_toolkit.sql.execution.operation_runner"
+)
+transfer_schema_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.schema"
 )
 load_sql_table_module = importlib.import_module(
     "analytics_toolkit.sql.dml.load.load_sql_table"
@@ -859,7 +869,7 @@ def test_missing_connections_file_ignores_legacy_backend_env_vars(
         ),
     )
 
-    with pytest.raises(config_module.SqlConfigError, match=".connections"):
+    with pytest.raises(config_module.SqlConfigError, match=r"\.connections"):
         config_module.get_connection_config("gp")
 
 
@@ -1320,14 +1330,15 @@ def test_airflow_connection_config_requires_airflow(
 
     def fake_import(
         name: str,
-        globals: object | None = None,
-        locals: object | None = None,
+        globals_: object | None = None,
+        locals_: object | None = None,
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
         if name.startswith("airflow"):
-            raise ImportError("airflow is unavailable")
-        return real_import(name, globals, locals, fromlist, level)
+            message = "airflow is unavailable"
+            raise ImportError(message)
+        return real_import(name, globals_, locals_, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
@@ -2040,6 +2051,555 @@ def test_create_table_sql_rejects_multiple_schema_sources() -> None:
             table_schema={"id": "TEXT"},
             only_generate_sql=True,
         )
+
+
+def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[object] = []
+
+    class FakeConnection:
+        def close(self) -> None:
+            events.append("close")
+
+    class FakeTargetAdapter:
+        def normalize_ch_columns_or_expression(
+            self,
+            value: object,
+            option_name: str,
+        ) -> object:
+            events.append(("normalize_columns", option_name, value))
+            return value
+
+        def normalize_ch_string(self, value: str, option_name: str) -> str:
+            events.append(("normalize_string", option_name, value))
+            return value
+
+        def validate_gp_distributed_by_key_option(
+            self,
+            value: object,
+            *,
+            option_owner: str,
+        ) -> None:
+            events.append(("validate_gp", value, option_owner))
+
+        def validate_ch_create_table_options(self, **kwargs: object) -> None:
+            events.append(("validate_ch_options", kwargs))
+
+        def validate_ch_columns_in_columns(
+            self,
+            value: object,
+            columns: list[str],
+            option_name: str,
+            *,
+            data_name: str,
+        ) -> None:
+            events.append(
+                ("validate_ch_columns", value, columns, option_name, data_name)
+            )
+
+        def build_create_from_sql_target_create_kwargs(
+            self,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            events.append(("create_kwargs", kwargs))
+            return {"ch_distributed_table": False}
+
+    def fake_config(key: str) -> types.SimpleNamespace:
+        backend = "trino" if key == "source_alias" else "gp"
+        return types.SimpleNamespace(connection_key=key, backend=backend)
+
+    def fake_inspect(
+        backend: str,
+        connection: object,
+        query: str,
+    ) -> list[types.SimpleNamespace]:
+        events.append(("inspect", backend, connection, query))
+        return [
+            types.SimpleNamespace(name="id"),
+            types.SimpleNamespace(name="amount"),
+        ]
+
+    monkeypatch.setattr(create_sql_table_module, "get_connection_config", fake_config)
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_backend_adapter",
+        lambda backend: FakeTargetAdapter(),
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_sql_connection",
+        lambda key: FakeConnection(),
+    )
+    monkeypatch.setattr(
+        transfer_schema_module,
+        "inspect_source_query_schema",
+        fake_inspect,
+    )
+    monkeypatch.setattr(
+        transfer_schema_module,
+        "map_source_schema_to_target",
+        lambda source_schema, backend: {
+            column.name: "BIGINT" for column in source_schema
+        },
+    )
+    monkeypatch.setattr(
+        operation_runner_module,
+        "run_retrying_operation",
+        lambda **kwargs: kwargs["operation"](1),
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_build_create_table_sqls",
+        lambda *args, **kwargs: ["create first;", "create second;"],
+    )
+
+    generated = create_sql_table_module.create_sql_table(
+        db_key="target_alias",
+        source_db="source_alias",
+        table_name="mart.target",
+        sql="select id, amount from source",
+        gp_distributed_by_key="id",
+        only_generate_sql=True,
+        query_label="coverage-ddl",
+    )
+
+    assert generated == "create first;\ncreate second"
+    assert "close" in events
+    inspect_event = next(event for event in events if event[0] == "inspect")
+    assert inspect_event[1] == "trino"
+    assert "coverage-ddl" in inspect_event[3]
+
+
+def test_create_table_execution_returns_metadata_and_builds_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[object] = []
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_connection_config",
+        lambda key: types.SimpleNamespace(connection_key=key, backend="gp"),
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_build_create_sql_table_sqls",
+        lambda options, option_owner: ["create table mart.target (id bigint)"],
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_execute_create_sql_table",
+        lambda **kwargs: events.append(("execute", kwargs)),
+    )
+
+    def fake_run_connection_operation(**kwargs: object) -> None:
+        context = kwargs["context_factory"](2)
+        events.append(("context", context))
+        kwargs["operation"]({"connection": object()}, 2)
+
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "run_connection_operation",
+        fake_run_connection_operation,
+    )
+
+    result = create_sql_table_module.create_sql_table(
+        "gp_alias",
+        "mart.target",
+        pd.DataFrame({"id": [1]}),
+        return_metadata=True,
+    )
+
+    assert result.metadata.statement_count == 1
+    assert result.plan.operation == "create_table"
+    assert result.plan.sqls == ["create table mart.target (id bigint)"]
+    context = next(event[1] for event in events if event[0] == "context")
+    assert context.retry_attempt == 2
+    execution = next(event[1] for event in events if event[0] == "execute")
+    assert execution["retry_attempt"] == 2
+
+
+def test_create_table_with_connection_returns_plan_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_build_create_sql_table_sqls",
+        lambda options, option_owner: ["create table target (id bigint)"],
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_execute_create_sql_table",
+        lambda **kwargs: None,
+    )
+
+    plan = create_sql_table_module._create_sql_table_with_connection(
+        "gp",
+        object(),
+        "target",
+        pd.DataFrame({"id": [1]}),
+        dry_run=True,
+    )
+    result = create_sql_table_module._create_sql_table_with_connection(
+        "gp",
+        object(),
+        "target",
+        pd.DataFrame({"id": [1]}),
+        return_metadata=True,
+    )
+
+    assert plan.operation == "create_table"
+    assert result.metadata.statement_count == 1
+
+
+def test_create_table_dataframe_and_name_validation_edges() -> None:
+    with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
+        create_sql_table_module._resolve_create_dataframe_and_schema(
+            df=None,
+            table_schema=None,
+        )
+    with pytest.raises(TypeError, match="df must be a pandas DataFrame"):
+        create_sql_table_module._resolve_create_dataframe_and_schema(
+            df=[],
+            table_schema=None,
+        )
+    with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
+        create_sql_table_module._resolve_create_dataframe_and_schema(
+            df=pd.DataFrame({"id": [1]}),
+            table_schema={"id": "BIGINT"},
+        )
+    with pytest.raises(ValueError, match="table_name must not be empty"):
+        create_sql_table_module.create_sql_table(
+            "gp",
+            " ",
+            pd.DataFrame({"id": [1]}),
+            only_generate_sql=True,
+        )
+
+
+def test_connection_backend_and_validation_connection_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[str] = []
+
+    class Connection:
+        def close(self) -> None:
+            closed.append("closed")
+
+    monkeypatch.setattr(
+        config_module,
+        "load_sql_connections",
+        lambda: {"z": {}, "a": {}},
+    )
+    monkeypatch.setattr(
+        config_module,
+        "get_connection_config",
+        lambda key: types.SimpleNamespace(connection_key=key, backend="gp"),
+    )
+    monkeypatch.setattr(
+        config_module,
+        "_open_validation_connection",
+        lambda key: Connection(),
+    )
+
+    results = config_module.validate_connections(connect=True)
+
+    assert [result.connection_key for result in results] == ["a", "z"]
+    assert all(result.connected for result in results)
+    assert closed == ["closed", "closed"]
+    assert config_module.get_connection_backend("alias") == "gp"
+
+
+def test_airflow_validation_and_backend_resolution_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirGP": FakeAirflowConnection(
+                conn_type="gp",
+                host="gp.example",
+                login="user",
+                password="password",
+                schema="db",
+            )
+        },
+    )
+
+    with config_module.use_airflow_connections(
+        connection_backends={"AirGP": "gp"}
+    ):
+        results = config_module.validate_connections([" AirGP "])
+        assert results[0].connection_key == "AirGP"
+        assert config_module.resolve_connection_backend("AirGP") == "gp"
+
+    monkeypatch.setattr(config_module, "get_connection_backend", lambda key: "trino")
+    assert config_module.resolve_connection_backend("warehouse") == "trino"
+
+
+def test_open_validation_connection_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = object()
+    monkeypatch.setattr(connection_module, "get_sql_connection", lambda key: marker)
+
+    assert config_module._open_validation_connection("gp") is marker
+
+
+def test_connection_key_and_empty_airflow_listing_validation() -> None:
+    with pytest.raises(SqlConfigError, match="Connection key must not be empty"):
+        config_module.normalize_connection_key(" ")
+
+    with config_module.use_airflow_connections():  # noqa: SIM117 -- Python 3.8
+        with pytest.raises(SqlConfigError, match="cannot list all"):
+            config_module.load_sql_connections()
+
+
+def test_connection_file_parser_rejects_invalid_top_level_shapes(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / ".connections"
+    path.write_text("[]", encoding="utf-8")
+    general_module.set_connections_path(path)
+    try:
+        with pytest.raises(SqlConfigError, match="must contain a JSON object"):
+            config_module.load_sql_connections()
+    finally:
+        general_module.set_connections_path(None)
+
+    with pytest.raises(SqlConfigError, match="field 'source' must be a string"):
+        config_module._is_airflow_connections_file(
+            {"source": 1, "connections": {}},
+            path,
+        )
+    with pytest.raises(SqlConfigError, match="keys must be strings"):
+        config_module._parse_direct_connections_file({1: {}}, path)
+    with pytest.raises(SqlConfigError, match="Duplicate SQL connection key"):
+        config_module._parse_direct_connections_file(
+            {"GP": {}, " gp ": {}},
+            path,
+        )
+    with pytest.raises(SqlConfigError, match="must be a JSON object"):
+        config_module._parse_direct_connections_file({"gp": []}, path)
+
+
+def test_airflow_file_parser_rejects_invalid_entries(tmp_path: Path) -> None:
+    path = tmp_path / ".connections"
+    with pytest.raises(SqlConfigError, match="keys must be strings"):
+        config_module._parse_airflow_connections_file(
+            {"connections": {1: {}}},
+            path,
+        )
+    with pytest.raises(SqlConfigError, match="must be a JSON object"):
+        config_module._parse_airflow_connections_file(
+            {"connections": {"gp": []}},
+            path,
+        )
+    with pytest.raises(SqlConfigError, match="Duplicate SQL connection key"):
+        config_module._parse_airflow_connections_file(
+            {
+                "connections": {
+                    "GP": {"type": "gp"},
+                    " gp ": {"type": "gp"},
+                }
+            },
+            path,
+        )
+def test_airflow_source_entry_normalization_and_unknown_key() -> None:
+    entry = config_module._AirflowConnectionEntry(
+        connection_id="AirGP",
+        backend="gp",
+        overrides={},
+    )
+    source = config_module._AirflowConnectionSource(
+        connections={"AirGP": entry},
+        normalized_connections={"airgp": "AirGP"},
+        default_backend=None,
+    )
+
+    assert (
+        config_module._get_airflow_source_entry(
+            source,
+            " airGP ",
+            allow_dynamic=False,
+        )
+        is entry
+    )
+    with pytest.raises(UnsupportedConnectionTypeError, match="Available keys"):
+        config_module._get_airflow_source_entry(
+            source,
+            "missing",
+            allow_dynamic=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("connection", "message"),
+    [
+        (FakeAirflowConnection(extra_dejson=[]), "extra_dejson must be a dict"),
+        (FakeAirflowConnection(extra_dejson=_MISSING, extra={"x": 1}), None),
+        (FakeAirflowConnection(extra_dejson=_MISSING, extra="{"), "valid JSON"),
+        (FakeAirflowConnection(extra_dejson=_MISSING, extra="[]"), "JSON object"),
+        (FakeAirflowConnection(extra_dejson=_MISSING, extra=1), "JSON object"),
+    ],
+)
+def test_airflow_extra_shapes(
+    connection: FakeAirflowConnection,
+    message: str | None,
+) -> None:
+    if message is None:
+        assert config_module._get_airflow_connection_extras(connection, "id") == {
+            "x": 1
+        }
+        return
+    with pytest.raises(SqlConfigError, match=message):
+        config_module._get_airflow_connection_extras(connection, "id")
+
+
+def test_airflow_backend_id_and_resolver_edges() -> None:
+    with pytest.raises(SqlConfigError, match="does not define a backend"):
+        config_module._resolve_airflow_connection_backend(
+            FakeAirflowConnection(),
+            {},
+            "id",
+        )
+    with pytest.raises(SqlConfigError, match="ID must not be empty"):
+        config_module._normalize_airflow_connection_id(" ")
+
+    assert config_module._is_airflow_extra_resolver(
+        "settings",
+        {"from": "extra", "default": 1, "custom": 2},
+    )
+    assert config_module._resolve_airflow_entry_overrides(
+        {"port": {"from": "extra", "key": "missing"}},
+        {},
+        "id",
+    ) == {}
+
+
+@pytest.mark.parametrize("value", [True, "bad", 1.5, 0])
+def test_optional_positive_integer_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(SqlConfigError):
+        config_module._optional_int({"port": value}, "gp", "port", 5432)
+
+
+@pytest.mark.parametrize("value", [True, "bad", 1.5, -1])
+def test_optional_non_negative_integer_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(SqlConfigError):
+        config_module._optional_non_negative_int({"timeout": value}, "gp", "timeout")
+
+
+def test_optional_config_value_validation_edges() -> None:
+    assert config_module._optional_string({"host": None}, "gp", "host", "x") == "x"
+    assert config_module._optional_non_negative_int(
+        {"timeout": 0}, "gp", "timeout"
+    ) == 0
+    with pytest.raises(SqlConfigError, match="must be a boolean"):
+        config_module._optional_bool({"flag": "maybe"}, "gp", "flag", False)
+    with pytest.raises(SqlConfigError, match="boolean or string"):
+        config_module._optional_bool_or_string_as_string(
+            {"verify": 1},
+            "gp",
+            "verify",
+        )
+    with pytest.raises(SqlConfigError, match="only string keys"):
+        config_module._optional_mapping({"settings": {1: 2}}, "gp", "settings")
+    with pytest.raises(SqlConfigError, match="contain only strings"):
+        config_module._optional_string_or_string_list(
+            {"ca_certs": [1]},
+            "gp",
+            "ca_certs",
+        )
+    with pytest.raises(SqlConfigError, match="string or list of strings"):
+        config_module._optional_string_or_string_list(
+            {"ca_certs": 1},
+            "gp",
+            "ca_certs",
+        )
+
+
+def test_clickhouse_host_connection_validates_backend_host_and_dispatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gp_config = config_module.get_connection_config("gp")
+    ch_config = config_module.get_connection_config("ch")
+    opened: list[object] = []
+
+    class Backend:
+        def open_connection(self, config: object, **kwargs: object) -> object:
+            opened.append((config, kwargs))
+            return "connection"
+
+    monkeypatch.setattr(connection_module, "get_backend", lambda backend: Backend())
+    monkeypatch.setattr(
+        connection_module,
+        "get_connection_config",
+        lambda key: gp_config if key == "gp" else ch_config,
+    )
+
+    with pytest.raises(UnsupportedConnectionTypeError, match="not a ClickHouse"):
+        connection_module.get_ch_connection_for_host("gp", "host")
+    with pytest.raises(ValueError, match="host must not be empty"):
+        connection_module.get_ch_connection_for_host("ch", " ")
+
+    assert (
+        connection_module.get_ch_connection_for_host("ch", " shard-1 ")
+        == "connection"
+    )
+    opened_config = opened[0][0]
+    assert opened_config.host == "shard-1"
+
+
+def test_clickhouse_airflow_ca_variable_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(
+        config_module.get_connection_config("ch"),
+        ca_certs=[],
+        ca_certs_variable="ch_ca",
+    )
+
+    real_import = builtins.__import__
+
+    def reject_airflow_import(
+        name: str,
+        globals_: object = None,
+        locals_: object = None,
+        fromlist: object = (),
+        level: int = 0,
+    ) -> object:
+        if name == "airflow.models.variable":
+            message = "airflow unavailable"
+            raise ImportError(message)
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", reject_airflow_import)
+    with pytest.raises(SqlConfigError, match="Variable support is unavailable"):
+        connection_module._resolve_ch_ca_certs(config)
+
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    install_fake_airflow(monkeypatch, {}, {"ch_ca": " "})
+    with pytest.raises(SqlConfigError, match="must be a non-empty string"):
+        connection_module._resolve_ch_ca_certs(config)
+
+
+def test_certificate_bundle_reuse_and_absolute_path() -> None:
+    first = _write_cert(".certs/first.pem", "FIRST\n")
+    second = _write_cert(".certs/second.pem", "SECOND\n")
+
+    bundle = connection_module._resolve_ca_certs(
+        "alias with spaces",
+        [first.name, second.name],
+    )
+    same_bundle = connection_module._resolve_ca_certs(
+        "alias with spaces",
+        [first.name, second.name],
+    )
+
+    assert bundle == same_bundle
+    assert Path(bundle).read_text(encoding="utf-8") == "FIRST\nSECOND\n"
+    assert connection_module._resolve_single_cert_path(
+        "alias",
+        str(first),
+        field_name="ca_certs",
+    ) == first.resolve()
 
     with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
         create_sql_table_module.create_sql_table(

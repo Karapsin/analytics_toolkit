@@ -293,6 +293,25 @@ def test_extract_ddl_greenplum_fallback_raises_when_table_missing(
 
 
 @pytest.mark.parametrize(
+    "result",
+    [
+        pd.DataFrame(),
+        pd.DataFrame(index=[0]),
+        pd.DataFrame({"ddl": [None]}),
+    ],
+)
+def test_first_result_value_rejects_missing_ddl(result: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="No DDL returned"):
+        extract_ddl_module._first_result_value(result, "mart.orders")
+
+
+def test_first_result_value_stringifies_present_ddl() -> None:
+    result = pd.DataFrame({"ddl": [123]})
+
+    assert extract_ddl_module._first_result_value(result, "mart.orders") == "123"
+
+
+@pytest.mark.parametrize(
     ("policy_type", "attrnums", "expected"),
     [
         ("p", "{1,2}", 'DISTRIBUTED BY ("id", "payload")'),
