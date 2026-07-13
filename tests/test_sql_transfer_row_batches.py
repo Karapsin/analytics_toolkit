@@ -6060,3 +6060,224 @@ def test_parquet_dependency_import_error_is_actionable(
     monkeypatch.setattr(builtins, "__import__", fail_fsspec)
     with pytest.raises(ImportError, match="pyarrow, fsspec, and s3fs"):
         parquet_stage_module.ensure_parquet_staging_dependencies()
+
+
+def test_run_keyed_transfer_attempt_requires_slices() -> None:
+    with pytest.raises(ValueError, match="requires transfer_slices"):
+        attempt_module.run_keyed_transfer_attempt(
+            make_progress_options(),
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+
+def test_initialize_shared_keyed_stage_uses_explicit_schema_without_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(
+        concurrency=1,
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+    )
+    state = models_module.TransferStageState(target_exists=False)
+    created: list[dict[str, Any]] = []
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_table",
+        lambda **kwargs: created.append(kwargs) or "stage.shared",
+    )
+
+    attempt_module.initialize_shared_stage_for_keyed_slices(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(target={"connection": object()}),
+        stage_state=state,
+        source_schema=[],
+    )
+
+    assert state.stage_column_types == {"id": "INTEGER", "event_date": "DATE"}
+    assert state.stage_table == "stage.shared"
+    assert state.stage_table_created is True
+    assert list(state.first_non_empty_batch.columns) == ["id", "event_date"]
+    assert created[0]["column_types"] == state.stage_column_types
+
+
+def test_initialize_shared_keyed_stage_requires_resolvable_nonempty_schema() -> None:
+    state = models_module.TransferStageState(target_exists=False)
+    with pytest.raises(ValueError, match="inspectable source query schema"):
+        attempt_module.initialize_shared_stage_for_keyed_slices(
+            options=make_keyed_options(table_schema=None),
+            connection_refs=models_module.TransferConnectionRefs(target={"connection": object()}),
+            stage_state=state,
+            source_schema=[],
+        )
+    with pytest.raises(ValueError, match="at least one column"):
+        attempt_module.initialize_shared_stage_for_keyed_slices(
+            options=make_keyed_options(table_schema={}),
+            connection_refs=models_module.TransferConnectionRefs(target={"connection": object()}),
+            stage_state=state,
+            source_schema=[],
+        )
+
+
+def test_initialize_shared_keyed_stage_dispatches_parquet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(
+        table_schema={"id": "INTEGER", "event_date": "DATE"},
+        trino_mode="parquet",
+        to_db_backend="trino",
+        transfer_staging_schema="scratch",
+        transfer_staging_location="s3://bucket/stage",
+    )
+    state = models_module.TransferStageState(target_exists=False)
+    calls: list[str] = []
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        lambda **_kwargs: calls.append("parquet"),
+    )
+
+    attempt_module.initialize_shared_stage_for_keyed_slices(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(target={"connection": object()}),
+        stage_state=state,
+        source_schema=[],
+    )
+    assert calls == ["parquet"]
+
+
+def test_consolidate_keyed_worker_stage_guard_paths() -> None:
+    worker = attempt_module.WorkerStageState(
+        worker_index=0,
+        stage_state=models_module.TransferStageState(target_exists=False),
+        transfer_slices=[],
+    )
+    refs = models_module.TransferConnectionRefs(target={"connection": object()})
+
+    attempt_module.consolidate_keyed_worker_stages(
+        options=make_keyed_options(write_mode="upsert"),
+        connection_refs=refs,
+        worker_stage_states=[worker, worker],
+        stage_state=models_module.TransferStageState(target_exists=False),
+    )
+    attempt_module.consolidate_keyed_worker_stages(
+        options=make_keyed_options(),
+        connection_refs=refs,
+        worker_stage_states=[worker],
+        stage_state=models_module.TransferStageState(target_exists=False),
+    )
+    with pytest.raises(RuntimeError, match="aggregate stage"):
+        attempt_module.consolidate_keyed_worker_stages(
+            options=make_keyed_options(),
+            connection_refs=refs,
+            worker_stage_states=[worker, worker],
+            stage_state=models_module.TransferStageState(target_exists=False),
+        )
+
+    aggregate = models_module.TransferStageState(
+        target_exists=False,
+        stage_table="stage.aggregate",
+    )
+    with pytest.raises(RuntimeError, match="worker stage"):
+        attempt_module.consolidate_keyed_worker_stages(
+            options=make_keyed_options(),
+            connection_refs=refs,
+            worker_stage_states=[worker, worker],
+            stage_state=aggregate,
+        )
+
+
+def test_load_stage_batches_skips_empty_source_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(progress=False, estimate_total_rows=False)
+    progress_bar = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "make_transfer_progress_bar",
+        lambda *_a, **_k: progress_bar,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(transfer_insert_page_sizing=lambda **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "iter_source_batches",
+        lambda *_a, **_k: iter([models_module.RowBatch(columns=["id"], rows=[])]),
+    )
+    assert attempt_module.load_stage_batches(
+        options,
+        models_module.TransferConnectionRefs(source={"connection": object()}),
+        models_module.TransferStageState(target_exists=False),
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    ) == 0
+
+
+def test_load_parquet_stage_batches_empty_estimate_and_missing_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        to_db_backend="trino",
+        trino_mode="parquet",
+        progress=True,
+        estimate_total_rows=True,
+    )
+    progress_bar = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: (object(), object(), object()),
+    )
+    monkeypatch.setattr(attempt_module, "parquet_row_group_size", lambda _options: 10)
+    monkeypatch.setattr(attempt_module, "estimate_source_rows", lambda *_a, **_k: 1)
+    monkeypatch.setattr(
+        attempt_module,
+        "make_transfer_progress_bar",
+        lambda *_a, **_k: progress_bar,
+    )
+    batches = [
+        models_module.RowBatch(columns=["id"], rows=[]),
+        models_module.RowBatch(columns=["id"], rows=[(1,)]),
+    ]
+    monkeypatch.setattr(attempt_module, "iter_source_batches", lambda *_a, **_k: iter(batches))
+    state = models_module.TransferStageState(
+        target_exists=False,
+        first_non_empty_batch=pd.DataFrame({"id": [1]}),
+    )
+    with pytest.raises(RuntimeError, match="Parquet stage location"):
+        attempt_module.load_parquet_stage_batches(
+            options,
+            models_module.TransferConnectionRefs(source={"connection": object()}),
+            state,
+            read_retry_cnt=1,
+        )
+
+
+def test_initialize_parquet_first_batch_uses_explicit_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        to_db_backend="trino",
+        table_schema={"id": "BIGINT"},
+    )
+    state = models_module.TransferStageState(target_exists=False)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        lambda **_kwargs: calls.append("create"),
+    )
+
+    attempt_module._initialize_parquet_stage_for_first_batch(
+        options,
+        models_module.TransferConnectionRefs(target={"connection": object()}),
+        state,
+        models_module.RowBatch(columns=["id"], rows=[(1,)]),
+    )
+    assert state.stage_column_types == {"id": "BIGINT"}
+    assert list(state.first_non_empty_batch["id"]) == [1]
+    assert calls == ["create"]

@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Completed SQL transfer option boundary coverage and removed an unreachable check.
 - Completed Parquet transfer staging coverage.
 - Completed SQL transfer source streaming coverage.
+- Raised SQL transfer attempt orchestration coverage.
 
 ## 1.3.10.15 - 2026-07-13
 
