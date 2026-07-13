@@ -434,10 +434,31 @@ def workflow_status(
     )
 
 
-def version_bump(
-    summary: str,
+def _version_bump_validation_error(
+    summary: str | None,
+    change_type: str,
+    force_release: bool,  # noqa: FBT001 - this mirrors the public named option.
+) -> tuple[str, str] | None:
+    if force_release and not _is_release_artifact(change_type):
+        return (
+            "Forced version bump is restricted to release workflows.",
+            "force_release requires a release-oriented change_type",
+        )
+    if force_release and summary is not None:
+        return (
+            "Forced version bump does not accept a changelog summary.",
+            "omit summary when force_release is enabled",
+        )
+    if not force_release and summary is None:
+        return "Version bump requires a changelog summary.", "summary is required"
+    return None
+
+
+def version_bump(  # noqa: C901 - this function coordinates the atomic metadata workflow.
+    summary: str | None = None,
     change_type: str = "implementation",
-    dry_run: bool = False,
+    dry_run: bool = False,  # noqa: FBT001, FBT002 - named MCP/CLI option.
+    force_release: bool = False,  # noqa: FBT001, FBT002 - named MCP/CLI option.
     root: str = ".",
 ) -> dict[str, Any]:
     """Plan or apply the repository version bump and changelog update."""
@@ -446,8 +467,19 @@ def version_bump(
         "summary": summary,
         "change_type": change_type,
         "dry_run": dry_run,
+        "force_release": force_release,
         "root": str(root_path),
     }
+    validation_error = _version_bump_validation_error(summary, change_type, force_release)
+    if validation_error is not None:
+        summary_text, message = validation_error
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary=summary_text,
+            blockers=[{"phase": "validate", "message": message}],
+        )
     if _is_docs_only(change_type) and not _is_release_artifact(change_type):
         return _tool_output(
             "version_bump",
@@ -460,15 +492,29 @@ def version_bump(
     current_version = _package_version(root_path)
     changelog = root_path / CHANGELOG_PATH
     changelog_text = _read_text(changelog)
-    bullet = _format_changelog_bullet(summary)
-    unreleased_count = _count_unreleased_changelog_bullets(changelog_text)
-    planned_unreleased_count = unreleased_count + 1
+    unreleased_bullets = _unreleased_changelog_bullets(changelog_text)
+    if force_release and not unreleased_bullets:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Forced version bump requires unreleased changelog entries.",
+            blockers=[
+                {
+                    "phase": "validate",
+                    "message": "no unreleased changelog entries are available to release",
+                }
+            ],
+        )
+    bullet = "" if force_release else _format_changelog_bullet(summary or "")
+    planned_unreleased_count = len(unreleased_bullets) + (0 if force_release else 1)
     next_version_value = _increment_version(current_version)
-    should_bump = planned_unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD
+    should_bump = force_release or planned_unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD
     if should_bump:
+        release_bullets = unreleased_bullets if force_release else unreleased_bullets + [bullet]
         entry = _format_changelog_entry(
             next_version_value,
-            _unreleased_changelog_bullets(changelog_text) + [bullet],
+            release_bullets,
         )
         planned = {
             "decision": "bump",
@@ -1194,15 +1240,17 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     )
 
     bump_parser = subparsers.add_parser("version-bump")
-    bump_parser.add_argument("summary")
+    bump_parser.add_argument("summary", nargs="?")
     bump_parser.add_argument("--change-type", default="implementation")
     bump_parser.add_argument("--dry-run", action="store_true")
+    bump_parser.add_argument("--force-release", action="store_true")
     bump_parser.add_argument("--root", default=".")
     bump_parser.set_defaults(
         handler=lambda args: version_bump(
             summary=args.summary,
             change_type=args.change_type,
             dry_run=args.dry_run,
+            force_release=args.force_release,
             root=args.root,
         )
     )

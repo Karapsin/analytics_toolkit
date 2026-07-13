@@ -16,6 +16,7 @@ agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_too
 agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
 agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_tools --instructions-read
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
+agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry-run
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
 agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/test_agent_tools_mcp.py
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
@@ -29,6 +30,12 @@ use standalone `git-workflow push` only to retry a failed post-commit push. Use
 `release-workflow --action merge-dev` to fast-forward `main` from `origin/dev`
 before a PyPI release. Use `release-workflow --action publish` only when release
 readiness is clean.
+
+Normal `version-bump` calls add the supplied summary under `## Unreleased` and
+roll the section into a new version when it reaches ten bullets. For an explicit
+release below that threshold, use `--change-type release --force-release`
+without a summary. Forced release is rejected for non-release change types and
+when there are no unreleased entries.
 
 `workflow-status` reports the current branch, dirty state, `git status --short`
 lines, unstaged `git diff --stat` lines, and staged `git diff --cached --stat`

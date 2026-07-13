@@ -468,6 +468,75 @@ def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
     assert applied["ok"] is True
 
 
+def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
+    _write_unreleased_changelog(root, ["Existing change 1", "Existing change 2"])
+
+    dry_run = mcp_server.version_bump(
+        change_type="release",
+        force_release=True,
+        root=str(root),
+        dry_run=True,
+    )
+    applied = mcp_server.version_bump(
+        change_type="release",
+        force_release=True,
+        root=str(root),
+    )
+
+    assert dry_run["result"]["decision"] == "bump"
+    assert dry_run["result"]["planned_version"] == "1.3.9.14"
+    assert dry_run["result"]["unreleased_count"] == 2
+    assert applied["result"]["decision"] == "bump"
+    assert 'version = "1.3.9.14"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## Unreleased" not in changelog
+    assert "- Existing change 1." in changelog
+    assert "- Existing change 2." in changelog
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {"change_type": "implementation", "force_release": True},
+            "force_release requires a release-oriented change_type",
+        ),
+        (
+            {"summary": "Release summary", "change_type": "release", "force_release": True},
+            "omit summary when force_release is enabled",
+        ),
+    ],
+)
+def test_version_bump_rejects_invalid_force_release_options(
+    tmp_path: Path,
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _write_unreleased_changelog(root, ["Existing change"])
+
+    result = mcp_server.version_bump(root=str(root), **kwargs)
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["message"] == message
+
+
+def test_version_bump_force_release_requires_unreleased_entries(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+
+    result = mcp_server.version_bump(
+        change_type="release",
+        force_release=True,
+        root=str(root),
+    )
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["message"] == (
+        "no unreleased changelog entries are available to release"
+    )
+
+
 def test_version_bump_fails_when_readme_version_marker_is_missing_at_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
@@ -1683,6 +1752,33 @@ def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
         else "unreleased"
     )
     assert output["result"]["decision"] == expected_decision
+
+
+def test_mcp_tool_wrapper_routes_force_release_flag(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _write_unreleased_changelog(root, ["Existing change"])
+    script = mcp_server.REPO_ROOT / "agent_tools" / "mcp_tool.sh"
+
+    completed = subprocess.run(
+        [
+            str(script),
+            "version-bump",
+            "--change-type",
+            "release",
+            "--force-release",
+            "--dry-run",
+            "--root",
+            str(root),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    output = json.loads(completed.stdout)
+    assert output["ok"] is True
+    assert output["input"]["force_release"] is True
+    assert output["result"]["decision"] == "bump"
 
 
 def test_agent_docs_cleanup_removed_direct_docs_assistant_workflow() -> None:

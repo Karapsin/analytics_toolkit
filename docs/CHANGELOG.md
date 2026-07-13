@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.15 - 2026-07-13
 
 - Removed hard-coded Trino parquet load adapter use.
 - Added date comparison helpers.
@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Added general.set_connections_path for explicit SQL .connections file selection.
 - Added from_here and read_file_here general path helpers.
 - Calibrated bootstrap inference, hardened SQL workflows, and added quality gates.
+- Added explicit force-release support for version workflows.
 
 ## 1.3.10.14 - 2026-07-07
 

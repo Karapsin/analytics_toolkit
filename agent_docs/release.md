@@ -9,6 +9,10 @@ When the user asks to update, publish, or release the package on PyPI, run the
 complete publishing workflow unless they explicitly ask for a narrower action:
 
 - Use `release_workflow(action="status")` to confirm release readiness before publishing.
+- When an explicit release must roll a non-empty `## Unreleased` section before
+  the normal ten-entry threshold, use
+  `version_bump(change_type="release", force_release=True)` without a summary.
+  Do not use forced release for ordinary repository changes.
 - Use `release_workflow(action="merge-dev")` to fast-forward `main` from `origin/dev`
   before release readiness checks. Normal work stays on `dev`; PyPI publishing
   runs only from `main` after that handoff.
