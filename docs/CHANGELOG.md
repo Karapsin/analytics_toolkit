@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Raised SQL backend adapter coverage.
+- Completed SQL adapter default policy coverage.
 
 ## 1.3.10.16 - 2026-07-13
 

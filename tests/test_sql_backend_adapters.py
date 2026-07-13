@@ -6,6 +6,7 @@ import threading
 from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -22,6 +23,7 @@ from analytics_toolkit.sql.backends.registry import (
     supported_backend_message,
 )
 from analytics_toolkit.sql.connection.errors import (
+    InvalidSqlInputError,
     SqlConfigError,
     UnsupportedConnectionTypeError,
 )
@@ -54,6 +56,9 @@ backend_source_count_module = importlib.import_module(
     "analytics_toolkit.sql.backends.source_count"
 )
 gp_stage_module = importlib.import_module("analytics_toolkit.sql.backends.gp.stage")
+adapter_defaults_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.adapter_defaults"
+)
 
 
 class RecordingClickHouseClient:
@@ -1731,3 +1736,270 @@ def test_gp_identifier_byte_helpers_cover_tiny_and_multibyte_limits() -> None:
         "\u0430\u0431\u0432",
         5,
     ) == "\u0430\u0431"
+
+
+def test_adapter_default_normalization_rejects_empty_values() -> None:
+    adapter = get_backend_adapter("gp")
+
+    assert adapter_defaults_module.normalize_ch_columns_or_expression(
+        adapter,
+        " id ",
+        "order_by",
+    ) == "id"
+    with pytest.raises(ValueError, match="must not be empty when provided"):
+        adapter_defaults_module.normalize_ch_columns_or_expression(
+            adapter,
+            [],
+            "order_by",
+        )
+    with pytest.raises(ValueError, match="order_by must not be empty"):
+        adapter_defaults_module.normalize_ch_string(adapter, "  ", "order_by")
+
+
+@pytest.mark.parametrize(
+    ("function", "args", "kwargs"),
+    [
+        (
+            adapter_defaults_module.build_show_tables_query,
+            (object(), object(), None, None, None),
+            {},
+        ),
+        (
+            adapter_defaults_module.extract_table_ddl,
+            (object(), "db", "schema.target"),
+            {"read_sql": lambda db, sql: None},
+        ),
+        (
+            adapter_defaults_module.build_drop_partitions_sqls,
+            (object(), "schema.target", ["2026-01-01"]),
+            {},
+        ),
+        (
+            adapter_defaults_module.build_create_partition_sql,
+            (object(), "schema.target"),
+            {"name": "p1"},
+        ),
+        (
+            adapter_defaults_module.build_vacuum_table_sql,
+            (object(), "schema.target"),
+            {},
+        ),
+    ],
+)
+def test_adapter_abstract_defaults_raise_not_implemented(
+    function: Any,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+) -> None:
+    with pytest.raises(NotImplementedError):
+        function(*args, **kwargs)
+
+
+def test_adapter_default_partition_options_reject_backend_specific_inputs() -> None:
+    with pytest.raises(
+        InvalidSqlInputError,
+        match="gp_truncate=True",
+    ):
+        adapter_defaults_module.validate_drop_partitions_options(
+            object(),
+            partition_column=None,
+            gp_truncate=True,
+        )
+    with pytest.raises(
+        InvalidSqlInputError,
+        match="trino_partition_column",
+    ):
+        adapter_defaults_module.validate_drop_partitions_options(
+            object(),
+            partition_column="dt",
+            gp_truncate=False,
+        )
+
+
+def test_adapter_default_stage_discovery_and_qualification() -> None:
+    class Cursor:
+        def __init__(self) -> None:
+            self.executed: list[tuple[str, tuple[str, str]]] = []
+            self.closed = False
+
+        def execute(self, sql: str, params: tuple[str, str]) -> None:
+            self.executed.append((sql, params))
+
+        def fetchall(self) -> list[tuple[str]]:
+            return [("stage_one",), ("stage_two",)]
+
+        def close(self) -> None:
+            self.closed = True
+
+    cursor = Cursor()
+    connection = SimpleNamespace(cursor=lambda: cursor)
+    adapter = get_backend_adapter("gp")
+
+    assert adapter_defaults_module.query_transfer_stage_table_names(
+        adapter,
+        connection,
+        connection_key="warehouse",
+        transfer_staging_schema="stage-schema",
+        table_pattern="target__stage__%",
+    ) == ["stage_one", "stage_two"]
+    assert cursor.executed[0][1] == ("stage-schema", "target__stage__%")
+    assert cursor.closed is True
+    assert adapter_defaults_module.qualify_transfer_stage_table_name(
+        adapter,
+        "warehouse",
+        "stage-schema",
+        "1stage",
+    ) == '"stage-schema"."1stage"'
+
+
+def test_adapter_default_create_kwargs_include_partition_and_order() -> None:
+    adapter = get_backend_adapter("trino")
+    common_kwargs = {
+        "gp_distributed_by_key": None,
+        "partition_by": ["dt"],
+        "order_by": ["id"],
+        "ch_engine": "ReplicatedMergeTree",
+        "ch_cluster": "{cluster}",
+        "ch_sharding_key": "rand()",
+        "ch_only_shard": False,
+    }
+
+    assert adapter_defaults_module.build_load_target_create_kwargs(
+        adapter,
+        **common_kwargs,
+        write_mode="append",
+        original_target_exists=True,
+    ) == {
+        "gp_distributed_by_key": None,
+        "partition_by": ["dt"],
+        "order_by": ["id"],
+    }
+    assert adapter_defaults_module.build_create_from_sql_target_create_kwargs(
+        adapter,
+        **common_kwargs,
+        drop_target_if_exists=True,
+        target_exists_before_drop=True,
+    ) == {
+        "gp_distributed_by_key": None,
+        "partition_by": ["dt"],
+        "order_by": ["id"],
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"ch_only_shard": True},
+        {"ch_cluster": "analytics"},
+        {"ch_sharding_key": "id"},
+    ],
+)
+def test_adapter_default_rejects_clickhouse_only_create_options(
+    overrides: dict[str, object],
+) -> None:
+    options: dict[str, Any] = {
+        "option_owner": "to_db",
+        "partition_by": None,
+        "order_by": None,
+        "ch_engine": "ReplicatedMergeTree",
+        "ch_cluster": "{cluster}",
+        "ch_sharding_key": "rand()",
+        "ch_only_shard": False,
+    }
+    options.update(overrides)
+
+    with pytest.raises(ValueError, match=r"can only be used.*type 'ch'"):
+        adapter_defaults_module.validate_ch_create_table_options(
+            get_backend_adapter("gp"),
+            **options,
+        )
+
+
+def test_adapter_default_transfer_and_insert_policies() -> None:
+    adapter = get_backend_adapter("gp")
+    batch = pd.DataFrame({"id": [1]})
+    error = RuntimeError("insert failed")
+
+    assert adapter_defaults_module.resolve_transfer_staging_mode(
+        adapter,
+        None,
+        transfer_staging_schema=None,
+        transfer_staging_location=None,
+    ) is None
+    with pytest.raises(ValueError, match="trino_mode must be one of"):
+        adapter_defaults_module.resolve_transfer_staging_mode(
+            adapter,
+            "csv",
+            transfer_staging_schema=None,
+            transfer_staging_location=None,
+        )
+    assert adapter_defaults_module.normalize_insert_batch(adapter, batch) is batch
+    assert adapter_defaults_module.normalize_insert_rows(adapter, [[1, "a"]]) == [
+        (1, "a")
+    ]
+    assert adapter_defaults_module.should_wrap_insert_error_as_ambiguous(
+        adapter,
+        object(),
+        error,
+    ) is True
+    assert (
+        adapter_defaults_module.should_refresh_connection_before_insert_retry(adapter)
+        is False
+    )
+    assert adapter_defaults_module.wait_for_table_absence(
+        adapter,
+        object(),
+        "target",
+    ) is None
+    assert adapter_defaults_module.estimate_source_rows(
+        adapter,
+        object(),
+        "SELECT 1",
+    ) is None
+
+
+def test_adapter_default_vacuum_restores_autocommit_after_failure() -> None:
+    execute_error = RuntimeError("vacuum failed")
+
+    class Cursor:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, sql: str) -> None:
+            assert sql == "VACUUM target"
+            raise execute_error
+
+        def close(self) -> None:
+            self.closed = True
+
+    cursor = Cursor()
+    connection = SimpleNamespace(autocommit=False, cursor=lambda: cursor)
+    adapter = SimpleNamespace(
+        build_vacuum_table_sql=lambda table_name, **kwargs: f"VACUUM {table_name}"
+    )
+
+    with pytest.raises(RuntimeError, match="vacuum failed"):
+        adapter_defaults_module.vacuum_table(adapter, connection, "target")
+
+    assert connection.autocommit is False
+    assert cursor.closed is True
+
+
+def test_adapter_default_vacuum_supports_connection_without_autocommit() -> None:
+    executed: list[str] = []
+    cursor = SimpleNamespace(
+        execute=executed.append,
+        close=lambda: executed.append("closed"),
+    )
+    connection = SimpleNamespace(cursor=lambda: cursor)
+    adapter = SimpleNamespace(
+        build_vacuum_table_sql=lambda table_name, **kwargs: f"VACUUM {table_name}"
+    )
+
+    adapter_defaults_module.vacuum_table(adapter, connection, "target")
+
+    assert executed == ["VACUUM target", "closed"]
+
+
+def test_adapter_default_identifier_checks_empty_name() -> None:
+    assert adapter_defaults_module._is_simple_identifier("") is False
