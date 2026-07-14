@@ -172,7 +172,13 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - After every non-documentation repository change, use `version_bump(...)` to update version metadata or the changelog. Non-documentation changes add one concise bullet under `## Unreleased` in `docs/CHANGELOG.md` until there are at least 10 unreleased bullets. While `## Unreleased` has fewer than 10 bullets, do not bump `pyproject.toml` or the root README version. Once `## Unreleased` reaches 10 or more bullets, use `version_bump(...)` to create a new versioned changelog section from all unreleased bullets, bump the package version in `pyproject.toml`, and update the root README version in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
-- Do not run tests against real databases. Unit tests should use fake connections, monkeypatching, and the autouse env fixture in `tests/conftest.py`.
+- Do not run tests against external, shared, or production databases. Unit tests
+  must use fake connections, monkeypatching, and the autouse env fixture in
+  `tests/conftest.py`. The only real-database exception is the repository-owned,
+  disposable SQL integration stack invoked through
+  `run_checks(area="sql", level="integration")`. That workflow may connect only
+  to the loopback/container endpoints it creates, must generate `.connections`
+  in a temporary directory, and must always tear down containers and volumes.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.

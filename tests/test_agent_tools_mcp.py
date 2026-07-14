@@ -610,6 +610,47 @@ def test_run_checks_dry_run_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert failed["blockers"][0]["returncode"] == 2
 
 
+def test_run_checks_plans_sql_integration_and_rejects_other_areas(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+
+    planned = mcp_server.run_checks(
+        area="sql",
+        level="integration",
+        root=str(root),
+        dry_run=True,
+    )
+    rejected = mcp_server.run_checks(
+        area="general",
+        level="integration",
+        root=str(root),
+        dry_run=True,
+    )
+
+    assert planned["result"]["planned_commands"] == [
+        "python -m release_routines.sql_integration"
+    ]
+    assert rejected["ok"] is False
+    assert rejected["blockers"][0]["message"] == (
+        "level='integration' is only supported for area='sql'"
+    )
+
+
+def test_run_checks_cli_accepts_integration_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_checks(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "run_checks", fake_run_checks)
+    parser = mcp_server._build_cli_parser()
+    args = parser.parse_args(["run-checks", "--area", "sql", "--level", "integration"])
+
+    assert args.handler(args) == {"ok": True}
+    assert captured["area"] == "sql"
+    assert captured["level"] == "integration"
+
+
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 

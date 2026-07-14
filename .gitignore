@@ -9,6 +9,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .rag_index/
+.integration-artifacts/
 .tox/
 .coverage
 coverage.json

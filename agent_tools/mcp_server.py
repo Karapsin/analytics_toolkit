@@ -640,7 +640,7 @@ def run_checks(
     dry_run: bool = False,
     root: str = ".",
 ) -> dict[str, Any]:
-    """Plan or execute focused, pre-commit, or release validation checks."""
+    """Plan or execute focused, integration, pre-commit, or release checks."""
     root_path = _resolve_root(root)
     input_summary = {
         "area": area,
@@ -1160,8 +1160,9 @@ def recommend_tests(area: str | None, change_type: str = "implementation") -> di
         "focused_commands": [_command_display(command) for command in commands],
         "required_final_commands": required_final,
         "notes": [
-            "Do not run tests against real databases.",
-            "Use fake connections, monkeypatching, and tests/conftest.py fixtures.",
+            "Unit tests must not access real databases.",
+            "Use run_checks(area='sql', level='integration') only for the disposable SQL stack.",
+            "Use fake connections, monkeypatching, and tests/conftest.py fixtures for unit tests.",
         ],
     }
 
@@ -1258,7 +1259,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     checks_parser = subparsers.add_parser("run-checks")
     checks_parser.add_argument("--area")
     checks_parser.add_argument("--change-type", default="implementation")
-    checks_parser.add_argument("--level", choices=["focused", "precommit", "release"], default="focused")
+    checks_parser.add_argument(
+        "--level",
+        choices=["focused", "integration", "precommit", "release"],
+        default="focused",
+    )
     checks_parser.add_argument("--dry-run", action="store_true")
     checks_parser.add_argument("--root", default=".")
     checks_parser.set_defaults(
@@ -1371,11 +1376,22 @@ def _check_commands(area: str | None, change_type: str, level: str) -> list[dict
                 }
             ],
         )
+    if level == "integration":
+        if _normalize_area(area or "") != "sql":
+            message = "level='integration' is only supported for area='sql'"
+            raise ValueError(message)
+        return [
+            {
+                "display": "python -m release_routines.sql_integration",
+                "args": [sys.executable, "-m", "release_routines.sql_integration"],
+                "env": {},
+            }
+        ]
     if level == "precommit":
         return [PRECOMMIT_COMMAND]
     if level == "release":
         return RELEASE_CHECK_COMMANDS
-    raise ValueError("level must be 'focused', 'precommit', or 'release'")
+    raise ValueError("level must be 'focused', 'integration', 'precommit', or 'release'")
 
 
 def _run_command(root: Path, command: dict[str, Any]) -> dict[str, Any]:

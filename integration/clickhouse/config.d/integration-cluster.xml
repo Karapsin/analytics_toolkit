@@ -1,0 +1,28 @@
+<clickhouse>
+    <remote_servers>
+        <integration_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse</host>
+                    <port>9000</port>
+                    <user>integration</user>
+                    <password>integration</password>
+                </replica>
+            </shard>
+        </integration_cluster>
+    </remote_servers>
+    <zookeeper>
+        <node>
+            <host>keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <macros>
+        <cluster>integration_cluster</cluster>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+    <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+</clickhouse>

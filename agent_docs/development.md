@@ -32,5 +32,9 @@ cleanup and use the explicit
 `python -m release_routines.lib.quality_debt lint --write-baseline` and
 `python -m release_routines.lib.quality_debt type --write-baseline` workflows.
 
-Do not run tests against real databases. Unit tests should use fake connections,
-monkeypatching, and the autouse env fixture in `tests/conftest.py`.
+Do not run tests against external, shared, or production databases. Unit tests
+must use fake connections, monkeypatching, and the autouse env fixture in
+`tests/conftest.py`. Disposable Greenplum, Trino, and ClickHouse integration
+tests are allowed only through `run_checks(area="sql", level="integration")`;
+that workflow owns endpoint validation, temporary configuration, diagnostics,
+and container/volume teardown.

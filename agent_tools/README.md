@@ -18,6 +18,7 @@ agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_t
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
 agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry-run
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
+agent_tools/mcp_tool.sh run-checks --area sql --level integration --dry-run
 agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/test_agent_tools_mcp.py
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
@@ -41,6 +42,12 @@ when there are no unreleased entries.
 lines, unstaged `git diff --stat` lines, and staged `git diff --cached --stat`
 lines through its `repo_health` result. Use that consolidated status instead of
 running separate shell probes for routine worktree summaries.
+
+`run-checks --area sql --level integration` starts the repository-owned
+disposable Trino/MinIO/Iceberg and ClickHouse/Keeper stack, adds Greenplum on
+x86_64 hosts, runs the marked integration tests, captures failure logs, and
+always removes its containers and volumes. It must not be redirected to
+external database endpoints.
 
 `mcp_server.py` exposes the consolidated tool surface:
 `prepare_start`, `docs`, `workflow_status`, `version_bump`, `run_checks`,

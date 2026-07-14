@@ -1,0 +1,128 @@
+name: analytics-toolkit-integration
+
+services:
+  iceberg-catalog-db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: iceberg
+      POSTGRES_USER: iceberg
+      POSTGRES_PASSWORD: integration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iceberg -d iceberg"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: integration
+      MINIO_ROOT_PASSWORD: integration-secret
+    ports:
+      - "${SQL_INTEGRATION_MINIO_PORT:-19001}:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set integration http://minio:9000 integration integration-secret
+        mc mb --ignore-existing integration/warehouse
+
+  trino:
+    image: trinodb/trino:482
+    depends_on:
+      iceberg-catalog-db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "${SQL_INTEGRATION_TRINO_PORT:-18080}:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  keeper:
+    image: clickhouse/clickhouse-keeper:26.3.15.4
+    volumes:
+      - ./clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "clickhouse-keeper-client",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "9181",
+          "get",
+          "/",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    tmpfs:
+      - /var/lib/clickhouse-keeper
+      - /var/log/clickhouse-keeper
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.15.4
+    depends_on:
+      keeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DB: integration
+      CLICKHOUSE_USER: integration
+      CLICKHOUSE_PASSWORD: integration
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "${SQL_INTEGRATION_CLICKHOUSE_PORT:-18123}:8123"
+    volumes:
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    tmpfs:
+      - /var/lib/clickhouse
+      - /var/log/clickhouse-server
+
+  greenplum:
+    profiles: ["gp"]
+    platform: linux/amd64
+    image: woblerr/greenplum:6.27.1
+    environment:
+      GREENPLUM_DATABASE_NAME: analytics_toolkit
+      GREENPLUM_PASSWORD: integration
+    ports:
+      - "${SQL_INTEGRATION_GREENPLUM_PORT:-15432}:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -p 5432 -U gpadmin -d analytics_toolkit",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    tmpfs:
+      - /data
