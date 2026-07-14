@@ -3441,6 +3441,176 @@ def test_adaptive_batch_sizer_respects_batch_memory_bounds() -> None:
     assert sizer.current_size == 66
 
 
+def test_row_batch_recursive_size_handles_mappings_sequences_and_scalars(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(models_module.sys, "getsizeof", lambda _value: 1)
+
+    value = {"key": [1, (2, {3}), frozenset({4})]}
+
+    assert models_module._approx_sizeof(value) == 10
+    assert models_module._approx_sizeof("scalar") == 1
+
+
+def test_transfer_row_count_result_sorts_slice_dictionaries() -> None:
+    result = models_module.TransferRowCountResult(
+        expected_source_rows=3,
+        streamed_rows=3,
+        stage_rows=3,
+        row_count_validated=True,
+        slice_counts=[
+            models_module.TransferSliceRowCount(2, "second", 2, 2),
+            models_module.TransferSliceRowCount(1, None, 1, 1),
+        ],
+    )
+
+    assert result.slice_counts_as_dicts() == [
+        {
+            "index": 1,
+            "label": None,
+            "expected_rows": 1,
+            "streamed_rows": 1,
+        },
+        {
+            "index": 2,
+            "label": "second",
+            "expected_rows": 2,
+            "streamed_rows": 2,
+        },
+    ]
+
+
+def test_row_batch_recursive_size_stops_at_cycles_and_depth_limit(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(models_module.sys, "getsizeof", lambda _value: 1)
+    cyclic: list[Any] = []
+    cyclic.append(cyclic)
+
+    assert models_module._approx_sizeof(cyclic) == 1
+    assert models_module._approx_sizeof([[[1]]], _max_depth=1) == 3
+
+
+def test_row_batch_dataframe_and_approximate_memory_include_rows(
+    monkeypatch,
+) -> None:
+    batch = models_module.RowBatch(columns=["id"], rows=[(1,), (2,)])
+    sized_values: list[Any] = []
+
+    def fake_approx_sizeof(value: Any) -> int:
+        sized_values.append(value)
+        return 10 * len(sized_values)
+
+    monkeypatch.setattr(models_module, "_approx_sizeof", fake_approx_sizeof)
+
+    assert batch.to_dataframe(include_rows=True).to_dict("records") == [
+        {"id": 1},
+        {"id": 2},
+    ]
+    assert batch.approx_memory_bytes() == 30
+    assert sized_values == [batch.columns, batch.rows]
+
+
+def test_adaptive_batch_sizer_ignores_invalid_counts_and_durations() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        target_seconds=10.0,
+    )
+
+    for inserted_rows in (None, 0, -1):
+        sizer.update(1.0, inserted_rows=inserted_rows)
+    for duration_seconds in (0.0, -1.0):
+        sizer.update(duration_seconds, inserted_rows=100)
+
+    assert sizer.current_size == 100
+    assert list(sizer.rows_per_second_samples) == []
+    assert sizer.previous_rows_per_second is None
+
+
+def test_adaptive_batch_sizer_handles_unknown_probe_and_missing_baselines() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        target_seconds=10.0,
+        target_rows_per_second_window=1,
+    )
+
+    assert sizer._try_schedule_rows_per_second_probe("grow") is False
+    sizer.is_experimental_size = True
+    sizer.probe_direction = "unknown"
+    sizer.previous_rows_per_second = 100.0
+    sizer.baseline_rows_per_second = 100.0
+    sizer.update(1.0, inserted_rows=100)
+    assert sizer.current_size == 100
+    assert sizer.previous_rows_per_second == 100.0
+    assert sizer.probe_direction == "unknown"
+
+    sizer.baseline_size = None
+    sizer._restore_rows_per_second_baseline()
+    assert sizer.current_size == 100
+    assert sizer.probe_direction is None
+    assert sizer.is_experimental_size is False
+
+
+def test_adaptive_batch_sizer_missing_memory_target_and_min_max_clamps() -> None:
+    no_target = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        optimize_by_rows_per_second=False,
+        target_seconds=10.0,
+    )
+    no_target._update_for_memory(1)
+    assert no_target.current_size == 100
+
+    min_memory = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        optimize_by_rows_per_second=False,
+        target_seconds=10.0,
+        target_memory_bytes=25,
+        min_target_memory_bytes=50,
+    )
+    min_memory.update(1.0, memory_bytes=20)
+    assert min_memory.current_size == 150
+
+    max_seconds = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=100,
+        min_size=10,
+        max_size=200,
+        optimize_by_rows_per_second=False,
+        target_seconds=50.0,
+        max_target_seconds=20.0,
+    )
+    max_seconds.update(9.0)
+    assert max_seconds.current_size == 150
+
+
+def test_adaptive_batch_sizer_memory_shrink_respects_minimum_at_size_one() -> None:
+    sizer = models_module.AdaptiveBatchSizer(
+        enabled=True,
+        current_size=1,
+        min_size=1,
+        max_size=10,
+        optimize_by_rows_per_second=False,
+        target_seconds=10.0,
+        target_memory_bytes=100,
+    )
+
+    sizer.update(1.0, memory_bytes=101)
+
+    assert sizer.current_size == 1
+
+
 def test_transfer_options_resolve_adaptive_bounds_and_validate() -> None:
     options = transfer_api_module.build_transfer_options(
         from_db="gp",

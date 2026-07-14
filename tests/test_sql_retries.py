@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -55,6 +56,20 @@ class GroupingError(Exception):
 
 class FeatureNotSupported(Exception):
     pgcode = "0A000"
+
+
+class CloseFailureConnection(FakeConnection):
+    def close(self) -> None:
+        self.close_calls += 1
+        message = f"cannot close {self.name}"
+        raise RuntimeError(message)
+
+
+class RollbackFailureConnection(FakeConnection):
+    def rollback(self) -> None:
+        self.rollback_calls += 1
+        message = f"cannot roll back {self.name}"
+        raise RuntimeError(message)
 
 
 def test_read_sql_retries_whole_flow_with_fresh_gp_connection(monkeypatch) -> None:
@@ -518,6 +533,171 @@ def test_run_with_retry_logs_human_readable_wait(
     assert attempts == [1, 2]
     assert sleeps == [90]
     assert "[unit retry] [retry] Retrying in 1 minute 30 seconds" in output
+
+
+def test_run_with_retry_reraises_same_exception_without_zero_delay_sleep(
+    monkeypatch,
+) -> None:
+    original_error = RuntimeError("temporary failure")
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise original_error
+
+    with pytest.raises(RuntimeError) as caught:
+        retry_module.run_with_retry(
+            "unit retry",
+            retry_cnt=2,
+            timeout_increment=0,
+            operation=operation,
+        )
+
+    assert caught.value is original_error
+    assert attempts == [1, 2]
+    assert sleeps == []
+
+
+def test_run_with_retry_nonretryable_exception_never_sleeps(monkeypatch) -> None:
+    original_error = ValueError("invalid input")
+    sleeps: list[float] = []
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    with pytest.raises(ValueError, match="invalid input") as caught:
+        retry_module.run_with_retry(
+            "unit retry",
+            retry_cnt=3,
+            timeout_increment=10,
+            operation=lambda _attempt: (_ for _ in ()).throw(original_error),
+            retryable_exceptions=(RuntimeError,),
+        )
+
+    assert caught.value is original_error
+    assert sleeps == []
+
+
+def test_run_with_retry_zero_retries_reports_missing_exception() -> None:
+    attempts: list[int] = []
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+
+    with pytest.raises(
+        RuntimeError,
+        match="unit retry failed without capturing an exception",
+    ):
+        retry_module.run_with_retry(
+            "unit retry",
+            retry_cnt=0,
+            timeout_increment=0,
+            operation=operation,
+        )
+
+    assert attempts == []
+
+
+def test_rollback_quietly_succeeds_and_suppresses_rollback_failure() -> None:
+    success = FakeConnection("success")
+    failure = RollbackFailureConnection("failure")
+
+    retry_module.rollback_quietly(success)
+    retry_module.rollback_quietly(failure)
+
+    assert success.rollback_calls == 1
+    assert failure.rollback_calls == 1
+
+
+@pytest.mark.parametrize("connection_class", [FakeConnection, CloseFailureConnection])
+def test_replace_connection_replaces_after_close_success_or_failure(
+    monkeypatch,
+    connection_class,
+) -> None:
+    original = connection_class("original")
+    replacement = FakeConnection("replacement")
+    connection_ref = {"connection": original}
+    opened_keys: list[str] = []
+
+    def open_connection(connection_key: str) -> FakeConnection:
+        opened_keys.append(connection_key)
+        return replacement
+
+    monkeypatch.setattr(retry_module, "get_sql_connection", open_connection)
+
+    retry_module.replace_connection("warehouse", connection_ref)
+
+    assert original.close_calls == 1
+    assert opened_keys == ["warehouse"]
+    assert connection_ref["connection"] is replacement
+
+
+def test_replace_connection_recovers_when_reference_is_missing(monkeypatch) -> None:
+    replacement = FakeConnection("replacement")
+    connection_ref: dict[str, FakeConnection] = {}
+    monkeypatch.setattr(
+        retry_module,
+        "get_sql_connection",
+        lambda connection_key: replacement,
+    )
+
+    retry_module.replace_connection("warehouse", connection_ref)
+
+    assert connection_ref == {"connection": replacement}
+
+
+def test_run_with_fresh_connection_returns_after_final_cleanup() -> None:
+    connection = FakeConnection("fresh")
+    seen_refs: list[dict[str, FakeConnection]] = []
+
+    result = retry_module.run_with_fresh_connection(
+        "warehouse",
+        "target",
+        lambda connection_ref: seen_refs.append(connection_ref) or "ok",
+        open_connection=lambda connection_key: connection,
+    )
+
+    assert result == "ok"
+    assert seen_refs == [{"connection": connection}]
+    assert connection.close_calls == 1
+
+
+def test_run_with_fresh_connection_closes_replacement_after_operation_failure() -> None:
+    original = FakeConnection("original")
+    replacement = FakeConnection("replacement")
+    original_error = RuntimeError("operation failed")
+
+    def operation(connection_ref: dict[str, FakeConnection]) -> None:
+        connection_ref["connection"] = replacement
+        raise original_error
+
+    with pytest.raises(RuntimeError) as caught:
+        retry_module.run_with_fresh_connection(
+            "warehouse",
+            "source",
+            operation,
+            open_connection=lambda connection_key: original,
+        )
+
+    assert caught.value is original_error
+    assert original.close_calls == 0
+    assert replacement.close_calls == 1
+
+
+def test_close_connection_ref_handles_missing_and_failed_connections(capsys) -> None:
+    retry_module.close_connection_ref({}, "warehouse", "source")
+    failing = CloseFailureConnection("failing")
+
+    retry_module.close_connection_ref(
+        {"connection": failing},
+        "warehouse",
+        "target",
+    )
+
+    assert failing.close_calls == 1
+    output = capsys.readouterr().out
+    assert "[warehouse] [close_target] Closing connection" in output
+    assert "[warehouse] [close_target] Failed" in output
 
 
 def test_operation_runner_retries_with_fresh_connections_and_gp_rollback() -> None:

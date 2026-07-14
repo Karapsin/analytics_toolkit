@@ -1,25 +1,25 @@
 {
   "overall": {
-    "combined": 95.42,
-    "statements": 96.34,
-    "branches": 92.68
+    "branches": 93.19,
+    "combined": 95.72,
+    "statements": 96.57
   },
   "prefixes": {
     "ab_utils": {
-      "combined": 100.0,
-      "branches": 100.0
-    },
-    "sql_format": {
-      "combined": 100.0,
-      "branches": 100.0
+      "branches": 100.0,
+      "combined": 100.0
     },
     "sql/connection": {
-      "combined": 99.24,
-      "branches": 98.34
+      "branches": 98.34,
+      "combined": 99.24
     },
     "sql/ddl": {
-      "combined": 98.98,
-      "branches": 98.71
+      "branches": 98.71,
+      "combined": 98.98
+    },
+    "sql_format": {
+      "branches": 100.0,
+      "combined": 100.0
     }
   }
 }

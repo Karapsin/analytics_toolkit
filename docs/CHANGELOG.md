@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Completed deterministic SQL formatting coverage.
 - Completed deterministic AB utility branch coverage and simplified unreachable allocation guards.
 - Made deterministic coverage target updates atomic and added check-only validation.
+- Expanded deterministic transfer runtime and retry coverage.
 
 ## 1.3.10.16 - 2026-07-13
 
