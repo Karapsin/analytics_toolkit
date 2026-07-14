@@ -6451,3 +6451,20 @@ def test_initialize_parquet_first_batch_uses_explicit_schema(
     assert state.stage_column_types == {"id": "BIGINT"}
     assert list(state.first_non_empty_batch["id"]) == [1]
     assert calls == ["create"]
+
+
+def test_cleanup_stale_stage_tables_suppresses_connection_close_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CloseFailure:
+        def close(self) -> None:
+            message = "close failed"
+            raise RuntimeError(message)
+
+    monkeypatch.setattr(staging_module, "get_sql_connection", lambda _key: CloseFailure())
+    monkeypatch.setattr(
+        staging_module,
+        "cleanup_stale_stage_tables_with_connection",
+        lambda **_kwargs: None,
+    )
+    staging_module.cleanup_stale_stage_tables("gp", stage_tables=[])

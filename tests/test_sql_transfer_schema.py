@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
@@ -22,6 +23,10 @@ transfer_finalize_module = importlib.import_module(
 runtime_models = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.runtime.models"
 )
+table_basic_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.table._basic_ops"
+)
+identifiers_module = importlib.import_module("analytics_toolkit.sql.core.identifiers")
 
 
 class FakeResult:
@@ -622,3 +627,37 @@ def test_transfer_upsert_duplicate_stage_keys_raise_before_finalization(
         )
 
     assert finalized is False
+
+
+def test_stage_name_parser_guards_reject_injected_invalid_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(stage_module, "parse_one", lambda *_args, **_kwargs: object())
+    with pytest.raises(ValueError, match="Invalid target table"):
+        stage_module.build_stage_table_name("gp", "sandbox.target")
+    with pytest.raises(ValueError, match="Invalid target table"):
+        stage_module.build_stage_table_prefix("gp", "sandbox.target", None)
+
+    valid_target = stage_module.exp.Table(this=stage_module.exp.Identifier(this="target"))
+    parsed = iter([valid_target, object()])
+    monkeypatch.setattr(stage_module, "parse_one", lambda *_args, **_kwargs: next(parsed))
+    with pytest.raises(ValueError, match="Invalid transfer_staging_schema"):
+        stage_module.build_stage_table_name(
+            "gp", "sandbox.target", transfer_staging_schema="scratch",
+        )
+
+
+def test_table_basic_compatibility_delegates_and_identifier_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert table_basic_module._format_gp_information_schema_type(
+        "numeric", "numeric", 10, 2,
+    ) == "NUMERIC(10, 2)"
+    assert table_basic_module._extract_row_count({"rows": 4}) == 4
+    monkeypatch.setattr(
+        identifiers_module.TableIdentifier,
+        "parse",
+        classmethod(lambda _cls, *_args: SimpleNamespace(parts=("one", "two", "three", "four"))),
+    )
+    with pytest.raises(Exception, match="up to three parts"):
+        table_basic_module.quote_qualified_table_name("one.two.three.four", "trino")

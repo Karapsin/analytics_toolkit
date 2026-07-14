@@ -60,6 +60,23 @@ def test_drop_tables_is_exported() -> None:
     assert sql_module.drop_tables is drop_module.drop_tables
 
 
+@pytest.mark.parametrize(
+    ("value", "error", "message"),
+    [
+        (("analytics.events",), TypeError, "string or a list"),
+        ([], ValueError, "must not be empty"),
+        (["   "], ValueError, "must not be empty"),
+    ],
+)
+def test_drop_tables_rejects_invalid_table_collections(
+    value: Any,
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error, match=message):
+        drop_module._normalize_target_tables(value)
+
+
 def test_drop_tables_dry_run_builds_default_pair_drop_sqls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pytest
@@ -388,3 +389,75 @@ class _FailingOnceGpConnection(FakeDbapiConnection):
 
     def cursor(self) -> _FailingOnceGpCursor:
         return _FailingOnceGpCursor(self)
+
+
+def test_partition_lifecycle_metadata_results_and_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contexts: list[object] = []
+
+    def fake_run_connection_operation(**kwargs: Any) -> None:
+        contexts.append(kwargs["context_factory"](1))
+
+    monkeypatch.setattr(
+        table_ops_module, "run_connection_operation", fake_run_connection_operation,
+    )
+    created = table_ops_module.gp_create_partitions(
+        "gp", "sandbox.events", days=["2026-05-01"], return_metadata=True,
+    )
+    dropped = table_ops_module.drop_partitions(
+        "gp", "sandbox.events", ["2026-05-01"], return_metadata=True,
+    )
+    assert created.metadata.statement_count == 1
+    assert dropped.metadata.statement_count == 1
+    assert [context.operation for context in contexts] == [
+        "gp_create_partitions", "drop_partitions",
+    ]
+    assert table_ops_module.gp_create_partitions(
+        "gp", "sandbox.events", days=["2026-05-02"],
+    ) is None
+
+
+def test_gp_partition_normalizers_cover_remaining_type_and_date_guards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        table_ops_module, "_selected_gp_create_partition_input",
+        lambda **_kwargs: "unexpected",
+    )
+    with pytest.raises(AssertionError, match="Unexpected"):
+        table_ops_module._normalize_gp_create_partitions(
+            intervals=None, values=None, days=None, weeks=None, months=None,
+            years=None, name_template="p_{}",
+        )
+
+    with pytest.raises(InvalidSqlInputError, match="contain mappings"):
+        table_ops_module._normalize_gp_interval_partitions(["bad"], "p_{}")
+    with pytest.raises(InvalidSqlInputError, match="contain strings"):
+        table_ops_module._normalize_gp_value_partitions([1], "p_{}")
+
+    for value in (None, "value", {"bad": "mapping"}, 1):
+        with pytest.raises(InvalidSqlInputError, match=r"non-empty sequence|provided"):
+            table_ops_module._validate_gp_partition_sequence(value, "values")
+
+    assert table_ops_module._parse_gp_partition_date(
+        datetime(2026, 5, 1, 12, tzinfo=timezone.utc), "date",
+    ) == date(2026, 5, 1)
+    assert table_ops_module._parse_gp_partition_date(
+        date(2026, 5, 2), "date",
+    ) == date(2026, 5, 2)
+    with pytest.raises(InvalidSqlInputError, match="ISO date"):
+        table_ops_module._parse_gp_partition_date(" ", "date")
+    with pytest.raises(AssertionError, match="Unexpected"):
+        table_ops_module._next_gp_partition_period_start(date(2026, 1, 1), "quarters")
+    with pytest.raises(InvalidSqlInputError, match="must be a string"):
+        table_ops_module._validate_gp_partition_name_template(1)
+    with pytest.raises(InvalidSqlInputError, match="must be a string"):
+        table_ops_module._validate_gp_partition_identifier(1, "partition")
+    with pytest.raises(InvalidSqlInputError, match="must not be empty"):
+        table_ops_module._validate_gp_partition_identifier(" ", "partition")
+
+    with pytest.raises(InvalidSqlInputError, match="must be strings"):
+        table_ops_module._validate_partition_keys([1])
+    with pytest.raises(InvalidSqlInputError, match="must not be empty"):
+        table_ops_module._validate_partition_keys([" "])

@@ -2259,3 +2259,203 @@ def test_load_table_trino_scalar_normalization_handles_nat_and_target_types() ->
     assert load_sql_table_module._normalize_trino_value(pd.NaT, None) is None
     assert load_sql_table_module._normalize_trino_value("7", "bigint") == 7
     assert load_sql_table_module._normalize_trino_value(7, "varchar") == "7"
+
+
+def test_load_lifecycle_remaining_validation_and_metadata_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    append_options = load_df_module.LoadOptions(
+        connection_key="gp", connection_backend="gp",
+        destination_table="sandbox.target", append=True,
+    )
+    state = load_df_module.LoadState(True, True)
+    assert load_df_module._handle_empty_dataframe_load(
+        append_options, state,
+        operation_metadata=load_df_module.SqlOperationMetadata(),
+        return_metadata=False,
+    ) == 0
+
+    missing_distribution = load_df_module.LoadOptions(
+        connection_key="gp", connection_backend="gp",
+        destination_table="sandbox.target", gp_distributed_by_key=["missing"],
+    )
+    with pytest.raises(ValueError, match="missing"):
+        load_df_module._validate_load_dataframe(
+            missing_distribution, pd.DataFrame({"id": [1]}),
+        )
+
+    labelled = load_df_module.LoadOptions(
+        connection_key="gp", connection_backend="gp",
+        destination_table="sandbox.target", query_label="candidate-9",
+    )
+    create_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module, "_create_sql_table_with_connection",
+        lambda *_args, **kwargs: create_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        load_df_module.get_backend_adapter("gp"),
+        "build_load_target_create_kwargs", lambda **_kwargs: {},
+    )
+    load_df_module._create_load_target_table(
+        labelled, load_df_module.LoadState(False, False), object(),
+        pd.DataFrame({"id": [1]}),
+    )
+    assert create_calls == [{"connection_key": "gp", "query_label": "candidate-9"}]
+
+    analyze_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module, "analyze_table", lambda **kwargs: analyze_calls.append(kwargs),
+    )
+    load_df_module._analyze_load_target(labelled, object())
+    assert analyze_calls[0]["query_label"] == "candidate-9"
+
+    monkeypatch.setattr(
+        load_df_module, "_run_load_target_action",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("count failed")),
+    )
+    result_metadata = load_df_module._build_load_metadata(
+        options=labelled, state=state, source_rows=2, inserted_rows=2,
+        operation_metadata=load_df_module.SqlOperationMetadata(),
+    )
+    assert result_metadata.final_target_rows is None
+    assert result_metadata.inserted_rows == 2
+
+
+def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = load_df_module.LoadOptions(
+        connection_key="trino", connection_backend="trino",
+        destination_table="iceberg.sandbox.target", table_schema={"id": "BIGINT"},
+        append=True, key_columns=["id"], transfer_staging_schema="scratch",
+        transfer_staging_location="s3://bucket/stage",
+    )
+    state = load_df_module.LoadState(True, True)
+    stage_kwargs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module, "_run_load_target_action",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(
+        load_df_module, "create_stage_table",
+        lambda **kwargs: stage_kwargs.append(kwargs) or "scratch.stage",
+    )
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *_a, **_k: 1)
+    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda **_k: None)
+    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *_a, **_k: None)
+    assert load_df_module._load_dataframe(options, state, pd.DataFrame({"id": [1]})) == 1
+    assert stage_kwargs[0]["table_schema"] == {"id": "BIGINT"}
+
+    monkeypatch.setattr(
+        load_df_module, "ensure_parquet_staging_dependencies",
+        lambda: (object(), object(), object()),
+    )
+    monkeypatch.setattr(load_df_module, "_create_load_parquet_stage_table", lambda *_a: None)
+    with pytest.raises(RuntimeError, match="not initialized"):
+        load_df_module._load_dataframe_via_parquet_stage(
+            options=options, state=load_df_module.LoadState(True, True),
+            df=pd.DataFrame({"id": [1]}), on_progress=None,
+        )
+
+    with pytest.raises(RuntimeError, match="was not initialized"):
+        load_df_module._finalize_loaded_dataframe_stage(
+            options=options, state=load_df_module.LoadState(True, True),
+            connection=object(), df=pd.DataFrame({"id": [1]}),
+        )
+
+    overlap_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module, "validate_stage_target_key_overlap",
+        lambda **kwargs: overlap_calls.append(kwargs),
+    )
+    staged = load_df_module.LoadState(
+        True, True, overlap_stage_table="scratch.stage",
+    )
+    load_df_module._finalize_loaded_dataframe_stage(
+        options=options, state=staged, connection=object(),
+        df=pd.DataFrame({"id": [1]}),
+    )
+    assert overlap_calls[0]["stage_table"] == "scratch.stage"
+
+
+def test_load_parquet_collision_exhaustion_and_final_stage_noops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = load_df_module.LoadOptions(
+        connection_key="trino", connection_backend="trino",
+        destination_table="iceberg.sandbox.target", table_schema={"id": "BIGINT"},
+        transfer_staging_schema="scratch", transfer_staging_location="s3://bucket/stage",
+    )
+    state = load_df_module.LoadState(False, False)
+    messages: list[str] = []
+    monkeypatch.setattr(load_df_module, "STAGE_TABLE_NAME_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(
+        load_df_module, "build_stage_table_name", lambda *_a, **_k: "scratch.collision",
+    )
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(load_df_module, "time_print", messages.append)
+    with pytest.raises(RuntimeError, match="unique Parquet"):
+        load_df_module._create_load_parquet_stage_table(options, state, object())
+    assert len(messages) == 2
+
+    df = pd.DataFrame({"id": [1]})
+    gp_options = load_df_module.LoadOptions(
+        connection_key="gp", connection_backend="gp", destination_table="sandbox.target",
+    )
+    load_df_module._ensure_final_upsert_stage_table(gp_options, state, df)
+    trino_state = load_df_module.LoadState(True, False)
+    load_df_module._ensure_final_upsert_stage_table(options, trino_state, df)
+    trino_state.original_target_exists = True
+    trino_state.final_upsert_stage_table = "scratch.final"
+    load_df_module._ensure_final_upsert_stage_table(options, trino_state, df)
+
+
+def test_load_option_requirements_and_remaining_upsert_plan_branches(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+) -> None:
+    with pytest.raises(ValueError, match="destination_table"):
+        load_df_module._build_load_options("gp", " ", False, None, None, None)
+    with pytest.raises(ValueError, match="upsert_partition_column"):
+        load_df_module._build_load_options(
+            "trino", "sandbox.target", False, "upsert", None, ["id"],
+        )
+
+    write_sql_connections({
+        "trino_no_template": {
+            "type": "trino", "host": "trino.example", "port": 8080,
+            "user": "user", "password": "password", "catalog": "iceberg",
+            "schema": "sandbox",
+        }
+    })
+    with pytest.raises(ValueError, match="drop_sql_template"):
+        load_df_module._build_load_options(
+            "trino_no_template", "sandbox.target", False, "upsert", None, ["id"],
+            upsert_partition_column="event_date",
+        )
+
+    gp_upsert = load_df_module.LoadOptions(
+        connection_key="gp", connection_backend="gp",
+        destination_table="sandbox.target", table_schema={"id": "BIGINT"},
+        write_mode="upsert", key_columns=["id"], use_parquet_staging=True,
+        transfer_staging_schema="scratch", transfer_staging_location="s3://stage",
+    )
+    monkeypatch.setattr(load_df_module, "add_create_table_steps", lambda *_a, **_k: None)
+    monkeypatch.setattr(load_df_module, "add_load_stage_step", lambda *_a, **_k: None)
+    monkeypatch.setattr(load_df_module, "build_upsert_stage_sqls", lambda *_a, **_k: [])
+    monkeypatch.setattr(load_df_module, "add_cleanup_stage_step", lambda *_a, **_k: None)
+    load_df_module._add_parquet_load_plan_steps(
+        load_df_module.SqlPlan(operation="load"), gp_upsert,
+        pd.DataFrame({"id": [1]}), load_df_module.SqlOperationMetadata(),
+    )
+
+    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda **_k: None)
+    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *_a, **_k: None)
+    load_df_module._finalize_loaded_dataframe_stage(
+        options=gp_upsert,
+        state=load_df_module.LoadState(
+            True, False, overlap_stage_table="scratch.stage",
+        ),
+        connection=object(), df=pd.DataFrame({"id": [1]}),
+    )

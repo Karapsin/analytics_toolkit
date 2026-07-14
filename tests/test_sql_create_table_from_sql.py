@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1222,3 +1223,195 @@ def test_create_table_from_sql_clickhouse_dry_fast_path_result(
         )
         == "fast plan"
     )
+
+
+def _candidate_create_options(**overrides: object) -> Any:
+    values: dict[str, object] = {
+        "source_key": "gp",
+        "source_backend": "gp",
+        "target_key": "gp",
+        "target_backend": "gp",
+        "target_table": "sandbox.target",
+        "source_sql": "SELECT id FROM source",
+    }
+    values.update(overrides)
+    return create_module.CreateTableFromSqlOptions(**values)
+
+
+def test_create_from_sql_compatibility_delegation_and_fast_unsafe_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transfer_api = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
+    monkeypatch.setattr(transfer_api, "transfer_table", lambda **kwargs: kwargs["to_table"])
+    assert create_module.transfer_table(to_table="sandbox.target") == "sandbox.target"
+
+    adapter = SimpleNamespace(
+        create_table_from_sql_fast_path=lambda **_kwargs: (False, None),
+    )
+    monkeypatch.setattr(create_module, "get_sql_connection", lambda _key: pytest.fail("no probe"))
+    monkeypatch.setattr(create_module, "_cleanup_attempt_target", lambda **_kwargs: False)
+    failure = create_module._execute_create_table_from_sql_fast_path_attempt(
+        options=_candidate_create_options(drop_target_if_exists=True),
+        target_adapter=adapter,
+        attempt=2,
+    )
+    assert isinstance(failure, create_module._UnsafeAttemptFailure)
+    assert failure.attempt == 2
+
+
+def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+
+    def open_connection(_key: str) -> FakeDbapiConnection:
+        connection = FakeDbapiConnection()
+        connections.append(connection)
+        return connection
+
+    adapter = SimpleNamespace(
+        validate_ch_columns_in_columns=lambda *_a, **_k: None,
+        prepare_existing_target_for_create_from_sql=lambda *_a, **_k: False,
+        build_create_from_sql_target_create_kwargs=lambda **_k: {},
+        should_insert_create_table_from_sql_directly=lambda **_k: True,
+    )
+    monkeypatch.setattr(create_module, "get_sql_connection", open_connection)
+    monkeypatch.setattr(
+        create_module,
+        "inspect_source_query_schema",
+        lambda *_a, **_k: [SimpleNamespace(name="id")],
+    )
+    monkeypatch.setattr(create_module, "map_source_schema_to_target", lambda *_a: {"id": "BIGINT"})
+    monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
+    monkeypatch.setattr(create_module, "insert_from_query", lambda *_a, **_k: 3)
+
+    no_insert = create_module._execute_generic_create_table_from_sql_attempt(
+        options=_candidate_create_options(insert_data=False, return_metadata=True),
+        target_adapter=adapter,
+        attempt=1,
+    )
+    assert no_insert.rows is None
+
+    direct = create_module._execute_generic_create_table_from_sql_attempt(
+        options=_candidate_create_options(return_metadata=True),
+        target_adapter=adapter,
+        attempt=1,
+    )
+    assert direct.rows == 3
+    assert direct.metadata.source_rows == 3
+
+    adapter.should_insert_create_table_from_sql_directly = lambda **_k: False
+    transfer_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        create_module,
+        "transfer_table",
+        lambda **kwargs: transfer_calls.append(kwargs) or 4,
+    )
+    delegated = create_module._execute_generic_create_table_from_sql_attempt(
+        options=_candidate_create_options(
+            source_key="gp_source",
+            target_key="trino_target",
+            target_backend="trino",
+            table_schema={"id": "BIGINT"},
+            query_label="candidate-9",
+            return_metadata=True,
+            ch_only_shard=True,
+        ),
+        target_adapter=adapter,
+        attempt=1,
+    )
+    assert delegated == 4
+    assert transfer_calls[0]["query_label"] == "candidate-9"
+    assert transfer_calls[0]["table_schema"] == {"id": "BIGINT"}
+    assert transfer_calls[0]["return_metadata"] is True
+    assert all(connection.close_calls == 1 for connection in connections)
+
+
+def test_create_from_sql_cleanup_validation_bool_and_close_dedup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="at least one column"):
+        create_module._validate_source_columns([])
+    with pytest.raises(ValueError, match="duplicate columns"):
+        create_module._validate_source_columns(["id", "id", "value"])
+    with pytest.raises(ValueError, match="boolean"):
+        create_module._normalize_only_shard(1)
+
+    options = _candidate_create_options(query_label="candidate-9")
+    drop_calls: list[dict[str, object]] = []
+    adapter = SimpleNamespace(
+        rollback_quietly=lambda _connection: None,
+        prepare_existing_target_for_create_from_sql=lambda *_a, **kwargs: drop_calls.append(kwargs),
+    )
+    create_module._drop_attempt_target(
+        options=options,
+        target_adapter=adapter,
+        target_connection=object(),
+    )
+    assert drop_calls[0]["drop_target_if_exists"] is True
+
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda _key: (_ for _ in ()).throw(RuntimeError("cleanup unavailable")),
+    )
+    with pytest.warns(RuntimeWarning, match="Could not remove partial target"):
+        assert not create_module._cleanup_attempt_target(
+            options=options,
+            target_adapter=adapter,
+            target_connection=None,
+        )
+
+    connection = FakeDbapiConnection()
+    create_module._close_connections(
+        source_connection=connection,
+        source_key="gp",
+        source_backend="gp",
+        target_connection=connection,
+        target_key="gp",
+        target_backend="gp",
+    )
+    assert connection.close_calls == 1
+
+    create_module._close_connections(
+        source_connection=None,
+        source_key="gp",
+        source_backend="gp",
+        target_connection=None,
+        target_key="gp",
+        target_backend="gp",
+    )
+
+
+def test_create_from_sql_delegated_failure_retains_unsafe_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = SimpleNamespace(
+        validate_ch_columns_in_columns=lambda *_a, **_k: None,
+        prepare_existing_target_for_create_from_sql=lambda *_a, **_k: False,
+        build_create_from_sql_target_create_kwargs=lambda **_k: {},
+        should_insert_create_table_from_sql_directly=lambda **_k: False,
+    )
+    monkeypatch.setattr(create_module, "get_sql_connection", lambda _key: FakeDbapiConnection())
+    monkeypatch.setattr(
+        create_module,
+        "inspect_source_query_schema",
+        lambda *_a, **_k: [SimpleNamespace(name="id")],
+    )
+    monkeypatch.setattr(create_module, "map_source_schema_to_target", lambda *_a: {"id": "BIGINT"})
+    monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
+    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        create_module,
+        "transfer_table",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("transfer failed")),
+    )
+    monkeypatch.setattr(create_module, "_cleanup_attempt_target", lambda **_kwargs: False)
+    result = create_module._execute_generic_create_table_from_sql_attempt(
+        options=_candidate_create_options(),
+        target_adapter=adapter,
+        attempt=3,
+    )
+    assert isinstance(result, create_module._UnsafeAttemptFailure)
+    assert result.attempt == 3
