@@ -1,13 +1,13 @@
 {
   "overall": {
-    "combined": 94.58,
-    "statements": 95.75,
-    "branches": 91.14
+    "combined": 95.06,
+    "statements": 96.12,
+    "branches": 91.93
   },
   "prefixes": {
     "ab_utils": {
-      "combined": 97.06,
-      "branches": 95.34
+      "combined": 99.19,
+      "branches": 98.44
     },
     "sql_format": {
       "combined": 96.95,

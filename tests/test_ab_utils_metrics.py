@@ -2920,6 +2920,666 @@ def test_mde_planning_options_is_no_longer_exported() -> None:
     assert hasattr(ab_metrics, "compute_mde")
 
 
+def test_mde_public_entrypoints_require_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = pd.DataFrame({"user": [1], "dt": ["2026-01-01"]})
+    with pytest.raises(ValueError, match="At least one metric"):
+        compute_mde(
+            frame,
+            user_id="user",
+            metric_columns=[],
+            group_sizes=[2],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+    table_info = SimpleNamespace(
+        exists=True,
+        columns=["user", "dt"],
+        resolved_table="public.events",
+        table="events",
+        backend="gp",
+    )
+    monkeypatch.setattr(planning_module.sql_facade, "table_info", lambda *_args: table_info)
+    for entrypoint in (compute_mde_from_sql, compute_mde_sql_native):
+        with pytest.raises(ValueError, match="At least one metric"):
+            entrypoint(
+                "db",
+                "public.events",
+                user_id="user",
+                metric_columns=[],
+                group_sizes=[2],
+                exp_days=[1],
+                start_dt=None,
+            )
+
+
+def test_compute_mde_sql_native_rejects_missing_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        planning_module.sql_facade,
+        "table_info",
+        lambda *_args: SimpleNamespace(exists=False),
+    )
+    with pytest.raises(ValueError, match="does not exist"):
+        compute_mde_sql_native(
+            "db",
+            "public.missing",
+            metric_columns=["metric"],
+            group_sizes=[2],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+
+def test_compute_mde_sql_native_warns_once_for_each_metric_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table_info = SimpleNamespace(
+        exists=True,
+        columns=["user", "dt", "metric"],
+        resolved_table="public.events",
+        table="events",
+        backend="gp",
+    )
+    monkeypatch.setattr(planning_module.sql_facade, "table_info", lambda *_args: table_info)
+    monkeypatch.setattr(
+        planning_module,
+        "_resolve_mde_options",
+        lambda **_kwargs: {
+            "days": [1, 1],
+            "pre_exp_days": None,
+            "control_share": 0.5,
+            "planned_splits": [{"group_size": 10, "control_n": 5, "test_n": 5}],
+            "start_dt": None,
+        },
+    )
+    monkeypatch.setattr(
+        planning_module,
+        "_validate_sql_mde_source_rows",
+        lambda **_kwargs: {
+            "min_date": pd.Timestamp("2026-01-01"),
+            "max_date": pd.Timestamp("2026-01-01"),
+        },
+    )
+    monkeypatch.setattr(
+        planning_module,
+        "_load_sql_native_mde_stats",
+        lambda **_kwargs: {
+            (0, 1): {
+                "avg": 2.0,
+                "var": 1.0,
+                "cuped_pair_n": 0,
+                "cuped_pre_var": None,
+                "cuped_adjusted_var": None,
+            }
+        },
+    )
+
+    with pytest.warns(UserWarning, match="Could not compute CUPED MDE") as caught:
+        result = compute_mde_sql_native(
+            "db",
+            "public.events",
+            user_id="user",
+            metric_columns=["metric"],
+            group_sizes=[10],
+            exp_days=[1],
+            start_dt=None,
+        )
+
+    assert len(caught) == 1
+    assert result.shape[0] == 2
+    assert result["mde_abs_cuped"].isna().all()
+
+
+def test_parallel_mde_preserves_first_exception_and_cancels_all_futures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_failure = RuntimeError("first failure")
+
+    class FakeFuture:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def result(self) -> object:
+            raise first_failure
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    futures = [FakeFuture(), FakeFuture()]
+    exited: list[type[BaseException] | None] = []
+
+    class FakeExecutor:
+        def __init__(self, *, max_workers: int) -> None:
+            assert max_workers == 2
+            self.index = 0
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, exc_type: type[BaseException] | None, *_args: object) -> None:
+            exited.append(exc_type)
+
+        def submit(self, *_args: object, **_kwargs: object) -> FakeFuture:
+            future = futures[self.index]
+            self.index += 1
+            return future
+
+    def in_completion_order(mapping: dict[FakeFuture, object]) -> Any:
+        return iter(mapping)
+
+    monkeypatch.setattr(planning_module, "ThreadPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(planning_module, "as_completed", in_completion_order)
+
+    with pytest.raises(RuntimeError, match="first failure"):
+        planning_module._compute_parallel_sql_mde_rows(
+            concurrency=2,
+            user_id="user",
+            metric_definitions=[{"kind": "mean", "metric_key": "metric", "column": "metric"}],
+            days_values=[1],
+            planned_splits=[
+                {"group_size": 10, "control_n": 5, "test_n": 5},
+                {"group_size": 20, "control_n": 10, "test_n": 10},
+            ],
+            control_share=0.5,
+            windows={1: {"pre_days": 1}},
+            outcome_frames={1: pd.DataFrame()},
+            pre_frames={1: None},
+            outliers_quantile=0.99,
+            outliers_policy="truncate",
+            mde_alpha=0.05,
+            mde_power=0.8,
+        )
+
+    assert all(future.cancelled for future in futures)
+    assert exited == [RuntimeError]
+
+
+@pytest.mark.parametrize(
+    ("loaded", "error"),
+    [({"mde_native_0_1": []}, TypeError), ({"mde_native_0_1": pd.DataFrame()}, ValueError)],
+)
+def test_sql_native_mde_loader_rejects_invalid_results(
+    monkeypatch: pytest.MonkeyPatch,
+    loaded: dict[str, object],
+    error: type[Exception],
+) -> None:
+    monkeypatch.setattr(
+        planning_module.sql_facade, "parallel_sql", lambda *_args, **_kwargs: loaded
+    )
+    kwargs = {
+        "concurrency": 1,
+        "db_key": "db",
+        "backend": "gp",
+        "source": '"public"."events"',
+        "sql_where": None,
+        "user_id": "user",
+        "date_column": "dt",
+        "metric_definitions": [{"kind": "mean", "metric_key": "metric", "column": "metric"}],
+        "aggregation_policies": {"metric": "sum"},
+        "days_values": [1],
+        "windows": {
+            1: {
+                "outcome_start": pd.Timestamp("2026-01-01"),
+                "pre_start": None,
+                "pre_days": 1,
+            }
+        },
+        "outliers_quantile": 0.99,
+        "outliers_policy": "truncate",
+        "print_queries": False,
+        "retry_cnt": 0,
+        "timeout_increment": 0,
+        "query_label": None,
+    }
+    with pytest.raises(error):
+        planning_module._load_sql_native_mde_stats(**kwargs)
+
+
+def test_sql_native_mde_loader_returns_first_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    loaded = {"mde_native_0_1": pd.DataFrame({"avg": [2.0], "var": [3.0]})}
+    monkeypatch.setattr(
+        planning_module.sql_facade, "parallel_sql", lambda *_args, **_kwargs: loaded
+    )
+    result = planning_module._load_sql_native_mde_stats(
+        concurrency=1,
+        db_key="db",
+        backend="gp",
+        source='"public"."events"',
+        sql_where=None,
+        user_id="user",
+        date_column="dt",
+        metric_definitions=[{"kind": "mean", "metric_key": "metric", "column": "metric"}],
+        aggregation_policies={"metric": "sum"},
+        days_values=[1],
+        windows={
+            1: {
+                "outcome_start": pd.Timestamp("2026-01-01"),
+                "pre_start": None,
+                "pre_days": 1,
+            }
+        },
+        outliers_quantile=0.99,
+        outliers_policy="truncate",
+        print_queries=False,
+        retry_cnt=0,
+        timeout_increment=0,
+        query_label=None,
+    )
+    assert result == {(0, 1): {"avg": 2.0, "var": 3.0}}
+
+
+@pytest.mark.parametrize(
+    ("stats", "unavailable", "reason", "variance"),
+    [
+        ({}, "missing pre window", "missing pre window", math.nan),
+        ({"cuped_pair_n": 1}, None, "not enough overlapping", math.nan),
+        ({"cuped_pair_n": 2, "cuped_pre_var": 0}, None, "not positive", math.nan),
+        ({"cuped_pair_n": 2, "cuped_pre_var": math.nan}, None, "not positive", math.nan),
+        (
+            {"cuped_pair_n": 2, "cuped_pre_var": 1, "cuped_adjusted_var": math.nan},
+            None,
+            "not enough adjusted",
+            math.nan,
+        ),
+        (
+            {"cuped_pair_n": 2, "cuped_pre_var": 1, "cuped_adjusted_var": 0.25},
+            None,
+            None,
+            0.25,
+        ),
+    ],
+)
+def test_resolve_sql_native_cuped_results(
+    stats: dict[str, object], unavailable: str | None, reason: str | None, variance: float
+) -> None:
+    actual_variance, actual_reason = planning_module._resolve_sql_native_cuped_result(
+        stats=stats, unavailable_reason=unavailable
+    )
+    if math.isnan(variance):
+        assert math.isnan(actual_variance)
+    else:
+        assert actual_variance == variance
+    assert reason is None if actual_reason is None else reason in actual_reason
+
+
+def test_sql_native_query_builders_cover_no_pre_ratio_and_policies() -> None:
+    mean_metric = {"kind": "mean", "metric_key": "metric", "column": "metric"}
+    no_pre_query = planning_module._build_sql_native_mde_stats_query(
+        backend="gp",
+        source='"public"."events"',
+        sql_where="country = 'US'",
+        user_id="user",
+        date_column="dt",
+        metric_definition=mean_metric,
+        aggregation_policies={"metric": "max"},
+        outcome_start=pd.Timestamp("2026-01-01"),
+        outcome_days=7,
+        pre_start=None,
+        pre_days=7,
+        outliers_quantile=0.99,
+        outliers_policy="non_zero_truncate",
+    )
+    assert "pre_user AS" not in no_pre_query
+    assert "CAST(0 AS INTEGER) AS cuped_pair_n" in no_pre_query
+    assert 'MAX("metric")' in no_pre_query
+    assert "(country = 'US')" in no_pre_query
+    assert "value <> 0" in no_pre_query
+
+    ratio_metric = {
+        "kind": "ratio",
+        "metric_key": "ratio",
+        "ratio_spec": {"numerator": "shared", "denominator": "shared", "level": "agg"},
+    }
+    assert planning_module._sql_native_metric_columns(ratio_metric) == ["shared"]
+
+    user_ratio = {
+        "kind": "ratio",
+        "metric_key": "ratio",
+        "ratio_spec": {"numerator": "num", "denominator": "den", "level": "user"},
+    }
+    user_ctes = planning_module._build_sql_native_metric_value_ctes(
+        prefix="outcome",
+        backend="gp",
+        user_id="user",
+        metric_definition=user_ratio,
+        outliers_quantile=0.99,
+        outliers_policy="remove",
+    )
+    assert "CASE WHEN" in user_ctes[0]
+    assert "THEN NULL ELSE value END" in user_ctes[2]
+
+    ratio_metric["ratio_spec"] = {"numerator": "num", "denominator": "den", "level": "agg"}
+    agg_ctes = planning_module._build_sql_native_metric_value_ctes(
+        prefix="outcome",
+        backend="gp",
+        user_id="user",
+        metric_definition=ratio_metric,
+        outliers_quantile=0.99,
+        outliers_policy="remove",
+    )
+    assert "THEN NULL ELSE numerator END" in agg_ctes[2]
+    assert "THEN NULL ELSE denominator END" in agg_ctes[2]
+    assert "CASE WHEN SUM(denominator) > 0" in agg_ctes[3]
+
+    with pytest.raises(AssertionError, match="Unexpected MDE aggregation policy"):
+        planning_module._build_sql_native_user_window_cte(
+            cte_name="outcome_user",
+            backend="gp",
+            source='"public"."events"',
+            sql_where=None,
+            user_id="user",
+            date_column="dt",
+            columns=["metric"],
+            aggregation_policies={"metric": "median"},
+            start_date=pd.Timestamp("2026-01-01"),
+            days=1,
+        )
+
+
+def test_mde_planning_row_keeps_nan_variance_outputs_nan() -> None:
+    row = planning_module._build_mde_planning_row(
+        metric_name="metric",
+        avg=2.0,
+        variance=math.nan,
+        days=1,
+        pre_exp_days=1,
+        group_size=10,
+        control_share=0.5,
+        control_n=5,
+        test_n=5,
+        cuped_variance=math.nan,
+        mde_alpha=0.05,
+        mde_power=0.8,
+    )
+    assert math.isnan(float(row["mde_abs"]))
+    assert math.isnan(float(row["mde_abs_cuped"]))
+
+
+def _frame_cuped_kwargs() -> dict[str, object]:
+    return {
+        "user_id": "user",
+        "metric_definition": {"kind": "mean", "metric_key": "metric", "column": "metric"},
+        "outcome_user_metric_df": pd.DataFrame({"user": [1, 2], "metric": [2.0, 4.0]}),
+        "pre_user_metric_df": pd.DataFrame({"user": [1, 2], "metric": [1.0, 3.0]}),
+        "outcome_outlier_context": None,
+        "pre_days": 1,
+        "unavailable_reason": None,
+        "outliers_quantile": 0.99,
+        "outliers_policy": "truncate",
+    }
+
+
+def test_frame_cuped_reports_missing_pre_start() -> None:
+    variance, reason = planning_module._compute_mde_cuped_variance(
+        df=pd.DataFrame({"user": [1], "dt": [pd.Timestamp("2026-01-01")], "metric": [1.0]}),
+        date_column="dt",
+        user_id="user",
+        metric_definition={"kind": "mean", "metric_key": "metric", "column": "metric"},
+        outcome_user_metric_df=pd.DataFrame({"user": [1], "metric": [1.0]}),
+        outcome_outlier_context=None,
+        pre_start_date=None,
+        pre_days=1,
+        unavailable_reason=None,
+        outliers_quantile=0.99,
+        outliers_policy="truncate",
+        aggregation_policies={"metric": "sum"},
+    )
+    assert math.isnan(variance)
+    assert reason == "pre-experiment window is unavailable"
+
+
+def test_frame_cuped_reports_missing_frame_and_metric_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kwargs = _frame_cuped_kwargs()
+    kwargs["pre_user_metric_df"] = None
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert reason == "pre-experiment window is unavailable"
+
+    kwargs["pre_user_metric_df"] = pd.DataFrame({"user": [1, 2], "metric": [1.0, 3.0]})
+    monkeypatch.setattr(
+        planning_module,
+        "_build_metric_values_by_user",
+        lambda **_kwargs: (pd.DataFrame(), "bad experiment"),
+    )
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert "experiment metric values are unavailable" in str(reason)
+
+    calls = iter(
+        [
+            (pd.DataFrame({"user": [1, 2], "metric_exp": [2.0, 4.0]}), None),
+            (pd.DataFrame(), "bad pre"),
+        ]
+    )
+    monkeypatch.setattr(
+        planning_module, "_build_metric_values_by_user", lambda **_kwargs: next(calls)
+    )
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert "pre-experiment metric values are unavailable" in str(reason)
+
+
+def test_frame_cuped_overlap_prevariance_adjusted_and_valid_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kwargs = _frame_cuped_kwargs()
+    kwargs["pre_user_metric_df"] = pd.DataFrame({"user": [2, 3], "metric": [1.0, 2.0]})
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert "not enough overlapping" in str(reason)
+
+    kwargs = _frame_cuped_kwargs()
+    kwargs["pre_user_metric_df"] = pd.DataFrame({"user": [1, 2], "metric": [1.0, 1.0]})
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert "not positive" in str(reason)
+
+    kwargs = _frame_cuped_kwargs()
+    monkeypatch.setattr(planning_module, "_compute_sample_variance", lambda _values: math.nan)
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(**kwargs)
+    assert math.isnan(variance)
+    assert "not enough adjusted" in str(reason)
+    monkeypatch.undo()
+
+    variance, reason = planning_module._compute_mde_cuped_variance_from_user_frames(
+        **_frame_cuped_kwargs()
+    )
+    assert math.isfinite(variance)
+    assert reason is None
+
+
+@pytest.mark.parametrize(
+    ("frame", "ratio", "expected_nan"),
+    [
+        (pd.DataFrame({"numerator": [1.0], "denominator": [1.0]}), 1.0, True),
+        (
+            pd.DataFrame({"numerator": [1.0, 2.0], "denominator": [1.0, 2.0]}),
+            math.nan,
+            True,
+        ),
+        (
+            pd.DataFrame({"numerator": [1.0, 2.0], "denominator": [0.0, 0.0]}),
+            1.0,
+            True,
+        ),
+        (
+            pd.DataFrame({"numerator": [1.0, 3.0], "denominator": [1.0, 1.0]}),
+            2.0,
+            False,
+        ),
+    ],
+)
+def test_aggregate_ratio_unit_variance_edges(
+    frame: pd.DataFrame, ratio: float, expected_nan: bool
+) -> None:
+    variance = planning_module._compute_agg_ratio_unit_variance(frame, ratio)
+    assert math.isnan(variance) if expected_nan else variance == pytest.approx(2.0)
+
+
+def test_aggregate_ratio_unit_variance_handles_nan_centered_variance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame({"numerator": [1.0, 2.0], "denominator": [1.0, 1.0]})
+    monkeypatch.setattr(pd.Series, "var", lambda *_args, **_kwargs: math.nan)
+    assert math.isnan(planning_module._compute_agg_ratio_unit_variance(frame, 1.5))
+
+
+def test_prepare_mde_frame_rejects_nat_after_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pd, "to_datetime", lambda *_args, **_kwargs: pd.Series([pd.NaT]))
+    with pytest.raises(ValueError, match="datelike values"):
+        planning_module._prepare_mde_user_day_frame(
+            df=pd.DataFrame({"user": [1], "dt": ["2026-01-01"]}),
+            user_id="user",
+            date_column="dt",
+        )
+
+
+def test_user_aggregation_rejects_unknown_policy_before_metric_exclusion() -> None:
+    with pytest.raises(AssertionError, match="Unexpected MDE aggregation policy"):
+        planning_module._aggregate_mde_columns_to_users(
+            aggregate_frame=pd.DataFrame({"user": [1], "metric": [math.nan]}),
+            user_id="user",
+            columns=["metric"],
+            aggregation_policies={"metric": "median"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("source_rows", "message"),
+    [
+        (pd.DataFrame(), "returned no rows"),
+        (
+            pd.DataFrame(
+                {
+                    "row_count": [0],
+                    "null_user_rows": [0],
+                    "null_date_rows": [0],
+                    "min_dt": [None],
+                    "max_dt": [None],
+                }
+            ),
+            "at least one user-day",
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "row_count": [1],
+                    "null_user_rows": [1],
+                    "null_date_rows": [0],
+                    "min_dt": ["2026-01-01"],
+                    "max_dt": ["2026-01-01"],
+                }
+            ),
+            "user.*missing values",
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "row_count": [1],
+                    "null_user_rows": [0],
+                    "null_date_rows": [1],
+                    "min_dt": ["2026-01-01"],
+                    "max_dt": ["2026-01-01"],
+                }
+            ),
+            "dt.*missing values",
+        ),
+    ],
+)
+def test_sql_mde_source_validation_rejects_empty_null_and_zero_sources(
+    monkeypatch: pytest.MonkeyPatch, source_rows: pd.DataFrame, message: str
+) -> None:
+    monkeypatch.setattr(planning_module, "_read_sql_mde_query", lambda **_kwargs: source_rows)
+    with pytest.raises(ValueError, match=message):
+        planning_module._validate_sql_mde_source_rows(
+            db_key="db",
+            backend="gp",
+            source='"public"."events"',
+            sql_where=None,
+            user_id="user",
+            date_column="dt",
+            print_queries=False,
+            retry_cnt=0,
+            timeout_increment=0,
+            query_label=None,
+        )
+
+
+def test_sql_mde_window_task_deduplicates_matching_window() -> None:
+    tasks: list[dict[str, object]] = []
+    task_names = {(pd.Timestamp("2026-01-01"), 1): "existing"}
+    result = planning_module._add_sql_mde_window_load_task(
+        tasks=tasks,
+        task_names_by_window=task_names,
+        task_name="new",
+        db_key="db",
+        backend="gp",
+        source='"public"."events"',
+        sql_where=None,
+        user_id="user",
+        date_column="dt",
+        columns=["metric"],
+        aggregation_policies={"metric": "sum"},
+        start_date=pd.Timestamp("2026-01-01"),
+        days=1,
+        print_queries=False,
+        retry_cnt=0,
+        timeout_increment=0,
+        query_label=None,
+    )
+    assert result == "existing"
+    assert tasks == []
+
+
+def test_read_sql_mde_user_window_delegates_and_normalizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        planning_module,
+        "_build_sql_mde_user_window_query",
+        lambda **kwargs: captured.setdefault("builder", kwargs) and "SELECT metric",
+    )
+
+    def fake_read(**kwargs: object) -> pd.DataFrame:
+        captured["reader"] = kwargs
+        return pd.DataFrame({"user": [1], "metric": [2.0], "extra": [3.0]})
+
+    monkeypatch.setattr(planning_module, "_read_sql_mde_query", fake_read)
+    result = planning_module._read_sql_mde_user_window(
+        db_key="db",
+        backend="gp",
+        source='"public"."events"',
+        sql_where="active",
+        user_id="user",
+        date_column="dt",
+        columns=["metric"],
+        aggregation_policies={"metric": "sum"},
+        start_date=pd.Timestamp("2026-01-01"),
+        days=1,
+        print_queries=True,
+        retry_cnt=2,
+        timeout_increment=3,
+        query_label="mde",
+    )
+    assert result.to_dict("list") == {"user": [1], "metric": [2.0]}
+    assert captured["reader"] == {
+        "db_key": "db",
+        "query": "SELECT metric",
+        "print_queries": True,
+        "retry_cnt": 2,
+        "timeout_increment": 3,
+        "query_label": "mde",
+    }
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 0), (math.nan, 0), ("7", 7), (8, 8)])
+def test_coerce_sql_int_handles_nulls_and_delegates_to_int(value: object, expected: int) -> None:
+    assert planning_module._coerce_sql_int(value) == expected
+
+
 def test_compute_test_metrics_accepts_ratio_spec_dataclass() -> None:
     df = pd.DataFrame(
         {
