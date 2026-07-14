@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Raised SQL backend adapter coverage.
 - Completed SQL adapter default policy coverage.
+- Raised deterministic Excel and general helper coverage.
 
 ## 1.3.10.16 - 2026-07-13
 

@@ -10,6 +10,100 @@ from openpyxl import load_workbook
 from analytics_toolkit.excel import break_table, pivot_and_break_table
 
 
+@pytest.mark.parametrize("invalid_df", [None, "table", 42, [], [pd.DataFrame(), "table"]])
+def test_table_helpers_reject_invalid_dataframe_specs(
+    invalid_df: object,
+    tmp_path: Path,
+) -> None:
+    expected_error = ValueError if invalid_df == [] else TypeError
+
+    with pytest.raises(expected_error, match="dataframe"):
+        break_table(invalid_df, tmp_path / "invalid.xlsx")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"value": "missing"}, "missing required columns"),
+        ({"value": "value", "columns": "metric"}, "different dataframe columns"),
+        ({"value": []}, "at least one"),
+        ({"value": ["value", 1]}, "sequence of column names"),
+        ({"value": ["value", "value"]}, "duplicate columns"),
+    ],
+)
+def test_pivot_and_break_table_rejects_invalid_column_specs(
+    kwargs: dict[str, object],
+    message: str,
+    tmp_path: Path,
+) -> None:
+    df = pd.DataFrame({"metric": ["users"], "value": [1]})
+
+    with pytest.raises(ValueError, match=message):
+        pivot_and_break_table(
+            df,
+            rows="metric",
+            output=tmp_path / "invalid-columns.xlsx",
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+
+def test_pivot_and_break_table_rejects_multi_value_row_role_collisions(tmp_path: Path) -> None:
+    df = pd.DataFrame({"group": ["A"], "metric": ["existing"], "users": [1], "orders": [2]})
+
+    with pytest.raises(ValueError, match="grouping column"):
+        pivot_and_break_table(
+            df,
+            rows="group",
+            value=["users", "orders"],
+            columns="group",
+            output=tmp_path / "group-collision.xlsx",
+        )
+    with pytest.raises(ValueError, match="already exists"):
+        pivot_and_break_table(
+            df,
+            rows="metric",
+            value=["users", "orders"],
+            output=tmp_path / "existing-row.xlsx",
+        )
+
+
+def test_pivot_without_columns_rejects_conflicting_rows(tmp_path: Path) -> None:
+    df = pd.DataFrame({"metric": ["users", "users"], "value": [1, 2]})
+
+    with pytest.raises(ValueError, match="not unique"):
+        pivot_and_break_table(
+            df,
+            rows="metric",
+            value="value",
+            output=tmp_path / "conflicting-rows.xlsx",
+        )
+
+
+def test_pivot_without_columns_preserves_row_order(tmp_path: Path) -> None:
+    df = pd.DataFrame({"metric": ["orders", "users"], "value": [2, 1]})
+
+    tables = pivot_and_break_table(
+        df,
+        rows="metric",
+        value="value",
+        output=tmp_path / "no-columns.xlsx",
+    )
+
+    assert tables[None][0].to_dict(orient="records") == [
+        {"metric": "orders", "value": 2},
+        {"metric": "users", "value": 1},
+    ]
+
+
+def test_break_table_rejects_missing_and_colliding_group_columns(tmp_path: Path) -> None:
+    df = pd.DataFrame({"metric": ["users"]})
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        break_table(df, tmp_path / "missing-break.xlsx", break_by="missing")
+    with pytest.raises(ValueError, match="different dataframe columns"):
+        break_table(df, tmp_path / "colliding-break.xlsx", break_by="metric", sheet_by="metric")
+
+
 def test_pivot_and_break_table_writes_multiple_sheets_and_tables(tmp_path: Path) -> None:
     df = pd.DataFrame(
         {
@@ -735,5 +829,103 @@ def test_pivot_and_break_table_writes_decimal_values_as_numeric_excel_cells(
         assert test_cell.data_type == "n"
         assert control_cell.value == pytest.approx(72.4867078207333238)
         assert test_cell.value == pytest.approx(70.6603563524410553)
+    finally:
+        workbook.close()
+
+
+def test_enforced_order_rejects_extra_and_misaligned_break_groups(tmp_path: Path) -> None:
+    first = pd.DataFrame(
+        {"metric": ["users"], "break": ["A"], "value": [1]}
+    )
+    extra = pd.DataFrame(
+        {"metric": ["users", "users"], "break": ["A", "B"], "value": [2, 3]}
+    )
+    misaligned = pd.DataFrame(
+        {"metric": ["users"], "break": ["B"], "value": [2]}
+    )
+
+    with pytest.raises(ValueError, match="more tables"):
+        pivot_and_break_table(
+            [first, extra],
+            rows="metric",
+            value="value",
+            output=tmp_path / "extra-groups.xlsx",
+            break_by="break",
+            enforce_same_row_order=True,
+        )
+    with pytest.raises(ValueError, match="do not align"):
+        pivot_and_break_table(
+            [first, misaligned],
+            rows="metric",
+            value="value",
+            output=tmp_path / "misaligned-groups.xlsx",
+            break_by="break",
+            enforce_same_row_order=True,
+        )
+
+
+def test_break_table_places_sparse_dataframe_groups_at_stable_coordinates(tmp_path: Path) -> None:
+    first = pd.DataFrame(
+        {"metric": ["users", "orders"], "break": ["A", "B"], "value": [1, 2]}
+    )
+    second = pd.DataFrame({"metric": ["margin"], "break": ["A"], "value": [0.5]})
+
+    output = tmp_path / "sparse-groups.xlsx"
+    break_table([first, second], output, break_by="break")
+
+    workbook = load_workbook(output, read_only=False, data_only=True)
+    try:
+        sheet = workbook["Sheet1"]
+        assert sheet["A1"].value == "A"
+        assert sheet["D1"].value == "A"
+        assert sheet["A6"].value == "B"
+        assert sheet["D6"].value is None
+    finally:
+        workbook.close()
+
+
+def test_break_table_handles_disjoint_sheets_and_special_numeric_values(tmp_path: Path) -> None:
+    first = pd.DataFrame(
+        {"sheet": ["first"], "label": ["flag"], "flag": [True], "missing": [float("nan")]}
+    )
+    second = pd.DataFrame(
+        {"sheet": ["second"], "label": ["ratio"], "flag": [0.5], "missing": [None]}
+    )
+
+    output = tmp_path / "disjoint-sheets.xlsx"
+    break_table([first, second], output, sheet_by="sheet", prettify=True)
+
+    workbook = load_workbook(output, read_only=False, data_only=True)
+    try:
+        assert workbook.sheetnames == ["first", "second"]
+        assert workbook["first"]["B2"].number_format == "General"
+        assert workbook["first"]["C2"].number_format == "General"
+        assert workbook["second"]["B2"].number_format == "0.00%"
+    finally:
+        workbook.close()
+
+
+def test_sheet_names_cover_missing_empty_and_multiple_deduplications(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        {
+            "sheet": [None, "''", "X" * 40, "X" * 39 + "A", "X" * 39 + "B"],
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    output = tmp_path / "edge-sheet-names.xlsx"
+    break_table(df, output, sheet_by="sheet")
+
+    workbook = load_workbook(output, read_only=True, data_only=True)
+    try:
+        expected_names = [
+            "sheet_NA",
+            "sheet_value",
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXX (2)",
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXX (3)",
+        ]
+        assert set(workbook.sheetnames) == set(expected_names)
+        assert [name for name in workbook.sheetnames if name.startswith("X")] == expected_names[2:]
     finally:
         workbook.close()

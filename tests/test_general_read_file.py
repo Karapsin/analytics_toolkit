@@ -9,7 +9,10 @@ import pytest
 import analytics_toolkit.general as general
 from analytics_toolkit.general import from_here, here, read_file_here, write_file
 from analytics_toolkit.general.read_file import read_file
+from analytics_toolkit.general.read_file import _find_unique_recursive_match
+from analytics_toolkit.general.read_file import _looks_like_stdlib_path
 from analytics_toolkit.general.read_file import _resolve_base_dir
+from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 
 FrameInfo = namedtuple("FrameInfo", ["filename"])
@@ -81,6 +84,21 @@ def test_resolve_base_dir_uses_first_real_caller_file(monkeypatch) -> None:
     resolved = _resolve_base_dir()
 
     assert resolved == Path("/Users/test/project/tickets/april_2026/MAL-3657")
+
+
+def test_resolve_base_dir_skips_pseudo_and_stdlib_frames(monkeypatch) -> None:
+    monkeypatch.delattr(__main__, "__file__", raising=False)
+    _mock_stack(
+        monkeypatch,
+        [
+            FrameInfo(filename="/project/analytics_toolkit/general/read_file.py"),
+            FrameInfo(filename="<frozen runpy>"),
+            FrameInfo(filename="/opt/python/lib/python3.14/asyncio/events.py"),
+            FrameInfo(filename="/project/jobs/report.py"),
+        ],
+    )
+
+    assert _resolve_base_dir() == Path("/project/jobs")
 
 
 def test_here_uses_first_real_caller_after_ide_runtime_frames(
@@ -199,6 +217,35 @@ def test_here_keeps_unique_basename_recursive_lookup_for_compatibility(
     resolved = here("query.sql")
 
     assert resolved == str(expected)
+
+
+def test_unique_basename_fallback_returns_the_only_recursive_match() -> None:
+    expected = Path("/project/nested/query.sql")
+
+    class FakeCwd:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def rglob(self, pattern: str):
+            self.calls += 1
+            assert pattern == "query.sql"
+            return [] if self.calls == 1 else [expected]
+
+    assert _find_unique_recursive_match(FakeCwd(), Path("query.sql")) == expected  # type: ignore[arg-type]
+
+
+def test_stdlib_shape_detection_rejects_nonstdlib_python_modules() -> None:
+    assert _looks_like_stdlib_path(Path("/opt/lib/python3.14/asyncio/events.py"))
+    assert not _looks_like_stdlib_path(Path("/opt/lib/python3.14/vendor/events.py"))
+
+
+def test_here_does_not_recursively_match_an_absolute_path(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delattr(__main__, "__file__", raising=False)
+    _mock_stack(monkeypatch, RUNTIME_STACK)
+    absolute = tmp_path.parent / "not-present" / "query.sql"
+
+    assert here(str(absolute)) == str(absolute)
 
 
 def test_from_here_zero_matches_here_with_base_dir(
@@ -332,6 +379,13 @@ def test_read_file_here_preserves_params(
     monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
 
     assert read_file_here("sql/query.sql", {"value": 42}) == "select 42"
+
+
+def test_read_file_rejects_nonexistent_path(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.sql"
+
+    with pytest.raises(InvalidSqlInputError, match="does not exist"):
+        read_file(str(missing))
 
 
 def test_write_file_writes_utf8_text(tmp_path: Path) -> None:
