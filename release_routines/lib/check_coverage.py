@@ -3,6 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import stat
+import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, NoReturn, Sequence
@@ -236,11 +240,41 @@ def ratchet_targets(
             if measured_floor <= current:
                 continue
             target_payload[metric] = measured_floor
-            changes.append(f"{label} {metric}: {current:.2f}% -> {measured_floor:.2f}%")
+            covered, total = counts.opportunities(metric)
+            changes.append(
+                f"{label} {metric}: {current:.2f}% -> {measured_floor:.2f}% "
+                f"covered={covered}/{total} missing={total - covered} prefix={label}"
+            )
 
     if changes:
-        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        _write_targets_atomically(path, payload)
     return changes
+
+
+def _write_targets_atomically(path: Path, payload: Any) -> None:
+    """Replace a target file atomically with deterministic JSON formatting."""
+    temporary_path: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temporary_path = Path(temporary_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), stat.S_IMODE(path.stat().st_mode))
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary_path.replace(path)
+        temporary_path = None
+    except OSError as exc:
+        _fail(f"Cannot update coverage targets {path}: {exc}", cause=exc)
+    finally:
+        if temporary_path is not None:
+            with suppress(FileNotFoundError):
+                temporary_path.unlink()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -251,10 +285,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path("release_routines/coverage_targets.json"),
         type=Path,
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--update-targets",
         action="store_true",
         help="raise existing floors to measured values rounded down to two decimals",
+    )
+    mode.add_argument(
+        "--check-only",
+        action="store_true",
+        help="validate configured floors without changing the target file",
     )
     args = parser.parse_args(argv)
     try:
