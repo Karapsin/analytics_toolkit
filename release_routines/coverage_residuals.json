@@ -1,0 +1,285 @@
+{
+  "acceptance": {
+    "all_production_files_at_least_90_combined": true,
+    "files_below_90_combined": [],
+    "minimum_file": {
+      "combined_percent": 90.48,
+      "path": "analytics_toolkit/sql/backends/ch/operations.py"
+    },
+    "new_coverage_exclusions": 0,
+    "required_thresholds": {
+      "branches": 97.0,
+      "combined": 98.0,
+      "statements": 98.5
+    }
+  },
+  "audit_date": "2026-07-14",
+  "categories": {
+    "dead_private_code": 2,
+    "failure_injection": 4,
+    "justified_exclusion": 0,
+    "platform_or_dependency_specific": 1,
+    "reachable_behavior": 4
+  },
+  "conclusion": {
+    "meaningful_assurance_from_98_to_current": true,
+    "meaningful_assurance_from_current_to_100": "marginal",
+    "recommendation": "Keep the 99.85% deterministic floors and address reachable residuals when their owning behavior next changes. Parser invariants and exotic compatibility failures do not justify synthetic tests or exclusions solely to display 100%.",
+    "reviewer_decision": "accept_residuals_and_stop_feature_work"
+  },
+  "dead_code_removed_during_audit": [
+    {
+      "contract_test": "tests/test_coverage_backend_insert_schema.py::test_literal",
+      "file": "analytics_toolkit/sql/backends/trino/insert.py",
+      "reason": "The inner pandas Timestamp NaT check was dominated by _is_null_like().",
+      "removed_lines": [
+        "former 167->168 NaT branch"
+      ]
+    },
+    {
+      "contract_test": "tests/test_sql_transfer_row_batches.py::test_resolve_target_adaptation_mode_rejects_non_boolean",
+      "file": "analytics_toolkit/sql/dml/transfer/flow/api.py",
+      "reason": "build_transfer_options receives target_rows_per_second only after resolve_target_adaptation_mode has validated and returned a bool.",
+      "removed_lines": [
+        "former 540->541 duplicate boolean guard"
+      ]
+    }
+  ],
+  "metrics": {
+    "overall": {
+      "branches": "5253/5266 (99.75313%)",
+      "combined": "20859/20889 (99.85638%)",
+      "statements": "15606/15623 (99.89119%)"
+    },
+    "subsystems": {
+      "ab_utils": "4670/4670 combined (100%)",
+      "sql": "13547/13577 combined (99.77904%)",
+      "sql_backends": "5464/5489 combined (99.54454%)",
+      "sql_execution": "502/502 combined (100%)",
+      "sql_format": "1265/1265 combined (100%)",
+      "sql_load": "760/760 combined (100%)",
+      "sql_transfer": "2681/2686 combined (99.81385%)"
+    }
+  },
+  "records": [
+    {
+      "category": "dead_private_code",
+      "concrete_test_strategy": "Construct a malformed sqlglot CTE node with an empty alias and call _extract_query_cte_names directly.",
+      "file": "analytics_toolkit/sql/backends/ch/create_table_as.py",
+      "locations": {
+        "arcs": [
+          "495->496"
+        ],
+        "lines": [
+          496
+        ]
+      },
+      "maintenance_cost": "Medium: the test would depend on malformed third-party AST internals.",
+      "owning_subsystem": "sql/backends/clickhouse/ctas",
+      "public_behavior_at_risk": "None for valid SQL; this guard only skips an invalid parser node.",
+      "recommended_action": "Retain the defensive guard without an exclusion.",
+      "reviewer_decision": "retain_defensive_path",
+      "why_it_remains": "Successfully parsed ClickHouse CTEs always expose a non-empty alias. A blank alias requires a deliberately malformed AST."
+    },
+    {
+      "category": "dead_private_code",
+      "concrete_test_strategy": "Monkeypatch the compiled missing-table expression with a fake match whose table capture consists only of quotes.",
+      "file": "analytics_toolkit/sql/backends/ch/create_table_as.py",
+      "locations": {
+        "arcs": [
+          "513->509"
+        ],
+        "lines": []
+      },
+      "maintenance_cost": "Medium: the test would bypass the real regular-expression contract.",
+      "owning_subsystem": "sql/backends/clickhouse/ctas",
+      "public_behavior_at_risk": "None with real ClickHouse error text; the regex requires a non-empty identifier token.",
+      "recommended_action": "Retain the normalization guard for parser resilience without an exclusion.",
+      "reviewer_decision": "retain_defensive_path",
+      "why_it_remains": "The real regex cannot produce an empty normalized relation name."
+    },
+    {
+      "category": "platform_or_dependency_specific",
+      "concrete_test_strategy": "Use an exotic Exception implementation that has no add_note method and rejects assignment to __notes__.",
+      "file": "analytics_toolkit/sql/backends/ch/create_table_as.py",
+      "locations": {
+        "arcs": [],
+        "lines": [
+          542,
+          543
+        ]
+      },
+      "maintenance_cost": "Medium: a synthetic exception type would test Python object-model behavior rather than SQL behavior.",
+      "owning_subsystem": "sql/backends/clickhouse/ctas",
+      "public_behavior_at_risk": "Only an optional diagnostic note can be lost; the original database exception remains intact.",
+      "recommended_action": "Retain the compatibility fallback and test only if a supported dependency exposes such an exception.",
+      "reviewer_decision": "defer_dependency_specific_test",
+      "why_it_remains": "Normal Python and connector exceptions support add_note or writable __notes__."
+    },
+    {
+      "category": "reachable_behavior",
+      "concrete_test_strategy": "Monkeypatch analytics_toolkit.sql.dml.io.read_sql.read_sql, call postprocess_show_tables without read_sql, and assert the enriched frame and delegated key.",
+      "file": "analytics_toolkit/sql/backends/ch/operations.py",
+      "locations": {
+        "arcs": [
+          "49->50"
+        ],
+        "lines": [
+          50
+        ]
+      },
+      "maintenance_cost": "Low.",
+      "owning_subsystem": "sql/backends/clickhouse/metadata",
+      "public_behavior_at_risk": "Default distributed-table statistics enrichment could regress while injected-reader behavior remains covered.",
+      "recommended_action": "Add the delegation test when ClickHouse metadata behavior next changes.",
+      "reviewer_decision": "defer_after_final_gate",
+      "why_it_remains": "Current tests inject read_sql and cover enrichment results, but not the lazy default import."
+    },
+    {
+      "category": "reachable_behavior",
+      "concrete_test_strategy": "Call build_drop_tables_sqls for shard-only and neither-table modes; assert exact shard SQL and the validation error.",
+      "file": "analytics_toolkit/sql/backends/ch/operations.py",
+      "locations": {
+        "arcs": [
+          "159->166",
+          "166->167",
+          "166->173"
+        ],
+        "lines": [
+          166,
+          167,
+          173
+        ]
+      },
+      "maintenance_cost": "Low.",
+      "owning_subsystem": "sql/backends/clickhouse/lifecycle",
+      "public_behavior_at_risk": "ClickHouse shard-only drop routing and rejection of an empty drop request.",
+      "recommended_action": "Add focused option-matrix cases during the next lifecycle change.",
+      "reviewer_decision": "defer_after_final_gate",
+      "why_it_remains": "The distributed-only, paired-table, and default-shard validation paths are covered; these two option combinations were not needed for the final contracts."
+    },
+    {
+      "category": "reachable_behavior",
+      "concrete_test_strategy": "Monkeypatch both wait helpers and assert local versus cluster delegation, table name, connection, and cluster.",
+      "file": "analytics_toolkit/sql/backends/ch/operations.py",
+      "locations": {
+        "arcs": [
+          "440->441",
+          "440->443"
+        ],
+        "lines": [
+          434,
+          435,
+          440,
+          441,
+          442,
+          443
+        ]
+      },
+      "maintenance_cost": "Low.",
+      "owning_subsystem": "sql/backends/clickhouse/lifecycle",
+      "public_behavior_at_risk": "Adapter-level local/cluster absence waiting could delegate incorrectly, although both underlying wait implementations are fully covered.",
+      "recommended_action": "Add a thin delegation contract when the adapter wrapper next changes.",
+      "reviewer_decision": "defer_after_final_gate",
+      "why_it_remains": "Underlying local, eventual, cluster, and timeout waits are covered; only this thin wrapper remains."
+    },
+    {
+      "category": "failure_injection",
+      "concrete_test_strategy": "Monkeypatch sqlglot.parse_one to raise and assert _is_default_ch_shard_table_name returns False.",
+      "file": "analytics_toolkit/sql/backends/ch/operations.py",
+      "locations": {
+        "arcs": [],
+        "lines": [
+          482,
+          483
+        ]
+      },
+      "maintenance_cost": "Low, but highly implementation-coupled.",
+      "owning_subsystem": "sql/backends/clickhouse/lifecycle",
+      "public_behavior_at_risk": "Malformed identifiers must fall back to non-shard routing instead of masking the original validation flow.",
+      "recommended_action": "Retain the parser safety net; add injection only during parser upgrades.",
+      "reviewer_decision": "defer_failure_injection",
+      "why_it_remains": "Malformed real inputs currently parse to a non-Table AST rather than raising; that fallback is already covered."
+    },
+    {
+      "category": "reachable_behavior",
+      "concrete_test_strategy": "Call build_upsert_stage_placeholder_sqls with valid partition/final-stage inputs and assert both null-safe preserved-row and incoming-row SQL statements.",
+      "file": "analytics_toolkit/sql/backends/trino/adapter.py",
+      "locations": {
+        "arcs": [
+          "338->344"
+        ],
+        "lines": [
+          344
+        ]
+      },
+      "maintenance_cost": "Low.",
+      "owning_subsystem": "sql/backends/trino/upsert",
+      "public_behavior_at_risk": "The adapter placeholder plan could drift from the covered concrete upsert builders.",
+      "recommended_action": "Add a valid placeholder-plan assertion when Trino upsert SQL next changes.",
+      "reviewer_decision": "defer_after_final_gate",
+      "why_it_remains": "Required-argument validation and underlying preserved/incoming SQL builders are covered; only the successful wrapper return is residual."
+    },
+    {
+      "category": "failure_injection",
+      "concrete_test_strategy": "Capture the nested callback from insert_rows_batch, then invoke it after constructing an attempt with no Greenplum insert page sizer.",
+      "file": "analytics_toolkit/sql/dml/transfer/flow/attempt.py",
+      "locations": {
+        "arcs": [
+          "675->676"
+        ],
+        "lines": [
+          676
+        ]
+      },
+      "maintenance_cost": "Medium: it requires invoking a callback that normal orchestration deliberately does not pass.",
+      "owning_subsystem": "sql/dml/transfer/runtime",
+      "public_behavior_at_risk": "None in current orchestration; the no-op protects future callback wiring changes.",
+      "recommended_action": "Retain the defensive no-op without an exclusion.",
+      "reviewer_decision": "retain_defensive_path",
+      "why_it_remains": "The callback is passed only when gp_insert_chunk_sizer is non-null, so the null branch is unreachable through normal flow."
+    },
+    {
+      "category": "failure_injection",
+      "concrete_test_strategy": "Inject a stage cleanup error with no remote cleanup error, once without and once with a target cleanup error; assert original traceback precedence and logging.",
+      "file": "analytics_toolkit/sql/dml/transfer/flow/finalize.py",
+      "locations": {
+        "arcs": [
+          "267->274",
+          "274->281"
+        ],
+        "lines": []
+      },
+      "maintenance_cost": "Medium: setup requires three independent cleanup failure channels.",
+      "owning_subsystem": "sql/dml/transfer/cleanup",
+      "public_behavior_at_risk": "Stage cleanup errors must retain precedence while secondary target errors are logged.",
+      "recommended_action": "Add the two remaining cleanup combinations if cleanup precedence is modified.",
+      "reviewer_decision": "defer_failure_injection",
+      "why_it_remains": "The higher-risk multi-error combinations and each individual cleanup failure are covered; these exact combinations are residual."
+    },
+    {
+      "category": "failure_injection",
+      "concrete_test_strategy": "Call _stage_tables_to_cleanup with both stage_tables and stage_table unset and a final upsert table present; assert only the final table is returned.",
+      "file": "analytics_toolkit/sql/dml/transfer/flow/finalize.py",
+      "locations": {
+        "arcs": [
+          "299->301"
+        ],
+        "lines": []
+      },
+      "maintenance_cost": "Low.",
+      "owning_subsystem": "sql/dml/transfer/cleanup",
+      "public_behavior_at_risk": "Cleanup enumeration for a partially initialized upsert stage.",
+      "recommended_action": "Add the small state-shape test during the next staging lifecycle change.",
+      "reviewer_decision": "defer_after_final_gate",
+      "why_it_remains": "Normal transfer initialization sets a primary stage name before a final upsert stage exists."
+    }
+  ],
+  "report": {
+    "branch_residuals": 13,
+    "combined_residuals": 30,
+    "source": "coverage.json",
+    "statement_residuals": 17
+  },
+  "schema_version": 1
+}

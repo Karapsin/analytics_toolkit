@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Completed deterministic SQL load and table lifecycle coverage.
 - Expanded deterministic SQL transfer coverage.
 - Completed deterministic SQL execution and orchestration coverage.
+- Completed the reviewed residual coverage ledger and removed dominated guards.
 
 ## 1.3.10.17 - 2026-07-14
 

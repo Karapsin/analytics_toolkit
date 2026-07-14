@@ -537,8 +537,6 @@ def build_transfer_options(
             "Trino write_mode='upsert' requires "
             "upsert_partition_drop_sql_template in the target connection config."
         )
-    if not isinstance(options.target_rows_per_second, bool):
-        raise ValueError("target_rows_per_second must be a boolean.")
     _validate_progress(options.progress)
     _validate_estimate_total_rows(options.estimate_total_rows)
     _validate_row_count_options(options.validate_row_count, options.ch_count_limit_read)

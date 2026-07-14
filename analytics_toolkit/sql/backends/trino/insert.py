@@ -164,8 +164,6 @@ def literal(value: Any, target_type: str | None) -> str:
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, pd.Timestamp):
-        if pd.isna(value):
-            return "NULL"
         timestamp_value = value.to_pydatetime()
         if normalized_target_type == "date":
             return f"DATE '{timestamp_value.strftime('%Y-%m-%d')}'"
