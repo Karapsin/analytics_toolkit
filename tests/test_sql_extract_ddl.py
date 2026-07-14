@@ -9,6 +9,7 @@ from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 
 extract_ddl_module = importlib.import_module("analytics_toolkit.sql.ddl.extract_ddl")
+ddl_builders_module = importlib.import_module("analytics_toolkit.sql.ddl.builders")
 gp_ddl_module = importlib.import_module("analytics_toolkit.sql.backends.gp.ddl")
 ddl_module = importlib.import_module("analytics_toolkit.sql.ddl")
 sql_module = importlib.import_module("analytics_toolkit.sql")
@@ -48,9 +49,7 @@ def test_extract_ddl_clickhouse_single_table_returns_semicolon(
     calls = _capture_read_sql(
         monkeypatch,
         {
-            "SHOW CREATE TABLE analytics.events": (
-                "CREATE TABLE analytics.events (id UInt64)"
-            ),
+            "SHOW CREATE TABLE analytics.events": ("CREATE TABLE analytics.events (id UInt64)"),
         },
     )
 
@@ -80,10 +79,7 @@ def test_extract_ddl_preserves_table_order_and_normalizes_semicolons(
         ("ch", "SHOW CREATE TABLE mart.orders"),
         ("ch", "SHOW CREATE TABLE mart.users"),
     ]
-    assert result == (
-        "CREATE TABLE mart.orders (id UInt64);\n"
-        "CREATE TABLE mart.users (id UInt64);"
-    )
+    assert result == ("CREATE TABLE mart.orders (id UInt64);\nCREATE TABLE mart.users (id UInt64);")
 
 
 def test_extract_ddl_trino_resolves_unqualified_table_name(
@@ -141,9 +137,7 @@ def test_extract_ddl_greenplum_uses_pg_get_tabledef(
     assert calls == [
         (
             "gp",
-            "SELECT "
-            "pg_catalog.pg_get_tabledef(pg_catalog.to_regclass('mart.orders')::oid) "
-            "AS ddl",
+            "SELECT pg_catalog.pg_get_tabledef(pg_catalog.to_regclass('mart.orders')::oid) AS ddl",
         )
     ]
     assert result == "CREATE TABLE mart.orders (id bigint);"
@@ -159,7 +153,7 @@ def test_extract_ddl_greenplum_escapes_table_name_literal(
                 "SELECT "
                 "pg_catalog.pg_get_tabledef(pg_catalog.to_regclass('mart.o''rders')::oid) "
                 "AS ddl"
-            ): "CREATE TABLE mart.\"o'rders\" (id bigint)",
+            ): 'CREATE TABLE mart."o\'rders" (id bigint)',
         },
     )
 
@@ -173,7 +167,7 @@ def test_extract_ddl_greenplum_escapes_table_name_literal(
             "AS ddl",
         )
     ]
-    assert result == "CREATE TABLE mart.\"o'rders\" (id bigint);"
+    assert result == 'CREATE TABLE mart."o\'rders" (id bigint);'
 
 
 def test_extract_ddl_greenplum_falls_back_to_catalog_ddl(
@@ -216,8 +210,7 @@ def test_extract_ddl_greenplum_falls_back_to_catalog_ddl(
                 {
                     "index_name": ["orders_payload_idx"],
                     "index_def": [
-                        "CREATE INDEX orders_payload_idx "
-                        "ON mart.orders USING btree (payload)",
+                        "CREATE INDEX orders_payload_idx ON mart.orders USING btree (payload)",
                     ],
                 },
             )
@@ -246,7 +239,7 @@ def test_extract_ddl_greenplum_falls_back_to_catalog_ddl(
     assert [connection_key for connection_key, _ in calls] == ["gp"] * len(calls)
     assert result == (
         'CREATE TABLE "mart"."orders" (\n'
-        '    "id" bigint DEFAULT nextval(\'orders_id_seq\'::regclass) NOT NULL,\n'
+        "    \"id\" bigint DEFAULT nextval('orders_id_seq'::regclass) NOT NULL,\n"
         '    "payload" text,\n'
         '    CONSTRAINT "orders_pkey" PRIMARY KEY (id)\n'
         ")\n"
@@ -332,10 +325,7 @@ def test_extract_ddl_greenplum_formats_distribution_policies(
     )
     policy = pd.DataFrame({"policy_type": [policy_type], "attrnums": [attrnums]})
 
-    assert (
-        gp_ddl_module.format_gp_distribution_clause(policy, columns)
-        == expected
-    )
+    assert gp_ddl_module.format_gp_distribution_clause(policy, columns) == expected
 
 
 @pytest.mark.parametrize(
@@ -375,6 +365,36 @@ def test_extract_ddl_raises_when_backend_returns_no_ddl(
 
     with pytest.raises(ValueError, match="No DDL returned for table mart.orders"):
         extract_ddl_module.extract_ddl("ch", "mart.orders")
+
+
+def test_normalize_ddl_rejects_blank_backend_result() -> None:
+    with pytest.raises(ValueError, match="No DDL returned"):
+        extract_ddl_module._normalize_ddl(" ; \n", "mart.orders")
+
+
+def test_backend_ddl_builder_preserves_unsupported_backend_cause() -> None:
+    with pytest.raises(
+        ddl_builders_module.UnsupportedConnectionTypeError,
+        match=ddl_builders_module.UNSUPPORTED_BACKEND_MESSAGE,
+    ) as caught:
+        ddl_builders_module._build_backend_create_table_sqls(
+            backend="unknown",
+            table_name="mart.orders",
+            joined_columns="id Int64",
+            gp_distributed_by_key=None,
+            partition_by=None,
+            order_by=None,
+            ch_engine="MergeTree",
+            ch_cluster="cluster",
+            ch_sharding_key="rand()",
+            ch_distributed_table=False,
+            ch_only_shard=False,
+            ch_replace_table=False,
+        )
+    assert isinstance(
+        caught.value.__cause__,
+        ddl_builders_module.UnsupportedConnectionTypeError,
+    )
 
 
 def _fail_read_sql(_connection_type: str, _query: str) -> pd.DataFrame:

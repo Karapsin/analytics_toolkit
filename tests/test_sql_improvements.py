@@ -21,22 +21,12 @@ config_module = importlib.import_module("analytics_toolkit.sql.connection.config
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
-execute_read_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.io.execute_read"
-)
-transfer_api_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.api"
-)
-models_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.runtime.models"
-)
+execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
+transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
+models_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.models")
 backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends")
-ddl_create_table_module = importlib.import_module(
-    "analytics_toolkit.sql.ddl.api"
-)
-ch_ctas_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.ch_create_table_as"
-)
+ddl_create_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
+ch_ctas_module = importlib.import_module("analytics_toolkit.sql.dml.table.ch_create_table_as")
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.execution.operation_runner"
 )
@@ -121,16 +111,22 @@ class InspectableClickHouseClient:
 def test_backend_support_matrix_includes_write_modes() -> None:
     rows = capabilities_module.support_matrix_rows()
 
-    assert {row["backend"] for row in rows} == set(
-        backend_registry_module.get_backend_names()
-    )
+    assert {row["backend"] for row in rows} == set(backend_registry_module.get_backend_names())
     for row in rows:
         assert "truncate_insert" in row["write_modes"]
         assert "upsert" in row["write_modes"]
-        assert capabilities_module.validate_write_mode(
-            row["backend"],
-            "upsert",
-        ) == "upsert"
+        assert (
+            capabilities_module.validate_write_mode(
+                row["backend"],
+                "upsert",
+            )
+            == "upsert"
+        )
+
+
+def test_capability_directory_lists_lazy_exports() -> None:
+    assert "BackendCapability" in capabilities_module.__dir__()
+    assert "WriteMode" in dir(capabilities_module)
 
 
 def test_table_identifier_preserves_qualified_parts_and_quotes() -> None:
@@ -241,6 +237,108 @@ def test_tracked_sql_operation_logs_finished_preview(capsys) -> None:
     assert "Finished SQL statement:\nselect * from source_table" in output
 
 
+def test_operation_runner_remaining_metadata_and_timing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def plain() -> str:
+        return "ok"
+
+    decorated = operation_runner_module.timed_public_sql_function(plain)
+    assert operation_runner_module.timed_public_sql_function(decorated) is decorated
+    assert decorated() == "ok"
+
+    metadata = plans_module.SqlOperationMetadata()
+    assert (
+        operation_runner_module.merge_operation_metadata(
+            metadata,
+            elapsed_seconds=1.5,
+            retry_attempts=2,
+            read_rows=3,
+            statement_count=4,
+            operation_status="success",
+            query_label="daily",
+        )
+        is metadata
+    )
+    assert isinstance(metadata.as_dict(), dict)
+    assert (
+        metadata.elapsed_seconds,
+        metadata.retry_attempts,
+        metadata.read_rows,
+        metadata.statement_count,
+        metadata.operation_status,
+        metadata.query_label,
+    ) == (1.5, 2, 3, 4, "success", "daily")
+    assert operation_runner_module.merge_operation_metadata(metadata) is metadata
+
+    monkeypatch.setattr(
+        operation_runner_module.time,
+        "perf_counter",
+        iter([0.0, 0.9996]).__next__,
+    )
+    with operation_runner_module.tracked_sql_operation(
+        metadata=metadata,
+        operation_name="failure",
+        alias=None,
+        backend=None,
+        phase="test",
+        preview_sql=" \n\t",
+    ):
+        pass
+    assert metadata.operation_status == "success"
+    assert "Finished SQL statement" not in capsys.readouterr().out
+    assert operation_runner_module._format_duration(0.9996) == "1 second"
+
+
+def test_tracked_operation_failure_and_operation_runner_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = plans_module.SqlOperationMetadata()
+    error = RuntimeError("broken")
+    with pytest.raises(RuntimeError, match="broken"):  # noqa: SIM117 -- py3.8
+        with operation_runner_module.tracked_sql_operation(
+            metadata=metadata,
+            operation_name="failure",
+            alias="gp",
+            backend="gp",
+            phase="test",
+        ):
+            raise error
+    assert metadata.operation_status == "failed"
+
+    annotated: list[tuple[BaseException, object]] = []
+    monkeypatch.setattr(
+        operation_runner_module,
+        "annotate_sql_exception",
+        lambda exc, context: annotated.append((exc, context)),
+    )
+    error = RuntimeError("once")
+    with pytest.raises(RuntimeError) as caught:
+        operation_runner_module.run_annotated_once(
+            operation=lambda: (_ for _ in ()).throw(error),
+            context=object(),
+        )
+    assert caught.value is error
+    assert annotated[0][0] is error
+    assert (
+        operation_runner_module.run_annotated_once(
+            operation=lambda: "ok",
+            context=object(),
+        )
+        == "ok"
+    )
+
+    rollbacks: list[object] = []
+    monkeypatch.setattr(
+        "analytics_toolkit.sql.dml.transfer.runtime.retry.rollback_quietly",
+        rollbacks.append,
+    )
+    connection = object()
+    operation_runner_module._rollback_quietly(connection)
+    assert rollbacks == [connection]
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected"),
     [
@@ -281,10 +379,7 @@ def test_tracked_sql_operation_logs_human_readable_elapsed(
         pass
 
     output = capsys.readouterr().out
-    assert (
-        "[unit_operation] [gp/gp] [phase] "
-        "Finished SQL in 1 minute 30 seconds"
-    ) in output
+    assert ("[unit_operation] [gp/gp] [phase] Finished SQL in 1 minute 30 seconds") in output
 
 
 def test_tracked_sql_operation_tags_inner_time_print(capsys) -> None:
@@ -311,10 +406,7 @@ def test_run_timed_query_inherits_sql_operation_tags(capsys) -> None:
 
     output = capsys.readouterr().out
     assert result == "ok"
-    assert (
-        "[timed_query] [gp/gp] [read] "
-        "Finished SQL query in "
-    ) in output
+    assert ("[timed_query] [gp/gp] [read] Finished SQL query in ") in output
 
 
 def test_run_timed_query_logs_human_readable_elapsed(
@@ -542,6 +634,25 @@ def test_table_info_clickhouse_includes_shard_table(monkeypatch) -> None:
     assert client.close_calls == 1
 
 
+def test_table_info_validates_boolean_and_blank_table_name() -> None:
+    with pytest.raises(ValueError, match="include_row_count"):
+        table_info_module.table_info("gp", "events", include_row_count=1)
+    with pytest.raises(table_info_module.InvalidSqlInputError, match="Table name"):
+        table_info_module.table_info("gp", "  ")
+
+    info = table_info_module.SqlTableInfo(
+        connection_key="gp",
+        backend="gp",
+        table="events",
+        exists=False,
+        columns={},
+        row_count=None,
+        resolved_table=None,
+        shard_table=None,
+    )
+    assert info.to_frame().loc[0, "column_name"] is None
+
+
 def test_format_plan_returns_stable_multistatement_text() -> None:
     plan = plans_module.SqlPlan(
         operation="copy",
@@ -565,8 +676,7 @@ def test_format_plan_returns_stable_multistatement_text() -> None:
         source_table="sandbox.source",
     )
     plan.add(
-        "insert into sandbox.target select * from sandbox.stage "
-        "where long_column = 'abcdef'",
+        "insert into sandbox.target select * from sandbox.stage where long_column = 'abcdef'",
         alias="trino",
         backend="trino",
         phase="insert_target",
@@ -616,6 +726,27 @@ def test_format_plan_rejects_invalid_max_sql_chars() -> None:
         )
 
 
+def test_plan_empty_properties_mapping_and_short_preview_paths() -> None:
+    plan = plans_module.SqlPlan(operation="noop")
+    text = plans_module.format_plan(plan)
+    assert "Options: <none>" in text
+    assert "Statements:\n  <none>" in text
+    assert plans_module._format_mapping({}) == "<none>"
+    assert plans_module._short_sql_preview("select 123", 3) == "sel"
+
+    result = plans_module.SqlOperationResult(
+        rows=0,
+        metadata=plans_module.SqlOperationMetadata(
+            inserted_rows=2,
+            affected_rows=3,
+        ),
+    )
+    assert result.inserted_rows == 2
+    assert result.affected_rows == 3
+    with pytest.raises(TypeError, match="SqlPlan"):
+        plans_module.format_plan(object())  # type: ignore[arg-type]
+
+
 def test_airflow_query_label_builds_deterministic_label() -> None:
     label = labels_module.airflow_query_label(
         dag_id="daily-dag",
@@ -658,8 +789,7 @@ def test_airflow_query_label_explicit_fields_override_context() -> None:
     )
 
     assert label == (
-        "airflow dag=context_dag task=explicit_task "
-        "run=context_run try=1 op=step_drop_/"
+        "airflow dag=context_dag task=explicit_task run=context_run try=1 op=step_drop_/"
     )
 
 
@@ -682,6 +812,14 @@ def test_airflow_query_label_is_sanitized_and_length_limited() -> None:
 def test_airflow_query_label_validates_context_type() -> None:
     with pytest.raises(TypeError, match="context"):
         labels_module.airflow_query_label(["not", "a", "mapping"])  # type: ignore[arg-type]
+
+
+def test_query_labels_handle_blank_values_and_missing_context_fields() -> None:
+    assert labels_module.normalize_query_label(" \t") is None
+    assert labels_module.airflow_query_label() is None
+    assert labels_module.airflow_query_label(operation="  ") is None
+    assert labels_module.airflow_query_label({"dag_id": "direct"}) == ("airflow dag=direct")
+    assert labels_module.airflow_query_label({"task": object()}) is None
 
 
 def test_load_df_dry_run_returns_ordered_labeled_plan() -> None:
@@ -749,13 +887,11 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
     assert any("DELETE FROM sandbox.scores AS target_dst" in sql for sql in gp_plan.sqls)
     assert any("USING sandbox.scores__stage__dry_run AS stage_src" in sql for sql in gp_plan.sqls)
     assert any(
-        'target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL' in sql
-        for sql in gp_plan.sqls
+        'target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL' in sql for sql in gp_plan.sqls
     )
     assert any(
         'INSERT INTO sandbox.scores ("id", "sub_id", "score") '
-        'SELECT "id", "sub_id", "score" FROM'
-        in sql
+        'SELECT "id", "sub_id", "score" FROM' in sql
         for sql in gp_plan.sqls
     )
 
@@ -787,8 +923,7 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
     )
     assert any("DELETE FROM sandbox.scores AS target_dst" in sql for sql in gp_plan.sqls)
     assert any(
-        'INSERT INTO sandbox.scores ("id", "score") SELECT CAST("id" AS BIGINT)'
-        in sql
+        'INSERT INTO sandbox.scores ("id", "score") SELECT CAST("id" AS BIGINT)' in sql
         for sql in gp_plan.sqls
     )
 
@@ -859,9 +994,7 @@ def test_transfer_upsert_dry_run_infers_source_columns_without_table_schema() ->
     )
 
     assert any(
-        'INSERT INTO sandbox.scores ("id", "score") '
-        'SELECT "id", "score" FROM'
-        in sql
+        'INSERT INTO sandbox.scores ("id", "score") SELECT "id", "score" FROM' in sql
         for sql in gp_plan.sqls
     )
 
@@ -1003,13 +1136,8 @@ def test_read_sql_prefixes_query_label(monkeypatch, capsys) -> None:
     assert result["value"].tolist() == [1]
     assert "Executing query:" not in output
     assert "[read_sql] [gp/gp] [read] Finished SQL query in " in output
-    assert (
-        "Finished SQL statement:\n"
-        "/* analytics_toolkit query_label=unit-test */"
-    ) in output
-    assert connection.executed[0].startswith(
-        "/* analytics_toolkit query_label=unit-test */"
-    )
+    assert ("Finished SQL statement:\n/* analytics_toolkit query_label=unit-test */") in output
+    assert connection.executed[0].startswith("/* analytics_toolkit query_label=unit-test */")
 
 
 def test_read_sql_return_metadata_preserves_dataframe(monkeypatch) -> None:
@@ -1037,6 +1165,39 @@ def test_read_sql_return_metadata_preserves_dataframe(monkeypatch) -> None:
     assert result.metadata.elapsed_seconds >= 0
     assert result.metadata.operation_status == "success"
     assert result.metadata.query_label == "metadata-read"
+
+
+def test_read_sql_with_metadata_delegates_to_shared_implementation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = object()
+    calls: list[dict[str, object]] = []
+
+    def fake_impl(**kwargs: object) -> object:
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(read_sql_module, "_read_sql_impl", fake_impl)
+    result = read_sql_module.read_sql_with_metadata(
+        "gp",
+        "select 1",
+        print_queries=True,
+        retry_cnt=2,
+        timeout_increment=0.5,
+        query_label="metadata",
+    )
+    assert result is expected
+    assert calls == [
+        {
+            "db_key": "gp",
+            "query": "select 1",
+            "print_queries": True,
+            "retry_cnt": 2,
+            "timeout_increment": 0.5,
+            "query_label": "metadata",
+            "return_metadata": True,
+        }
+    ]
 
 
 def test_execute_sql_dry_run_does_not_open_connection(monkeypatch) -> None:
@@ -1105,12 +1266,7 @@ def test_execute_sql_logs_elapsed_for_each_statement_by_default(
 
     output = capsys.readouterr().out
     assert "Executing query:" not in output
-    assert (
-        output.count(
-            "[execute_sql] [trino/trino] [execute] Finished SQL query in "
-        )
-        == 2
-    )
+    assert output.count("[execute_sql] [trino/trino] [execute] Finished SQL query in ") == 2
     assert "Finished SQL statement:\nselect 1; select 2" in output
     assert "[execute_sql] [trino/trino] [close] Closing connection" in output
 
@@ -1149,6 +1305,94 @@ def test_execute_sql_progress_false_suppresses_statement_bar(
     assert progress_bars == []
     assert client.commands == ["select 1", "select 2"]
     assert "Finished SQL statement:\nselect 1; select 2" in output
+
+
+def test_execute_and_read_validation_and_direct_helper_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(execute_sql_module.InvalidSqlInputError):
+        execute_sql_module._build_execute_sql_options(
+            db_key="gp",
+            query="  ",
+            print_queries=False,
+            gp_break_query=False,
+            gp_commit_each_statement=False,
+            retry_cnt=1,
+            timeout_increment=0,
+            query_label=None,
+            dry_run=False,
+            return_sql=False,
+            return_metadata=False,
+            progress=False,
+        )
+    with pytest.raises(read_sql_module.InvalidSqlInputError):
+        read_sql_module._build_read_sql_options(
+            db_key="gp",
+            query=" ",
+            print_queries=False,
+            retry_cnt=1,
+            timeout_increment=0,
+            query_label=None,
+            return_metadata=False,
+        )
+    with pytest.raises(read_sql_module.InvalidSqlInputError, match="exactly one"):
+        read_sql_module._build_read_sql_options(
+            db_key="gp",
+            query="select 1; select 2",
+            print_queries=False,
+            retry_cnt=1,
+            timeout_increment=0,
+            query_label=None,
+            return_metadata=False,
+        )
+
+    commands: list[str] = []
+    execute_sql_module._execute_ch_statement(
+        type("Client", (), {"command": lambda self, sql: commands.append(sql)})(),
+        "select 1",
+    )
+    execute_sql_module._execute_trino_statement(
+        type("Cursor", (), {"execute": lambda self, sql: commands.append(sql)})(),
+        "select 2",
+    )
+    assert commands == ["select 1", "select 2"]
+
+    printed: list[str] = []
+    monkeypatch.setattr(execute_sql_module, "time_print", printed.append)
+    execute_sql_module._maybe_print_query("select 1; select 2", True, True)
+    execute_sql_module._maybe_print_query("select 3", True, False)
+    execute_sql_module._maybe_print_query(" ; ", True, True)
+    assert printed == [
+        "Executing query:\nselect 1",
+        "Executing query:\nselect 3",
+        "Executing query:\n",
+    ]
+
+    printed.clear()
+    monkeypatch.setattr(read_sql_module, "time_print", printed.append)
+    read_sql_module._maybe_print_query("select 1", True)
+    read_sql_module._maybe_print_query(" ; ", True)
+    assert printed == ["Executing query:\nselect 1", "Executing query:\n;"]
+
+
+def test_execute_statement_progress_wraps_multiple_statements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_tqdm(values, **kwargs):
+        calls.append((list(values), kwargs))
+        return values
+
+    monkeypatch.setattr(execute_sql_module, "tqdm", fake_tqdm)
+    assert list(
+        execute_sql_module._iterate_statements_with_progress(
+            ["select 1", "select 2"],
+            "gp",
+            progress=True,
+        )
+    ) == ["select 1", "select 2"]
+    assert calls == [(["select 1", "select 2"], {"desc": "gp statements", "unit": "stmt"})]
 
 
 def test_execute_sql_clickhouse_executes_split_statements_in_order(monkeypatch) -> None:
@@ -1477,14 +1721,10 @@ def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> N
     )
 
     assert plan.statements[0].phase == "clear_target"
-    assert plan.sqls[0] == (
-        "TRUNCATE TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics"
-    )
+    assert plan.sqls[0] == ("TRUNCATE TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics")
     assert plan.sqls[1] == "TRUNCATE TABLE IF EXISTS analytics.events"
     assert plan.statements[2].phase == "create_target"
-    assert plan.sqls[2].startswith(
-        "CREATE TABLE IF NOT EXISTS analytics.events_shard"
-    )
+    assert plan.sqls[2].startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
     assert "ON CLUSTER analytics" in plan.sqls[2]
 
 
@@ -1525,11 +1765,7 @@ def test_transfer_clickhouse_dry_run_preserves_drop_pair_cluster() -> None:
         ch_cluster="analytics",
     )
 
-    drop_sqls = [
-        statement.sql
-        for statement in plan.statements
-        if statement.phase == "drop_target"
-    ]
+    drop_sqls = [statement.sql for statement in plan.statements if statement.phase == "drop_target"]
     assert drop_sqls == [
         "DROP TABLE IF EXISTS analytics.events",
         "DROP TABLE IF EXISTS analytics.events_shard",
@@ -1553,15 +1789,12 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
     )
 
     assert plan.options["ch_only_shard"] is True
-    drop_sqls = [
-        statement.sql for statement in plan.statements if statement.phase == "drop_target"
-    ]
+    drop_sqls = [statement.sql for statement in plan.statements if statement.phase == "drop_target"]
     assert drop_sqls == ["DROP TABLE IF EXISTS analytics.events"]
     target_create_sql = [
         statement.sql
         for statement in plan.statements
-        if statement.phase == "create_target"
-        and statement.target_table == "analytics.events"
+        if statement.phase == "create_target" and statement.target_table == "analytics.events"
     ][0]
     assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
     assert "ENGINE = ReplicatedMergeTree" in target_create_sql

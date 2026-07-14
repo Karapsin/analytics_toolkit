@@ -45,8 +45,8 @@ class _AirflowConnectionSource:
     default_backend: BackendName | None
 
 
-_AIRFLOW_CONNECTION_SOURCE: ContextVar[_AirflowConnectionSource | None] = (
-    ContextVar("analytics_toolkit_sql_airflow_connection_source", default=None)
+_AIRFLOW_CONNECTION_SOURCE: ContextVar[_AirflowConnectionSource | None] = ContextVar(
+    "analytics_toolkit_sql_airflow_connection_source", default=None
 )
 
 
@@ -201,11 +201,7 @@ def generate_dummy_connections(airflow: bool = False) -> Path:
         raise ValueError(f"SQL connections file already exists: {connections_path}")
     certs_dir = Path.cwd() / ".certs"
 
-    content = (
-        _build_dummy_airflow_connections()
-        if airflow
-        else _build_dummy_direct_connections()
-    )
+    content = _build_dummy_airflow_connections() if airflow else _build_dummy_direct_connections()
     certs_dir.mkdir(exist_ok=True)
     connections_path.write_text(
         json.dumps(content, indent=2) + "\n",
@@ -218,8 +214,7 @@ def generate_dummy_connections(airflow: bool = False) -> Path:
 def _print_dummy_connections_cert_instructions(certs_dir: Path) -> None:
     print(f"Created {certs_dir} for local certificate files.")
     print(
-        "Greenplum: put CA PEMs in .certs/ and set ca_certs; "
-        "optional ssl_cert, ssl_key, sslmode."
+        "Greenplum: put CA PEMs in .certs/ and set ca_certs; optional ssl_cert, ssl_key, sslmode."
     )
     print("Trino: put HTTPS CA PEMs in .certs/ and set ca_certs.")
     print(
@@ -253,9 +248,7 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "ca_certs": "trino-ca.pem",
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
-            "upsert_partition_drop_sql_template": (
-                example_upsert_partition_drop_sql_template()
-            ),
+            "upsert_partition_drop_sql_template": (example_upsert_partition_drop_sql_template()),
         },
         "ch": {
             "type": "ch",
@@ -391,17 +384,13 @@ def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
     return connections_source
 
 
-def _load_file_connections_source() -> (
-    dict[str, dict[str, Any]] | _AirflowConnectionSource
-):
+def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConnectionSource:
     connections_path = get_connections_file_path()
 
     try:
         parsed = json.loads(connections_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise SqlConfigError(
-            f"{connections_path} must contain valid JSON."
-        ) from exc
+        raise SqlConfigError(f"{connections_path} must contain valid JSON.") from exc
 
     if not isinstance(parsed, dict):
         raise SqlConfigError(f"{connections_path} must contain a JSON object.")
@@ -431,8 +420,7 @@ def _is_airflow_connections_file(
 
     if "connections" in parsed:
         raise SqlConfigError(
-            f"{connections_path} field 'source' must be a string when "
-            "'connections' is present."
+            f"{connections_path} field 'source' must be a string when 'connections' is present."
         )
     return False
 
@@ -451,9 +439,7 @@ def _parse_direct_connections_file(
                 f"Duplicate SQL connection key after normalization: {normalized_key}"
             )
         if not isinstance(raw_config, dict):
-            raise SqlConfigError(
-                f"{connections_path}['{normalized_key}'] must be a JSON object."
-            )
+            raise SqlConfigError(f"{connections_path}['{normalized_key}'] must be a JSON object.")
         connections[normalized_key] = raw_config
 
     return connections
@@ -474,33 +460,28 @@ def _parse_airflow_connections_file(
     normalized_connections: dict[str, str] = {}
     for raw_key, raw_config in raw_connections.items():
         if not isinstance(raw_key, str):
-            raise SqlConfigError(
-                f"{connections_path}['connections'] keys must be strings."
-            )
+            raise SqlConfigError(f"{connections_path}['connections'] keys must be strings.")
         if not isinstance(raw_config, dict):
             raise SqlConfigError(
-                f"{connections_path}['connections']['{raw_key}'] "
-                "must be a JSON object."
+                f"{connections_path}['connections']['{raw_key}'] must be a JSON object."
             )
 
         normalized_key = normalize_connection_key(raw_key)
         if normalized_key in normalized_connections:
             raise SqlConfigError(
-                "Duplicate SQL connection key after normalization: "
-                f"{normalized_key}"
+                f"Duplicate SQL connection key after normalization: {normalized_key}"
             )
 
-        backend = _normalize_backend_name(
-            _require_string(raw_config, raw_key, "type")
+        backend = _normalize_backend_name(_require_string(raw_config, raw_key, "type"))
+        connection_id = cast(
+            "str",
+            _optional_string(
+                raw_config,
+                raw_key,
+                "connection_id",
+                raw_key,
+            ),
         )
-        connection_id = _optional_string(
-            raw_config,
-            raw_key,
-            "connection_id",
-            raw_key,
-        )
-        if connection_id is None:
-            connection_id = raw_key
 
         overrides = dict(raw_config)
         overrides.pop("type", None)
@@ -565,8 +546,7 @@ def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:
     except KeyError as exc:
         available = ", ".join(sorted(connections)) or "<none>"
         raise UnsupportedConnectionTypeError(
-            f"Unknown SQL connection key: {connection_key}. "
-            f"Available keys: {available}"
+            f"Unknown SQL connection key: {connection_key}. Available keys: {available}"
         ) from exc
 
 
@@ -621,8 +601,7 @@ def _get_airflow_source_entry(
 
     available = ", ".join(sorted(source.connections)) or "<none>"
     raise UnsupportedConnectionTypeError(
-        f"Unknown SQL connection key: {connection_key}. "
-        f"Available keys: {available}"
+        f"Unknown SQL connection key: {connection_key}. Available keys: {available}"
     )
 
 
@@ -678,8 +657,7 @@ def _get_airflow_connection(connection_id: str) -> Any:
         return BaseHook.get_connection(connection_id)
     except Exception as exc:
         raise UnsupportedConnectionTypeError(
-            f"Unknown Airflow connection ID: {connection_id}. "
-            f"{type(exc).__name__}: {exc}"
+            f"Unknown Airflow connection ID: {connection_id}. {type(exc).__name__}: {exc}"
         ) from exc
 
 
@@ -713,9 +691,7 @@ def _get_airflow_connection_extras(
             )
         return parsed
 
-    raise SqlConfigError(
-        f"Airflow connection '{connection_id}' extra must be a JSON object."
-    )
+    raise SqlConfigError(f"Airflow connection '{connection_id}' extra must be a JSON object.")
 
 
 def _resolve_airflow_connection_backend(
@@ -724,9 +700,7 @@ def _resolve_airflow_connection_backend(
     connection_id: str,
 ) -> BackendName:
     raw_backend = (
-        extras.get("type")
-        or extras.get("backend")
-        or getattr(connection, "conn_type", None)
+        extras.get("type") or extras.get("backend") or getattr(connection, "conn_type", None)
     )
     if raw_backend is None:
         raise SqlConfigError(
@@ -961,8 +935,7 @@ def _optional_non_negative_int(
 
     if parsed < 0:
         raise SqlConfigError(
-            f"SQL connection '{connection_key}' field '{field_name}' "
-            "must be non-negative."
+            f"SQL connection '{connection_key}' field '{field_name}' must be non-negative."
         )
     return parsed
 
@@ -1007,8 +980,7 @@ def _optional_bool_or_string_as_string(
         return normalized if normalized else None
 
     raise SqlConfigError(
-        f"SQL connection '{connection_key}' field '{field_name}' "
-        "must be a boolean or string."
+        f"SQL connection '{connection_key}' field '{field_name}' must be a boolean or string."
     )
 
 
@@ -1022,8 +994,7 @@ def _optional_mapping(
         return None
     if not isinstance(value, dict):
         raise SqlConfigError(
-            f"SQL connection '{connection_key}' field '{field_name}' "
-            "must be a JSON object."
+            f"SQL connection '{connection_key}' field '{field_name}' must be a JSON object."
         )
 
     for key in value:

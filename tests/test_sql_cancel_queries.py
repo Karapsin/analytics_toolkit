@@ -47,6 +47,16 @@ def test_cancel_queries_rejects_invalid_query_id_modes(
         cancel_module.cancel_queries("gp", **kwargs)
 
 
+def test_cancel_query_id_scalar_and_mixed_sequence_validation() -> None:
+    assert cancel_module._normalize_query_ids("query-1", cancel_all=False) == ["query-1"]
+    with pytest.raises(ValueError, match="strings or integers"):
+        cancel_module._normalize_query_ids([1, object()], cancel_all=False)
+
+
+def test_running_query_ids_sql_delegates_to_backend_adapter() -> None:
+    assert "pg_stat_activity" in cancel_module._running_query_ids_sql("gp")
+
+
 @pytest.mark.parametrize("concurrency", [0, -1, True, 1.5])
 def test_cancel_queries_rejects_invalid_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="concurrency"):
@@ -213,9 +223,7 @@ def test_cancel_queries_gp_reports_cancelled_not_terminated(
     monkeypatch.setattr(
         cancel_module,
         "read_sql",
-        lambda *args, **kwargs: pd.DataFrame(
-            {"cancelled": [True], "terminated": [False]}
-        ),
+        lambda *args, **kwargs: pd.DataFrame({"cancelled": [True], "terminated": [False]}),
     )
 
     result = cancel_module.cancel_queries("gp", [8])

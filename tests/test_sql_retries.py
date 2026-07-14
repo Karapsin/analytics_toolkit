@@ -14,7 +14,9 @@ execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.exec
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
-operation_runner_module = importlib.import_module("analytics_toolkit.sql.execution.operation_runner")
+operation_runner_module = importlib.import_module(
+    "analytics_toolkit.sql.execution.operation_runner"
+)
 
 
 class FakeConnection:
@@ -246,7 +248,7 @@ def test_execute_read_does_not_retry_ambiguous_column(monkeypatch) -> None:
     try:
         execute_read_module.execute_read(
             "gp",
-            'select is_qr_plus from schema.table',
+            "select is_qr_plus from schema.table",
             retry_cnt=3,
             timeout_increment=0,
         )
@@ -487,7 +489,7 @@ def test_run_with_retry_does_not_retry_cross_database_reference_error() -> None:
     def operation(attempt: int) -> None:
         attempts.append(attempt)
         raise FeatureNotSupported(
-            'cross-database references are not implemented: '
+            "cross-database references are not implemented: "
             '"iceberg.pa_core_sandbox.karapsin_tmp_back_usage_check"\n'
             "LINE 1: select * from iceberg.pa_core_sandbox.karapsin_tmp_back_usag..."
         )
@@ -769,6 +771,30 @@ def test_operation_runner_does_not_rollback_non_gp_backends() -> None:
         assert connection.close_calls == 1
 
 
+def test_operation_runner_uses_custom_connection_cleanup() -> None:
+    connection = FakeConnection("custom")
+    cleaned: list[dict[str, FakeConnection]] = []
+
+    result = operation_runner_module.run_connection_operation(
+        operation_name="custom cleanup",
+        connection_key="gp",
+        backend="gp",
+        retry_cnt=1,
+        timeout_increment=0,
+        open_connection=lambda _key: connection,
+        operation=lambda connection_ref, _attempt: connection_ref["connection"].name,
+        context_factory=lambda attempt: operation_runner_module.SqlOperationContext(
+            operation="custom cleanup",
+            retry_attempt=attempt,
+        ),
+        cleanup=cleaned.append,
+    )
+
+    assert result == "custom"
+    assert cleaned == [{"connection": connection}]
+    assert connection.close_calls == 0
+
+
 def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     connections: list[FakeConnection] = []
     events: list[tuple[str, str]] = []
@@ -808,7 +834,9 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
             raise RuntimeError("temporary failure")
         return len(df)
 
-    def fake_analyze_table(connection_type: str, connection: FakeConnection, table_name: str) -> None:
+    def fake_analyze_table(
+        connection_type: str, connection: FakeConnection, table_name: str
+    ) -> None:
         events.append(("analyze", connection.name))
 
     def fake_drop_table_with_retry(

@@ -1005,10 +1005,7 @@ def test_async_sql_hard_cap_rejects_unthrottled_effective_concurrency() -> None:
 
     with pytest.raises(
         ValueError,
-        match=(
-            "effective concurrency exceeds hard_concurrency_cap.*"
-            "soft_concurrency_cap"
-        ),
+        match=("effective concurrency exceeds hard_concurrency_cap.*soft_concurrency_cap"),
     ):
         async_module.async_sql(tasks, concurrency=11)
 
@@ -1258,6 +1255,74 @@ def test_async_sql_validates_task_input(
 ) -> None:
     with pytest.raises(expected_exception):
         async_module.async_sql(tasks)
+
+
+def test_async_thread_runner_preserves_base_exception() -> None:
+    message = "stop"
+    error = KeyboardInterrupt(message)
+
+    async def fail() -> dict[str, Any]:
+        raise error
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        async_module._run_coroutine_sync_in_thread(fail)
+    assert caught.value is error
+
+
+def test_async_nested_concurrency_state_can_raise_caps_and_add_semaphore() -> None:
+    async def build_state() -> Any:
+        active = async_module._ConcurrencyState(
+            effective_concurrency=1,
+            hard_cap=2,
+            soft_cap=2,
+            semaphores=(asyncio.Semaphore(2),),
+        )
+        token = async_module._CONCURRENCY_STATE.set(active)
+        try:
+            return async_module._build_concurrency_state(
+                concurrency=2,
+                soft_concurrency_cap=1,
+                hard_concurrency_cap=3,
+            )
+        finally:
+            async_module._CONCURRENCY_STATE.reset(token)
+
+    state = asyncio.run(build_state())
+    assert state.hard_cap == 3
+    assert state.soft_cap == 1
+    assert len(state.semaphores) == 2
+
+
+def test_async_to_thread_fallback_copies_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = async_module.contextvars.ContextVar("test_marker", default="missing")
+    marker.set("copied")
+    monkeypatch.setattr(async_module.asyncio, "to_thread", None, raising=False)
+
+    assert asyncio.run(async_module._to_thread(marker.get)) == "copied"
+
+
+def test_async_impl_resets_context_when_progress_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_create_task(coroutine: Any) -> None:
+        coroutine.close()
+        message = "task creation"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(
+        async_module.asyncio,
+        "create_task",
+        fail_create_task,
+    )
+    with pytest.raises(RuntimeError, match="task creation"):
+        asyncio.run(
+            async_module._async_sql_impl(
+                [{"type": "read", "db_key": "gp", "query": "select 1"}],
+            )
+        )
+    assert async_module._CONCURRENCY_STATE.get() is None
 
 
 @pytest.mark.parametrize(

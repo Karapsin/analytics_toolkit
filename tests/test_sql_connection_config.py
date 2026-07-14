@@ -23,28 +23,16 @@ from analytics_toolkit.sql.connection.errors import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
-connection_module = importlib.import_module(
-    "analytics_toolkit.sql.connection.get_sql_connection"
-)
+connection_module = importlib.import_module("analytics_toolkit.sql.connection.get_sql_connection")
 api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
-create_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.ddl.api"
-)
+create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.execution.operation_runner"
 )
-transfer_schema_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.schema"
-)
-load_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.load.load_sql_table"
-)
-trino_config_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.trino.config"
-)
-ch_config_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.config"
-)
+transfer_schema_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.schema")
+load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
+trino_config_module = importlib.import_module("analytics_toolkit.sql.backends.trino.config")
+ch_config_module = importlib.import_module("analytics_toolkit.sql.backends.ch.config")
 
 _MISSING = object()
 
@@ -77,9 +65,7 @@ assert callable(sql.airflow_query_label)
     env = dict(os.environ)
     repo_root = Path(__file__).resolve().parents[1]
     env["PYTHONPATH"] = (
-        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}"
-        if env.get("PYTHONPATH")
-        else str(repo_root)
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
     )
 
     result = subprocess.run(
@@ -601,9 +587,7 @@ def test_multiple_ca_certs_are_bundled_in_order(
     connection_module.get_sql_connection("trino_bundle")
 
     bundle_path = Path(str(connect_calls[0]["verify"]))
-    expected_bundle_path = (
-        Path.cwd() / ".certs" / ".generated" / "trino_bundle-ca-bundle.pem"
-    )
+    expected_bundle_path = Path.cwd() / ".certs" / ".generated" / "trino_bundle-ca-bundle.pem"
     assert bundle_path == expected_bundle_path
     assert bundle_path.read_text(encoding="utf-8") == "ROOT\nINTERMEDIATE\n"
 
@@ -642,14 +626,9 @@ def test_clickhouse_ca_certs_list_uses_generated_bundle(
 
     assert result is client
     bundle_path = Path(str(client_calls[0]["ca_cert"]))
-    expected_bundle_path = (
-        Path.cwd() / ".certs" / ".generated" / "ch_ssl-ca-bundle.pem"
-    )
+    expected_bundle_path = Path.cwd() / ".certs" / ".generated" / "ch_ssl-ca-bundle.pem"
     assert bundle_path == expected_bundle_path
-    assert (
-        bundle_path.read_text(encoding="utf-8")
-        == "CLICKHOUSE ROOT\nCLICKHOUSE INTERMEDIATE\n"
-    )
+    assert bundle_path.read_text(encoding="utf-8") == "CLICKHOUSE ROOT\nCLICKHOUSE INTERMEDIATE\n"
 
 
 def test_clickhouse_ca_certs_missing_file_fails_only_when_connecting(
@@ -790,8 +769,7 @@ def test_generate_dummy_connections_writes_direct_file(
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
             "upsert_partition_drop_sql_template": (
-                "ALTER TABLE {table} DROP PARTITION "
-                "({partition_column} = {partition_value})"
+                "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
             ),
         },
         "ch": {
@@ -834,8 +812,7 @@ def test_generate_dummy_connections_writes_airflow_file(
                 "transfer_staging_schema": "object_storage.sandbox",
                 "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
                 "upsert_partition_drop_sql_template": (
-                    "ALTER TABLE {table} DROP PARTITION "
-                    "({partition_column} = {partition_value})"
+                    "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
                 ),
             },
             "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
@@ -2100,9 +2077,8 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
             *,
             data_name: str,
         ) -> None:
-            events.append(
-                ("validate_ch_columns", value, columns, option_name, data_name)
-            )
+            events.append(("validate_ch_columns", value, columns, option_name, data_name))
+
         def build_create_from_sql_target_create_kwargs(
             self,
             **kwargs: object,
@@ -2144,9 +2120,7 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
     monkeypatch.setattr(
         transfer_schema_module,
         "map_source_schema_to_target",
-        lambda source_schema, backend: {
-            column.name: "BIGINT" for column in source_schema
-        },
+        lambda source_schema, backend: {column.name: "BIGINT" for column in source_schema},
     )
     monkeypatch.setattr(
         operation_runner_module,
@@ -2330,9 +2304,7 @@ def test_airflow_validation_and_backend_resolution_paths(
         },
     )
 
-    with config_module.use_airflow_connections(
-        connection_backends={"AirGP": "gp"}
-    ):
+    with config_module.use_airflow_connections(connection_backends={"AirGP": "gp"}):
         results = config_module.validate_connections([" AirGP "])
         assert results[0].connection_key == "AirGP"
         assert config_module.resolve_connection_backend("AirGP") == "gp"
@@ -2407,6 +2379,8 @@ def test_airflow_file_parser_rejects_invalid_entries(tmp_path: Path) -> None:
             },
             path,
         )
+
+
 def test_airflow_source_entry_normalization_and_unknown_key() -> None:
     entry = config_module._AirflowConnectionEntry(
         connection_id="AirGP",
@@ -2450,9 +2424,7 @@ def test_airflow_extra_shapes(
     message: str | None,
 ) -> None:
     if message is None:
-        assert config_module._get_airflow_connection_extras(connection, "id") == {
-            "x": 1
-        }
+        assert config_module._get_airflow_connection_extras(connection, "id") == {"x": 1}
         return
     with pytest.raises(SqlConfigError, match=message):
         config_module._get_airflow_connection_extras(connection, "id")
@@ -2472,11 +2444,14 @@ def test_airflow_backend_id_and_resolver_edges() -> None:
         "settings",
         {"from": "extra", "default": 1, "custom": 2},
     )
-    assert config_module._resolve_airflow_entry_overrides(
-        {"port": {"from": "extra", "key": "missing"}},
-        {},
-        "id",
-    ) == {}
+    assert (
+        config_module._resolve_airflow_entry_overrides(
+            {"port": {"from": "extra", "key": "missing"}},
+            {},
+            "id",
+        )
+        == {}
+    )
 
 
 @pytest.mark.parametrize("value", [True, "bad", 1.5, 0])
@@ -2493,9 +2468,7 @@ def test_optional_non_negative_integer_rejects_invalid_values(value: object) -> 
 
 def test_optional_config_value_validation_edges() -> None:
     assert config_module._optional_string({"host": None}, "gp", "host", "x") == "x"
-    assert config_module._optional_non_negative_int(
-        {"timeout": 0}, "gp", "timeout"
-    ) == 0
+    assert config_module._optional_non_negative_int({"timeout": 0}, "gp", "timeout") == 0
     with pytest.raises(SqlConfigError, match="must be a boolean"):
         config_module._optional_bool({"flag": "maybe"}, "gp", "flag", False)
     with pytest.raises(SqlConfigError, match="boolean or string"):
@@ -2518,6 +2491,41 @@ def test_optional_config_value_validation_edges() -> None:
             "gp",
             "ca_certs",
         )
+
+
+def test_airflow_raw_json_extra_and_boolean_type_edges() -> None:
+    connection = FakeAirflowConnection(
+        extra_dejson=_MISSING,
+        extra='{"catalog": "iceberg"}',
+    )
+    assert config_module._get_airflow_connection_extras(connection, "AirTrino") == {
+        "catalog": "iceberg"
+    }
+    with pytest.raises(SqlConfigError, match="must be a boolean"):
+        config_module._optional_bool({"flag": 1}, "gp", "flag", False)
+
+
+def test_load_sql_connections_lists_explicit_airflow_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "AirGP": FakeAirflowConnection(
+                conn_type="postgres",
+                host="gp.example",
+                port=5432,
+                login="user",
+                password="password",
+                schema="db",
+                extra_dejson={},
+            )
+        },
+    )
+    with config_module.use_airflow_connections({"AirGP": "gp"}):
+        raw = config_module.load_sql_connections()
+
+    assert raw["AirGP"]["type"] == "gp"
 
 
 def test_clickhouse_host_connection_validates_backend_host_and_dispatches(
@@ -2544,10 +2552,7 @@ def test_clickhouse_host_connection_validates_backend_host_and_dispatches(
     with pytest.raises(ValueError, match="host must not be empty"):
         connection_module.get_ch_connection_for_host("ch", " ")
 
-    assert (
-        connection_module.get_ch_connection_for_host("ch", " shard-1 ")
-        == "connection"
-    )
+    assert connection_module.get_ch_connection_for_host("ch", " shard-1 ") == "connection"
     opened_config = opened[0][0]
     assert opened_config.host == "shard-1"
 
@@ -2600,11 +2605,14 @@ def test_certificate_bundle_reuse_and_absolute_path() -> None:
 
     assert bundle == same_bundle
     assert Path(bundle).read_text(encoding="utf-8") == "FIRST\nSECOND\n"
-    assert connection_module._resolve_single_cert_path(
-        "alias",
-        str(first),
-        field_name="ca_certs",
-    ) == first.resolve()
+    assert (
+        connection_module._resolve_single_cert_path(
+            "alias",
+            str(first),
+            field_name="ca_certs",
+        )
+        == first.resolve()
+    )
 
     with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
         create_sql_table_module.create_sql_table(
@@ -2633,10 +2641,7 @@ def test_trino_insert_chunk_size_comes_from_connection_config(
     config = config_module.get_connection_config("trino_batch")
 
     assert config.insert_chunk_size == 250
-    assert (
-        load_sql_table_module._get_trino_insert_chunk_size(None, "trino_batch")
-        == 250
-    )
+    assert load_sql_table_module._get_trino_insert_chunk_size(None, "trino_batch") == 250
 
 
 def test_legacy_trino_insert_chunk_size_env_is_ignored(monkeypatch) -> None:
@@ -2723,10 +2728,7 @@ def test_direct_trino_connections_file_supports_transfer_staging_location(
 
     config = config_module.get_connection_config("trino_with_location")
     assert config.transfer_staging_schema == "object_storage.sandbox"
-    assert (
-        config.transfer_staging_location
-        == "s3://bucket/tmp/analytics_toolkit_transfer"
-    )
+    assert config.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def _direct_trino_config(**overrides: object) -> types.SimpleNamespace:
@@ -2773,11 +2775,14 @@ def test_direct_trino_connection_import_auth_and_kwargs(
 
     calls: list[dict[str, object]] = []
     _install_fake_trino(monkeypatch, calls)
-    assert trino_config_module.open_connection(
-        _direct_trino_config(),
-        parse_verify_value=lambda value: value == "/ca.pem",
-        resolve_ca_certs=lambda *_args: "/ca.pem",
-    ) is not None
+    assert (
+        trino_config_module.open_connection(
+            _direct_trino_config(),
+            parse_verify_value=lambda value: value == "/ca.pem",
+            resolve_ca_certs=lambda *_args: "/ca.pem",
+        )
+        is not None
+    )
     kwargs = calls[-1]
     assert kwargs["verify"] is True
     assert kwargs["catalog"] == "iceberg"
@@ -2946,9 +2951,7 @@ def test_airflow_trino_connections_file_supports_transfer_staging_location(
                 login="air-user",
                 password="air-password",
                 extra_dejson={
-                    "parquet_transfer_location": (
-                        "s3://bucket/tmp/analytics_toolkit_transfer"
-                    ),
+                    "parquet_transfer_location": ("s3://bucket/tmp/analytics_toolkit_transfer"),
                 },
             ),
         },
@@ -2956,10 +2959,7 @@ def test_airflow_trino_connections_file_supports_transfer_staging_location(
 
     config = config_module.get_connection_config("airflow_trino")
     assert config.transfer_staging_schema == "object_storage.sandbox"
-    assert (
-        config.transfer_staging_location
-        == "s3://bucket/tmp/analytics_toolkit_transfer"
-    )
+    assert config.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_direct_clickhouse_connection_reports_blocked_connector(

@@ -1,8 +1,8 @@
 {
   "overall": {
-    "branches": 98.48,
-    "combined": 99.04,
-    "statements": 99.23
+    "branches": 99.71,
+    "combined": 99.83,
+    "statements": 99.87
   },
   "prefixes": {
     "ab_utils": {
@@ -10,12 +10,12 @@
       "combined": 100.0
     },
     "sql/connection": {
-      "branches": 98.34,
-      "combined": 99.24
+      "branches": 100.0,
+      "combined": 100.0
     },
     "sql/ddl": {
-      "branches": 98.71,
-      "combined": 98.98
+      "branches": 100.0,
+      "combined": 100.0
     },
     "sql_format": {
       "branches": 100.0,

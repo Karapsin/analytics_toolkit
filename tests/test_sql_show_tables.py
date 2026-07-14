@@ -676,3 +676,16 @@ def test_show_tables_rejects_multi_statement_conditions(
             "gp",
             conditions="table_name = 'orders'; SELECT 1",
         )
+
+
+def test_show_tables_remaining_validation_and_formatting_paths() -> None:
+    with pytest.raises(TypeError, match="schema"):
+        show_tables_module._validate_optional_string(1, "schema")
+    with pytest.raises(show_tables_module.InvalidSqlInputError, match="must not be empty"):
+        show_tables_module._validate_table_name_value("sandbox.", "sandbox")
+    with pytest.raises(show_tables_module.InvalidSqlInputError, match="conditions"):
+        show_tables_module._validate_conditions(";")
+
+    assert show_tables_module._format_table_size("unknown") == "unknown"
+    assert show_tables_module._format_table_size(float("inf")) is None
+    assert show_tables_module._normalize_row_count("unknown") is None

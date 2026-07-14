@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Completed shared and Greenplum backend contract coverage.
 - Completed deterministic SQL load and table lifecycle coverage.
 - Expanded deterministic SQL transfer coverage.
+- Completed deterministic SQL execution and orchestration coverage.
 
 ## 1.3.10.17 - 2026-07-14
 

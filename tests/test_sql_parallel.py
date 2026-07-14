@@ -10,9 +10,8 @@ import pytest
 
 from analytics_toolkit.general import time_print
 
-parallel_module = importlib.import_module(
-    "analytics_toolkit.sql.orchestration.parallel_sql"
-)
+parallel_module = importlib.import_module("analytics_toolkit.sql.orchestration.parallel_sql")
+tasks_module = importlib.import_module("analytics_toolkit.sql.orchestration.tasks")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -611,10 +610,7 @@ def test_parallel_sql_hard_cap_rejects_excessive_nested_concurrency() -> None:
 
     with pytest.raises(
         ValueError,
-        match=(
-            "effective concurrency exceeds hard_concurrency_cap.*"
-            "soft_concurrency_cap"
-        ),
+        match=("effective concurrency exceeds hard_concurrency_cap.*soft_concurrency_cap"),
     ):
         parallel_module.parallel_sql(
             [
@@ -916,6 +912,90 @@ def test_parallel_sql_validates_task_input(
 ) -> None:
     with pytest.raises(expected_exception):
         parallel_module.parallel_sql(tasks)
+
+
+def test_parallel_shutdown_falls_back_for_legacy_executor() -> None:
+    unsupported_error = TypeError("unsupported")
+
+    class LegacyExecutor:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def shutdown(self, **kwargs: object) -> None:
+            self.calls.append(kwargs)
+            if "cancel_futures" in kwargs:
+                raise unsupported_error
+
+    executor = LegacyExecutor()
+    parallel_module._shutdown_executor(
+        executor,
+        wait=True,
+        cancel_futures=True,
+    )
+    assert executor.calls == [
+        {"wait": True, "cancel_futures": True},
+        {"wait": True},
+    ]
+
+
+def test_parallel_nested_concurrency_state_can_raise_caps_and_add_semaphore() -> None:
+    active = parallel_module._ParallelConcurrencyState(
+        effective_concurrency=1,
+        hard_cap=2,
+        soft_cap=2,
+        semaphores=(parallel_module.Semaphore(2),),
+    )
+    token = parallel_module._PARALLEL_CONCURRENCY_STATE.set(active)
+    try:
+        state = parallel_module._build_parallel_concurrency_state(
+            concurrency=2,
+            soft_concurrency_cap=1,
+            hard_concurrency_cap=3,
+        )
+    finally:
+        parallel_module._PARALLEL_CONCURRENCY_STATE.reset(token)
+    assert state.hard_cap == 3
+    assert state.soft_cap == 1
+    assert len(state.semaphores) == 2
+
+
+def test_parallel_pipeline_rejects_non_closable_awaitable() -> None:
+    class Awaitable:
+        def __await__(self):
+            if False:
+                yield None
+
+    with pytest.raises(TypeError, match="coroutine custom_sql_pipeline"):
+        parallel_module._run_parallel_pipeline(
+            "pipeline",
+            [lambda _context: Awaitable()],
+            (),
+        )
+
+
+def test_task_helpers_handle_locked_exception_blank_query_and_unknown_type() -> None:
+    class LockedError(Exception):
+        def __setattr__(self, _name: str, _value: object) -> None:
+            message = "locked"
+            raise RuntimeError(message)
+
+    tasks_module._annotate_task_exception(
+        LockedError("failure"),
+        "task",
+        "read",
+        {"query": "select 1"},
+    )
+    assert tasks_module._task_sql_field_and_query("read", {"query": " "}) == (
+        "query",
+        None,
+    )
+    assert tasks_module._apply_start_comment(
+        "read",
+        {"query": 1},
+        "-- start",
+    ) == {"query": 1}
+    with pytest.raises(ValueError, match="Unsupported task type"):
+        tasks_module._run_sync_task("unknown", {}, task_runners={})
 
 
 @pytest.mark.parametrize(

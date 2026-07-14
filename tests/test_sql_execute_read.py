@@ -10,9 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-execute_read_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.io.execute_read"
-)
+execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -152,9 +150,7 @@ def test_execute_read_gp_break_query_executes_setup_statements_separately(
 
     execute_read_module.execute_read(
         "gp",
-        "CREATE TEMP TABLE tmp AS SELECT 1; "
-        "INSERT INTO tmp SELECT 2; "
-        "SELECT * FROM tmp",
+        "CREATE TEMP TABLE tmp AS SELECT 1; INSERT INTO tmp SELECT 2; SELECT * FROM tmp",
         print_queries=False,
         gp_break_query=True,
         gp_commit_each_statement=True,
@@ -251,3 +247,35 @@ def test_execute_read_rejects_empty_query(
 
     with pytest.raises(execute_read_module.InvalidSqlInputError):
         execute_read_module.execute_read("ch", "   ")
+
+
+def test_execute_read_rejects_statementless_query_and_labels_statements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common = {
+        "db_key": "gp",
+        "print_queries": False,
+        "gp_break_query": False,
+        "gp_commit_each_statement": False,
+        "retry_cnt": 1,
+        "timeout_increment": 0,
+        "return_metadata": False,
+        "progress": False,
+    }
+    original_split = execute_read_module._split_sql_statements
+    monkeypatch.setattr(execute_read_module, "_split_sql_statements", lambda _sql: [])
+    with pytest.raises(execute_read_module.InvalidSqlInputError):
+        execute_read_module._build_execute_read_options(
+            query="select 1",
+            query_label=None,
+            **common,
+        )
+    monkeypatch.setattr(execute_read_module, "_split_sql_statements", original_split)
+
+    options = execute_read_module._build_execute_read_options(
+        query="select 1; select 2",
+        query_label="batch",
+        **common,
+    )
+    assert len(options.statements) == 2
+    assert all("query_label=batch" in sql for sql in options.statements)
