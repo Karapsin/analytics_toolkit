@@ -18,6 +18,7 @@ gp_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.gp.a
 gp_ddl = importlib.import_module("analytics_toolkit.sql.backends.gp.ddl")
 gp_insert = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
 trino_operations = importlib.import_module("analytics_toolkit.sql.backends.trino.operations")
+trino_parquet = importlib.import_module("analytics_toolkit.sql.backends.trino.parquet_stage")
 
 
 class QueryResult:
@@ -1153,3 +1154,22 @@ def test_trino_operation_cursor_and_error_paths() -> None:
         trino_operations._first_result_value(pd.DataFrame(), "events")
     with pytest.raises(ValueError, match="No DDL"):
         trino_operations._first_result_value(pd.DataFrame({"ddl": [pd.NA]}), "events")
+
+
+def test_trino_stage_type_reuse_and_parquet_null_edge_cases() -> None:
+    current = {"id": "BIGINT"}
+    assert (
+        trino_operations.resolve_transfer_stage_column_types(
+            object(),
+            object(),
+            "stage",
+            connection_key="warehouse",
+            current_column_types=current,
+        )
+        is current
+    )
+    adapter = SimpleNamespace(sqlglot_dialect="trino")
+    with pytest.raises(ValueError, match="Invalid target table name"):
+        trino_parquet.parquet_stage_target_table_base(adapter, "function_call()")
+    assert trino_parquet._infer_trino_type_from_values([None, pd.NA, 3]) == "BIGINT"
+    assert trino_parquet._infer_trino_type_from_values([[1, 2]]) == "VARCHAR"

@@ -499,6 +499,8 @@ class TrinoAdapter(DbApiBackendAdapter):
             failed_query = statement if statement is not None else sql
             time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
             raise
+        finally:
+            cursor.close()
         return None
 
     def execute_read_sql(

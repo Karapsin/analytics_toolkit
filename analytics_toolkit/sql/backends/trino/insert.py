@@ -125,8 +125,6 @@ def iter_row_values(
 def normalize_value(value: Any, target_type: str | None) -> Any:
     if _is_null_like(value):
         return None
-    if value is None:
-        return None
 
     normalized_target_type = (target_type or "").lower()
     if normalized_target_type.startswith(("varchar", "char", "string")):
@@ -159,7 +157,7 @@ def validate_row_width(columns: Sequence[str], row: Sequence[Any]) -> None:
 
 
 def literal(value: Any, target_type: str | None) -> str:
-    if value is None:
+    if _is_null_like(value):
         return "NULL"
 
     normalized_target_type = (target_type or "").lower()

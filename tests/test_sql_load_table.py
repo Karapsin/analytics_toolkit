@@ -2253,3 +2253,9 @@ def test_cleanup_load_reports_each_best_effort_failure(
         "Failed to drop load_df target table sandbox.target created by this failed operation",
         "Failed to delete temporary load_df Parquet stage files s3://bucket/stage/",
     ]
+
+
+def test_load_table_trino_scalar_normalization_handles_nat_and_target_types() -> None:
+    assert load_sql_table_module._normalize_trino_value(pd.NaT, None) is None
+    assert load_sql_table_module._normalize_trino_value("7", "bigint") == 7
+    assert load_sql_table_module._normalize_trino_value(7, "varchar") == "7"
