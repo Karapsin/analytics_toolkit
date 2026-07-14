@@ -10,6 +10,7 @@ import pytest
 
 show_module = importlib.import_module("analytics_toolkit.sql.metadata.show_queries")
 metadata_module = importlib.import_module("analytics_toolkit.sql.metadata")
+ch_queries_module = importlib.import_module("analytics_toolkit.sql.backends.ch.queries")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -42,6 +43,79 @@ def test_normalize_query_states(raw_state: Any, expected: list[str]) -> None:
 def test_normalize_query_states_rejects_invalid_values(raw_state: Any) -> None:
     with pytest.raises(ValueError, match="state"):
         show_module.normalize_query_states(raw_state)
+
+
+def test_clickhouse_query_sql_state_matrix_and_escaped_user() -> None:
+    assert ch_queries_module.show_queries_sqls(
+        None, user=None, states=[]
+    ) == []
+    active = ch_queries_module.show_queries_sqls(
+        None, user="o'reilly", states=["active"]
+    )
+    assert len(active) == 1
+    assert "user = 'o''reilly'" in active[0]["sql"]
+    finished = ch_queries_module.show_queries_sqls(
+        None, user=None, states=["finished"]
+    )
+    assert "QueryFinish" in finished[0]["sql"]
+    assert "ExceptionBeforeStart" not in finished[0]["sql"]
+    failed = ch_queries_module.show_queries_sqls(
+        None, user=None, states=["failed"]
+    )
+    assert "ExceptionBeforeStart" in failed[0]["sql"]
+    both = ch_queries_module.show_queries_sqls(
+        None, user=None, states=["active", "finished", "failed"]
+    )
+    assert [item["history"] for item in both] == [False, True]
+
+
+def test_show_queries_invalid_non_sequence_and_lazy_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="state must be"):
+        show_module.normalize_query_states(1)  # type: ignore[arg-type]
+
+    read_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        read_module,
+        "read_sql",
+        lambda key, query, **kwargs: calls.append((key, query)) or pd.DataFrame(),
+    )
+    result = show_module._execute_read_sql(
+        "ch",
+        "select 1",
+        print_queries=False,
+        retry_cnt=0,
+        timeout_increment=0,
+        query_label=None,
+    )
+    assert result.empty
+    assert calls == [("ch", "select 1")]
+
+
+def test_show_queries_active_read_failure_is_not_suppressed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        show_module,
+        "get_connection_config",
+        lambda db_key: make_config(db_key, "ch"),
+    )
+    monkeypatch.setattr(
+        show_module,
+        "_read_queries",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("active failed")),
+    )
+    with pytest.raises(RuntimeError, match="active failed"):
+        show_module.show_queries("ch", state="active", retry_cnt=1)
+
+
+def test_show_queries_normalizer_preserves_existing_backend() -> None:
+    result = show_module._normalize_result(
+        pd.DataFrame({"backend": ["custom"], "query_id": ["q"]}), "ch"
+    )
+    assert result.loc[0, "backend"] == "custom"
 
 
 def test_show_queries_greenplum_active_current_user(

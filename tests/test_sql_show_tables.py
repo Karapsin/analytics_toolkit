@@ -7,6 +7,7 @@ import pytest
 
 
 show_tables_module = importlib.import_module("analytics_toolkit.sql.metadata.show_tables")
+ch_metadata_module = importlib.import_module("analytics_toolkit.sql.backends.ch.metadata")
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -47,6 +48,99 @@ def test_show_tables_is_public_api() -> None:
     assert "show_tables" in sql_module.__all__
     assert "show_tables" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
     assert getattr(sql_module.show_tables, "__sql_public_timing__", False)
+
+
+def test_clickhouse_shard_stats_missing_metadata_and_partial_results() -> None:
+    no_engine = pd.DataFrame({"schema": ["db"], "table_name": ["t"]})
+    assert (
+        ch_metadata_module.apply_clickhouse_shard_stats("ch", no_engine, read_sql=lambda *_: None)
+        is no_engine
+    )
+
+    no_reference = pd.DataFrame(
+        {
+            "schema": ["db"],
+            "table_name": ["t"],
+            "engine": ["Distributed"],
+            "engine_full": ["Distributed(broken)"],
+        }
+    )
+    assert (
+        ch_metadata_module.apply_clickhouse_shard_stats(
+            "ch", no_reference, read_sql=lambda *_: None
+        )
+        is no_reference
+    )
+
+    tables = pd.DataFrame(
+        {
+            "schema": ["db", "db"],
+            "table_name": ["a", "b"],
+            "engine": ["Distributed", "Distributed"],
+            "engine_full": [
+                "Distributed('core', 'db', 'a_shard', rand())",
+                "Distributed('core', 'db', 'b_shard', rand())",
+            ],
+            "row_count": [None, None],
+            "table_size_bytes": [None, None],
+        }
+    )
+
+    def read_sql(_key: str, query: str) -> pd.DataFrame:
+        assert "cluster('core'" in query
+        return pd.DataFrame(
+            {
+                "shard_database": ["db", None],
+                "shard_table": ["a_shard", "ignored"],
+                "row_count": [7, 9],
+                "table_size_bytes": [70, 90],
+            }
+        )
+
+    resolved = ch_metadata_module.apply_clickhouse_shard_stats("ch", tables, read_sql=read_sql)
+    assert resolved.loc[0, "row_count"] == 7
+    assert pd.isna(resolved.loc[1, "row_count"])
+
+
+def test_clickhouse_metadata_parser_quoting_nesting_and_malformed_inputs() -> None:
+    assert ch_metadata_module.normalize_clickhouse_engine_arg("'a''b'") == "a'b"
+    assert ch_metadata_module.normalize_clickhouse_engine_arg('"a""b"') == 'a"b'
+    assert ch_metadata_module.normalize_clickhouse_engine_arg("(abc(") == "(abc("
+    assert (
+        ch_metadata_module.find_clickhouse_function_call(
+            "'Distributed(ignored)' Distributed ('core', db, t)", "Distributed"
+        )
+        == 23
+    )
+    assert (
+        ch_metadata_module.find_clickhouse_function_call(
+            "'escaped\\' Distributed(ignored)' Distributed('c',db,t)", "Distributed"
+        )
+        is not None
+    )
+    assert (
+        ch_metadata_module.find_clickhouse_function_call(
+            "'a''b' Distributed('c',db,t)", "Distributed"
+        )
+        == 7
+    )
+    assert ch_metadata_module.find_matching_paren("x", 0) is None
+    assert ch_metadata_module.find_matching_paren("('a''b', nested(1, 2))", 0) == 21
+    assert ch_metadata_module.find_matching_paren("('a\\'b', 1)", 0) == 10
+    assert ch_metadata_module.find_matching_paren("(broken", 0) is None
+    assert ch_metadata_module.split_top_level_args("'a''b', nested(1, 2), 'c\\'d', , tail") == [
+        "'a''b'",
+        "nested(1, 2)",
+        "'c\\'d'",
+        "tail",
+    ]
+    assert ch_metadata_module.split_top_level_args("one,  ") == ["one"]
+    assert (
+        ch_metadata_module.extract_clickhouse_function_args(
+            "Distributed('core', nested(db, x), 't'", "Distributed"
+        )
+        is None
+    )
 
 
 def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(

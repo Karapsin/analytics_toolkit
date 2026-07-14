@@ -74,6 +74,22 @@ ch_adapter_module = importlib.import_module(
 ch_lifecycle_backend_module = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.lifecycle"
 )
+ch_ddl_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.ddl")
+ch_insert_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.insert"
+)
+ch_operations_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.operations"
+)
+ch_queries_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.queries"
+)
+ch_target_create_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.target_create"
+)
+ch_upsert_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.upsert"
+)
 
 
 class RecordingClickHouseClient:
@@ -2504,3 +2520,474 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
         ch_adapter_module.ch_cluster_clause("  ")
     assert ch_adapter_module.format_ch_cluster_name("`quoted`") == "`quoted`"
     assert ch_adapter_module.is_simple_identifier("") is False
+
+
+def test_clickhouse_ddl_expression_cluster_and_uuid_edges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert ch_ddl_backend_module._normalize_ch_expression(" toYYYYMM(day) ", "x") == (
+        "toYYYYMM(day)"
+    )
+    assert ch_ddl_backend_module._normalize_ch_expression(["day"], "x") == "`day`"
+    with pytest.raises(ValueError, match="must not be empty when provided"):
+        ch_ddl_backend_module._normalize_ch_expression([], "x")
+    with pytest.raises(ValueError, match="duplicate"):
+        ch_ddl_backend_module._normalize_ch_expression(["day", "day"], "x")
+    with pytest.raises(ValueError, match="must not be empty"):
+        ch_ddl_backend_module._normalize_non_empty_string("  ", "x")
+
+    assert ch_ddl_backend_module._format_ch_cluster_name("  ") == ""
+    assert ch_ddl_backend_module._format_ch_cluster_name("`core-prod`") == "`core-prod`"
+    assert ch_ddl_backend_module._format_ch_cluster_name("core-prod") == "'core-prod'"
+    assert ch_ddl_backend_module._is_simple_identifier("") is False
+    assert ch_ddl_backend_module._is_simple_identifier("9core") is False
+    assert ch_ddl_backend_module._is_simple_identifier("_core9") is True
+
+    commands: list[str] = []
+    monkeypatch.setattr(
+        get_backend_adapter("ch"),
+        "execute_command",
+        lambda _connection, sql: commands.append(sql),
+    )
+    ch_ddl_backend_module._execute_ch_command(object(), "SELECT 1")
+    assert commands == ["SELECT 1"]
+
+    unchanged = [
+        "CREATE TABLE x ON CLUSTER core\n(id UInt64) ENGINE = ReplicatedMergeTree",
+        "CREATE TABLE x\n(id UInt64) ENGINE = MergeTree",
+        "CREATE TABLE x\nUUID 'fixed'\n(id UInt64) ENGINE = ReplicatedMergeTree",
+        "CREATE TABLE x ENGINE = ReplicatedMergeTree",
+    ]
+    for sql in unchanged:
+        assert ch_ddl_backend_module.add_explicit_ch_uuid_to_local_replicated_create(sql) == sql
+    monkeypatch.setattr(ch_ddl_backend_module.uuid, "uuid4", lambda: "fixed-uuid")
+    rewritten = ch_ddl_backend_module.add_explicit_ch_uuid_to_local_replicated_create(
+        "CREATE TABLE x\n(id UInt64) ENGINE = ReplicatedMergeTree"
+    )
+    assert "UUID 'fixed-uuid'" in rewritten
+
+
+def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
+    class LegacyFrame:
+        def applymap(self, function: Any) -> pd.DataFrame:
+            return pd.DataFrame({"value": [function(Decimal("1.25")), function(None)]})
+
+    normalized = ch_insert_backend_module.normalize_batch(
+        LegacyFrame()  # type: ignore[arg-type]
+    )
+    assert normalized.to_dict("records") == [{"value": 1.25}, {"value": None}]
+    assert ch_insert_backend_module.normalize_scalar(
+        [Decimal("1.5"), (Decimal("2.5"),), {Decimal("3.5"): Decimal("4.5")}]
+    ) == [1.5, (2.5,), {3.5: 4.5}]
+    assert ch_insert_backend_module.column_type_names(["a"], None) is None
+    assert ch_insert_backend_module.column_type_names(
+        ["a", "b"], {"a": "UInt8", "b": "String"}
+    ) == ["UInt8", "String"]
+    with pytest.raises(ValueError, match="Missing explicit SQL type for column 'b'"):
+        ch_insert_backend_module.column_type_names(["a", "b"], {"a": "UInt8"})
+    assert ch_insert_backend_module.normalize_row(([1, 2], None)) == ([1, 2], None)
+    assert ch_insert_backend_module._is_null_like(None) is True
+    assert ch_insert_backend_module._is_null_like([1, 2]) is False
+
+
+def test_clickhouse_lifecycle_drop_modes_and_wait_routing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert len(ch_lifecycle_backend_module.build_drop_ch_table_sqls("db.t", None)) == 1
+    executed: list[str] = []
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_execute_ch_sqls",
+        lambda _connection, sqls: executed.extend(sqls),
+    )
+    local_waits: list[str] = []
+    cluster_waits: list[str] = []
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_wait_for_ch_table_absence",
+        lambda _connection, table, **_kwargs: local_waits.append(table),
+    )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_wait_for_ch_table_absence_on_cluster",
+        lambda _connection, table, **_kwargs: cluster_waits.append(table),
+    )
+    ch_lifecycle_backend_module.drop_ch_table(
+        object(), "db.local", ch_cluster=None, wait_for_absence=True
+    )
+    ch_lifecycle_backend_module.drop_ch_table(
+        object(), "db.clustered", ch_cluster="core", wait_for_absence=True
+    )
+    assert local_waits == ["db.local"]
+    assert cluster_waits == ["db.clustered"]
+    ch_lifecycle_backend_module.truncate_ch_distributed_table_pair(object(), "db.t")
+    ch_lifecycle_backend_module.create_ch_distributed_table_pair(
+        object(), table_name="db.t", joined_columns="id UInt64", wait_for_table=False
+    )
+    waited: list[str] = []
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_wait_for_ch_distributed_table_pair",
+        lambda _connection, table, **_kwargs: waited.append(table),
+    )
+    ch_lifecycle_backend_module.create_ch_distributed_table_pair(
+        object(), table_name="db.t", joined_columns="id UInt64", wait_for_table=True
+    )
+    assert waited == ["db.t"]
+
+
+def test_clickhouse_lifecycle_timeout_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ch_lifecycle_backend_module, "_execute_ch_sqls", lambda *_: None)
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_wait_for_ch_distributed_table_pair_absence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("lagging")),
+    )
+    with pytest.raises(TimeoutError, match="lagging"):
+        ch_lifecycle_backend_module.drop_ch_distributed_table_pair(
+            object(), "db.t", wait_for_absence=True, ch_retry_per_host_drops=False
+        )
+    with pytest.raises(TimeoutError, match="non-null ch_cluster"):
+        ch_lifecycle_backend_module.drop_ch_distributed_table_pair(
+            object(),
+            "db.t",
+            ch_cluster=None,
+            wait_for_absence=True,
+            ch_retry_per_host_drops=True,
+        )
+
+
+def test_clickhouse_lifecycle_host_selection_and_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pair = ch_lifecycle_backend_module.ch_distributed_table_pair("db.t")
+    assert ch_lifecycle_backend_module._select_ch_hosts_for_local_drop(
+        object(), pair, ch_cluster="core", configured_hosts=[]
+    ) == []
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_resolve_ch_cluster_name_for_wait",
+        lambda _connection, cluster: cluster,
+    )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_query_ch_cluster_table_rows",
+        lambda *args, **kwargs: [],
+    )
+    assert ch_lifecycle_backend_module._select_ch_hosts_for_local_drop(
+        object(), pair, ch_cluster="core", configured_hosts=["a", "b"]
+    ) == ["a", "b"]
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_query_ch_cluster_table_rows",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("query failed")),
+    )
+    assert ch_lifecycle_backend_module._select_ch_hosts_for_local_drop(
+        object(), pair, ch_cluster="core", configured_hosts=["a"]
+    ) == ["a"]
+
+    class Result:
+        def __init__(self) -> None:
+            self.result_rows = [(), ("  ",), (" host-a ",)]
+
+    class Connection:
+        def query(self, _sql: str) -> Result:
+            return Result()
+
+    assert ch_lifecycle_backend_module._query_ch_configured_cluster_hosts(
+        Connection(), "core"
+    ) == ["host-a"]
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_query_ch_configured_cluster_hosts",
+        lambda *_: [],
+    )
+    with pytest.raises(TimeoutError, match="could not find any configured"):
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_cluster_hosts(
+            object(),
+            pair,
+            ch_cluster="core",
+            query_label=None,
+            per_host_drop_workers=1,
+            per_host_connection_factory=lambda _host: object(),
+        )
+
+
+def test_clickhouse_lifecycle_per_host_error_and_close_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pair = ch_lifecycle_backend_module.ch_distributed_table_pair("db.t")
+    factory_error = RuntimeError("boom")
+
+    def fail_factory(_host: str) -> Any:
+        raise factory_error
+
+    assert "boom" in ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+        "host-a",
+        pair=pair,
+        query_label=None,
+        per_host_connection_factory=fail_factory,
+    )
+
+    close_error = RuntimeError("close failed")
+
+    class ClosingConnection:
+        def close(self) -> None:
+            raise close_error
+
+    monkeypatch.setattr(ch_lifecycle_backend_module, "_execute_ch_sqls", lambda *_: None)
+    assert ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+        "host-a",
+        pair=pair,
+        query_label=None,
+        per_host_connection_factory=lambda _host: None,
+    ) is None
+    assert ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+        "host-a",
+        pair=pair,
+        query_label=None,
+        per_host_connection_factory=lambda _host: object(),
+    ) is None
+    with pytest.raises(RuntimeError, match="close failed"):
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+            "host-a",
+            pair=pair,
+            query_label=None,
+            per_host_connection_factory=lambda _host: ClosingConnection(),
+        )
+
+
+def test_clickhouse_target_explicit_type_validation() -> None:
+    batch = pd.DataFrame({"a": [1], "b": [2]})
+    adapter = SimpleNamespace(infer_dataframe_column_type=lambda _series: "UInt64")
+    with pytest.raises(ValueError, match="Missing explicit SQL type for column 'b'"):
+        ch_target_create_backend_module.expected_create_table_column_types(
+            adapter,
+            batch,
+            {"a": "UInt8"},
+            ch_distributed_table=True,
+            ch_only_shard=False,
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        ch_target_create_backend_module.expected_create_table_column_types(
+            adapter,
+            pd.DataFrame({"a": [1]}),
+            {"a": "  "},
+            ch_distributed_table=True,
+            ch_only_shard=False,
+        )
+
+
+def test_clickhouse_upsert_requirements_and_placeholder_sqls() -> None:
+    adapter = SimpleNamespace(
+        build_preserved_target_rows_insert_sql=lambda *args, **kwargs: "preserved",
+        build_incoming_rows_insert_sql=lambda *args, **kwargs: "incoming",
+        build_drop_upsert_partition_sqls=lambda *args, **kwargs: ["drop"],
+        build_insert_from_stage_placeholder_sql=lambda *args, **kwargs: "final",
+    )
+    with pytest.raises(ValueError, match="are required"):
+        ch_upsert_backend_module.build_upsert_stage_sqls(
+            adapter,
+            "target",
+            "stage",
+            columns=["id"],
+            key_columns=["id"],
+        )
+    with pytest.raises(ValueError, match="are required"):
+        ch_upsert_backend_module.build_upsert_stage_placeholder_sqls(
+            adapter, "target", "stage", key_columns=["id"]
+        )
+    assert ch_upsert_backend_module.build_upsert_stage_placeholder_sqls(
+        adapter,
+        "target",
+        "stage",
+        key_columns=["id"],
+        upsert_partition_column="month",
+        final_stage_table="final_stage",
+    ) == ["preserved", "incoming", "drop", "final"]
+
+
+def test_clickhouse_wait_eventual_and_timeout_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        def __init__(self, rows: list[tuple[object, ...]]) -> None:
+            self.result_rows = rows
+
+    class SequenceConnection:
+        def __init__(self, rows: list[list[tuple[object, ...]]]) -> None:
+            self.rows = iter(rows)
+
+        def query(self, _sql: str) -> Result:
+            return Result(next(self.rows))
+
+    ticks = iter([0.0, 0.1, 0.2, 0.3])
+    sleeps: list[float] = []
+    monkeypatch.setattr(ch_backend_wait_module.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(ch_backend_wait_module.time, "sleep", sleeps.append)
+    ch_backend_wait_module._wait_for_ch_table(
+        SequenceConnection([[(0,)], [(1,)]]),
+        "db.t",
+        timeout_seconds=1,
+        poll_interval_seconds=0.25,
+    )
+    assert sleeps == [0.25]
+
+    ticks = iter([0.0, 0.1, 0.2, 0.3])
+    sleeps.clear()
+    ch_backend_wait_module._wait_for_ch_table_absence(
+        SequenceConnection([[(1,)], [(0,)]]),
+        "db.t",
+        timeout_seconds=1,
+        poll_interval_seconds=0.5,
+    )
+    assert sleeps == [0.5]
+
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_query_ch_expected_cluster_hosts",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("schema query")),
+    )
+    monkeypatch.setattr(ch_backend_wait_module.time, "monotonic", lambda: 1.0)
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_describe_ch_cluster_schema_mismatch",
+        lambda *args, **kwargs: "details",
+    )
+    with pytest.raises(TimeoutError, match="details") as exc_info:
+        ch_backend_wait_module._wait_for_ch_table_schema_on_cluster(
+            object(),
+            "db.t",
+            expected_column_types={"id": "UInt64"},
+            ch_cluster="core",
+            timeout_seconds=0,
+            poll_interval_seconds=0,
+        )
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+def test_clickhouse_lifecycle_concurrent_host_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pair = ch_lifecycle_backend_module.ch_distributed_table_pair("db.t")
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_query_ch_configured_cluster_hosts",
+        lambda *_: ["host-a"],
+    )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_select_ch_hosts_for_local_drop",
+        lambda *args, **kwargs: ["host-a"],
+    )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_drop_ch_distributed_table_pair_on_host",
+        lambda *args, **kwargs: "host-a: failed",
+    )
+    with pytest.raises(TimeoutError, match="host-a: failed"):
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_cluster_hosts(
+            object(),
+            pair,
+            ch_cluster="core",
+            query_label=None,
+            per_host_drop_workers=1,
+            per_host_connection_factory=lambda _host: object(),
+        )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "_drop_ch_distributed_table_pair_on_host",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("worker crashed")),
+    )
+    with pytest.raises(TimeoutError, match="worker crashed"):
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_cluster_hosts(
+            object(),
+            pair,
+            ch_cluster="core",
+            query_label=None,
+            per_host_drop_workers=1,
+            per_host_connection_factory=lambda _host: object(),
+        )
+
+
+def test_clickhouse_wait_schema_diagnostics_and_macro_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = [("extra", "String", 1)] + [
+        (f"c{i}", "Wrong", 1) for i in range(7)
+    ] + [("malformed",)]
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_query_ch_rows",
+        lambda *_: observed,
+    )
+    details = ch_backend_wait_module._describe_ch_cluster_schema_mismatch(
+        object(),
+        "db.t",
+        expected_column_types={f"c{i}": "UInt64" for i in range(7)},
+        ch_cluster="core",
+        expected_hosts=2,
+    )
+    assert "Schema mismatch details" in details
+    assert details.endswith("...")
+
+    class EmptyMacroConnection:
+        def query(self, _sql: str) -> Any:
+            return SimpleNamespace(result_rows=[])
+
+    with pytest.raises(ValueError, match="Could not resolve"):
+        ch_backend_wait_module._resolve_ch_cluster_name_for_wait(
+            EmptyMacroConnection(), "{cluster}"
+        )
+
+    macro_error = RuntimeError("macro failed")
+
+    class FailingMacroConnection:
+        def query(self, _sql: str) -> Any:
+            raise macro_error
+
+    with pytest.raises(ValueError, match="Could not resolve") as exc_info:
+        ch_backend_wait_module._resolve_ch_cluster_name_for_wait(
+            FailingMacroConnection(), "{cluster}"
+        )
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+def test_clickhouse_wait_cluster_absence_wrapper_and_plain_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_wait_for_ch_tables_absence_on_cluster",
+        lambda _connection, names, **_kwargs: calls.append(names),
+    )
+    ch_backend_wait_module._wait_for_ch_table_absence_on_cluster(
+        object(), "db.t", ch_cluster="core"
+    )
+    assert calls == [["db.t"]]
+
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_query_ch_expected_cluster_hosts",
+        lambda *args, **kwargs: 1,
+    )
+    monkeypatch.setattr(ch_backend_wait_module, "_query_ch_count", lambda *args: 0)
+    monkeypatch.setattr(ch_backend_wait_module.time, "monotonic", lambda: 1.0)
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_describe_ch_cluster_schema_mismatch",
+        lambda *args, **kwargs: "",
+    )
+    with pytest.raises(TimeoutError, match="did not match expected") as exc_info:
+        ch_backend_wait_module._wait_for_ch_table_schema_on_cluster(
+            object(),
+            "db.t",
+            expected_column_types={"id": "UInt64"},
+            ch_cluster="core",
+            timeout_seconds=0,
+            poll_interval_seconds=0,
+        )
+    assert exc_info.value.__cause__ is None
