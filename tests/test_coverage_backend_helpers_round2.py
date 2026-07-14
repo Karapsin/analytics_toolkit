@@ -17,6 +17,7 @@ ch_wait = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
 gp_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.gp.adapter")
 gp_ddl = importlib.import_module("analytics_toolkit.sql.backends.gp.ddl")
 gp_insert = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
+gp_operations = importlib.import_module("analytics_toolkit.sql.backends.gp.operations")
 trino_operations = importlib.import_module("analytics_toolkit.sql.backends.trino.operations")
 trino_parquet = importlib.import_module("analytics_toolkit.sql.backends.trino.parquet_stage")
 
@@ -270,6 +271,60 @@ def test_greenplum_adapter_execution_and_type_branches(
     )
 
 
+def test_greenplum_execute_loops_read_cleanup_and_dataframe_delegate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = gp_adapter_module.GreenplumAdapter()
+    messages: list[str] = []
+    monkeypatch.setattr(
+        importlib.import_module("analytics_toolkit.general"),
+        "time_print",
+        lambda message, **_kwargs: messages.append(message),
+    )
+
+    connection = RecordingConnection()
+    adapter.execute_sql(
+        connection,
+        "SELECT 1; SELECT 2",
+        print_queries=False,
+        gp_break_query=True,
+        gp_commit_each_statement=False,
+        progress=False,
+    )
+    assert connection.commits == 1
+
+    failed_cursor = RecordingCursor(fail_on="SET broken")
+    failed_connection = RecordingConnection(failed_cursor)
+    with pytest.raises(RuntimeError, match="query failed"):
+        adapter.execute_read_sql(
+            failed_connection,
+            ["SET broken", "SELECT 1"],
+            print_queries=False,
+            gp_break_query=False,
+            gp_commit_each_statement=False,
+            progress=False,
+        )
+    assert failed_cursor.closed is True
+    assert "Failed SQL:\nSELECT 1" in messages
+
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_insert_rows",
+        lambda *args, **kwargs: calls.append((*args, kwargs)),
+    )
+    adapter._insert_dataframe_batch(
+        object(),
+        "target",
+        pd.DataFrame({"id": [1], "value": [None]}),
+        gp_insert_chunk_size=3,
+        query_label="batch",
+        on_progress=None,
+    )
+    assert list(calls[0][2]) == ["id", "value"]
+    assert calls[0][3] == [(1, None)]
+
+
 def test_greenplum_adapter_insert_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = gp_adapter_module.GreenplumAdapter()
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
@@ -491,6 +546,74 @@ def test_gp_ddl_missing_columns_and_partition_fallbacks() -> None:
     assert gp_ddl.format_gp_partition_clause(" ; ") == ""
 
 
+def test_gp_ddl_minimal_catalog_and_empty_helper_edges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_partition_clause = gp_ddl.read_gp_partition_clause
+    relation = pd.DataFrame(
+        [
+            {
+                "oid": "1",
+                "schema_name": "public",
+                "relation_name": "events",
+                "reloptions": None,
+                "table_comment": None,
+            }
+        ]
+    )
+    columns = pd.DataFrame(
+        [
+            {
+                "column_name": "id",
+                "formatted_type": "integer",
+                "default_expr": None,
+                "is_not_null": False,
+                "column_comment": None,
+                "attnum": 1,
+            }
+        ]
+    )
+
+    def read_sql(_connection_key: str, query: str) -> pd.DataFrame:
+        if "FROM pg_catalog.pg_class AS c" in query:
+            return relation
+        if "FROM pg_catalog.pg_attribute AS a" in query:
+            return columns
+        if any(
+            marker in query
+            for marker in (
+                "FROM pg_catalog.pg_constraint",
+                "FROM pg_catalog.pg_inherits",
+                "FROM pg_catalog.pg_index",
+            )
+        ):
+            return pd.DataFrame()
+        raise AssertionError(query)
+
+    monkeypatch.setattr(gp_ddl, "read_gp_partition_clause", lambda *args, **kwargs: "")
+    monkeypatch.setattr(gp_ddl, "read_gp_distribution_clause", lambda *args, **kwargs: "")
+    ddl = gp_ddl.extract_greenplum_catalog_ddl("gp", "public.events", read_sql=read_sql)
+    assert ddl == 'CREATE TABLE "public"."events" (\n    "id" integer\n);'
+
+    assert (
+        read_partition_clause(
+            "gp",
+            "1",
+            read_sql=lambda *_args: pd.DataFrame(
+                [{"has_partkeydef": False, "has_partition_def": False}]
+            ),
+        )
+        == ""
+    )
+    assert gp_ddl.format_gp_partition_clause(None) == ""
+    with pytest.raises(ValueError, match="No DDL"):
+        gp_ddl.first_result_value(pd.DataFrame(), "events")
+    with pytest.raises(ValueError, match="No DDL"):
+        gp_ddl.first_result_value(pd.DataFrame({"ddl": [pd.NA]}), "events")
+    assert gp_ddl.parse_pg_array_text("   ") == []
+    assert gp_ddl.parse_attrnums(None) == []
+
+
 def test_gp_ddl_distribution_catalog_fallbacks() -> None:
     columns = pd.DataFrame([{"attnum": 1, "column_name": "id"}])
     calls = 0
@@ -592,6 +715,30 @@ def test_gp_ddl_helper_error_and_formatting_branches() -> None:
     assert gp_ddl.is_missing_pg_get_tabledef_error(UndefinedFunction("pg_get_tabledef unavailable"))
     assert not gp_ddl.is_missing_pg_get_tabledef_error(UndefinedFunction("different function"))
     assert gp_ddl.exception_text(Exception()) == ""
+
+
+def test_gp_operation_backend_only_options_and_partition_requirements() -> None:
+    with pytest.raises(InvalidSqlInputError, match="only supported for Trino"):
+        gp_operations.build_show_tables_query(
+            object(),
+            object(),
+            None,
+            None,
+            None,
+            trino_catalog="hive",
+        )
+    with pytest.raises(InvalidSqlInputError, match="both start and end"):
+        gp_operations.build_create_partition_sql(
+            object(),
+            "public.events",
+            name="p1",
+            start="2026-01-01",
+        )
+
+
+def test_gp_null_scalar_is_normalized_for_insert() -> None:
+    assert gp_insert._is_null_like(None) is True
+    assert gp_insert.normalize_insert_rows(object(), [[None]]) == [(None,)]
 
 
 def test_clickhouse_metadata_application_and_macro_fallbacks() -> None:

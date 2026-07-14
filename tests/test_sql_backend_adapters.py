@@ -2474,6 +2474,142 @@ def test_clickhouse_adapter_stage_finalization_and_existing_metadata(
     assert create_calls[0]["table_schema"] == {"stored_id": "UInt32"}
 
 
+class MinimalContractAdapter(BackendAdapter):
+    backend = "minimal"
+    display_name = "Minimal"
+    sqlglot_dialect = "postgres"
+    identifier_quote = '"'
+    supports_transactions = False
+    supports_analyze = True
+    supports_distributed_tables = False
+    truncate_semantics = "truncate"
+    drop_semantics = "drop"
+    create_semantics = "create"
+    type_family = "test"
+
+
+def test_base_adapter_metadata_abstract_and_value_contracts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = MinimalContractAdapter()
+    assert adapter.name == "minimal"
+    assert adapter.capability.display_name == "Minimal"
+
+    executed: list[str] = []
+    monkeypatch.setattr(
+        adapter,
+        "execute_command",
+        lambda _connection, sql: executed.append(sql),
+    )
+    adapter.analyze_table(object(), "public.events", query_label="contract")
+    assert executed
+    assert "ANALYZE public.events" in executed[0]
+
+    with pytest.raises(NotImplementedError):
+        adapter.iter_source_batches(
+            connection_key="source",
+            connection_ref={"connection": object()},
+            query="SELECT 1",
+            get_batch_size=lambda: 1,
+            retry_cnt=0,
+            timeout_increment=0,
+        )
+    with pytest.raises(NotImplementedError):
+        adapter.build_drop_upsert_partition_sqls(
+            "target",
+            partition_column="day",
+            partition_values=None,
+        )
+    with pytest.raises(UnsupportedConnectionTypeError, match="does not support"):
+        adapter.build_dataframe_batch_insert_sql("target", ["id"], row_count=1)
+
+    with pytest.raises(ValueError, match="missing staged column"):
+        adapter.column_types_for_columns({"id": "BIGINT"}, ["id", "value"])
+    assert adapter.type_code_name(None, None, None) is None
+    assert adapter.type_code_name(SimpleNamespace(type_name="custom"), None, None) == "custom"
+    assert adapter.type_code_name(object(), None, None).startswith("<object object")
+    with pytest.raises(ValueError, match="empty strings"):
+        adapter.normalize_query_id("  ")
+    assert adapter.normalize_query_id(7) == "7"
+    with pytest.raises(ValueError, match="strings or integers"):
+        adapter.normalize_query_id(True)
+    assert "FROM (SELECT 1)" in adapter.build_insert_from_query_sql(
+        "target", " SELECT 1; ", {"id": "BIGINT"}
+    )
+
+
+def test_base_adapter_write_stage_and_finalization_contracts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = MinimalContractAdapter()
+    events: list[Any] = []
+    monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
+    monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
+
+    def request(**values: Any) -> TargetWriteModeRequest:
+        return TargetWriteModeRequest(
+            connection=object(),
+            table_name="target",
+            write_mode=values.get("write_mode", "replace"),
+            target_exists=values.get("target_exists", True),
+            replace_existing_non_ch=values.get("policy", "clear"),
+        )
+    assert adapter.apply_target_write_mode(request(write_mode="append")) is True
+    assert adapter.apply_target_write_mode(request(policy="drop")) is False
+    with pytest.raises(ValueError, match="clear, drop"):
+        adapter.apply_target_write_mode(request(policy="invalid"))
+    assert events == ["drop"]
+
+    creates: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        importlib.import_module("analytics_toolkit.sql.ddl.api"),
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: creates.append(kwargs),
+    )
+    adapter.ensure_stage_target_table(
+        StageTargetTableRequest(
+            connection=object(),
+            target_table="target",
+            sample_batch=pd.DataFrame({"id": [1]}),
+            target_column_types={"id": "BIGINT"},
+            gp_distributed_by_key=None,
+            partition_by=["day"],
+            order_by=["id"],
+            ch_engine="MergeTree",
+            ch_cluster="cluster",
+            ch_sharding_key="id",
+            query_label=None,
+            connection_key="minimal",
+        )
+    )
+    assert creates[0]["partition_by"] == ["day"]
+    assert creates[0]["order_by"] == ["id"]
+
+    events.clear()
+    monkeypatch.setattr(
+        adapter,
+        "ensure_stage_target_table",
+        lambda _request: events.append("ensure") or True,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "insert_from_table",
+        lambda *args, **kwargs: events.append(("insert", args[2])),
+    )
+    for target_exists in (True, False):
+        adapter.finalize_stage_table(
+            StageFinalizationRequest(
+                connection=object(),
+                stage_table="stage",
+                target_table="target",
+                replace_target_table=False,
+                target_exists=target_exists,
+                sample_batch=pd.DataFrame({"id": [1]}),
+            )
+        )
+    assert events == [("insert", "stage"), "ensure", ("insert", "stage")]
+
+
 def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

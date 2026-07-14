@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import importlib
 from datetime import date
 from types import SimpleNamespace
@@ -7,10 +8,8 @@ from typing import Any
 
 import pandas as pd
 import pytest
-
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.connection.errors import SqlConfigError
-
 
 trino_insert = importlib.import_module("analytics_toolkit.sql.backends.trino.insert")
 ch_source_count = importlib.import_module(
@@ -20,6 +19,8 @@ ch_source_schema = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.source_schema"
 )
 connection_config = importlib.import_module("analytics_toolkit.sql.connection.config")
+source_schema = importlib.import_module("analytics_toolkit.sql.backends.source_schema")
+gp_config = importlib.import_module("analytics_toolkit.sql.backends.gp.config")
 
 
 class FakeCursor:
@@ -54,6 +55,69 @@ class FakeTrinoAdapter:
         self.calls.append((table_name, tuple(columns), row_count, query_label))
         return f"INSERT INTO {table_name} VALUES " + ", ".join(
             ["(?, ?)"] * row_count
+        )
+
+
+def test_shared_source_schema_description_and_type_normalization_edges() -> None:
+    description = SimpleNamespace(
+        name="amount",
+        type_code="decimal",
+        precision="12",
+        scale="2",
+    )
+    assert source_schema.source_column_from_description(
+        description,
+        type_code_name=lambda code, precision, scale: f"{code}({precision},{scale})",
+    ) == SourceColumn("amount", "decimal(12,2)", precision=12, scale=2)
+    assert source_schema.description_value(object(), "missing", 3) is None
+    assert source_schema.optional_int("invalid") is None
+
+    assert source_schema.normalize_type_name(None) == ""
+    assert (
+        source_schema.normalize_type_name(" Nullable(LowCardinality(String)) ")
+        == "string"
+    )
+    assert source_schema.unwrap_type("string", "nullable") == "string"
+    assert source_schema.classify_source_type("") == "string"
+    assert source_schema.classify_source_type("geography") == "string"
+
+
+def test_shared_source_schema_clickhouse_nullability_refinement_edges() -> None:
+    assert source_schema.refine_clickhouse_column_types_nullability_from_rows(
+        None, ["id"], [(1,)]
+    ) is None
+    original = {"id": "Nullable(Int64)"}
+    assert source_schema.refine_clickhouse_column_types_nullability_from_rows(
+        original, ["id"], []
+    ) is original
+
+    refined = source_schema.refine_clickhouse_column_types_nullability_from_rows(
+        {"id": "Nullable(Int64)", "payload": "String", "unseen": "UInt8"},
+        ["id", "payload"],
+        [(1, None)],
+    )
+    assert refined == {"id": "Int64", "payload": "Nullable(String)", "unseen": "UInt8"}
+    assert source_schema.is_null_value(None) is True
+    assert source_schema.is_null_value([1, 2]) is False
+
+
+def test_gp_config_reports_blocked_psycopg2_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def blocked_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "psycopg2":
+            message = "blocked"
+            raise ImportError(message)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+    with pytest.raises(ImportError, match="required for Greenplum connections"):
+        gp_config.open_connection(
+            SimpleNamespace(),
+            resolve_ca_certs=lambda *_args: None,
+            resolve_single_cert_path=lambda *_args: None,
         )
 
 

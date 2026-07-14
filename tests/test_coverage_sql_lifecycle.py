@@ -16,6 +16,9 @@ maintenance = importlib.import_module("analytics_toolkit.sql.dml.table.maintenan
 table_validation = importlib.import_module("analytics_toolkit.sql.dml.table.table_validation")
 errors = importlib.import_module("analytics_toolkit.sql.connection.errors")
 backend_utils = importlib.import_module("analytics_toolkit.sql.backends.utils")
+backend_upsert = importlib.import_module("analytics_toolkit.sql.backends.upsert")
+backend_dbapi = importlib.import_module("analytics_toolkit.sql.backends.dbapi")
+backend_validation = importlib.import_module("analytics_toolkit.sql.backends.validation")
 ch_options = importlib.import_module("analytics_toolkit.sql.clickhouse.options")
 backends = importlib.import_module("analytics_toolkit.sql.backends")
 
@@ -620,6 +623,101 @@ class RowCountResult:
 )
 def test_extract_row_count_supports_backend_result_shapes(executed: Any, expected: int) -> None:
     assert backend_utils.extract_row_count(executed) == expected
+
+
+def test_shared_upsert_source_requires_columns_and_builds_union() -> None:
+    adapter = SimpleNamespace(quote_identifier=lambda column: f'"{column}"')
+    assert backend_upsert.incoming_stage_source_sql(adapter, "stage") == "stage"
+    with pytest.raises(ValueError, match="columns are required"):
+        backend_upsert.incoming_stage_source_sql(
+            adapter,
+            "stage",
+            incoming_stage_tables=["stage_a", "stage_b"],
+        )
+    assert backend_upsert.incoming_stage_source_sql(
+        adapter,
+        "stage",
+        incoming_stage_tables=["stage_a", "stage_b"],
+        columns=["id", "value"],
+    ) == ('(\nSELECT "id", "value" FROM stage_a\nUNION ALL\nSELECT "id", "value" FROM stage_b\n)')
+
+
+def test_backend_row_count_falls_through_summary_to_attributes() -> None:
+    result = RowCountResult(
+        rowcount=-1,
+        summary={"rows": "invalid"},
+        written_rows="11",
+    )
+    assert backend_utils.extract_row_count(result) == 11
+    assert backend_utils._extract_row_count_from_mapping({"rows": "invalid"}) is None
+
+    class SummaryMapping(dict):
+        def __init__(self, **values: Any) -> None:
+            super().__init__(**values)
+            self.summary = {"rows": 12}
+
+    assert backend_utils.extract_row_count(SummaryMapping(rows="invalid")) == 12
+
+
+class InsertDbApiAdapter(backend_dbapi.DbApiBackendAdapter):
+    def build_insert_from_query_sql(
+        self,
+        target_table: str,
+        source_sql: str,
+        column_types: Any,
+    ) -> str:
+        del column_types
+        return f"INSERT INTO {target_table} {source_sql}"
+
+
+class InsertCursor:
+    rowcount = 4
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.closed = False
+
+    def execute(self, _sql: str) -> None:
+        if self.error is not None:
+            raise self.error
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_dbapi_insert_without_transactions_closes_on_success_and_failure() -> None:
+    adapter = InsertDbApiAdapter(backend="test", commit_commands=False)
+    success_cursor = InsertCursor()
+    success_connection = SimpleNamespace(cursor=lambda: success_cursor)
+    assert (
+        adapter.insert_from_query(
+            success_connection, "target", "SELECT 1", {}, query_label="contract"
+        )
+        == 4
+    )
+    assert success_cursor.closed is True
+
+    failed_cursor = InsertCursor(RuntimeError("insert failed"))
+    failed_connection = SimpleNamespace(cursor=lambda: failed_cursor)
+    with pytest.raises(RuntimeError, match="insert failed"):
+        adapter.insert_from_query(failed_connection, "target", "SELECT 1", {})
+    assert failed_cursor.closed is True
+
+
+def test_backend_validation_single_stage_delegates_to_adapter() -> None:
+    calls: list[tuple[str, Any]] = []
+    adapter = SimpleNamespace(
+        build_stage_duplicate_keys_sql=lambda table, keys: (
+            calls.append((table, keys)) or "SELECT duplicate"
+        )
+    )
+    assert (
+        backend_validation.build_stage_duplicate_keys_sql_for_tables(
+            adapter, ["only_stage"], ["id"]
+        )
+        == "SELECT duplicate"
+    )
+    assert calls == [("only_stage", ["id"])]
 
 
 def test_backend_sql_literal_helpers() -> None:

@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Completed deterministic ClickHouse lifecycle, DML, and metadata coverage.
+- Completed shared and Greenplum backend contract coverage.
 
 ## 1.3.10.17 - 2026-07-14
 

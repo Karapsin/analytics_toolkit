@@ -310,6 +310,22 @@ def test_trino_output_row_count_from_payload(payload: Any, expected: int | None)
     assert estimate._trino_output_row_count_from_payload(payload) == expected
 
 
+def test_source_estimate_scans_later_nested_and_text_candidates() -> None:
+    assert (
+        estimate._trino_output_row_count_from_payload(
+            {
+                "statsAndCosts": {
+                    "first": {"other": 1},
+                    "second": {"outputRowCount": "8.4"},
+                }
+            }
+        )
+        == 8
+    )
+    assert estimate._extract_text_plan_rows([f"rows={'9' * 400}", "rows=3.6"]) == 4
+    assert estimate._is_simple_clickhouse_select("DELETE FROM source") is False
+
+
 def test_extract_trino_output_row_count_scans_multiple_payloads() -> None:
     values = ["not-json", '{"root": {}}', b'{"stats": {"outputRowCount": 6}}']
 
