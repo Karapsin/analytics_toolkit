@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ch_ctas_module = importlib.import_module(
     "analytics_toolkit.sql.dml.table.ch_create_table_as"
 )
+ch_ctas_impl = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.create_table_as"
+)
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -413,3 +416,153 @@ def test_ch_create_table_as_schema_inference_cte_unknown_table_adds_hint(
     notes = "\n".join(getattr(exc_info.value, "__notes__", ()))
     assert "ClickHouse could not resolve CTE 'trigger_map'" in notes
     assert "GLOBAL LEFT JOIN trigger_map AS alias" in notes
+
+
+def test_ch_create_table_as_only_shard_executes_drop_create_and_metadata(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    result = ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        ch_only_shard=True,
+        return_metadata=True,
+        table_schema={"dt": "Date", "id": "UInt64", "amount": "Float64"},
+    )
+    assert fake_client.commands[0] == f"DROP TABLE IF EXISTS {TARGET_TABLE}"
+    assert fake_client.commands[1].startswith(f"CREATE OR REPLACE TABLE {TARGET_TABLE}")
+    assert fake_client.commands[2] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
+    assert result.metadata.statement_count == 3
+    assert fake_client.close_calls == 1
+
+
+def test_ch_create_table_as_explicit_schema_failure_adds_cte_note(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    error = FakeDatabaseError("Code: 60. Table default.trigger_map does not exist. (UNKNOWN_TABLE)")
+    fake_client.schema_query_error = error
+    with pytest.raises(FakeDatabaseError) as exc_info:
+        ch_ctas_module.ch_create_table_as(
+            "ch",
+            TARGET_TABLE,
+            CTE_JOIN_QUERY,
+            table_schema={"id": "UInt64", "kind": "String"},
+        )
+    assert "ClickHouse could not resolve CTE 'trigger_map'" in "\n".join(
+        getattr(exc_info.value, "__notes__", ())
+    )
+    assert fake_client.close_calls == 1
+
+
+def test_ch_create_table_as_dry_schema_placeholders_and_validation() -> None:
+    local_plan = ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        ch_only_shard=True,
+        dry_run=True,
+    )
+    assert local_plan.sqls[1] == (f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE} (<query schema>)")
+    distributed_plan = ch_ctas_module.ch_create_table_as(
+        "ch",
+        TARGET_TABLE,
+        QUERY,
+        dry_run=True,
+    )
+    assert sum("<query schema>" in sql for sql in distributed_plan.sqls) == 4
+    with pytest.raises(ValueError, match="ch_only_shard must be a boolean"):
+        ch_ctas_impl.build_ch_create_table_as_sqls(
+            TARGET_TABLE,
+            "`id` UInt64",
+            QUERY,
+            ch_only_shard=1,
+        )
+    with pytest.raises(ch_ctas_module.InvalidSqlInputError, match="must not be empty"):
+        ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, "   ")
+
+
+def test_ch_create_table_as_schema_result_validation_and_type_fallback() -> None:
+    class ResultConnection:
+        def __init__(self, result: FakeClickHouseResult) -> None:
+            self.result = result
+
+        def query(self, _sql: str) -> FakeClickHouseResult:
+            return self.result
+
+    with pytest.raises(ValueError, match="at least one column"):
+        ch_ctas_impl._infer_ch_query_columns(
+            ResultConnection(FakeClickHouseResult([])),
+            QUERY,
+        )
+    with pytest.raises(ValueError, match="Could not infer"):
+        ch_ctas_impl._infer_ch_query_columns(
+            ResultConnection(FakeClickHouseResult([], column_names=("id",), column_types=())),
+            QUERY,
+        )
+    with pytest.raises(ValueError, match="at least one column"):
+        ch_ctas_impl._inspect_ch_query_column_names(
+            ResultConnection(FakeClickHouseResult([])),
+            QUERY,
+        )
+    assert ch_ctas_impl._ch_type_name("UInt64") == "UInt64"
+
+
+def test_ch_create_table_as_explicit_types_missing_blank_and_valid(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    with pytest.raises(ValueError, match=r"missing SQL type for column.*amount"):
+        ch_ctas_module.ch_create_table_as(
+            "ch",
+            TARGET_TABLE,
+            QUERY,
+            table_schema={"dt": "Date", "id": "UInt64"},
+        )
+    assert fake_client.close_calls == 1
+
+    with pytest.raises(ValueError, match="SQL type for column 'id' must not be empty"):
+        ch_ctas_module.ch_create_table_as(
+            "ch",
+            TARGET_TABLE,
+            QUERY,
+            table_schema={"dt": "Date", "id": "  ", "amount": "Float64"},
+        )
+    assert fake_client.close_calls == 1
+
+    definitions = ch_ctas_impl.build_table_schema_column_definitions(
+        "ch",
+        {"dt": "Date", "id": "UInt64", "amount": "Float64"},
+        columns=["dt", "id", "amount"],
+    )
+    assert definitions == "`dt` Date, `id` UInt64, `amount` Float64"
+
+
+def test_ch_create_table_as_cte_parser_matching_and_note_edges() -> None:
+    assert ch_ctas_impl._extract_query_cte_names("not valid (") == {}
+    scalar = "WITH one AS 1 SELECT one"
+    assert ch_ctas_impl._extract_query_cte_names(scalar) == {}
+    assert ch_ctas_impl._clickhouse_missing_table_names(RuntimeError("ordinary")) == []
+    assert ch_ctas_impl._clickhouse_missing_table_names(
+        RuntimeError(
+            "UNKNOWN_TABLE: Table `default`.`trigger_map` does not exist; "
+            "Table db.other does not exist"
+        )
+    ) == ["trigger_map", "other"]
+    error = RuntimeError("Table default.trigger_map does not exist")
+    ch_ctas_impl._annotate_ch_cte_join_exception(error, CTE_JOIN_QUERY, backend="gp")
+    assert getattr(error, "__notes__", ()) == ()
+    ch_ctas_impl._annotate_ch_cte_join_exception(
+        error,
+        "SELECT * FROM missing",
+        backend="ch",
+    )
+    assert getattr(error, "__notes__", ()) == ()
+
+    note = ch_ctas_impl._ch_cte_join_note("trigger_map")
+    ch_ctas_impl._add_exception_note_once(error, note)
+    ch_ctas_impl._add_exception_note_once(error, note)
+    assert getattr(error, "__notes__", ()).count(note) == 1
+
+    fallback_error = RuntimeError("fallback")
+    fallback_error.add_note = None  # type: ignore[method-assign]
+    ch_ctas_impl._add_exception_note_once(fallback_error, "fallback note")
+    assert fallback_error.__notes__ == ["fallback note"]

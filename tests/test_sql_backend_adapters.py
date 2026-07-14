@@ -15,7 +15,12 @@ from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend
 from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
 from analytics_toolkit.sql.backends.base import BackendAdapter
 from analytics_toolkit.sql.backends.gp.adapter import GP_IDENTIFIER_MAX_BYTES
-from analytics_toolkit.sql.backends.models import SourceColumn
+from analytics_toolkit.sql.backends.models import (
+    SourceColumn,
+    StageFinalizationRequest,
+    StageTargetTableRequest,
+    TargetWriteModeRequest,
+)
 from analytics_toolkit.sql.backends.registry import (
     backend_capability_map,
     get_backend_capability,
@@ -62,6 +67,12 @@ adapter_defaults_module = importlib.import_module(
 )
 trino_adapter_module = importlib.import_module(
     "analytics_toolkit.sql.backends.trino.adapter"
+)
+ch_adapter_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.adapter"
+)
+ch_lifecycle_backend_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.lifecycle"
 )
 
 
@@ -2236,3 +2247,260 @@ def test_trino_adapter_partition_template_validation() -> None:
         partition_values=None,
         trino_partition_drop_sql_template=template,
     )[0]
+
+
+def test_clickhouse_adapter_maintenance_delete_and_progress_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_backend_adapter("ch")
+    client = RecordingClickHouseClient()
+    adapter.truncate_table(client, "analytics.events", ch_cluster="cluster one")
+    assert client.commands[-1][0] == (
+        "TRUNCATE TABLE IF EXISTS analytics.events ON CLUSTER 'cluster one'"
+    )
+    with pytest.raises(UnsupportedConnectionTypeError, match="does not support ANALYZE"):
+        adapter.analyze_table_sql("analytics.events")
+    assert adapter.analyze_table(client, "analytics.events") is None
+
+    delete_sql = adapter._build_delete_matching_stage_sql(
+        "analytics.events",
+        "analytics.events_stage",
+        ["id", "group"],
+        ch_cluster="{cluster}",
+    )
+    assert "tuple(isNull(`id`), ifNull(toString(`id`), '')" in delete_sql
+    assert "SELECT tuple(isNull(`id`)" in delete_sql
+
+    progress: list[int] = []
+    frame = pd.DataFrame({"id": [1, 2]})
+    client.insert_df = lambda **kwargs: None  # type: ignore[attr-defined]
+    client.insert = lambda **kwargs: None  # type: ignore[attr-defined]
+    adapter._insert_dataframe_batch(client, "events", frame, progress.append)
+    adapter._insert_rows(
+        client,
+        "events",
+        ["id"],
+        [(1,), (2,), (3,)],
+        {"id": "UInt64"},
+        progress.append,
+    )
+    adapter._insert_rows(client, "events", ["id"], [(4,)], None)
+    assert progress == [2, 3]
+
+
+def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_backend_adapter("ch")
+    messages: list[str] = []
+    monkeypatch.setattr(
+        importlib.import_module("analytics_toolkit.general"),
+        "time_print",
+        lambda message, **_kwargs: messages.append(message),
+    )
+
+    command_error = RuntimeError("command failed")
+    read_error = RuntimeError("read failed")
+
+    class FailingClient:
+        def command(self, sql: str) -> None:
+            if sql == "SELECT 2":
+                raise command_error
+
+        def query_df(self, sql: str) -> pd.DataFrame:
+            raise read_error
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        adapter.execute_sql(
+            FailingClient(),
+            "SELECT 1; SELECT 2",
+            print_queries=False,
+            gp_break_query=False,
+            gp_commit_each_statement=False,
+            progress=False,
+        )
+    with pytest.raises(RuntimeError, match="read failed"):
+        adapter.execute_read_sql(
+            FailingClient(),
+            ["SELECT broken"],
+            print_queries=False,
+            gp_break_query=False,
+            gp_commit_each_statement=False,
+            progress=False,
+        )
+    assert "Failed SQL:\nSELECT 2" in messages
+    assert "Failed SQL:\nSELECT broken" in messages
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("append", True, False, True, True),
+        ("append", False, False, True, False),
+        ("truncate_insert", True, True, True, True),
+        ("truncate_insert", False, True, False, False),
+        ("replace", True, True, True, False),
+        ("truncate_insert", True, False, True, True),
+        ("truncate_insert", False, False, False, False),
+        ("replace", True, False, True, False),
+    ],
+)
+def test_clickhouse_adapter_write_mode_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, bool, bool, bool, bool],
+) -> None:
+    write_mode, target_exists, only_shard, drop_missing, expected = case
+    adapter = get_backend_adapter("ch")
+    events: list[str] = []
+    monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
+    monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "truncate_ch_distributed_table_pair",
+        lambda *args, **kwargs: events.append("truncate_pair"),
+    )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "drop_ch_distributed_table_pair",
+        lambda *args, **kwargs: events.append("drop_pair"),
+    )
+    result = adapter.apply_target_write_mode(
+        TargetWriteModeRequest(
+            connection=object(),
+            table_name="analytics.events",
+            write_mode=write_mode,
+            target_exists=target_exists,
+            replace_existing_non_ch="clear",
+            drop_missing_ch_truncate_target=drop_missing,
+            ch_only_shard=only_shard,
+        )
+    )
+    assert result is expected
+    if write_mode == "replace":
+        assert events == (["drop"] if only_shard else ["drop_pair"])
+
+
+def test_clickhouse_adapter_stage_finalization_and_existing_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_backend_adapter("ch")
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        adapter,
+        "ensure_distributed_target_pair",
+        lambda *args, **kwargs: calls.append(("ensure", kwargs.get("target_exists"))),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "insert_from_table",
+        lambda *args, **kwargs: calls.append(("insert", args[2])),
+    )
+    request = StageTargetTableRequest(
+        connection=object(),
+        target_table="events",
+        sample_batch=pd.DataFrame({"id": [1]}),
+        target_column_types={"id": "UInt64"},
+        gp_distributed_by_key=None,
+        partition_by=None,
+        order_by=["id"],
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="id",
+        query_label=None,
+        connection_key="ch",
+    )
+    assert adapter.ensure_stage_target_table(request) is True
+    assert calls == [("ensure", False)]
+
+    calls.clear()
+    adapter.finalize_stage_table(
+        StageFinalizationRequest(
+            connection=object(),
+            stage_table="events_stage",
+            target_table="events",
+            replace_target_table=False,
+            target_exists=False,
+            sample_batch=pd.DataFrame({"id": [1]}),
+            target_column_types={"id": "UInt64"},
+            write_mode="upsert",
+        )
+    )
+    assert calls == [("ensure", False), ("insert", "events_stage")]
+
+    metadata_adapter = ch_adapter_module.ClickHouseAdapter()
+    monkeypatch.setattr(
+        metadata_adapter,
+        "get_table_column_types",
+        lambda *args, **kwargs: {"stored_id": "UInt32"},
+    )
+    create_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        importlib.import_module("analytics_toolkit.sql.ddl.api"),
+        "_create_sql_table_with_connection",
+        lambda *args, **kwargs: create_calls.append(kwargs),
+    )
+    metadata_adapter.ensure_distributed_target_pair(
+        object(),
+        "events",
+        pd.DataFrame({"id": [1]}),
+        target_exists=True,
+        target_column_types=None,
+        insert_column_types=None,
+        gp_distributed_by_key=None,
+        partition_by=None,
+        order_by=None,
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="rand()",
+        query_label=None,
+        connection_key="ch",
+    )
+    assert create_calls[0]["table_schema"] == {"stored_id": "UInt32"}
+
+
+def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_backend_adapter("ch")
+    monkeypatch.setattr(adapter, "ensure_distributed_target_pair", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        adapter, "fetch_upsert_partition_values", lambda *args, **kwargs: ["2026-01"]
+    )
+    monkeypatch.setattr(
+        adapter, "build_upsert_stage_sqls", lambda *args, **kwargs: ["ALTER TABLE x"]
+    )
+    commands: list[str] = []
+    monkeypatch.setattr(adapter, "execute_command", lambda _connection, sql: commands.append(sql))
+    adapter.finalize_stage_table(
+        StageFinalizationRequest(
+            connection=object(),
+            stage_table="events_stage",
+            target_table="events",
+            replace_target_table=False,
+            target_exists=True,
+            sample_batch=pd.DataFrame({"id": [1], "month": ["2026-01"]}),
+            target_column_types={"id": "UInt64", "month": "String"},
+            write_mode="upsert",
+            upsert_partition_column="month",
+        )
+    )
+    assert commands == ["ALTER TABLE x"]
+    with pytest.raises(ValueError, match="upsert_partition_column is required"):
+        adapter.finalize_stage_table(
+            StageFinalizationRequest(
+                connection=object(),
+                stage_table="stage",
+                target_table="events",
+                replace_target_table=False,
+                target_exists=True,
+                sample_batch=pd.DataFrame({"id": [1]}),
+                write_mode="upsert",
+            )
+        )
+    assert "system.processes" in adapter.running_query_ids_sql()
+    assert adapter.cancel_status(pd.DataFrame()) == (True, "submitted")
+    assert ch_adapter_module.ch_cluster_clause(None) == ""
+    with pytest.raises(ValueError, match="must not be empty"):
+        ch_adapter_module.ch_cluster_clause("  ")
+    assert ch_adapter_module.format_ch_cluster_name("`quoted`") == "`quoted`"
+    assert ch_adapter_module.is_simple_identifier("") is False

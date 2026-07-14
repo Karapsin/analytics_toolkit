@@ -42,6 +42,9 @@ load_sql_table_module = importlib.import_module(
 trino_config_module = importlib.import_module(
     "analytics_toolkit.sql.backends.trino.config"
 )
+ch_config_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.config"
+)
 
 _MISSING = object()
 
@@ -2100,7 +2103,6 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
             events.append(
                 ("validate_ch_columns", value, columns, option_name, data_name)
             )
-
         def build_create_from_sql_target_create_kwargs(
             self,
             **kwargs: object,
@@ -2958,3 +2960,42 @@ def test_airflow_trino_connections_file_supports_transfer_staging_location(
         config.transfer_staging_location
         == "s3://bucket/tmp/analytics_toolkit_transfer"
     )
+
+
+def test_direct_clickhouse_connection_reports_blocked_connector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import = builtins.__import__
+
+    def blocked_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "clickhouse_connect" or name.startswith("clickhouse_connect."):
+            message = "blocked"
+            raise ImportError(message)
+        return real_import(name, *args, **kwargs)
+
+    config = types.SimpleNamespace(
+        host="clickhouse.example",
+        port=8443,
+        user="analyst",
+        password="secret",
+        secure=True,
+        database=None,
+        verify_value=None,
+        connect_timeout=None,
+        send_receive_timeout=None,
+        settings=None,
+        interface=None,
+        query_limit=None,
+        query_retries=None,
+        client_name=None,
+    )
+    with monkeypatch.context() as context:
+        context.setattr(builtins, "__import__", blocked_import)
+        context.delitem(sys.modules, "clickhouse_connect", raising=False)
+        context.delitem(sys.modules, "clickhouse_connect.common", raising=False)
+        with pytest.raises(ImportError, match="required for ClickHouse"):
+            ch_config_module.open_connection(
+                config,
+                parse_verify_value=lambda value: value,
+                resolve_ch_ca_certs=lambda _config: None,
+            )

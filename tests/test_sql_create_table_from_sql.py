@@ -10,6 +10,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 create_module = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
+ch_fast_path_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.create_table_from_sql"
+)
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
@@ -167,7 +170,6 @@ def test_schema_only_creation_uses_native_metadata_types(monkeypatch) -> None:
         "get_sql_connection",
         lambda connection_key: connection,
     )
-
     result = create_module.create_table_from_sql(
         "gp",
         "sandbox.target_table",
@@ -1128,3 +1130,95 @@ def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
     assert cleanup_calls == 2
     assert len(connections) == 2
     assert [connection.close_calls for connection in connections] == [1, 1]
+
+
+def test_clickhouse_fast_path_applies_only_to_same_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = create_module.get_backend_adapter("ch")
+    assert ch_fast_path_module.uses_create_table_from_sql_fast_path(
+        adapter,
+        source_backend="ch",
+        source_key="ch",
+        target_key="ch",
+    )
+    assert not ch_fast_path_module.uses_create_table_from_sql_fast_path(
+        adapter,
+        source_backend="gp",
+        source_key="gp",
+        target_key="ch",
+    )
+    assert ch_fast_path_module.create_table_from_sql_fast_path(
+        adapter,
+        source_backend="gp",
+        source_key="gp",
+        target_key="ch",
+        target_table="events",
+        source_sql="SELECT 1",
+        partition_by=None,
+        order_by=None,
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="rand()",
+        ch_only_shard=False,
+        ch_retry_per_host_drops=True,
+        insert_data=True,
+        drop_target_if_exists=False,
+        dry_run=False,
+        return_sql=False,
+        query_label=None,
+        return_metadata=False,
+        table_schema=None,
+    ) == (False, None)
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as"),
+        "ch_create_table_as",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or "created",
+    )
+    applied, result = ch_fast_path_module.create_table_from_sql_fast_path(
+        adapter,
+        source_backend="ch",
+        source_key="ch",
+        target_key="ch",
+        target_table="events",
+        source_sql="SELECT 1",
+        partition_by=["dt"],
+        order_by=["id"],
+        ch_engine="MergeTree",
+        ch_cluster="cluster",
+        ch_sharding_key="id",
+        ch_only_shard=True,
+        ch_retry_per_host_drops=False,
+        insert_data=False,
+        drop_target_if_exists=True,
+        dry_run=True,
+        return_sql=False,
+        query_label="job",
+        return_metadata=True,
+        table_schema={"id": "UInt64"},
+    )
+    assert (applied, result) == (True, "created")
+    assert calls[0][0] == ("ch", "events", "SELECT 1")
+    assert calls[0][1]["ch_only_shard"] is True
+
+
+def test_create_table_from_sql_clickhouse_dry_fast_path_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = create_module.get_backend_adapter("ch")
+    monkeypatch.setattr(
+        adapter,
+        "create_table_from_sql_fast_path",
+        lambda **kwargs: (True, "fast plan"),
+    )
+    assert (
+        create_module.create_table_from_sql(
+            "ch",
+            "events",
+            "SELECT 1 AS id",
+            dry_run=True,
+        )
+        == "fast plan"
+    )

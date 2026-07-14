@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.17 - 2026-07-14
 
 - Raised SQL backend adapter coverage.
 - Completed SQL adapter default policy coverage.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Made deterministic coverage target updates atomic and added check-only validation.
 - Expanded deterministic transfer runtime and retry coverage.
 - Expanded deterministic Trino backend coverage and cursor cleanup.
+- Raised deterministic ClickHouse adapter and table-creation coverage.
 
 ## 1.3.10.16 - 2026-07-13
 
