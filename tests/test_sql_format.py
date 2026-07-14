@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from analytics_toolkit import sql_format
 from sqlglot import exp, parse_one
+from sqlglot.errors import SqlglotError
 
 
 def test_sql_format_is_importable_from_root_package() -> None:
@@ -1213,3 +1214,258 @@ def test_sql_format_internal_right_join_column_and_indentation_edges() -> None:
     assert sql_format._normalize_join_condition_layout(
         "join b\n  ON a.id = b.id\n    AND a.kind = b.kind"
     ) == "join b\n  ON a.id = b.id\n AND a.kind = b.kind"
+
+
+def test_format_sql_converts_sqlglot_render_errors(monkeypatch) -> None:
+    class BrokenExpression(exp.Expression):
+        def sql(self, *args, **kwargs) -> str:
+            return (_ for _ in ()).throw(SqlglotError("render failed"))
+
+    monkeypatch.setattr(
+        sql_format,
+        "_prepare_group_order_rendering",
+        lambda *args, **kwargs: (BrokenExpression(), []),
+    )
+
+    with pytest.raises(ValueError, match="format_sql could not render SQL"):
+        sql_format.format_sql("select 1")
+
+
+def test_sql_format_converts_matching_and_distribution_render_errors(
+    monkeypatch,
+) -> None:
+    expression = exp.column("value")
+    monkeypatch.setattr(
+        expression,
+        "sql",
+        lambda *args, **kwargs: (_ for _ in ()).throw(SqlglotError("match failed")),
+    )
+    with pytest.raises(ValueError, match="render SQL expression for matching"):
+        sql_format._expression_match_key(expression, dialect=None)
+
+    identifier = exp.to_identifier("id")
+    column = exp.Column(this=identifier, table=exp.to_identifier("tmp"))
+    monkeypatch.setattr(
+        identifier,
+        "sql",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            SqlglotError("distribution failed")
+        ),
+    )
+    with pytest.raises(ValueError, match="render distribution column"):
+        sql_format._column_name_for_temp(
+            column,
+            consumer_names={"tmp"},
+            dialect=None,
+        )
+
+
+def test_format_sql_traverses_cte_and_outer_select_ordinals() -> None:
+    formatted = sql_format.format_sql(
+        "with totals as ("
+        "select account_id, sum(amount) as amount from payments "
+        "group by account_id order by amount"
+        ") select amount, count(*) as n from totals "
+        "group by amount order by n",
+    )
+
+    assert formatted.count("group by 1") == 2
+    assert formatted.count("order by 2") == 2
+
+    group_only = sql_format.format_sql(
+        "with grouped as (select a from t group by a) "
+        "select a from grouped group by a",
+        order_by_format="expressions",
+    )
+    assert group_only.count("group by 1") == 2
+
+
+def test_format_sql_ordinal_mapping_keeps_first_duplicate_projection() -> None:
+    formatted = sql_format.format_sql(
+        "select account_id, account_id from payments group by account_id"
+    )
+
+    assert formatted.endswith("group by 1")
+
+
+def test_sql_format_ordinal_mapping_handles_empty_alias_and_unmatched_qualifier() -> None:
+    empty_alias = exp.Alias(
+        this=exp.column("account_id"),
+        alias=exp.to_identifier(""),
+    )
+    assert sql_format._projection_alias_key(empty_alias) is None
+
+    select = parse_one("select account_id from payments")
+    mapping = sql_format._select_ordinal_mapping(select, dialect=None)
+    qualified = exp.column("missing", table="payments")
+    assert (
+        sql_format._select_position_for_clause_expression(
+            qualified,
+            mapping=mapping,
+            dialect=None,
+        )
+        is None
+    )
+
+
+def test_sql_format_replaces_multiple_non_ordered_items() -> None:
+    select = parse_one("select a, b from t")
+    mapping = sql_format._select_ordinal_mapping(select, dialect=None)
+    select.set(
+        "order",
+        exp.Order(expressions=[exp.column("missing"), exp.column("a")]),
+    )
+
+    sql_format._replace_order_by_items(select, mapping=mapping, dialect=None)
+
+    assert [item.sql() for item in select.args["order"].expressions] == ["missing", "1"]
+
+
+def test_format_sql_mixes_expression_grouping_with_ordinal_ordering() -> None:
+    formatted = sql_format.format_sql(
+        "select a, b from t group by a, b order by b",
+        group_by_format="expressions",
+    )
+
+    assert "group by\n    a,\n    b" in formatted
+    assert formatted.endswith("order by 2")
+
+
+def test_sql_format_compaction_stops_at_blank_line_and_handles_final_comma() -> None:
+    target = sql_format._ClauseCompactionTarget("GROUP BY", "1")
+    assert sql_format._compact_targeted_clause_layout(
+        "GROUP BY\n\n    1",
+        [target],
+    ) == "GROUP BY\n\n    1"
+    assert sql_format._compact_clause_item_lines(["1,"]) == "1"
+
+
+def test_rewrite_with_ctes_reports_injected_residual_select(
+    monkeypatch,
+) -> None:
+    expression = parse_one("select * from (select id from events) s")
+    monkeypatch.setattr(exp.Subquery, "replace", lambda self, expression: self)
+
+    with pytest.raises(ValueError, match="confidently rewrite all SELECT subqueries"):
+        sql_format._extract_supported_ctes(expression, cte_prefix="cte")
+
+
+def test_sqlglot_with_and_from_argument_name_compatibility(monkeypatch) -> None:
+    current_arg_types = exp.Select.arg_types
+    legacy_arg_types = {
+        key: value for key, value in current_arg_types.items() if key not in {"with_", "from_"}
+    }
+    legacy_arg_types.update({"with": False, "from": False})
+    monkeypatch.setattr(exp.Select, "arg_types", legacy_arg_types)
+
+    assert sql_format._with_arg_name() == "with"
+    assert sql_format._from_arg_name() == "from"
+
+    select = exp.Select(expressions=[exp.Star()])
+    select.set("from", exp.From(this=exp.to_table("tmp")))
+    assert sql_format._is_temp_reference_select(select, temp_names={"tmp"})
+
+
+def test_sql_format_local_sources_support_select_without_from() -> None:
+    assert sql_format._local_select_source_names(parse_one("select 1")) == set()
+
+
+def test_gp_planner_postconditions_reject_residual_query_shapes() -> None:
+    planner = sql_format._GpTempTablePlanner(
+        dialect=None,
+        temp_prefix="tmp",
+        group_by_format="ordinal",
+        order_by_format="ordinal",
+        keyword_case="lower",
+        indent=4,
+        cte_blank_lines=1,
+        union_blank_lines=1,
+    )
+
+    remaining_with = parse_one("with c as (select 1) select * from c")
+    with pytest.raises(ValueError, match="remove every WITH clause"):
+        planner.validate_complete_rewrite(remaining_with)
+
+    nested_select = exp.Select(expressions=[exp.Select(expressions=[exp.Literal.number(1)])])
+    with pytest.raises(ValueError, match="nested SELECT queries"):
+        planner.validate_complete_rewrite(nested_select)
+
+    residual_subquery = exp.select(exp.Subquery(this=exp.select("id").from_("events")))
+    with pytest.raises(ValueError, match="nested SELECT queries"):
+        planner.validate_complete_rewrite(residual_subquery)
+
+    residual_exists = exp.select(exp.Exists(this=exp.select("id").from_("events")))
+    with pytest.raises(ValueError, match="nested SELECT queries"):
+        planner.validate_complete_rewrite(residual_exists)
+
+
+def test_gp_planner_rejects_non_select_cte_body() -> None:
+    planner = sql_format._GpTempTablePlanner(
+        dialect=None,
+        temp_prefix="tmp",
+        group_by_format="ordinal",
+        order_by_format="ordinal",
+        keyword_case="lower",
+        indent=4,
+        cte_blank_lines=1,
+        union_blank_lines=1,
+    )
+    select = exp.select("*")
+    select.set(
+        sql_format._with_arg_name(),
+        exp.With(
+            expressions=[
+                exp.CTE(
+                    this=exp.Delete(this=exp.to_table("events")),
+                    alias=exp.TableAlias(this=exp.to_identifier("c")),
+                )
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="only supports SELECT CTEs"):
+        planner.rewrite_select(select)
+
+
+def test_gp_planner_child_loop_skips_with_and_non_expression_items() -> None:
+    planner = sql_format._GpTempTablePlanner(
+        dialect=None,
+        temp_prefix="tmp",
+        group_by_format="ordinal",
+        order_by_format="ordinal",
+        keyword_case="lower",
+        indent=4,
+        cte_blank_lines=1,
+        union_blank_lines=1,
+    )
+    with_expression = exp.With(expressions=[])
+    select = exp.select("1")
+    select.set(sql_format._with_arg_name(), with_expression)
+    planner._rewrite_expression_children(select)
+    assert select.args[sql_format._with_arg_name()] is with_expression
+
+    container = exp.Expression()
+    container.set("items", [exp.Literal.number(1), "not-an-expression"])
+    planner._rewrite_expression_children(container)
+    assert container.args["items"][1] == "not-an-expression"
+
+
+def test_gp_planner_distribution_ignores_unrelated_join_equality() -> None:
+    planner = sql_format._GpTempTablePlanner(
+        dialect=None,
+        temp_prefix="tmp",
+        group_by_format="ordinal",
+        order_by_format="ordinal",
+        keyword_case="lower",
+        indent=4,
+        cte_blank_lines=1,
+        union_blank_lines=1,
+    )
+    consumer = parse_one(
+        "select * from tmp join other on left_side.id = right_side.id"
+    )
+
+    assert planner._distributed_columns(
+        "tmp",
+        consumer_expressions=[consumer],
+    ) == []

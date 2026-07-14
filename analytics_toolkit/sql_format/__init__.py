@@ -455,7 +455,7 @@ def _select_ordinal_mapping(
             projection.this if isinstance(projection, exp.Alias) else projection
         )
         expression_key = _expression_match_key(expression, dialect=dialect)
-        if expression_key is not None and expression_key not in expression_positions:
+        if expression_key not in expression_positions:
             expression_positions[expression_key] = position
 
         alias_key = _projection_alias_key(projection)
@@ -489,7 +489,7 @@ def _expression_match_key(
     expression: exp.Expression,
     *,
     dialect: str | None,
-) -> str | None:
+) -> str:
     try:
         return expression.sql(
             dialect=dialect,
@@ -955,24 +955,6 @@ class _GpTempTablePlanner:
                 raise ValueError(
                     "gp_rewrite_to_temp_tables could not confidently rewrite all "
                     "nested SELECT queries."
-                )
-        for subquery in expression.find_all(exp.Subquery):
-            if isinstance(subquery.this, exp.Select) and not _is_temp_reference_select(
-                subquery.this,
-                temp_names=temp_names,
-            ):
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables could not confidently rewrite all "
-                    "SELECT subqueries."
-                )
-        for exists in expression.find_all(exp.Exists):
-            if isinstance(exists.this, exp.Select) and not _is_temp_reference_select(
-                exists.this,
-                temp_names=temp_names,
-            ):
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables could not confidently rewrite all "
-                    "predicate SELECT subqueries."
                 )
         for temp_table in self.temp_tables:
             self._assert_select_is_uncorrelated(temp_table.query)
