@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -52,6 +54,36 @@ def test_do_split_uses_custom_group_ratios() -> None:
         "test_1": 20,
         "test_2": 30,
     }
+
+
+def test_stratified_largest_remainder_exhaustive_small_matrices_preserve_margins() -> None:
+    for row_count, column_count in product(range(1, 4), repeat=2):
+        for row_totals in product(range(4), repeat=row_count):
+            total = sum(row_totals)
+            for column_totals in product(range(4), repeat=column_count):
+                if sum(column_totals) != total:
+                    continue
+                matrix = ab_utils.split._build_stratified_count_matrix(
+                    stratum_sizes=row_totals,
+                    group_counts=column_totals,
+                    rng=np.random.default_rng(0),
+                )
+                assert [sum(row) for row in matrix] == list(row_totals)
+                assert [
+                    sum(row[column] for row in matrix) for column in range(column_count)
+                ] == list(column_totals)
+                assert all(count >= 0 for row in matrix for count in row)
+
+
+def test_stratified_largest_remainder_fills_residual_deficit() -> None:
+    matrix = ab_utils.split._build_stratified_count_matrix(
+        stratum_sizes=[2, 3, 3],
+        group_counts=[2, 2, 2, 2],
+        rng=np.random.default_rng(0),
+    )
+
+    assert [sum(row) for row in matrix] == [2, 3, 3]
+    assert [sum(row[column] for row in matrix) for column in range(4)] == [2, 2, 2, 2]
 
 
 @pytest.mark.parametrize(
@@ -173,9 +205,7 @@ def test_do_split_splits_mandatory_users_across_test_groups() -> None:
         random_state=3,
     )
 
-    mandatory_counts = (
-        result[result["is_mandatory_user"]]["group_name"].value_counts().to_dict()
-    )
+    mandatory_counts = result[result["is_mandatory_user"]]["group_name"].value_counts().to_dict()
     assert set(mandatory_counts) <= {"test_1", "test_2"}
     assert sorted(mandatory_counts.values()) == [1, 2]
 

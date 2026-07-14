@@ -13,6 +13,7 @@ from analytics_toolkit.ab_utils import bootstrap as bootstrap_module
 from analytics_toolkit.ab_utils import cuped as cuped_module
 from analytics_toolkit.ab_utils import outliers as outliers_module
 from analytics_toolkit.ab_utils import ratio as ratio_module
+from analytics_toolkit.ab_utils import rows as rows_module
 from analytics_toolkit.ab_utils import split as split_module
 from analytics_toolkit.ab_utils import sql_bootstrap as sql_bootstrap_module
 from analytics_toolkit.ab_utils import sql_native
@@ -276,6 +277,35 @@ def test_outlier_context_missing_columns_and_empty_cutoff_paths() -> None:
     )
 
 
+def test_outlier_context_collection_handles_zero_one_and_multiple_metrics() -> None:
+    frame = pd.DataFrame({"first": [1.0, 2.0], "second": [2.0, 4.0]})
+    definitions = [
+        {"kind": "mean", "metric_key": name, "column": name} for name in ("first", "second")
+    ]
+
+    assert outliers_module._build_outlier_contexts(frame, [], 1.0, "truncate") == {}
+    assert list(
+        outliers_module._build_outlier_contexts(frame, definitions[:1], 1.0, "truncate")
+    ) == ["first"]
+    assert list(outliers_module._build_outlier_contexts(frame, definitions, 1.0, "truncate")) == [
+        "first",
+        "second",
+    ]
+    missing_then_present = [
+        {"kind": "mean", "metric_key": "missing", "column": "missing"},
+        definitions[0],
+    ]
+    assert list(
+        outliers_module._build_outlier_contexts(
+            frame,
+            missing_then_present,
+            1.0,
+            "truncate",
+            allow_missing=True,
+        )
+    ) == ["first"]
+
+
 def test_outlier_masks_and_removal_policy_edges() -> None:
     values = pd.Series([1.0, 10.0])
     no_context = outliers_module._build_value_outlier_mask(values, None)
@@ -371,6 +401,147 @@ def test_compute_test_metrics_rejects_missing_metric_and_control() -> None:
         api_module._compute_test_metrics_dataframe(
             pd.DataFrame({"user_id": [1, 2], "group_name": ["a", "b"], "metric": [1.0, 2.0]})
         )
+
+    with pytest.raises(ValueError, match="missing column 'numerator'"):
+        api_module._compute_test_metrics_dataframe(
+            pd.DataFrame({"user_id": [1, 2], "group_name": ["control", "test"]}),
+            ratio_metrics=[
+                {
+                    "name": "ratio",
+                    "numerator": "numerator",
+                    "denominator": "denominator",
+                }
+            ],
+        )
+
+
+def test_cuped_nan_standard_error_returns_unavailable_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "group": ["control", "control", "test", "test"],
+            "metric_exp": [1.0, 3.0, 4.0, 7.0],
+            "metric_pre": [1.0, 2.0, 2.0, 4.0],
+        }
+    )
+    monkeypatch.setattr(
+        cuped_module,
+        "_compute_group_diff_standard_error",
+        lambda **_kwargs: math.nan,
+    )
+
+    p_value, standard_error, reason = cuped_module._compute_cuped_statistics_from_frame(
+        frame,
+        "group",
+        "control",
+        "test",
+    )
+
+    assert math.isnan(p_value)
+    assert math.isnan(standard_error)
+    assert reason == "not enough overlapping observations to run the CUPED t-test"
+
+
+def test_metric_row_residual_paths_cover_implicit_context_masks_and_ratio_variance() -> None:
+    with pytest.raises(ValueError, match="At least one non-control group"):
+        rows_module._build_comparisons(["control"], "control")
+
+    mean_frame = pd.DataFrame(
+        {
+            "group": ["control", "control", "test", "test"],
+            "metric": [1.0, 9.0, 2.0, 12.0],
+        }
+    )
+    mean_definition = {
+        "kind": "mean",
+        "metric_key": "metric",
+        "column": "metric",
+        "_outlier_context": {"cutoff": 5.0, "policy": "truncate"},
+    }
+    prepared_mean = rows_module._prepare_metric_context(mean_frame, mean_definition)
+    legacy_mean_row = rows_module._build_metric_row(
+        mean_frame,
+        "group",
+        "control",
+        "test",
+        mean_definition,
+        0.05,
+        0.8,
+    )
+    prepared_mean_row = rows_module._build_metric_row(
+        mean_frame,
+        "group",
+        "control",
+        "test",
+        mean_definition,
+        0.05,
+        0.8,
+        prepared_metric_context=prepared_mean,
+    )
+    assert legacy_mean_row["outliers_n_control"] == 1
+    assert prepared_mean_row["outliers_n_test"] == 1
+
+    ratio_definition = {
+        "kind": "ratio",
+        "metric_key": "ratio",
+        "ratio_spec": {
+            "name": "ratio",
+            "numerator": "num",
+            "denominator": "den",
+            "level": "agg",
+        },
+    }
+    invalid_frame = pd.DataFrame(
+        {
+            "group": ["control", "control", "test", "test"],
+            "num": [1.0, 2.0, 3.0, 4.0],
+            "den": [0.0, 0.0, 0.0, 0.0],
+        }
+    )
+    prepared_invalid = rows_module._prepare_metric_context(invalid_frame, ratio_definition)
+    prepared_invalid_row = rows_module._build_metric_row(
+        invalid_frame,
+        "group",
+        "control",
+        "test",
+        ratio_definition,
+        0.05,
+        0.8,
+        prepared_metric_context=prepared_invalid,
+    )
+    legacy_invalid_row = rows_module._build_metric_row(
+        invalid_frame,
+        "group",
+        "control",
+        "test",
+        ratio_definition,
+        0.05,
+        0.8,
+    )
+    for row in (prepared_invalid_row, legacy_invalid_row):
+        assert math.isnan(row["delta_abs"])
+        assert math.isnan(row["variance_control"])
+        assert math.isnan(row["variance_test"])
+        assert math.isnan(row["s.e."])
+
+    valid_frame = invalid_frame.assign(
+        num=[1.0, 4.0, 3.0, 8.0],
+        den=[1.0, 2.0, 1.0, 2.0],
+    )
+    valid_row = rows_module._build_metric_row(
+        valid_frame,
+        "group",
+        "control",
+        "test",
+        ratio_definition,
+        0.05,
+        0.8,
+    )
+    assert math.isfinite(valid_row["delta_abs"])
+    assert math.isfinite(valid_row["variance_control"])
+    assert math.isfinite(valid_row["variance_test"])
+    assert math.isfinite(valid_row["s.e."])
 
 
 @pytest.mark.parametrize(
@@ -656,6 +827,10 @@ def test_split_none_defaults_return_full_sample_contracts() -> None:
     assert split_module._normalize_stratification_cols(None) == []
     assert split_module._validate_random_state(None) is None
     assert split_module._normalize_target_sample_size(None, max_size=3) == 3
+    assert split_module._normalize_stratification_cols(("segment", "country")) == [
+        "segment",
+        "country",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -799,6 +974,14 @@ def test_fit_counts_to_capacities_redistributes_and_detects_shortfall() -> None:
         total=2,
         rng=rng,
     ) == [1, 1]
+    one_slot = split_module._fit_counts_to_capacities(
+        [0, 0],
+        capacities=[1, 1],
+        total=1,
+        rng=rng,
+    )
+    assert sum(one_slot) == 1
+    assert all(count >= 0 for count in one_slot)
     with pytest.raises(ValueError, match="Unable to fit"):
         split_module._fit_counts_to_capacities(
             [0],

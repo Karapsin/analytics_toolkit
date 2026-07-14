@@ -552,6 +552,39 @@ def test_parallel_compute_metrics_updates_progress_bar(
     assert progress_bar.closed
 
 
+def test_parallel_compute_metrics_cleans_up_when_progress_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shutdown_calls: list[tuple[bool, bool]] = []
+    error = RuntimeError("progress setup failed")
+
+    def fail_progress_bar(*, total: int, progress: bool) -> None:
+        assert total == 1
+        assert progress is False
+        raise error
+
+    def record_shutdown(
+        _executor: Any,
+        *,
+        wait: bool,
+        cancel_futures: bool,
+    ) -> None:
+        shutdown_calls.append((wait, cancel_futures))
+
+    monkeypatch.setattr(parallel_module, "_make_progress_bar", fail_progress_bar)
+    monkeypatch.setattr(parallel_module, "_shutdown_executor", record_shutdown)
+    state_before = parallel_module._CONCURRENCY_STATE.get()
+
+    with pytest.raises(RuntimeError, match="progress setup failed"):
+        parallel_module._compute_metric_tasks(
+            {"task": {"df": pd.DataFrame()}},
+            progress=False,
+        )
+
+    assert shutdown_calls == [(True, True)]
+    assert parallel_module._CONCURRENCY_STATE.get() is state_before
+
+
 def test_parallel_compute_metrics_fail_fast_raises_original_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

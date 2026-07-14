@@ -74,9 +74,7 @@ def compute_test_metrics(
 
     if isinstance(df, pd.DataFrame):
         if concurrency != 1:
-            raise ValueError(
-                "concurrency can be greater than 1 only when df is a task mapping."
-            )
+            raise ValueError("concurrency can be greater than 1 only when df is a task mapping.")
         return _compute_test_metrics_dataframe(df=df, **metric_kwargs)
 
     if isinstance(df, Mapping):
@@ -91,9 +89,7 @@ def compute_test_metrics(
             ratio_metrics=ratio_metrics,
             test_vs_test=test_vs_test,
             multiple_comparisons_adjustment=multiple_comparisons_adjustment,
-            multiple_comparisons_adjustment_resamples=(
-                multiple_comparisons_adjustment_resamples
-            ),
+            multiple_comparisons_adjustment_resamples=(multiple_comparisons_adjustment_resamples),
             bootstrap_random_state=bootstrap_random_state,
             bootstrap_n_jobs=bootstrap_n_jobs,
             bootstrap_progress=bootstrap_progress,
@@ -249,7 +245,6 @@ def _compute_test_metrics_dataframe(
     if control not in group_names:
         raise ValueError(f"Control label '{control}' was not found in column '{group}'.")
 
-    include_groups = True
     ratio_specs = _normalize_ratio_metrics(df, ratio_metrics, reserved_columns={group, user_id})
     comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
     metric_definitions = _build_metric_definitions(metric_columns, ratio_specs)
@@ -353,15 +348,12 @@ def _compute_test_metrics_dataframe(
                     row["mde_abs CUPED"],
                     row["metric_control"],
                 )
-            if include_groups:
-                row = {
-                    "metric_type": str(metric_definition["kind"]),
-                    "group_1": test_group,
-                    "group_2": baseline_group,
-                    **row,
-                }
-            else:
-                row = {"metric_type": str(metric_definition["kind"]), **row}
+            row = {
+                "metric_type": str(metric_definition["kind"]),
+                "group_1": test_group,
+                "group_2": baseline_group,
+                **row,
+            }
             rows.append(row)
 
     if multiple_comparisons_adjustment:
@@ -409,10 +401,7 @@ def _compute_test_metrics_dataframe(
     if multiple_comparisons_adjustment:
         columns.append("s.e. bootstrap")
         columns.append("bootstrap_adj_p")
-    if include_groups:
-        columns = ["metric_type", "group_1", "group_2", *columns]
-    else:
-        columns = ["metric_type", *columns]
+    columns = ["metric_type", "group_1", "group_2", *columns]
 
     for row in rows:
         row.pop("_comparison_key", None)

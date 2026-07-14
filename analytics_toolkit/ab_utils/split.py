@@ -93,15 +93,12 @@ def do_split(
             for desired_count, forced_count in zip(final_counts, forced_counts)
         ]
         impossible_groups = [
-            group
-            for group, count in zip(group_names, assignable_counts)
-            if count < 0
+            group for group, count in zip(group_names, assignable_counts) if count < 0
         ]
         if impossible_groups:
             labels = ", ".join(impossible_groups)
             raise ValueError(
-                "Mandatory users make compensated group quotas impossible "
-                f"for group(s): {labels}."
+                f"Mandatory users make compensated group quotas impossible for group(s): {labels}."
             )
         assignable_positions = randomized_positions
     else:
@@ -275,9 +272,7 @@ def _get_present_mandatory_positions(
 
     mandatory_ids = mandatory_users_df[split_col].tolist()
     present_positions = [
-        id_to_position[user_id]
-        for user_id in mandatory_ids
-        if user_id in id_to_position
+        id_to_position[user_id] for user_id in mandatory_ids if user_id in id_to_position
     ]
     missing_ids = [user_id for user_id in mandatory_ids if user_id not in id_to_position]
     if missing_ids:
@@ -497,27 +492,21 @@ def _fill_remaining_matrix_deficits(
 
         row_order = row_candidates[np.argsort(rng.random(len(row_candidates)))]
         column_order = column_candidates[np.argsort(rng.random(len(column_candidates)))]
-        made_progress = False
         for row_index in row_order:
-            if row_deficits[row_index] <= 0:
-                continue
-            for column_index in column_order:
-                if column_deficits[column_index] <= 0:
-                    continue
-                floor_counts[row_index, column_index] += 1
-                row_deficits[row_index] -= 1
-                column_deficits[column_index] -= 1
-                made_progress = True
-                break
-        if not made_progress:
-            raise ValueError("Unable to build stratified group counts.")
+            positive_columns = column_order[column_deficits[column_order] > 0]
+            column_index = positive_columns[0]
+            floor_counts[row_index, column_index] += 1
+            row_deficits[row_index] -= 1
+            column_deficits[column_index] -= 1
 
 
 def _count_assignments(
     assignments: dict[int, str],
     group_names: Sequence[str],
 ) -> list[int]:
-    return [sum(group == group_name for group in assignments.values()) for group_name in group_names]
+    return [
+        sum(group == group_name for group in assignments.values()) for group_name in group_names
+    ]
 
 
 def _round_counts(
@@ -578,15 +567,11 @@ def _fit_counts_to_capacities(
             if deficit <= 0:
                 break
             available = capacities[index] - adjusted_counts[index]
-            if available <= 0:
-                continue
             add_count = min(available, deficit)
             adjusted_counts[index] += add_count
             deficit -= add_count
         candidates = [
-            index
-            for index, capacity in enumerate(capacities)
-            if adjusted_counts[index] < capacity
+            index for index, capacity in enumerate(capacities) if adjusted_counts[index] < capacity
         ]
     if deficit:
         raise ValueError("Unable to fit counts to available strata.")

@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Raised deterministic Excel and general helper coverage.
 - Raised deterministic AB MDE planning coverage.
 - Completed deterministic SQL formatting coverage.
+- Completed deterministic AB utility branch coverage and simplified unreachable allocation guards.
 
 ## 1.3.10.16 - 2026-07-13
 
