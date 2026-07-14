@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Completed deterministic ClickHouse lifecycle, DML, and metadata coverage.
 - Completed shared and Greenplum backend contract coverage.
 - Completed deterministic SQL load and table lifecycle coverage.
+- Expanded deterministic SQL transfer coverage.
 
 ## 1.3.10.17 - 2026-07-14
 

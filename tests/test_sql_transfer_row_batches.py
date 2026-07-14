@@ -45,6 +45,15 @@ row_counts_module = importlib.import_module(
 progress_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.progress"
 )
+dry_run_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.dry_run"
+)
+keyed_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.keyed"
+)
+transfer_logging_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.logging"
+)
 staging_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.staging"
 )
@@ -6468,3 +6477,872 @@ def test_cleanup_stale_stage_tables_suppresses_connection_close_failure(
         lambda **_kwargs: None,
     )
     staging_module.cleanup_stale_stage_tables("gp", stage_tables=[])
+
+
+def test_transfer_restarts_ambiguous_stage_load_and_uses_policy_retry_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        replace_target_table=True,
+        retry_cnt=2,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+    )
+    calls: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            transfer_attempt_policy=lambda _retry_cnt: SimpleNamespace(
+                retry_ambiguous_stage_load=True,
+                insert_retry_cnt=0,
+            )
+        ),
+    )
+
+    def attempt(**kwargs: Any) -> int:
+        calls.append((kwargs["read_retry_cnt"], kwargs["insert_retry_cnt"]))
+        if len(calls) == 1:
+            message = "unknown commit"
+            raise transfer_api_module.AmbiguousTableLoadError(message)
+        return 3
+
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", attempt)
+    monkeypatch.setattr(
+        transfer_api_module,
+        "run_retrying_operation",
+        lambda **kwargs: kwargs["operation"](1),
+    )
+
+    assert transfer_api_module.transfer_table("source", "target") == 3
+    assert calls == [(2, 0), (2, 0)]
+
+
+def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(replace_target_table=False, write_mode="append")
+    closed: list[str] = []
+
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            transfer_attempt_policy=lambda _retry_cnt: SimpleNamespace(
+                retry_ambiguous_stage_load=False,
+                insert_retry_cnt=1,
+            )
+        ),
+    )
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", lambda **_k: 4)
+    monkeypatch.setattr(
+        transfer_api_module,
+        "run_annotated_once",
+        lambda *, operation, context: operation(),
+    )
+
+    class Target:
+        def close(self) -> None:
+            closed.append("close")
+            message = "ignored close"
+            raise RuntimeError(message)
+
+    monkeypatch.setattr(transfer_api_module, "get_sql_connection", lambda _key: Target())
+    monkeypatch.setattr(
+        transfer_api_module,
+        "count_table_rows",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("count failed")),
+    )
+
+    result = transfer_api_module.transfer_table(
+        "source", "target", return_metadata=True
+    )
+
+    assert result.rows == 4
+    assert result.metadata.final_target_rows is None
+    assert closed == ["close"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"to_table": "   "}, "to_table"),
+        ({"target_rows_per_second": 1}, "target_rows_per_second"),
+        ({"validate_row_count": 1}, "validate_row_count"),
+        ({"ch_count_limit_read": 1}, "ch_count_limit_read"),
+        ({"ch_only_shard": 1}, "ch_only_shard"),
+    ],
+)
+def test_transfer_option_matrix_rejects_invalid_values(
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    values: dict[str, Any] = {
+        "from_db": "gp",
+        "to_db": "trino",
+        "from_sql": "select id from source_table",
+        "to_table": "sandbox.target",
+        "dry_run": True,
+    }
+    values.update(kwargs)
+    with pytest.raises(ValueError, match=message):
+        transfer_api_module.transfer_table(**values)
+
+
+def test_transfer_truncate_dry_run_orders_clear_before_insert() -> None:
+    plan = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+        write_mode="truncate_insert",
+        table_schema={"id": "BIGINT"},
+        dry_run=True,
+    )
+    phases = [statement.phase for statement in plan.statements]
+    assert phases.index("clear_target") < phases.index("insert_target")
+
+
+def test_dry_run_fallback_names_locations_labels_and_source_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slices = [
+        models_module.TransferSlice(i, (i,), f"id = {i}", f"select {i}", f"slice-{i}")
+        for i in range(3)
+    ]
+    options = make_progress_options(
+        target_table="schema.target",
+        transfer_slices=slices,
+        concurrency=2,
+        transfer_staging_location="s3://bucket/base/",
+    )
+    monkeypatch.setattr(
+        dry_run_module,
+        "build_stage_table_name",
+        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad name")),
+    )
+    monkeypatch.setattr(
+        dry_run_module,
+        "build_stage_external_location",
+        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad location")),
+    )
+    assert dry_run_module.dry_run_stage_table_names(options) == [
+        "schema.target__stage__dryrun__w00000",
+        "schema.target__stage__dryrun__w00001",
+    ]
+    assert dry_run_module.source_batches_label(options, 1).endswith("[1]")
+    assert dry_run_module.source_batches_label(options) == "shared keyed source slice batches"
+    assert dry_run_module.dry_run_stage_external_location(options) == (
+        "s3://bucket/base/__stage__dryrun/"
+    )
+    assert dry_run_module.infer_source_select_columns(
+        "delete from source", source_backend="gp"
+    ) is None
+    assert dry_run_module.infer_source_select_columns(
+        "select *, id from source", source_backend="gp"
+    ) is None
+    assert dry_run_module.infer_source_select_columns(
+        "select id + 1 from source", source_backend="gp"
+    ) is None
+    assert dry_run_module.infer_source_select_columns(
+        "select from", source_backend="gp"
+    ) is None
+
+
+def test_key_normalization_empty_invalid_cartesian_literals_and_null_predicate() -> None:
+    with pytest.raises(ValueError, match="at least one placeholder"):
+        keys_module.normalize_transfer_keys([])
+    with pytest.raises(ValueError, match="mapping keys"):
+        keys_module.normalize_transfer_keys({1: "id"})
+    with pytest.raises(ValueError, match="mapping values"):
+        keys_module.normalize_transfer_keys({"id": 1})
+    with pytest.raises(ValueError, match="must not be empty"):
+        keys_module.normalize_transfer_keys({"id": "  "})
+    with pytest.raises(ValueError, match="entries must be strings"):
+        keys_module.normalize_transfer_keys([1])
+    with pytest.raises(ValueError, match="positive integer"):
+        keys_module.normalize_transfer_concurrency(True)
+    with pytest.raises(ValueError, match="Multiple transfer_keys"):
+        keys_module.normalize_transfer_key_values(
+            [keys_module.TransferKey("a", "a"), keys_module.TransferKey("b", "b")],
+            [1],
+        )
+    with pytest.raises(ValueError, match="non-empty sequence"):
+        keys_module.normalize_transfer_key_values(
+            [keys_module.TransferKey("id", "id")], "one"
+        )
+    with pytest.raises(ValueError, match="counts must match"):
+        keys_module.build_transfer_slice_predicate(
+            [keys_module.TransferKey("id", "id")], ()
+        )
+    assert keys_module.build_transfer_slice_predicate(
+        [keys_module.TransferKey("id", "coalesce(id, 0)")], (None,)
+    ) == "(coalesce(id, 0)) IS NULL"
+    assert keys_module.render_transfer_literal("O'Reilly") == "'O''Reilly'"
+    assert keys_module.render_transfer_literal(Decimal("1.25")) == "1.25"
+    with pytest.raises(ValueError, match="Decimal values must be finite"):
+        keys_module.render_transfer_literal(Decimal("NaN"))
+    with pytest.raises(ValueError, match="supports only"):
+        keys_module.render_transfer_literal(object())
+
+
+def test_keyed_state_requires_stage_and_logging_handles_empty_keys() -> None:
+    state = models_module.TransferStageState(target_exists=False)
+    state.transfer_slices = []
+    with pytest.raises(RuntimeError, match="stage table"):
+        keyed_module.build_keyed_worker_stage_states(
+            stage_state=state
+        )
+    options = make_progress_options(transfer_keys=[])
+    transfer_slice = models_module.TransferSlice(0, (), "", "select 1", "slice-00000")
+    assert transfer_logging_module.format_transfer_slice_log_label(
+        options, transfer_slice
+    ) is None
+    options = make_progress_options(transfer_keys=["id"])
+    transfer_slice = models_module.TransferSlice(
+        0, (None,), "id IS NULL", "select 1", "slice-00000"
+    )
+    assert transfer_logging_module.format_transfer_slice_log_label(
+        options, transfer_slice
+    ) == "id=NULL"
+
+
+def test_callable_commit_and_failed_keyed_future_cancels_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commits: list[str] = []
+    attempt_module._commit_if_supported(SimpleNamespace(commit=lambda: commits.append("commit")))
+    attempt_module._commit_if_supported(SimpleNamespace(commit="not callable"))
+    assert commits == ["commit"]
+
+    class Future:
+        def __init__(self, error: Exception | None = None) -> None:
+            self.error = error
+            self.cancelled = False
+
+        def exception(self) -> Exception | None:
+            return self.error
+
+        def result(self) -> int:
+            return 1
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    failed = Future(RuntimeError("worker failed"))
+    pending = Future()
+
+    class Executor:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+        def submit(self, *_args: Any, **_kwargs: Any) -> Future:
+            return failed if _kwargs["worker_stage_state"].worker_index == 0 else pending
+
+    monkeypatch.setattr(attempt_module, "ThreadPoolExecutor", Executor)
+    monkeypatch.setattr(attempt_module, "wait", lambda _pending, **_k: ({failed}, {pending}))
+    workers = [
+        keyed_module.WorkerStageState(
+            worker_index=i,
+            stage_state=models_module.TransferStageState(target_exists=False),
+            transfer_slices=[],
+        )
+        for i in range(2)
+    ]
+    with pytest.raises(RuntimeError, match="worker failed"):
+        attempt_module.load_keyed_stage_slices(
+            options=make_progress_options(),
+            worker_stage_states=workers,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+    assert pending.cancelled is True
+
+
+def test_row_count_disabled_mismatch_missing_workers_retry_and_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disabled = make_progress_options(validate_row_count=False)
+    state = models_module.TransferStageState(target_exists=False)
+    row_counts_module.validate_slice_row_count(
+        options=disabled,
+        stage_state=state,
+        slice_index=0,
+        transfer_key_label=None,
+        streamed_rows=2,
+    )
+    row_counts_module.validate_streamed_row_count(
+        options=disabled,
+        stage_state=state,
+        total_rows=2,
+    )
+    row_counts_module.validate_loaded_stage_row_count(
+        options=disabled,
+        connection_refs=models_module.TransferConnectionRefs(),
+        stage_state=state,
+        total_rows=2,
+        open_connection=lambda _key: object(),
+    )
+
+    enabled = make_progress_options(validate_row_count=True, retry_cnt=2, timeout_increment=0)
+    with pytest.raises(RuntimeError, match="worker stage states"):
+        row_counts_module.validate_streamed_row_count(
+            options=enabled,
+            stage_state=state,
+            total_rows=1,
+        )
+    state.expected_source_rows = 2
+    with pytest.raises(row_counts_module.TransferRowCountMismatchError):
+        row_counts_module.validate_loaded_stage_row_count(
+            options=enabled,
+            connection_refs=models_module.TransferConnectionRefs(),
+            stage_state=state,
+            total_rows=1,
+            open_connection=lambda _key: object(),
+        )
+
+    source_ref = {"connection": SimpleNamespace(name="old")}
+    calls: list[str] = []
+    monkeypatch.setattr(
+        row_counts_module,
+        "count_source_rows",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("count")),
+    )
+    monkeypatch.setattr(row_counts_module, "rollback_quietly", lambda conn: calls.append(conn.name))
+    monkeypatch.setattr(
+        row_counts_module,
+        "replace_connection",
+        lambda _key, ref: ref.update(connection=SimpleNamespace(name="new")),
+    )
+    with pytest.raises(RuntimeError, match="count"):
+        row_counts_module._count_source_rows_with_retry(
+            enabled, source_ref, "select 1"
+        )
+    assert calls == ["old", "new"]
+
+    messages: list[str] = []
+    monkeypatch.setattr(
+        row_counts_module,
+        "time_print",
+        lambda message, **_k: messages.append(message),
+    )
+    row_counts_module._log_expected_rows(enabled, 12, None, None)
+    row_counts_module._log_expected_rows(enabled, 3, 1, "")
+    assert messages == [
+        "Expecting 12 source row(s)",
+        "Expecting 3 source row(s) for for",
+    ]
+
+
+def test_stage_early_creation_schema_choices_and_existing_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(table_schema={"id": "BIGINT"})
+    refs = models_module.TransferConnectionRefs(target={"connection": object()})
+    existing = models_module.TransferStageState(target_exists=True)
+    transfer_stage_module.ensure_transfer_target_table(options, refs, existing, [])
+
+    adapter = SimpleNamespace(can_create_transfer_target_before_batches=lambda: True)
+    monkeypatch.setattr(transfer_stage_module, "get_backend_adapter", lambda _b: adapter)
+    with pytest.raises(ValueError, match="schema has no columns"):
+        transfer_stage_module.ensure_transfer_target_table(
+            options,
+            refs,
+            models_module.TransferStageState(target_exists=False),
+            [],
+        )
+
+    state = models_module.TransferStageState(target_exists=False, target_existed_at_start=None)
+    monkeypatch.setattr(transfer_stage_module, "_ensure_stage_target_table", lambda **_k: None)
+    transfer_stage_module.ensure_transfer_target_table(options, refs, state, ["id"])
+    assert state.target_existed_at_start is False
+    assert state.target_created_by_operation is True
+
+
+def test_finalize_existing_target_schema_and_cleanup_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(write_mode="append", replace_target_table=False)
+    state = models_module.TransferStageState(
+        target_exists=True,
+        stage_table="stage.one",
+        stage_tables=["stage.one", "stage.one"],
+        final_upsert_stage_table="stage.final",
+        stage_table_created=True,
+        first_non_empty_batch=pd.DataFrame({"id": [1]}),
+        stage_column_types={"id": "BIGINT"},
+        stage_external_location="s3://bucket/stage",
+    )
+    roles: list[str] = []
+    monkeypatch.setattr(
+        finalize_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, role, operation: roles.append(role)
+        or operation({"connection": object()}),
+    )
+    monkeypatch.setattr(finalize_module, "validate_stage_uniqueness", lambda **_k: None)
+    monkeypatch.setattr(finalize_module, "validate_stage_target_key_overlap", lambda **_k: None)
+    monkeypatch.setattr(
+        finalize_module,
+        "get_existing_target_insert_types",
+        lambda *_a, **_k: {"id": "INTEGER"},
+    )
+    monkeypatch.setattr(finalize_module, "finalize_stage_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(finalize_module, "analyze_table", lambda **_k: None)
+    finalize_module.finalize_loaded_stage(
+        options, models_module.TransferConnectionRefs(), state, 1
+    )
+    assert state.insert_column_types == {"id": "INTEGER"}
+    assert "target_metadata" in roles
+
+    cleaned: list[str] = []
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_stage_table_with_retry",
+        lambda *_args, **_k: cleaned.append(_args[3]),
+    )
+    remote_error = RuntimeError("remote")
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_parquet_stage_location",
+        lambda _location: (_ for _ in ()).throw(remote_error),
+    )
+    with pytest.raises(RuntimeError, match="remote"):
+        finalize_module.cleanup_stage(
+            options,
+            models_module.TransferConnectionRefs(),
+            state,
+            1,
+        )
+    assert cleaned == ["stage.one", "stage.final"]
+
+
+def test_ensure_final_upsert_stage_guard_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    non_upsert = make_progress_options(write_mode="append")
+    state = models_module.TransferStageState(target_exists=True)
+    finalize_module._ensure_final_upsert_stage_table(non_upsert, state)
+
+    upsert = make_progress_options(write_mode="upsert")
+    monkeypatch.setattr(
+        finalize_module,
+        "get_backend_adapter",
+        lambda _b: SimpleNamespace(uses_partition_replacement_upsert=lambda: False),
+    )
+    finalize_module._ensure_final_upsert_stage_table(upsert, state)
+    monkeypatch.setattr(
+        finalize_module,
+        "get_backend_adapter",
+        lambda _b: SimpleNamespace(uses_partition_replacement_upsert=lambda: True),
+    )
+    finalize_module._ensure_final_upsert_stage_table(
+        upsert, models_module.TransferStageState(target_exists=False)
+    )
+    finalize_module._ensure_final_upsert_stage_table(
+        upsert,
+        models_module.TransferStageState(
+            target_exists=True, final_upsert_stage_table="already"
+        ),
+    )
+
+
+def test_remaining_key_dry_run_logging_and_row_count_guards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(keys_module, "product", lambda *_a: iter(()))
+    with pytest.raises(ValueError, match="at least one slice"):
+        keys_module.normalize_transfer_slices(
+            source_sql="select * from source where {id}",
+            transfer_keys="id",
+            transfer_key_values=[1],
+            concurrency=1,
+        )
+    with pytest.raises(ValueError, match="at least one placeholder"):
+        keys_module.normalize_transfer_keys({})
+    key = keys_module.TransferKey("id", "id")
+    with pytest.raises(ValueError, match="counts must match"):
+        keys_module.render_transfer_slice_source_sql(
+            "select * from source where {id}", transfer_keys=[key], values=()
+        )
+    assert keys_module.render_transfer_literal(None) == "NULL"
+    with pytest.raises(ValueError, match="float values must be finite"):
+        keys_module.render_transfer_literal(float("inf"))
+
+    no_location = make_progress_options(transfer_staging_location=None)
+    assert dry_run_module.dry_run_stage_external_location(no_location) is None
+    empty_values = models_module.TransferSlice(0, (), "", "select 1", "slice-0")
+    assert transfer_logging_module.format_transfer_slice_log_label(
+        make_progress_options(transfer_keys=["id"]), empty_values
+    ) is None
+
+    options = make_progress_options(validate_row_count=True)
+    state = models_module.TransferStageState(target_exists=False)
+    state.worker_stage_states = [
+        SimpleNamespace(
+            stage_state=SimpleNamespace(expected_source_rows=2, slice_counts=[])
+        )
+    ]
+    with pytest.raises(row_counts_module.TransferRowCountMismatchError):
+        row_counts_module.validate_streamed_row_count(
+            options=options, stage_state=state, total_rows=1
+        )
+    state = models_module.TransferStageState(target_exists=False)
+    with pytest.raises(RuntimeError, match="source row count"):
+        row_counts_module.validate_loaded_stage_row_count(
+            options=options,
+            connection_refs=models_module.TransferConnectionRefs(),
+            stage_state=state,
+            total_rows=0,
+            open_connection=lambda _key: object(),
+        )
+    assert row_counts_module._collect_worker_slice_counts(state) == []
+
+
+def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(write_mode="upsert")
+    state = models_module.TransferStageState(
+        target_exists=True,
+        stage_table="stage.one",
+        first_non_empty_batch=pd.DataFrame({"id": [1]}),
+        stage_column_types=None,
+    )
+    events: list[str] = []
+    monkeypatch.setattr(
+        finalize_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, role, operation: events.append(role)
+        or operation({"connection": object()}),
+    )
+    monkeypatch.setattr(finalize_module, "validate_stage_uniqueness", lambda **_k: None)
+    monkeypatch.setattr(
+        finalize_module,
+        "validate_stage_target_key_overlap",
+        lambda **_k: events.append("overlap"),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "get_backend_adapter",
+        lambda _b: SimpleNamespace(uses_partition_replacement_upsert=lambda: False),
+    )
+    monkeypatch.setattr(finalize_module, "finalize_stage_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(finalize_module, "analyze_table", lambda **_k: None)
+    finalize_module.finalize_loaded_stage(
+        options, models_module.TransferConnectionRefs(), state, 1
+    )
+    assert state.insert_column_types is None
+    assert "overlap" not in events
+
+    assert finalize_module._stage_tables_to_cleanup(
+        models_module.TransferStageState(
+            target_exists=False,
+            stage_table="stage.single",
+            final_upsert_stage_table="stage.final",
+        )
+    ) == ["stage.single", "stage.final"]
+
+    cleanup_state = models_module.TransferStageState(
+        target_exists=False,
+        target_existed_at_start=False,
+        target_created_by_operation=True,
+        stage_external_location="s3://bucket/stage",
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_parquet_stage_location",
+        lambda _location: (_ for _ in ()).throw(RuntimeError("remote")),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "drop_table_with_retry",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("target")),
+    )
+    monkeypatch.setattr(
+        general_module,
+        "time_print",
+        lambda message, **_k: messages.append(message),
+    )
+    with pytest.raises(RuntimeError, match="remote"):
+        finalize_module.cleanup_stage(
+            options,
+            models_module.TransferConnectionRefs(),
+            cleanup_state,
+            1,
+            drop_created_target=True,
+        )
+    assert any("remote Parquet" in message for message in messages)
+
+    cleanup_state.stage_external_location = None
+    with pytest.raises(RuntimeError, match="target"):
+        finalize_module.cleanup_stage(
+            options,
+            models_module.TransferConnectionRefs(),
+            cleanup_state,
+            1,
+            drop_created_target=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("table_schema", "source_schema", "expected_types"),
+    [
+        ({"id": "BIGINT"}, [SimpleNamespace(name="id", native_type="int")], {"id": "BIGINT"}),
+        ({"id": "BIGINT"}, [], {"id": "BIGINT"}),
+        (None, [SimpleNamespace(name="id", native_type="int")], {"id": "MAPPED"}),
+    ],
+)
+def test_transfer_attempt_schema_selection_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+    table_schema: dict[str, str] | None,
+    source_schema: list[Any],
+    expected_types: dict[str, str],
+) -> None:
+    options = make_progress_options(table_schema=table_schema, validate_row_count=False)
+    source = FakeTransferConnection("source")
+    state = models_module.TransferStageState(target_exists=False)
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source)
+    monkeypatch.setattr(
+        attempt_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(attempt_module, "create_stage_state", lambda *_a: state)
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_a: source_schema,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "validate_table_schema_columns",
+        lambda schema, _cols: schema,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "map_source_schema_to_target",
+        lambda *_a: {"id": "MAPPED"},
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(attempt_module, "load_stage_batches", lambda **_k: 0)
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", lambda **_k: None)
+
+    assert attempt_module.run_transfer_attempt(options, 1, 1) == 0
+    assert state.stage_column_types == expected_types
+
+
+def test_transfer_attempt_cleanup_error_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(validate_row_count=False)
+    source = FakeTransferConnection("source")
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source)
+    monkeypatch.setattr(
+        attempt_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_a: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_a: (_ for _ in ()).throw(RuntimeError("transfer")),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_stage",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("cleanup")),
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(attempt_module, "time_print", messages.append)
+    with pytest.raises(RuntimeError, match="transfer"):
+        attempt_module.run_transfer_attempt(options, 1, 1)
+    assert messages
+    assert "Cleanup failed" in messages[0]
+
+
+def test_transfer_attempt_cleanup_only_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(validate_row_count=False)
+    source = FakeTransferConnection("source")
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source)
+    monkeypatch.setattr(
+        attempt_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_a: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(attempt_module, "inspect_source_query_schema", lambda *_a: [])
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(attempt_module, "load_stage_batches", lambda **_k: 0)
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda **_k: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_stage",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("cleanup only")),
+    )
+    with pytest.raises(RuntimeError, match="cleanup only"):
+        attempt_module.run_transfer_attempt(options, 1, 1)
+
+
+def test_keyed_attempt_cleanup_error_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(validate_row_count=False)
+    source = FakeTransferConnection("source")
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source)
+    monkeypatch.setattr(
+        attempt_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_a: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_a: (_ for _ in ()).throw(RuntimeError("keyed transfer")),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_stage",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("keyed cleanup")),
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(attempt_module, "time_print", messages.append)
+    with pytest.raises(RuntimeError, match="keyed transfer"):
+        attempt_module.run_keyed_transfer_attempt(options, 1, 1)
+    assert messages
+    assert "Cleanup failed" in messages[0]
+
+
+def test_keyed_attempt_cleanup_only_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(validate_row_count=False)
+    source = FakeTransferConnection("source")
+    state = models_module.TransferStageState(
+        target_exists=False, stage_table="stage.shared", stage_tables=["stage.shared"]
+    )
+    worker = keyed_module.WorkerStageState(
+        worker_index=0, stage_state=state, transfer_slices=options.transfer_slices or []
+    )
+    monkeypatch.setattr(attempt_module, "get_sql_connection", lambda _key: source)
+    monkeypatch.setattr(
+        attempt_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(attempt_module, "create_stage_state", lambda *_a: state)
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_a: [SimpleNamespace(name="id", native_type="int")],
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "initialize_shared_stage_for_keyed_slices",
+        lambda **_k: None,
+    )
+    monkeypatch.setattr(attempt_module, "build_keyed_worker_stage_states", lambda **_k: [worker])
+    monkeypatch.setattr(attempt_module, "load_keyed_stage_slices", lambda **_k: 0)
+    monkeypatch.setattr(attempt_module, "validate_streamed_row_count", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "consolidate_keyed_worker_stages", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_k: None)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda **_k: None)
+    monkeypatch.setattr(
+        attempt_module,
+        "cleanup_stage",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("keyed cleanup only")),
+    )
+    with pytest.raises(RuntimeError, match="keyed cleanup only"):
+        attempt_module.run_keyed_transfer_attempt(options, 1, 1)
+
+
+def test_initialize_shared_keyed_stage_maps_inspected_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_keyed_options(table_schema=None, concurrency=1)
+    state = models_module.TransferStageState(target_exists=False)
+    schema = [SimpleNamespace(name="id", native_type="integer")]
+    monkeypatch.setattr(
+        attempt_module,
+        "map_source_schema_to_target",
+        lambda *_a: {"id": "BIGINT"},
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "get_backend_adapter",
+        lambda _b: SimpleNamespace(validate_ch_columns_in_columns=lambda *_a, **_k: None),
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(attempt_module, "create_stage_table", lambda **_k: "stage.shared")
+    attempt_module.initialize_shared_stage_for_keyed_slices(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(target={"connection": object()}),
+        stage_state=state,
+        source_schema=schema,
+    )
+    assert state.stage_column_types == {"id": "BIGINT"}
+
+
+def test_transfer_upsert_precondition_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common = {
+        "from_db": "gp",
+        "to_db": "trino",
+        "from_sql": "select id from source_table",
+        "to_table": "sandbox.target",
+        "write_mode": "upsert",
+        "key_columns": ["id"],
+        "dry_run": True,
+    }
+    with pytest.raises(ValueError, match="upsert_partition_column"):
+        transfer_api_module.transfer_table(**common)
+
+    adapter = transfer_api_module.get_backend_adapter("trino")
+    monkeypatch.setattr(adapter, "needs_upsert_partition_drop_template", lambda: True)
+    defaults = adapter.target_connection_defaults(
+        transfer_api_module.get_connection_config("trino")
+    )
+    monkeypatch.setattr(
+        adapter,
+        "target_connection_defaults",
+        lambda _config: SimpleNamespace(
+            transfer_staging_location=defaults.transfer_staging_location,
+            upsert_partition_drop_sql_template=None,
+            insert_chunk_size=defaults.insert_chunk_size,
+        ),
+    )
+    with pytest.raises(ValueError, match="drop_sql_template"):
+        transfer_api_module.transfer_table(
+            **common, upsert_partition_column="event_date"
+        )
