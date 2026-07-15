@@ -50,10 +50,15 @@ registered adapters, write modes, and the complete 3×3 transfer-pair set.
 | Greenplum partition creation and vacuum helpers | yes | no | no |
 | ClickHouse shard/distributed table management | no | no | yes |
 
-Greenplum is the transactional, maintenance-friendly backend. Trino is best
-treated as a query and Iceberg table backend without portable table-size
-metadata. ClickHouse has the most specialized DDL behavior because distributed
+Greenplum is the transactional, maintenance-friendly backend. Trino uses an
+Iceberg target catalog and a separate Hive external-table catalog for temporary
+Parquet staging; stage objects and metastore entries are removed after every
+attempt. ClickHouse has the most specialized DDL behavior because distributed
 targets are managed as shard/distributed table pairs.
+
+The integration matrix uses distinct source and target aliases even for
+same-backend transfers, and declares every Greenplum/Trino/ClickHouse source and
+target pair plus every target write mode in the schema-version-2 manifest.
 
 ## Backend Extension Notes
 

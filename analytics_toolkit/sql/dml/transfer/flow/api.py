@@ -498,6 +498,11 @@ def build_transfer_options(
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
+        transfer_parquet_staging_schema=getattr(
+            to_config,
+            "transfer_parquet_staging_schema",
+            None,
+        ),
         transfer_staging_location=target_defaults.transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         trino_mode=resolved_trino_mode,

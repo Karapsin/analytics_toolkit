@@ -19,6 +19,13 @@ investigation.
 - ClickHouse load/transfer creates and manages a shard table plus a `Distributed` table. Preserve local and cluster DDL/drop/truncate behavior.
 - Key validation uses normalized unique key lists and null-safe joins for staged-vs-target overlap checks.
 - Trino table metadata helpers need the alias key so unqualified names can use that connection's catalog/schema.
+- Integration Trino targets use the Iceberg catalog, while raw Parquet stages
+  use the separate Hive catalog named by `transfer_staging_schema`. Do not point
+  external Parquet stages at an Iceberg schema: Iceberg tracks data files in
+  table metadata and does not expose Hive's `external_location` contract.
+- Every integration resource name and query label must include the profile run
+  ID and scenario test ID. Register resources before creation so partial
+  failures remain cleanable.
 
 ## SQL Layout Notes
 

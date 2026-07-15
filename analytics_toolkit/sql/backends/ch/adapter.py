@@ -333,6 +333,7 @@ class ClickHouseAdapter(BackendAdapter):
     )
 
     build_upsert_stage_sqls = _upsert.build_upsert_stage_sqls
+    build_preserved_target_rows_insert_sql = _upsert.build_preserved_target_rows_insert_sql
     build_upsert_stage_placeholder_sqls = _upsert.build_upsert_stage_placeholder_sqls
     build_drop_upsert_partition_sqls = _upsert.build_drop_upsert_partition_sqls
 

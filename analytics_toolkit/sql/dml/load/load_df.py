@@ -350,6 +350,11 @@ def _build_load_options(
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
         transfer_staging_schema=config.transfer_staging_schema,
+        transfer_parquet_staging_schema=getattr(
+            config,
+            "transfer_parquet_staging_schema",
+            None,
+        ),
         transfer_staging_location=target_defaults.transfer_staging_location,
         transfer_staging_username=_sanitize_transfer_staging_username(config.user),
         use_parquet_staging=(
@@ -689,6 +694,9 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
             "transfer_staging_schema": options.transfer_staging_schema,
+            "transfer_parquet_staging_schema": (
+                options.transfer_parquet_staging_schema
+            ),
             "transfer_staging_location": options.transfer_staging_location,
             "use_parquet_staging": options.use_parquet_staging,
         },
@@ -943,10 +951,13 @@ def _add_parquet_load_plan_steps(
 ) -> None:
     adapter = get_backend_adapter(options.connection_backend)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
+    parquet_schema = (
+        options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    )
     stage_table = build_stage_table_name(
         options.connection_backend,
         options.destination_table,
-        transfer_staging_schema=options.transfer_staging_schema,
+        transfer_staging_schema=parquet_schema,
         transfer_staging_username=options.transfer_staging_username,
         random_suffix="dryrun",
     )
@@ -1280,7 +1291,10 @@ def _create_load_parquet_stage_table(
     state: LoadState,
     connection: Any,
 ) -> None:
-    if not options.transfer_staging_schema:
+    parquet_schema = (
+        options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    )
+    if not parquet_schema:
         raise ValueError("transfer_staging_schema is required for Parquet staging.")
     if not options.transfer_staging_location:
         raise ValueError("transfer_staging_location is required for Parquet staging.")
@@ -1296,7 +1310,7 @@ def _create_load_parquet_stage_table(
         stage_table = build_stage_table_name(
             options.connection_backend,
             options.destination_table,
-            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_schema=parquet_schema,
             transfer_staging_username=options.transfer_staging_username,
         )
         if table_exists(

@@ -246,7 +246,8 @@ rows = sql.transfer(
   generated multi-row `INSERT ... VALUES` staging.
 - Parquet transfer streams source rows into temporary Parquet files under
   `transfer_staging_location`, creates a Trino external stage table in
-  `transfer_staging_schema`, and then applies the normal `append`, `replace`,
+  `transfer_parquet_staging_schema` when configured (otherwise
+  `transfer_staging_schema`), and then applies the normal `append`, `replace`,
   `truncate_insert`, or `upsert` finalization logic from that stage table.
 - Python and Trino must both have access to the same object-storage prefix for
   Parquet staging. The Parquet/object-storage Python dependencies are installed

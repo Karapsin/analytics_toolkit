@@ -40,6 +40,7 @@ def _write_trino_connections(
     write_sql_connections: Any,
     *,
     transfer_staging_location: str | None,
+    transfer_parquet_staging_schema: str | None = None,
 ) -> None:
     config: dict[str, object] = {
         "type": "trino",
@@ -57,6 +58,8 @@ def _write_trino_connections(
     }
     if transfer_staging_location is not None:
         config["transfer_staging_location"] = transfer_staging_location
+    if transfer_parquet_staging_schema is not None:
+        config["transfer_parquet_staging_schema"] = transfer_parquet_staging_schema
     write_sql_connections({"trino_stage": config})
 
 
@@ -1677,6 +1680,7 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
     _write_trino_connections(
         write_sql_connections,
         transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        transfer_parquet_staging_schema="hive.pa_core_stage",
     )
     connection = FakeDbapiConnection()
     writes: list[dict[str, object]] = []
@@ -1762,19 +1766,19 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
         }
     ]
     assert inserts[0][0] == "iceberg.sandbox.target"
-    assert inserts[0][1].startswith("object_storage.pa_core_stage.target__")
+    assert inserts[0][1].startswith("hive.pa_core_stage.target__")
     assert cleaned_locations[0].startswith(
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
     )
     assert "__analytics_toolkit_target_user__stage__" in cleaned_locations[0]
     assert any(
-        sql.startswith("CREATE TABLE object_storage.pa_core_stage.target__")
+        sql.startswith("CREATE TABLE hive.pa_core_stage.target__")
         and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/"
         in sql
         for sql in connection.executed
     )
     assert any(
-        sql.startswith("DROP TABLE IF EXISTS object_storage.pa_core_stage.target__")
+        sql.startswith("DROP TABLE IF EXISTS hive.pa_core_stage.target__")
         for sql in connection.executed
     )
 

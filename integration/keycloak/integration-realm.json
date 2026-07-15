@@ -5,15 +5,29 @@
     {
       "username": "integration",
       "enabled": true,
+      "firstName": "Integration",
+      "lastName": "User",
+      "email": "integration@example.test",
+      "emailVerified": true,
+      "requiredActions": [],
+      "realmRoles": ["offline_access"],
       "credentials": [{"type": "password", "value": "integration", "temporary": false}]
     }
   ],
   "clients": [
     {
       "clientId": "trino-client",
-      "publicClient": true,
+      "publicClient": false,
+      "secret": "integration-oauth-secret",
+      "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost/*", "https://localhost/*"]
+      "redirectUris": [
+        "https://localhost:18446/oauth2/callback",
+        "https://127.0.0.1:18446/oauth2/callback"
+      ]
     }
-  ]
+  ],
+  "accessTokenLifespan": 30,
+  "ssoSessionIdleTimeout": 120,
+  "ssoSessionMaxLifespan": 300
 }

@@ -6,17 +6,21 @@ import uuid
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from tests.integration.manifest import scenario_param
+from tests.integration.support.identity import resource_name
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 
 
 def _table_name(backend: str, suffix: str) -> str:
-    token = uuid.uuid4().hex[:10]
+    run_id = os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8])
+    test_id = os.environ.get("SQL_INTEGRATION_TEST_ID", "manual")
+    token = resource_name(run_id, test_id, suffix)
     if backend == "gp":
-        return f"public.it_{suffix}_{token}"
+        return f"public.{token}"
     if backend == "trino":
-        return f"iceberg.integration.it_{suffix}_{token}"
-    return f"integration.it_{suffix}_{token}"
+        return f"iceberg.integration.{token}"
+    return f"integration.{token}"
 
 
 def _enabled_backends() -> list[str]:
@@ -34,10 +38,13 @@ def _load_options(backend: str) -> dict[str, object]:
     return {
         "partition_by": ["dt"],
         "order_by": ["id"],
+        "ch_engine": "MergeTree",
         "ch_cluster": "integration_cluster",
+        "ch_only_shard": True,
     }
 
 
+@pytest.mark.sql_scenario("connections.direct")
 def test_connections_are_valid_and_reachable() -> None:
     results = sql.validate_connections(_enabled_backends(), connect=True)
 
@@ -46,7 +53,10 @@ def test_connections_are_valid_and_reachable() -> None:
     ]
 
 
-@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"backend.contract.{backend}", backend) for backend in ("gp", "trino", "ch")],
+)
 def test_backend_load_metadata_upsert_and_cleanup(backend: str) -> None:
     if backend not in _enabled_backends():
         pytest.skip("Greenplum integration runs only on x86_64")
@@ -90,7 +100,12 @@ def test_backend_load_metadata_upsert_and_cleanup(backend: str) -> None:
         assert set(frame["id"].tolist()) == {1, 2, 3}
         assert "two-updated" in frame["value"].tolist()
 
-        listed = sql.show_tables(backend, table_name=table)
+        listed = sql.show_tables(
+            backend,
+            schema="public" if backend == "gp" else "integration",
+            table_name=table.rsplit(".", 1)[-1],
+            trino_catalog="iceberg" if backend == "trino" else None,
+        )
         assert table.rsplit(".", 1)[-1] in listed["table_name"].tolist()
         assert "CREATE" in sql.extract_ddl(backend, table).upper()
     finally:
@@ -102,6 +117,7 @@ def test_backend_load_metadata_upsert_and_cleanup(backend: str) -> None:
         )
 
 
+@pytest.mark.sql_scenario("transfer.cross_backend_roundtrip")
 def test_representative_cross_backend_transfers() -> None:
     if os.environ.get("SQL_INTEGRATION_GP") != "1":
         pytest.skip("cross-backend chain includes Greenplum and runs on x86_64")

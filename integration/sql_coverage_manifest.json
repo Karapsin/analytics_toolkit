@@ -1,60 +1,5838 @@
 {
-  "schema_version": 1,
-  "backends": ["gp", "trino", "ch"],
-  "write_modes": ["append", "replace", "truncate_insert", "upsert"],
+  "schema_version": 2,
+  "backends": {
+    "gp": {
+      "display_name": "Greenplum",
+      "supports_transactions": true,
+      "supports_analyze": true,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": false,
+      "requires_upsert_partition_column": false,
+      "supports_show_tables_catalog_filter": false
+    },
+    "trino": {
+      "display_name": "Trino",
+      "supports_transactions": false,
+      "supports_analyze": true,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": false,
+      "requires_upsert_partition_column": true,
+      "supports_show_tables_catalog_filter": true
+    },
+    "ch": {
+      "display_name": "ClickHouse",
+      "supports_transactions": false,
+      "supports_analyze": false,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": true,
+      "requires_upsert_partition_column": true,
+      "supports_show_tables_catalog_filter": false
+    }
+  },
+  "backend_capabilities": {
+    "gp": {
+      "display_name": "Greenplum",
+      "supports_transactions": true,
+      "supports_analyze": true,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": false,
+      "requires_upsert_partition_column": false,
+      "supports_show_tables_catalog_filter": false
+    },
+    "trino": {
+      "display_name": "Trino",
+      "supports_transactions": false,
+      "supports_analyze": true,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": false,
+      "requires_upsert_partition_column": true,
+      "supports_show_tables_catalog_filter": true
+    },
+    "ch": {
+      "display_name": "ClickHouse",
+      "supports_transactions": false,
+      "supports_analyze": false,
+      "uses_stage_tables": true,
+      "supports_distributed_tables": true,
+      "requires_upsert_partition_column": true,
+      "supports_show_tables_catalog_filter": false
+    }
+  },
+  "write_modes": {
+    "gp": [
+      "append",
+      "replace",
+      "truncate_insert",
+      "upsert"
+    ],
+    "trino": [
+      "append",
+      "replace",
+      "truncate_insert",
+      "upsert"
+    ],
+    "ch": [
+      "append",
+      "replace",
+      "truncate_insert",
+      "upsert"
+    ]
+  },
   "transfer_pairs": [
-    ["gp", "gp"], ["gp", "trino"], ["gp", "ch"],
-    ["trino", "gp"], ["trino", "trino"], ["trino", "ch"],
-    ["ch", "gp"], ["ch", "trino"], ["ch", "ch"]
+    [
+      "gp",
+      "gp"
+    ],
+    [
+      "gp",
+      "trino"
+    ],
+    [
+      "gp",
+      "ch"
+    ],
+    [
+      "trino",
+      "gp"
+    ],
+    [
+      "trino",
+      "trino"
+    ],
+    [
+      "trino",
+      "ch"
+    ],
+    [
+      "ch",
+      "gp"
+    ],
+    [
+      "ch",
+      "trino"
+    ],
+    [
+      "ch",
+      "ch"
+    ]
   ],
-  "integration_exports": {
-    "async_sql": "tests/integration/test_sql_matrix.py::test_orchestration_task_matrix",
-    "parallel_sql": "tests/integration/test_sql_matrix.py::test_orchestration_task_matrix",
-    "cancel_queries": "tests/integration/test_sql_matrix.py::test_query_observability_matrix",
-    "create_sql_table": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
-    "drop_partitions": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
-    "drop_tables": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
-    "execute": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
-    "execute_read": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
-    "extract_ddl": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
-    "gp_create_partitions": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
-    "gp_vacuum": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
-    "load_df": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix",
-    "read": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
-    "show_queries": "tests/integration/test_sql_matrix.py::test_query_observability_matrix",
-    "show_tables": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
-    "table_info": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
-    "cleanup_stale_stage_tables": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
-    "transfer": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix",
-    "validate_connections": "tests/integration/test_sql_backends.py::test_connections_are_valid_and_reachable"
+  "connection_aliases": {
+    "gp": {
+      "purpose": "Direct plain Greenplum alias"
+    },
+    "gp_source": {
+      "purpose": "Same-backend Greenplum source"
+    },
+    "gp_target": {
+      "purpose": "Same-backend Greenplum target"
+    },
+    "trino": {
+      "purpose": "Direct plain Trino alias"
+    },
+    "trino_source_parquet": {
+      "purpose": "Parquet staging source"
+    },
+    "trino_target_values": {
+      "purpose": "VALUES target"
+    },
+    "trino_source_values": {
+      "purpose": "VALUES source"
+    },
+    "trino_target_parquet": {
+      "purpose": "Parquet target"
+    },
+    "ch": {
+      "purpose": "Direct plain ClickHouse alias"
+    },
+    "ch_source": {
+      "purpose": "Same-backend ClickHouse source"
+    },
+    "ch_target": {
+      "purpose": "Same-backend ClickHouse target"
+    },
+    "ch_limited": {
+      "purpose": "Limited-query ClickHouse source"
+    },
+    "gp_tls": {
+      "purpose": "Greenplum TLS"
+    },
+    "gp_tls_bundle": {
+      "purpose": "Greenplum CA bundle"
+    },
+    "gp_tls_client_cert": {
+      "purpose": "Greenplum mutual TLS"
+    },
+    "trino_basic_tls": {
+      "purpose": "Trino Basic TLS"
+    },
+    "trino_oauth_tls": {
+      "purpose": "Trino OAuth TLS"
+    },
+    "ch_tls": {
+      "purpose": "ClickHouse TLS"
+    },
+    "ch_tls_variable_ca": {
+      "purpose": "ClickHouse Airflow Variable CA"
+    },
+    "airflow_gp": {
+      "purpose": "Airflow Greenplum"
+    },
+    "airflow_trino": {
+      "purpose": "Airflow Trino"
+    },
+    "airflow_ch": {
+      "purpose": "Airflow ClickHouse"
+    }
   },
-  "unit_only_exports": {
-    "BACKEND_CAPABILITIES": {"test": "tests/test_sql_backend_adapters.py", "reason": "immutable capability metadata"},
-    "BackendName": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
-    "ConnectionKey": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
-    "ConnectionValidationResult": {"test": "tests/test_sql_connection_config.py", "reason": "result value type"},
-    "SqlOperationContext": {"test": "tests/test_sql_retries.py", "reason": "error context value type"},
-    "SqlOperationError": {"test": "tests/test_sql_retries.py", "reason": "error value type"},
-    "SqlOperationMetadata": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "metadata value type"},
-    "SqlOperationResult": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "result value type"},
-    "SqlPlan": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "plan value type"},
-    "SqlStatement": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "statement value type"},
-    "SqlTableInfo": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "table metadata value type"},
-    "SqlTaskType": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
-    "SqlText": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
-    "TableName": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
-    "format_plan": {"test": "tests/test_sql_improvements.py", "reason": "pure formatting"},
-    "generate_dummy_connections": {"test": "tests/test_sql_connection_config.py", "reason": "local configuration generation"},
-    "get_time_print_sink": {"test": "tests/test_general_logging.py", "reason": "process-local timing configuration"},
-    "set_time_print_sink": {"test": "tests/test_general_logging.py", "reason": "process-local timing configuration"},
-    "time_print": {"test": "tests/test_general_logging.py", "reason": "logging sink helper"}
+  "task_types": [
+    "read",
+    "execute",
+    "execute_read",
+    "load_df",
+    "transfer",
+    "custom_sql_pipeline"
+  ],
+  "exports": {
+    "BACKEND_CAPABILITIES": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_backend_support_matrix_includes_write_modes"
+      ],
+      "parameters": {}
+    },
+    "BackendName": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "ConnectionKey": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "ConnectionValidationResult": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlOperationContext": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlOperationError": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlOperationMetadata": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlOperationResult": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlPlan": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+      ],
+      "parameters": {}
+    },
+    "SqlStatement": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+      ],
+      "parameters": {}
+    },
+    "SqlTableInfo": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_table_info_gp_reads_columns_and_skips_row_count_by_default"
+      ],
+      "parameters": {}
+    },
+    "SqlTaskType": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "SqlText": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "TableName": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "async_sql": {
+      "classification": "integration",
+      "parameters": {
+        "tasks": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "fail_fast": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "start_comment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "10",
+          "states": [
+            {
+              "state": "default",
+              "value": "10",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "cancel_queries": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "query_ids": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "cancel_all": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "print_queries": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "cleanup_stale_stage_tables": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "target_table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "stage_tables": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "clean_all": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "read_retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "create_sql_table": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "table_name": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "df": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "source_db": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "insert_data": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "drop_target_if_exists": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "gp_distributed_by_key": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "partition_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "order_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "ch_engine": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'ReplicatedMergeTree'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'ReplicatedMergeTree'",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "ch_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'{cluster}'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'{cluster}'",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "ch_sharding_key": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'rand()'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'rand()'",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "ch_distributed_table": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_only_shard": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_replace_table": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "only_generate_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "table_schema": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "drop_partitions": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "partition_keys_list": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "trino_partition_column": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "gp_truncate": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "drop_tables": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "if_exists": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'{cluster}'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'{cluster}'",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_drop_shard": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_drop_distributed": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_wait_for_absence": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_wait_timeout_seconds": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "300",
+          "states": [
+            {
+              "state": "default",
+              "value": "300",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_wait_poll_interval_seconds": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_retry_per_host_drops": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "execute": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "print_queries": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "gp_break_query": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "gp_commit_each_statement": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "execute_read": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "print_queries": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "gp_break_query": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "gp_commit_each_statement": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "extract_ddl": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "tables": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "format_plan": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+      ],
+      "parameters": {
+        "plan": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+              ]
+            }
+          ]
+        },
+        "include_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+              ]
+            }
+          ]
+        },
+        "max_sql_chars": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "160",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_format_plan_returns_stable_multistatement_text"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "generate_dummy_connections": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_sql_connection_config.py::test_generate_dummy_connections_writes_direct_file"
+      ],
+      "parameters": {
+        "airflow": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_connection_config.py::test_generate_dummy_connections_writes_direct_file"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "get_time_print_sink": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_general_logging.py::test_time_print_validates_sink"
+      ],
+      "parameters": {}
+    },
+    "gp_create_partitions": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "intervals": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "values": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "days": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "weeks": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "months": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "years": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "name_template": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'p_{}'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'p_{}'",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "only_generate_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "gp_vacuum": {
+      "classification": "integration",
+      "parameters": {
+        "table_name": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
+        "analyze": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "full": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "verbose": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'gp'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'gp'",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "load_df": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "destination_table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "df": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "append": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "write_mode": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "gp_distributed_by_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "key_columns": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "upsert_partition_column": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "trino_insert_chunk_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "partition_by": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "order_by": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "ch_engine": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'ReplicatedMergeTree'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'ReplicatedMergeTree'",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "ch_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'{cluster}'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'{cluster}'",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "ch_sharding_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'rand()'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'rand()'",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "ch_only_shard": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_retry_per_host_drops": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "gp_insert_chunk_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "table_schema": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "load.trino.append"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "parallel_sql": {
+      "classification": "integration",
+      "parameters": {
+        "tasks": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "fail_fast": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "start_comment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "10",
+          "states": [
+            {
+              "state": "default",
+              "value": "10",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "orchestration.parallel_async"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "read": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "print_queries": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "query.read.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "set_time_print_sink": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_general_logging.py::test_time_print_validates_sink"
+      ],
+      "parameters": {
+        "sink": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_validates_sink"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "show_queries": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "user": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "state": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'active'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'active'",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "print_queries": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "observability.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "show_tables": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "schema": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "conditions": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "table_name": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_distributed_table_stats": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "trino_catalog": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "backend.contract.trino"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "table_info": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "include_row_count": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "lifecycle.trino"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "time_print": {
+      "classification": "unit_only",
+      "reason": "This export has no database-observing behavior.",
+      "tests": [
+        "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+      ],
+      "parameters": {
+        "message": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "level": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "'info'",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "enabled": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "operation": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "connection": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "backend": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "phase": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "task_id": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        },
+        "stream": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "status": "covered",
+              "tests": [
+                "tests/test_general_logging.py::test_time_print_keyword_only_options_have_compatible_defaults"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "transfer": {
+      "classification": "integration",
+      "parameters": {
+        "from_db": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "to_db": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "from_sql": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "to_table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "from_table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "write_mode": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "batch_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "100000",
+          "states": [
+            {
+              "state": "default",
+              "value": "100000",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "adaptive_batch_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "min_batch_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "1000",
+          "states": [
+            {
+              "state": "default",
+              "value": "1000",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "max_batch_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "adaptive_batch_size_step": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "0.1",
+          "states": [
+            {
+              "state": "default",
+              "value": "0.1",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "target_rows_per_second": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "target_batch_seconds": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "min_batch_seconds": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "max_batch_seconds": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "target_batch_memory_mb": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "min_batch_memory_mb": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "max_batch_memory_mb": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "target_rows_per_second_window": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "target_rows_per_second_deadband": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "0.15",
+          "states": [
+            {
+              "state": "default",
+              "value": "0.15",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "full_retry_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "full_timeout_increment": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "600",
+          "states": [
+            {
+              "state": "default",
+              "value": "600",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "key_columns": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "upsert_partition_column": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "gp_distributed_by_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "gp_insert_chunk_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "trino_insert_chunk_size": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "partition_by": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "order_by": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "ch_engine": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'ReplicatedMergeTree'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'ReplicatedMergeTree'",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "ch_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'{cluster}'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'{cluster}'",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "ch_sharding_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'rand()'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'rand()'",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "ch_only_shard": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_retry_per_host_drops": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "dry_run": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_sql": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "return_metadata": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "query_label": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "progress": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "estimate_total_rows": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "table_schema": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "transfer_keys": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "transfer_key_values": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "trino_mode": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            }
+          ]
+        },
+        "validate_row_count": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_count_limit_read": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "True",
+          "states": [
+            {
+              "state": "default",
+              "value": "True",
+              "status": "covered",
+              "scenarios": [
+                "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "false",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "validate_connections": {
+      "classification": "integration",
+      "parameters": {
+        "keys": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "connections.direct"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "connections.direct"
+              ]
+            }
+          ]
+        },
+        "connect": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "scenarios": [
+                "connections.direct"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        }
+      }
+    }
   },
-  "parameter_policy": {
-    "integration_default": "Every public parameter of an integration export is exercised by its named scenario or a deterministic validation test.",
-    "unit_only_default": "Constructor and helper parameters have no database behavior and are covered by the referenced deterministic unit test."
+  "scenarios": {
+    "query.read.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_read_execute_matrix[query.read.gp]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "load.gp.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.gp.append]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "load.gp.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.gp.replace]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "load.gp.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.gp.truncate_insert]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "load.gp.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.gp.upsert]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "lifecycle.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix[lifecycle.gp]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "observability.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_query_observability_matrix[observability.gp]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "backend.contract.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup[backend.contract.gp]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "query.read.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_read_execute_matrix[query.read.trino]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "load.trino.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.trino.append]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "load.trino.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.trino.replace]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "load.trino.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.trino.truncate_insert]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "load.trino.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.trino.upsert]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "lifecycle.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix[lifecycle.trino]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "observability.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_query_observability_matrix[observability.trino]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "backend.contract.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup[backend.contract.trino]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "query.read.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_read_execute_matrix[query.read.ch]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "load.ch.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.ch.append]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "load.ch.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.ch.replace]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "load.ch.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.ch.truncate_insert]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "load.ch.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix[load.ch.upsert]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "lifecycle.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix[lifecycle.ch]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "observability.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_query_observability_matrix[observability.ch]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "backend.contract.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup[backend.contract.ch]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "transfer.gp.gp.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.gp.append]",
+      "backends": [
+        "gp",
+        "gp"
+      ]
+    },
+    "transfer.gp.gp.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.gp.replace]",
+      "backends": [
+        "gp",
+        "gp"
+      ]
+    },
+    "transfer.gp.gp.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.gp.truncate_insert]",
+      "backends": [
+        "gp",
+        "gp"
+      ]
+    },
+    "transfer.gp.gp.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.gp.upsert]",
+      "backends": [
+        "gp",
+        "gp"
+      ]
+    },
+    "transfer.gp.trino.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.trino.append]",
+      "backends": [
+        "gp",
+        "trino"
+      ]
+    },
+    "transfer.gp.trino.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.trino.replace]",
+      "backends": [
+        "gp",
+        "trino"
+      ]
+    },
+    "transfer.gp.trino.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.trino.truncate_insert]",
+      "backends": [
+        "gp",
+        "trino"
+      ]
+    },
+    "transfer.gp.trino.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.trino.upsert]",
+      "backends": [
+        "gp",
+        "trino"
+      ]
+    },
+    "transfer.gp.ch.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.ch.append]",
+      "backends": [
+        "gp",
+        "ch"
+      ]
+    },
+    "transfer.gp.ch.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.ch.replace]",
+      "backends": [
+        "gp",
+        "ch"
+      ]
+    },
+    "transfer.gp.ch.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.ch.truncate_insert]",
+      "backends": [
+        "gp",
+        "ch"
+      ]
+    },
+    "transfer.gp.ch.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.gp.ch.upsert]",
+      "backends": [
+        "gp",
+        "ch"
+      ]
+    },
+    "transfer.trino.gp.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.gp.append]",
+      "backends": [
+        "trino",
+        "gp"
+      ]
+    },
+    "transfer.trino.gp.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.gp.replace]",
+      "backends": [
+        "trino",
+        "gp"
+      ]
+    },
+    "transfer.trino.gp.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.gp.truncate_insert]",
+      "backends": [
+        "trino",
+        "gp"
+      ]
+    },
+    "transfer.trino.gp.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.gp.upsert]",
+      "backends": [
+        "trino",
+        "gp"
+      ]
+    },
+    "transfer.trino.trino.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.trino.append]",
+      "backends": [
+        "trino",
+        "trino"
+      ]
+    },
+    "transfer.trino.trino.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.trino.replace]",
+      "backends": [
+        "trino",
+        "trino"
+      ]
+    },
+    "transfer.trino.trino.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.trino.truncate_insert]",
+      "backends": [
+        "trino",
+        "trino"
+      ]
+    },
+    "transfer.trino.trino.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.trino.upsert]",
+      "backends": [
+        "trino",
+        "trino"
+      ]
+    },
+    "transfer.trino.ch.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.ch.append]",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.trino.ch.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.ch.replace]",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.trino.ch.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.ch.truncate_insert]",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.trino.ch.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.ch.upsert]",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.ch.gp.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.gp.append]",
+      "backends": [
+        "ch",
+        "gp"
+      ]
+    },
+    "transfer.ch.gp.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.gp.replace]",
+      "backends": [
+        "ch",
+        "gp"
+      ]
+    },
+    "transfer.ch.gp.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.gp.truncate_insert]",
+      "backends": [
+        "ch",
+        "gp"
+      ]
+    },
+    "transfer.ch.gp.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.gp.upsert]",
+      "backends": [
+        "ch",
+        "gp"
+      ]
+    },
+    "transfer.ch.trino.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.trino.append]",
+      "backends": [
+        "ch",
+        "trino"
+      ]
+    },
+    "transfer.ch.trino.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.trino.replace]",
+      "backends": [
+        "ch",
+        "trino"
+      ]
+    },
+    "transfer.ch.trino.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.trino.truncate_insert]",
+      "backends": [
+        "ch",
+        "trino"
+      ]
+    },
+    "transfer.ch.trino.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.trino.upsert]",
+      "backends": [
+        "ch",
+        "trino"
+      ]
+    },
+    "transfer.ch.ch.append": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.ch.append]",
+      "backends": [
+        "ch",
+        "ch"
+      ]
+    },
+    "transfer.ch.ch.replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.ch.replace]",
+      "backends": [
+        "ch",
+        "ch"
+      ]
+    },
+    "transfer.ch.ch.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.ch.truncate_insert]",
+      "backends": [
+        "ch",
+        "ch"
+      ]
+    },
+    "transfer.ch.ch.upsert": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.ch.ch.upsert]",
+      "backends": [
+        "ch",
+        "ch"
+      ]
+    },
+    "connections.direct": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_connections_are_valid_and_reachable",
+      "backends": [
+        "gp",
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.cross_backend_roundtrip": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_representative_cross_backend_transfers",
+      "backends": [
+        "gp",
+        "trino",
+        "ch"
+      ]
+    },
+    "maintenance.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
+      "backends": [
+        "gp"
+      ]
+    },
+    "orchestration.parallel_async": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_orchestration_task_matrix",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "auth.trino.basic": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_tls_connections_validate_and_execute[auth.trino.basic]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "auth.clickhouse.tls": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_tls_connections_validate_and_execute[auth.clickhouse.tls]",
+      "backends": [
+        "ch"
+      ]
+    },
+    "auth.greenplum.mtls": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_tls_connections_validate_and_execute[auth.greenplum.mtls]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "auth.airflow.routes": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_real_airflow_connection_source_routes_all_backends",
+      "backends": [
+        "gp",
+        "trino",
+        "ch"
+      ]
+    },
+    "auth.realm.secret_free": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_auth_environment_is_secret_free",
+      "backends": []
+    },
+    "auth.trino.oauth": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth.py::test_real_browser_driven_trino_oauth",
+      "backends": [
+        "trino"
+      ]
+    },
+    "fault.connections.fresh": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_faults.py::test_fault_profile_starts_from_healthy_fresh_connections",
+      "backends": [
+        "gp",
+        "trino",
+        "ch"
+      ]
+    },
+    "fault.database.clickhouse_restart": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_faults.py::test_database_fault_restart_recovers",
+      "backends": [
+        "ch"
+      ]
+    },
+    "fault.staging.minio_pause": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_faults.py::test_staging_fault_is_always_restored",
+      "backends": [
+        "trino"
+      ]
+    },
+    "fault.authentication.keycloak_restart": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_faults.py::test_authentication_fault_is_project_scoped",
+      "backends": []
+    }
   },
   "unsupported_authentication": {
-    "kerberos": "not exposed by analytics_toolkit SQL connection configuration",
-    "jwt": "not exposed by analytics_toolkit SQL connection configuration"
+    "kerberos": {
+      "status": "not_applicable",
+      "reason": "The public connection schema does not expose Kerberos authentication.",
+      "tests": [
+        "tests/test_sql_connection_config.py::test_backend_specific_validation_uses_alias_backend"
+      ]
+    },
+    "jwt": {
+      "status": "not_applicable",
+      "reason": "The public connection schema does not expose JWT authentication.",
+      "tests": [
+        "tests/test_sql_connection_config.py::test_backend_specific_validation_uses_alias_backend"
+      ]
+    }
   }
 }

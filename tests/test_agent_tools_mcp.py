@@ -167,7 +167,7 @@ def test_prepare_start_sequences_environment_and_index(
 
     result = mcp_server.prepare_start("implementation", root=str(root))
 
-    assert result["ok"] is True
+    assert result["ok"] is True, result
     assert commands == [
         "git fetch origin dev",
         "git switch dev",
@@ -566,7 +566,8 @@ def test_version_bump_does_not_partially_write_when_release_changelog_fails(
     original_readme = (root / "README.md").read_text(encoding="utf-8")
 
     def fail_changelog(text: str, entry: str) -> str:
-        raise ValueError("Could not update changelog")
+        msg = "Could not update changelog"
+        raise ValueError(msg)
 
     monkeypatch.setattr(mcp_server, "_release_unreleased_changelog_text", fail_changelog)
 
@@ -896,7 +897,7 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, timeout_seconds: {
+        lambda root_path, sha, timeout_seconds: {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -912,7 +913,7 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
             "ok": True,
             "command": command["display"],
             "returncode": 0,
-            "stdout": "ok",
+            "stdout": "a" * 40 if command["display"] == "git rev-parse HEAD" else "ok",
             "stderr": "",
             "summary": "ok",
         }
@@ -926,10 +927,11 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
         root=str(root),
     )
 
-    assert result["ok"] is True
-    assert commands[-3:] == [
+    assert result["ok"] is True, result
+    assert commands[-4:] == [
         "git add -- agent_tools/mcp_server.py docs/CHANGELOG.md",
         "git commit -m 'Update workflow'",
+        "git rev-parse HEAD",
         "git push origin HEAD:dev",
     ]
 
@@ -956,7 +958,7 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, timeout_seconds: {
+        lambda root_path, sha, timeout_seconds: {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -969,7 +971,7 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
             "ok": True,
             "command": command["display"],
             "returncode": 0,
-            "stdout": "ok",
+            "stdout": "a" * 40 if command["display"] == "git rev-parse HEAD" else "ok",
             "stderr": "",
             "summary": "ok",
         }
@@ -984,9 +986,10 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
     )
 
     assert result["ok"] is True
-    assert commands[-3:] == [
+    assert commands[-4:] == [
         "git add -- docs/guide.md",
         "git commit -m 'Update docs'",
+        "git rev-parse HEAD",
         "git push origin HEAD:dev",
     ]
 
@@ -1015,7 +1018,7 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, timeout_seconds: {
+        lambda root_path, sha, timeout_seconds: {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -1028,7 +1031,7 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
             "ok": True,
             "command": command["display"],
             "returncode": 0,
-            "stdout": "ok",
+            "stdout": "a" * 40 if command["display"] == "git rev-parse HEAD" else "ok",
             "stderr": "",
             "summary": "ok",
         }
@@ -1043,9 +1046,10 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
     )
 
     assert result["ok"] is True
-    assert commands[-3:] == [
+    assert commands[-4:] == [
         "git add -- agent_tools/README.md",
         "git commit -m 'Update agent tools docs'",
+        "git rev-parse HEAD",
         "git push origin HEAD:dev",
     ]
 
@@ -1120,7 +1124,8 @@ def test_precommit_fingerprint_excludes_sensitive_untracked_file_contents(
     def read_bytes_with_secret_guard(path: Path) -> bytes:
         rel_path = path.relative_to(root).as_posix()
         if mcp_server._is_sensitive_local_path(rel_path):
-            raise AssertionError(f"sensitive path was read: {rel_path}")
+            msg = f"sensitive path was read: {rel_path}"
+            raise AssertionError(msg)
         read_paths.append(rel_path)
         return original_read_bytes(path)
 
@@ -1292,8 +1297,20 @@ def test_git_workflow_commit_and_push_dispatch(
     )
     monkeypatch.setattr(
         mcp_server,
+        "_run_git",
+        lambda root_path, args: {
+            "ok": True,
+            "stdout": "a" * 40 + "\n",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git " + " ".join(args),
+            "summary": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, timeout_seconds: {
+        lambda root_path, sha, timeout_seconds: {
             "result": {"sha": "a" * 40, "required": []},
             "command_results": [],
             "blockers": [],
@@ -1342,8 +1359,20 @@ def test_git_workflow_push_dispatch(
     )
     monkeypatch.setattr(
         mcp_server,
+        "_run_git",
+        lambda root_path, args: {
+            "ok": True,
+            "stdout": "a" * 40 + "\n",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git " + " ".join(args),
+            "summary": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, timeout_seconds: {
+        lambda root_path, sha, timeout_seconds: {
             "result": {"sha": "a" * 40, "required": []},
             "command_results": [],
             "blockers": [],
@@ -1415,6 +1444,309 @@ def test_classify_github_snapshot_requires_workflows_jobs_and_statuses() -> None
     assert result["pending"] == []
     assert result["failed"] == []
     assert result["required"][0]["run_id"] == 42
+
+
+def test_github_watcher_handles_delayed_discovery_and_exact_sha(
+    tmp_path: Path,
+) -> None:
+    root = _write_watcher_manifest(tmp_path / "project")
+    sha = "a" * 40
+    clock = _FakeClock()
+    snapshots = [
+        {"runs": [], "jobs": [], "check_runs": [], "statuses": []},
+        _successful_github_snapshot(),
+    ]
+    runner = _FakeGithubRunner(sha, snapshots)
+
+    result = mcp_server._watch_github_checks(
+        root,
+        sha=sha,
+        timeout_seconds=30,
+        poll_seconds=1,
+        discovery_seconds=10,
+        command_runner=runner,
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+    )
+
+    assert result["blockers"] == []
+    assert result["result"]["sha"] == sha
+    assert result["result"]["required"][0]["run_id"] == 42
+    assert all(f"head_sha={sha}" in endpoint for endpoint in runner.run_endpoints)
+    assert result["result"]["total_duration_seconds"] == 1
+
+
+def test_github_watcher_rejects_missing_required_workflow_after_grace(
+    tmp_path: Path,
+) -> None:
+    root = _write_watcher_manifest(tmp_path / "project")
+    clock = _FakeClock()
+    runner = _FakeGithubRunner("b" * 40, [{"runs": [], "jobs": [], "check_runs": [], "statuses": []}])
+
+    result = mcp_server._watch_github_checks(
+        root,
+        sha="b" * 40,
+        timeout_seconds=20,
+        poll_seconds=1,
+        discovery_seconds=2,
+        command_runner=runner,
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+    )
+
+    assert result["blockers"][0]["phase"] == "github_checks_discovery"
+    assert result["blockers"][0]["missing"] == ["tests"]
+
+
+def test_github_watcher_accepts_only_declared_conditional_skip(tmp_path: Path) -> None:
+    root = _write_watcher_manifest(tmp_path / "project", conditional=True)
+    snapshot = _successful_github_snapshot()
+    snapshot["check_runs"] = [
+        {
+            "name": "nightly fault",
+            "status": "completed",
+            "conclusion": "skipped",
+            "html_url": "https://example.test/check/9",
+        }
+    ]
+    result = mcp_server._watch_github_checks(
+        root,
+        sha="c" * 40,
+        command_runner=_FakeGithubRunner("c" * 40, [snapshot]),
+        monotonic=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert result["blockers"] == []
+    assert result["result"]["conditional_skips_accepted"] == [
+        {"name": "nightly fault", "conclusion": "skipped", "kind": "check_run"}
+    ]
+
+    snapshot["check_runs"][0]["name"] = "undeclared"
+    rejected = mcp_server._watch_github_checks(
+        root,
+        sha="c" * 40,
+        command_runner=_FakeGithubRunner("c" * 40, [snapshot]),
+        monotonic=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+    assert rejected["blockers"][0]["phase"] == "github_checks"
+
+
+def test_github_watcher_reports_failed_steps_and_failed_log_error(tmp_path: Path) -> None:
+    root = _write_watcher_manifest(tmp_path / "project")
+    snapshot = _successful_github_snapshot()
+    snapshot["jobs"][0]["conclusion"] = "failure"
+    snapshot["jobs"][0]["steps"] = [
+        {"name": "Run tests", "conclusion": "failure"}
+    ]
+    runner = _FakeGithubRunner("d" * 40, [snapshot], fail_logs=True)
+
+    result = mcp_server._watch_github_checks(
+        root,
+        sha="d" * 40,
+        command_runner=runner,
+        monotonic=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert result["blockers"][0]["phase"] == "github_checks"
+    assert result["result"]["failures"][0]["failed_steps"] == [
+        {"name": "Run tests", "conclusion": "failure"}
+    ]
+    assert result["result"]["failed_log_excerpts"][0]["ok"] is False
+    assert "log unavailable" in result["result"]["failed_log_excerpts"][0]["excerpt"]
+
+
+def test_push_captures_immutable_sha_before_push(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    captured = "e" * 40
+    order: list[str] = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
+
+    def fake_git(root_path: Path, args: list[str]) -> dict[str, object]:
+        order.append("sha")
+        return {
+            "ok": True,
+            "stdout": captured + "\n",
+            "stderr": "",
+            "returncode": 0,
+            "command": "git rev-parse HEAD",
+            "summary": captured,
+        }
+
+    def fake_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        order.append("push")
+        return {
+            "ok": True,
+            "stdout": "",
+            "stderr": "",
+            "returncode": 0,
+            "command": command["display"],
+            "summary": "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_git", fake_git)
+    monkeypatch.setattr(mcp_server, "_run_command", fake_command)
+
+    result = mcp_server._push_dev_result(root)
+
+    assert order == ["sha", "push"]
+    assert result["sha"] == captured
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _FakeGithubRunner:
+    def __init__(
+        self,
+        sha: str,
+        snapshots: list[dict[str, object]],
+        *,
+        fail_logs: bool = False,
+    ) -> None:
+        self.sha = sha
+        self.snapshots = snapshots
+        self.index = 0
+        self.fail_logs = fail_logs
+        self.run_endpoints: list[str] = []
+
+    def __call__(  # noqa: PLR0911 - endpoint dispatcher for watcher tests.
+        self, root: Path, command: dict[str, object]
+    ) -> dict[str, object]:
+        display = str(command["display"])
+        current = self.snapshots[min(self.index, len(self.snapshots) - 1)]
+        if display.startswith("gh repo view"):
+            return _command_result(display, "owner/repository\n")
+        if "actions/runs?" in display:
+            endpoint = display[len("gh api ") :]
+            self.run_endpoints.append(endpoint)
+            return _command_result(display, json.dumps({"workflow_runs": current["runs"]}))
+        if "/jobs?" in display:
+            return _command_result(display, json.dumps({"jobs": current["jobs"]}))
+        if "/check-runs?" in display:
+            return _command_result(display, json.dumps({"check_runs": current["check_runs"]}))
+        if display.endswith("/status"):
+            result = _command_result(display, json.dumps({"statuses": current["statuses"]}))
+            self.index += 1
+            return result
+        if display.startswith("gh run view"):
+            if self.fail_logs:
+                return _command_result(display, "", ok=False, stderr="log unavailable")
+            return _command_result(display, "failed test output")
+        raise AssertionError(display)
+
+
+def _command_result(
+    display: str,
+    stdout: str,
+    *,
+    ok: bool = True,
+    stderr: str = "",
+) -> dict[str, object]:
+    return {
+        "ok": ok,
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": 0 if ok else 1,
+        "command": display,
+        "summary": stdout or stderr,
+    }
+
+
+def _successful_github_snapshot(conclusion: str = "success") -> dict[str, object]:
+    return {
+        "runs": [
+            {
+                "name": "tests",
+                "id": 42,
+                "run_attempt": 1,
+                "status": "completed",
+                "conclusion": conclusion,
+                "html_url": "https://example.test/run/42",
+            }
+        ],
+        "jobs": [
+            {
+                "workflow_run_id": 42,
+                "name": "unit tests",
+                "status": "completed",
+                "conclusion": conclusion,
+                "html_url": "https://example.test/job/7",
+                "steps": [],
+            }
+        ],
+        "check_runs": [],
+        "statuses": [],
+    }
+
+
+def _write_watcher_manifest(root: Path, *, conditional: bool = False) -> Path:
+    manifest_dir = root / ".github"
+    manifest_dir.mkdir(parents=True)
+    conditional_checks = []
+    if conditional:
+        conditional_checks.append(
+            {
+                "name": "nightly fault",
+                "allowed_conclusions": ["neutral", "skipped"],
+                "reason": "nightly only",
+            }
+        )
+    (manifest_dir / "required-workflows.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "branches": {
+                    "dev": {
+                        "workflows": [
+                            {
+                                "name": "tests",
+                                "classification": "required_push",
+                                "allowed_conclusions": ["success"],
+                                "required_jobs": [
+                                    {
+                                        "name": "unit tests",
+                                        "allowed_conclusions": ["success"],
+                                    }
+                                ],
+                            }
+                        ],
+                        "conditional_checks": conditional_checks,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _successful_head(root: Path, args: list[str]) -> dict[str, object]:
+    return {
+        "ok": True,
+        "stdout": "a" * 40 + "\n",
+        "stderr": "",
+        "returncode": 0,
+        "command": "git " + " ".join(args),
+        "summary": "ok",
+    }
 
 
 def test_git_workflow_commit_reports_push_readiness_failure(
@@ -1493,6 +1825,7 @@ def test_git_workflow_commit_reports_push_command_failure(
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
+    monkeypatch.setattr(mcp_server, "_run_git", _successful_head)
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
         display = str(command["display"])
@@ -1595,7 +1928,8 @@ def test_git_workflow_push_blocks_on_readiness_failure(
     )
 
     def fail_if_called(root_path: Path, command: dict[str, object]) -> dict[str, object]:
-        raise AssertionError("push command should not run")
+        msg = "push command should not run"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(mcp_server, "_run_command", fail_if_called)
 
@@ -2021,14 +2355,7 @@ def _write_docs_project(root: Path) -> Path:
     )
     (root / "agent_tools").mkdir()
     (root / "agent_tools" / "README.md").write_text(
-        "\n".join(
-            [
-                "# Agent Tools",
-                "",
-                "The MCP docs tool provides local RAG retrieval for agents.",
-                'Use docs(query, mode="search") for snippets.',
-            ]
-        ),
+        '# Agent Tools\n\nThe MCP docs tool provides local RAG retrieval for agents.\nUse docs(query, mode="search") for snippets.',
         encoding="utf-8",
     )
     return root

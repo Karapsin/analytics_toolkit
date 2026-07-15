@@ -1,4 +1,7 @@
 <clickhouse>
+    <!-- The pinned server image defaults to loopback-only listeners.  Integration
+         clients and Trino reach this service through the Compose network. -->
+    <listen_host>0.0.0.0</listen_host>
     <remote_servers>
         <integration_cluster>
             <shard>

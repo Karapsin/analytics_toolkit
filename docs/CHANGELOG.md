@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.10.18 - 2026-07-15
 
 - Completed deterministic ClickHouse lifecycle, DML, and metadata coverage.
 - Completed shared and Greenplum backend contract coverage.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Added disposable Greenplum, Trino, and ClickHouse integration environments.
 - Expanded SQL integration profiles, coverage matrix, and exact-SHA GitHub verification.
 - Made SQL identifier tests independent of local connection files.
+- Expanded exhaustive SQL integration, authentication, fault recovery, and exact-SHA verification.
 
 ## 1.3.10.17 - 2026-07-14
 

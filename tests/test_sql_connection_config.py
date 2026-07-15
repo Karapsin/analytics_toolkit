@@ -2721,6 +2721,7 @@ def test_direct_trino_connections_file_supports_transfer_staging_location(
                 "catalog": "iceberg",
                 "schema": "sandbox",
                 "transfer_staging_schema": "object_storage.sandbox",
+                "transfer_parquet_staging_schema": "hive.sandbox",
                 "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
             },
         }
@@ -2728,6 +2729,7 @@ def test_direct_trino_connections_file_supports_transfer_staging_location(
 
     config = config_module.get_connection_config("trino_with_location")
     assert config.transfer_staging_schema == "object_storage.sandbox"
+    assert config.transfer_parquet_staging_schema == "hive.sandbox"
     assert config.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 

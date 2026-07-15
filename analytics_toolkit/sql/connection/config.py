@@ -70,6 +70,7 @@ class TrinoConfig:
     transfer_staging_schema: str | None
     transfer_staging_location: str | None
     upsert_partition_drop_sql_template: str | None = None
+    transfer_parquet_staging_schema: str | None = None
 
 
 @dataclass(frozen=True)

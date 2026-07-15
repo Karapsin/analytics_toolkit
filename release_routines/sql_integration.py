@@ -6,6 +6,8 @@ import os
 import platform
 import subprocess
 import sys
+import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
 
@@ -17,6 +19,7 @@ ARTIFACTS_DIR = REPO_ROOT / ".integration-artifacts"
 PROJECT_NAME = "analytics-toolkit-integration"
 X86_ARCHITECTURES = {"amd64", "x86_64"}
 PROFILES = ("core", "auth", "all", "fault")
+FAULT_GROUPS = ("database", "staging", "authentication")
 
 
 def _compose_command(
@@ -32,11 +35,12 @@ def _compose_command(
         "--file",
         str(CORE_COMPOSE_FILE),
     ]
-    if profile == "auth":
+    uses_auth = profile in {"auth", "fault"}
+    if uses_auth:
         command.extend(["--file", str(AUTH_COMPOSE_FILE)])
     if include_greenplum:
         command.extend(["--profile", "gp"])
-    if profile == "auth":
+    if uses_auth:
         command.extend(["--profile", "auth"])
     command.extend(args)
     return command
@@ -71,7 +75,9 @@ def _capture(
     return completed.returncode
 
 
-def _write_diagnostics(*, include_greenplum: bool, profile: str) -> None:
+def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifacts.
+    *, include_greenplum: bool, profile: str
+) -> None:
     profile_dir = ARTIFACTS_DIR / profile
     _capture(
         profile_dir / "compose.log",
@@ -82,8 +88,7 @@ def _write_diagnostics(*, include_greenplum: bool, profile: str) -> None:
             profile=profile,
         ),
     )
-    _capture(
-        profile_dir / "service-health.txt",
+    health = subprocess.run(
         _compose_command(
             "ps",
             "--all",
@@ -92,17 +97,59 @@ def _write_diagnostics(*, include_greenplum: bool, profile: str) -> None:
             include_greenplum=include_greenplum,
             profile=profile,
         ),
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
     )
+    records: list[object] = []
+    for line in health.stdout.splitlines():
+        if line.strip():
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                records.append({"unparsed": line})
+    (profile_dir / "service-health.json").write_text(
+        json.dumps(records, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    for filename in (
+        "leaks.json",
+        "minio-objects.json",
+        "active-queries.json",
+        "failed-query-details.json",
+    ):
+        path = profile_dir / filename
+        if not path.exists():
+            path.write_text("[]\n", encoding="utf-8")
+    if profile == "fault":
+        timeline = profile_dir / "fault-timeline.json"
+        if not timeline.exists():
+            timeline.write_text("[]\n", encoding="utf-8")
+    if profile in {"auth", "fault"}:
+        for filename in ("oauth-browser.log", "authentication.log"):
+            path = profile_dir / filename
+            if not path.exists():
+                path.write_text("", encoding="utf-8")
 
 
-def _test_environment(*, include_greenplum: bool, profile: str) -> dict[str, str]:
+def _test_environment(
+    *,
+    include_greenplum: bool,
+    profile: str,
+    run_id: str,
+    fault_group: str | None,
+) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
         {
             "ANALYTICS_TOOLKIT_RUN_INTEGRATION": "1",
             "SQL_INTEGRATION_PROFILE": profile,
+            "SQL_INTEGRATION_RUN_ID": run_id,
+            "SQL_INTEGRATION_ARTIFACT_DIR": str(ARTIFACTS_DIR / profile),
+            "SQL_INTEGRATION_COMPOSE_PROJECT": f"{PROJECT_NAME}-{profile}",
             "SQL_INTEGRATION_GP": "1" if include_greenplum else "0",
-            "SQL_INTEGRATION_CERTS": str(ARTIFACTS_DIR / "auth" / "certs"),
+            "SQL_INTEGRATION_CERTS": str(ARTIFACTS_DIR / profile / "certs"),
             "AWS_ACCESS_KEY_ID": "integration",
             "AWS_SECRET_ACCESS_KEY": "integration-secret",
             "AWS_DEFAULT_REGION": "us-east-1",
@@ -110,6 +157,8 @@ def _test_environment(*, include_greenplum: bool, profile: str) -> dict[str, str
             "AWS_ENDPOINT_URL_S3": "http://127.0.0.1:19001",
         }
     )
+    if fault_group:
+        environment["SQL_INTEGRATION_FAULT_GROUP"] = fault_group
     return environment
 
 
@@ -119,6 +168,18 @@ def _pytest_marker(profile: str) -> str:
     if profile == "auth":
         return "integration and integration_auth"
     return "integration and integration_fault"
+
+
+def _assert_no_manifest_skips(*, profile: str, include_greenplum: bool) -> int:
+    if not include_greenplum or profile not in {"core", "auth"}:
+        return 0
+    report = ARTIFACTS_DIR / profile / "pytest.xml"
+    try:
+        root = ET.parse(report).getroot()  # noqa: S314 - parses our local pytest report.
+    except (OSError, ET.ParseError):
+        return 1
+    skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in root.iter("testsuite"))
+    return 1 if skipped else 0
 
 
 def _assert_teardown_clean(*, profile: str) -> int:
@@ -149,18 +210,39 @@ def _assert_teardown_clean(*, profile: str) -> int:
         capture_output=True,
         text=True,
     )
+    networks = subprocess.run(
+        [
+            "docker",
+            "network",
+            "ls",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={PROJECT_NAME}-{profile}",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     leaked = {
         "containers": containers.stdout.split(),
         "volumes": volumes.stdout.split(),
+        "networks": networks.stdout.split(),
     }
     artifact = ARTIFACTS_DIR / profile / "runner-leaks.json"
     artifact.write_text(json.dumps(leaked, indent=2), encoding="utf-8")
-    return 1 if leaked["containers"] or leaked["volumes"] else 0
+    return 1 if any(leaked.values()) else 0
 
 
-def run_profile(*, profile: str, include_greenplum: bool) -> int:
+def run_profile(
+    *,
+    profile: str,
+    include_greenplum: bool,
+    fault_group: str | None = None,
+) -> int:
     profile_dir = ARTIFACTS_DIR / profile
     profile_dir.mkdir(parents=True, exist_ok=True)
+    run_id = uuid.uuid4().hex[:12]
     up_command = _compose_command(
         "up",
         "--detach",
@@ -178,10 +260,10 @@ def run_profile(*, profile: str, include_greenplum: bool) -> int:
         _write_diagnostics(include_greenplum=include_greenplum, profile=profile)
         if not started:
             return result
-        if profile == "auth":
+        if profile in {"auth", "fault"}:
             cert_dir = profile_dir / "certs"
             cert_dir.mkdir(parents=True, exist_ok=True)
-            for filename in ("ca.crt", "client.crt", "client.key"):
+            for filename in ("ca.crt", "server.crt", "client.crt", "client.key"):
                 copy_result = _run(
                     _compose_command(
                         "cp",
@@ -194,12 +276,16 @@ def run_profile(*, profile: str, include_greenplum: bool) -> int:
                 if copy_result != 0:
                     return copy_result
             (cert_dir / "client.key").chmod(0o600)
+            ca_text = (cert_dir / "ca.crt").read_text(encoding="utf-8")
+            (cert_dir / "ca-copy.crt").write_text(ca_text, encoding="utf-8")
+            (cert_dir / "ca-bundle.crt").write_text(ca_text + ca_text, encoding="utf-8")
         result = _run(
             [
                 sys.executable,
                 "-m",
                 "pytest",
                 "-q",
+                "--maxfail=1",
                 "-m",
                 _pytest_marker(profile),
                 "--junitxml",
@@ -209,8 +295,15 @@ def run_profile(*, profile: str, include_greenplum: bool) -> int:
             env=_test_environment(
                 include_greenplum=include_greenplum,
                 profile=profile,
+                run_id=run_id,
+                fault_group=fault_group,
             ),
         )
+        if result == 0:
+            result = _assert_no_manifest_skips(
+                profile=profile,
+                include_greenplum=include_greenplum,
+            )
         _write_diagnostics(include_greenplum=include_greenplum, profile=profile)
         return result
     finally:
@@ -228,12 +321,18 @@ def run_profile(*, profile: str, include_greenplum: bool) -> int:
             raise SystemExit(down_result or leak_result)
 
 
-def run(*, profile: str, include_greenplum: bool) -> int:
-    selected = ("core", "auth") if profile == "all" else (profile,)
+def run(
+    *,
+    profile: str,
+    include_greenplum: bool,
+    fault_group: str | None = None,
+) -> int:
+    selected = ("core", "auth", "fault") if profile == "all" else (profile,)
     for selected_profile in selected:
         result = run_profile(
             profile=selected_profile,
             include_greenplum=include_greenplum,
+            fault_group=fault_group,
         )
         if result != 0:
             return result
@@ -243,6 +342,7 @@ def run(*, profile: str, include_greenplum: bool) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run disposable SQL integration tests.")
     parser.add_argument("--profile", choices=PROFILES, default="all")
+    parser.add_argument("--fault-group", choices=FAULT_GROUPS)
     parser.add_argument(
         "--with-greenplum",
         action="store_true",
@@ -255,6 +355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return run(
         profile=args.profile,
         include_greenplum=architecture in X86_ARCHITECTURES,
+        fault_group=args.fault_group,
     )
 
 

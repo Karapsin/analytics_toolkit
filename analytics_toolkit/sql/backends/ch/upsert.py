@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..base import _apply_query_label
-from ..utils import sql_literal
+from analytics_toolkit.sql.backends.base import _apply_query_label
+from analytics_toolkit.sql.backends.upsert import incoming_stage_source_sql
+from analytics_toolkit.sql.backends.utils import sql_literal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
-def build_upsert_stage_sqls(
+def build_upsert_stage_sqls(  # noqa: PLR0913 - mirrors the backend adapter protocol.
     adapter: Any,
     target_table: str,
     stage_table: str,
@@ -26,10 +29,11 @@ def build_upsert_stage_sqls(
 ) -> list[str]:
     del trino_partition_drop_sql_template
     if upsert_partition_column is None or final_stage_table is None:
-        raise ValueError(
+        msg = (
             "upsert_partition_column and final_stage_table are required for "
             "ClickHouse write_mode='upsert'."
         )
+        raise ValueError(msg)
     return adapter.build_partition_replacement_upsert_sqls(
         target_table,
         stage_table,
@@ -46,7 +50,58 @@ def build_upsert_stage_sqls(
     )
 
 
-def build_upsert_stage_placeholder_sqls(
+def build_preserved_target_rows_insert_sql(  # noqa: PLR0913 - mirrors the backend adapter protocol.
+    adapter: Any,
+    target_table: str,
+    stage_table: str,
+    *,
+    final_stage_table: str,
+    columns: Sequence[str],
+    key_columns: Sequence[str],
+    partition_column: str,
+    incoming_stage_tables: Sequence[str] | None = None,
+    query_label: str | None = None,
+) -> str:
+    """Build ClickHouse-compatible preservation SQL without correlated EXISTS."""
+    target_columns = adapter.column_list_sql(columns)
+    selected_columns = ", ".join(
+        f"target_dst.{adapter.quote_identifier(column)}" for column in columns
+    )
+    incoming_source = incoming_stage_source_sql(
+        adapter,
+        stage_table,
+        incoming_stage_tables=incoming_stage_tables,
+        columns=columns,
+    )
+    incoming_partitions = incoming_stage_source_sql(
+        adapter,
+        stage_table,
+        incoming_stage_tables=incoming_stage_tables,
+        columns=[partition_column],
+    )
+    partition_sql = adapter.quote_identifier(partition_column)
+    partition_predicate = adapter.null_safe_key_equality(
+        "target_dst",
+        "affected_partition",
+        partition_column,
+    )
+    key_predicates = " AND ".join(
+        adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
+        for column_name in key_columns
+    )
+    return _apply_query_label(
+        f"INSERT INTO {final_stage_table} ({target_columns})\n"  # noqa: S608 - identifiers are adapter-quoted.
+        f"SELECT {selected_columns}\n"
+        f"FROM {target_table} AS target_dst\n"
+        "INNER JOIN (\n"
+        f"  SELECT DISTINCT {partition_sql} FROM {incoming_partitions}\n"
+        f") AS affected_partition ON {partition_predicate}\n"
+        f"LEFT ANTI JOIN {incoming_source} AS stage_src ON {key_predicates}",
+        query_label,
+    )
+
+
+def build_upsert_stage_placeholder_sqls(  # noqa: PLR0913 - mirrors the backend adapter protocol.
     adapter: Any,
     target_table: str,
     stage_table: str,
@@ -63,10 +118,11 @@ def build_upsert_stage_placeholder_sqls(
 ) -> list[str]:
     del trino_partition_drop_sql_template
     if upsert_partition_column is None or final_stage_table is None:
-        raise ValueError(
+        msg = (
             "upsert_partition_column and final_stage_table are required for "
             "ClickHouse write_mode='upsert'."
         )
+        raise ValueError(msg)
     return [
         adapter.build_preserved_target_rows_insert_sql(
             target_table,
@@ -102,7 +158,7 @@ def build_upsert_stage_placeholder_sqls(
     ]
 
 
-def build_drop_upsert_partition_sqls(
+def build_drop_upsert_partition_sqls(  # noqa: PLR0913 - mirrors the backend adapter protocol.
     adapter: Any,
     target_table: str,
     *,
@@ -114,8 +170,8 @@ def build_drop_upsert_partition_sqls(
     ch_only_shard: bool = False,
 ) -> list[str]:
     del adapter, partition_column, trino_partition_drop_sql_template
-    from .adapter import ch_cluster_clause
-    from .lifecycle import ch_distributed_table_pair
+    from .adapter import ch_cluster_clause  # noqa: PLC0415 - avoid adapter cycle.
+    from .lifecycle import ch_distributed_table_pair  # noqa: PLC0415 - avoid adapter cycle.
 
     drop_table = (
         target_table if ch_only_shard else ch_distributed_table_pair(target_table).shard_table

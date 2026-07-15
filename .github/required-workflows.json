@@ -1,31 +1,57 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "branches": {
     "dev": {
       "workflows": [
         {
           "name": "tests",
           "path": ".github/workflows/tests.yml",
-          "trigger": "push",
-          "allowed_conclusions": ["success"]
+          "classification": "required_push",
+          "event": "push",
+          "allowed_conclusions": ["success"],
+          "required_jobs": []
         },
         {
           "name": "sql-integration",
           "path": ".github/workflows/sql-integration.yml",
-          "trigger": "push",
+          "classification": "required_push",
+          "event": "push",
+          "allowed_conclusions": ["success"],
           "required_jobs": [
-            "core SQL integration",
-            "authentication SQL integration"
+            {
+              "name": "core SQL integration",
+              "allowed_conclusions": ["success"]
+            },
+            {
+              "name": "authentication SQL integration",
+              "allowed_conclusions": ["success"]
+            }
           ],
-          "allowed_conclusions": ["success"]
+          "conditional_jobs": [
+            {
+              "name": "destructive fault injection",
+              "events": ["schedule", "workflow_dispatch"],
+              "allowed_conclusions": ["success", "skipped"],
+              "reason": "Destructive fault groups run nightly or by explicit manual dispatch, never on dev pushes."
+            }
+          ]
         }
       ],
-      "conditional_checks": ["destructive fault injection"],
+      "conditional_checks": [
+        {
+          "name": "destructive fault injection",
+          "kind": "job",
+          "allowed_conclusions": ["neutral", "skipped"],
+          "reason": "The fault job is intentionally conditional on scheduled and manual events."
+        }
+      ],
       "classified_non_push_workflows": [
         {
           "name": "publish",
           "path": ".github/workflows/publish.yml",
-          "reason": "release publishing is intentionally branch/tag/manual gated"
+          "classification": "release_only",
+          "events": ["workflow_dispatch", "release"],
+          "reason": "Release publishing is intentionally branch, tag, and manual gated."
         }
       ]
     }

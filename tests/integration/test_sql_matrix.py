@@ -6,6 +6,8 @@ import uuid
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from tests.integration.manifest import scenario_param
+from tests.integration.support.identity import resource_name
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 BACKENDS = ("gp", "trino", "ch")
@@ -18,22 +20,28 @@ def _enabled(backend: str) -> bool:
 
 def _alias(backend: str, *, target: bool = False) -> str:
     if backend == "gp":
-        return "gp_alias" if target else "gp"
+        return "gp_target" if target else "gp_source"
     if backend == "trino":
-        return "trino_values" if target else "trino_parquet"
-    return "ch" if target else "ch_limited"
+        return "trino_target_values" if target else "trino_source_parquet"
+    return "ch_target" if target else "ch_source"
 
 
 def _table(backend: str, label: str) -> str:
-    suffix = uuid.uuid4().hex[:10]
+    run_id = os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8])
+    test_id = os.environ.get("SQL_INTEGRATION_TEST_ID", "manual")
+    suffix = resource_name(run_id, test_id, label)
     if backend == "gp":
-        return f"public.it_{label}_{suffix}"
+        return f"public.{suffix}"
     if backend == "trino":
-        return f"iceberg.integration.it_{label}_{suffix}"
-    return f"integration.it_{label}_{suffix}"
+        return f"iceberg.integration.{suffix}"
+    return f"integration.{suffix}"
 
 
-def _shape_options(backend: str) -> dict[str, object]:
+def _shape_options(
+    backend: str,
+    *,
+    ch_only_shard: bool = False,
+) -> dict[str, object]:
     if backend == "gp":
         return {"gp_distributed_by_key": "id"}
     if backend == "trino":
@@ -41,7 +49,9 @@ def _shape_options(backend: str) -> dict[str, object]:
     return {
         "partition_by": ["dt"],
         "order_by": ["id"],
+        "ch_engine": "MergeTree",
         "ch_cluster": "integration_cluster",
+        "ch_only_shard": ch_only_shard,
     }
 
 
@@ -62,7 +72,10 @@ def _frame(first: int = 1) -> pd.DataFrame:
     )
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"query.read.{backend}", backend) for backend in BACKENDS],
+)
 def test_read_execute_matrix(backend: str) -> None:
     if not _enabled(backend):
         pytest.skip("Greenplum requires x86_64")
@@ -72,14 +85,23 @@ def test_read_execute_matrix(backend: str) -> None:
     assert sql.execute(alias, "SELECT 3", return_metadata=True).metadata.statement_count == 1
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-@pytest.mark.parametrize("write_mode", WRITE_MODES)
+@pytest.mark.parametrize(
+    ("backend", "write_mode"),
+    [
+        scenario_param(f"load.{backend}.{write_mode}", backend, write_mode)
+        for backend in BACKENDS
+        for write_mode in WRITE_MODES
+    ],
+)
 def test_load_write_mode_matrix(backend: str, write_mode: str) -> None:
     if not _enabled(backend):
         pytest.skip("Greenplum requires x86_64")
     alias = _alias(backend, target=True)
     table = _table(backend, f"load_{write_mode}")
-    options = _shape_options(backend)
+    options = _shape_options(
+        backend,
+        ch_only_shard=backend == "ch" and write_mode == "upsert",
+    )
     try:
         sql.load_df(alias, table, _frame(), write_mode="replace", **options)
         mode_options = {**options, **(_upsert_options(backend) if write_mode == "upsert" else {})}
@@ -95,9 +117,20 @@ def test_load_write_mode_matrix(backend: str, write_mode: str) -> None:
         )
 
 
-@pytest.mark.parametrize("source", BACKENDS)
-@pytest.mark.parametrize("target", BACKENDS)
-@pytest.mark.parametrize("write_mode", WRITE_MODES)
+@pytest.mark.parametrize(
+    ("source", "target", "write_mode"),
+    [
+        scenario_param(
+            f"transfer.{source}.{target}.{write_mode}",
+            source,
+            target,
+            write_mode,
+        )
+        for source in BACKENDS
+        for target in BACKENDS
+        for write_mode in WRITE_MODES
+    ],
+)
 def test_transfer_pair_and_write_mode_matrix(
     source: str,
     target: str,
@@ -122,9 +155,15 @@ def test_transfer_pair_and_write_mode_matrix(
             target_table,
             _frame(10),
             write_mode="replace",
-            **_shape_options(target),
+            **_shape_options(
+                target,
+                ch_only_shard=target == "ch" and write_mode == "upsert",
+            ),
         )
-        options = _shape_options(target)
+        options = _shape_options(
+            target,
+            ch_only_shard=target == "ch" and write_mode == "upsert",
+        )
         if write_mode == "upsert":
             options.update(_upsert_options(target))
         transferred = sql.transfer(
@@ -154,7 +193,10 @@ def test_transfer_pair_and_write_mode_matrix(
         )
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"lifecycle.{backend}", backend) for backend in BACKENDS],
+)
 def test_table_lifecycle_matrix(backend: str) -> None:
     if not _enabled(backend):
         pytest.skip("Greenplum requires x86_64")
@@ -164,7 +206,10 @@ def test_table_lifecycle_matrix(backend: str) -> None:
         sql.create_sql_table(alias, table, df=_frame(), **_shape_options(backend))
         info = sql.table_info(alias, table, include_row_count=True)
         assert info.exists
-        assert info.resolved_table
+        if backend == "trino":
+            assert info.resolved_table == table
+        if backend == "ch":
+            assert info.shard_table == f"{table}_shard"
         sql.cleanup_stale_stage_tables(alias, target_table=table)
     finally:
         sql.drop_tables(
@@ -175,7 +220,10 @@ def test_table_lifecycle_matrix(backend: str) -> None:
         )
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"observability.{backend}", backend) for backend in BACKENDS],
+)
 def test_query_observability_matrix(backend: str) -> None:
     if not _enabled(backend):
         pytest.skip("Greenplum requires x86_64")
@@ -183,6 +231,7 @@ def test_query_observability_matrix(backend: str) -> None:
     assert {"query_id", "state"}.issubset(result.columns)
 
 
+@pytest.mark.sql_scenario("maintenance.gp")
 def test_greenplum_partition_and_vacuum() -> None:
     if not _enabled("gp"):
         pytest.skip("Greenplum requires x86_64")
@@ -201,6 +250,7 @@ def test_greenplum_partition_and_vacuum() -> None:
         sql.drop_tables("gp", table, if_exists=True, ch_cluster=None)
 
 
+@pytest.mark.sql_scenario("orchestration.parallel_async")
 def test_orchestration_task_matrix() -> None:
     tasks = [
         {"name": "trino", "type": "read", "db_key": "trino", "query": "SELECT 1"},

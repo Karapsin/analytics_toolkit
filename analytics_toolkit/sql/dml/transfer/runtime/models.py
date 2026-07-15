@@ -382,6 +382,7 @@ class TransferOptions:
     validate_row_count: bool = False
     ch_count_limit_read: bool = True
     transfer_staging_schema: str | None = None
+    transfer_parquet_staging_schema: str | None = None
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
     trino_mode: TrinoTransferMode | None = None

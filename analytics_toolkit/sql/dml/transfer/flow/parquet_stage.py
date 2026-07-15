@@ -37,7 +37,10 @@ def create_parquet_stage_table(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
 ) -> None:
-    if not options.transfer_staging_schema:
+    parquet_schema = (
+        options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    )
+    if not parquet_schema:
         raise ValueError("transfer_staging_schema is required for Parquet staging.")
     if not options.transfer_staging_location:
         raise ValueError("transfer_staging_location is required for Parquet staging.")
@@ -51,7 +54,7 @@ def create_parquet_stage_table(
         stage_table = build_stage_table_name(
             "trino",
             options.target_table,
-            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_schema=parquet_schema,
             transfer_staging_username=options.transfer_staging_username,
         )
         if table_exists(

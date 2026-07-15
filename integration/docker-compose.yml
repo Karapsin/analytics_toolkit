@@ -14,6 +14,32 @@ services:
       retries: 30
     tmpfs:
       - /var/lib/postgresql/data
+    volumes:
+      - ./iceberg-catalog/init.sql:/docker-entrypoint-initdb.d/10-iceberg.sql:ro
+
+  hive-metastore:
+    image: apache/hive:4.0.1
+    environment:
+      SERVICE_NAME: metastore
+      SERVICE_OPTS: -Dhive.metastore.warehouse.dir=file:///tmp/hive-warehouse/
+      HADOOP_CLASSPATH: /opt/hadoop/share/hadoop/tools/lib/*
+      AWS_ACCESS_KEY_ID: integration
+      AWS_SECRET_ACCESS_KEY: integration-secret
+      AWS_REGION: us-east-1
+      HIVE_CUSTOM_CONF_DIR: /hive-custom-conf
+      HADOOP_CLIENT_OPTS: >-
+        -Dfs.s3a.endpoint=http://minio:9000
+        -Dfs.s3a.access.key=integration
+        -Dfs.s3a.secret.key=integration-secret
+        -Dfs.s3a.path.style.access=true
+        -Dfs.s3a.connection.ssl.enabled=false
+    volumes:
+      - ./hive/core-site.xml:/hive-custom-conf/core-site.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9083'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -43,10 +69,24 @@ services:
         mc alias set integration http://minio:9000 integration integration-secret
         mc mb --ignore-existing integration/warehouse
 
+  minio-client:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set integration http://minio:9000 integration integration-secret
+        exec tail -f /dev/null
+
   trino:
     image: trinodb/trino:482
     depends_on:
       iceberg-catalog-db:
+        condition: service_healthy
+      hive-metastore:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully

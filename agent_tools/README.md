@@ -46,27 +46,31 @@ lines through its `repo_health` result. Use that consolidated status instead of
 running separate shell probes for routine worktree summaries.
 
 `run-checks --area sql --level integration` starts the repository-owned
-disposable Trino/MinIO/Iceberg and ClickHouse/Keeper stack, adds Greenplum on
+disposable Trino/MinIO/Iceberg/Hive and ClickHouse/Keeper stack, adds Greenplum on
 x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
 The integration entrypoint accepts `--integration-profile core`, `auth`, `all`,
-or `fault`; `all` is the exhaustive default. Core and auth are required on each
-`dev` push. Fault is destructive and runs nightly or by manual dispatch. Each
-profile writes Compose logs, service health, JUnit output, and leak reports below
-`.integration-artifacts/<profile>/` and always tears down its project containers
-and volumes. Greenplum completeness requires x86_64; ARM runs are useful but not
-the complete deterministic matrix.
+or `fault`; `all` is the exhaustive local default and includes every fault
+group. Core and auth are required on each `dev` push. Fault is destructive and
+runs nightly or by manual dispatch in database, staging, and authentication
+groups. Each profile writes Compose logs, service health, JUnit output,
+collection output, query/object diagnostics, and leak reports below
+`.integration-artifacts/<profile>/` and always tears down its project
+containers, networks, and volumes. Greenplum completeness and the no-skips gate
+require x86_64; ARM runs are useful but not the complete deterministic matrix.
 
 Successful `git-workflow commit` and `push` operations automatically watch the
-exact pushed SHA. The watcher discovers every entry in
+immutable SHA captured immediately before the push. The watcher discovers every entry in
 `.github/required-workflows.json`, polls Actions jobs plus commit check-runs and
 statuses, and returns run/job URLs and conclusions. It fails on cancellation,
 supersession, missing workflows, terminal failures, API/authentication errors,
 or timeout. Only conditional skips declared in the manifest are accepted.
-When resuming after interruption, use `git-workflow checks --sha ...`; do not
-inspect the latest branch run instead.
+When a run fails, it waits for terminal state and returns failed steps plus a
+bounded `gh run view --log-failed` excerpt. Rerun only for demonstrated
+infrastructure failure. When resuming after interruption, use
+`git-workflow checks --sha ...`; do not inspect the latest branch run instead.
 
 `mcp_server.py` exposes the consolidated tool surface:
 `prepare_start`, `docs`, `workflow_status`, `version_bump`, `run_checks`,

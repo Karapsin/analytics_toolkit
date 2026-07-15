@@ -69,6 +69,11 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             connection_key,
             "transfer_staging_location",
         ),
+        transfer_parquet_staging_schema=_optional_string(
+            raw_config,
+            connection_key,
+            "transfer_parquet_staging_schema",
+        ),
         upsert_partition_drop_sql_template=_optional_string(
             raw_config,
             connection_key,

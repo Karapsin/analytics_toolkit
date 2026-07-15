@@ -51,7 +51,10 @@ def dry_run_stage_table_name(
         return build_stage_table_name(
             options.to_db_backend,
             options.target_table,
-            transfer_staging_schema=options.transfer_staging_schema,
+            transfer_staging_schema=(
+                options.transfer_parquet_staging_schema
+                or options.transfer_staging_schema
+            ),
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=suffix,
         )

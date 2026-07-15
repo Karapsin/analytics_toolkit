@@ -85,7 +85,8 @@ rows
 - For Trino connections with both `transfer_staging_schema` and
   `transfer_staging_location` configured, `load_df` writes temporary Parquet
   files to the object-storage prefix, creates an external stage table in
-  `transfer_staging_schema`, and finalizes into the target table from that
+  `transfer_parquet_staging_schema` when configured (otherwise
+  `transfer_staging_schema`), and finalizes into the target table from that
   stage. Python and Trino must both be able to access and clean up that prefix.
 - If `transfer_staging_location` is not configured, Trino `load_df` keeps using
   direct dataframe inserts controlled by `trino_insert_chunk_size`.

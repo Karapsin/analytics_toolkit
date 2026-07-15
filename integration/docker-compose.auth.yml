@@ -9,13 +9,13 @@ services:
       - -ec
       - |
         apk add --no-cache openssl
-        openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=integration-ca -keyout /certs/ca.key -out /certs/ca.crt
+        openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=integration-ca -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout /certs/ca.key -out /certs/ca.crt
         openssl req -newkey rsa:2048 -nodes -subj /CN=localhost -keyout /certs/server.key -out /certs/server.csr
-        printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
+        printf 'subjectAltName=DNS:localhost,IP:127.0.0.1,DNS:auth-proxy,DNS:keycloak.localhost\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
         openssl x509 -req -days 2 -in /certs/server.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/server.ext -out /certs/server.crt
         cat /certs/server.crt /certs/server.key >/certs/server.pem
         openssl req -newkey rsa:2048 -nodes -subj /CN=integration-client -keyout /certs/client.key -out /certs/client.csr
-        printf 'extendedKeyUsage=clientAuth\n' >/certs/client.ext
+        printf 'keyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n' >/certs/client.ext
         openssl x509 -req -days 2 -in /certs/client.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/client.ext -out /certs/client.crt
 
   keycloak:
@@ -25,6 +25,9 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: integration
       KC_BOOTSTRAP_ADMIN_PASSWORD: integration
+      KC_HOSTNAME: https://keycloak.localhost:18445
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
     ports:
       - "${SQL_INTEGRATION_KEYCLOAK_PORT:-18081}:8080"
     volumes:
@@ -36,6 +39,8 @@ services:
     depends_on:
       iceberg-catalog-db:
         condition: service_healthy
+      hive-metastore:
+        condition: service_healthy
       minio-init:
         condition: service_completed_successfully
     volumes:
@@ -44,13 +49,36 @@ services:
       - ./trino-auth/password-authenticator.properties:/etc/trino/password-authenticator.properties:ro
       - ./trino-auth/password.db:/etc/trino/password.db:ro
 
+  trino-oauth:
+    profiles: ["auth"]
+    image: trinodb/trino:482
+    depends_on:
+      iceberg-catalog-db:
+        condition: service_healthy
+      hive-metastore:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      TRINO_OAUTH_CLIENT_SECRET: integration-oauth-secret
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino-oauth/config.properties:/etc/trino/config.properties:ro
+      - auth-certificates:/certs:ro
+
   auth-proxy:
     profiles: ["auth"]
     image: haproxy:3.2.1-alpine
+    networks:
+      default:
+        aliases:
+          - keycloak.localhost
     depends_on:
       auth-certificates:
         condition: service_completed_successfully
       trino-auth:
+        condition: service_started
+      trino-oauth:
         condition: service_started
       clickhouse:
         condition: service_healthy
@@ -59,6 +87,7 @@ services:
     ports:
       - "${SQL_INTEGRATION_GP_TLS_PORT:-19432}:19432"
       - "${SQL_INTEGRATION_TRINO_TLS_PORT:-18443}:18443"
+      - "${SQL_INTEGRATION_TRINO_OAUTH_TLS_PORT:-18446}:18446"
       - "${SQL_INTEGRATION_CLICKHOUSE_TLS_PORT:-18444}:18444"
       - "${SQL_INTEGRATION_KEYCLOAK_TLS_PORT:-18445}:18445"
     volumes:

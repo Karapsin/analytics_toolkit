@@ -530,7 +530,7 @@ def version_bump(  # noqa: C901 - this function coordinates the atomic metadata 
     next_version_value = _increment_version(current_version)
     should_bump = force_release or planned_unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD
     if should_bump:
-        release_bullets = unreleased_bullets if force_release else unreleased_bullets + [bullet]
+        release_bullets = unreleased_bullets if force_release else [*unreleased_bullets, bullet]
         entry = _format_changelog_entry(
             next_version_value,
             release_bullets,
@@ -913,6 +913,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
 
     checks = _watch_pushed_commit(
         root_path,
+        sha=push["sha"],
         timeout_seconds=check_timeout_seconds,
     )
     command_results.extend(checks["command_results"])
@@ -1065,11 +1066,12 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
 def create_mcp_server() -> Any:
     """Create the MCP server instance."""
     if FastMCP is None:
-        raise RuntimeError(
+        msg = (
             "The MCP SDK is not installed. Run "
             "`.venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt` "
             "from the repository root, then start this server again."
         )
+        raise RuntimeError(msg)
 
     server = FastMCP("analytics-toolkit-agent-tools")
 
@@ -1543,7 +1545,8 @@ def _check_commands(
         return [PRECOMMIT_COMMAND]
     if level == "release":
         return RELEASE_CHECK_COMMANDS
-    raise ValueError("level must be 'focused', 'integration', 'precommit', or 'release'")
+    msg = "level must be 'focused', 'integration', 'precommit', or 'release'"
+    raise ValueError(msg)
 
 
 def _run_command(root: Path, command: dict[str, Any]) -> dict[str, Any]:
@@ -1689,14 +1692,16 @@ def _write_text(path: Path, text: str) -> None:
 def _parse_required(pattern: re.Pattern[str], text: str, label: str) -> str:
     match = pattern.search(text)
     if match is None:
-        raise ValueError(f"Could not parse {label}")
+        msg = f"Could not parse {label}"
+        raise ValueError(msg)
     return match.group(1)
 
 
 def _replace_required(pattern: re.Pattern[str], text: str, replacement: str, label: str) -> str:
     updated, count = pattern.subn(replacement, text, count=1)
     if count != 1:
-        raise ValueError(f"Could not update {label}")
+        msg = f"Could not update {label}"
+        raise ValueError(msg)
     return updated
 
 
@@ -1736,7 +1741,8 @@ def _prepend_changelog_entry(path: Path, entry: str) -> None:
 
 def _prepend_changelog_entry_text(text: str, entry: str) -> str:
     if not text.strip():
-        raise ValueError("Could not update changelog")
+        msg = "Could not update changelog"
+        raise ValueError(msg)
     match = re.search(r"^##\s+", text, flags=re.MULTILINE)
     if match is None:
         return text.rstrip() + "\n\n" + entry
@@ -1770,7 +1776,8 @@ def _count_unreleased_changelog_bullets(text: str) -> int:
 
 def _upsert_unreleased_changelog_bullet(text: str, bullet: str) -> str:
     if not text.strip():
-        raise ValueError("Could not update changelog")
+        msg = "Could not update changelog"
+        raise ValueError(msg)
     bounds = _unreleased_changelog_bounds(text)
     if bounds is None:
         entry = f"## Unreleased\n\n{bullet}\n\n"
@@ -1779,7 +1786,7 @@ def _upsert_unreleased_changelog_bullet(text: str, bullet: str) -> str:
             return text.rstrip() + "\n\n" + entry.rstrip() + "\n"
         return text[: match.start()] + entry + text[match.start() :]
 
-    section_start, body_start, section_end = bounds
+    _section_start, body_start, section_end = bounds
     body = text[body_start:section_end].strip()
     updated_body = f"{body}\n{bullet}" if body else bullet
     return (
@@ -1803,10 +1810,12 @@ def _release_unreleased_changelog_text(text: str, entry: str) -> str:
 def _increment_version(version: str) -> str:
     parts = version.split(".")
     if len(parts) != 4:
-        raise ValueError("Version must have four numeric parts")
+        msg = "Version must have four numeric parts"
+        raise ValueError(msg)
     numbers = [int(part) for part in parts]
     if any(number < 0 or number > 19 for number in numbers):
-        raise ValueError("Version components must be between 0 and 19")
+        msg = "Version components must be between 0 and 19"
+        raise ValueError(msg)
 
     for index in range(3, -1, -1):
         if numbers[index] < 19:
@@ -1814,7 +1823,8 @@ def _increment_version(version: str) -> str:
             for reset_index in range(index + 1, 4):
                 numbers[reset_index] = 0
             return ".".join(str(number) for number in numbers)
-    raise ValueError("Version cannot be incremented without exceeding component limits")
+    msg = "Version cannot be incremented without exceeding component limits"
+    raise ValueError(msg)
 
 
 def _project_dependencies(pyproject_text: str) -> list[str]:
@@ -2021,7 +2031,7 @@ def _untracked_paths_under(root: Path, rel_path: str) -> set[str]:
     result = _run_git(root, ["ls-files", "--others", "--exclude-standard", "--", rel_path])
     if not result["ok"]:
         return {rel_path}
-    return set(path for path in result["stdout"].splitlines() if path) or {rel_path}
+    return {path for path in result["stdout"].splitlines() if path} or {rel_path}
 
 
 def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dict[str, Any]:
@@ -2068,11 +2078,8 @@ def _version_bump_message(missing: list[str]) -> str:
 def _is_documentation_path(rel_path: str) -> bool:
     normalized = rel_path.replace("\\", "/").strip("/")
     return (
-        normalized == "README.md"
-        or normalized == "AGENTS.md"
-        or normalized == "agent_tools/README.md"
-        or normalized.startswith("docs/")
-        or normalized.startswith("agent_docs/")
+        normalized in {"README.md", "AGENTS.md", "agent_tools/README.md"}
+        or normalized.startswith(("docs/", "agent_docs/"))
         or (normalized.endswith(".md") and "/" not in normalized)
     )
 
@@ -2091,8 +2098,7 @@ def _is_sensitive_path_part(part: str) -> bool:
     return (
         part in SENSITIVE_LOCAL_PATHS
         or part in SENSITIVE_LOCAL_DIRS
-        or part.startswith(".env.")
-        or part.startswith(".env-")
+        or part.startswith((".env.", ".env-"))
     )
 
 
@@ -2225,6 +2231,27 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
             "blockers": readiness["blockers"],
         }
 
+    head = _run_git(root, ["rev-parse", "HEAD"])
+    if not head["ok"]:
+        return {
+            "readiness": readiness,
+            "command_results": [*readiness["command_results"], head],
+            "blockers": [_command_blocker("push_sha", head)],
+        }
+    pushed_sha = head["stdout"].strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", pushed_sha):
+        return {
+            "readiness": readiness,
+            "command_results": [*readiness["command_results"], head],
+            "blockers": [
+                {
+                    "phase": "push_sha",
+                    "message": "HEAD did not resolve to a full immutable commit SHA.",
+                    "sha": pushed_sha,
+                }
+            ],
+        }
+
     result = _run_command(
         root,
         {
@@ -2236,7 +2263,9 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
     blockers = [] if result["ok"] else [_command_blocker("push", result)]
     return {
         "readiness": readiness,
-        "command_results": [*readiness["command_results"], result],
+        "sha": pushed_sha,
+        "push_target": f"origin/{WORK_BRANCH}",
+        "command_results": [*readiness["command_results"], head, result],
         "blockers": blockers,
     }
 
@@ -2262,7 +2291,11 @@ def _push_dev_workflow(
             ],
         )
 
-    checks = _watch_pushed_commit(root, timeout_seconds=timeout_seconds)
+    checks = _watch_pushed_commit(
+        root,
+        sha=push["sha"],
+        timeout_seconds=timeout_seconds,
+    )
     return _tool_output(
         "git_workflow",
         input_summary,
@@ -2309,42 +2342,57 @@ def _github_checks_workflow(
     )
 
 
-def _watch_pushed_commit(root: Path, *, timeout_seconds: int) -> dict[str, Any]:
-    head = _run_git(root, ["rev-parse", "HEAD"])
-    if not head["ok"]:
-        return {
-            "result": {},
-            "command_results": [head],
-            "blockers": [_command_blocker("github_checks_sha", head)],
-        }
-    sha = head["stdout"].strip()
-    watched = _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
-    watched["command_results"].insert(0, head)
-    return watched
+def _watch_pushed_commit(
+    root: Path,
+    *,
+    sha: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    """Watch the immutable SHA captured immediately before the push."""
+    return _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
 
 
-def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine.
+def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded polling state machine.
     root: Path,
     *,
     sha: str,
     timeout_seconds: int = GITHUB_CHECK_TIMEOUT_SECONDS,
     poll_seconds: int = GITHUB_CHECK_POLL_SECONDS,
     discovery_seconds: int = GITHUB_CHECK_DISCOVERY_SECONDS,
+    command_runner: Any = None,
+    monotonic: Any = None,
+    sleeper: Any = None,
 ) -> dict[str, Any]:
+    command_runner = command_runner or _run_command
+    monotonic = monotonic or time.monotonic
+    sleeper = sleeper or time.sleep
     if not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
         return _github_check_failure(sha, "validate", "sha must be a Git commit SHA")
     if timeout_seconds <= 0:
         return _github_check_failure(sha, "validate", "timeout must be positive")
+    if poll_seconds <= 0 or discovery_seconds <= 0:
+        return _github_check_failure(
+            sha, "validate", "poll and discovery intervals must be positive"
+        )
 
     try:
         manifest = json.loads((root / REQUIRED_WORKFLOWS_PATH).read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != 2:  # noqa: PLR2004 - versioned file contract.
+            msg = "required-workflows manifest schema_version must be 2"
+            raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
         branch_manifest = manifest["branches"][WORK_BRANCH]
         expected = branch_manifest["workflows"]
         conditional_checks = branch_manifest.get("conditional_checks", [])
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        if not isinstance(expected, list) or not expected:
+            msg = "required push workflows must be a non-empty list"
+            raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
+        if not all(entry.get("classification") == "required_push" for entry in expected):
+            msg = "every watched workflow must be classified as required_push"
+            raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         return _github_check_failure(sha, "manifest", str(exc))
 
-    repo_result = _run_command(
+    repo_result = command_runner(
         root,
         {
             "display": "gh repo view --json nameWithOwner --jq .nameWithOwner",
@@ -2360,13 +2408,18 @@ def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine
             "blockers": [_command_blocker("github_auth", repo_result)],
         }
     repository = repo_result["stdout"].strip()
-    started = time.monotonic()
+    started = monotonic()
     discovery_deadline = started + min(discovery_seconds, timeout_seconds)
     deadline = started + timeout_seconds
     last_snapshot: dict[str, Any] = {"sha": sha, "repository": repository}
 
     while True:
-        snapshot = _github_check_snapshot(root, repository, sha)
+        snapshot = _github_check_snapshot(
+            root,
+            repository,
+            sha,
+            command_runner=command_runner,
+        )
         command_results.extend(snapshot.pop("command_results"))
         if snapshot.get("error"):
             return {
@@ -2381,12 +2434,30 @@ def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine
             **snapshot,
         }
         classified = _classify_github_snapshot(expected, last_snapshot)
-        last_snapshot["required"] = classified["required"]
-        if classified["failed"]:
-            failed_logs = _failed_run_logs(root, classified["failed"])
+        now = monotonic()
+        compact = _compact_github_result(
+            last_snapshot,
+            classified,
+            discovery_duration=min(now, discovery_deadline) - started,
+            total_duration=now - started,
+        )
+        if classified["failed"] and not classified["pending"]:
+            failed_logs = _failed_run_logs(
+                root,
+                classified["failed"],
+                command_runner=command_runner,
+            )
             command_results.extend(failed_logs)
+            compact["failed_log_excerpts"] = [
+                {
+                    "command": item.get("command"),
+                    "ok": item.get("ok"),
+                    "excerpt": str(item.get("stdout") or item.get("stderr") or "")[-12000:],
+                }
+                for item in failed_logs
+            ]
             return {
-                "result": last_snapshot,
+                "result": compact,
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -2396,12 +2467,11 @@ def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine
                     }
                 ],
             }
-        now = time.monotonic()
         if not classified["missing"] and not classified["pending"]:
-            return {"result": last_snapshot, "command_results": command_results, "blockers": []}
+            return {"result": compact, "command_results": command_results, "blockers": []}
         if classified["missing"] and now >= discovery_deadline:
             return {
-                "result": last_snapshot,
+                "result": compact,
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -2413,7 +2483,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine
             }
         if now >= deadline:
             return {
-                "result": last_snapshot,
+                "result": compact,
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -2424,10 +2494,17 @@ def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine
                     }
                 ],
             }
-        time.sleep(min(poll_seconds, max(0.0, deadline - now)))
+        sleeper(min(poll_seconds, max(0.0, deadline - now)))
 
 
-def _github_check_snapshot(root: Path, repository: str, sha: str) -> dict[str, Any]:
+def _github_check_snapshot(
+    root: Path,
+    repository: str,
+    sha: str,
+    *,
+    command_runner: Any = None,
+) -> dict[str, Any]:
+    command_runner = command_runner or _run_command
     endpoints = {
         "runs": f"repos/{repository}/actions/runs?head_sha={sha}&event=push&per_page=100",
         "check_runs": f"repos/{repository}/commits/{sha}/check-runs?per_page=100",
@@ -2436,7 +2513,7 @@ def _github_check_snapshot(root: Path, repository: str, sha: str) -> dict[str, A
     payloads: dict[str, Any] = {}
     results: list[dict[str, Any]] = []
     for key, endpoint in endpoints.items():
-        result = _run_command(
+        result = command_runner(
             root,
             {
                 "display": f"gh api {endpoint}",
@@ -2462,7 +2539,7 @@ def _github_check_snapshot(root: Path, repository: str, sha: str) -> dict[str, A
     jobs: list[dict[str, Any]] = []
     for run in runs:
         endpoint = f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100"
-        result = _run_command(
+        result = command_runner(
             root,
             {"display": f"gh api {endpoint}", "args": ["gh", "api", endpoint], "env": {}},
         )
@@ -2489,11 +2566,23 @@ def _github_check_snapshot(root: Path, repository: str, sha: str) -> dict[str, A
     }
 
 
-def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub state kinds.
+def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple GitHub state kinds.
     expected: list[dict[str, Any]],
     snapshot: dict[str, Any],
 ) -> dict[str, Any]:
-    runs_by_name = {run.get("name"): run for run in snapshot.get("runs", [])}
+    runs_by_name: dict[str, dict[str, Any]] = {}
+    for run in snapshot.get("runs", []):
+        name = run.get("name")
+        if not name:
+            continue
+        current = runs_by_name.get(name)
+        rank = (int(run.get("run_attempt") or 1), int(run.get("id") or 0))
+        current_rank = (
+            int(current.get("run_attempt") or 1),
+            int(current.get("id") or 0),
+        ) if current else (-1, -1)
+        if rank > current_rank:
+            runs_by_name[name] = run
     jobs = snapshot.get("jobs", [])
     required: list[dict[str, Any]] = []
     missing: list[str] = []
@@ -2508,6 +2597,7 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub s
         item = {
             "name": name,
             "run_id": run.get("id"),
+            "attempt": run.get("run_attempt", 1),
             "status": run.get("status"),
             "conclusion": run.get("conclusion"),
             "url": run.get("html_url"),
@@ -2523,7 +2613,13 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub s
             continue
         required_jobs = entry.get("required_jobs", [])
         run_jobs = [job for job in jobs if job.get("workflow_run_id") == run.get("id")]
-        for job_name in required_jobs:
+        for job_entry in required_jobs:
+            if isinstance(job_entry, str):
+                job_name = job_entry
+                job_allowed = allowed
+            else:
+                job_name = job_entry["name"]
+                job_allowed = set(job_entry.get("allowed_conclusions", ["success"]))
             job = next(
                 (candidate for candidate in run_jobs if candidate.get("name") == job_name), None
             )
@@ -2535,21 +2631,36 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub s
                 "status": job.get("status"),
                 "conclusion": job.get("conclusion"),
                 "url": job.get("html_url"),
+                "failed_steps": [
+                    {
+                        "name": step.get("name"),
+                        "conclusion": step.get("conclusion"),
+                    }
+                    for step in job.get("steps", [])
+                    if step.get("conclusion") not in {None, "success", "skipped"}
+                ],
             }
             item["jobs"].append(job_item)
             if job.get("status") != "completed":
                 pending.append(f"{name}: {job_name}")
-            elif job.get("conclusion") not in allowed:
+            elif job.get("conclusion") not in job_allowed:
                 failed.append({**job_item, "workflow": name, "run_id": run.get("id")})
 
-    conditional = set(snapshot.get("conditional_checks", []))
+    conditional = {
+        item["name"]: set(item.get("allowed_conclusions", ["neutral", "skipped"]))
+        for item in snapshot.get("conditional_checks", [])
+        if isinstance(item, dict) and item.get("reason", "").strip()
+    }
+    accepted_conditional: list[dict[str, Any]] = []
     for check in snapshot.get("check_runs", []):
         conclusion = check.get("conclusion")
         if check.get("status") != "completed":
             pending.append(f"check-run: {check.get('name')}")
-        elif conclusion != "success" and not (
-            conclusion in {"neutral", "skipped"} and check.get("name") in conditional
-        ):
+        elif conclusion != "success" and conclusion in conditional.get(check.get("name"), set()):
+            accepted_conditional.append(
+                {"name": check.get("name"), "conclusion": conclusion, "kind": "check_run"}
+            )
+        elif conclusion != "success":
             failed.append(
                 {
                     "name": check.get("name"),
@@ -2570,15 +2681,27 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub s
                     "url": status.get("target_url"),
                 }
             )
-    return {"required": required, "missing": missing, "pending": pending, "failed": failed}
+    return {
+        "required": required,
+        "missing": missing,
+        "pending": pending,
+        "failed": failed,
+        "accepted_conditional": accepted_conditional,
+    }
 
 
-def _failed_run_logs(root: Path, failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _failed_run_logs(
+    root: Path,
+    failures: list[dict[str, Any]],
+    *,
+    command_runner: Any = None,
+) -> list[dict[str, Any]]:
+    command_runner = command_runner or _run_command
     run_ids = sorted(
         {item.get("run_id") for item in failures if item.get("run_id")}
     )
     return [
-        _run_command(
+        command_runner(
             root,
             {
                 "display": f"gh run view {run_id} --log-failed",
@@ -2588,6 +2711,45 @@ def _failed_run_logs(root: Path, failures: list[dict[str, Any]]) -> list[dict[st
         )
         for run_id in run_ids
     ]
+
+
+def _compact_github_result(
+    snapshot: dict[str, Any],
+    classified: dict[str, Any],
+    *,
+    discovery_duration: float,
+    total_duration: float,
+) -> dict[str, Any]:
+    """Return stable watcher evidence without repeating complete API payloads."""
+    return {
+        "sha": snapshot["sha"],
+        "repository": snapshot["repository"],
+        "push_target": f"origin/{WORK_BRANCH}",
+        "required": classified["required"],
+        "missing": classified["missing"],
+        "pending": classified["pending"],
+        "failures": classified["failed"],
+        "status_contexts": [
+            {
+                "name": status.get("context"),
+                "state": status.get("state"),
+                "url": status.get("target_url"),
+            }
+            for status in snapshot.get("statuses", [])
+        ],
+        "check_runs": [
+            {
+                "name": check.get("name"),
+                "status": check.get("status"),
+                "conclusion": check.get("conclusion"),
+                "url": check.get("html_url"),
+            }
+            for check in snapshot.get("check_runs", [])
+        ],
+        "conditional_skips_accepted": classified["accepted_conditional"],
+        "discovery_duration_seconds": round(discovery_duration, 3),
+        "total_duration_seconds": round(total_duration, 3),
+    }
 
 
 def _github_check_failure(sha: str, phase: str, message: str) -> dict[str, Any]:

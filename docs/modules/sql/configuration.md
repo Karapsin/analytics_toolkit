@@ -61,7 +61,8 @@ for an Airflow-source file. The helper never overwrites an existing
     "password": "password",
     "catalog": "iceberg",
     "schema": "sandbox",
-    "transfer_staging_schema": "transfer_schema",
+    "transfer_staging_schema": "iceberg.transfer_schema",
+    "transfer_parquet_staging_schema": "hive.transfer_schema",
     "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
     "http_scheme": "https",
     "ca_certs": "trino-ca.pem",
@@ -111,7 +112,8 @@ connection timeout with TCP keepalives enabled. When `ca_certs` is set and
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
 `insert_chunk_size`, `request_timeout`, `source`,
-`transfer_staging_schema`, and `transfer_staging_location` fields.
+`transfer_staging_schema`, `transfer_parquet_staging_schema`, and
+`transfer_staging_location` fields.
 
 When `transfer_staging_schema` is set, transfer staging tables for that
 connection are created under that schema and transfer cleanup scans only
@@ -120,9 +122,12 @@ staging tables matching the target transfer user marker.
 When a Trino connection defines both `transfer_staging_schema` and
 `transfer_staging_location`, `load_df` and transfers from a different
 connection key stage source rows as Parquet files under the object-storage
-location and create a temporary Trino table in `transfer_staging_schema` over
-that prefix. Python and Trino must both be able to write/read/delete the same
-object-storage prefix. If `transfer_staging_location` is omitted, Trino
+location and create a temporary Trino table in
+`transfer_parquet_staging_schema` over that prefix when the latter is set,
+falling back to `transfer_staging_schema`. This allows Iceberg finalization
+stages and Hive external Parquet stages to use different catalogs. Python and
+Trino must both be able to write/read/delete the same object-storage prefix. If
+`transfer_staging_location` is omitted, Trino
 transfers keep using row-batch `INSERT` staging and `load_df` keeps using direct
 dataframe inserts.
 

@@ -37,7 +37,9 @@ must use fake connections, monkeypatching, and the autouse env fixture in
 `tests/conftest.py`. Disposable Greenplum, Trino, and ClickHouse integration
 tests are allowed only through `run_checks(area="sql", level="integration")`;
 that workflow owns endpoint validation, temporary configuration, diagnostics,
-and container/volume teardown.
+and container/network/volume teardown. The `all` profile is exhaustive and
+includes destructive fault groups; normal pushes run only required core and
+auth jobs. On x86_64, a skipped core/auth manifest scenario is a failure.
 
 ## Fresh-Agent Sequence
 

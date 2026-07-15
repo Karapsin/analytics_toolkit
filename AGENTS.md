@@ -189,4 +189,9 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
+- SQL integration `all` is the exhaustive local profile and includes the
+  destructive database, staging, and authentication fault groups. Push CI runs
+  core and auth with zero skipped manifest scenarios on x86_64; fault groups run
+  only nightly or by manual dispatch. Integration cleanup must remove project
+  containers, networks, volumes, labelled queries, tables, and MinIO objects.
 - Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.
