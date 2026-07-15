@@ -60,6 +60,25 @@ The integration matrix uses distinct source and target aliases even for
 same-backend transfers, and declares every Greenplum/Trino/ClickHouse source and
 target pair plus every target write mode in the schema-version-2 manifest.
 
+## Integration Type Contract
+
+| Logical value | Greenplum | Trino/Iceberg | ClickHouse |
+| --- | --- | --- | --- |
+| boolean | `BOOLEAN` | `BOOLEAN` | `Nullable(Bool)` |
+| signed integer | `BIGINT` | `BIGINT` | `Nullable(Int64)` |
+| fixed decimal | `NUMERIC(18,4)` | `DECIMAL(18,4)` | `Nullable(Decimal(18,4))` |
+| floating point | `DOUBLE PRECISION` | `DOUBLE` | `Nullable(Float64)` |
+| Unicode text | `TEXT` | `VARCHAR` | `Nullable(String)` |
+| date | `DATE` | `DATE` | `Nullable(Date)` |
+| UTC timestamp | `TIMESTAMPTZ` | `TIMESTAMP(6) WITH TIME ZONE` | `Nullable(DateTime64(6, 'UTC'))` |
+| UUID | `UUID` | `UUID` | `Nullable(UUID)` |
+| canonical JSON | `JSONB` | `VARCHAR` | `String` |
+
+Integration comparisons normalize decimals to scale four, timestamps to UTC
+microsecond ISO-8601, UUIDs to lowercase, JSON with sorted keys, and backend
+null/scalar wrappers to Python values. Column and deterministic row order must
+still match exactly.
+
 ## Backend Extension Notes
 
 Backend implementations live under `analytics_toolkit/sql/backends/<backend>/`.

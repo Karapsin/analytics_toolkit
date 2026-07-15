@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import importlib
 import sys
 from pathlib import Path
@@ -8,24 +9,20 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backend_adapters import get_backend_adapter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 schema_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.schema")
 stage_module = importlib.import_module("analytics_toolkit.sql.dml.load.stage")
 gp_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.gp.adapter")
-transfer_stage_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.stage"
-)
+transfer_stage_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.stage")
 transfer_finalize_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.finalize"
 )
-runtime_models = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.runtime.models"
-)
-table_basic_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table._basic_ops"
-)
+runtime_models = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.models")
+retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
+table_basic_module = importlib.import_module("analytics_toolkit.sql.dml.table._basic_ops")
 identifiers_module = importlib.import_module("analytics_toolkit.sql.core.identifiers")
 
 
@@ -95,8 +92,7 @@ def test_inspect_dbapi_source_schema_is_adapter_owned() -> None:
         schema_module.SourceColumn("amount", "numeric(12,2)", precision=12, scale=2),
     ]
     assert connection.cursor_obj.executed == [
-        "SELECT * FROM (select id, amount from source) "
-        "AS source_schema_probe WHERE 1 = 0"
+        "SELECT * FROM (select id, amount from source) AS source_schema_probe WHERE 1 = 0"
     ]
     assert connection.cursor_obj.closed is True
 
@@ -115,6 +111,64 @@ def test_inspect_clickhouse_source_schema_is_adapter_owned() -> None:
         schema_module.SourceColumn("amount", "Nullable(Decimal(18, 4))"),
     ]
     assert client.queries == ["DESCRIBE TABLE (select id, amount from source)"]
+
+
+def test_clickhouse_datetime64_timezone_is_attached_to_naive_batch_values() -> None:
+    naive = dt.datetime(2026, 1, 2, 3, 4, 5, 123456)  # noqa: DTZ001
+    batch = runtime_models.RowBatch(
+        columns=["event_ts", "label"],
+        rows=[(naive, "unchanged")],
+    )
+
+    normalized = get_backend_adapter("ch").normalize_transfer_source_batch(
+        batch,
+        {"event_ts": "Nullable(DateTime64(6, 'UTC'))", "label": "String"},
+    )
+
+    assert normalized.rows[0][0].isoformat() == "2026-01-02T03:04:05.123456+00:00"
+    assert normalized.rows[0][1] == "unchanged"
+    assert batch.rows[0][0].tzinfo is None
+
+
+def test_clickhouse_source_batch_timezone_normalization_handles_noop_paths() -> None:
+    aware = dt.datetime(2026, 1, 2, tzinfo=dt.timezone.utc)
+    batch = runtime_models.RowBatch(columns=["event_ts"], rows=[(aware,)])
+    adapter = get_backend_adapter("ch")
+
+    unchanged_type = adapter.normalize_transfer_source_batch(
+        batch,
+        {"event_ts": "String"},
+    )
+    unchanged_value = adapter.normalize_transfer_source_batch(
+        batch,
+        {"event_ts": "DateTime64(6, 'UTC')"},
+    )
+
+    assert unchanged_type is batch
+    assert unchanged_value.rows == [(aware,)]
+
+
+def test_clickhouse_upsert_finalization_error_is_marked_unsafe() -> None:
+    error = RuntimeError("ambiguous finalization")
+
+    get_backend_adapter("ch").mark_upsert_finalization_error(error)
+
+    assert error.__dict__["analytics_toolkit_sql_retry_safe"] is False
+
+
+def test_retry_marker_prevents_unsafe_operation_retry() -> None:
+    attempts: list[int] = []
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        error = RuntimeError("ambiguous finalization")
+        error.analytics_toolkit_sql_retry_safe = False
+        raise error
+
+    with pytest.raises(RuntimeError, match="ambiguous finalization"):
+        retry_module.run_with_retry("unsafe write", 3, 0, operation)
+
+    assert attempts == [1]
 
 
 def test_map_source_schema_to_target_preserves_common_types() -> None:
@@ -444,10 +498,7 @@ def test_stage_cleanup_helpers_forward_retry_contract(
     ],
 )
 def test_build_stage_table_prefix(username: str | None, expected: str) -> None:
-    assert (
-        stage_module.build_stage_table_prefix("gp", "sales.target", username)
-        == expected
-    )
+    assert stage_module.build_stage_table_prefix("gp", "sales.target", username) == expected
 
 
 def test_refine_clickhouse_nullability_from_rows() -> None:
@@ -643,16 +694,24 @@ def test_stage_name_parser_guards_reject_injected_invalid_nodes(
     monkeypatch.setattr(stage_module, "parse_one", lambda *_args, **_kwargs: next(parsed))
     with pytest.raises(ValueError, match="Invalid transfer_staging_schema"):
         stage_module.build_stage_table_name(
-            "gp", "sandbox.target", transfer_staging_schema="scratch",
+            "gp",
+            "sandbox.target",
+            transfer_staging_schema="scratch",
         )
 
 
 def test_table_basic_compatibility_delegates_and_identifier_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert table_basic_module._format_gp_information_schema_type(
-        "numeric", "numeric", 10, 2,
-    ) == "NUMERIC(10, 2)"
+    assert (
+        table_basic_module._format_gp_information_schema_type(
+            "numeric",
+            "numeric",
+            10,
+            2,
+        )
+        == "NUMERIC(10, 2)"
+    )
     assert table_basic_module._extract_row_count({"rows": 4}) == 4
     monkeypatch.setattr(
         identifiers_module.TableIdentifier,

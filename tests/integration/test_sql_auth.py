@@ -72,7 +72,9 @@ def test_real_airflow_connection_source_routes_all_backends(
     write_sql_connections({"source": "airflow", "connections": aliases})
 
     results = sql.validate_connections(list(aliases), connect=True)
-    assert all(result.valid and result.connected for result in results)
+    assert all(result.valid and result.connected for result in results), [
+        (result.connection_key, result.valid, result.connected, result.error) for result in results
+    ]
 
 
 @pytest.mark.sql_scenario("auth.trino.oauth")

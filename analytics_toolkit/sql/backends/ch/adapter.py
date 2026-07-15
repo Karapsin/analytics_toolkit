@@ -3,11 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from . import create_table_from_sql as _create_from_sql, operations as _operations
-from . import source_count as _source_count, upsert as _upsert
-from . import insert as _insert, queries as _queries
-from . import source_schema as _ch_source_schema
-from . import target_create as _target_create
 from .. import dataframe_types as _dataframe_types
 from ..base import (
     BackendAdapter,
@@ -17,7 +12,14 @@ from ..base import (
     TargetWriteModeRequest,
     _apply_query_label,
 )
-
+from . import create_table_from_sql as _create_from_sql
+from . import insert as _insert
+from . import operations as _operations
+from . import queries as _queries
+from . import source_count as _source_count
+from . import source_schema as _ch_source_schema
+from . import target_create as _target_create
+from . import upsert as _upsert
 
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
@@ -281,7 +283,6 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None = None,
     ) -> None:
         del connection, table_name, query_label
-        return None
 
     def count_table_rows_sql(
         self,
@@ -298,17 +299,13 @@ class ClickHouseAdapter(BackendAdapter):
         *,
         query_label: str | None = None,
     ) -> int:
-        result = connection.query(
-            self.count_table_rows_sql(table_name, query_label=query_label)
-        )
+        result = connection.query(self.count_table_rows_sql(table_name, query_label=query_label))
         rows = getattr(result, "result_rows", None) or []
         return int(rows[0][0]) if rows else 0
 
     count_source_rows = _source_count.count_source_rows
     source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read
-    disable_query_limit_for_transfer_reads = (
-        _source_count.disable_query_limit_for_transfer_reads
-    )
+    disable_query_limit_for_transfer_reads = _source_count.disable_query_limit_for_transfer_reads
 
     def get_table_column_types(
         self,
@@ -328,9 +325,9 @@ class ClickHouseAdapter(BackendAdapter):
 
     inspect_source_query_schema = _ch_source_schema.inspect_source_query_schema
     map_source_type_to_target = _ch_source_schema.map_source_type_to_target
-    refine_stage_column_types_from_rows = (
-        _ch_source_schema.refine_stage_column_types_from_rows
-    )
+    refine_stage_column_types_from_rows = _ch_source_schema.refine_stage_column_types_from_rows
+    normalize_transfer_source_batch = _ch_source_schema.normalize_transfer_source_batch
+    mark_upsert_finalization_error = _ch_source_schema.mark_upsert_finalization_error
 
     build_upsert_stage_sqls = _upsert.build_upsert_stage_sqls
     build_preserved_target_rows_insert_sql = _upsert.build_preserved_target_rows_insert_sql
@@ -378,12 +375,13 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
+
         from ...dml.io.execute_sql import (
             _iterate_statements_with_progress,
             _maybe_print_query,
             _split_sql_statements,
         )
+        from ...execution.query_timing import run_timed_query
 
         statements = _split_sql_statements(sql)
         time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
@@ -435,13 +433,13 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
+
         from ...dml.io.execute_read import _execute_setup_statements
         from ...dml.io.execute_sql import _maybe_print_query
+        from ...execution.query_timing import run_timed_query
 
         time_print(
-            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-            "and reading final query",
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
         try:
@@ -470,7 +468,7 @@ class ClickHouseAdapter(BackendAdapter):
         query: str,
         get_batch_size: Callable[[], int],
         retry_cnt: int,
-        timeout_increment: int | float,
+        timeout_increment: float,
         disable_query_limit: bool = False,
     ) -> Iterator[Any]:
         from ...dml.transfer.io.source import _iter_clickhouse_batches
@@ -572,11 +570,12 @@ class ClickHouseAdapter(BackendAdapter):
 
     def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
         from analytics_toolkit.general import time_print
+
+        from ...connection.get_sql_connection import get_ch_connection_for_host
         from .lifecycle import (
             drop_ch_distributed_table_pair,
             truncate_ch_distributed_table_pair,
         )
-        from ...connection.get_sql_connection import get_ch_connection_for_host
 
         if request.write_mode == "append":
             return request.target_exists
@@ -612,16 +611,10 @@ class ClickHouseAdapter(BackendAdapter):
                 query_label=request.query_label,
             )
             return True
-        if (
-            request.write_mode == "truncate_insert"
-            and not request.drop_missing_ch_truncate_target
-        ):
+        if request.write_mode == "truncate_insert" and not request.drop_missing_ch_truncate_target:
             return False
 
-        time_print(
-            "Dropping existing ClickHouse distributed table pair "
-            f"{request.table_name}"
-        )
+        time_print(f"Dropping existing ClickHouse distributed table pair {request.table_name}")
         per_host_connection_factory = (
             (lambda host: get_ch_connection_for_host(request.connection_key, host))
             if request.connection_key is not None
@@ -710,8 +703,7 @@ class ClickHouseAdapter(BackendAdapter):
             )
             if request.upsert_partition_column is None:
                 raise ValueError(
-                    "upsert_partition_column is required for "
-                    "ClickHouse write_mode='upsert'."
+                    "upsert_partition_column is required for ClickHouse write_mode='upsert'."
                 )
             partition_values = self.fetch_upsert_partition_values(
                 request.connection,
@@ -859,10 +851,7 @@ where user = currentUser()
 
     def cancel_query_sql(self, query_id: int | str) -> str:
         normalized_id = self.normalize_query_id(query_id)
-        return (
-            "KILL QUERY "
-            f"WHERE query_id = {_sql_string_literal(str(normalized_id))} SYNC"
-        )
+        return f"KILL QUERY WHERE query_id = {_sql_string_literal(str(normalized_id))} SYNC"
 
     def cancel_status(self, result: Any) -> tuple[bool, str]:
         if "kill_status" in result.columns and not result.empty:

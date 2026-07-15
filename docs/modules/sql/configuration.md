@@ -149,6 +149,15 @@ relative path such as `.certs/trino-ca.pem` resolves relative to the
 bundled into a generated PEM bundle under `.certs/.generated/`. Missing
 certificate files are reported when the connection is opened.
 
+Authentication is established by the backend driver, not by accepting a
+prebuilt bearer token from toolkit callers. Greenplum supports password TLS and
+client-certificate fields (`ssl_cert`/`ssl_key`); Trino supports Basic TLS and
+`auth_mode="oauth2"`; ClickHouse supports direct TLS and Airflow Variable CA
+resolution. OAuth follows the Trino driver's browser callback and verifies both
+the Trino and identity-provider TLS chains. Logs may include the authorization
+URL and phase name, but credentials, token values, client secrets, and private
+key contents are redacted.
+
 ## Airflow-Source Connections
 
 In Airflow DAGs, keep credentials in Airflow Connections and use an

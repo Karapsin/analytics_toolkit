@@ -1,22 +1,45 @@
 from __future__ import annotations
 
+import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import replace
 from typing import Any
-import uuid
 
 import pandas as pd
 from tqdm import tqdm
 
+from analytics_toolkit.general import time_print
+
 from ....backend_adapters import get_backend_adapter
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
-from analytics_toolkit.general import time_print
-from ...load.stage import create_stage_table
+from ....execution.operation_runner import _format_duration
 from ...load.load_sql_table import insert_rows_batch
+from ...load.stage import create_stage_table
 from ...table._basic_ops import insert_from_table
-from ...table.table_validation import validate_key_columns_in_columns
-from ...table.table_validation import validate_upsert_partition_column_in_columns
+from ...table.table_validation import (
+    validate_key_columns_in_columns,
+    validate_upsert_partition_column_in_columns,
+)
+from ..io.source import iter_source_batches
+from ..runtime.models import (
+    AdaptiveBatchSizer,
+    RowBatch,
+    TransferConnectionRefs,
+    TransferOptions,
+    TransferStageState,
+)
+from ..runtime.retry import (
+    close_connection_ref,
+    replace_connection,
+    rollback_quietly,
+    run_with_fresh_connection,
+    run_with_retry,
+)
+from ..schema import (
+    inspect_source_query_schema,
+    map_source_schema_to_target,
+)
 from .estimate import estimate_source_rows
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .keyed import WorkerStageState, build_keyed_worker_stage_states
@@ -32,28 +55,19 @@ from .parquet_stage import (
     sample_dataframe_from_batch,
     write_batch_to_parquet_stage,
 )
-from ..runtime.models import (
-    AdaptiveBatchSizer,
-    RowBatch,
-    TransferConnectionRefs,
-    TransferOptions,
-    TransferSlice,
-    TransferStageState,
-)
-from ..runtime.retry import (
-    close_connection_ref, replace_connection, rollback_quietly,
-    run_with_fresh_connection, run_with_retry,
-)
-from ..io.source import iter_source_batches
-from ..schema import inspect_source_query_schema, map_source_schema_to_target
-from ....execution.operation_runner import _format_duration
-from .stage import create_stage_state, ensure_transfer_target_table
-from .stage import initialize_stage_for_first_batch
-from .row_counts import disable_query_limit_for_transfer_reads
-from .row_counts import prepare_row_count_validated_options
-from .row_counts import validate_loaded_stage_row_count, validate_slice_row_count
-from .row_counts import validate_streamed_row_count
 from .progress import format_transfer_progress_count, make_transfer_progress_bar
+from .row_counts import (
+    disable_query_limit_for_transfer_reads,
+    prepare_row_count_validated_options,
+    validate_loaded_stage_row_count,
+    validate_slice_row_count,
+    validate_streamed_row_count,
+)
+from .stage import (
+    create_stage_state,
+    ensure_transfer_target_table,
+    initialize_stage_for_first_batch,
+)
 
 
 def run_transfer_attempt(
@@ -134,8 +148,10 @@ def run_transfer_attempt(
             insert_retry_cnt=insert_retry_cnt,
         )
         validate_loaded_stage_row_count(
-            options=options, connection_refs=connection_refs,
-            stage_state=stage_state, total_rows=total_rows,
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            total_rows=total_rows,
             open_connection=get_sql_connection,
         )
         finalize_loaded_stage(
@@ -162,9 +178,7 @@ def run_transfer_attempt(
 
     if transfer_error is not None:
         if cleanup_error is not None:
-            time_print(
-                f"Cleanup failed while handling transfer error: {cleanup_error!r}"
-            )
+            time_print(f"Cleanup failed while handling transfer error: {cleanup_error!r}")
         raise transfer_error.with_traceback(transfer_error.__traceback__)
     if cleanup_error is not None:
         raise cleanup_error.with_traceback(cleanup_error.__traceback__)
@@ -243,8 +257,10 @@ def run_keyed_transfer_attempt(
             stage_state=stage_state,
         )
         validate_loaded_stage_row_count(
-            options=options, connection_refs=connection_refs,
-            stage_state=stage_state, total_rows=total_rows,
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            total_rows=total_rows,
             open_connection=get_sql_connection,
         )
         finalize_loaded_stage(
@@ -271,9 +287,7 @@ def run_keyed_transfer_attempt(
 
     if transfer_error is not None:
         if cleanup_error is not None:
-            time_print(
-                f"Cleanup failed while handling transfer error: {cleanup_error!r}"
-            )
+            time_print(f"Cleanup failed while handling transfer error: {cleanup_error!r}")
         raise transfer_error.with_traceback(transfer_error.__traceback__)
     if cleanup_error is not None:
         raise cleanup_error.with_traceback(cleanup_error.__traceback__)
@@ -603,19 +617,23 @@ def load_stage_batches(
     insert_page_sizing = get_backend_adapter(
         options.to_db_backend,
     ).transfer_insert_page_sizing(gp_insert_chunk_size=options.gp_insert_chunk_size)
-    gp_insert_chunk_sizer = None if insert_page_sizing is None else AdaptiveBatchSizer(
-        enabled=options.adaptive_batch_size,
-        current_size=insert_page_sizing.initial_size,
-        min_size=insert_page_sizing.min_size,
-        max_size=insert_page_sizing.max_size,
-        target_seconds=options.target_batch_seconds,
-        optimize_by_rows_per_second=True,
-        target_rows_per_second_window=options.target_rows_per_second_window,
-        target_rows_per_second_deadband=options.target_rows_per_second_deadband,
-        adaptive_batch_size_step=options.adaptive_batch_size_step,
+    gp_insert_chunk_sizer = (
+        None
+        if insert_page_sizing is None
+        else AdaptiveBatchSizer(
+            enabled=options.adaptive_batch_size,
+            current_size=insert_page_sizing.initial_size,
+            min_size=insert_page_sizing.min_size,
+            max_size=insert_page_sizing.max_size,
+            target_seconds=options.target_batch_seconds,
+            optimize_by_rows_per_second=True,
+            target_rows_per_second_window=options.target_rows_per_second_window,
+            target_rows_per_second_deadband=options.target_rows_per_second_deadband,
+            adaptive_batch_size_step=options.adaptive_batch_size_step,
+        )
     )
     try:
-        for batch in iter_source_batches(
+        for source_batch in iter_source_batches(
             options.from_db_key,
             options.from_db_backend,
             connection_refs.source,
@@ -629,8 +647,12 @@ def load_stage_batches(
                 options.from_db_backend,
             ),
         ):
-            if batch.empty:
+            if source_batch.empty:
                 continue
+            batch = get_backend_adapter(options.from_db_backend).normalize_transfer_source_batch(
+                source_batch,
+                stage_state.source_column_types,
+            )
 
             if stage_state.first_non_empty_batch is None:
                 _run_with_fresh_target_connection(
@@ -703,9 +725,7 @@ def load_stage_batches(
                         else None
                     ),
                     on_gp_insert_page_success=(
-                        update_gp_insert_chunk_sizer
-                        if gp_insert_chunk_sizer is not None
-                        else None
+                        update_gp_insert_chunk_sizer if gp_insert_chunk_sizer is not None else None
                     ),
                     connection_key=options.to_db_key,
                     rollback_fn=rollback_quietly,
@@ -720,9 +740,7 @@ def load_stage_batches(
                 else None
             )
             rows_per_second_text = (
-                f"{rows_per_second:,.2f}"
-                if rows_per_second is not None
-                else "N/A"
+                f"{rows_per_second:,.2f}" if rows_per_second is not None else "N/A"
             )
             time_print(
                 f"Transferred batch of "
@@ -765,7 +783,7 @@ def load_parquet_stage_batches(
     )
     progress_tracker = ProgressTracker(progress_bar)
     try:
-        for batch in iter_source_batches(
+        for source_batch in iter_source_batches(
             options.from_db_key,
             options.from_db_backend,
             connection_refs.source,
@@ -779,8 +797,12 @@ def load_parquet_stage_batches(
                 options.from_db_backend,
             ),
         ):
-            if batch.empty:
+            if source_batch.empty:
                 continue
+            batch = get_backend_adapter(options.from_db_backend).normalize_transfer_source_batch(
+                source_batch,
+                stage_state.source_column_types,
+            )
 
             if stage_state.first_non_empty_batch is None:
                 _run_with_fresh_target_connection(
@@ -842,10 +864,9 @@ def _initialize_parquet_stage_for_first_batch(
             batch.columns,
         )
     elif stage_state.stage_column_types is None:
-        stage_state.stage_column_types = (
-            get_backend_adapter(options.to_db_backend)
-            .infer_parquet_stage_column_types_from_rows(batch)
-        )
+        stage_state.stage_column_types = get_backend_adapter(
+            options.to_db_backend
+        ).infer_parquet_stage_column_types_from_rows(batch)
 
     validate_key_columns_in_columns(
         options.key_columns,

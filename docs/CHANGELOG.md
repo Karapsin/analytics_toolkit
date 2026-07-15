@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Expanded deep SQL integration recovery, cancellation, type, atomicity, authentication, orchestration, and DDL coverage.
+
 ## 1.3.10.18 - 2026-07-15
 
 - Completed deterministic ClickHouse lifecycle, DML, and metadata coverage.

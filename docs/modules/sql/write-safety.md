@@ -39,4 +39,24 @@ Query labels are safe SQL comments attached to generated statements, logs, and
 metadata. Use stable labels for scheduled jobs so database activity, Python
 logs, and operation metadata can be connected later.
 
+## Atomicity and Retry Boundaries
+
+Validation failures before mutation leave an existing target unchanged. Staged
+append and upsert workflows do not mutate the target until finalization, and a
+target created only for a failed operation is cleaned up; cleanup never removes
+a pre-existing target.
+
+| Backend/finalization | Failure contract |
+| --- | --- |
+| Greenplum transactional finalization | rolls back to the exact original target |
+| Trino/Iceberg partition replacement | target is either exactly original or exactly committed; partial/mixed state is never reported as success |
+| ClickHouse partition replacement | target is either exactly original or exactly committed; partial/mixed state is never reported as success |
+| destructive replace/truncate on a non-transactional backend | no preservation promise after the destructive statement; failure remains contextual and stages are cleaned |
+
+Retry-safe phases reopen a connection and start from a clean attempt. Ambiguous
+or unsafe mutations fail explicitly instead of silently reporting success.
+After a successful retry, the target must contain each expected batch exactly
+once. A cleanup error is reported alongside the primary operation error rather
+than replacing it.
+
 [SQL module index](index.md)

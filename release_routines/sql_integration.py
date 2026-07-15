@@ -118,6 +118,10 @@ def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifact
         "minio-objects.json",
         "active-queries.json",
         "failed-query-details.json",
+        "operation-retry-timeline.json",
+        "connection-identities.json",
+        "orchestration-timeline.json",
+        "type-normalization-mismatch.json",
     ):
         path = profile_dir / filename
         if not path.exists():
@@ -263,7 +267,13 @@ def run_profile(
         if profile in {"auth", "fault"}:
             cert_dir = profile_dir / "certs"
             cert_dir.mkdir(parents=True, exist_ok=True)
-            for filename in ("ca.crt", "server.crt", "client.crt", "client.key"):
+            for filename in (
+                "ca.crt",
+                "wrong-ca.crt",
+                "server.crt",
+                "client.crt",
+                "client.key",
+            ):
                 copy_result = _run(
                     _compose_command(
                         "cp",

@@ -4,10 +4,10 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from ....connection.get_sql_connection import get_sql_connection
-from ....execution.operation_runner import _format_duration
 from analytics_toolkit.general import time_print
 
+from ....connection.get_sql_connection import get_sql_connection
+from ....execution.operation_runner import _format_duration
 
 T = TypeVar("T")
 
@@ -15,7 +15,7 @@ T = TypeVar("T")
 def run_with_retry(
     operation_name: str,
     retry_cnt: int,
-    timeout_increment: int | float,
+    timeout_increment: float,
     operation: Callable[[int], Any],
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
     non_retryable_predicate: Callable[[Exception], bool] | None = None,
@@ -69,6 +69,8 @@ def run_with_retry(
 
 def is_non_retryable_sql_error(exc: Exception) -> bool:
     """Return True for deterministic SQL errors that another attempt won't fix."""
+    if getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False:
+        return True
     class_names = _exception_class_names(exc)
     if class_names & {
         "SyntaxError",
@@ -104,9 +106,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
     }:
         return True
 
-    error_name = str(
-        getattr(exc, "error_name", "") or getattr(exc, "name", "")
-    ).strip().upper()
+    error_name = str(getattr(exc, "error_name", "") or getattr(exc, "name", "")).strip().upper()
     if error_name in {
         "SYNTAX_ERROR",
         "TABLE_NOT_FOUND",

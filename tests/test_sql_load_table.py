@@ -21,13 +21,9 @@ TEST_CH_SHARD_TABLE = f"test_table_{CURRENT_DT}_shard"
 TEST_CH_STAGE_TABLE = f"test_table_{CURRENT_DT}__stage__abcd1234"
 TEST_CH_SHARD_RELATION = f"test_table_{CURRENT_DT}_shard"
 
-create_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.ddl.api"
-)
+create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
 ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
-load_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.load.load_sql_table"
-)
+load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
 gp_insert_module = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 parquet_stage_module = importlib.import_module(
@@ -52,8 +48,7 @@ def _write_trino_connections(
         "schema": "sandbox",
         "transfer_staging_schema": "object_storage.pa_core_stage",
         "upsert_partition_drop_sql_template": (
-            "ALTER TABLE {table} DROP PARTITION "
-            "({partition_column} = {partition_value})"
+            "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
     }
     if transfer_staging_location is not None:
@@ -96,7 +91,7 @@ class FakeClickHouseClient:
                 {"result_rows": [(sql.count("name = ") or 1,)]},
             )()
         if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE "):].strip()
+            table_name = sql[len("EXISTS TABLE ") :].strip()
             return type(
                 "FakeResult",
                 (),
@@ -131,9 +126,7 @@ class FakeClickHouseClient:
                 "data": list(data),
                 "column_names": list(column_names),
                 "column_type_names": (
-                    list(column_type_names)
-                    if column_type_names is not None
-                    else None
+                    list(column_type_names) if column_type_names is not None else None
                 ),
             }
         )
@@ -143,15 +136,15 @@ class FakeClickHouseClient:
 
     def _track_table_ddl(self, sql: str) -> None:
         if sql.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = sql[len("CREATE TABLE IF NOT EXISTS "):].split()[0]
+            table_name = sql[len("CREATE TABLE IF NOT EXISTS ") :].split(maxsplit=1)[0]
             self.created_tables.add(table_name)
             return
         if sql.startswith("CREATE TABLE "):
-            table_name = sql[len("CREATE TABLE "):].split()[0]
+            table_name = sql[len("CREATE TABLE ") :].split(maxsplit=1)[0]
             self.created_tables.add(table_name)
             return
         if sql.startswith("DROP TABLE IF EXISTS "):
-            table_name = sql[len("DROP TABLE IF EXISTS "):].split()[0]
+            table_name = sql[len("DROP TABLE IF EXISTS ") :].split(maxsplit=1)[0]
             self.created_tables.discard(table_name)
 
     def _cluster_table_count(self, sql: str) -> int:
@@ -377,8 +370,14 @@ def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
         "_create_sql_table_with_connection",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **kwargs: f"{kwargs['target_table']}__stage__ok")
-    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "create_stage_table",
+        lambda **kwargs: f"{kwargs['target_table']}__stage__ok",
+    )
+    monkeypatch.setattr(
+        load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         load_df_module,
@@ -389,8 +388,10 @@ def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
     monkeypatch.setattr(
         load_df_module,
         "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
-            (connection_type, connection_key, table_name),
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
+            cleanups.append(
+                (connection_type, connection_key, table_name),
+            )
         ),
     )
 
@@ -439,16 +440,24 @@ def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
         "_create_sql_table_with_connection",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **kwargs: f"{kwargs['target_table']}__stage__err")
-    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module,
+        "create_stage_table",
+        lambda **kwargs: f"{kwargs['target_table']}__stage__err",
+    )
+    monkeypatch.setattr(
+        load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
     monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         load_df_module,
         "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
-            (connection_type, connection_key, table_name),
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
+            cleanups.append(
+                (connection_type, connection_key, table_name),
+            )
         ),
     )
 
@@ -545,8 +554,8 @@ def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
     monkeypatch.setattr(
         load_df_module,
         "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: cleanups.append(
-            table_name
+        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
+            cleanups.append(table_name)
         ),
     )
 
@@ -593,7 +602,9 @@ def test_load_df_gp_upsert_existing_target_uses_target_types_and_df_columns(
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
     monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
+    )
 
     result = load_df_module.load_df(
         "gp",
@@ -610,8 +621,7 @@ def test_load_df_gp_upsert_existing_target_uses_target_types_and_df_columns(
         'INSERT INTO sandbox.target ("id", "score") '
         'SELECT CAST("id" AS BIGINT) AS "id", '
         'CAST("score" AS INTEGER) AS "score" '
-        "FROM sandbox.target__stage__upsert"
-        in sql
+        "FROM sandbox.target__stage__upsert" in sql
         for sql in connection.executed
     )
 
@@ -645,7 +655,9 @@ def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_colu
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
     monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
+    )
 
     result = load_df_module.load_df(
         "ch",
@@ -662,8 +674,7 @@ def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_colu
     assert any(
         "INSERT INTO analytics.target__stage__upsert (`id`, `score`) "
         "SELECT CAST(`id` AS UInt64) AS `id`, CAST(`score` AS Int64) AS `score` "
-        "FROM analytics.target__stage__upsert"
-        in sql
+        "FROM analytics.target__stage__upsert" in sql
         for sql in client.commands
     )
 
@@ -790,9 +801,7 @@ def test_insert_gp_rows_reports_per_page_success(monkeypatch) -> None:
         rows=[(1,), (2,), (3,)],
         gp_insert_chunk_size=2,
         on_progress=progress_updates.append,
-        on_page_success=lambda duration, rows: page_successes.append(
-            (duration, rows)
-        ),
+        on_page_success=lambda duration, rows: page_successes.append((duration, rows)),
     )
 
     assert progress_updates == [2, 1]
@@ -901,10 +910,7 @@ def test_batch_insert_sql_builders_preserve_backend_shapes() -> None:
         "schema.stage_table",
         ["id", "value"],
         row_count=2,
-    ) == (
-        'INSERT INTO schema.stage_table ("id", "value") '
-        "VALUES (?, ?), (?, ?)"
-    )
+    ) == ('INSERT INTO schema.stage_table ("id", "value") VALUES (?, ?), (?, ?)')
 
 
 def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_columns() -> None:
@@ -968,22 +974,16 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert len(sqls) == 4
     shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = sqls
     assert "SETTINGS index_granularity" not in "\n".join(sqls)
-    assert shard_sql.startswith(
-        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
-    )
+    assert shard_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ENGINE = ReplicatedMergeTree" in shard_sql
     assert "PARTITION BY `month_date`" in shard_sql
     assert "ORDER BY (`month_date`, `min_month_use`)" in shard_sql
-    assert local_shard_sql.startswith(
-        f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}"
-    )
+    assert local_shard_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
     assert "ON CLUSTER" not in local_shard_sql
     assert "UUID '" in local_shard_sql
     assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
-    assert distributed_sql.startswith(
-        f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
-    )
+    assert distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
     assert f"AS {TEST_CH_SHARD_TABLE}" not in distributed_sql
     assert "`min_month_use` Date" in distributed_sql
     assert "`month_date` Date" in distributed_sql
@@ -992,9 +992,7 @@ def test_build_create_table_sqls_creates_clickhouse_distributed_pair() -> None:
     assert "    currentDatabase()," in distributed_sql
     assert f"    '{TEST_CH_SHARD_RELATION}'," in distributed_sql
     assert "    cityHash64(month_date, min_month_use)" in distributed_sql
-    assert local_distributed_sql.startswith(
-        f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}"
-    )
+    assert local_distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
     assert "ON CLUSTER" not in local_distributed_sql
     assert "ENGINE = Distributed(" in local_distributed_sql
 
@@ -1074,9 +1072,7 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_tables() -> None:
 
     assert "EXISTS TABLE analytics.events" in client.queries
     assert "EXISTS TABLE analytics.events_shard" in client.queries
-    cluster_table_queries = [
-        query for query in client.queries if "system, tables" in query
-    ]
+    cluster_table_queries = [query for query in client.queries if "system, tables" in query]
     assert len(cluster_table_queries) == 4
     assert "clusterAllReplicas('core', system, tables)" in cluster_table_queries[0]
     assert "WHERE database = 'analytics'" in cluster_table_queries[0]
@@ -1128,17 +1124,18 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
         },
     )
 
-    cluster_column_queries = [
-        query for query in client.queries if "system, columns" in query
-    ]
+    cluster_column_queries = [query for query in client.queries if "system, columns" in query]
     assert len(cluster_column_queries) == 3
     assert "clusterAllReplicas('core', system, columns)" in cluster_column_queries[0]
     assert "WHERE database = 'analytics'" in cluster_column_queries[0]
     assert "AND table = 'events'" in cluster_column_queries[0]
-    assert "name = 'month_date' AND type = 'Date'" in cluster_column_queries[0]
     assert (
-        "name = 'cheque_cnt_total' AND type = 'Decimal(38, 5)'"
+        "name = 'month_date' AND replaceRegexpAll(type, '\\\\s+', '') = 'Date'"
         in cluster_column_queries[0]
+    )
+    assert (
+        "name = 'cheque_cnt_total' "
+        "AND replaceRegexpAll(type, '\\\\s+', '') = 'Decimal(38,5)'" in cluster_column_queries[0]
     )
     assert "AND table = 'events_shard'" in cluster_column_queries[2]
 
@@ -1181,9 +1178,7 @@ def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> 
         poll_interval_seconds=0,
     )
 
-    cluster_table_queries = [
-        query for query in client.queries if "system, tables" in query
-    ]
+    cluster_table_queries = [query for query in client.queries if "system, tables" in query]
     assert len(cluster_table_queries) == 2
     assert "AND name = 'events'" in cluster_table_queries[0]
     assert "AND name = 'events_shard'" in cluster_table_queries[0]
@@ -1306,14 +1301,8 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
     assert inserted_rows == 1
     assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" in client.commands
     assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" in client.commands
-    assert (
-        f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'"
-        in client.commands
-    )
-    assert (
-        f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'"
-        in client.commands
-    )
+    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
+    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
     assert "SETTINGS index_granularity" not in "\n".join(client.commands)
     assert any(
         command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
@@ -1358,14 +1347,8 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
 
     assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" in client.commands
     assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" in client.commands
-    assert (
-        f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'"
-        in client.commands
-    )
-    assert (
-        f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'"
-        in client.commands
-    )
+    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
+    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
     assert any(
         command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
         for command in client.commands
@@ -1381,8 +1364,7 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         for command in client.commands
     )
     assert client.commands[-1] == (
-        f"INSERT INTO {TEST_CH_TABLE} "
-        f"SELECT * FROM {TEST_CH_STAGE_TABLE}"
+        f"INSERT INTO {TEST_CH_TABLE} SELECT * FROM {TEST_CH_STAGE_TABLE}"
     )
     assert not any(query.startswith("DESCRIBE TABLE ") for query in client.queries)
 
@@ -1521,8 +1503,7 @@ def test_finalize_stage_table_trino_replace_recreates_target() -> None:
         "FROM iceberg.pa_core_stage.target__stage"
     )
     assert not any(
-        sql.startswith("DELETE FROM iceberg.pa_core_sandbox.target")
-        for sql in connection.executed
+        sql.startswith("DELETE FROM iceberg.pa_core_sandbox.target") for sql in connection.executed
     )
 
 
@@ -1573,27 +1554,21 @@ def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> Non
         upsert_partition_column="event_date",
         final_upsert_stage_table="sandbox.target__final_stage",
         trino_upsert_partition_drop_sql_template=(
-            "ALTER TABLE {table} DROP PARTITION "
-            "({partition_column} = {partition_value})"
+            "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
         insert_column_types={"id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed[0] == (
-        'SELECT DISTINCT "event_date" FROM sandbox.target__stage'
-    )
+    assert connection.executed[0] == ('SELECT DISTINCT "event_date" FROM sandbox.target__stage')
     assert connection.executed[1].startswith(
         'INSERT INTO sandbox.target__final_stage ("id", "score")\n'
         'SELECT target_dst."id", target_dst."score"\n'
         "FROM sandbox.target AS target_dst"
     )
     assert connection.executed[3] == (
-        'ALTER TABLE sandbox.target DROP PARTITION ("event_date" = '
-        "'2026-06-24')"
+        "ALTER TABLE sandbox.target DROP PARTITION (\"event_date\" = '2026-06-24')"
     )
-    assert connection.executed[4].startswith(
-        'INSERT INTO sandbox.target ("id", "score") '
-    )
+    assert connection.executed[4].startswith('INSERT INTO sandbox.target ("id", "score") ')
 
 
 def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None:
@@ -1618,9 +1593,7 @@ def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None
 
     drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
     assert drop_sql == f"ALTER TABLE {TEST_CH_SHARD_TABLE} ON CLUSTER core DROP PARTITION 1"
-    assert client.commands[-1].startswith(
-        f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) "
-    )
+    assert client.commands[-1].startswith(f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) ")
 
 
 def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> None:
@@ -1668,9 +1641,7 @@ def test_finalize_stage_table_upsert_missing_target_creates_and_inserts() -> Non
     )
 
     assert connection.executed[0].startswith("CREATE TABLE sandbox.target")
-    assert connection.executed[1].startswith(
-        'INSERT INTO sandbox.target ("id", "score") '
-    )
+    assert connection.executed[1].startswith('INSERT INTO sandbox.target ("id", "score") ')
 
 
 def test_load_df_trino_parquet_stage_routes_through_external_table(
@@ -1691,8 +1662,9 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
     monkeypatch.setattr(
         load_df_module,
         "table_exists",
-        lambda connection_type, connection, table_name, **kwargs: table_name
-        == "iceberg.sandbox.target",
+        lambda connection_type, connection, table_name, **kwargs: (
+            table_name == "iceberg.sandbox.target"
+        ),
     )
     monkeypatch.setattr(
         load_df_module,
@@ -1712,17 +1684,19 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
     monkeypatch.setattr(
         load_df_module,
         "write_dataframe_to_parquet_stage",
-        lambda df, **kwargs: writes.append(
-            {
-                "rows": len(df),
-                "location": kwargs["stage_external_location"],
-                "row_group_size": kwargs["row_group_size"],
-                "pa": kwargs["pa"],
-                "pq": kwargs["pq"],
-                "fsspec": kwargs["fsspec_module"],
-            }
-        )
-        or len(df),
+        lambda df, **kwargs: (
+            writes.append(
+                {
+                    "rows": len(df),
+                    "location": kwargs["stage_external_location"],
+                    "row_group_size": kwargs["row_group_size"],
+                    "pa": kwargs["pa"],
+                    "pq": kwargs["pq"],
+                    "fsspec": kwargs["fsspec_module"],
+                }
+            )
+            or len(df)
+        ),
     )
     monkeypatch.setattr(
         load_df_module,
@@ -1767,14 +1741,11 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
     ]
     assert inserts[0][0] == "iceberg.sandbox.target"
     assert inserts[0][1].startswith("hive.pa_core_stage.target__")
-    assert cleaned_locations[0].startswith(
-        "s3://bucket/tmp/analytics_toolkit_transfer/target/"
-    )
+    assert cleaned_locations[0].startswith("s3://bucket/tmp/analytics_toolkit_transfer/target/")
     assert "__analytics_toolkit_target_user__stage__" in cleaned_locations[0]
     assert any(
         sql.startswith("CREATE TABLE hive.pa_core_stage.target__")
-        and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/"
-        in sql
+        and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/" in sql
         for sql in connection.executed
     )
     assert any(
@@ -1810,9 +1781,7 @@ def test_load_df_trino_without_staging_location_keeps_insert_path(
     monkeypatch.setattr(
         load_df_module,
         "ensure_parquet_staging_dependencies",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("Parquet dependencies should not be loaded")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("Parquet dependencies should not be loaded")),
     )
 
     rows = load_df_module.load_df(
@@ -1843,8 +1812,9 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
     monkeypatch.setattr(
         load_df_module,
         "table_exists",
-        lambda connection_type, connection, table_name, **kwargs: table_name
-        == "iceberg.sandbox.target",
+        lambda connection_type, connection, table_name, **kwargs: (
+            table_name == "iceberg.sandbox.target"
+        ),
     )
     monkeypatch.setattr(
         load_df_module,
@@ -1871,19 +1841,15 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
     monkeypatch.setattr(
         load_df_module,
         "upsert_stage_table",
-        lambda connection_type,
-        connection,
-        target,
-        stage,
-        columns,
-        key_columns,
-        **kwargs: upserts.append(
-            {
-                "target": target,
-                "stage": stage,
-                "columns": list(columns),
-                "key_columns": list(key_columns),
-            }
+        lambda connection_type, connection, target, stage, columns, key_columns, **kwargs: (
+            upserts.append(
+                {
+                    "target": target,
+                    "stage": stage,
+                    "columns": list(columns),
+                    "key_columns": list(key_columns),
+                }
+            )
         ),
     )
     monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
@@ -1950,14 +1916,11 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
     assert any(
         "CREATE TABLE object_storage.pa_core_stage.target__analytics_toolkit_target_user__stage__dryrun "
         in sql
-        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
-        in sql
+        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls
     )
     assert any(
-        sql.startswith(
-            "WRITE PARQUET FILES TO s3://bucket/tmp/analytics_toolkit_transfer/target/"
-        )
+        sql.startswith("WRITE PARQUET FILES TO s3://bucket/tmp/analytics_toolkit_transfer/target/")
         for sql in plan.sqls
     )
     assert any(sql.startswith("DELETE STAGE FILES s3://bucket/tmp/") for sql in plan.sqls)
@@ -2015,9 +1978,7 @@ def test_write_dataframe_to_parquet_stage_uses_one_spooled_file(
     monkeypatch.setattr(
         parquet_stage_module,
         "upload_spooled_file",
-        lambda fsspec_module, spooled_file, remote_uri: uploaded.append(
-            (remote_uri, spooled_file)
-        ),
+        lambda fsspec_module, spooled_file, remote_uri: uploaded.append((remote_uri, spooled_file)),
     )
 
     rows = parquet_stage_module.write_dataframe_to_parquet_stage(
@@ -2036,7 +1997,7 @@ def test_write_dataframe_to_parquet_stage_uses_one_spooled_file(
         "s3://bucket/tmp/stage/part-00000.parquet",
         "s3://bucket/tmp/stage/part-00001.parquet",
     ]
-    assert all(getattr(spooled_file, "closed") for _uri, spooled_file in uploaded)
+    assert all(spooled_file.closed for _uri, spooled_file in uploaded)
 
 
 def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
@@ -2055,9 +2016,7 @@ def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
     monkeypatch.setattr(
         load_df_module,
         "_run_load_target_action",
-        lambda _options, _role, operation: operation(
-            {"connection": FakeDbapiConnection()}
-        ),
+        lambda _options, _role, operation: operation({"connection": FakeDbapiConnection()}),
     )
     monkeypatch.setattr(
         load_df_module,
@@ -2172,6 +2131,14 @@ def test_dataframe_key_uniqueness_rejects_duplicate_keys() -> None:
         )
 
 
+def test_dataframe_key_uniqueness_rejects_null_keys() -> None:
+    with pytest.raises(ValueError, match=r"Null key values.*id"):
+        load_df_module._validate_dataframe_key_uniqueness(
+            pd.DataFrame({"id": [1, None], "value": ["one", "missing"]}),
+            ["id"],
+        )
+
+
 @pytest.mark.parametrize(
     ("options", "target_types", "message"),
     [
@@ -2269,57 +2236,78 @@ def test_load_lifecycle_remaining_validation_and_metadata_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     append_options = load_df_module.LoadOptions(
-        connection_key="gp", connection_backend="gp",
-        destination_table="sandbox.target", append=True,
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        append=True,
     )
     state = load_df_module.LoadState(True, True)
-    assert load_df_module._handle_empty_dataframe_load(
-        append_options, state,
-        operation_metadata=load_df_module.SqlOperationMetadata(),
-        return_metadata=False,
-    ) == 0
+    assert (
+        load_df_module._handle_empty_dataframe_load(
+            append_options,
+            state,
+            operation_metadata=load_df_module.SqlOperationMetadata(),
+            return_metadata=False,
+        )
+        == 0
+    )
 
     missing_distribution = load_df_module.LoadOptions(
-        connection_key="gp", connection_backend="gp",
-        destination_table="sandbox.target", gp_distributed_by_key=["missing"],
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        gp_distributed_by_key=["missing"],
     )
     with pytest.raises(ValueError, match="missing"):
         load_df_module._validate_load_dataframe(
-            missing_distribution, pd.DataFrame({"id": [1]}),
+            missing_distribution,
+            pd.DataFrame({"id": [1]}),
         )
 
     labelled = load_df_module.LoadOptions(
-        connection_key="gp", connection_backend="gp",
-        destination_table="sandbox.target", query_label="candidate-9",
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        query_label="candidate-9",
     )
     create_calls: list[dict[str, object]] = []
     monkeypatch.setattr(
-        load_df_module, "_create_sql_table_with_connection",
+        load_df_module,
+        "_create_sql_table_with_connection",
         lambda *_args, **kwargs: create_calls.append(kwargs),
     )
     monkeypatch.setattr(
         load_df_module.get_backend_adapter("gp"),
-        "build_load_target_create_kwargs", lambda **_kwargs: {},
+        "build_load_target_create_kwargs",
+        lambda **_kwargs: {},
     )
     load_df_module._create_load_target_table(
-        labelled, load_df_module.LoadState(False, False), object(),
+        labelled,
+        load_df_module.LoadState(False, False),
+        object(),
         pd.DataFrame({"id": [1]}),
     )
     assert create_calls == [{"connection_key": "gp", "query_label": "candidate-9"}]
 
     analyze_calls: list[dict[str, object]] = []
     monkeypatch.setattr(
-        load_df_module, "analyze_table", lambda **kwargs: analyze_calls.append(kwargs),
+        load_df_module,
+        "analyze_table",
+        lambda **kwargs: analyze_calls.append(kwargs),
     )
     load_df_module._analyze_load_target(labelled, object())
     assert analyze_calls[0]["query_label"] == "candidate-9"
 
     monkeypatch.setattr(
-        load_df_module, "_run_load_target_action",
+        load_df_module,
+        "_run_load_target_action",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("count failed")),
     )
     result_metadata = load_df_module._build_load_metadata(
-        options=labelled, state=state, source_rows=2, inserted_rows=2,
+        options=labelled,
+        state=state,
+        source_rows=2,
+        inserted_rows=2,
         operation_metadata=load_df_module.SqlOperationMetadata(),
     )
     assert result_metadata.final_target_rows is None
@@ -2330,19 +2318,25 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     options = load_df_module.LoadOptions(
-        connection_key="trino", connection_backend="trino",
-        destination_table="iceberg.sandbox.target", table_schema={"id": "BIGINT"},
-        append=True, key_columns=["id"], transfer_staging_schema="scratch",
+        connection_key="trino",
+        connection_backend="trino",
+        destination_table="iceberg.sandbox.target",
+        table_schema={"id": "BIGINT"},
+        append=True,
+        key_columns=["id"],
+        transfer_staging_schema="scratch",
         transfer_staging_location="s3://bucket/stage",
     )
     state = load_df_module.LoadState(True, True)
     stage_kwargs: list[dict[str, object]] = []
     monkeypatch.setattr(
-        load_df_module, "_run_load_target_action",
+        load_df_module,
+        "_run_load_target_action",
         lambda _options, _role, operation: operation({"connection": object()}),
     )
     monkeypatch.setattr(
-        load_df_module, "create_stage_table",
+        load_df_module,
+        "create_stage_table",
         lambda **kwargs: stage_kwargs.append(kwargs) or "scratch.stage",
     )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *_a, **_k: 1)
@@ -2352,32 +2346,42 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
     assert stage_kwargs[0]["table_schema"] == {"id": "BIGINT"}
 
     monkeypatch.setattr(
-        load_df_module, "ensure_parquet_staging_dependencies",
+        load_df_module,
+        "ensure_parquet_staging_dependencies",
         lambda: (object(), object(), object()),
     )
     monkeypatch.setattr(load_df_module, "_create_load_parquet_stage_table", lambda *_a: None)
     with pytest.raises(RuntimeError, match="not initialized"):
         load_df_module._load_dataframe_via_parquet_stage(
-            options=options, state=load_df_module.LoadState(True, True),
-            df=pd.DataFrame({"id": [1]}), on_progress=None,
+            options=options,
+            state=load_df_module.LoadState(True, True),
+            df=pd.DataFrame({"id": [1]}),
+            on_progress=None,
         )
 
     with pytest.raises(RuntimeError, match="was not initialized"):
         load_df_module._finalize_loaded_dataframe_stage(
-            options=options, state=load_df_module.LoadState(True, True),
-            connection=object(), df=pd.DataFrame({"id": [1]}),
+            options=options,
+            state=load_df_module.LoadState(True, True),
+            connection=object(),
+            df=pd.DataFrame({"id": [1]}),
         )
 
     overlap_calls: list[dict[str, object]] = []
     monkeypatch.setattr(
-        load_df_module, "validate_stage_target_key_overlap",
+        load_df_module,
+        "validate_stage_target_key_overlap",
         lambda **kwargs: overlap_calls.append(kwargs),
     )
     staged = load_df_module.LoadState(
-        True, True, overlap_stage_table="scratch.stage",
+        True,
+        True,
+        overlap_stage_table="scratch.stage",
     )
     load_df_module._finalize_loaded_dataframe_stage(
-        options=options, state=staged, connection=object(),
+        options=options,
+        state=staged,
+        connection=object(),
         df=pd.DataFrame({"id": [1]}),
     )
     assert overlap_calls[0]["stage_table"] == "scratch.stage"
@@ -2387,15 +2391,20 @@ def test_load_parquet_collision_exhaustion_and_final_stage_noops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     options = load_df_module.LoadOptions(
-        connection_key="trino", connection_backend="trino",
-        destination_table="iceberg.sandbox.target", table_schema={"id": "BIGINT"},
-        transfer_staging_schema="scratch", transfer_staging_location="s3://bucket/stage",
+        connection_key="trino",
+        connection_backend="trino",
+        destination_table="iceberg.sandbox.target",
+        table_schema={"id": "BIGINT"},
+        transfer_staging_schema="scratch",
+        transfer_staging_location="s3://bucket/stage",
     )
     state = load_df_module.LoadState(False, False)
     messages: list[str] = []
     monkeypatch.setattr(load_df_module, "STAGE_TABLE_NAME_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(
-        load_df_module, "build_stage_table_name", lambda *_a, **_k: "scratch.collision",
+        load_df_module,
+        "build_stage_table_name",
+        lambda *_a, **_k: "scratch.collision",
     )
     monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: True)
     monkeypatch.setattr(load_df_module, "time_print", messages.append)
@@ -2405,7 +2414,9 @@ def test_load_parquet_collision_exhaustion_and_final_stage_noops(
 
     df = pd.DataFrame({"id": [1]})
     gp_options = load_df_module.LoadOptions(
-        connection_key="gp", connection_backend="gp", destination_table="sandbox.target",
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
     )
     load_df_module._ensure_final_upsert_stage_table(gp_options, state, df)
     trino_state = load_df_module.LoadState(True, False)
@@ -2423,35 +2434,58 @@ def test_load_option_requirements_and_remaining_upsert_plan_branches(
         load_df_module._build_load_options("gp", " ", False, None, None, None)
     with pytest.raises(ValueError, match="upsert_partition_column"):
         load_df_module._build_load_options(
-            "trino", "sandbox.target", False, "upsert", None, ["id"],
+            "trino",
+            "sandbox.target",
+            False,
+            "upsert",
+            None,
+            ["id"],
         )
 
-    write_sql_connections({
-        "trino_no_template": {
-            "type": "trino", "host": "trino.example", "port": 8080,
-            "user": "user", "password": "password", "catalog": "iceberg",
-            "schema": "sandbox",
+    write_sql_connections(
+        {
+            "trino_no_template": {
+                "type": "trino",
+                "host": "trino.example",
+                "port": 8080,
+                "user": "user",
+                "password": "password",
+                "catalog": "iceberg",
+                "schema": "sandbox",
+            }
         }
-    })
+    )
     with pytest.raises(ValueError, match="drop_sql_template"):
         load_df_module._build_load_options(
-            "trino_no_template", "sandbox.target", False, "upsert", None, ["id"],
+            "trino_no_template",
+            "sandbox.target",
+            False,
+            "upsert",
+            None,
+            ["id"],
             upsert_partition_column="event_date",
         )
 
     gp_upsert = load_df_module.LoadOptions(
-        connection_key="gp", connection_backend="gp",
-        destination_table="sandbox.target", table_schema={"id": "BIGINT"},
-        write_mode="upsert", key_columns=["id"], use_parquet_staging=True,
-        transfer_staging_schema="scratch", transfer_staging_location="s3://stage",
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        table_schema={"id": "BIGINT"},
+        write_mode="upsert",
+        key_columns=["id"],
+        use_parquet_staging=True,
+        transfer_staging_schema="scratch",
+        transfer_staging_location="s3://stage",
     )
     monkeypatch.setattr(load_df_module, "add_create_table_steps", lambda *_a, **_k: None)
     monkeypatch.setattr(load_df_module, "add_load_stage_step", lambda *_a, **_k: None)
     monkeypatch.setattr(load_df_module, "build_upsert_stage_sqls", lambda *_a, **_k: [])
     monkeypatch.setattr(load_df_module, "add_cleanup_stage_step", lambda *_a, **_k: None)
     load_df_module._add_parquet_load_plan_steps(
-        load_df_module.SqlPlan(operation="load"), gp_upsert,
-        pd.DataFrame({"id": [1]}), load_df_module.SqlOperationMetadata(),
+        load_df_module.SqlPlan(operation="load"),
+        gp_upsert,
+        pd.DataFrame({"id": [1]}),
+        load_df_module.SqlOperationMetadata(),
     )
 
     monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda **_k: None)
@@ -2459,7 +2493,10 @@ def test_load_option_requirements_and_remaining_upsert_plan_branches(
     load_df_module._finalize_loaded_dataframe_stage(
         options=gp_upsert,
         state=load_df_module.LoadState(
-            True, False, overlap_stage_table="scratch.stage",
+            True,
+            False,
+            overlap_stage_table="scratch.stage",
         ),
-        connection=object(), df=pd.DataFrame({"id": [1]}),
+        connection=object(),
+        df=pd.DataFrame({"id": [1]}),
     )

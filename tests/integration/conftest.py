@@ -10,6 +10,7 @@ import pytest
 from analytics_toolkit import sql
 from tests.integration.support.faults import FaultController
 from tests.integration.support.identity import safe_identifier
+from tests.integration.support.resources import ResourceRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -76,6 +77,13 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         json.dumps(sorted(records, key=lambda item: item["scenario_id"]), indent=2),
         encoding="utf-8",
     )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]):
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)
 
 
 def _integration_connections() -> dict[str, dict[str, object]]:
@@ -198,6 +206,13 @@ def _assert_loopback_connections(connections: dict[str, dict[str, object]]) -> N
             raise RuntimeError(message)
 
 
+@pytest.fixture
+def integration_connections() -> dict[str, dict[str, object]]:
+    connections = _integration_connections()
+    _assert_loopback_connections(connections)
+    return connections
+
+
 @pytest.fixture(autouse=True)
 def default_sql_connections(
     monkeypatch: pytest.MonkeyPatch,
@@ -224,15 +239,27 @@ def initialize_integration_schemas(default_sql_connections: None) -> Iterator[No
     yield
 
 
+@pytest.fixture
+def resource_registry(tmp_path: Path) -> ResourceRegistry:
+    return ResourceRegistry(
+        root=Path(__file__).parents[2],
+        project=os.environ.get("SQL_INTEGRATION_COMPOSE_PROJECT"),
+        artifact_dir=Path(os.environ.get("SQL_INTEGRATION_ARTIFACT_DIR", tmp_path / "artifacts")),
+    )
+
+
 @pytest.fixture(autouse=True)
 def assert_no_toolkit_leaks(
+    request: pytest.FixtureRequest,
     default_sql_connections: None,
+    resource_registry: ResourceRegistry,
     tmp_path: Path,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> Iterator[None]:
     del default_sql_connections
     yield
     write_sql_connections(_integration_connections())
+    cleanup_errors = resource_registry.cleanup()
     leak_report = {
         "tables": [],
         "queries": [],
@@ -294,4 +321,14 @@ def assert_no_toolkit_leaks(
         )
         previous.append({"test_id": test_id, **leak_report})
         artifact_path.write_text(json.dumps(previous, indent=2), encoding="utf-8")
-    assert not any(leak_report.values()), leak_report
+    cleanup_report = {"cleanup_errors": cleanup_errors, "leaks": leak_report}
+    if cleanup_errors or any(leak_report.values()):
+        call_report = getattr(request.node, "rep_call", None)
+        if call_report is not None and call_report.failed:
+            request.node.add_report_section(
+                "teardown",
+                "integration cleanup",
+                json.dumps(cleanup_report, indent=2),
+            )
+            return
+        pytest.fail(f"integration cleanup failed: {cleanup_report}")

@@ -11,7 +11,6 @@ from .models import (
     TransferInsertPageSizing,
 )
 
-
 _DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
 _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
@@ -67,14 +66,10 @@ def validate_write_mode(
 ) -> str:
     normalized = write_mode.strip().lower()
     if normalized not in {"append", "replace", "truncate_insert", "upsert"}:
-        raise ValueError(
-            f"{option_name} must be one of: append, replace, truncate_insert, upsert."
-        )
+        raise ValueError(f"{option_name} must be one of: append, replace, truncate_insert, upsert.")
 
     if normalized not in adapter.supported_write_modes:
-        raise ValueError(
-            f"{adapter.display_name} does not support {option_name}={normalized!r}."
-        )
+        raise ValueError(f"{adapter.display_name} does not support {option_name}={normalized!r}.")
     return normalized
 
 
@@ -146,9 +141,7 @@ def validate_drop_partitions_options(
 
     del adapter
     if gp_truncate:
-        raise InvalidSqlInputError(
-            "gp_truncate=True is only supported for Greenplum connections."
-        )
+        raise InvalidSqlInputError("gp_truncate=True is only supported for Greenplum connections.")
     if partition_column is not None:
         raise InvalidSqlInputError(
             "trino_partition_column is only supported for Trino partition deletes."
@@ -461,32 +454,20 @@ def validate_ch_create_table_options(
     if not isinstance(ch_only_shard, bool):
         raise ValueError("ch_only_shard must be a boolean.")
     if not getattr(adapter, "supports_ch_create_table_options", False):
-        if (
-            not getattr(adapter, "supports_create_table_order_by", True)
-            and order_by is not None
-        ):
+        if not getattr(adapter, "supports_create_table_order_by", True) and order_by is not None:
             raise ValueError(
-                f"order_by is not supported when {option_owner} has type "
-                f"'{adapter.backend}'."
+                f"order_by is not supported when {option_owner} has type '{adapter.backend}'."
             )
     else:
         return
     if ch_only_shard:
-        raise ValueError(
-            f"ch_only_shard can only be used when {option_owner} has type 'ch'."
-        )
+        raise ValueError(f"ch_only_shard can only be used when {option_owner} has type 'ch'.")
     if ch_engine != _DEFAULT_CH_ENGINE:
-        raise ValueError(
-            f"ch_engine can only be used when {option_owner} has type 'ch'."
-        )
+        raise ValueError(f"ch_engine can only be used when {option_owner} has type 'ch'.")
     if ch_cluster != _DEFAULT_CH_CLUSTER:
-        raise ValueError(
-            f"ch_cluster can only be used when {option_owner} has type 'ch'."
-        )
+        raise ValueError(f"ch_cluster can only be used when {option_owner} has type 'ch'.")
     if ch_sharding_key != _DEFAULT_CH_SHARDING_KEY:
-        raise ValueError(
-            f"ch_sharding_key can only be used when {option_owner} has type 'ch'."
-        )
+        raise ValueError(f"ch_sharding_key can only be used when {option_owner} has type 'ch'.")
 
 
 def transfer_insert_page_sizing(
@@ -534,8 +515,7 @@ def validate_gp_distributed_by_key_option(
     del adapter
     if value is not None:
         raise ValueError(
-            f"gp_distributed_by_key can only be used when {option_owner} "
-            "has type 'gp'."
+            f"gp_distributed_by_key can only be used when {option_owner} has type 'gp'."
         )
 
 
@@ -548,8 +528,7 @@ def validate_gp_insert_chunk_size_option(
     del adapter
     if value is not None:
         raise ValueError(
-            f"gp_insert_chunk_size can only be used when {option_owner} "
-            "has type 'gp'."
+            f"gp_insert_chunk_size can only be used when {option_owner} has type 'gp'."
         )
 
 
@@ -621,6 +600,19 @@ def resolve_transfer_stage_column_types(
 def normalize_insert_batch(adapter: Any, batch: Any) -> Any:
     del adapter
     return batch
+
+
+def normalize_transfer_source_batch(
+    adapter: Any,
+    batch: Any,
+    source_column_types: dict[str, str | None],
+) -> Any:
+    del adapter, source_column_types
+    return batch
+
+
+def mark_upsert_finalization_error(adapter: Any, exc: Exception) -> None:
+    del adapter, exc
 
 
 def normalize_insert_rows(

@@ -7,7 +7,6 @@ from typing import Any
 import pandas as pd
 import pytest
 
-
 show_module = importlib.import_module("analytics_toolkit.sql.metadata.show_queries")
 metadata_module = importlib.import_module("analytics_toolkit.sql.metadata")
 ch_queries_module = importlib.import_module("analytics_toolkit.sql.backends.ch.queries")
@@ -46,22 +45,16 @@ def test_normalize_query_states_rejects_invalid_values(raw_state: Any) -> None:
 
 
 def test_clickhouse_query_sql_state_matrix_and_escaped_user() -> None:
-    assert ch_queries_module.show_queries_sqls(
-        None, user=None, states=[]
-    ) == []
-    active = ch_queries_module.show_queries_sqls(
-        None, user="o'reilly", states=["active"]
-    )
+    assert ch_queries_module.show_queries_sqls(None, user=None, states=[]) == []
+    active = ch_queries_module.show_queries_sqls(None, user="o'reilly", states=["active"])
     assert len(active) == 1
     assert "user = 'o''reilly'" in active[0]["sql"]
-    finished = ch_queries_module.show_queries_sqls(
-        None, user=None, states=["finished"]
-    )
+    assert "Nullable(DateTime64(6))" in active[0]["sql"]
+    assert "Nullable(String)" in active[0]["sql"]
+    finished = ch_queries_module.show_queries_sqls(None, user=None, states=["finished"])
     assert "QueryFinish" in finished[0]["sql"]
     assert "ExceptionBeforeStart" not in finished[0]["sql"]
-    failed = ch_queries_module.show_queries_sqls(
-        None, user=None, states=["failed"]
-    )
+    failed = ch_queries_module.show_queries_sqls(None, user=None, states=["failed"])
     assert "ExceptionBeforeStart" in failed[0]["sql"]
     both = ch_queries_module.show_queries_sqls(
         None, user=None, states=["active", "finished", "failed"]
@@ -134,7 +127,7 @@ def test_show_queries_greenplum_active_current_user(
         *,
         print_queries: bool,
         retry_cnt: int,
-        timeout_increment: int | float,
+        timeout_increment: float,
         query_label: str | None,
     ) -> pd.DataFrame:
         calls.append(
@@ -212,8 +205,8 @@ def test_show_queries_trino_uses_optional_user_and_history_state(
     )
 
     assert len(queries) == 1
-    assert 'from system.runtime.queries' in queries[0]
-    assert '"user" = \'other\'\'user\'' in queries[0]
+    assert "from system.runtime.queries" in queries[0]
+    assert "\"user\" = 'other''user'" in queries[0]
     assert "state in ('FAILED')" in queries[0]
     assert result["backend"].tolist() == ["trino"]
     assert result["state"].tolist() == ["failed"]
@@ -258,8 +251,7 @@ def test_show_queries_clickhouse_combines_active_and_history(
     assert "from system.processes" in queries[0]
     assert "from system.query_log" in queries[1]
     assert (
-        "type in ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')"
-        in queries[1]
+        "type in ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')" in queries[1]
     )
     assert result["query_id"].tolist() == ["ch-active", "ch-finished"]
 

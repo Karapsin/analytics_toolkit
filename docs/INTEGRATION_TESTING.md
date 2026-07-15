@@ -46,6 +46,22 @@ package dependencies. Fault starts the complete topology and runs destructive
 database, staging, and authentication groups. It is never part of normal
 pytest, pre-commit, or `dev` push execution.
 
+Core exercises active-query discovery and cancellation, exact logical-type
+round trips, all nine source/target transfer and schema-copy pairs, failure
+atomicity, both orchestration APIs, and native backend DDL. The canonical type
+dataset includes nullable booleans, signed integers, `Decimal(18,4)`, doubles,
+Unicode, dates, UTC microsecond timestamps, UUIDs, canonical JSON, and an
+all-null text column. Trino/Iceberg and ClickHouse store canonical JSON as text;
+Greenplum uses `JSONB`.
+
+The auth topology generates its CA, server, and client credentials for each
+run. It covers Greenplum mTLS, Trino Basic TLS and real OAuth authorization-code
+login through Chromium and Keycloak, ClickHouse TLS, and Airflow Connection and
+Variable routing. Negative cases use wrong credentials and trust roots and
+assert that diagnostic output contains no password, private-key, token, or
+client-secret material. The OAuth scenarios require the Playwright Chromium
+browser installed by the auth job; injected bearer tokens are not accepted.
+
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
 removes MinIO objects, and restores paused services before it scans for leaks.
@@ -54,7 +70,11 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `collected-scenarios.json`, `leaks.json`, `minio-objects.json`,
 `active-queries.json`, and `failed-query-details.json` below
 `.integration-artifacts/<profile>/`. Fault runs also write
-`fault-timeline.json`; auth runs preserve browser and authentication logs. It
+`fault-timeline.json`; auth runs preserve browser and authentication logs.
+Operation/retry and connection-identity reports, orchestration timelines, and
+type-normalization mismatch reports are also always present. For failures,
+inspect service health first, then Compose logs, the operation-specific
+timeline, active/failed query details, and finally leak/object reports. It
 always runs
 `docker compose down --volumes --remove-orphans`, even
 when startup or pytest fails, and verifies that project containers, networks,
@@ -69,7 +89,8 @@ shared, external, or production database.
 
 The `sql-integration` workflow runs required core and auth x86_64 jobs in
 parallel on every push to `dev`, each with a 60-minute limit. The destructive
-fault groups run nightly and by manual dispatch with matrix fail-fast disabled.
+fault groups (`database`, `staging`, and `authentication`) run nightly and by
+manual dispatch with matrix fail-fast disabled.
 Core and auth require zero skipped manifest scenarios on x86_64; ARM runs are
 diagnostic and may report Greenplum as architecture-unavailable. All artifacts
 are uploaded even on failure. Completion requires no toolkit tables, labelled

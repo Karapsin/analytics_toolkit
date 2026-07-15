@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+# ruff: noqa: EM102, I001, TRY003
+
 import json
 import subprocess
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -105,4 +108,76 @@ class FaultController:
             check=check,
             capture_output=True,
             text=True,
+        )
+
+
+class FaultGate:
+    """One-shot, bounded integration checkpoint for an internal operation boundary."""
+
+    def __init__(
+        self,
+        *,
+        phase: str,
+        trigger_call: int = 1,
+        timeout: float = 30,
+        hold_exception: bool = False,
+    ) -> None:
+        self.phase = phase
+        self.trigger_call = trigger_call
+        self.timeout = timeout
+        self.calls = 0
+        self.reached = threading.Event()
+        self.release = threading.Event()
+        self.failed = threading.Event()
+        self.failure_release = threading.Event()
+        self.hold_exception = hold_exception
+        self.timeline: list[dict[str, Any]] = []
+        self.exception: str | None = None
+
+    def wrap(self, function: Any) -> Any:
+        def instrumented(*args: Any, **kwargs: Any) -> Any:
+            self.calls += 1
+            if self.calls == self.trigger_call:
+                self._record("reached")
+                self.reached.set()
+                if not self.release.wait(self.timeout):
+                    raise TimeoutError(f"fault gate was not released: {self.phase}")
+                self._record("released")
+            try:
+                return function(*args, **kwargs)
+            except BaseException as exc:
+                self.exception = repr(exc)
+                self._record("exception")
+                self.failed.set()
+                if self.hold_exception and not self.failure_release.wait(self.timeout):
+                    raise TimeoutError(
+                        f"fault recovery did not release exception: {self.phase}"
+                    ) from exc
+                raise
+
+        return instrumented
+
+    def wait(self) -> None:
+        if not self.reached.wait(self.timeout):
+            raise TimeoutError(f"fault gate was not reached: {self.phase}")
+
+    def open(self) -> None:
+        self.release.set()
+
+    def wait_for_failure(self) -> None:
+        if not self.failed.wait(self.timeout):
+            raise TimeoutError(f"fault gate did not observe a failure: {self.phase}")
+
+    def resume_after_failure(self) -> None:
+        self.failure_release.set()
+
+    def _record(self, event: str) -> None:
+        self.timeline.append(
+            {
+                "timestamp_monotonic": time.monotonic(),
+                "phase": self.phase,
+                "call": self.calls,
+                "event": event,
+                "exception": self.exception,
+            }
         )

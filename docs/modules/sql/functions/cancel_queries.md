@@ -49,5 +49,13 @@ cancelled[["backend", "query_id", "cancelled", "terminated"]]
   using `state="active"`.
 - Greenplum uses `pg_cancel_backend(pid)` followed by `pg_terminate_backend(pid)` for each target PID.
 - Returned rows include the backend, target query id, generated cancellation SQL, cancellation flag, termination flag, and backend status.
+- Explicit query IDs are returned in input order, including when cancellation
+  concurrency is greater than one.
+- Query visibility is backend-current-user scoped. Match a stable
+  `query_label` in [show_queries](show_queries.md) before cancelling instead of
+  assuming that the newest query belongs to the caller.
+- Cancellation is best-effort for IDs that already finished between discovery
+  and cancellation. Long-running workers should still be joined with a bounded
+  deadline and cancellation repeated from unconditional cleanup.
 
 [SQL functions index](index.md)

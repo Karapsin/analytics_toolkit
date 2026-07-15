@@ -40,11 +40,11 @@ def _active_queries_sql(user_sql: str) -> str:
     user,
     'active' as state,
     query,
-    null as started_at,
-    null as finished_at,
+    cast(null as Nullable(DateTime64(6))) as started_at,
+    cast(null as Nullable(DateTime64(6))) as finished_at,
     elapsed as elapsed_seconds,
-    null as source,
-    null as database,
+    cast(null as Nullable(String)) as source,
+    cast(null as Nullable(String)) as database,
     'active' as raw_state
 from system.processes
 where {user_sql}
@@ -68,7 +68,7 @@ def _history_queries_sql(user_sql: str, states: list[str]) -> str:
     query_start_time as started_at,
     event_time as finished_at,
     query_duration_ms / 1000.0 as elapsed_seconds,
-    null as source,
+    cast(null as Nullable(String)) as source,
     current_database as database,
     type as raw_state
 from system.query_log

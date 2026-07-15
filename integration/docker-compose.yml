@@ -12,9 +12,8 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    tmpfs:
-      - /var/lib/postgresql/data
     volumes:
+      - iceberg-catalog-data:/var/lib/postgresql/data
       - ./iceberg-catalog/init.sql:/docker-entrypoint-initdb.d/10-iceberg.sql:ro
 
   hive-metastore:
@@ -54,8 +53,8 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    tmpfs:
-      - /data
+    volumes:
+      - minio-data:/data
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
@@ -137,13 +136,13 @@ services:
       - "${SQL_INTEGRATION_CLICKHOUSE_PORT:-18123}:8123"
     volumes:
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - clickhouse-data:/var/lib/clickhouse
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 3s
       timeout: 3s
       retries: 40
     tmpfs:
-      - /var/lib/clickhouse
       - /var/log/clickhouse-server
 
   greenplum:
@@ -164,5 +163,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 60
-    tmpfs:
-      - /data
+    volumes:
+      - greenplum-data:/data
+
+volumes:
+  clickhouse-data:
+  greenplum-data:
+  iceberg-catalog-data:
+  minio-data:

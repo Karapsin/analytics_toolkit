@@ -3,12 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from . import adapter_defaults as _adapter_defaults, common_methods as _common_methods
+from . import adapter_defaults as _adapter_defaults
+from . import common_methods as _common_methods
 from . import source_count as _source_count
 from . import upsert as _upsert
 from . import validation as _validation
-from .models import BackendCapability, BackendName, SourceColumn, WriteMode
-from .models import StageFinalizationRequest, StageTargetTableRequest, TargetWriteModeRequest
+from .models import (
+    BackendCapability,
+    BackendName,
+    SourceColumn,
+    StageFinalizationRequest,
+    StageTargetTableRequest,
+    TargetWriteModeRequest,
+    WriteMode,
+)
 from .utils import extract_row_count
 
 
@@ -25,12 +33,15 @@ class BackendAdapter:
     drop_semantics: str
     create_semantics: str
     type_family: str
-    supported_write_modes: frozenset[WriteMode] = frozenset({"append", "replace", "truncate_insert", "upsert"})
+    supported_write_modes: frozenset[WriteMode] = frozenset(
+        {"append", "replace", "truncate_insert", "upsert"}
+    )
     supports_early_transfer_target_creation: bool = True
     upsert_strategy: str = "key_delete_insert"
     requires_upsert_partition_column: bool = False
     requires_upsert_partition_drop_template: bool = False
     supports_show_tables_catalog_filter: bool = False
+
     @property
     def name(self) -> BackendName:
         return self.backend
@@ -51,14 +62,10 @@ class BackendAdapter:
             create_semantics=self.create_semantics,
             type_family=self.type_family,
             supported_write_modes=self.supported_write_modes,
-            supports_early_transfer_target_creation=(
-                self.supports_early_transfer_target_creation
-            ),
+            supports_early_transfer_target_creation=(self.supports_early_transfer_target_creation),
             upsert_strategy=self.upsert_strategy,
             requires_upsert_partition_column=self.requires_upsert_partition_column,
-            requires_upsert_partition_drop_template=(
-                self.requires_upsert_partition_drop_template
-            ),
+            requires_upsert_partition_drop_template=(self.requires_upsert_partition_drop_template),
             supports_show_tables_catalog_filter=self.supports_show_tables_catalog_filter,
         )
 
@@ -191,10 +198,12 @@ class BackendAdapter:
             connection,
             self.analyze_table_sql(table_name, query_label=query_label),
         )
+
     validate_write_mode = _adapter_defaults.validate_write_mode
     normalize_ch_columns_or_expression = _adapter_defaults.normalize_ch_columns_or_expression
     normalize_ch_string = _adapter_defaults.normalize_ch_string
     validate_ch_columns_in_columns = _adapter_defaults.validate_ch_columns_in_columns
+
     def count_table_rows_sql(
         self,
         table_name: str,
@@ -212,9 +221,7 @@ class BackendAdapter:
     ) -> int:
         cursor = connection.cursor()
         try:
-            cursor.execute(
-                self.count_table_rows_sql(table_name, query_label=query_label)
-            )
+            cursor.execute(self.count_table_rows_sql(table_name, query_label=query_label))
             row = cursor.fetchone()
             return int(row[0]) if row else 0
         finally:
@@ -245,15 +252,11 @@ class BackendAdapter:
     def map_source_type_to_target(self, column: SourceColumn) -> str:
         raise NotImplementedError
 
-    refine_stage_column_types_from_rows = (
-        _adapter_defaults.refine_stage_column_types_from_rows
-    )
+    refine_stage_column_types_from_rows = _adapter_defaults.refine_stage_column_types_from_rows
 
     build_show_tables_query = _adapter_defaults.build_show_tables_query
     postprocess_show_tables = _adapter_defaults.postprocess_show_tables
-    allows_show_tables_catalog_filter = (
-        _adapter_defaults.allows_show_tables_catalog_filter
-    )
+    allows_show_tables_catalog_filter = _adapter_defaults.allows_show_tables_catalog_filter
     extract_table_ddl = _adapter_defaults.extract_table_ddl
     validate_drop_partitions_options = _adapter_defaults.validate_drop_partitions_options
     build_drop_partitions_sqls = _adapter_defaults.build_drop_partitions_sqls
@@ -265,9 +268,7 @@ class BackendAdapter:
     build_drop_target_sqls = _adapter_defaults.build_drop_target_sqls
     drop_table_with_options = _adapter_defaults.drop_table_with_options
     build_clear_target_sqls = _adapter_defaults.build_clear_target_sqls
-    build_transfer_replace_target_sqls = (
-        _adapter_defaults.build_transfer_replace_target_sqls
-    )
+    build_transfer_replace_target_sqls = _adapter_defaults.build_transfer_replace_target_sqls
     transfer_replace_target_phase = _adapter_defaults.transfer_replace_target_phase
     transfer_replace_existing_non_ch = _adapter_defaults.transfer_replace_existing_non_ch
     companion_table_name = _adapter_defaults.companion_table_name
@@ -293,7 +294,7 @@ class BackendAdapter:
         query: str,
         get_batch_size: Callable[[], int],
         retry_cnt: int,
-        timeout_increment: int | float,
+        timeout_increment: float,
         disable_query_limit: bool = False,
     ) -> Any:
         del (
@@ -439,8 +440,7 @@ class BackendAdapter:
         missing_columns = [column for column in columns if column not in column_types]
         if missing_columns:
             raise ValueError(
-                "Target table is missing staged column(s): "
-                + ", ".join(missing_columns)
+                "Target table is missing staged column(s): " + ", ".join(missing_columns)
             )
         return {column: column_types[column] for column in columns}
 
@@ -486,25 +486,31 @@ class BackendAdapter:
         raise NotImplementedError
 
     normalize_insert_batch = _adapter_defaults.normalize_insert_batch
+    normalize_transfer_source_batch = _adapter_defaults.normalize_transfer_source_batch
+    mark_upsert_finalization_error = _adapter_defaults.mark_upsert_finalization_error
     normalize_insert_rows = _adapter_defaults.normalize_insert_rows
     should_wrap_insert_error_as_ambiguous = _adapter_defaults.should_wrap_insert_error_as_ambiguous
-    should_refresh_connection_before_insert_retry = _adapter_defaults.should_refresh_connection_before_insert_retry
+    should_refresh_connection_before_insert_retry = (
+        _adapter_defaults.should_refresh_connection_before_insert_retry
+    )
     transfer_attempt_policy = _adapter_defaults.transfer_attempt_policy
     transfer_insert_page_sizing = _adapter_defaults.transfer_insert_page_sizing
     requires_load_target_column_metadata = _adapter_defaults.requires_load_target_column_metadata
     uses_partition_replacement_upsert = _adapter_defaults.uses_partition_replacement_upsert
     needs_upsert_partition_drop_template = _adapter_defaults.needs_upsert_partition_drop_template
     supports_distributed_table_targets = _adapter_defaults.supports_distributed_table_targets
-    can_create_transfer_target_before_batches = _adapter_defaults.can_create_transfer_target_before_batches
+    can_create_transfer_target_before_batches = (
+        _adapter_defaults.can_create_transfer_target_before_batches
+    )
     resolve_ch_retry_per_host_drops = _adapter_defaults.resolve_ch_retry_per_host_drops
     validate_gp_distributed_by_key_option = _adapter_defaults.validate_gp_distributed_by_key_option
     validate_gp_insert_chunk_size_option = _adapter_defaults.validate_gp_insert_chunk_size_option
-    validate_trino_insert_chunk_size_option = _adapter_defaults.validate_trino_insert_chunk_size_option
+    validate_trino_insert_chunk_size_option = (
+        _adapter_defaults.validate_trino_insert_chunk_size_option
+    )
     resolve_transfer_staging_mode = _adapter_defaults.resolve_transfer_staging_mode
     create_table_from_sql_fast_path = _adapter_defaults.create_table_from_sql_fast_path
-    uses_create_table_from_sql_fast_path = (
-        _adapter_defaults.uses_create_table_from_sql_fast_path
-    )
+    uses_create_table_from_sql_fast_path = _adapter_defaults.uses_create_table_from_sql_fast_path
     should_insert_create_table_from_sql_directly = (
         _adapter_defaults.should_insert_create_table_from_sql_directly
     )
@@ -550,10 +556,7 @@ class BackendAdapter:
             return request.target_exists
         if not request.target_exists:
             return False
-        if (
-            request.write_mode == "truncate_insert"
-            or request.replace_existing_non_ch == "clear"
-        ):
+        if request.write_mode == "truncate_insert" or request.replace_existing_non_ch == "clear":
             self.clear_table(
                 request.connection,
                 request.table_name,
@@ -755,9 +758,7 @@ class BackendAdapter:
     build_stage_duplicate_keys_sql_for_tables = (
         _validation.build_stage_duplicate_keys_sql_for_tables
     )
-    build_stage_target_key_overlap_sql = (
-        _validation.build_stage_target_key_overlap_sql
-    )
+    build_stage_target_key_overlap_sql = _validation.build_stage_target_key_overlap_sql
     stage_has_duplicate_keys = _validation.stage_has_duplicate_keys
     stage_keys_overlap_target = _validation.stage_keys_overlap_target
     query_has_rows = _validation.query_has_rows
@@ -862,10 +863,7 @@ class BackendAdapter:
             self.cast_select_expression(column_name, target_type)
             for column_name, target_type in column_types.items()
         )
-        return (
-            f"INSERT INTO {target_table} ({target_columns}) "
-            f"SELECT {select_columns} {from_sql}"
-        )
+        return f"INSERT INTO {target_table} ({target_columns}) SELECT {select_columns} {from_sql}"
 
     def column_list_sql(self, columns: Sequence[str]) -> str:
         return ", ".join(self.quote_identifier(column_name) for column_name in columns)
@@ -883,10 +881,7 @@ class BackendAdapter:
         quoted_column = self.quote_identifier(column_name)
         left_expr = f"{left_alias}.{quoted_column}"
         right_expr = f"{right_alias}.{quoted_column}"
-        return (
-            f"({left_expr} = {right_expr} "
-            f"OR ({left_expr} IS NULL AND {right_expr} IS NULL))"
-        )
+        return f"({left_expr} = {right_expr} OR ({left_expr} IS NULL AND {right_expr} IS NULL))"
 
     def quote_identifier(self, identifier: str) -> str:
         escaped = identifier.replace(self.identifier_quote, self.identifier_quote * 2)

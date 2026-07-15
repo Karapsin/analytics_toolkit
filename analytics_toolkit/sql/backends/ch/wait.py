@@ -5,13 +5,13 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ...ddl.schema import normalize_table_schema
 from .ddl import (
     _normalize_non_empty_string,
     _sql_string_literal,
     build_ch_shard_table_name,
     split_ch_table_name_for_distributed_engine,
 )
-from ...ddl.schema import normalize_table_schema
 
 
 def after_create_table(
@@ -48,8 +48,7 @@ def _wait_for_ch_table(
             return
         if time.monotonic() >= deadline:
             raise TimeoutError(
-                f"ClickHouse table {table_name} was not visible after "
-                f"{timeout_seconds} second(s)."
+                f"ClickHouse table {table_name} was not visible after {timeout_seconds} second(s)."
             )
         time.sleep(poll_interval_seconds)
 
@@ -184,19 +183,14 @@ def _wait_for_ch_tables_absence_on_cluster(
     poll_interval_seconds: float = 1,
 ) -> None:
     normalized_table_names = [str(table_name).strip() for table_name in table_names]
-    normalized_table_names = [
-        table_name for table_name in normalized_table_names if table_name
-    ]
+    normalized_table_names = [table_name for table_name in normalized_table_names if table_name]
     if not normalized_table_names:
         return
 
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
     cluster_literal = _sql_string_literal(cluster_name)
-    expected_hosts_sql = (
-        "SELECT count()\n"
-        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
-    )
+    expected_hosts_sql = f"SELECT count()\nFROM clusterAllReplicas({cluster_literal}, system, one)"
 
     deadline = time.monotonic() + timeout_seconds
     remote_hosts = 0
@@ -215,11 +209,7 @@ def _wait_for_ch_tables_absence_on_cluster(
                 table_names=normalized_table_names,
                 ch_cluster=cluster_name,
             )
-            if (
-                expected_hosts > 0
-                and remote_hosts >= expected_hosts
-                and not visible_table_rows
-            ):
+            if expected_hosts > 0 and remote_hosts >= expected_hosts and not visible_table_rows:
                 return
         except Exception as exc:
             last_error = exc
@@ -254,14 +244,9 @@ def _wait_for_ch_table_on_cluster(
 ) -> None:
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
-    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
-        table_name
-    )
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(table_name)
     cluster_literal = _sql_string_literal(cluster_name)
-    expected_hosts_sql = (
-        "SELECT count()\n"
-        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
-    )
+    expected_hosts_sql = f"SELECT count()\nFROM clusterAllReplicas({cluster_literal}, system, one)"
     visible_tables_sql = (
         "SELECT count()\n"
         f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
@@ -314,14 +299,9 @@ def _wait_for_ch_table_schema_on_cluster(
 
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
-    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
-        table_name
-    )
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(table_name)
     cluster_literal = _sql_string_literal(cluster_name)
-    expected_hosts_sql = (
-        "SELECT count()\n"
-        f"FROM clusterAllReplicas({cluster_literal}, system, one)"
-    )
+    expected_hosts_sql = f"SELECT count()\nFROM clusterAllReplicas({cluster_literal}, system, one)"
     matching_columns_sql = (
         "SELECT count()\n"
         f"FROM clusterAllReplicas({cluster_literal}, system, columns)\n"
@@ -377,10 +357,16 @@ def _build_ch_expected_schema_condition(
     return " OR ".join(
         "("
         f"name = {_sql_string_literal(column_name)} "
-        f"AND type = {_sql_string_literal(column_type)}"
+        "AND replaceRegexpAll(type, '\\\\s+', '') = "
+        f"{_sql_string_literal(_normalize_ch_type_for_comparison(column_type))}"
         ")"
         for column_name, column_type in expected_column_types.items()
     )
+
+
+def _normalize_ch_type_for_comparison(column_type: str) -> str:
+    """Ignore formatting whitespace in ClickHouse's canonical type names."""
+    return "".join(column_type.split())
 
 
 def _describe_ch_cluster_schema_mismatch(
@@ -391,9 +377,7 @@ def _describe_ch_cluster_schema_mismatch(
     ch_cluster: str,
     expected_hosts: int,
 ) -> str:
-    database_expr, relation_name = split_ch_table_name_for_distributed_engine(
-        table_name
-    )
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(table_name)
     cluster_literal = _sql_string_literal(ch_cluster)
     observed_sql = (
         "SELECT name, type, count()\n"
@@ -418,7 +402,13 @@ def _describe_ch_cluster_schema_mismatch(
     details: list[str] = []
     for column_name, expected_type in expected_column_types.items():
         type_counts = observed.get(column_name, {})
-        if type_counts.get(expected_type, 0) == expected_hosts:
+        normalized_expected = _normalize_ch_type_for_comparison(expected_type)
+        matching_hosts = sum(
+            count
+            for observed_type, count in type_counts.items()
+            if _normalize_ch_type_for_comparison(observed_type) == normalized_expected
+        )
+        if matching_hosts == expected_hosts:
             continue
         if not type_counts:
             observed_summary = "missing"
@@ -503,12 +493,9 @@ def _query_ch_cluster_table_rows(
 ) -> list[tuple[Any, ...]]:
     conditions: list[str] = []
     for table_name in table_names:
-        database_expr, relation_name = split_ch_table_name_for_distributed_engine(
-            table_name
-        )
+        database_expr, relation_name = split_ch_table_name_for_distributed_engine(table_name)
         conditions.append(
-            f"(database = {database_expr} "
-            f"AND name = {_sql_string_literal(relation_name)})"
+            f"(database = {database_expr} AND name = {_sql_string_literal(relation_name)})"
         )
     if not conditions:
         return []
@@ -559,9 +546,7 @@ def _query_ch_cluster_host_counts(
 ) -> tuple[int, int]:
     remote_hosts = _query_ch_count(connection, remote_hosts_sql)
     configured_hosts_sql = (
-        "SELECT count()\n"
-        "FROM system.clusters\n"
-        f"WHERE cluster = {_sql_string_literal(cluster_name)}"
+        f"SELECT count()\nFROM system.clusters\nWHERE cluster = {_sql_string_literal(cluster_name)}"
     )
     try:
         configured_hosts = _query_ch_count(connection, configured_hosts_sql)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -7,6 +9,10 @@ from .. import source_schema as _source_schema
 from ..models import SourceColumn
 
 _CLICKHOUSE_MAX_DECIMAL_PRECISION = 76
+_CLICKHOUSE_DATETIME_TIMEZONE = re.compile(
+    r"datetime64\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
+    re.IGNORECASE,
+)
 
 
 def inspect_source_query_schema(adapter: Any, connection: Any, query: str) -> list[Any]:
@@ -40,6 +46,38 @@ def refine_stage_column_types_from_rows(
         columns,
         rows,
     )
+
+
+def normalize_transfer_source_batch(
+    adapter: Any,
+    batch: Any,
+    source_column_types: dict[str, str | None],
+) -> Any:
+    """Attach native ClickHouse timezone metadata to naive DateTime64 values."""
+    del adapter
+    timezone_by_index: dict[int, dt.tzinfo] = {}
+    for index, column in enumerate(batch.columns):
+        native_type = source_column_types.get(column) or ""
+        match = _CLICKHOUSE_DATETIME_TIMEZONE.search(native_type)
+        if match is not None and match.group(1).upper() == "UTC":
+            timezone_by_index[index] = dt.timezone.utc
+    if not timezone_by_index:
+        return batch
+
+    rows: list[tuple[Any, ...]] = []
+    for row in batch.rows:
+        values = list(row)
+        for index, timezone in timezone_by_index.items():
+            value = values[index]
+            if isinstance(value, dt.datetime) and value.tzinfo is None:
+                values[index] = value.replace(tzinfo=timezone)
+        rows.append(tuple(values))
+    return type(batch)(columns=batch.columns, rows=rows)
+
+
+def mark_upsert_finalization_error(adapter: Any, exc: Exception) -> None:
+    del adapter
+    exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
 
 
 def _map_to_ch_base_type(

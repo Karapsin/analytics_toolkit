@@ -5817,6 +5817,296 @@
       "profile": "fault",
       "node_id": "tests/integration/test_sql_faults.py::test_authentication_fault_is_project_scoped",
       "backends": []
+    },
+    "query.cancel.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_visible_labelled_query[query.cancel.gp]",
+      "backends": ["gp"]
+    },
+    "query.cancel.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_visible_labelled_query[query.cancel.trino]",
+      "backends": ["trino"]
+    },
+    "query.cancel.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_visible_labelled_query[query.cancel.ch]",
+      "backends": ["ch"]
+    },
+    "query.cancel_all.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_all_terminates_two_workers[query.cancel_all.gp]",
+      "backends": ["gp"]
+    },
+    "query.cancel_all.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_all_terminates_two_workers[query.cancel_all.trino]",
+      "backends": ["trino"]
+    },
+    "query.cancel_all.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_all_terminates_two_workers[query.cancel_all.ch]",
+      "backends": ["ch"]
+    },
+    "types.roundtrip.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_explicit_type_roundtrip[types.roundtrip.gp]",
+      "backends": ["gp"]
+    },
+    "types.roundtrip.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_explicit_type_roundtrip[types.roundtrip.trino]",
+      "backends": ["trino"]
+    },
+    "types.roundtrip.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_explicit_type_roundtrip[types.roundtrip.ch]",
+      "backends": ["ch"]
+    },
+    "types.inferred.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_inferred_portable_subset_roundtrip[types.inferred.gp]",
+      "backends": ["gp"]
+    },
+    "types.inferred.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_inferred_portable_subset_roundtrip[types.inferred.trino]",
+      "backends": ["trino"]
+    },
+    "types.inferred.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_inferred_portable_subset_roundtrip[types.inferred.ch]",
+      "backends": ["ch"]
+    },
+    "types.transfer.gp.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.gp.gp]",
+      "backends": ["gp", "gp"]
+    },
+    "types.transfer.gp.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.gp.trino]",
+      "backends": ["gp", "trino"]
+    },
+    "types.transfer.gp.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.gp.ch]",
+      "backends": ["gp", "ch"]
+    },
+    "types.transfer.trino.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.trino.gp]",
+      "backends": ["trino", "gp"]
+    },
+    "types.transfer.trino.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.trino.trino]",
+      "backends": ["trino", "trino"]
+    },
+    "types.transfer.trino.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.trino.ch]",
+      "backends": ["trino", "ch"]
+    },
+    "types.transfer.ch.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.ch.gp]",
+      "backends": ["ch", "gp"]
+    },
+    "types.transfer.ch.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.ch.trino]",
+      "backends": ["ch", "trino"]
+    },
+    "types.transfer.ch.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.ch.ch]",
+      "backends": ["ch", "ch"]
+    },
+    "atomicity.load.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_validation_failures_preserve_existing_target[atomicity.load.gp]",
+      "backends": ["gp"]
+    },
+    "atomicity.load.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_validation_failures_preserve_existing_target[atomicity.load.trino]",
+      "backends": ["trino"]
+    },
+    "atomicity.load.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_validation_failures_preserve_existing_target[atomicity.load.ch]",
+      "backends": ["ch"]
+    },
+    "atomicity.finalize.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_failure_before_upsert_finalization_preserves_target[atomicity.finalize.gp]",
+      "backends": ["gp"]
+    },
+    "atomicity.finalize.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_failure_before_upsert_finalization_preserves_target[atomicity.finalize.trino]",
+      "backends": ["trino"]
+    },
+    "atomicity.finalize.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_failure_before_upsert_finalization_preserves_target[atomicity.finalize.ch]",
+      "backends": ["ch"]
+    },
+    "orchestration.parallel.task_types": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_every_orchestration_task_type_returns_real_results[orchestration.parallel.task_types]",
+      "backends": ["trino", "ch"]
+    },
+    "orchestration.async.task_types": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_every_orchestration_task_type_returns_real_results[orchestration.async.task_types]",
+      "backends": ["trino", "ch"]
+    },
+    "orchestration.parallel.overlap": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_pipeline_and_standard_sql_task_really_overlap[orchestration.parallel.overlap]",
+      "backends": ["trino", "ch"]
+    },
+    "orchestration.async.overlap": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_pipeline_and_standard_sql_task_really_overlap[orchestration.async.overlap]",
+      "backends": ["trino", "ch"]
+    },
+    "orchestration.parallel.caps": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_orchestration_hard_cap_rejects_before_task_start[orchestration.parallel.caps]",
+      "backends": []
+    },
+    "orchestration.async.caps": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_orchestration_hard_cap_rejects_before_task_start[orchestration.async.caps]",
+      "backends": []
+    },
+    "orchestration.parallel.failure": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_orchestration_failure_modes_keep_diagnostics_and_order[orchestration.parallel.failure]",
+      "backends": ["trino", "ch"]
+    },
+    "orchestration.async.failure": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_orchestration_failure_modes_keep_diagnostics_and_order[orchestration.async.failure]",
+      "backends": ["trino", "ch"]
+    },
+    "schema.copy.gp.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.gp.gp]",
+      "backends": ["gp", "gp"]
+    },
+    "schema.copy.gp.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.gp.trino]",
+      "backends": ["gp", "trino"]
+    },
+    "schema.copy.gp.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.gp.ch]",
+      "backends": ["gp", "ch"]
+    },
+    "schema.copy.trino.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.trino.gp]",
+      "backends": ["trino", "gp"]
+    },
+    "schema.copy.trino.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.trino.trino]",
+      "backends": ["trino", "trino"]
+    },
+    "schema.copy.trino.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.trino.ch]",
+      "backends": ["trino", "ch"]
+    },
+    "schema.copy.ch.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.ch.gp]",
+      "backends": ["ch", "gp"]
+    },
+    "schema.copy.ch.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.ch.trino]",
+      "backends": ["ch", "trino"]
+    },
+    "schema.copy.ch.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.ch.ch]",
+      "backends": ["ch", "ch"]
+    },
+    "ddl.native.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_greenplum_native_distribution_ddl",
+      "backends": ["gp"]
+    },
+    "ddl.native.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_trino_native_iceberg_properties",
+      "backends": ["trino"]
+    },
+    "ddl.native.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_clickhouse_native_distributed_ddl",
+      "backends": ["ch"]
+    },
+    "auth.negative.trino.password": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.trino.password]",
+      "backends": ["trino"]
+    },
+    "auth.negative.trino.ca": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.trino.ca]",
+      "backends": ["trino"]
+    },
+    "auth.negative.ch.password": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.ch.password]",
+      "backends": ["ch"]
+    },
+    "auth.negative.ch.ca": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.ch.ca]",
+      "backends": ["ch"]
+    },
+    "auth.negative.gp.password": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.gp.password]",
+      "backends": ["gp"]
+    },
+    "auth.negative.gp.ca": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_negative_tls_credentials_fail_during_real_connection[auth.negative.gp.ca]",
+      "backends": ["gp"]
+    },
+    "auth.oauth.reuse": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_oauth_authentication_object_reuses_valid_token",
+      "backends": ["trino"]
+    },
+    "fault.finalize.gp": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.gp]",
+      "backends": ["gp"]
+    },
+    "fault.finalize.trino": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.trino]",
+      "backends": ["trino"]
+    },
+    "fault.finalize.ch": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.ch]",
+      "backends": ["ch"]
+    },
+    "fault.load.minio_before_upload": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_minio_unavailable_before_parquet_upload_reports_primary_failure",
+      "backends": ["trino"]
     }
   },
   "unsupported_authentication": {

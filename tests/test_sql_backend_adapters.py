@@ -10,7 +10,6 @@ from typing import Any
 
 import pandas as pd
 import pytest
-
 from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
 from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
 from analytics_toolkit.sql.backends.base import BackendAdapter
@@ -35,61 +34,34 @@ from analytics_toolkit.sql.connection.errors import (
 )
 from tests.sql_fakes import FakeClickHouseResult, FakeDbapiConnection
 
-
 sql_module = importlib.import_module("analytics_toolkit.sql")
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
-execute_read_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.io.execute_read"
-)
-load_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.load.load_sql_table"
-)
+execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
+load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.api")
-table_basic_ops_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table._basic_ops"
-)
+table_basic_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table._basic_ops")
 ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.clickhouse.lifecycle")
 ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
 ch_backend_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
-backend_registry_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.registry"
-)
-backend_validation_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.validation"
-)
-backend_source_count_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.source_count"
-)
+backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends.registry")
+backend_validation_module = importlib.import_module("analytics_toolkit.sql.backends.validation")
+backend_source_count_module = importlib.import_module("analytics_toolkit.sql.backends.source_count")
 gp_stage_module = importlib.import_module("analytics_toolkit.sql.backends.gp.stage")
-adapter_defaults_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.adapter_defaults"
-)
-trino_adapter_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.trino.adapter"
-)
-ch_adapter_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.adapter"
-)
-ch_lifecycle_backend_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.lifecycle"
-)
+adapter_defaults_module = importlib.import_module("analytics_toolkit.sql.backends.adapter_defaults")
+trino_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.trino.adapter")
+ch_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.ch.adapter")
+ch_lifecycle_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.lifecycle")
 ch_ddl_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.ddl")
-ch_insert_backend_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.insert"
-)
+ch_insert_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.insert")
 ch_operations_backend_module = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.operations"
 )
-ch_queries_backend_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.queries"
-)
+ch_queries_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.queries")
 ch_target_create_backend_module = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.target_create"
 )
-ch_upsert_backend_module = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.upsert"
-)
+ch_upsert_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.upsert")
 
 
 class RecordingClickHouseClient:
@@ -297,16 +269,11 @@ def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
         "schema.stage",
         ["id", "name"],
         row_count=2,
-    ) == (
-        'INSERT INTO schema.stage ("id", "name") VALUES (?, ?), (?, ?)'
-    )
+    ) == ('INSERT INTO schema.stage ("id", "name") VALUES (?, ?), (?, ?)')
     assert get_backend_adapter("gp").build_stage_duplicate_keys_sql(
         "schema.stage",
         ["id", "dt"],
-    ) == (
-        'SELECT 1 FROM schema.stage GROUP BY "id", "dt" '
-        "HAVING COUNT(*) > 1 LIMIT 1"
-    )
+    ) == ('SELECT 1 FROM schema.stage GROUP BY "id", "dt" HAVING COUNT(*) > 1 LIMIT 1')
     assert get_backend_adapter("ch").build_stage_target_key_overlap_sql(
         "db.stage",
         "db.target",
@@ -400,15 +367,14 @@ def test_registered_backends_implement_full_contract() -> None:
                 missing.append(f"{backend_name}.{method_name}")
 
     assert missing == []
+
+
 def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     gp_adapter = get_backend_adapter("gp")
     trino_adapter = get_backend_adapter("trino")
     ch_adapter = get_backend_adapter("ch")
 
-    assert (
-        gp_adapter.target_connection_defaults(SimpleNamespace()).insert_chunk_size
-        is None
-    )
+    assert gp_adapter.target_connection_defaults(SimpleNamespace()).insert_chunk_size is None
     trino_defaults = trino_adapter.target_connection_defaults(
         SimpleNamespace(
             insert_chunk_size=123,
@@ -442,18 +408,27 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
         assert policy.retry_ambiguous_stage_load is True
         assert adapter.transfer_insert_page_sizing(gp_insert_chunk_size=None) is None
 
-    assert trino_adapter.requires_load_target_column_metadata(
-        write_mode="replace",
-        original_target_exists=False,
-    ) is True
-    assert gp_adapter.requires_load_target_column_metadata(
-        write_mode="replace",
-        original_target_exists=True,
-    ) is False
-    assert gp_adapter.requires_load_target_column_metadata(
-        write_mode="upsert",
-        original_target_exists=True,
-    ) is True
+    assert (
+        trino_adapter.requires_load_target_column_metadata(
+            write_mode="replace",
+            original_target_exists=False,
+        )
+        is True
+    )
+    assert (
+        gp_adapter.requires_load_target_column_metadata(
+            write_mode="replace",
+            original_target_exists=True,
+        )
+        is False
+    )
+    assert (
+        gp_adapter.requires_load_target_column_metadata(
+            write_mode="upsert",
+            original_target_exists=True,
+        )
+        is True
+    )
     assert gp_adapter.uses_partition_replacement_upsert() is False
     assert trino_adapter.uses_partition_replacement_upsert() is True
     assert ch_adapter.uses_partition_replacement_upsert() is True
@@ -505,30 +480,39 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     assert ch_adapter.resolve_ch_retry_per_host_drops(True) is True
     assert ch_adapter.resolve_ch_retry_per_host_drops(False) is False
     create_batch = pd.DataFrame({"id": [1], "label": ["a"]})
-    assert gp_adapter.expected_create_table_column_types(
-        create_batch,
-        {"id": "BIGINT", "label": "TEXT"},
-        ch_distributed_table=True,
-        ch_only_shard=False,
-    ) is None
+    assert (
+        gp_adapter.expected_create_table_column_types(
+            create_batch,
+            {"id": "BIGINT", "label": "TEXT"},
+            ch_distributed_table=True,
+            ch_only_shard=False,
+        )
+        is None
+    )
     assert ch_adapter.expected_create_table_column_types(
         create_batch,
         {"id": "UInt64", "label": "String"},
         ch_distributed_table=True,
         ch_only_shard=False,
     ) == {"id": "UInt64", "label": "String"}
-    assert ch_adapter.expected_create_table_column_types(
-        create_batch,
-        {"id": "UInt64", "label": "String"},
-        ch_distributed_table=False,
-        ch_only_shard=False,
-    ) is None
-    assert ch_adapter.expected_create_table_column_types(
-        create_batch,
-        {"id": "UInt64", "label": "String"},
-        ch_distributed_table=True,
-        ch_only_shard=True,
-    ) is None
+    assert (
+        ch_adapter.expected_create_table_column_types(
+            create_batch,
+            {"id": "UInt64", "label": "String"},
+            ch_distributed_table=False,
+            ch_only_shard=False,
+        )
+        is None
+    )
+    assert (
+        ch_adapter.expected_create_table_column_types(
+            create_batch,
+            {"id": "UInt64", "label": "String"},
+            ch_distributed_table=True,
+            ch_only_shard=True,
+        )
+        is None
+    )
 
     gp_adapter.validate_gp_distributed_by_key_option(["id"], option_owner="to_db")
     gp_adapter.validate_gp_insert_chunk_size_option(1, option_owner="to_db")
@@ -628,16 +612,22 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
             transfer_staging_location=None,
         )
 
-    assert gp_adapter.should_insert_create_table_from_sql_directly(
-        source_backend="gp",
-        source_key="source_gp",
-        target_key="target_gp",
-    ) is True
-    assert gp_adapter.should_insert_create_table_from_sql_directly(
-        source_backend="trino",
-        source_key="source_trino",
-        target_key="target_gp",
-    ) is False
+    assert (
+        gp_adapter.should_insert_create_table_from_sql_directly(
+            source_backend="gp",
+            source_key="source_gp",
+            target_key="target_gp",
+        )
+        is True
+    )
+    assert (
+        gp_adapter.should_insert_create_table_from_sql_directly(
+            source_backend="trino",
+            source_key="source_trino",
+            target_key="target_gp",
+        )
+        is False
+    )
 
 
 def test_target_create_kwargs_are_backend_adapter_owned() -> None:
@@ -682,17 +672,20 @@ def test_target_create_kwargs_are_backend_adapter_owned() -> None:
         "ch_only_shard": False,
         "ch_replace_table": True,
     }
-    assert ch_adapter.build_create_from_sql_target_create_kwargs(
-        gp_distributed_by_key=None,
-        partition_by=None,
-        order_by=None,
-        ch_engine="MergeTree",
-        ch_cluster="cluster",
-        ch_sharding_key="id",
-        ch_only_shard=True,
-        drop_target_if_exists=True,
-        target_exists_before_drop=True,
-    )["ch_distributed_table"] is False
+    assert (
+        ch_adapter.build_create_from_sql_target_create_kwargs(
+            gp_distributed_by_key=None,
+            partition_by=None,
+            order_by=None,
+            ch_engine="MergeTree",
+            ch_cluster="cluster",
+            ch_sharding_key="id",
+            ch_only_shard=True,
+            drop_target_if_exists=True,
+            target_exists_before_drop=True,
+        )["ch_distributed_table"]
+        is False
+    )
 
 
 def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
@@ -707,7 +700,7 @@ def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
     assert create_sql == (
         "/* analytics_toolkit query_label=load-parquet */\n"
         'CREATE TABLE hive.tmp.stage ("id" BIGINT, "amount" DECIMAL(3, 2), '
-        '"label" VARCHAR) WITH (format = \'PARQUET\', '
+        "\"label\" VARCHAR) WITH (format = 'PARQUET', "
         "external_location = 's3://bucket/stage/target''s/')"
     )
     assert adapter.parquet_stage_target_table_base("catalog.schema.target") == "target"
@@ -757,18 +750,14 @@ def test_dataframe_column_type_inference_is_adapter_owned() -> None:
     ch_adapter = get_backend_adapter("ch")
 
     assert gp_adapter.infer_dataframe_column_type(pd.Series([1, 2])) == "BIGINT"
-    assert (
-        gp_adapter.infer_dataframe_column_type(pd.Series([1.5, 2.5]))
-        == "DOUBLE PRECISION"
-    )
+    assert gp_adapter.infer_dataframe_column_type(pd.Series([1.5, 2.5])) == "DOUBLE PRECISION"
     assert trino_adapter.infer_dataframe_column_type(pd.Series([1.5, 2.5])) == "DOUBLE"
     assert trino_adapter.infer_dataframe_column_type(pd.Series(["a", "b"])) == "VARCHAR"
-    assert ch_adapter.infer_dataframe_column_type(pd.Series([1, None])) == (
-        "Nullable(Float64)"
+    assert ch_adapter.infer_dataframe_column_type(pd.Series([1, None])) == ("Nullable(Float64)")
+    assert (
+        ch_adapter.infer_dataframe_column_type(pd.Series([Decimal("1.2"), Decimal("3.4")]))
+        == "Float64"
     )
-    assert ch_adapter.infer_dataframe_column_type(
-        pd.Series([Decimal("1.2"), Decimal("3.4")])
-    ) == "Float64"
 
 
 def test_backend_lookup_preserves_connection_config_errors(
@@ -792,17 +781,14 @@ def test_backend_lookup_preserves_unknown_connection_key_errors() -> None:
 
 def test_legacy_backend_imports_resolve_to_canonical_objects() -> None:
     legacy_module = importlib.import_module("analytics_toolkit.sql._backend_adapters")
-    public_compat_module = importlib.import_module(
-        "analytics_toolkit.sql.backend_adapters"
-    )
+    public_compat_module = importlib.import_module("analytics_toolkit.sql.backend_adapters")
 
     assert legacy_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
     assert public_compat_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
     for backend_name in get_backend_names():
         assert legacy_module.get_backend_adapter(backend_name) is BACKEND_REGISTRY[backend_name]
         assert (
-            public_compat_module.get_backend_adapter(backend_name)
-            is BACKEND_REGISTRY[backend_name]
+            public_compat_module.get_backend_adapter(backend_name) is BACKEND_REGISTRY[backend_name]
         )
 
 
@@ -920,23 +906,15 @@ def test_sql_backend_dispatch_uses_adapter_boundary() -> None:
         assert "globals()[" not in inspect.getsource(function)
 
     assert "get_backend_adapter" in inspect.getsource(read_sql_module._read_backend)
-    assert "get_backend_adapter" in inspect.getsource(
-        execute_sql_module._execute_backend
-    )
-    assert "get_backend_adapter" in inspect.getsource(
-        execute_read_module._execute_read_backend
-    )
+    assert "get_backend_adapter" in inspect.getsource(execute_sql_module._execute_backend)
+    assert "get_backend_adapter" in inspect.getsource(execute_read_module._execute_read_backend)
     assert not hasattr(read_sql_module, "_READ_BACKENDS")
     assert not hasattr(execute_sql_module, "_EXECUTE_BACKENDS")
     assert not hasattr(execute_read_module, "_EXECUTE_READ_BACKENDS")
     assert not hasattr(load_sql_table_module, "_BATCH_INSERT_BACKENDS")
     assert not hasattr(load_sql_table_module, "_ROW_INSERT_BACKENDS")
-    assert "get_backend_adapter" in inspect.getsource(
-        load_sql_table_module._insert_batch_backend
-    )
-    assert "get_backend_adapter" in inspect.getsource(
-        load_sql_table_module._insert_rows_backend
-    )
+    assert "get_backend_adapter" in inspect.getsource(load_sql_table_module._insert_batch_backend)
+    assert "get_backend_adapter" in inspect.getsource(load_sql_table_module._insert_rows_backend)
 
 
 def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
@@ -975,9 +953,7 @@ def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
         "select value",
         print_queries=False,
         print_query=lambda query, enabled: printed.append((query, enabled)),
-        read_dbapi_query=lambda connection, query: pytest.fail(
-            "ClickHouse should use query_df"
-        ),
+        read_dbapi_query=lambda connection, query: pytest.fail("ClickHouse should use query_df"),
     )
 
     pd.testing.assert_frame_equal(ch_result, pd.DataFrame({"value": [2]}))
@@ -991,10 +967,13 @@ def test_backend_adapters_execute_operations_like_existing_table_ops() -> None:
     assert gp_connection.commit_calls == 1
 
     trino_connection = FakeDbapiConnection(rows=[(7,)])
-    assert get_backend_adapter("trino").count_table_rows(
-        trino_connection,
-        "schema.target",
-    ) == 7
+    assert (
+        get_backend_adapter("trino").count_table_rows(
+            trino_connection,
+            "schema.target",
+        )
+        == 7
+    )
     assert trino_connection.executed == ["SELECT COUNT(*) FROM schema.target"]
     assert trino_connection.commit_calls == 0
 
@@ -1361,12 +1340,15 @@ def test_backend_adapters_execute_validation_queries_per_backend() -> None:
     ]
 
     ch_client = RecordingClickHouseClient()
-    assert get_backend_adapter("ch").stage_keys_overlap_target(
-        ch_client,
-        "db.stage",
-        "db.target",
-        ["id"],
-    ) is False
+    assert (
+        get_backend_adapter("ch").stage_keys_overlap_target(
+            ch_client,
+            "db.stage",
+            "db.target",
+            ["id"],
+        )
+        is False
+    )
     assert ch_client.queries[-1] == (
         "SELECT 1 FROM db.stage AS stage_src "
         "INNER JOIN db.target AS target_dst ON "
@@ -1377,14 +1359,8 @@ def test_backend_adapters_execute_validation_queries_per_backend() -> None:
 
 
 def test_stage_base_identifier_policy_is_adapter_owned() -> None:
-    assert (
-        get_backend_adapter("trino").stage_base_identifier("target", None, "abcd")
-        == "target"
-    )
-    assert (
-        get_backend_adapter("ch").stage_base_identifier("target", "loader", "abcd")
-        == "target"
-    )
+    assert get_backend_adapter("trino").stage_base_identifier("target", None, "abcd") == "target"
+    assert get_backend_adapter("ch").stage_base_identifier("target", "loader", "abcd") == "target"
 
 
 def test_gp_stage_base_identifier_keeps_marker_within_backend_limit() -> None:
@@ -1395,9 +1371,7 @@ def test_gp_stage_base_identifier_keeps_marker_within_backend_limit() -> None:
         "karapsin_de",
         "4f99601c",
     )
-    stage_identifier = (
-        f"{identifier}__analytics_toolkit_karapsin_de__stage__4f99601c"
-    )
+    stage_identifier = f"{identifier}__analytics_toolkit_karapsin_de__stage__4f99601c"
 
     assert len(stage_identifier.encode()) <= GP_IDENTIFIER_MAX_BYTES
     assert stage_identifier.endswith("__stage__4f99601c")
@@ -1453,21 +1427,27 @@ def test_backend_adapter_insert_from_query_returns_backend_row_counts() -> None:
             self.insert_rowcount = 4
 
     gp_connection = RowCountCursorConnection()
-    assert get_backend_adapter("gp").insert_from_query(
-        gp_connection,
-        "schema.target",
-        "select id from source",
-        {"id": "BIGINT"},
-    ) == 4
+    assert (
+        get_backend_adapter("gp").insert_from_query(
+            gp_connection,
+            "schema.target",
+            "select id from source",
+            {"id": "BIGINT"},
+        )
+        == 4
+    )
     assert gp_connection.commit_calls == 1
 
     ch_client = RecordingClickHouseClient()
-    assert get_backend_adapter("ch").insert_from_query(
-        ch_client,
-        "db.target",
-        "select id from source",
-        {"id": "Nullable(Int64)"},
-    ) == 3
+    assert (
+        get_backend_adapter("ch").insert_from_query(
+            ch_client,
+            "db.target",
+            "select id from source",
+            {"id": "Nullable(Int64)"},
+        )
+        == 3
+    )
     assert ch_client.commands[-1][0] == (
         "INSERT INTO db.target (`id`) "
         "SELECT CAST(`id` AS Nullable(Int64)) AS `id` "
@@ -1494,9 +1474,7 @@ def test_backend_registry_normalizes_aliases_and_reports_supported_names() -> No
 def test_backend_registry_rejects_invalid_backend_returned_by_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_module = importlib.import_module(
-        "analytics_toolkit.sql.connection.config"
-    )
+    config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
     monkeypatch.setattr(
         config_module,
         "get_connection_backend",
@@ -1604,15 +1582,9 @@ def test_source_count_helpers_cover_cursor_shapes_and_labels() -> None:
     assert backend_source_count_module.fetch_first_row(
         _SourceCountCursor(fetchall=lambda: [(8,), (9,)])
     ) == (8,)
-    assert backend_source_count_module.fetch_first_row(
-        _SourceCountCursor(fetchall=list)
-    ) is None
-    assert backend_source_count_module.fetch_first_row(
-        _SourceCountCursor(rows=[(10,)])
-    ) == (10,)
-    assert backend_source_count_module.fetch_first_row(
-        _SourceCountCursor(rows=[])
-    ) is None
+    assert backend_source_count_module.fetch_first_row(_SourceCountCursor(fetchall=list)) is None
+    assert backend_source_count_module.fetch_first_row(_SourceCountCursor(rows=[(10,)])) == (10,)
+    assert backend_source_count_module.fetch_first_row(_SourceCountCursor(rows=[])) is None
     with pytest.raises(TypeError, match="Cursor must provide"):
         backend_source_count_module.fetch_first_row(object())
 
@@ -1763,20 +1735,26 @@ def test_gp_stage_identifier_rejects_marker_larger_than_identifier_limit() -> No
 def test_gp_identifier_byte_helpers_cover_tiny_and_multibyte_limits() -> None:
     assert gp_stage_module._fit_identifier_bytes("very-long-name", 4) == "458f"
     assert gp_stage_module._truncate_identifier_bytes("short", 10) == "short"
-    assert gp_stage_module._truncate_identifier_bytes(
-        "\u0430\u0431\u0432",
-        5,
-    ) == "\u0430\u0431"
+    assert (
+        gp_stage_module._truncate_identifier_bytes(
+            "\u0430\u0431\u0432",
+            5,
+        )
+        == "\u0430\u0431"
+    )
 
 
 def test_adapter_default_normalization_rejects_empty_values() -> None:
     adapter = get_backend_adapter("gp")
 
-    assert adapter_defaults_module.normalize_ch_columns_or_expression(
-        adapter,
-        " id ",
-        "order_by",
-    ) == "id"
+    assert (
+        adapter_defaults_module.normalize_ch_columns_or_expression(
+            adapter,
+            " id ",
+            "order_by",
+        )
+        == "id"
+    )
     with pytest.raises(ValueError, match="must not be empty when provided"):
         adapter_defaults_module.normalize_ch_columns_or_expression(
             adapter,
@@ -1875,12 +1853,15 @@ def test_adapter_default_stage_discovery_and_qualification() -> None:
     ) == ["stage_one", "stage_two"]
     assert cursor.executed[0][1] == ("stage-schema", "target__stage__%")
     assert cursor.closed is True
-    assert adapter_defaults_module.qualify_transfer_stage_table_name(
-        adapter,
-        "warehouse",
-        "stage-schema",
-        "1stage",
-    ) == '"stage-schema"."1stage"'
+    assert (
+        adapter_defaults_module.qualify_transfer_stage_table_name(
+            adapter,
+            "warehouse",
+            "stage-schema",
+            "1stage",
+        )
+        == '"stage-schema"."1stage"'
+    )
 
 
 def test_adapter_default_create_kwargs_include_partition_and_order() -> None:
@@ -1951,12 +1932,15 @@ def test_adapter_default_transfer_and_insert_policies() -> None:
     batch = pd.DataFrame({"id": [1]})
     error = RuntimeError("insert failed")
 
-    assert adapter_defaults_module.resolve_transfer_staging_mode(
-        adapter,
-        None,
-        transfer_staging_schema=None,
-        transfer_staging_location=None,
-    ) is None
+    assert (
+        adapter_defaults_module.resolve_transfer_staging_mode(
+            adapter,
+            None,
+            transfer_staging_schema=None,
+            transfer_staging_location=None,
+        )
+        is None
+    )
     with pytest.raises(ValueError, match="trino_mode must be one of"):
         adapter_defaults_module.resolve_transfer_staging_mode(
             adapter,
@@ -1965,28 +1949,32 @@ def test_adapter_default_transfer_and_insert_policies() -> None:
             transfer_staging_location=None,
         )
     assert adapter_defaults_module.normalize_insert_batch(adapter, batch) is batch
-    assert adapter_defaults_module.normalize_insert_rows(adapter, [[1, "a"]]) == [
-        (1, "a")
-    ]
-    assert adapter_defaults_module.should_wrap_insert_error_as_ambiguous(
-        adapter,
-        object(),
-        error,
-    ) is True
+    assert adapter_defaults_module.normalize_insert_rows(adapter, [[1, "a"]]) == [(1, "a")]
     assert (
-        adapter_defaults_module.should_refresh_connection_before_insert_retry(adapter)
-        is False
+        adapter_defaults_module.should_wrap_insert_error_as_ambiguous(
+            adapter,
+            object(),
+            error,
+        )
+        is True
     )
-    assert adapter_defaults_module.wait_for_table_absence(
-        adapter,
-        object(),
-        "target",
-    ) is None
-    assert adapter_defaults_module.estimate_source_rows(
-        adapter,
-        object(),
-        "SELECT 1",
-    ) is None
+    assert adapter_defaults_module.should_refresh_connection_before_insert_retry(adapter) is False
+    assert (
+        adapter_defaults_module.wait_for_table_absence(
+            adapter,
+            object(),
+            "target",
+        )
+        is None
+    )
+    assert (
+        adapter_defaults_module.estimate_source_rows(
+            adapter,
+            object(),
+            "SELECT 1",
+        )
+        is None
+    )
 
 
 def test_adapter_default_vacuum_restores_autocommit_after_failure() -> None:
@@ -2071,22 +2059,13 @@ def test_trino_adapter_schema_merge_and_upsert_guards(
     )
     assert adapter.inspect_source_query_schema(object(), "SELECT id") == expected
     with pytest.raises(ValueError, match="partition_column and final_stage_table"):
-        adapter.build_upsert_stage_sqls(
-            "target", "stage", columns=["id"], key_columns=["id"]
-        )
+        adapter.build_upsert_stage_sqls("target", "stage", columns=["id"], key_columns=["id"])
     with pytest.raises(ValueError, match="partition_column and final_stage_table"):
-        adapter.build_upsert_stage_placeholder_sqls(
-            "target", "stage", key_columns=["id"]
-        )
-    merge = adapter._build_merge_sql(
-        "target", "stage", columns=["id", "value"], key_columns=["id"]
-    )
-    placeholder = adapter._build_merge_placeholder_sql(
-        "target", "stage", key_columns=["id"]
-    )
+        adapter.build_upsert_stage_placeholder_sqls("target", "stage", key_columns=["id"])
+    merge = adapter._build_merge_sql("target", "stage", columns=["id", "value"], key_columns=["id"])
+    placeholder = adapter._build_merge_placeholder_sql("target", "stage", key_columns=["id"])
     null_safe = (
-        'target_dst."id" = stage_src."id" OR '
-        '(target_dst."id" IS NULL AND stage_src."id" IS NULL)'
+        'target_dst."id" = stage_src."id" OR (target_dst."id" IS NULL AND stage_src."id" IS NULL)'
     )
     assert null_safe in merge
     assert null_safe in placeholder
@@ -2171,9 +2150,7 @@ def test_trino_adapter_insert_forwarding(monkeypatch: pytest.MonkeyPatch) -> Non
         "query_label": "load",
         "on_progress": None,
     }
-    adapter.insert_dataframe_batch(
-        object(), "target", frame, trino_insert_chunk_size=3, **common
-    )
+    adapter.insert_dataframe_batch(object(), "target", frame, trino_insert_chunk_size=3, **common)
     adapter.insert_rows_batch(
         object(), "target", ["id"], [(1,)], trino_insert_chunk_size=4, **common
     )
@@ -2194,11 +2171,9 @@ def test_trino_adapter_insert_forwarding(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_trino_adapter_query_states_and_properties() -> None:
     adapter = get_backend_adapter("trino")
     assert "system.runtime.queries" in adapter.running_query_ids_sql()
-    queries = adapter.show_queries_sqls(
-        user="O'Reilly", states=["active", "finished", "failed"]
-    )
+    queries = adapter.show_queries_sqls(user="O'Reilly", states=["active", "finished", "failed"])
     assert [query["history"] for query in queries] == [False, True]
-    assert '"user" = \'O\'\'Reilly\'' in queries[0]["sql"]
+    assert "\"user\" = 'O''Reilly'" in queries[0]["sql"]
     assert "state in ('FINISHED', 'FAILED')" in queries[1]["sql"]
     assert adapter.show_queries_sqls(user=None, states=[]) == []
     with pytest.raises(ValueError, match="Unsupported Trino history state"):
@@ -2211,9 +2186,7 @@ def test_trino_adapter_query_states_and_properties() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         trino_adapter_module._normalize_trino_property_entries([], "order_by")
     with pytest.raises(ValueError, match="duplicate"):
-        trino_adapter_module._normalize_trino_property_entries(
-            ["id", "id"], "order_by"
-        )
+        trino_adapter_module._normalize_trino_property_entries(["id", "id"], "order_by")
 
 
 @pytest.mark.parametrize(
@@ -2237,9 +2210,10 @@ def test_trino_adapter_query_states_and_properties() -> None:
     ],
 )
 def test_trino_adapter_source_type_mapping(native_type: str, expected: str) -> None:
-    assert get_backend_adapter("trino").map_source_type_to_target(
-        SourceColumn("value", native_type)
-    ) == expected
+    assert (
+        get_backend_adapter("trino").map_source_type_to_target(SourceColumn("value", native_type))
+        == expected
+    )
 
 
 def test_trino_adapter_partition_template_validation() -> None:
@@ -2257,12 +2231,15 @@ def test_trino_adapter_partition_template_validation() -> None:
             "ALTER TABLE {table} DROP {partition_column}"
         )
     template = "ALTER TABLE {table} DROP ({partition_column} = {partition_value})"
-    assert "<affected partition value>" in adapter.build_drop_upsert_partition_sqls(
-        "target",
-        partition_column="day",
-        partition_values=None,
-        trino_partition_drop_sql_template=template,
-    )[0]
+    assert (
+        "<affected partition value>"
+        in adapter.build_drop_upsert_partition_sqls(
+            "target",
+            partition_column="day",
+            partition_values=None,
+            trino_partition_drop_sql_template=template,
+        )[0]
+    )
 
 
 def test_clickhouse_adapter_maintenance_delete_and_progress_paths(
@@ -2554,6 +2531,7 @@ def test_base_adapter_write_stage_and_finalization_contracts(
             target_exists=values.get("target_exists", True),
             replace_existing_non_ch=values.get("policy", "clear"),
         )
+
     assert adapter.apply_target_write_mode(request(write_mode="append")) is True
     assert adapter.apply_target_write_mode(request(policy="drop")) is False
     with pytest.raises(ValueError, match="clear, drop"):
@@ -2799,9 +2777,12 @@ def test_clickhouse_lifecycle_host_selection_and_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pair = ch_lifecycle_backend_module.ch_distributed_table_pair("db.t")
-    assert ch_lifecycle_backend_module._select_ch_hosts_for_local_drop(
-        object(), pair, ch_cluster="core", configured_hosts=[]
-    ) == []
+    assert (
+        ch_lifecycle_backend_module._select_ch_hosts_for_local_drop(
+            object(), pair, ch_cluster="core", configured_hosts=[]
+        )
+        == []
+    )
     monkeypatch.setattr(
         ch_lifecycle_backend_module,
         "_resolve_ch_cluster_name_for_wait",
@@ -2832,9 +2813,9 @@ def test_clickhouse_lifecycle_host_selection_and_failures(
         def query(self, _sql: str) -> Result:
             return Result()
 
-    assert ch_lifecycle_backend_module._query_ch_configured_cluster_hosts(
-        Connection(), "core"
-    ) == ["host-a"]
+    assert ch_lifecycle_backend_module._query_ch_configured_cluster_hosts(Connection(), "core") == [
+        "host-a"
+    ]
     monkeypatch.setattr(
         ch_lifecycle_backend_module,
         "_query_ch_configured_cluster_hosts",
@@ -2874,18 +2855,24 @@ def test_clickhouse_lifecycle_per_host_error_and_close_paths(
             raise close_error
 
     monkeypatch.setattr(ch_lifecycle_backend_module, "_execute_ch_sqls", lambda *_: None)
-    assert ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
-        "host-a",
-        pair=pair,
-        query_label=None,
-        per_host_connection_factory=lambda _host: None,
-    ) is None
-    assert ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
-        "host-a",
-        pair=pair,
-        query_label=None,
-        per_host_connection_factory=lambda _host: object(),
-    ) is None
+    assert (
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+            "host-a",
+            pair=pair,
+            query_label=None,
+            per_host_connection_factory=lambda _host: None,
+        )
+        is None
+    )
+    assert (
+        ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
+            "host-a",
+            pair=pair,
+            query_label=None,
+            per_host_connection_factory=lambda _host: object(),
+        )
+        is None
+    )
     with pytest.raises(RuntimeError, match="close failed"):
         ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
             "host-a",
@@ -3051,9 +3038,9 @@ def test_clickhouse_lifecycle_concurrent_host_errors(
 def test_clickhouse_wait_schema_diagnostics_and_macro_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    observed = [("extra", "String", 1)] + [
-        (f"c{i}", "Wrong", 1) for i in range(7)
-    ] + [("malformed",)]
+    observed = (
+        [("extra", "String", 1)] + [(f"c{i}", "Wrong", 1) for i in range(7)] + [("malformed",)]
+    )
     monkeypatch.setattr(
         ch_backend_wait_module,
         "_query_ch_rows",
@@ -3068,6 +3055,20 @@ def test_clickhouse_wait_schema_diagnostics_and_macro_failures(
     )
     assert "Schema mismatch details" in details
     assert details.endswith("...")
+
+    monkeypatch.setattr(
+        ch_backend_wait_module,
+        "_query_ch_rows",
+        lambda *_: [("amount", "Decimal(18, 4)", 1)],
+    )
+    equivalent_details = ch_backend_wait_module._describe_ch_cluster_schema_mismatch(
+        object(),
+        "db.t",
+        expected_column_types={"amount": "Decimal(18,4)"},
+        ch_cluster="core",
+        expected_hosts=1,
+    )
+    assert equivalent_details == ""
 
     class EmptyMacroConnection:
         def query(self, _sql: str) -> Any:
