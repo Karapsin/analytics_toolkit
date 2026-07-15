@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, EM101, I001, PLR0915, PT018, TC002, TRY003, UP037
+# ruff: noqa: BLE001, C901, EM101, EM102, I001, PLC0415, PLR0915, PT011, PT018, TC002, TRY003, UP037
 
 import importlib
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+import requests
 from analytics_toolkit import sql
 from tests.integration.manifest import scenario_param
 from tests.integration.support.backends import (
@@ -57,6 +59,96 @@ class _OperationWorker:
 def _fault_group(name: str) -> None:
     if os.environ.get("SQL_INTEGRATION_FAULT_GROUP") not in {None, name}:
         pytest.skip(f"{name} fault group not selected")
+
+
+def _wait_keycloak_route(timeout: float = 30) -> None:
+    url = "https://127.0.0.1:18445/realms/integration/.well-known/openid-configuration"
+    ca_file = Path(os.environ["SQL_INTEGRATION_CERTS"]) / "ca.crt"
+    deadline = time.monotonic() + timeout
+    last_error: BaseException | None = None
+    while time.monotonic() < deadline:
+        try:
+            if requests.get(url, verify=ca_file, timeout=2).status_code == 200:
+                return
+        except requests.RequestException as exc:
+            last_error = exc
+        time.sleep(0.25)
+    raise TimeoutError(f"Keycloak TLS route did not recover: {last_error!r}")
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"fault.batch.{backend}", backend) for backend in BACKENDS],
+)
+def test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambiguous(
+    backend: str,
+    fault_controller: FaultController,
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("database")
+    if not backend_enabled(backend):
+        pytest.skip("Greenplum requires x86_64")
+    alias = backend_alias(backend, target=True)
+    table = resource_registry.table(alias, integration_table(backend, "fault_first_batch"))
+    original = pd.DataFrame(
+        {
+            "row_id": [100],
+            "event_date": [pd.Timestamp("2026-07-10")],
+            "value": ["original"],
+        }
+    )
+    options = table_options(backend, only_shard=backend == "ch")
+    sql.load_df(alias, table, original, write_mode="replace", **options)
+    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+    gate = FaultGate(phase="second_stage_batch", trigger_call=2, timeout=90, hold_exception=True)
+    monkeypatch.setattr(
+        attempt_module,
+        "insert_rows_batch",
+        gate.wrap(attempt_module.insert_rows_batch),
+    )
+    transfer_options = dict(options)
+    if backend != "gp":
+        transfer_options["partition_by"] = ["event_date"]
+    worker = resource_registry.worker(
+        _OperationWorker(
+            lambda: sql.transfer(
+                "trino_values",
+                alias,
+                (
+                    "SELECT value AS row_id, DATE '2026-07-01' AS event_date, "
+                    "CAST(value AS VARCHAR) AS value FROM UNNEST(sequence(1, 6)) t(value)"
+                ),
+                table,
+                write_mode="append",
+                batch_size=1,
+                retry_cnt=1,
+                full_retry_cnt=2,
+                timeout_increment=1,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+                **transfer_options,
+            )
+        ).start()
+    )
+    gate.wait()
+    fault_controller.stop(SERVICES[backend])
+    gate.open()
+    gate.wait_for_failure()
+    fault_controller.restart(SERVICES[backend])
+    fault_controller.wait_healthy(SERVICES[backend])
+    gate.resume_after_failure()
+    worker.join()
+    result = sql.read(alias, f"SELECT row_id, value FROM {table} ORDER BY row_id")
+    if worker.error is not None:
+        assert backend in {"trino", "ch"}
+        rendered = repr(worker.error).lower()
+        assert "ambiguous" in rendered or "unsafe" in rendered
+        assert result.to_dict("records") == [{"row_id": 100, "value": "original"}]
+    else:
+        assert worker.result == 6
+        assert result["row_id"].tolist() == [1, 2, 3, 4, 5, 6, 100]
+        assert result["row_id"].nunique() == 7
 
 
 @pytest.mark.parametrize(
@@ -252,3 +344,284 @@ def test_minio_unavailable_before_parquet_upload_reports_primary_failure(
             real_cleanup(location)
     info = sql.table_info("trino_target_parquet", table, include_row_count=True)
     assert info.exists and info.row_count == 0
+
+
+@pytest.mark.sql_scenario("fault.staging.minio_after_first_object")
+def test_minio_unavailable_after_first_parquet_object_cleans_attempt(
+    fault_controller: FaultController,
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("staging")
+    parquet_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
+    )
+    gate = FaultGate(
+        phase="second_parquet_upload",
+        trigger_call=2,
+        timeout=90,
+        hold_exception=True,
+    )
+    monkeypatch.setattr(
+        parquet_module,
+        "upload_spooled_file",
+        gate.wrap(parquet_module.upload_spooled_file),
+    )
+    table = resource_registry.table(
+        "trino_target_parquet",
+        integration_table("trino", "fault_second_object"),
+    )
+    worker = resource_registry.worker(
+        _OperationWorker(
+            lambda: sql.transfer(
+                "trino_values",
+                "trino_target_parquet",
+                (
+                    "SELECT value AS row_id, DATE '2026-07-01' AS event_date, "
+                    "CAST(value AS VARCHAR) AS value FROM UNNEST(sequence(1, 6)) t(value)"
+                ),
+                table,
+                write_mode="replace",
+                batch_size=2,
+                partition_by=["event_date"],
+                retry_cnt=1,
+                full_retry_cnt=1,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+            )
+        ).start()
+    )
+    gate.wait()
+    fault_controller.stop("minio")
+    gate.open()
+    gate.wait_for_failure()
+    fault_controller.restart("minio")
+    fault_controller.wait_healthy("minio")
+    gate.resume_after_failure()
+    worker.join(30)
+    assert gate.calls == 2
+    assert worker.error is not None
+    assert not sql.table_info("trino_target_parquet", table).exists
+
+
+@pytest.mark.sql_scenario("fault.staging.hive_registration")
+def test_hive_metastore_failure_during_external_registration_preserves_target(
+    fault_controller: FaultController,
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("staging")
+    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+    gate = FaultGate(
+        phase="external_stage_registration",
+        timeout=90,
+        hold_exception=True,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        gate.wrap(attempt_module.create_parquet_stage_table),
+    )
+    table = resource_registry.table(
+        "trino_target_parquet",
+        integration_table("trino", "fault_hive_registration"),
+    )
+    original = pd.DataFrame(
+        {"row_id": [100], "event_date": [pd.Timestamp("2026-07-01")], "value": ["original"]}
+    )
+    sql.load_df(
+        "trino_target_parquet", table, original, write_mode="replace", partition_by=["event_date"]
+    )
+    worker = resource_registry.worker(
+        _OperationWorker(
+            lambda: sql.transfer(
+                "trino_values",
+                "trino_target_parquet",
+                "SELECT 1 AS row_id, DATE '2026-07-02' AS event_date, 'new' AS value",
+                table,
+                write_mode="replace",
+                batch_size=1,
+                partition_by=["event_date"],
+                retry_cnt=1,
+                full_retry_cnt=1,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+            )
+        ).start()
+    )
+    gate.wait()
+    fault_controller.stop("hive-metastore")
+    gate.open()
+    gate.wait_for_failure()
+    fault_controller.restart("hive-metastore")
+    fault_controller.wait_healthy("hive-metastore")
+    gate.resume_after_failure()
+    worker.join(30)
+    assert worker.error is not None
+    actual = sql.read(
+        "trino_target_parquet",
+        f"SELECT row_id, event_date, value FROM {table} ORDER BY row_id",
+    )
+    assert_exact_frame(actual, original)
+
+
+@pytest.mark.sql_scenario("fault.staging.catalog_finalization")
+def test_iceberg_catalog_failure_during_finalization_preserves_exact_target(
+    fault_controller: FaultController,
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("staging")
+    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+    gate = FaultGate(phase="catalog_finalization", timeout=90)
+    monkeypatch.setattr(
+        attempt_module,
+        "finalize_loaded_stage",
+        gate.wrap(attempt_module.finalize_loaded_stage),
+    )
+    table = resource_registry.table(
+        "trino_target_values",
+        integration_table("trino", "fault_catalog_finalization"),
+    )
+    original = pd.DataFrame(
+        {"row_id": [100], "event_date": [pd.Timestamp("2026-07-01")], "value": ["original"]}
+    )
+    sql.load_df(
+        "trino_target_values", table, original, write_mode="replace", partition_by=["event_date"]
+    )
+    worker = resource_registry.worker(
+        _OperationWorker(
+            lambda: sql.transfer(
+                "trino_values",
+                "trino_target_values",
+                "SELECT 1 AS row_id, DATE '2026-07-02' AS event_date, 'replacement' AS value",
+                table,
+                write_mode="replace",
+                batch_size=1,
+                partition_by=["event_date"],
+                retry_cnt=1,
+                full_retry_cnt=1,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+            )
+        ).start()
+    )
+    gate.wait()
+    fault_controller.stop("iceberg-catalog-db")
+    gate.open()
+    worker.join(60)
+    fault_controller.restart("iceberg-catalog-db")
+    fault_controller.wait_healthy("iceberg-catalog-db")
+    assert worker.error is not None
+    actual = sql.read(
+        "trino_target_values",
+        f"SELECT row_id, event_date, value FROM {table} ORDER BY row_id",
+    )
+    assert_exact_frame(actual, original)
+
+
+@pytest.mark.sql_scenario("fault.staging.cleanup_secondary")
+def test_cleanup_failure_is_reported_without_masking_primary_failure(
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _fault_group("staging")
+    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+    real_cleanup = attempt_module.cleanup_stage
+
+    def fail_finalization(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise RuntimeError("injected primary finalization failure")
+
+    def fail_after_cleanup(*args: Any, **kwargs: Any) -> None:
+        real_cleanup(*args, **kwargs)
+        raise RuntimeError("injected secondary cleanup failure")
+
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", fail_finalization)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", fail_after_cleanup)
+    table = resource_registry.table(
+        "trino_target_values",
+        integration_table("trino", "fault_cleanup_secondary"),
+    )
+    with pytest.raises(Exception, match="primary finalization failure"):
+        sql.transfer(
+            "trino_values",
+            "trino_target_values",
+            "SELECT 1 AS row_id, DATE '2026-07-02' AS event_date, 'replacement' AS value",
+            table,
+            write_mode="replace",
+            batch_size=1,
+            partition_by=["event_date"],
+            retry_cnt=1,
+            full_retry_cnt=1,
+            adaptive_batch_size=False,
+            target_rows_per_second=False,
+        )
+    captured = capsys.readouterr().out
+    assert "Cleanup failed while handling transfer error" in captured
+    assert "secondary cleanup failure" in captured
+    assert not sql.table_info("trino_target_values", table).exists
+
+
+@pytest.mark.sql_scenario("fault.authentication.keycloak_discovery")
+def test_keycloak_unavailable_during_oauth_start_fails_without_secret_leak(
+    fault_controller: FaultController,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("authentication")
+    from tests.integration.test_sql_auth_negative import _install_browser_oauth
+
+    alias = "trino_oauth_discovery_tls"
+    _install_browser_oauth(monkeypatch, alias=alias)
+    fault_controller.stop("keycloak")
+    try:
+        with pytest.raises(Exception) as exc_info:
+            sql.read(alias, "SELECT 1", retry_cnt=1)
+    finally:
+        fault_controller.restart("keycloak")
+        fault_controller.wait_healthy("keycloak")
+        _wait_keycloak_route()
+    rendered = repr(exc_info.value)
+    assert "integration-oauth-secret" not in rendered
+    assert "access_token" not in rendered.lower()
+
+
+@pytest.mark.sql_scenario("fault.authentication.keycloak_token_exchange")
+def test_keycloak_pauses_after_login_before_token_exchange(
+    fault_controller: FaultController,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fault_group("authentication")
+    from tests.integration.test_sql_auth_negative import _install_browser_oauth
+
+    paused = False
+
+    def stop_before_callback() -> None:
+        nonlocal paused
+        if not paused:
+            fault_controller.pause("keycloak")
+            paused = True
+
+    alias = "trino_oauth_exchange_tls"
+    callbacks, _ = _install_browser_oauth(
+        monkeypatch,
+        alias=alias,
+        before_callback=stop_before_callback,
+    )
+    error: BaseException | None = None
+    try:
+        try:
+            sql.read(alias, "SELECT 1", retry_cnt=1)
+        except BaseException as exc:
+            error = exc
+    finally:
+        if paused:
+            fault_controller.unpause("keycloak")
+            fault_controller.wait_healthy("keycloak")
+            _wait_keycloak_route()
+    rendered = repr(error)
+    assert paused, {"error": rendered, "callbacks": callbacks}
+    assert error is not None
+    assert "integration-oauth-secret" not in rendered
+    assert "access_token" not in rendered.lower()

@@ -6,6 +6,7 @@ import base64
 import copy
 import hashlib
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,12 @@ CASES = (
     ("ch", "ch_tls", "ca"),
     ("gp", "gp_tls", "password"),
     ("gp", "gp_tls", "ca"),
+)
+
+GP_CERT_CASES = (
+    "missing",
+    "invalid",
+    "wrong_key",
 )
 
 
@@ -67,10 +74,61 @@ def test_negative_tls_credentials_fail_during_real_connection(
         assert any(token in rendered.lower() for token in ("certificate", "verify", "ssl", "tls"))
 
 
-@pytest.mark.sql_scenario("auth.oauth.reuse")
-def test_oauth_authentication_object_reuses_valid_token(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "failure",
+    [scenario_param(f"auth.cert.gp.{failure}", failure) for failure in GP_CERT_CASES],
+)
+def test_greenplum_client_certificate_failures(
+    failure: str,
+    integration_connections: dict[str, dict[str, object]],
+    write_sql_connections: "Callable[[dict[str, dict[str, object]]], Path]",
 ) -> None:
+    if os.environ.get("SQL_INTEGRATION_GP") != "1":
+        pytest.skip("Greenplum authentication requires x86_64")
+    certs = Path(os.environ["SQL_INTEGRATION_CERTS"])
+    invalid = copy.deepcopy(integration_connections["gp_tls"])
+    if failure == "missing":
+        invalid.pop("ssl_cert", None)
+        invalid.pop("ssl_key", None)
+    elif failure == "invalid":
+        invalid["ssl_cert"] = str(certs / "invalid-client.crt")
+        invalid["ssl_key"] = str(certs / "invalid-client.key")
+    else:
+        invalid["ssl_key"] = str(certs / "invalid-client.key")
+    write_sql_connections({f"gp_cert_{failure}": invalid})
+
+    with pytest.raises(Exception) as exc_info:
+        sql.read(f"gp_cert_{failure}", "SELECT 1", retry_cnt=1)
+    rendered = repr(exc_info.value)
+    assert "PRIVATE KEY" not in rendered
+    assert "integration-secret" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("backend", "alias"),
+    [
+        scenario_param("auth.cert.trino.hostname", "trino", "trino_hostname_tls"),
+        scenario_param("auth.cert.ch.hostname", "ch", "ch_hostname_tls"),
+    ],
+)
+def test_tls_hostname_mismatch_fails(
+    backend: str,
+    alias: str,
+) -> None:
+    with pytest.raises(Exception) as exc_info:
+        sql.read(alias, "SELECT 1", retry_cnt=1)
+    rendered = repr(exc_info.value).lower()
+    assert backend in {"trino", "ch"}
+    assert any(token in rendered for token in ("hostname", "certificate", "verify", "ssl"))
+
+
+def _install_browser_oauth(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    password: str = "integration",
+    alias: str = "trino_oauth_tls",
+    before_callback=None,
+):
     try:
         import trino.auth  # noqa: PLC0415 - auth profile dependency.
         from cryptography import x509  # noqa: PLC0415
@@ -99,15 +157,64 @@ def test_oauth_authentication_object_reuses_valid_token(
             page = browser.new_page()
             page.goto(url, wait_until="domcontentloaded")
             page.locator("#username").fill("integration")
-            page.locator("#password").fill("integration")
-            page.locator("#kc-login").click()
+            page.locator("#password").fill(password)
+            page.locator("#kc-login").click(no_wait_after=before_callback is not None)
+            if before_callback is not None:
+                before_callback()
             page.wait_for_url("**/oauth2/**", timeout=10_000)
             browser.close()
 
     authentication = real_oauth(redirect)
     monkeypatch.setattr(trino.auth, "OAuth2Authentication", lambda: authentication)
+    return callbacks, alias
+
+
+@pytest.mark.sql_scenario("auth.oauth.reuse")
+def test_oauth_authentication_object_reuses_valid_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    callbacks, _ = _install_browser_oauth(monkeypatch)
     first = sql.read("trino_oauth_tls", "SELECT 11 AS value", retry_cnt=1)
     second = sql.read("trino_oauth_tls", "SELECT 12 AS value", retry_cnt=1)
     assert int(first.iloc[0, 0]) == 11
     assert int(second.iloc[0, 0]) == 12
     assert len(callbacks) == 1
+
+
+@pytest.mark.sql_scenario("auth.oauth.lifecycle.expiry")
+def test_oauth_expiry_refreshes_without_second_browser_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    callbacks, _ = _install_browser_oauth(monkeypatch)
+    first = sql.read("trino_oauth_tls", "SELECT 13 AS value", retry_cnt=1)
+    assert int(first.iloc[0, 0]) == 13
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline - 3:
+        time.sleep(0.25)
+    refreshed = sql.read("trino_oauth_tls", "SELECT 14 AS value", retry_cnt=1)
+    assert int(refreshed.iloc[0, 0]) == 14
+    assert len(callbacks) == 1
+
+
+@pytest.mark.sql_scenario("auth.oauth.lifecycle.wrong_password")
+def test_oauth_wrong_user_password_fails_without_secret_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_browser_oauth(monkeypatch, password="wrong-browser-password")
+    with pytest.raises(Exception) as exc_info:
+        sql.read("trino_oauth_tls", "SELECT 15 AS value", retry_cnt=1)
+    rendered = repr(exc_info.value)
+    assert "wrong-browser-password" not in rendered
+    assert "access_token" not in rendered.lower()
+
+
+@pytest.mark.sql_scenario("auth.oauth.lifecycle.invalid_client_secret")
+def test_oauth_invalid_client_secret_fails_without_secret_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_browser_oauth(monkeypatch, alias="trino_invalid_oauth_tls")
+    with pytest.raises(Exception) as exc_info:
+        sql.read("trino_invalid_oauth_tls", "SELECT 16 AS value", retry_cnt=1)
+    rendered = repr(exc_info.value)
+    assert "invalid-integration-oauth-secret" not in rendered
+    assert "access_token" not in rendered.lower()

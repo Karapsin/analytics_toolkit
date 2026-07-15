@@ -15,9 +15,15 @@ services:
         printf 'subjectAltName=DNS:localhost,IP:127.0.0.1,DNS:auth-proxy,DNS:keycloak.localhost\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
         openssl x509 -req -days 2 -in /certs/server.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/server.ext -out /certs/server.crt
         cat /certs/server.crt /certs/server.key >/certs/server.pem
+        openssl req -newkey rsa:2048 -nodes -subj /CN=localhost -keyout /certs/dns-server.key -out /certs/dns-server.csr
+        printf 'subjectAltName=DNS:localhost\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' >/certs/dns-server.ext
+        openssl x509 -req -days 2 -in /certs/dns-server.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/dns-server.ext -out /certs/dns-server.crt
+        cat /certs/dns-server.crt /certs/dns-server.key >/certs/dns-server.pem
         openssl req -newkey rsa:2048 -nodes -subj /CN=integration-client -keyout /certs/client.key -out /certs/client.csr
         printf 'keyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n' >/certs/client.ext
         openssl x509 -req -days 2 -in /certs/client.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/client.ext -out /certs/client.crt
+        openssl req -newkey rsa:2048 -nodes -subj /CN=invalid-client -keyout /certs/invalid-client.key -out /certs/invalid-client.csr
+        openssl x509 -req -days 2 -in /certs/invalid-client.csr -CA /certs/wrong-ca.crt -CAkey /certs/wrong-ca.key -CAcreateserial -extfile /certs/client.ext -out /certs/invalid-client.crt
 
   keycloak:
     profiles: ["auth"]
@@ -33,6 +39,12 @@ services:
       - "${SQL_INTEGRATION_KEYCLOAK_PORT:-18081}:8080"
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
 
   trino-auth:
     profiles: ["auth"]
@@ -67,6 +79,23 @@ services:
       - ./trino-oauth/config.properties:/etc/trino/config.properties:ro
       - auth-certificates:/certs:ro
 
+  trino-oauth-invalid:
+    profiles: ["auth"]
+    image: trinodb/trino:482
+    depends_on:
+      iceberg-catalog-db:
+        condition: service_healthy
+      hive-metastore:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      TRINO_OAUTH_CLIENT_SECRET: invalid-integration-oauth-secret
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino-oauth/config.properties:/etc/trino/config.properties:ro
+      - auth-certificates:/certs:ro
+
   auth-proxy:
     profiles: ["auth"]
     image: haproxy:3.2.1-alpine
@@ -81,6 +110,8 @@ services:
         condition: service_started
       trino-oauth:
         condition: service_started
+      trino-oauth-invalid:
+        condition: service_started
       clickhouse:
         condition: service_healthy
       keycloak:
@@ -91,6 +122,9 @@ services:
       - "${SQL_INTEGRATION_TRINO_OAUTH_TLS_PORT:-18446}:18446"
       - "${SQL_INTEGRATION_CLICKHOUSE_TLS_PORT:-18444}:18444"
       - "${SQL_INTEGRATION_KEYCLOAK_TLS_PORT:-18445}:18445"
+      - "${SQL_INTEGRATION_TRINO_HOSTNAME_TLS_PORT:-18447}:18447"
+      - "${SQL_INTEGRATION_CLICKHOUSE_HOSTNAME_TLS_PORT:-18448}:18448"
+      - "${SQL_INTEGRATION_TRINO_INVALID_OAUTH_TLS_PORT:-18449}:18449"
     volumes:
       - auth-certificates:/certs:ro
       - ./haproxy/auth.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro

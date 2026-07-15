@@ -29,12 +29,14 @@ agent_tools/mcp_tool.sh run-checks --area sql --level integration
 ```
 
 The default `all` profile is the exhaustive local entrypoint and runs `core`,
-`auth`, and all destructive `fault` groups. Select one profile explicitly:
+`auth`, all destructive `fault` groups, and the resource-intensive `stress`
+profile. Select one profile explicitly:
 
 ```bash
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile auth
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile fault
+agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile stress
 ```
 
 Core covers deterministic database behavior. Auth adds per-run certificates,
@@ -45,6 +47,12 @@ Airflow and Playwright are installed only by the auth integration job, never as
 package dependencies. Fault starts the complete topology and runs destructive
 database, staging, and authentication groups. It is never part of normal
 pytest, pre-commit, or `dev` push execution.
+
+Stress proves exact results under simultaneous append and upsert writers,
+Greenplum lock contention, Trino connection-pool pressure, and one-million-row
+values and Parquet transfers. The streaming cases require batches no larger
+than 10,000 rows and process RSS growth below 512 MiB. These bounds are
+regression guards for the pinned CI runner, not public memory guarantees.
 
 Core exercises active-query discovery and cancellation, exact logical-type
 round trips, all nine source/target transfer and schema-copy pairs, failure
@@ -72,7 +80,9 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `.integration-artifacts/<profile>/`. Fault runs also write
 `fault-timeline.json`; auth runs preserve browser and authentication logs.
 Operation/retry and connection-identity reports, orchestration timelines, and
-type-normalization mismatch reports are also always present. For failures,
+type-normalization mismatch reports are also always present. Stress runs add
+memory samples, connection-pressure results, lock timelines, and concurrent
+writer results. For failures,
 inspect service health first, then Compose logs, the operation-specific
 timeline, active/failed query details, and finally leak/object reports. It
 always runs
@@ -90,7 +100,8 @@ shared, external, or production database.
 The `sql-integration` workflow runs required core and auth x86_64 jobs in
 parallel on every push to `dev`, each with a 60-minute limit. The destructive
 fault groups (`database`, `staging`, and `authentication`) run nightly and by
-manual dispatch with matrix fail-fast disabled.
+manual dispatch with matrix fail-fast disabled. The stress profile also runs
+nightly or by manual dispatch and is excluded from normal pushes.
 Core and auth require zero skipped manifest scenarios on x86_64; ARM runs are
 diagnostic and may report Greenplum as architecture-unavailable. All artifacts
 are uploaded even on failure. Completion requires no toolkit tables, labelled

@@ -1,6 +1,17 @@
 name: analytics-toolkit-integration
 
 services:
+  pressure-proxy:
+    profiles: ["stress"]
+    image: haproxy:3.2.1-alpine
+    depends_on:
+      trino:
+        condition: service_healthy
+    ports:
+      - "${SQL_INTEGRATION_PRESSURE_PORT:-18082}:18082"
+    volumes:
+      - ./haproxy/pressure.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
   iceberg-catalog-db:
     image: postgres:17.6-alpine
     environment:

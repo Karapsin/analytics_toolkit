@@ -168,11 +168,29 @@
     "trino_oauth_tls": {
       "purpose": "Trino OAuth TLS"
     },
+    "trino_oauth_discovery_tls": {
+      "purpose": "Dedicated Trino OAuth discovery-fault route"
+    },
+    "trino_oauth_exchange_tls": {
+      "purpose": "Dedicated Trino OAuth token-exchange-fault route"
+    },
+    "trino_invalid_oauth_tls": {
+      "purpose": "Trino OAuth invalid-client-secret endpoint"
+    },
+    "trino_hostname_tls": {
+      "purpose": "Trino TLS hostname mismatch"
+    },
+    "trino_pressure": {
+      "purpose": "Trino connection-pressure proxy"
+    },
     "ch_tls": {
       "purpose": "ClickHouse TLS"
     },
     "ch_tls_variable_ca": {
       "purpose": "ClickHouse Airflow Variable CA"
+    },
+    "ch_hostname_tls": {
+      "purpose": "ClickHouse TLS hostname mismatch"
     },
     "airflow_gp": {
       "purpose": "Airflow Greenplum"
@@ -6093,6 +6111,21 @@
       "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.gp]",
       "backends": ["gp"]
     },
+    "fault.batch.gp": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambiguous[fault.batch.gp]",
+      "backends": ["gp"]
+    },
+    "fault.batch.trino": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambiguous[fault.batch.trino]",
+      "backends": ["trino"]
+    },
+    "fault.batch.ch": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambiguous[fault.batch.ch]",
+      "backends": ["ch"]
+    },
     "fault.finalize.trino": {
       "profile": "fault",
       "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.trino]",
@@ -6106,6 +6139,216 @@
     "fault.load.minio_before_upload": {
       "profile": "fault",
       "node_id": "tests/integration/test_sql_fault_recovery.py::test_minio_unavailable_before_parquet_upload_reports_primary_failure",
+      "backends": ["trino"]
+    },
+    "auth.cert.gp.missing": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_greenplum_client_certificate_failures[auth.cert.gp.missing]",
+      "backends": ["gp"]
+    },
+    "auth.cert.gp.invalid": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_greenplum_client_certificate_failures[auth.cert.gp.invalid]",
+      "backends": ["gp"]
+    },
+    "auth.cert.gp.wrong_key": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_greenplum_client_certificate_failures[auth.cert.gp.wrong_key]",
+      "backends": ["gp"]
+    },
+    "auth.cert.trino.hostname": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_tls_hostname_mismatch_fails[auth.cert.trino.hostname]",
+      "backends": ["trino"]
+    },
+    "auth.cert.ch.hostname": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_tls_hostname_mismatch_fails[auth.cert.ch.hostname]",
+      "backends": ["ch"]
+    },
+    "auth.oauth.lifecycle.expiry": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_oauth_expiry_refreshes_without_second_browser_login",
+      "backends": ["trino"]
+    },
+    "auth.oauth.lifecycle.wrong_password": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_oauth_wrong_user_password_fails_without_secret_leak",
+      "backends": ["trino"]
+    },
+    "auth.oauth.lifecycle.invalid_client_secret": {
+      "profile": "auth",
+      "node_id": "tests/integration/test_sql_auth_negative.py::test_oauth_invalid_client_secret_fails_without_secret_leak",
+      "backends": ["trino"]
+    },
+    "query.edge.gp.missing": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_missing_query_id_has_deterministic_backend_result[query.edge.gp.missing]",
+      "backends": ["gp"]
+    },
+    "query.edge.trino.missing": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_missing_query_id_has_deterministic_backend_result[query.edge.trino.missing]",
+      "backends": ["trino"]
+    },
+    "query.edge.ch.missing": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_missing_query_id_has_deterministic_backend_result[query.edge.ch.missing]",
+      "backends": ["ch"]
+    },
+    "query.edge.gp.finished": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_finished_query_id_does_not_reactivate_query[query.edge.gp.finished]",
+      "backends": ["gp"]
+    },
+    "query.edge.trino.finished": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_finished_query_id_does_not_reactivate_query[query.edge.trino.finished]",
+      "backends": ["trino"]
+    },
+    "query.edge.ch.finished": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_cancellation.py::test_cancel_finished_query_id_does_not_reactivate_query[query.edge.ch.finished]",
+      "backends": ["ch"]
+    },
+    "atomicity.append.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_append_key_overlap_preserves_existing_target[atomicity.append.gp]",
+      "backends": ["gp"]
+    },
+    "atomicity.append.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_append_key_overlap_preserves_existing_target[atomicity.append.trino]",
+      "backends": ["trino"]
+    },
+    "atomicity.append.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_append_key_overlap_preserves_existing_target[atomicity.append.ch]",
+      "backends": ["ch"]
+    },
+    "atomicity.created_target.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_target_created_only_for_failed_load_is_removed[atomicity.created_target.gp]",
+      "backends": ["gp"]
+    },
+    "atomicity.created_target.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_target_created_only_for_failed_load_is_removed[atomicity.created_target.trino]",
+      "backends": ["trino"]
+    },
+    "atomicity.created_target.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_target_created_only_for_failed_load_is_removed[atomicity.created_target.ch]",
+      "backends": ["ch"]
+    },
+    "atomicity.transfer.row_count": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_atomicity.py::test_transfer_row_count_mismatch_preserves_existing_target",
+      "backends": ["ch", "trino"]
+    },
+    "fault.staging.minio_after_first_object": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_minio_unavailable_after_first_parquet_object_cleans_attempt",
+      "backends": ["trino"]
+    },
+    "fault.staging.hive_registration": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_hive_metastore_failure_during_external_registration_preserves_target",
+      "backends": ["trino"]
+    },
+    "fault.staging.catalog_finalization": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_iceberg_catalog_failure_during_finalization_preserves_exact_target",
+      "backends": ["trino"]
+    },
+    "fault.staging.cleanup_secondary": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_cleanup_failure_is_reported_without_masking_primary_failure",
+      "backends": ["trino"]
+    },
+    "fault.authentication.keycloak_discovery": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_keycloak_unavailable_during_oauth_start_fails_without_secret_leak",
+      "backends": ["trino"]
+    },
+    "fault.authentication.keycloak_token_exchange": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_fault_recovery.py::test_keycloak_pauses_after_login_before_token_exchange",
+      "backends": ["trino"]
+    },
+    "ddl.options.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_table_generation_metadata_and_invalid_schema_options[ddl.options.gp]",
+      "backends": ["gp"]
+    },
+    "ddl.options.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_table_generation_metadata_and_invalid_schema_options[ddl.options.trino]",
+      "backends": ["trino"]
+    },
+    "ddl.options.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_table_generation_metadata_and_invalid_schema_options[ddl.options.ch]",
+      "backends": ["ch"]
+    },
+    "ddl.native.gp.distribution_variants": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_greenplum_random_and_single_key_distribution",
+      "backends": ["gp"]
+    },
+    "ddl.native.ch.shard_replace": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_clickhouse_shard_only_replace_flow",
+      "backends": ["ch"]
+    },
+    "concurrency.write.gp": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_writers_preserve_exact_disjoint_rows[concurrency.write.gp]",
+      "backends": ["gp"]
+    },
+    "concurrency.write.trino": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_writers_preserve_exact_disjoint_rows[concurrency.write.trino]",
+      "backends": ["trino"]
+    },
+    "concurrency.write.ch": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_writers_preserve_exact_disjoint_rows[concurrency.write.ch]",
+      "backends": ["ch"]
+    },
+    "concurrency.upsert.gp": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_disjoint_upserts_preserve_exact_values[concurrency.upsert.gp]",
+      "backends": ["gp"]
+    },
+    "concurrency.upsert.trino": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_disjoint_upserts_preserve_exact_values[concurrency.upsert.trino]",
+      "backends": ["trino"]
+    },
+    "concurrency.upsert.ch": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_concurrent_disjoint_upserts_preserve_exact_values[concurrency.upsert.ch]",
+      "backends": ["ch"]
+    },
+    "concurrency.lock.gp": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_greenplum_lock_contention_recovers_with_fresh_connection",
+      "backends": ["gp"]
+    },
+    "stress.stream.values": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_million_row_transfer_has_bounded_batches_and_memory[stress.stream.values]",
+      "backends": ["trino", "ch"]
+    },
+    "stress.stream.parquet": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_million_row_transfer_has_bounded_batches_and_memory[stress.stream.parquet]",
+      "backends": ["trino"]
+    },
+    "stress.connection.pressure": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_connection_pressure_fails_contextually_and_recovers",
       "backends": ["trino"]
     }
   },

@@ -114,3 +114,60 @@ def test_cancel_all_terminates_two_workers(
             lambda label=label: _gone(backend, label),
             description=f"cancel-all query to leave active state: {label}",
         )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"query.edge.{backend}.missing", backend) for backend in BACKENDS],
+)
+def test_cancel_missing_query_id_has_deterministic_backend_result(backend: str) -> None:
+    if not _enabled(backend):
+        pytest.skip("Greenplum requires x86_64")
+    missing_id: int | str = 2_000_000_000 if backend == "gp" else "missing-query-id"
+    if backend == "trino":
+        with pytest.raises(Exception, match=r"(?i)query|not found|unknown"):
+            sql.cancel_queries(backend, [missing_id], concurrency=2, retry_cnt=1)
+        return
+    result = sql.cancel_queries(backend, [missing_id], concurrency=2, retry_cnt=1)
+    assert result["query_id"].tolist() == [missing_id]
+    if backend == "gp":
+        assert result["cancelled"].tolist() == [False]
+    else:
+        assert result["status"].tolist() == ["submitted"]
+
+
+def _short_running_query(backend: str) -> str:
+    if backend == "gp":
+        return "SELECT pg_sleep(2)"
+    if backend == "ch":
+        return (
+            "SELECT count() FROM numbers(20) WHERE sleepEachRow(0.1) = 0 SETTINGS max_block_size=1"
+        )
+    return "SELECT count(*) FROM UNNEST(sequence(1, 25000000))"
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"query.edge.{backend}.finished", backend) for backend in BACKENDS],
+)
+def test_cancel_finished_query_id_does_not_reactivate_query(
+    backend: str,
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not _enabled(backend):
+        pytest.skip("Greenplum requires x86_64")
+    label = _label("finished_cancel")
+    worker = resource_registry.worker(
+        QueryWorker(backend, _short_running_query(backend), label).start()
+    )
+    row = find_labelled_query(backend, label)
+    query_id = row["query_id"]
+    worker.join(timeout=30)
+    poll_until(lambda: _gone(backend, label), description=f"finished query {label}")
+    if backend == "trino":
+        with pytest.raises(Exception, match=r"(?i)query|not found|finished"):
+            sql.cancel_queries(backend, [query_id], retry_cnt=1)
+    else:
+        result = sql.cancel_queries(backend, [query_id], retry_cnt=1)
+        assert result["query_id"].tolist() == [query_id]
+    assert _gone(backend, label)

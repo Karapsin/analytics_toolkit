@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: BLE001, I001, PERF203
+
 import json
 import os
 import subprocess
@@ -136,6 +138,12 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     }
     connections["ch_source"] = {**connections["ch"]}
     connections["ch_target"] = {**connections["ch"]}
+    if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
+        connections["trino_pressure"] = {
+            **connections["trino_values"],
+            "port": int(os.environ.get("SQL_INTEGRATION_PRESSURE_PORT", "18082")),
+            "connect_timeout": 2,
+        }
     if os.environ.get("SQL_INTEGRATION_GP") == "1":
         connections["gp"] = {
             "type": "gp",
@@ -150,7 +158,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
         connections["gp_alias"] = {**connections["gp"]}
         connections["gp_source"] = {**connections["gp"]}
         connections["gp_target"] = {**connections["gp"]}
-    if os.environ.get("SQL_INTEGRATION_PROFILE") == "auth":
+    if os.environ.get("SQL_INTEGRATION_PROFILE") in {"auth", "fault"}:
         certs = os.environ["SQL_INTEGRATION_CERTS"]
         connections["trino_basic_tls"] = {
             **connections["trino_values"],
@@ -170,6 +178,12 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "verify": True,
             "source": "analytics-toolkit-integration-oauth",
         }
+        connections["trino_oauth_discovery_tls"] = {**connections["trino_oauth_tls"]}
+        connections["trino_oauth_exchange_tls"] = {**connections["trino_oauth_tls"]}
+        connections["trino_invalid_oauth_tls"] = {
+            **connections["trino_oauth_tls"],
+            "port": int(os.environ.get("SQL_INTEGRATION_TRINO_INVALID_OAUTH_TLS_PORT", "18449")),
+        }
         connections["ch_tls"] = {
             **connections["ch"],
             "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_TLS_PORT", "18444")),
@@ -180,6 +194,14 @@ def _integration_connections() -> dict[str, dict[str, object]]:
         connections["ch_tls_variable_ca"] = {
             **connections["ch_tls"],
             "ca_certs": [f"{certs}/ca.crt", f"{certs}/ca-copy.crt"],
+        }
+        connections["trino_hostname_tls"] = {
+            **connections["trino_basic_tls"],
+            "port": int(os.environ.get("SQL_INTEGRATION_TRINO_HOSTNAME_TLS_PORT", "18447")),
+        }
+        connections["ch_hostname_tls"] = {
+            **connections["ch_tls"],
+            "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_HOSTNAME_TLS_PORT", "18448")),
         }
         if "gp" in connections:
             connections["gp_tls"] = {
@@ -249,7 +271,7 @@ def resource_registry(tmp_path: Path) -> ResourceRegistry:
 
 
 @pytest.fixture(autouse=True)
-def assert_no_toolkit_leaks(
+def assert_no_toolkit_leaks(  # noqa: C901, PLR0912, PLR0915
     request: pytest.FixtureRequest,
     default_sql_connections: None,
     resource_registry: ResourceRegistry,
@@ -273,7 +295,23 @@ def assert_no_toolkit_leaks(
         backends.append("gp")
     for backend in backends:
         tables = sql.show_tables(backend)
-        names = tables.get("table_name", []).tolist()
+        matching_tables = tables[
+            tables["table_name"]
+            .astype(str)
+            .map(lambda name: name.startswith((resource_prefix, "it_stage_")))
+        ]
+        for row in matching_tables.itertuples(index=False):
+            qualified = (
+                f"{row.db}.{row.schema}.{row.table_name}"
+                if backend == "trino"
+                else f"{row.schema}.{row.table_name}"
+            )
+            try:
+                sql.drop_tables(backend, qualified, if_exists=True)
+            except Exception as exc:
+                cleanup_errors.append(f"scan drop {backend}:{qualified}: {exc!r}")
+        remaining_tables = sql.show_tables(backend)
+        names = remaining_tables.get("table_name", []).tolist()
         leak_report["tables"].extend(
             f"{backend}:{name}"
             for name in names
@@ -281,6 +319,20 @@ def assert_no_toolkit_leaks(
         )
         active = sql.show_queries(backend, state="active")
         if "query" in active:
+            labelled = active[
+                active["query"]
+                .astype(str)
+                .str.contains(
+                    "analytics_toolkit_integration",
+                    regex=False,
+                )
+            ]
+            for query_id in labelled.get("query_id", []):
+                try:
+                    sql.cancel_queries(backend, [query_id], retry_cnt=1)
+                except Exception as exc:
+                    cleanup_errors.append(f"scan cancel {backend}:{query_id}: {exc!r}")
+            active = sql.show_queries(backend, state="active")
             leak_report["queries"].extend(
                 f"{backend}:{value}"
                 for value in active["query"].astype(str)
@@ -288,29 +340,48 @@ def assert_no_toolkit_leaks(
             )
     compose_project = os.environ.get("SQL_INTEGRATION_COMPOSE_PROJECT")
     if compose_project:
+        minio_command = [
+            "docker",
+            "compose",
+            "--project-name",
+            compose_project,
+            "--file",
+            str(Path(__file__).parents[2] / "integration/docker-compose.yml"),
+            "exec",
+            "-T",
+            "minio-client",
+            "mc",
+        ]
+        find_command = [
+            *minio_command,
+            "find",
+            "integration/warehouse",
+            "--name",
+            f"*{resource_prefix}*",
+            "--print",
+        ]
         listed = subprocess.run(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                compose_project,
-                "--file",
-                str(Path(__file__).parents[2] / "integration/docker-compose.yml"),
-                "exec",
-                "-T",
-                "minio-client",
-                "mc",
-                "find",
-                "integration/warehouse",
-                "--name",
-                f"*{resource_prefix}*",
-                "--print",
-            ],
+            find_command,
             check=False,
             capture_output=True,
             text=True,
         )
-        leak_report["objects"] = listed.stdout.splitlines()
+        for object_path in listed.stdout.splitlines():
+            removed = subprocess.run(
+                [*minio_command, "rm", "--recursive", "--force", object_path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if removed.returncode != 0:
+                cleanup_errors.append(f"scan minio {object_path}: {removed.stderr.strip()}")
+        remaining = subprocess.run(
+            find_command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        leak_report["objects"] = remaining.stdout.splitlines()
     report_path = tmp_path / "integration-leaks.json"
     report_path.write_text(json.dumps(leak_report, indent=2), encoding="utf-8")
     artifact_dir = os.environ.get("SQL_INTEGRATION_ARTIFACT_DIR")

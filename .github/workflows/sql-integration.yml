@@ -12,7 +12,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, core, auth, fault]
+        options: [all, core, auth, fault, stress]
 
 permissions:
   contents: read
@@ -109,4 +109,32 @@ jobs:
         with:
           name: sql-integration-fault-${{ matrix.group }}
           path: .integration-artifacts/fault
+          if-no-files-found: error
+
+  stress:
+    name: SQL integration stress
+    if: github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'stress'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and agent tools
+        run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e . pytest psutil
+      - name: Run SQL integration stress profile
+        run: >-
+          python -m release_routines.sql_integration
+          --profile stress
+          --with-greenplum
+      - name: Upload stress diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sql-integration-stress
+          path: .integration-artifacts/stress
           if-no-files-found: error

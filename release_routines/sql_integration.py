@@ -18,7 +18,7 @@ AUTH_COMPOSE_FILE = INTEGRATION_DIR / "docker-compose.auth.yml"
 ARTIFACTS_DIR = REPO_ROOT / ".integration-artifacts"
 PROJECT_NAME = "analytics-toolkit-integration"
 X86_ARCHITECTURES = {"amd64", "x86_64"}
-PROFILES = ("core", "auth", "all", "fault")
+PROFILES = ("core", "auth", "all", "fault", "stress")
 FAULT_GROUPS = ("database", "staging", "authentication")
 
 
@@ -42,6 +42,8 @@ def _compose_command(
         command.extend(["--profile", "gp"])
     if uses_auth:
         command.extend(["--profile", "auth"])
+    if profile == "stress":
+        command.extend(["--profile", "stress"])
     command.extend(args)
     return command
 
@@ -122,6 +124,10 @@ def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifact
         "connection-identities.json",
         "orchestration-timeline.json",
         "type-normalization-mismatch.json",
+        "memory-profile.json",
+        "connection-pressure.json",
+        "lock-timeline.json",
+        "concurrent-writer-results.json",
     ):
         path = profile_dir / filename
         if not path.exists():
@@ -171,6 +177,8 @@ def _pytest_marker(profile: str) -> str:
         return "integration and integration_core"
     if profile == "auth":
         return "integration and integration_auth"
+    if profile == "stress":
+        return "integration and integration_stress"
     return "integration and integration_fault"
 
 
@@ -273,6 +281,9 @@ def run_profile(
                 "server.crt",
                 "client.crt",
                 "client.key",
+                "invalid-client.crt",
+                "invalid-client.key",
+                "dns-server.crt",
             ):
                 copy_result = _run(
                     _compose_command(
@@ -337,7 +348,7 @@ def run(
     include_greenplum: bool,
     fault_group: str | None = None,
 ) -> int:
-    selected = ("core", "auth", "fault") if profile == "all" else (profile,)
+    selected = ("core", "auth", "fault", "stress") if profile == "all" else (profile,)
     for selected_profile in selected:
         result = run_profile(
             profile=selected_profile,

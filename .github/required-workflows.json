@@ -33,6 +33,12 @@
               "events": ["schedule", "workflow_dispatch"],
               "allowed_conclusions": ["success", "skipped"],
               "reason": "Destructive fault groups run nightly or by explicit manual dispatch, never on dev pushes."
+            },
+            {
+              "name": "SQL integration stress",
+              "events": ["schedule", "workflow_dispatch"],
+              "allowed_conclusions": ["success", "skipped"],
+              "reason": "Resource-pressure scenarios run nightly or by explicit manual dispatch, never on dev pushes."
             }
           ]
         }
@@ -43,6 +49,12 @@
           "kind": "job",
           "allowed_conclusions": ["neutral", "skipped"],
           "reason": "The fault job is intentionally conditional on scheduled and manual events."
+        },
+        {
+          "name": "SQL integration stress",
+          "kind": "job",
+          "allowed_conclusions": ["neutral", "skipped"],
+          "reason": "The stress job is intentionally conditional on scheduled and manual events."
         }
       ],
       "classified_non_push_workflows": [

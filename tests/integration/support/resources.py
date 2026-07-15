@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, I001, PERF203, TC003
+# ruff: noqa: BLE001, C901, I001, PERF203, PLR0912, TC003
 
 import json
 import subprocess
@@ -20,6 +20,7 @@ class ResourceRegistry:
     tables: list[tuple[str, str, str | None]] = field(default_factory=list)
     queries: list[tuple[str, int | str]] = field(default_factory=list)
     workers: list[Any] = field(default_factory=list)
+    finalizers: list[Any] = field(default_factory=list)
     minio_prefixes: list[str] = field(default_factory=list)
     cleanup_errors: list[str] = field(default_factory=list)
 
@@ -34,6 +35,10 @@ class ResourceRegistry:
     def worker(self, worker: Any) -> Any:
         self.workers.append(worker)
         return worker
+
+    def finalizer(self, finalizer: Any) -> Any:
+        self.finalizers.append(finalizer)
+        return finalizer
 
     def minio(self, prefix: str) -> str:
         self.minio_prefixes.append(prefix)
@@ -50,6 +55,11 @@ class ResourceRegistry:
                     for token in ("not running", "not found", "unknown query", "no such query")
                 ):
                     self.cleanup_errors.append(f"cancel {db_key}:{query_id}: {exc!r}")
+        for finalizer in reversed(self.finalizers):
+            try:
+                finalizer()
+            except Exception as exc:
+                self.cleanup_errors.append(f"finalizer {finalizer!r}: {exc!r}")
         for worker in reversed(self.workers):
             try:
                 worker.cancel()
@@ -77,6 +87,7 @@ class ResourceRegistry:
                 {
                     "tables": self.tables,
                     "queries": self.queries,
+                    "finalizers": [repr(item) for item in self.finalizers],
                     "minio_prefixes": self.minio_prefixes,
                     "cleanup_errors": self.cleanup_errors,
                 },

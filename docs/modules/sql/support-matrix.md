@@ -59,6 +59,10 @@ targets are managed as shard/distributed table pairs.
 The integration matrix uses distinct source and target aliases even for
 same-backend transfers, and declares every Greenplum/Trino/ClickHouse source and
 target pair plus every target write mode in the schema-version-2 manifest.
+Nightly stress coverage additionally verifies disjoint concurrent append and
+upsert writers, Greenplum lock recovery with a fresh connection, bounded
+million-row values and Parquet streams, and contextual failure plus recovery
+when the Trino connection route is saturated.
 
 ## Integration Type Contract
 

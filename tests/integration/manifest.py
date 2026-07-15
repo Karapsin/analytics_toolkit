@@ -73,7 +73,7 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
         msg = "SQL coverage manifest must declare scenarios"
         raise ValueError(msg)
     for scenario_id, item in manifest["scenarios"].items():
-        if not scenario_id or item.get("profile") not in {"core", "auth", "fault"}:
+        if not scenario_id or item.get("profile") not in {"core", "auth", "fault", "stress"}:
             msg = f"Invalid SQL scenario record: {scenario_id}"
             raise ValueError(msg)
         if not str(item.get("node_id", "")).startswith("tests/integration/"):

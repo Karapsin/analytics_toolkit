@@ -150,6 +150,7 @@ markers = [
   "integration_core: deterministic SQL database behavior",
   "integration_auth: TLS, certificate, OAuth, and Airflow SQL behavior",
   "integration_fault: destructive SQL retry and recovery behavior",
+  "integration_stress: nightly SQL concurrency, pressure, and bounded-memory behavior",
   "sql_scenario(id): stable scenario identifier declared by the SQL coverage manifest",
 ]
 

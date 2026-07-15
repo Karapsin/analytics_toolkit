@@ -27,7 +27,7 @@
       ]
     }
   ],
-  "accessTokenLifespan": 30,
+  "accessTokenLifespan": 5,
   "ssoSessionIdleTimeout": 120,
   "ssoSessionMaxLifespan": 300
 }

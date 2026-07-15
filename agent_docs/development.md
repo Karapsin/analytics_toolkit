@@ -38,8 +38,10 @@ must use fake connections, monkeypatching, and the autouse env fixture in
 tests are allowed only through `run_checks(area="sql", level="integration")`;
 that workflow owns endpoint validation, temporary configuration, diagnostics,
 and container/network/volume teardown. The `all` profile is exhaustive and
-includes destructive fault groups; normal pushes run only required core and
-auth jobs. On x86_64, a skipped core/auth manifest scenario is a failure.
+includes destructive fault groups and resource-intensive stress scenarios;
+normal pushes run only required core and auth jobs. Fault and stress profiles
+run nightly or by manual dispatch. On x86_64, a skipped core/auth manifest
+scenario is a failure.
 
 ## Fresh-Agent Sequence
 

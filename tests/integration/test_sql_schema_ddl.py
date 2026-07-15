@@ -216,3 +216,117 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
     )
     info = sql.table_info("ch_target", table)
     assert info.shard_table == f"{table}_shard"
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"ddl.options.{backend}", backend) for backend in BACKENDS],
+)
+def test_create_table_generation_metadata_and_invalid_schema_options(
+    backend: str,
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled(backend):
+        pytest.skip("Greenplum requires x86_64")
+    alias = backend_alias(backend, target=True)
+    dry_table = resource_registry.table(alias, integration_table(backend, "ddl_dry_run"))
+    options = _copy_options(backend)
+    plan = sql.create_sql_table(
+        alias,
+        dry_table,
+        table_schema=_schema(backend),
+        dry_run=True,
+        query_label="integration_ddl_options",
+        **options,
+    )
+    assert plan.statements
+    assert not sql.table_info(alias, dry_table).exists
+
+    generated = sql.create_sql_table(
+        alias,
+        dry_table,
+        table_schema=_schema(backend),
+        only_generate_sql=True,
+        **options,
+    )
+    assert isinstance(generated, str) and "CREATE" in generated.upper()
+
+    result = sql.create_sql_table(
+        alias,
+        dry_table,
+        table_schema=_schema(backend),
+        return_metadata=True,
+        retry_cnt=1,
+        **options,
+    )
+    assert result.metadata.statement_count >= 1
+    assert sql.table_info(alias, dry_table).exists
+
+    invalid_table = resource_registry.table(alias, integration_table(backend, "ddl_invalid"))
+    with pytest.raises(Exception, match=r"(?i)type|schema|syntax|unknown"):
+        sql.create_sql_table(
+            alias,
+            invalid_table,
+            table_schema={"row_id": "DEFINITELY_NOT_A_REAL_TYPE"},
+            retry_cnt=1,
+            **options,
+        )
+    assert not sql.table_info(alias, invalid_table).exists
+
+    missing_table = resource_registry.table(
+        alias,
+        integration_table(backend, "ddl_missing_source"),
+    )
+    with pytest.raises(Exception, match=r"(?i)not found|does not exist|unknown|missing"):
+        sql.create_sql_table(
+            alias,
+            missing_table,
+            sql="SELECT * FROM integration.definitely_missing_source_table",
+            source_db=alias,
+            insert_data=True,
+            retry_cnt=1,
+            **_copy_options(backend),
+        )
+    assert not sql.table_info(alias, missing_table).exists
+
+
+@pytest.mark.sql_scenario("ddl.native.gp.distribution_variants")
+def test_greenplum_random_and_single_key_distribution(
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    random_table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_random")
+    keyed_table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_keyed")
+    sql.create_sql_table("gp_target", random_table, table_schema=_schema("gp"), retry_cnt=1)
+    sql.create_sql_table(
+        "gp_target",
+        keyed_table,
+        table_schema=_schema("gp"),
+        gp_distributed_by_key=["row_id"],
+        retry_cnt=1,
+    )
+    random_ddl = " ".join(sql.extract_ddl("gp_target", random_table).upper().split())
+    keyed_ddl = " ".join(sql.extract_ddl("gp_target", keyed_table).upper().split())
+    assert "DISTRIBUTED RANDOMLY" in random_ddl
+    assert "DISTRIBUTED BY" in keyed_ddl and "ROW_ID" in keyed_ddl
+
+
+@pytest.mark.sql_scenario("ddl.native.ch.shard_replace")
+def test_clickhouse_shard_only_replace_flow(resource_registry: ResourceRegistry) -> None:
+    table = _registered(resource_registry, "ch", "ch_target", "ddl_ch_replace")
+    options = {
+        "table_schema": _schema("ch"),
+        "ch_engine": "MergeTree",
+        "order_by": ["row_id"],
+        "ch_only_shard": True,
+        "ch_replace_table": True,
+        "retry_cnt": 1,
+    }
+    sql.create_sql_table("ch_target", table, **options)
+    sql.create_sql_table("ch_target", table, **options)
+    ddl = " ".join(sql.extract_ddl("ch_target", table).upper().split())
+    assert "MERGETREE" in ddl and "ORDER BY" in ddl
+    info = sql.table_info("ch_target", table)
+    assert info.exists
+    assert info.shard_table == f"{table}_shard"
