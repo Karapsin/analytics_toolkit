@@ -88,17 +88,17 @@ def test_core_identifier_parse_suffix_and_required_identifier_errors(
 def test_core_identifier_wraps_parse_errors_and_validates_trino_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        core_identifiers.TableIdentifier,
-        "parse",
-        classmethod(lambda cls, *_args: (_ for _ in ()).throw(ValueError("bad"))),
-    )
-    with pytest.raises(ValueError, match="Invalid Greenplum table name"):
-        core_identifiers.split_gp_table_name("bad")
-    with pytest.raises(ValueError, match="Invalid table name"):
-        core_identifiers.split_trino_table_name("bad")
+    with monkeypatch.context() as parse_patch:
+        parse_patch.setattr(
+            core_identifiers.TableIdentifier,
+            "parse",
+            classmethod(lambda cls, *_args: (_ for _ in ()).throw(ValueError("bad"))),
+        )
+        with pytest.raises(ValueError, match="Invalid Greenplum table name"):
+            core_identifiers.split_gp_table_name("bad")
+        with pytest.raises(ValueError, match="Invalid table name"):
+            core_identifiers.split_trino_table_name("bad")
 
-    monkeypatch.undo()
     trino_config = config_module.get_connection_config("trino")
     gp_config = config_module.get_connection_config("gp")
     monkeypatch.setattr(

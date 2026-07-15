@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Completed the reviewed residual coverage ledger and removed dominated guards.
 - Added disposable Greenplum, Trino, and ClickHouse integration environments.
 - Expanded SQL integration profiles, coverage matrix, and exact-SHA GitHub verification.
+- Made SQL identifier tests independent of local connection files.
 
 ## 1.3.10.17 - 2026-07-14
 
