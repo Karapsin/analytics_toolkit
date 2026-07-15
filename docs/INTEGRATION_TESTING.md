@@ -27,8 +27,22 @@ through the repository check entrypoint:
 agent_tools/mcp_tool.sh run-checks --area sql --level integration
 ```
 
-The workflow writes diagnostics to `.integration-artifacts/compose.log` after
-a failure. It always runs `docker compose down --volumes --remove-orphans`, even
+The default `all` profile runs `core` and `auth`. Select one profile explicitly:
+
+```bash
+agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
+agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile auth
+agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile fault
+```
+
+Core covers deterministic database behavior. Auth adds per-run certificates,
+HAProxy TLS endpoints, Trino password authentication, Keycloak realm fixtures,
+secure ClickHouse, Greenplum client certificates on x86_64, and real Airflow
+connection resolution. Fault is reserved for destructive restart/retry cases.
+
+The workflow writes Compose logs, service health snapshots, JUnit reports, and
+leak reports to `.integration-artifacts/<profile>/`. It always runs
+`docker compose down --volumes --remove-orphans`, even
 when startup or pytest fails.
 
 The tests generate `.connections` under pytest's temporary directory and allow
@@ -37,8 +51,17 @@ shared, external, or production database.
 
 ## CI
 
-The `sql-integration` GitHub Actions workflow runs the complete x86_64 stack on
-every push to `dev` and supports manual dispatch. Superseded `dev` runs are
-cancelled, and Compose logs are uploaded when the check fails.
+The `sql-integration` workflow runs required core and auth x86_64 jobs in
+parallel on every push to `dev`, each with a 60-minute limit. The destructive
+fault profile runs nightly and by manual dispatch. All profile artifacts are
+uploaded even when tests pass. Completion requires no toolkit tables, labelled
+queries, MinIO stage objects, project containers, or project volumes left behind.
+
+The machine-readable coverage declaration is
+`integration/sql_coverage_manifest.json`. Its guard tests compare public SQL
+exports, callable parameters, registered adapters, supported write modes,
+source/target pairs, and collected scenario references so additions cannot be
+silently omitted. Unsupported Kerberos and JWT routes are explicitly excluded
+because the toolkit does not expose them.
 
 [Documentation overview](README.md)

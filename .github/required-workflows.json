@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "branches": {
+    "dev": {
+      "workflows": [
+        {
+          "name": "tests",
+          "path": ".github/workflows/tests.yml",
+          "trigger": "push",
+          "allowed_conclusions": ["success"]
+        },
+        {
+          "name": "sql-integration",
+          "path": ".github/workflows/sql-integration.yml",
+          "trigger": "push",
+          "required_jobs": [
+            "core SQL integration",
+            "authentication SQL integration"
+          ],
+          "allowed_conclusions": ["success"]
+        }
+      ],
+      "conditional_checks": ["destructive fault injection"],
+      "classified_non_push_workflows": [
+        {
+          "name": "publish",
+          "path": ".github/workflows/publish.yml",
+          "reason": "release publishing is intentionally branch/tag/manual gated"
+        }
+      ]
+    }
+  }
+}

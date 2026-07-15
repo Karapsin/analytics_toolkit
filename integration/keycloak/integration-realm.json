@@ -1,0 +1,19 @@
+{
+  "realm": "integration",
+  "enabled": true,
+  "users": [
+    {
+      "username": "integration",
+      "enabled": true,
+      "credentials": [{"type": "password", "value": "integration", "temporary": false}]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "trino-client",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost/*", "https://localhost/*"]
+    }
+  ]
+}

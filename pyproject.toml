@@ -147,6 +147,9 @@ source = ["analytics_toolkit"]
 addopts = "-m 'not integration'"
 markers = [
   "integration: disposable real-database tests run only through the repository integration workflow",
+  "integration_core: deterministic SQL database behavior",
+  "integration_auth: TLS, certificate, OAuth, and Airflow SQL behavior",
+  "integration_fault: destructive SQL retry and recovery behavior",
 ]
 
 [tool.coverage.report]

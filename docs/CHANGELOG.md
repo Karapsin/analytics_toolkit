@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Completed deterministic SQL execution and orchestration coverage.
 - Completed the reviewed residual coverage ledger and removed dominated guards.
 - Added disposable Greenplum, Trino, and ClickHouse integration environments.
+- Expanded SQL integration profiles, coverage matrix, and exact-SHA GitHub verification.
 
 ## 1.3.10.17 - 2026-07-14
 

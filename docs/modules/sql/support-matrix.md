@@ -36,6 +36,11 @@ drop those partitions, and insert the final increment. Trino also requires
 
 ## Public Helper Coverage
 
+The executable integration classification lives in
+[`integration/sql_coverage_manifest.json`](../../../integration/sql_coverage_manifest.json).
+It is checked against `analytics_toolkit.sql.__all__`, public signatures,
+registered adapters, write modes, and the complete 3×3 transfer-pair set.
+
 | Helper area | Greenplum | Trino | ClickHouse |
 | --- | --- | --- | --- |
 | read, execute, and execute-read workflows | yes | yes | yes |

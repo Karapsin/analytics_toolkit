@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from analytics_toolkit import sql
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 
 
 def _table_name(backend: str, suffix: str) -> str:

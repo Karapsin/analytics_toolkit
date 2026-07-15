@@ -38,3 +38,25 @@ must use fake connections, monkeypatching, and the autouse env fixture in
 tests are allowed only through `run_checks(area="sql", level="integration")`;
 that workflow owns endpoint validation, temporary configuration, diagnostics,
 and container/volume teardown.
+
+## Fresh-Agent Sequence
+
+1. Run `prepare_start(...)`.
+2. Run focused `docs(...)` RAG retrieval.
+3. Read every routed instruction file.
+4. Run `workflow_status(...)`.
+5. Implement only the requested coherent batch.
+6. Run focused checks.
+7. Run `version_bump(...)` for non-documentation changes.
+8. Run `run_checks(level="precommit")`.
+9. Re-run `workflow_status(...)`.
+10. Commit explicit paths with `git_workflow(action="commit", ...)`.
+11. Wait for every required GitHub check for the exact pushed SHA.
+12. Diagnose failures, fix in-scope defects, and recommit until the new SHA is green.
+13. Report the final SHA, push target, conclusions, and run URLs.
+
+If a watch is interrupted, resume it with
+`git_workflow(action="checks", sha="<exact-pushed-sha>")` or
+`agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>`.
+Never use the newest run on `dev` as a proxy for that SHA. Missing authentication,
+API access, required workflows, or a bounded watcher timeout is a blocker.

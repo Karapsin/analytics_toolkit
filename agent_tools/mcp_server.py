@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -58,10 +59,17 @@ CHANGELOG_PATH = "docs/CHANGELOG.md"
 UNRELEASED_CHANGELOG_THRESHOLD = 10
 WORK_BRANCH = "dev"
 RELEASE_BRANCH = "main"
+INTEGRATION_PROFILES = ("core", "auth", "all", "fault")
+REQUIRED_WORKFLOWS_PATH = Path(".github/required-workflows.json")
+GITHUB_CHECK_TIMEOUT_SECONDS = 60 * 60
+GITHUB_CHECK_POLL_SECONDS = 15
+GITHUB_CHECK_DISCOVERY_SECONDS = 5 * 60
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
-CHANGELOG_HEADING_RE = re.compile(r"^##\s+([0-9]+(?:\.[0-9]+){3})\s+-\s+(.+?)\s*$", flags=re.MULTILINE)
+CHANGELOG_HEADING_RE = re.compile(
+    r"^##\s+([0-9]+(?:\.[0-9]+){3})\s+-\s+(.+?)\s*$", flags=re.MULTILINE
+)
 UNRELEASED_HEADING_RE = re.compile(r"^##\s+Unreleased\s*$", flags=re.IGNORECASE | re.MULTILINE)
 DEPENDENCY_RE = re.compile(r'"([^"]+)"')
 
@@ -147,21 +155,28 @@ TEST_COMMANDS = {
     ],
     "sql": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py",
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py tests/test_sql_integration_manifest.py",
             "args": [
                 "pytest",
                 "-q",
                 "tests/test_sql_connection_config.py",
                 "tests/test_sql_retries.py",
                 "tests/test_sql_load_table.py",
+                "tests/test_sql_integration_manifest.py",
             ],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "agent_tools": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py",
-            "args": ["pytest", "-q", "tests/test_rag_docs.py", "tests/test_agent_tools_mcp.py"],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py tests/test_required_workflows.py",
+            "args": [
+                "pytest",
+                "-q",
+                "tests/test_rag_docs.py",
+                "tests/test_agent_tools_mcp.py",
+                "tests/test_required_workflows.py",
+            ],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
@@ -277,7 +292,9 @@ def prepare_start(
                     "expected_branch": WORK_BRANCH,
                 }
             ],
-            next_actions=[f"Switch to {WORK_BRANCH}, resolve checkout issues, then rerun prepare_start."],
+            next_actions=[
+                f"Switch to {WORK_BRANCH}, resolve checkout issues, then rerun prepare_start."
+            ],
         )
 
     try:
@@ -373,7 +390,9 @@ def docs(
             ok=False,
             summary="Docs retrieval failed.",
             blockers=[{"phase": "docs", "message": str(exc)}],
-            next_actions=["Run prepare_start(...) to rebuild the docs index, then retry docs(...)."],
+            next_actions=[
+                "Run prepare_start(...) to rebuild the docs index, then retry docs(...)."
+            ],
         )
 
     return _tool_output(
@@ -633,11 +652,12 @@ def version_bump(  # noqa: C901 - this function coordinates the atomic metadata 
     )
 
 
-def run_checks(
+def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     area: str | None = None,
     change_type: str = "implementation",
     level: str = "focused",
     dry_run: bool = False,
+    integration_profile: str = "all",
     root: str = ".",
 ) -> dict[str, Any]:
     """Plan or execute focused, integration, pre-commit, or release checks."""
@@ -647,10 +667,16 @@ def run_checks(
         "change_type": change_type,
         "level": level,
         "dry_run": dry_run,
+        "integration_profile": integration_profile,
         "root": str(root_path),
     }
     try:
-        commands = _check_commands(area=area, change_type=change_type, level=level)
+        commands = _check_commands(
+            area=area,
+            change_type=change_type,
+            level=level,
+            integration_profile=integration_profile,
+        )
     except ValueError as exc:
         return _tool_output(
             "run_checks",
@@ -699,7 +725,9 @@ def run_checks(
                 result=result_data,
                 command_results=command_results,
                 blockers=[exc.to_dict()],
-                next_actions=["Fix the git fingerprinting failure, then rerun run_checks(level='precommit')."],
+                next_actions=[
+                    "Fix the git fingerprinting failure, then rerun run_checks(level='precommit')."
+                ],
             )
         _record_precommit_success(root_path, fingerprint, command_results)
         result_data["precommit_fingerprint"] = fingerprint
@@ -714,10 +742,12 @@ def run_checks(
     )
 
 
-def git_workflow(
+def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinator.
     action: str,
     message: str | None = None,
     paths: list[str] | None = None,
+    sha: str | None = None,
+    check_timeout_seconds: int = GITHUB_CHECK_TIMEOUT_SECONDS,
     root: str = ".",
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
@@ -726,19 +756,46 @@ def git_workflow(
         "action": action,
         "message": message,
         "paths": paths,
+        "sha": sha,
+        "check_timeout_seconds": check_timeout_seconds,
         "root": str(root_path),
     }
-    if action not in {"commit", "push"}:
+    if action not in {"checks", "commit", "push"}:
         return _tool_output(
             "git_workflow",
             input_summary,
             ok=False,
             summary="Unsupported git workflow action.",
-            blockers=[{"phase": "validate", "message": "action must be 'commit' or 'push'"}],
+            blockers=[
+                {
+                    "phase": "validate",
+                    "message": "action must be 'checks', 'commit', or 'push'",
+                }
+            ],
+        )
+
+    if action == "checks":
+        if not sha:
+            return _tool_output(
+                "git_workflow",
+                input_summary,
+                ok=False,
+                summary="Commit SHA is required to resume GitHub checks.",
+                blockers=[{"phase": "validate", "message": "sha is required for checks"}],
+            )
+        return _github_checks_workflow(
+            root_path,
+            input_summary,
+            sha=sha,
+            timeout_seconds=check_timeout_seconds,
         )
 
     if action == "push":
-        return _push_dev_workflow(root_path, input_summary)
+        return _push_dev_workflow(
+            root_path,
+            input_summary,
+            timeout_seconds=check_timeout_seconds,
+        )
 
     if not message:
         return _tool_output(
@@ -771,7 +828,9 @@ def git_workflow(
                     "message": "paths are required for commit so git_workflow does not stage unrelated changes",
                 }
             ],
-            next_actions=["Pass explicit paths for the current batch, then retry git_workflow(action='commit')."],
+            next_actions=[
+                "Pass explicit paths for the current batch, then retry git_workflow(action='commit')."
+            ],
         )
     version_requirement = _version_bump_requirement(root_path, commit_paths)
     if version_requirement["missing"]:
@@ -787,7 +846,9 @@ def git_workflow(
                     "message": _version_bump_message(version_requirement["missing"]),
                 }
             ],
-            next_actions=["Run version_bump(...), include all version metadata paths, then retry the commit."],
+            next_actions=[
+                "Run version_bump(...), include all version metadata paths, then retry the commit."
+            ],
         )
     verification = _verify_precommit_success(root_path)
     if not verification["ok"]:
@@ -850,11 +911,36 @@ def git_workflow(
             next_actions=["Resolve push blockers, then retry git_workflow(action='push')."],
         )
 
+    checks = _watch_pushed_commit(
+        root_path,
+        timeout_seconds=check_timeout_seconds,
+    )
+    command_results.extend(checks["command_results"])
+    if checks["blockers"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit and push completed, but exact-SHA GitHub verification failed.",
+            result={
+                "push_readiness": push["readiness"],
+                "github_checks": checks["result"],
+            },
+            command_results=command_results,
+            blockers=checks["blockers"],
+            next_actions=[
+                "Fix deterministic failures or retry only demonstrated infrastructure failures, "
+                "then push and watch the new exact SHA."
+            ],
+        )
     return _tool_output(
         "git_workflow",
         input_summary,
-        summary="Commit completed and pushed to dev.",
-        result={"push_readiness": push["readiness"]},
+        summary="Commit, push, and exact-SHA GitHub verification completed.",
+        result={
+            "push_readiness": push["readiness"],
+            "github_checks": checks["result"],
+        },
         command_results=command_results,
     )
 
@@ -869,7 +955,12 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
             input_summary,
             ok=False,
             summary="Unsupported release workflow action.",
-            blockers=[{"phase": "validate", "message": "action must be 'status', 'merge-dev', or 'publish'"}],
+            blockers=[
+                {
+                    "phase": "validate",
+                    "message": "action must be 'status', 'merge-dev', or 'publish'",
+                }
+            ],
         )
 
     if action == "merge-dev":
@@ -886,7 +977,9 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
                 result=status,
                 command_results=status["command_results"],
                 blockers=status["blockers"],
-                next_actions=["Resolve release blockers, then rerun release_workflow(action='status')."],
+                next_actions=[
+                    "Resolve release blockers, then rerun release_workflow(action='status')."
+                ],
             )
 
         command_results: list[dict[str, Any]] = []
@@ -904,7 +997,9 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
                     result=status,
                     command_results=[*status["command_results"], *command_results],
                     blockers=[blocker],
-                    next_actions=["Fix the release validation failure, then rerun release_workflow(action='status')."],
+                    next_actions=[
+                        "Fix the release validation failure, then rerun release_workflow(action='status')."
+                    ],
                 )
 
         try:
@@ -918,7 +1013,9 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
                 result=status,
                 command_results=[*status["command_results"], *command_results],
                 blockers=[exc.to_dict()],
-                next_actions=["Fix the git fingerprinting failure, then rerun release_workflow(action='status')."],
+                next_actions=[
+                    "Fix the git fingerprinting failure, then rerun release_workflow(action='status')."
+                ],
             )
         _record_release_check_success(root_path, fingerprint, command_results)
         status["release_check_verification"] = _verify_release_check_success(root_path)
@@ -928,7 +1025,9 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
             summary="Release is ready.",
             result=status,
             command_results=[*status["command_results"], *command_results],
-            next_actions=["Use release_workflow(action='publish') only after all blockers are resolved."],
+            next_actions=[
+                "Use release_workflow(action='publish') only after all blockers are resolved."
+            ],
         )
 
     status = _release_readiness(root_path, require_release_check=True)
@@ -954,7 +1053,9 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
         "release_workflow",
         input_summary,
         ok=result["ok"],
-        summary="Release publish workflow completed." if result["ok"] else "Release publish workflow failed.",
+        summary="Release publish workflow completed."
+        if result["ok"]
+        else "Release publish workflow failed.",
         result=status,
         command_results=[*status["command_results"], result],
         blockers=[] if result["ok"] else [_command_blocker("publish", result)],
@@ -1177,7 +1278,9 @@ def _handle_cli_call(argv: list[str]) -> int:
             json.dumps(
                 {
                     "ok": False,
-                    "tool": args.command.replace("-", "_") if hasattr(args, "command") else "unknown",
+                    "tool": args.command.replace("-", "_")
+                    if hasattr(args, "command")
+                    else "unknown",
                     "error": str(exc),
                 },
                 indent=2,
@@ -1198,8 +1301,12 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--module")
     prepare_parser.add_argument("--root", default=".")
     prepare_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
-    prepare_parser.add_argument("--ensure-project-env", dest="ensure_project_env", action="store_true", default=True)
-    prepare_parser.add_argument("--no-ensure-project-env", dest="ensure_project_env", action="store_false")
+    prepare_parser.add_argument(
+        "--ensure-project-env", dest="ensure_project_env", action="store_true", default=True
+    )
+    prepare_parser.add_argument(
+        "--no-ensure-project-env", dest="ensure_project_env", action="store_false"
+    )
     prepare_parser.set_defaults(
         handler=lambda args: prepare_start(
             task=args.task,
@@ -1265,6 +1372,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         default="focused",
     )
     checks_parser.add_argument("--dry-run", action="store_true")
+    checks_parser.add_argument(
+        "--integration-profile",
+        choices=INTEGRATION_PROFILES,
+        default="all",
+    )
     checks_parser.add_argument("--root", default=".")
     checks_parser.set_defaults(
         handler=lambda args: run_checks(
@@ -1272,26 +1384,37 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             change_type=args.change_type,
             level=args.level,
             dry_run=args.dry_run,
+            integration_profile=args.integration_profile,
             root=args.root,
         )
     )
 
     git_parser = subparsers.add_parser("git-workflow")
-    git_parser.add_argument("action", choices=["commit", "push"])
+    git_parser.add_argument("action", choices=["checks", "commit", "push"])
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
+    git_parser.add_argument("--sha")
+    git_parser.add_argument(
+        "--check-timeout-seconds",
+        type=int,
+        default=GITHUB_CHECK_TIMEOUT_SECONDS,
+    )
     git_parser.add_argument("--root", default=".")
     git_parser.set_defaults(
         handler=lambda args: git_workflow(
             action=args.action,
             message=args.message,
             paths=args.paths,
+            sha=args.sha,
+            check_timeout_seconds=args.check_timeout_seconds,
             root=args.root,
         )
     )
 
     release_parser = subparsers.add_parser("release-workflow")
-    release_parser.add_argument("--action", choices=["status", "merge-dev", "publish"], default="status")
+    release_parser.add_argument(
+        "--action", choices=["status", "merge-dev", "publish"], default="status"
+    )
     release_parser.add_argument("--root", default=".")
     release_parser.set_defaults(
         handler=lambda args: release_workflow(action=args.action, root=args.root)
@@ -1300,7 +1423,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _prepare_start_commands(root: Path, ensure_project_env: bool) -> list[tuple[str, dict[str, Any]]]:
+def _prepare_start_commands(
+    root: Path, ensure_project_env: bool
+) -> list[tuple[str, dict[str, Any]]]:
     venv_python = root / ".venv" / "bin" / "python"
     commands: list[tuple[str, dict[str, Any]]] = [
         (
@@ -1344,7 +1469,14 @@ def _prepare_start_commands(root: Path, ensure_project_env: bool) -> list[tuple[
             "mcp_requirements",
             {
                 "display": ".venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt",
-                "args": [str(venv_python), "-m", "pip", "install", "-r", "agent_tools/requirements-mcp.txt"],
+                "args": [
+                    str(venv_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    "agent_tools/requirements-mcp.txt",
+                ],
                 "env": {},
             },
         )
@@ -1363,7 +1495,19 @@ def _prepare_start_commands(root: Path, ensure_project_env: bool) -> list[tuple[
     return commands
 
 
-def _check_commands(area: str | None, change_type: str, level: str) -> list[dict[str, Any]]:
+def _check_commands(
+    area: str | None,
+    change_type: str,
+    level: str,
+    integration_profile: str = "all",
+) -> list[dict[str, Any]]:
+    if integration_profile not in INTEGRATION_PROFILES:
+        expected = ", ".join(INTEGRATION_PROFILES)
+        message = f"integration_profile must be one of: {expected}"
+        raise ValueError(message)
+    if level != "integration" and integration_profile != "all":
+        message = "integration_profile is only valid for level='integration'"
+        raise ValueError(message)
     if level == "focused":
         key = _normalize_area(area or "")
         return TEST_COMMANDS.get(
@@ -1382,8 +1526,16 @@ def _check_commands(area: str | None, change_type: str, level: str) -> list[dict
             raise ValueError(message)
         return [
             {
-                "display": "python -m release_routines.sql_integration",
-                "args": [sys.executable, "-m", "release_routines.sql_integration"],
+                "display": (
+                    f"python -m release_routines.sql_integration --profile {integration_profile}"
+                ),
+                "args": [
+                    sys.executable,
+                    "-m",
+                    "release_routines.sql_integration",
+                    "--profile",
+                    integration_profile,
+                ],
                 "env": {},
             }
         ]
@@ -1430,7 +1582,9 @@ def _run_git_pull(root: Path) -> dict[str, Any]:
 
 
 def _run_git(root: Path, args: list[str]) -> dict[str, Any]:
-    return _run_command(root, {"display": f"git {' '.join(args)}", "args": ["git", *args], "env": {}})
+    return _run_command(
+        root, {"display": f"git {' '.join(args)}", "args": ["git", *args], "env": {}}
+    )
 
 
 def _command_display(command: dict[str, Any]) -> str:
@@ -1664,7 +1818,9 @@ def _increment_version(version: str) -> str:
 
 
 def _project_dependencies(pyproject_text: str) -> list[str]:
-    match = re.search(r"^dependencies\s*=\s*\[(.*?)^\]", pyproject_text, flags=re.MULTILINE | re.DOTALL)
+    match = re.search(
+        r"^dependencies\s*=\s*\[(.*?)^\]", pyproject_text, flags=re.MULTILINE | re.DOTALL
+    )
     if match is None:
         return []
     return DEPENDENCY_RE.findall(match.group(1))
@@ -1672,7 +1828,11 @@ def _project_dependencies(pyproject_text: str) -> list[str]:
 
 def _optional_dependencies(pyproject_text: str) -> dict[str, list[str]]:
     optional: dict[str, list[str]] = {}
-    match = re.search(r"^\[project\.optional-dependencies\]\s*(.*?)(?:^\[|\Z)", pyproject_text, flags=re.MULTILINE | re.DOTALL)
+    match = re.search(
+        r"^\[project\.optional-dependencies\]\s*(.*?)(?:^\[|\Z)",
+        pyproject_text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
     if match is None:
         return optional
     for line in match.group(1).splitlines():
@@ -1715,7 +1875,9 @@ def _unique(values: list[str]) -> list[str]:
 def _routing_notes(required_files: list[str]) -> list[str]:
     notes = []
     if "agent_docs/development.md" in required_files:
-        notes.append("Implementation, testing, build, or commit work requires development instructions.")
+        notes.append(
+            "Implementation, testing, build, or commit work requires development instructions."
+        )
     if "agent_docs/documentation.md" in required_files:
         notes.append("Public documentation changes must follow documentation instructions.")
     if "agent_docs/release.md" in required_files:
@@ -1752,9 +1914,13 @@ def _missing_mandatory_actions(
         if version_requirement["missing"]:
             missing.append(_version_bump_message(version_requirement["missing"]))
         if not metadata["ok"]:
-            missing.append("Run version_bump(...) so pyproject.toml, README.md, and docs/CHANGELOG.md align.")
+            missing.append(
+                "Run version_bump(...) so pyproject.toml, README.md, and docs/CHANGELOG.md align."
+            )
         if not _verify_precommit_success(root)["ok"]:
-            missing.append("Run run_checks(level='precommit') before git_workflow(action='commit').")
+            missing.append(
+                "Run run_checks(level='precommit') before git_workflow(action='commit')."
+            )
     return missing
 
 
@@ -1916,7 +2082,9 @@ def _is_sensitive_local_path(rel_path: str) -> bool:
     if not normalized:
         return False
     parts = normalized.split("/")
-    return normalized in SENSITIVE_LOCAL_PATHS or any(_is_sensitive_path_part(part) for part in parts)
+    return normalized in SENSITIVE_LOCAL_PATHS or any(
+        _is_sensitive_path_part(part) for part in parts
+    )
 
 
 def _is_sensitive_path_part(part: str) -> bool:
@@ -1937,7 +2105,11 @@ def _tracked_diff_fingerprint_parts(root: Path, *, staged: bool) -> list[str]:
         if _is_sensitive_local_path(rel_path):
             parts.append(f"{rel_path}:excluded-sensitive-local-path")
             continue
-        diff_args = ["diff", "--cached", "--binary", "--", rel_path] if staged else ["diff", "--binary", "--", rel_path]
+        diff_args = (
+            ["diff", "--cached", "--binary", "--", rel_path]
+            if staged
+            else ["diff", "--binary", "--", rel_path]
+        )
         diff = _require_git_for_fingerprint(root, diff_args)
         parts.append(diff.get("stdout", ""))
         parts.append(diff.get("stderr", ""))
@@ -2017,7 +2189,11 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
             "recorded_fingerprint": recorded,
             "current_fingerprint": current,
         }
-    return {"ok": True, "message": "Pre-commit check record matches the current tree.", "fingerprint": current}
+    return {
+        "ok": True,
+        "message": "Pre-commit check record matches the current tree.",
+        "fingerprint": current,
+    }
 
 
 def _push_readiness(root: Path) -> dict[str, Any]:
@@ -2026,7 +2202,9 @@ def _push_readiness(root: Path) -> dict[str, Any]:
     if health["branch"] != WORK_BRANCH:
         blockers.append({"phase": "push", "message": f"Push workflow must run from {WORK_BRANCH}."})
     if health["dirty"]:
-        blockers.append({"phase": "push", "message": "Push workflow requires a clean working tree."})
+        blockers.append(
+            {"phase": "push", "message": "Push workflow requires a clean working tree."}
+        )
 
     remote = _remote_dev_status(root, require_equal=False)
     blockers.extend(remote["blockers"])
@@ -2063,18 +2241,361 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
     }
 
 
-def _push_dev_workflow(root: Path, input_summary: dict[str, Any]) -> dict[str, Any]:
+def _push_dev_workflow(
+    root: Path,
+    input_summary: dict[str, Any],
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
     push = _push_dev_result(root)
+    if push["blockers"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Push failed.",
+            result={"push_readiness": push["readiness"]},
+            command_results=push["command_results"],
+            blockers=push["blockers"],
+            next_actions=[
+                "Resolve push readiness blockers, then retry git_workflow(action='push')."
+            ],
+        )
+
+    checks = _watch_pushed_commit(root, timeout_seconds=timeout_seconds)
     return _tool_output(
         "git_workflow",
         input_summary,
-        ok=not push["blockers"],
-        summary="Push completed." if not push["blockers"] else "Push failed.",
-        result={"push_readiness": push["readiness"]},
-        command_results=push["command_results"],
-        blockers=push["blockers"],
-        next_actions=[] if not push["blockers"] else ["Resolve push readiness blockers, then retry git_workflow(action='push')."],
+        ok=not checks["blockers"],
+        summary=(
+            "Push and exact-SHA GitHub verification completed."
+            if not checks["blockers"]
+            else "Push completed, but exact-SHA GitHub verification failed."
+        ),
+        result={
+            "push_readiness": push["readiness"],
+            "github_checks": checks["result"],
+        },
+        command_results=[*push["command_results"], *checks["command_results"]],
+        blockers=checks["blockers"],
+        next_actions=(
+            []
+            if not checks["blockers"]
+            else ["Resume with git_workflow(action='checks', sha='<pushed-sha>')."]
+        ),
     )
+
+
+def _github_checks_workflow(
+    root: Path,
+    input_summary: dict[str, Any],
+    *,
+    sha: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    checks = _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
+    return _tool_output(
+        "git_workflow",
+        input_summary,
+        ok=not checks["blockers"],
+        summary=(
+            "Exact-SHA GitHub verification completed."
+            if not checks["blockers"]
+            else "Exact-SHA GitHub verification failed."
+        ),
+        result={"github_checks": checks["result"]},
+        command_results=checks["command_results"],
+        blockers=checks["blockers"],
+    )
+
+
+def _watch_pushed_commit(root: Path, *, timeout_seconds: int) -> dict[str, Any]:
+    head = _run_git(root, ["rev-parse", "HEAD"])
+    if not head["ok"]:
+        return {
+            "result": {},
+            "command_results": [head],
+            "blockers": [_command_blocker("github_checks_sha", head)],
+        }
+    sha = head["stdout"].strip()
+    watched = _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
+    watched["command_results"].insert(0, head)
+    return watched
+
+
+def _watch_github_checks(  # noqa: C901, PLR0911 - bounded polling state machine.
+    root: Path,
+    *,
+    sha: str,
+    timeout_seconds: int = GITHUB_CHECK_TIMEOUT_SECONDS,
+    poll_seconds: int = GITHUB_CHECK_POLL_SECONDS,
+    discovery_seconds: int = GITHUB_CHECK_DISCOVERY_SECONDS,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
+        return _github_check_failure(sha, "validate", "sha must be a Git commit SHA")
+    if timeout_seconds <= 0:
+        return _github_check_failure(sha, "validate", "timeout must be positive")
+
+    try:
+        manifest = json.loads((root / REQUIRED_WORKFLOWS_PATH).read_text(encoding="utf-8"))
+        branch_manifest = manifest["branches"][WORK_BRANCH]
+        expected = branch_manifest["workflows"]
+        conditional_checks = branch_manifest.get("conditional_checks", [])
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        return _github_check_failure(sha, "manifest", str(exc))
+
+    repo_result = _run_command(
+        root,
+        {
+            "display": "gh repo view --json nameWithOwner --jq .nameWithOwner",
+            "args": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+            "env": {},
+        },
+    )
+    command_results = [repo_result]
+    if not repo_result["ok"]:
+        return {
+            "result": {"sha": sha},
+            "command_results": command_results,
+            "blockers": [_command_blocker("github_auth", repo_result)],
+        }
+    repository = repo_result["stdout"].strip()
+    started = time.monotonic()
+    discovery_deadline = started + min(discovery_seconds, timeout_seconds)
+    deadline = started + timeout_seconds
+    last_snapshot: dict[str, Any] = {"sha": sha, "repository": repository}
+
+    while True:
+        snapshot = _github_check_snapshot(root, repository, sha)
+        command_results.extend(snapshot.pop("command_results"))
+        if snapshot.get("error"):
+            return {
+                "result": {**last_snapshot, **snapshot},
+                "command_results": command_results,
+                "blockers": [snapshot["error"]],
+            }
+        last_snapshot = {
+            "sha": sha,
+            "repository": repository,
+            "conditional_checks": conditional_checks,
+            **snapshot,
+        }
+        classified = _classify_github_snapshot(expected, last_snapshot)
+        last_snapshot["required"] = classified["required"]
+        if classified["failed"]:
+            failed_logs = _failed_run_logs(root, classified["failed"])
+            command_results.extend(failed_logs)
+            return {
+                "result": last_snapshot,
+                "command_results": command_results,
+                "blockers": [
+                    {
+                        "phase": "github_checks",
+                        "message": "Required GitHub checks did not succeed.",
+                        "failures": classified["failed"],
+                    }
+                ],
+            }
+        now = time.monotonic()
+        if not classified["missing"] and not classified["pending"]:
+            return {"result": last_snapshot, "command_results": command_results, "blockers": []}
+        if classified["missing"] and now >= discovery_deadline:
+            return {
+                "result": last_snapshot,
+                "command_results": command_results,
+                "blockers": [
+                    {
+                        "phase": "github_checks_discovery",
+                        "message": "Required workflows did not appear for the exact SHA.",
+                        "missing": classified["missing"],
+                    }
+                ],
+            }
+        if now >= deadline:
+            return {
+                "result": last_snapshot,
+                "command_results": command_results,
+                "blockers": [
+                    {
+                        "phase": "github_checks_timeout",
+                        "message": "Timed out waiting for exact-SHA GitHub checks.",
+                        "missing": classified["missing"],
+                        "pending": classified["pending"],
+                    }
+                ],
+            }
+        time.sleep(min(poll_seconds, max(0.0, deadline - now)))
+
+
+def _github_check_snapshot(root: Path, repository: str, sha: str) -> dict[str, Any]:
+    endpoints = {
+        "runs": f"repos/{repository}/actions/runs?head_sha={sha}&event=push&per_page=100",
+        "check_runs": f"repos/{repository}/commits/{sha}/check-runs?per_page=100",
+        "statuses": f"repos/{repository}/commits/{sha}/status",
+    }
+    payloads: dict[str, Any] = {}
+    results: list[dict[str, Any]] = []
+    for key, endpoint in endpoints.items():
+        result = _run_command(
+            root,
+            {
+                "display": f"gh api {endpoint}",
+                "args": ["gh", "api", endpoint],
+                "env": {},
+            },
+        )
+        results.append(result)
+        if not result["ok"]:
+            return {
+                "command_results": results,
+                "error": _command_blocker("github_api", result),
+            }
+        try:
+            payloads[key] = json.loads(result["stdout"] or "{}")
+        except json.JSONDecodeError as exc:
+            return {
+                "command_results": results,
+                "error": {"phase": "github_api", "message": str(exc)},
+            }
+
+    runs = payloads["runs"].get("workflow_runs", [])
+    jobs: list[dict[str, Any]] = []
+    for run in runs:
+        endpoint = f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100"
+        result = _run_command(
+            root,
+            {"display": f"gh api {endpoint}", "args": ["gh", "api", endpoint], "env": {}},
+        )
+        results.append(result)
+        if not result["ok"]:
+            return {
+                "command_results": results,
+                "error": _command_blocker("github_jobs", result),
+            }
+        try:
+            run_jobs = json.loads(result["stdout"] or "{}").get("jobs", [])
+        except json.JSONDecodeError as exc:
+            return {
+                "command_results": results,
+                "error": {"phase": "github_jobs", "message": str(exc)},
+            }
+        jobs.extend({**job, "workflow_run_id": run["id"]} for job in run_jobs)
+    return {
+        "runs": runs,
+        "jobs": jobs,
+        "check_runs": payloads["check_runs"].get("check_runs", []),
+        "statuses": payloads["statuses"].get("statuses", []),
+        "command_results": results,
+    }
+
+
+def _classify_github_snapshot(  # noqa: C901, PLR0912 - checks multiple GitHub state kinds.
+    expected: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    runs_by_name = {run.get("name"): run for run in snapshot.get("runs", [])}
+    jobs = snapshot.get("jobs", [])
+    required: list[dict[str, Any]] = []
+    missing: list[str] = []
+    pending: list[str] = []
+    failed: list[dict[str, Any]] = []
+    for entry in expected:
+        name = entry["name"]
+        run = runs_by_name.get(name)
+        if run is None:
+            missing.append(name)
+            continue
+        item = {
+            "name": name,
+            "run_id": run.get("id"),
+            "status": run.get("status"),
+            "conclusion": run.get("conclusion"),
+            "url": run.get("html_url"),
+            "jobs": [],
+        }
+        required.append(item)
+        if run.get("status") != "completed":
+            pending.append(name)
+            continue
+        allowed = set(entry.get("allowed_conclusions", ["success"]))
+        if run.get("conclusion") not in allowed:
+            failed.append(item)
+            continue
+        required_jobs = entry.get("required_jobs", [])
+        run_jobs = [job for job in jobs if job.get("workflow_run_id") == run.get("id")]
+        for job_name in required_jobs:
+            job = next(
+                (candidate for candidate in run_jobs if candidate.get("name") == job_name), None
+            )
+            if job is None:
+                missing.append(f"{name}: {job_name}")
+                continue
+            job_item = {
+                "name": job_name,
+                "status": job.get("status"),
+                "conclusion": job.get("conclusion"),
+                "url": job.get("html_url"),
+            }
+            item["jobs"].append(job_item)
+            if job.get("status") != "completed":
+                pending.append(f"{name}: {job_name}")
+            elif job.get("conclusion") not in allowed:
+                failed.append({**job_item, "workflow": name, "run_id": run.get("id")})
+
+    conditional = set(snapshot.get("conditional_checks", []))
+    for check in snapshot.get("check_runs", []):
+        conclusion = check.get("conclusion")
+        if check.get("status") != "completed":
+            pending.append(f"check-run: {check.get('name')}")
+        elif conclusion != "success" and not (
+            conclusion in {"neutral", "skipped"} and check.get("name") in conditional
+        ):
+            failed.append(
+                {
+                    "name": check.get("name"),
+                    "conclusion": conclusion,
+                    "url": check.get("html_url"),
+                }
+            )
+    for status in snapshot.get("statuses", []):
+        state = status.get("state")
+        context = status.get("context", "unknown")
+        if state == "pending":
+            pending.append(f"status: {context}")
+        elif state != "success":
+            failed.append(
+                {
+                    "name": context,
+                    "conclusion": state,
+                    "url": status.get("target_url"),
+                }
+            )
+    return {"required": required, "missing": missing, "pending": pending, "failed": failed}
+
+
+def _failed_run_logs(root: Path, failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    run_ids = sorted(
+        {item.get("run_id") for item in failures if item.get("run_id")}
+    )
+    return [
+        _run_command(
+            root,
+            {
+                "display": f"gh run view {run_id} --log-failed",
+                "args": ["gh", "run", "view", str(run_id), "--log-failed"],
+                "env": {},
+            },
+        )
+        for run_id in run_ids
+    ]
+
+
+def _github_check_failure(sha: str, phase: str, message: str) -> dict[str, Any]:
+    return {
+        "result": {"sha": sha},
+        "command_results": [],
+        "blockers": [{"phase": phase, "message": message}],
+    }
 
 
 def _remote_main_status(root: Path, *, require_equal: bool) -> dict[str, Any]:
@@ -2162,7 +2683,12 @@ def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[st
             ok=False,
             summary="Release merge blocked by repository readiness checks.",
             result={"repo_health": health},
-            blockers=[{"phase": "release_merge", "message": "Release merge requires a clean working tree."}],
+            blockers=[
+                {
+                    "phase": "release_merge",
+                    "message": "Release merge requires a clean working tree.",
+                }
+            ],
         )
 
     command_results: list[dict[str, Any]] = []
@@ -2209,7 +2735,9 @@ def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[st
                 summary="Release merge failed.",
                 command_results=command_results,
                 blockers=[_command_blocker("release_merge", result)],
-                next_actions=["Resolve the merge blocker, then rerun release_workflow(action='merge-dev')."],
+                next_actions=[
+                    "Resolve the merge blocker, then rerun release_workflow(action='merge-dev')."
+                ],
             )
 
     return _tool_output(
@@ -2303,9 +2831,13 @@ def _release_readiness(root: Path, *, require_release_check: bool = False) -> di
     route = route_agent_context("release publish", module=None)
     blockers = [*metadata["blockers"], *dependencies["blockers"]]
     if health["branch"] != RELEASE_BRANCH:
-        blockers.append({"phase": "release", "message": f"Release publishing must run from {RELEASE_BRANCH}."})
+        blockers.append(
+            {"phase": "release", "message": f"Release publishing must run from {RELEASE_BRANCH}."}
+        )
     if health["dirty"]:
-        blockers.append({"phase": "release", "message": "Release publishing requires a clean working tree."})
+        blockers.append(
+            {"phase": "release", "message": "Release publishing requires a clean working tree."}
+        )
     if "agent_docs/release.md" not in route["required_files"]:
         blockers.append({"phase": "release", "message": "Release instructions were not routed."})
     remote = _remote_main_status(root, require_equal=True)

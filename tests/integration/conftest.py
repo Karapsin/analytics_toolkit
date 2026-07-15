@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,19 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "transfer_staging_schema": "integration",
         },
     }
+    connections["trino_values"] = {
+        **connections["trino"],
+        "transfer_staging_location": None,
+        "insert_chunk_size": 2,
+    }
+    connections["trino_parquet"] = {**connections["trino"]}
+    connections["ch_limited"] = {
+        **connections["ch"],
+        "query_limit": 2,
+        "query_retries": 1,
+        "client_name": "analytics-toolkit-integration",
+        "settings": {"max_execution_time": 60},
+    }
     if os.environ.get("SQL_INTEGRATION_GP") == "1":
         connections["gp"] = {
             "type": "gp",
@@ -54,6 +68,34 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "sslmode": "disable",
             "transfer_staging_schema": "public",
         }
+        connections["gp_alias"] = {**connections["gp"]}
+    if os.environ.get("SQL_INTEGRATION_PROFILE") == "auth":
+        certs = os.environ["SQL_INTEGRATION_CERTS"]
+        connections["trino_basic_tls"] = {
+            **connections["trino_values"],
+            "port": int(os.environ.get("SQL_INTEGRATION_TRINO_TLS_PORT", "18443")),
+            "password": "integration",
+            "auth_mode": "basic",
+            "http_scheme": "https",
+            "ca_certs": [f"{certs}/ca.crt"],
+            "verify": True,
+        }
+        connections["ch_tls"] = {
+            **connections["ch"],
+            "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_TLS_PORT", "18444")),
+            "secure": True,
+            "verify": True,
+            "ca_certs": [f"{certs}/ca.crt"],
+        }
+        if "gp" in connections:
+            connections["gp_tls"] = {
+                **connections["gp"],
+                "port": int(os.environ.get("SQL_INTEGRATION_GP_TLS_PORT", "19432")),
+                "sslmode": "verify-full",
+                "ca_certs": [f"{certs}/ca.crt"],
+                "ssl_cert": f"{certs}/client.crt",
+                "ssl_key": f"{certs}/client.key",
+            }
     return connections
 
 
@@ -88,3 +130,35 @@ def initialize_integration_schemas(default_sql_connections: None) -> Iterator[No
     sql.execute("trino", "CREATE SCHEMA IF NOT EXISTS iceberg.integration")
     sql.execute("trino", "CREATE SCHEMA IF NOT EXISTS iceberg.integration_stage")
     yield
+
+
+@pytest.fixture(autouse=True)
+def assert_no_toolkit_leaks(
+    default_sql_connections: None,
+    tmp_path: Path,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> Iterator[None]:
+    del default_sql_connections
+    yield
+    write_sql_connections(_integration_connections())
+    leak_report = {
+        "tables": [],
+        "queries": [],
+        "objects": [],
+    }
+    for backend in ("trino", "ch"):
+        tables = sql.show_tables(backend)
+        names = tables.get("table_name", []).tolist()
+        leak_report["tables"].extend(
+            f"{backend}:{name}" for name in names if str(name).startswith("it_stage_")
+        )
+        active = sql.show_queries(backend, state="active")
+        if "query" in active:
+            leak_report["queries"].extend(
+                f"{backend}:{value}"
+                for value in active["query"].astype(str)
+                if "analytics_toolkit_integration" in value
+            )
+    report_path = tmp_path / "integration-leaks.json"
+    report_path.write_text(json.dumps(leak_report, indent=2), encoding="utf-8")
+    assert not any(leak_report.values()), leak_report

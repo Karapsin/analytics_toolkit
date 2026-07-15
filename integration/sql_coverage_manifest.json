@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "backends": ["gp", "trino", "ch"],
+  "write_modes": ["append", "replace", "truncate_insert", "upsert"],
+  "transfer_pairs": [
+    ["gp", "gp"], ["gp", "trino"], ["gp", "ch"],
+    ["trino", "gp"], ["trino", "trino"], ["trino", "ch"],
+    ["ch", "gp"], ["ch", "trino"], ["ch", "ch"]
+  ],
+  "integration_exports": {
+    "async_sql": "tests/integration/test_sql_matrix.py::test_orchestration_task_matrix",
+    "parallel_sql": "tests/integration/test_sql_matrix.py::test_orchestration_task_matrix",
+    "cancel_queries": "tests/integration/test_sql_matrix.py::test_query_observability_matrix",
+    "create_sql_table": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
+    "drop_partitions": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
+    "drop_tables": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
+    "execute": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
+    "execute_read": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
+    "extract_ddl": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
+    "gp_create_partitions": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
+    "gp_vacuum": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
+    "load_df": "tests/integration/test_sql_matrix.py::test_load_write_mode_matrix",
+    "read": "tests/integration/test_sql_matrix.py::test_read_execute_matrix",
+    "show_queries": "tests/integration/test_sql_matrix.py::test_query_observability_matrix",
+    "show_tables": "tests/integration/test_sql_backends.py::test_backend_load_metadata_upsert_and_cleanup",
+    "table_info": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
+    "cleanup_stale_stage_tables": "tests/integration/test_sql_matrix.py::test_table_lifecycle_matrix",
+    "transfer": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix",
+    "validate_connections": "tests/integration/test_sql_backends.py::test_connections_are_valid_and_reachable"
+  },
+  "unit_only_exports": {
+    "BACKEND_CAPABILITIES": {"test": "tests/test_sql_backend_adapters.py", "reason": "immutable capability metadata"},
+    "BackendName": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
+    "ConnectionKey": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
+    "ConnectionValidationResult": {"test": "tests/test_sql_connection_config.py", "reason": "result value type"},
+    "SqlOperationContext": {"test": "tests/test_sql_retries.py", "reason": "error context value type"},
+    "SqlOperationError": {"test": "tests/test_sql_retries.py", "reason": "error value type"},
+    "SqlOperationMetadata": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "metadata value type"},
+    "SqlOperationResult": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "result value type"},
+    "SqlPlan": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "plan value type"},
+    "SqlStatement": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "statement value type"},
+    "SqlTableInfo": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "table metadata value type"},
+    "SqlTaskType": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
+    "SqlText": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
+    "TableName": {"test": "tests/test_sql_public_facade_smoke.py", "reason": "typing export"},
+    "format_plan": {"test": "tests/test_sql_improvements.py", "reason": "pure formatting"},
+    "generate_dummy_connections": {"test": "tests/test_sql_connection_config.py", "reason": "local configuration generation"},
+    "get_time_print_sink": {"test": "tests/test_general_logging.py", "reason": "process-local timing configuration"},
+    "set_time_print_sink": {"test": "tests/test_general_logging.py", "reason": "process-local timing configuration"},
+    "time_print": {"test": "tests/test_general_logging.py", "reason": "logging sink helper"}
+  },
+  "parameter_policy": {
+    "integration_default": "Every public parameter of an integration export is exercised by its named scenario or a deterministic validation test.",
+    "unit_only_default": "Constructor and helper parameters have no database behavior and are covered by the referenced deterministic unit test."
+  },
+  "unsupported_authentication": {
+    "kerberos": "not exposed by analytics_toolkit SQL connection configuration",
+    "jwt": "not exposed by analytics_toolkit SQL connection configuration"
+  }
+}

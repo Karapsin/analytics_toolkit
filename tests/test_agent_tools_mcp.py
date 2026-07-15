@@ -91,7 +91,9 @@ def test_resolve_root_defaults_to_repo_root_even_when_cwd_has_pyproject(
     assert mcp_server._resolve_root(str(outside)) == outside.resolve()
 
 
-def test_prepare_start_stops_on_failed_step(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_prepare_start_stops_on_failed_step(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     calls: list[str] = []
 
@@ -296,7 +298,7 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
     assert "agent_tools/README.md" in result["result"]["required_instruction_files"]
     assert result["result"]["metadata_status"]["ok"] is True
     assert result["result"]["recommended_checks"]["focused_commands"] == [
-        "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py"
+        "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py tests/test_required_workflows.py"
     ]
 
 
@@ -434,7 +436,9 @@ def test_workflow_status_cli_accepts_instructions_read_flag(
 def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
 
-    dry_run = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root), dry_run=True)
+    dry_run = mcp_server.version_bump(
+        "Consolidated agent MCP workflow", root=str(root), dry_run=True
+    )
     applied = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 
     assert dry_run["result"]["decision"] == "unreleased"
@@ -537,7 +541,9 @@ def test_version_bump_force_release_requires_unreleased_entries(tmp_path: Path) 
     )
 
 
-def test_version_bump_fails_when_readme_version_marker_is_missing_at_threshold(tmp_path: Path) -> None:
+def test_version_bump_fails_when_readme_version_marker_is_missing_at_threshold(
+    tmp_path: Path,
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
     (root / "README.md").write_text("# analytics_toolkit\n", encoding="utf-8")
@@ -587,9 +593,11 @@ def test_version_bump_skips_documentation_only_changes(tmp_path: Path) -> None:
 def test_run_checks_dry_run_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
 
-    dry_run = mcp_server.run_checks(area="agent_tools", level="focused", root=str(root), dry_run=True)
+    dry_run = mcp_server.run_checks(
+        area="agent_tools", level="focused", root=str(root), dry_run=True
+    )
     assert dry_run["result"]["planned_commands"] == [
-        "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py"
+        "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py tests/test_required_workflows.py"
     ]
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -627,7 +635,7 @@ def test_run_checks_plans_sql_integration_and_rejects_other_areas(tmp_path: Path
     )
 
     assert planned["result"]["planned_commands"] == [
-        "python -m release_routines.sql_integration"
+        "python -m release_routines.sql_integration --profile all"
     ]
     assert rejected["ok"] is False
     assert rejected["blockers"][0]["message"] == (
@@ -649,6 +657,7 @@ def test_run_checks_cli_accepts_integration_level(monkeypatch: pytest.MonkeyPatc
     assert args.handler(args) == {"ok": True}
     assert captured["area"] == "sql"
     assert captured["level"] == "integration"
+    assert captured["integration_profile"] == "all"
 
 
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
@@ -884,6 +893,15 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
+    monkeypatch.setattr(
+        mcp_server,
+        "_watch_pushed_commit",
+        lambda root_path, timeout_seconds: {
+            "result": {"sha": "a" * 40},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
     real_run_command = mcp_server._run_command
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -935,6 +953,15 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
+    monkeypatch.setattr(
+        mcp_server,
+        "_watch_pushed_commit",
+        lambda root_path, timeout_seconds: {
+            "result": {"sha": "a" * 40},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
         commands.append(str(command["display"]))
@@ -984,6 +1011,15 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
         mcp_server,
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_watch_pushed_commit",
+        lambda root_path, timeout_seconds: {
+            "result": {"sha": "a" * 40},
+            "command_results": [],
+            "blockers": [],
+        },
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -1254,6 +1290,15 @@ def test_git_workflow_commit_and_push_dispatch(
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
     )
+    monkeypatch.setattr(
+        mcp_server,
+        "_watch_pushed_commit",
+        lambda root_path, timeout_seconds: {
+            "result": {"sha": "a" * 40, "required": []},
+            "command_results": [],
+            "blockers": [],
+        },
+    )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
         commands.append(str(command["display"]))
@@ -1276,7 +1321,7 @@ def test_git_workflow_commit_and_push_dispatch(
     )
 
     assert result["ok"] is True
-    assert result["summary"] == "Commit completed and pushed to dev."
+    assert result["summary"] == "Commit, push, and exact-SHA GitHub verification completed."
     assert commands == [
         "git add -- agent_tools/mcp_server.py tests/test_agent_tools_mcp.py",
         "git commit -m 'Update workflow'",
@@ -1294,6 +1339,15 @@ def test_git_workflow_push_dispatch(
         mcp_server,
         "_push_readiness",
         lambda root_path: {"blockers": [], "command_results": [], "repo_health": {"branch": "dev"}},
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_watch_pushed_commit",
+        lambda root_path, timeout_seconds: {
+            "result": {"sha": "a" * 40, "required": []},
+            "command_results": [],
+            "blockers": [],
+        },
     )
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -1313,6 +1367,54 @@ def test_git_workflow_push_dispatch(
 
     assert result["ok"] is True
     assert commands == ["git push origin HEAD:dev"]
+
+
+def test_git_workflow_checks_requires_sha(tmp_path: Path) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+
+    result = mcp_server.git_workflow("checks", root=str(root))
+
+    assert result["ok"] is False
+    assert result["blockers"][0]["phase"] == "validate"
+
+
+def test_classify_github_snapshot_requires_workflows_jobs_and_statuses() -> None:
+    expected = [
+        {
+            "name": "sql-integration",
+            "required_jobs": ["core SQL integration"],
+            "allowed_conclusions": ["success"],
+        }
+    ]
+    snapshot = {
+        "runs": [
+            {
+                "name": "sql-integration",
+                "id": 42,
+                "status": "completed",
+                "conclusion": "success",
+                "html_url": "https://example.test/run/42",
+            }
+        ],
+        "jobs": [
+            {
+                "workflow_run_id": 42,
+                "name": "core SQL integration",
+                "status": "completed",
+                "conclusion": "success",
+                "html_url": "https://example.test/job/7",
+            }
+        ],
+        "check_runs": [],
+        "statuses": [],
+    }
+
+    result = mcp_server._classify_github_snapshot(expected, snapshot)
+
+    assert result["missing"] == []
+    assert result["pending"] == []
+    assert result["failed"] == []
+    assert result["required"][0]["run_id"] == 42
 
 
 def test_git_workflow_commit_reports_push_readiness_failure(
@@ -1757,7 +1859,9 @@ def test_release_publish_requires_current_release_check(
     def fake_readiness(root_path: Path, require_release_check: bool = False) -> dict[str, object]:
         seen_require_release_check.append(require_release_check)
         return {
-            "blockers": [{"phase": "release_checks", "message": "No successful release check record exists."}],
+            "blockers": [
+                {"phase": "release_checks", "message": "No successful release check record exists."}
+            ],
             "command_results": [],
         }
 
@@ -1783,9 +1887,7 @@ def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
     output = json.loads(completed.stdout)
     assert output["ok"] is True
     assert output["tool"] == "version_bump"
-    changelog = (mcp_server.REPO_ROOT / "docs" / "CHANGELOG.md").read_text(
-        encoding="utf-8"
-    )
+    changelog = (mcp_server.REPO_ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
     expected_decision = (
         "bump"
         if mcp_server._count_unreleased_changelog_bullets(changelog) + 1
@@ -1924,7 +2026,7 @@ def _write_docs_project(root: Path) -> Path:
                 "# Agent Tools",
                 "",
                 "The MCP docs tool provides local RAG retrieval for agents.",
-                "Use docs(query, mode=\"search\") for snippets.",
+                'Use docs(query, mode="search") for snippets.',
             ]
         ),
         encoding="utf-8",
@@ -1937,11 +2039,15 @@ def _write_changed_version_metadata(root: Path, version: str) -> None:
     readme = root / "README.md"
     changelog = root / "docs" / "CHANGELOG.md"
     pyproject.write_text(
-        pyproject.read_text(encoding="utf-8").replace('version = "1.3.9.13"', f'version = "{version}"'),
+        pyproject.read_text(encoding="utf-8").replace(
+            'version = "1.3.9.13"', f'version = "{version}"'
+        ),
         encoding="utf-8",
     )
     readme.write_text(
-        readme.read_text(encoding="utf-8").replace("**Version:** `1.3.9.13`", f"**Version:** `{version}`"),
+        readme.read_text(encoding="utf-8").replace(
+            "**Version:** `1.3.9.13`", f"**Version:** `{version}`"
+        ),
         encoding="utf-8",
     )
     changelog.write_text(

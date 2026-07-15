@@ -62,7 +62,14 @@ Normal implementation, documentation, test, commit, and push work is done on
 the `dev` branch and syncs with `origin/dev`. `git_workflow(action="commit")`
 must be the final repository step for a coherent task batch: after pre-commit
 checks pass, it stages the explicit paths, commits, and pushes `HEAD` to
-`origin/dev`. Use `main` only for PyPI release preparation and publishing. When
+`origin/dev`. After pushing, the workflow must watch every required GitHub
+workflow and check for the exact pushed commit SHA until all are successful.
+This read-only watch is the required completion phase after the final repository
+mutation. A cancelled, superseded, missing, failed, or timed-out check is not
+success. Resume an interrupted watch with
+`git_workflow(action="checks", sha="<exact-sha>")`; never substitute the newest
+branch run for the pushed SHA. This applies to implementation, documentation,
+release, retry, and standalone pushes. Use `main` only for PyPI release preparation and publishing. When
 a PyPI release is requested, merge `dev` into `main` with
 `release_workflow(action="merge-dev")`, then run release readiness and
 publishing from `main`.
