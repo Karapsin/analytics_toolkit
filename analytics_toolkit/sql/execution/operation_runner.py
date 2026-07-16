@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, TypeVar, cast
 
 from analytics_toolkit.general import time_print, time_print_context
 
+from .cancellation import raise_if_cancelled
 from ..connection.errors import SqlOperationContext, annotate_sql_exception
 from .plans import SqlOperationMetadata
 from .validation import validate_non_negative_number, validate_positive_int
@@ -83,8 +84,7 @@ def tracked_sql_operation(
         status = operation_metadata.operation_status or "finished"
         message_prefix = "Failed SQL" if status == "failed" else "Finished SQL"
         time_print(
-            f"{message_prefix} in "
-            f"{_format_duration(operation_metadata.elapsed_seconds)}",
+            f"{message_prefix} in {_format_duration(operation_metadata.elapsed_seconds)}",
             operation=operation_name,
             connection=alias,
             backend=backend,
@@ -164,9 +164,7 @@ def validate_retry_options(
     try:
         validate_non_negative_number(timeout_increment, "timeout_increment")
     except ValueError as exc:
-        raise ValueError(
-            "timeout_increment must be a finite non-negative number."
-        ) from exc
+        raise ValueError("timeout_increment must be a finite non-negative number.") from exc
 
 
 def validate_progress_option(progress: bool) -> None:
@@ -189,8 +187,10 @@ def run_connection_operation(
     """Run a public SQL operation with a fresh connection for each retry."""
 
     def attempt_operation(attempt: int) -> T:
+        raise_if_cancelled()
         connection_ref: ConnectionRef = {"connection": open_connection(connection_key)}
         try:
+            raise_if_cancelled()
             return operation(connection_ref, attempt)
         except Exception as exc:
             annotate_sql_exception(exc, context_factory(attempt))

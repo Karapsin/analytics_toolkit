@@ -23,6 +23,19 @@ rejected before dispatch.
 Use fail-fast behavior when one failed task invalidates the batch. Disable it
 when partial results are acceptable and failures should be reported per task.
 
+## Interrupting Async Batches
+
+Pressing Ctrl+C while [sql.async_sql](functions/async_sql.md) is running stops
+queued tasks and attempts to cancel the batch's active database queries. Each
+batch carries a private marker, so cancellation does not target unrelated
+queries from the same database user. The helper waits up to 10 seconds for
+Greenplum, Trino, and ClickHouse cancellation before re-raising the original
+`KeyboardInterrupt`; failures or unconfirmed query IDs are logged.
+
+This behavior covers the built-in task types and toolkit SQL functions called
+from custom pipelines. A custom step that opens a raw database driver directly
+must provide its own cancellation handling.
+
 ## Date-Partitioned Batches
 
 Use [gen_dates_list](../dates/functions/gen-dates-list.md) to create one task

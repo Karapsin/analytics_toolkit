@@ -3,14 +3,25 @@ from __future__ import annotations
 import asyncio
 import contextvars
 from collections.abc import Callable, Coroutine, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from functools import partial
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 from typing import Any
 
 from tqdm import tqdm
+
+from analytics_toolkit.sql.execution.cancellation import (
+    AsyncSqlCancelled,
+    SqlCancellationScope,
+    activate_cancellation_scope,
+    cancel_scope_queries,
+    current_cancellation_scope,
+    raise_if_cancelled,
+    shutdown_executor,
+)
 
 from ..dml.io.execute_read import execute_read
 from ..dml.io.execute_sql import execute_sql
@@ -42,8 +53,8 @@ _SYNC_TASK_RUNNERS = {
     "load_df": lambda kwargs: load_df(**kwargs),
     "transfer": lambda kwargs: transfer_table(**kwargs),
 }
-_CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
-    contextvars.ContextVar("analytics_toolkit_async_sql_concurrency", default=None)
+_CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = contextvars.ContextVar(
+    "analytics_toolkit_async_sql_concurrency", default=None
 )
 
 
@@ -67,17 +78,20 @@ def async_sql(
     progress: bool = False,
 ) -> dict[str, Any]:
     """Run independent SQL tasks concurrently and return a result dictionary."""
-    return _run_coroutine_sync(
-        lambda: _async_sql_impl(
-            tasks,
-            concurrency=concurrency,
-            fail_fast=fail_fast,
-            start_comment=start_comment,
-            soft_concurrency_cap=soft_concurrency_cap,
-            hard_concurrency_cap=hard_concurrency_cap,
-            progress=progress,
+    cancellation_scope = SqlCancellationScope(parent=current_cancellation_scope())
+    with activate_cancellation_scope(cancellation_scope):
+        return _run_coroutine_sync(
+            lambda: _async_sql_impl(
+                tasks,
+                concurrency=concurrency,
+                fail_fast=fail_fast,
+                start_comment=start_comment,
+                soft_concurrency_cap=soft_concurrency_cap,
+                hard_concurrency_cap=hard_concurrency_cap,
+                progress=progress,
+            ),
+            cancellation_scope=cancellation_scope,
         )
-    )
 
 
 async def _async_sql_impl(
@@ -90,6 +104,31 @@ async def _async_sql_impl(
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
     progress: bool = False,
 ) -> dict[str, Any]:
+    scope = current_cancellation_scope() or SqlCancellationScope()
+    with activate_cancellation_scope(scope):
+        return await _async_sql_impl_scoped(
+            tasks,
+            concurrency=concurrency,
+            fail_fast=fail_fast,
+            start_comment=start_comment,
+            soft_concurrency_cap=soft_concurrency_cap,
+            hard_concurrency_cap=hard_concurrency_cap,
+            progress=progress,
+            cancellation_scope=scope,
+        )
+
+
+async def _async_sql_impl_scoped(  # noqa: PLR0912, PLR0913, PLR0915
+    tasks: Sequence[Mapping[str, Any]],
+    *,
+    concurrency: int,
+    fail_fast: bool,
+    start_comment: str | None,
+    soft_concurrency_cap: int | None,
+    hard_concurrency_cap: int,
+    progress: bool,
+    cancellation_scope: SqlCancellationScope,
+) -> dict[str, Any]:
     task_defs = _validate_tasks(tasks, start_comment=start_comment)
     _validate_concurrency(concurrency)
     _validate_optional_soft_concurrency_cap(soft_concurrency_cap)
@@ -101,6 +140,11 @@ async def _async_sql_impl(
         hard_concurrency_cap=hard_concurrency_cap,
     )
     reset_token = _CONCURRENCY_STATE.set(state)
+    executor = ThreadPoolExecutor(
+        max_workers=max(1, min(concurrency, state.soft_cap)),
+        thread_name_prefix="async-sql-worker",
+    )
+    cancellation_scope.register_executor(executor)
 
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -111,9 +155,11 @@ async def _async_sql_impl(
                     name,
                     kwargs["steps"],
                     state.semaphores,
+                    executor,
                 )
             return await _run_blocking(
                 state.semaphores,
+                executor,
                 _run_sync_task,
                 task_type,
                 kwargs,
@@ -145,68 +191,108 @@ async def _async_sql_impl(
         for task in async_tasks:
             task.add_done_callback(lambda _task: progress_bar.update(1))
 
-        if fail_fast:
-            results_by_index: dict[int, Any] = {}
-            try:
+        try:
+            if fail_fast:
+                results_by_index: dict[int, Any] = {}
                 for finished in asyncio.as_completed(async_tasks):
                     index, result = await finished
                     results_by_index[index] = _normalize_task_result(result)
-            except BaseException:
-                for task in async_tasks:
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(*async_tasks, return_exceptions=True)
-                raise
 
+                return {
+                    name: results_by_index[index]
+                    for index, (name, _task_type, _kwargs) in enumerate(task_defs)
+                }
+
+            indexed_results = await asyncio.gather(
+                *async_tasks,
+                return_exceptions=True,
+            )
+            results_by_index: dict[int, Any] = {}
+            for default_index, item in enumerate(indexed_results):
+                _raise_interrupt_result(item)
+                if isinstance(item, BaseException):
+                    results_by_index[default_index] = str(item)
+                else:
+                    index, result = item
+                    results_by_index[index] = _normalize_task_result(result)
             return {
                 name: results_by_index[index]
                 for index, (name, _task_type, _kwargs) in enumerate(task_defs)
             }
-
-        indexed_results = await asyncio.gather(*async_tasks, return_exceptions=True)
-        results_by_index: dict[int, Any] = {}
-        for default_index, item in enumerate(indexed_results):
-            if isinstance(item, BaseException):
-                results_by_index[default_index] = str(item)
+        except BaseException as exc:
+            if _is_interrupt_exception(exc):
+                cancellation_scope.request_cancel()
+                for task in async_tasks:
+                    if not task.done():
+                        task.cancel()
+                cancel_scope_queries(cancellation_scope)
             else:
-                index, result = item
-                results_by_index[index] = _normalize_task_result(result)
-
-        return {
-            name: results_by_index[index]
-            for index, (name, _task_type, _kwargs) in enumerate(task_defs)
-        }
+                for task in async_tasks:
+                    if not task.done():
+                        task.cancel()
+            await asyncio.gather(*async_tasks, return_exceptions=True)
+            raise
     finally:
         if "progress_bar" in locals():
             progress_bar.close()
+        cancellation_scope.unregister_executor(executor)
+        shutdown_executor(
+            executor,
+            wait=not cancellation_scope.cancelled,
+            cancel_futures=cancellation_scope.cancelled,
+        )
         _CONCURRENCY_STATE.reset(reset_token)
 
 
 def _run_coroutine_sync(
     coroutine_factory: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
+    *,
+    cancellation_scope: SqlCancellationScope | None = None,
 ) -> dict[str, Any]:
     if _is_event_loop_running():
-        return _run_coroutine_sync_in_thread(coroutine_factory)
+        return _run_coroutine_sync_in_thread(
+            coroutine_factory,
+            cancellation_scope=cancellation_scope,
+        )
     return asyncio.run(coroutine_factory())
 
 
 def _run_coroutine_sync_in_thread(
     coroutine_factory: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
+    *,
+    cancellation_scope: SqlCancellationScope | None = None,
 ) -> dict[str, Any]:
-    queue: Queue[tuple[bool, dict[str, Any] | BaseException, Any | None]] = Queue(
-        maxsize=1
-    )
+    queue: Queue[tuple[bool, dict[str, Any] | BaseException, Any | None]] = Queue(maxsize=1)
+    runner_ready = Event()
+    runner_state: dict[str, Any] = {}
+
+    async def run_captured() -> dict[str, Any]:
+        runner_state["loop"] = asyncio.get_running_loop()
+        runner_state["task"] = asyncio.current_task()
+        runner_ready.set()
+        return await coroutine_factory()
 
     def run() -> None:
         try:
-            queue.put((True, asyncio.run(coroutine_factory()), None))
+            queue.put((True, asyncio.run(run_captured()), None))
         except BaseException as exc:
             queue.put((False, exc, exc.__traceback__))
 
     context = contextvars.copy_context()
     thread = Thread(target=lambda: context.run(run), daemon=True)
     thread.start()
-    ok, value, traceback = queue.get()
+    try:
+        ok, value, traceback = queue.get()
+    except BaseException:
+        if cancellation_scope is not None:
+            cancellation_scope.request_cancel()
+        runner_ready.wait(timeout=1)
+        loop = runner_state.get("loop")
+        task = runner_state.get("task")
+        if loop is not None and task is not None:
+            loop.call_soon_threadsafe(task.cancel)
+        thread.join(timeout=10)
+        raise
     thread.join()
 
     if ok:
@@ -280,6 +366,7 @@ async def _run_pipeline(
     task_name: str,
     steps: Sequence[Any],
     soft_semaphores: tuple[asyncio.Semaphore, ...],
+    executor: ThreadPoolExecutor,
 ) -> Any:
     context = _PipelineContext(task_name=task_name)
     for index, step in enumerate(steps):
@@ -287,7 +374,12 @@ async def _run_pipeline(
         if _is_async_callable(step):
             result = await step(context)
         else:
-            result = await _run_blocking(soft_semaphores, step, context)
+            result = await _run_blocking(
+                soft_semaphores,
+                executor,
+                step,
+                context,
+            )
         context.results.append(result)
 
     return context.last_result
@@ -295,16 +387,33 @@ async def _run_pipeline(
 
 async def _run_blocking(
     soft_semaphores: tuple[asyncio.Semaphore, ...],
+    executor: ThreadPoolExecutor,
     func: Any,
     *args: Any,
 ) -> Any:
     async with AsyncExitStack() as stack:
         for semaphore in reversed(soft_semaphores):
             await stack.enter_async_context(semaphore)
-        return await _to_thread(func, *args)
+        return await _to_thread(func, *args, _executor=executor)
 
 
-async def _to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+async def _to_thread(
+    func: Any,
+    *args: Any,
+    _executor: ThreadPoolExecutor | None = None,
+    **kwargs: Any,
+) -> Any:
+    if _executor is not None:
+        loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
+        call = partial(func, *args, **kwargs)
+
+        def run_guarded() -> Any:
+            raise_if_cancelled()
+            return call()
+
+        return await loop.run_in_executor(_executor, context.run, run_guarded)
+
     to_thread = getattr(asyncio, "to_thread", None)
     if to_thread is not None:
         return await to_thread(func, *args, **kwargs)
@@ -321,3 +430,15 @@ def _run_sync_task(task_type: str, kwargs: dict[str, Any]) -> Any:
         kwargs,
         task_runners=_SYNC_TASK_RUNNERS,
     )
+
+
+def _is_interrupt_exception(value: Any) -> bool:
+    return isinstance(
+        value,
+        (AsyncSqlCancelled, KeyboardInterrupt, asyncio.CancelledError),
+    )
+
+
+def _raise_interrupt_result(value: Any) -> None:
+    if _is_interrupt_exception(value) and isinstance(value, BaseException):
+        raise value

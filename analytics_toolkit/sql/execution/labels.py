@@ -4,6 +4,8 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
+from analytics_toolkit.sql.execution.cancellation import cancellation_query_comments
+
 
 _LABEL_SAFE_RE = re.compile(r"[^A-Za-z0-9_.:=,@/+ -]+")
 _AIRFLOW_CONTEXT_OBJECT_FIELDS = {
@@ -32,13 +34,14 @@ def query_label_comment(query_label: str | None) -> str:
 
 
 def apply_query_label(sql: str, query_label: str | None) -> str:
+    prefixes = list(cancellation_query_comments())
     comment = query_label_comment(query_label)
-    if not comment:
+    if comment:
+        prefixes.append(comment)
+    missing_prefixes = [prefix for prefix in prefixes if prefix not in sql]
+    if not missing_prefixes:
         return sql
-    stripped = sql.lstrip()
-    if stripped.startswith("/* analytics_toolkit query_label="):
-        return sql
-    return f"{comment}\n{sql}"
+    return "\n".join([*missing_prefixes, sql])
 
 
 def airflow_query_label(
@@ -72,9 +75,7 @@ def airflow_query_label(
         ("op", operation),
     ]
     label_parts = [
-        f"{name}={text}"
-        for name, value in parts
-        if (text := _label_value_text(value)) is not None
+        f"{name}={text}" for name, value in parts if (text := _label_value_text(value)) is not None
     ]
     if not label_parts:
         return None

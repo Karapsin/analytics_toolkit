@@ -5,6 +5,11 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.execution.cancellation import (
+    current_cancellation_scope,
+    raise_if_cancelled,
+    wait_or_raise_if_cancelled,
+)
 
 from ....connection.get_sql_connection import get_sql_connection
 from ....execution.operation_runner import _format_duration
@@ -24,6 +29,7 @@ def run_with_retry(
     should_not_retry = non_retryable_predicate or is_non_retryable_sql_error
 
     for attempt in range(1, retry_cnt + 1):
+        raise_if_cancelled()
         try:
             return operation(attempt)
         except Exception as exc:
@@ -60,7 +66,10 @@ def run_with_retry(
                 phase="retry",
             )
             if sleep_seconds > 0:
-                time.sleep(sleep_seconds)
+                if current_cancellation_scope() is None:
+                    time.sleep(sleep_seconds)
+                else:
+                    wait_or_raise_if_cancelled(sleep_seconds)
 
     if last_error is None:
         raise RuntimeError(f"{operation_name} failed without capturing an exception.")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import replace
@@ -466,6 +467,8 @@ def load_keyed_stage_slices(
     with ThreadPoolExecutor(max_workers=len(worker_stage_states)) as executor:
         pending = {
             executor.submit(
+                _run_in_context,
+                contextvars.copy_context(),
                 load_keyed_stage_worker,
                 options=options,
                 worker_stage_state=worker_stage_state,
@@ -484,6 +487,14 @@ def load_keyed_stage_slices(
                     raise exc
                 total_rows += future.result()
     return total_rows
+
+
+def _run_in_context(
+    context: contextvars.Context,
+    function: Any,
+    **kwargs: Any,
+) -> Any:
+    return context.run(function, **kwargs)
 
 
 def load_keyed_stage_worker(

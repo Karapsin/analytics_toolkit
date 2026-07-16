@@ -6062,6 +6062,26 @@
       "node_id": "tests/integration/test_sql_orchestration.py::test_orchestration_failure_modes_keep_diagnostics_and_order[orchestration.async.failure]",
       "backends": ["trino", "ch"]
     },
+    "orchestration.async.interrupt.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_async_sql_interrupt_cancels_only_its_batch[orchestration.async.interrupt.gp]",
+      "backends": ["gp"]
+    },
+    "orchestration.async.interrupt.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_async_sql_interrupt_cancels_only_its_batch[orchestration.async.interrupt.trino]",
+      "backends": ["trino"]
+    },
+    "orchestration.async.interrupt.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_async_sql_interrupt_cancels_only_its_batch[orchestration.async.interrupt.ch]",
+      "backends": ["ch"]
+    },
+    "orchestration.async.interrupt.direct": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_orchestration.py::test_async_sql_interrupt_cancels_only_its_batch[orchestration.async.interrupt.direct]",
+      "backends": ["ch"]
+    },
     "schema.copy.gp.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.gp.gp]",

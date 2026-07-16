@@ -7,6 +7,10 @@ from typing import Any
 from .config import ChConfig, get_connection_config, get_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 from ..backends import get_backend
+from analytics_toolkit.sql.execution.cancellation import (
+    raise_if_cancelled,
+    register_connection_alias,
+)
 from ..execution.operation_runner import timed_public_sql_function
 from analytics_toolkit.general import time_print
 
@@ -14,6 +18,8 @@ from analytics_toolkit.general import time_print
 @timed_public_sql_function
 def get_sql_connection(db_key: str) -> Any:
     config = get_connection_config(db_key)
+    register_connection_alias(config.connection_key)
+    raise_if_cancelled()
     time_print(
         "Opening connection",
         connection=config.connection_key,
@@ -21,13 +27,19 @@ def get_sql_connection(db_key: str) -> Any:
         phase="connect",
     )
 
-    return get_backend(config.backend).open_connection(
+    connection = get_backend(config.backend).open_connection(
         config,
         parse_verify_value=_parse_verify_value,
         resolve_ca_certs=_resolve_ca_certs,
         resolve_single_cert_path=_resolve_single_cert_path_by_name,
         resolve_ch_ca_certs=_resolve_ch_ca_certs,
     )
+    try:
+        raise_if_cancelled()
+    except BaseException:
+        connection.close()
+        raise
+    return connection
 
 
 def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
@@ -39,19 +51,27 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
     host_name = str(host).strip()
     if not host_name:
         raise ValueError("host must not be empty.")
+    register_connection_alias(config.connection_key)
+    raise_if_cancelled()
     time_print(
         f"Opening connection to {host_name}",
         connection=config.connection_key,
         backend=config.backend,
         phase="connect",
     )
-    return get_backend("ch").open_connection(
+    connection = get_backend("ch").open_connection(
         replace(config, host=host_name),
         parse_verify_value=_parse_verify_value,
         resolve_ca_certs=_resolve_ca_certs,
         resolve_single_cert_path=_resolve_single_cert_path_by_name,
         resolve_ch_ca_certs=_resolve_ch_ca_certs,
     )
+    try:
+        raise_if_cancelled()
+    except BaseException:
+        connection.close()
+        raise
+    return connection
 
 
 def _resolve_ch_ca_certs(config: ChConfig) -> str | None:
@@ -110,14 +130,10 @@ def _resolve_ca_certs(connection_key: str, ca_certs: list[str]) -> str | None:
     bundle_dir = connections_dir / ".certs" / ".generated"
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = bundle_dir / f"{_safe_file_key(connection_key)}-ca-bundle.pem"
-    bundle_contents = "\n".join(
-        path.read_text(encoding="utf-8").strip()
-        for path in resolved_paths
-    ) + "\n"
-    if (
-        not bundle_path.exists()
-        or bundle_path.read_text(encoding="utf-8") != bundle_contents
-    ):
+    bundle_contents = (
+        "\n".join(path.read_text(encoding="utf-8").strip() for path in resolved_paths) + "\n"
+    )
+    if not bundle_path.exists() or bundle_path.read_text(encoding="utf-8") != bundle_contents:
         bundle_path.write_text(bundle_contents, encoding="utf-8")
     return str(bundle_path)
 

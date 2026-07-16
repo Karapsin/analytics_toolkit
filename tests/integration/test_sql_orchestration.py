@@ -2,9 +2,12 @@ from __future__ import annotations
 
 # ruff: noqa: B009, I001, PT011, PT018, RUF043, TC002
 
+import asyncio
 import importlib
 import json
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,12 +15,37 @@ import pandas as pd
 import pytest
 from analytics_toolkit import sql
 from tests.integration.manifest import scenario_param
-from tests.integration.support.backends import integration_table
+from tests.integration.support.backends import (
+    backend_enabled,
+    integration_table,
+)
+from tests.integration.support.identity import query_label
 from tests.integration.support.orchestration import Timeline
+from tests.integration.support.query_workers import (
+    QueryWorker,
+    find_labelled_query,
+    long_running_query,
+    poll_until,
+)
 from tests.integration.support.resources import ResourceRegistry
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 APIS = ("parallel", "async")
+
+
+def _label(purpose: str) -> str:
+    return query_label(
+        os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8]),
+        os.environ.get("SQL_INTEGRATION_TEST_ID", "manual"),
+        purpose,
+    )
+
+
+def _query_is_gone(db_key: str, label: str) -> bool:
+    active = sql.show_queries(db_key, state="active", retry_cnt=1)
+    if active.empty:
+        return True
+    return not active["query"].astype(str).str.contains(label, regex=False).any()
 
 
 def _runner(api: str) -> Callable[..., dict[str, Any]]:
@@ -246,3 +274,111 @@ def test_orchestration_failure_modes_keep_diagnostics_and_order(api: str) -> Non
     assert getattr(error, "analytics_toolkit_sql_task_type") == "read"
     assert getattr(error, "analytics_toolkit_sql_field") == "query"
     assert "SELECT missing" in getattr(error, "analytics_toolkit_sql_query")
+
+
+@pytest.mark.parametrize(
+    ("backend", "inside_event_loop"),
+    [
+        scenario_param("orchestration.async.interrupt.gp", "gp", True),
+        scenario_param("orchestration.async.interrupt.trino", "trino", True),
+        scenario_param("orchestration.async.interrupt.ch", "ch", True),
+        scenario_param("orchestration.async.interrupt.direct", "ch", False),
+    ],
+)
+def test_async_sql_interrupt_cancels_only_its_batch(
+    backend: str,
+    inside_event_loop: bool,
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled(backend):
+        pytest.skip("Greenplum requires x86_64")
+
+    table = resource_registry.table(
+        backend,
+        integration_table(backend, "async_interrupt_queue"),
+    )
+    load_kwargs: dict[str, Any] = {}
+    if backend == "gp":
+        load_kwargs["gp_distributed_by_key"] = "row_id"
+    elif backend == "ch":
+        load_kwargs.update(
+            ch_engine="MergeTree",
+            order_by="row_id",
+            ch_cluster="integration_cluster",
+            ch_only_shard=True,
+        )
+    sql.load_df(
+        backend,
+        table,
+        pd.DataFrame({"row_id": [1]}),
+        write_mode="replace",
+        retry_cnt=1,
+        **load_kwargs,
+    )
+
+    unrelated_label = _label("async_interrupt_unrelated")
+    unrelated = resource_registry.worker(
+        QueryWorker(
+            backend,
+            long_running_query(backend),
+            unrelated_label,
+        ).start()
+    )
+    unrelated_row = find_labelled_query(backend, unrelated_label)
+    unrelated.query_id = resource_registry.query(backend, unrelated_row["query_id"])
+
+    interrupted_label = _label("async_interrupt_owned")
+    interrupt_error = KeyboardInterrupt("integration interrupt")
+
+    def interrupt_when_visible(_context: Any) -> None:
+        row = find_labelled_query(backend, interrupted_label)
+        resource_registry.query(backend, row["query_id"])
+        raise interrupt_error
+
+    tasks = [
+        {
+            "name": "running",
+            "type": "read",
+            "db_key": backend,
+            "query": long_running_query(backend),
+            "query_label": interrupted_label,
+            "retry_cnt": 1,
+        },
+        {
+            "name": "interrupt",
+            "type": "custom_sql_pipeline",
+            "steps": [interrupt_when_visible],
+        },
+        {
+            "name": "queued_side_effect",
+            "type": "execute",
+            "db_key": backend,
+            "query": f"INSERT INTO {table} (row_id) VALUES (2)",
+            "retry_cnt": 1,
+        },
+    ]
+
+    def run_batch() -> None:
+        sql.async_sql(tasks, concurrency=2)
+
+    async def run_batch_inside_event_loop() -> None:
+        run_batch()
+
+    def invoke_batch() -> None:
+        if inside_event_loop:
+            asyncio.run(run_batch_inside_event_loop())
+        else:
+            run_batch()
+
+    started_at = time.monotonic()
+    with pytest.raises(KeyboardInterrupt, match="integration interrupt"):
+        invoke_batch()
+    assert time.monotonic() - started_at < 12
+
+    poll_until(
+        lambda: _query_is_gone(backend, interrupted_label),
+        description=f"interrupted async query to stop: {interrupted_label}",
+    )
+    assert not _query_is_gone(backend, unrelated_label)
+    rows = sql.read(backend, f"SELECT count(*) AS row_count FROM {table}", retry_cnt=1)
+    assert int(rows.iloc[0, 0]) == 1
