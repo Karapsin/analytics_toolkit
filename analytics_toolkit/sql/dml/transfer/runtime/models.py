@@ -351,6 +351,7 @@ class TransferOptions:
     upsert_partition_column: str | None = None
     trino_upsert_partition_drop_sql_template: str | None = None
     gp_distributed_by_key: list[str] | None = None
+    gp_partitions: Any = None
     gp_insert_chunk_size: int | None = None
     trino_insert_chunk_size: int | None = None
     adaptive_batch_size: bool = True

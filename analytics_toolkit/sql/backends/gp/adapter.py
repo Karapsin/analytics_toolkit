@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from . import operations as _operations
+from . import partitions as _partitions
 from . import insert as _insert
 from . import stage as _stage
 from .. import dataframe_types as _dataframe_types
@@ -114,6 +115,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         table_name: str,
         joined_columns: str,
         gp_distributed_by_key: list[str] | None,
+        gp_partitions: Any = None,
         partition_by: Sequence[str] | str | None,
         order_by: Sequence[str] | str | None,
         ch_engine: str,
@@ -146,7 +148,12 @@ class GreenplumAdapter(DbApiBackendAdapter):
             )
         else:
             distribution_sql = "DISTRIBUTED RANDOMLY"
-        partition_sql = _build_gp_partition_by_sql(partition_by)
+        from ...ddl.identifiers import quote_identifier
+        partition_sql = _partitions.render_gp_partition_clause(
+            partition_by,
+            gp_partitions,
+            quote_identifier=quote_identifier,
+        )
         return [
             f"CREATE TABLE {table_name} ({joined_columns}) "
             f"{storage_sql} {distribution_sql}{partition_sql}"
@@ -574,6 +581,19 @@ class GreenplumAdapter(DbApiBackendAdapter):
     ) -> None:
         del value, option_owner
 
+    def normalize_gp_partitions_option(
+        self,
+        gp_partitions: Any,
+        *,
+        partition_by: Sequence[str] | str | None,
+        option_owner: str,
+    ) -> Any:
+        del option_owner
+        return _partitions.normalize_gp_partitions(
+            gp_partitions,
+            partition_by=partition_by,
+        )
+
     def validate_gp_insert_chunk_size_option(
         self,
         value: int | None,
@@ -829,18 +849,14 @@ def _build_gp_partition_by_sql(partition_by: Sequence[str] | str | None) -> str:
 
 
 def _normalize_gp_partition_column(partition_by: Sequence[str] | str) -> str:
-    from ..ch.ddl import _normalize_non_empty_string
+    from analytics_toolkit.sql.connection.errors import (  # noqa: PLC0415
+        InvalidSqlInputError,
+    )
 
-    if isinstance(partition_by, str):
-        return _normalize_non_empty_string(partition_by, "partition_by")
-
-    columns = [
-        _normalize_non_empty_string(column, "partition_by")
-        for column in partition_by
-    ]
-    if len(columns) != 1:
-        raise ValueError("partition_by for Greenplum must contain exactly one column.")
-    return columns[0]
+    try:
+        return _partitions.normalize_gp_partition_column(partition_by)
+    except InvalidSqlInputError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _map_to_gp_type(

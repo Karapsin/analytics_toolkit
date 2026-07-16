@@ -40,6 +40,7 @@ def create_sql_table(
     insert_data: bool = False,
     drop_target_if_exists: bool = False,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -72,6 +73,7 @@ def create_sql_table(
             insert_data=insert_data,
             drop_target_if_exists=drop_target_if_exists,
             gp_distributed_by_key=gp_distributed_by_key,
+            gp_partitions=gp_partitions,
             partition_by=partition_by,
             order_by=order_by,
             ch_engine=ch_engine,
@@ -95,6 +97,7 @@ def create_sql_table(
         df=df,
         table_schema=table_schema,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_partitions=gp_partitions,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
@@ -185,6 +188,7 @@ def _create_sql_table_from_sql_source(
     insert_data: bool,
     drop_target_if_exists: bool,
     gp_distributed_by_key: str | Sequence[str] | None,
+    gp_partitions: Mapping[str, Any] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -206,6 +210,7 @@ def _create_sql_table_from_sql_source(
             table_name=table_name,
             sql=sql,
             gp_distributed_by_key=gp_distributed_by_key,
+            gp_partitions=gp_partitions,
             partition_by=partition_by,
             order_by=order_by,
             ch_engine=ch_engine,
@@ -227,6 +232,7 @@ def _create_sql_table_from_sql_source(
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_partitions=gp_partitions,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
@@ -249,6 +255,7 @@ def _generate_create_sql_table_from_query_sql(
     table_name: str,
     sql: str,
     gp_distributed_by_key: str | Sequence[str] | None,
+    gp_partitions: Mapping[str, Any] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -294,6 +301,11 @@ def _generate_create_sql_table_from_query_sql(
         "ch_sharding_key",
     )
     only_shard = _normalize_only_shard(ch_only_shard)
+    normalized_gp_partitions = target_adapter.normalize_gp_partitions_option(
+        gp_partitions,
+        partition_by=partition,
+        option_owner="db_key",
+    )
 
     target_adapter.validate_gp_distributed_by_key_option(
         gp_distribution,
@@ -363,6 +375,7 @@ def _generate_create_sql_table_from_query_sql(
     )
     create_kwargs = target_adapter.build_create_from_sql_target_create_kwargs(
         gp_distributed_by_key=gp_distribution,
+        gp_partitions=normalized_gp_partitions,
         partition_by=partition,
         order_by=order,
         ch_engine=ch_engine_name,
@@ -396,6 +409,7 @@ def _create_sql_table_with_connection(
     *,
     connection_key: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -419,6 +433,7 @@ def _create_sql_table_with_connection(
         df=df,
         table_schema=table_schema,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_partitions=gp_partitions,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
@@ -459,6 +474,7 @@ def _build_create_table_options(
     df: pd.DataFrame | None,
     table_schema: Mapping[str, str] | None,
     gp_distributed_by_key: str | Sequence[str] | None,
+    gp_partitions: Mapping[str, Any] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -482,6 +498,12 @@ def _build_create_table_options(
     )
     if table_name.strip() == "":
         raise ValueError("table_name must not be empty.")
+    adapter = get_backend_adapter(backend)
+    normalized_gp_partitions = adapter.normalize_gp_partitions_option(
+        gp_partitions,
+        partition_by=partition_by,
+        option_owner=option_owner,
+    )
     return CreateSqlTableOptions(
         connection_key=connection_key,
         backend=backend,
@@ -492,6 +514,7 @@ def _build_create_table_options(
             gp_distributed_by_key,
             "gp_distributed_by_key",
         ),
+        gp_partitions=normalized_gp_partitions,
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
@@ -540,6 +563,7 @@ def _build_create_sql_table_sqls(
         options.df,
         table_schema=options.table_schema,
         gp_distributed_by_key=options.gp_distributed_by_key,
+        gp_partitions=options.gp_partitions,
         partition_by=options.partition_by,
         order_by=options.order_by,
         ch_engine=options.ch_engine,
@@ -566,6 +590,9 @@ def _build_create_table_plan(
         target_alias=options.connection_key,
         target_backend=options.backend,
         target_table=options.table_name,
+        options={
+            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
+        },
         metadata=metadata,
     )
     plan.extend(
@@ -626,6 +653,7 @@ def _build_create_table_sqls(
     *,
     column_types: Mapping[str, str] | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | Any | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -651,6 +679,17 @@ def _build_create_table_sqls(
         df,
         resolved_column_types,
     )
+    adapter = get_backend_adapter(backend)
+    normalized_gp_partitions = (
+        gp_partitions
+        if gp_partitions is not None
+        and not isinstance(gp_partitions, Mapping)
+        else adapter.normalize_gp_partitions_option(
+            gp_partitions,
+            partition_by=partition_by,
+            option_owner=option_owner,
+        )
+    )
     return _apply_query_label_to_sqls(
         _build_backend_create_table_sqls(
             backend=backend,
@@ -660,6 +699,7 @@ def _build_create_table_sqls(
                 gp_distributed_by_key,
                 "gp_distributed_by_key",
             ),
+            gp_partitions=normalized_gp_partitions,
             partition_by=partition_by,
             order_by=order_by,
             ch_engine=ch_engine,
@@ -671,3 +711,15 @@ def _build_create_table_sqls(
         ),
         query_label,
     )
+
+
+def _gp_partition_plan_option(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if hasattr(value, "start"):
+        return {
+            "start": value.start,
+            "end": value.end,
+            "interval": value.interval,
+        }
+    return {"values": [partition.value for partition in value.partitions]}

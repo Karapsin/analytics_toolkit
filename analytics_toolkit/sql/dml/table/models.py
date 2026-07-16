@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class CreateTableFromSqlOptions:
     insert_data: bool = True
     drop_target_if_exists: bool = False
     gp_distributed_by_key: list[str] | None = None
+    gp_partitions: Any = None
     partition_by: Sequence[str] | str | None = None
     order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"

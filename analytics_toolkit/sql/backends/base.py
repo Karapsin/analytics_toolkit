@@ -99,6 +99,7 @@ class BackendAdapter:
         table_name: str,
         joined_columns: str,
         gp_distributed_by_key: list[str] | None,
+        gp_partitions: Any = None,
         partition_by: Sequence[str] | str | None,
         order_by: Sequence[str] | str | None,
         ch_engine: str,
@@ -504,6 +505,7 @@ class BackendAdapter:
     )
     resolve_ch_retry_per_host_drops = _adapter_defaults.resolve_ch_retry_per_host_drops
     validate_gp_distributed_by_key_option = _adapter_defaults.validate_gp_distributed_by_key_option
+    normalize_gp_partitions_option = _adapter_defaults.normalize_gp_partitions_option
     validate_gp_insert_chunk_size_option = _adapter_defaults.validate_gp_insert_chunk_size_option
     validate_trino_insert_chunk_size_option = (
         _adapter_defaults.validate_trino_insert_chunk_size_option
@@ -583,6 +585,8 @@ class BackendAdapter:
         create_kwargs: dict[str, Any] = {}
         if request.partition_by is not None:
             create_kwargs["partition_by"] = request.partition_by
+        if request.gp_partitions is not None:
+            create_kwargs["gp_partitions"] = request.gp_partitions
         if request.order_by is not None:
             create_kwargs["order_by"] = request.order_by
         _create_sql_table_with_connection(
@@ -609,6 +613,7 @@ class BackendAdapter:
                         sample_batch=request.sample_batch,
                         target_column_types=request.target_column_types,
                         gp_distributed_by_key=request.gp_distributed_by_key,
+                        gp_partitions=request.gp_partitions,
                         partition_by=request.partition_by,
                         order_by=request.order_by,
                         ch_engine=request.ch_engine,
@@ -685,6 +690,7 @@ class BackendAdapter:
                     sample_batch=request.sample_batch,
                     target_column_types=request.target_column_types,
                     gp_distributed_by_key=request.gp_distributed_by_key,
+                    gp_partitions=request.gp_partitions,
                     partition_by=request.partition_by,
                     order_by=request.order_by,
                     ch_engine=request.ch_engine,

@@ -49,6 +49,7 @@ def build_load_target_create_kwargs(
     adapter: Any,
     *,
     gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any = None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -58,7 +59,7 @@ def build_load_target_create_kwargs(
     write_mode: str,
     original_target_exists: bool,
 ) -> dict[str, Any]:
-    del adapter
+    del adapter, gp_partitions
     return {
         "gp_distributed_by_key": gp_distributed_by_key,
         "partition_by": partition_by,
@@ -78,6 +79,7 @@ def build_create_from_sql_target_create_kwargs(
     adapter: Any,
     *,
     gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any = None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -87,7 +89,7 @@ def build_create_from_sql_target_create_kwargs(
     drop_target_if_exists: bool,
     target_exists_before_drop: bool,
 ) -> dict[str, Any]:
-    del adapter
+    del adapter, gp_partitions
     return {
         "gp_distributed_by_key": gp_distributed_by_key,
         "partition_by": partition_by,

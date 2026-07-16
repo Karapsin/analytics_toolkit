@@ -3,6 +3,8 @@ from __future__ import annotations
 # ruff: noqa: I001, PT018, TC002
 
 from decimal import Decimal
+import os
+import uuid
 
 import pandas as pd
 import pytest
@@ -16,9 +18,18 @@ from tests.integration.support.backends import (
     table_options,
 )
 from tests.integration.support.normalization import assert_exact_frame
+from tests.integration.support.identity import query_label
 from tests.integration.support.resources import ResourceRegistry
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
+
+
+def _query_label(purpose: str) -> str:
+    return query_label(
+        os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8]),
+        os.environ.get("SQL_INTEGRATION_TEST_ID", "manual"),
+        purpose,
+    )
 
 
 def _portable_frame() -> pd.DataFrame:
@@ -236,7 +247,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
         dry_table,
         table_schema=_schema(backend),
         dry_run=True,
-        query_label="integration_ddl_options",
+        query_label=_query_label("ddl_options"),
         **options,
     )
     assert plan.statements
@@ -310,6 +321,182 @@ def test_greenplum_random_and_single_key_distribution(
     keyed_ddl = " ".join(sql.extract_ddl("gp_target", keyed_table).upper().split())
     assert "DISTRIBUTED RANDOMLY" in random_ddl
     assert "DISTRIBUTED BY" in keyed_ddl and "ROW_ID" in keyed_ddl
+
+
+@pytest.mark.sql_scenario("ddl.native.gp.partition_range")
+def test_greenplum_initial_range_partitions(
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_range")
+    load_table = _registered(
+        resource_registry,
+        "gp",
+        "gp_target",
+        "ddl_gp_range_load",
+    )
+    source_table = _registered(
+        resource_registry,
+        "gp",
+        "gp_source",
+        "ddl_gp_range_source",
+    )
+    transfer_table = _registered(
+        resource_registry,
+        "gp",
+        "gp_target",
+        "ddl_gp_range_transfer",
+    )
+    partitions = {
+        "start": "2026-01-01",
+        "end": "2026-04-01",
+        "interval": "1 month",
+    }
+    create_options = {
+        "table_schema": {"event_date": "DATE", "row_id": "BIGINT"},
+        "partition_by": "event_date",
+        "gp_partitions": partitions,
+        "gp_distributed_by_key": "row_id",
+        "query_label": _query_label("gp_partition_range"),
+        "retry_cnt": 1,
+    }
+    generated = sql.create_sql_table(
+        "gp_target",
+        table,
+        only_generate_sql=True,
+        **create_options,
+    )
+    assert "PARTITION BY RANGE" in generated
+    assert "EVERY (INTERVAL '1 month')" in generated
+    sql.create_sql_table("gp_target", table, **create_options)
+
+    initial = pd.DataFrame(
+        {
+            "event_date": [pd.Timestamp("2026-01-15").date(), pd.Timestamp("2026-02-20").date()],
+            "row_id": [1, 2],
+        }
+    )
+    sql.load_df(
+        "gp_target",
+        table,
+        initial,
+        write_mode="append",
+        partition_by="event_date",
+        gp_partitions=partitions,
+        query_label=_query_label("gp_partition_range_insert"),
+        retry_cnt=1,
+    )
+    assert_exact_frame(
+        sql.read("gp_target", f"SELECT * FROM {table} ORDER BY row_id"),
+        initial,
+        date_columns=("event_date",),
+    )
+    with pytest.raises(Exception, match=r"(?i)partition|range|SQL context"):
+        sql.execute(
+            "gp_target",
+            f"INSERT INTO {table} VALUES ('2026-05-01', 99)",
+            query_label=_query_label("gp_partition_range_reject"),
+            retry_cnt=1,
+        )
+    assert len(sql.read("gp_target", f"SELECT * FROM {table}")) == 2
+
+    extracted = " ".join(sql.extract_ddl("gp_target", table).upper().split())
+    assert "PARTITION BY RANGE" in extracted
+    assert "2026-01-01" in extracted and "2026-04-01" in extracted
+    sql.gp_create_partitions(
+        "gp_target",
+        table,
+        months=["2026-04-01"],
+        query_label=_query_label("gp_partition_range_extend"),
+        retry_cnt=1,
+    )
+    sql.execute(
+        "gp_target",
+        f"INSERT INTO {table} VALUES ('2026-04-15', 3)",
+        query_label=_query_label("gp_partition_range_extended_insert"),
+        retry_cnt=1,
+    )
+    assert len(sql.read("gp_target", f"SELECT * FROM {table}")) == 3
+
+    sql.load_df(
+        "gp_target",
+        load_table,
+        initial,
+        write_mode="replace",
+        partition_by="event_date",
+        gp_partitions=partitions,
+        query_label=_query_label("gp_partition_range_load_create"),
+        retry_cnt=1,
+    )
+    assert len(sql.read("gp_target", f"SELECT * FROM {load_table}")) == 2
+
+    sql.load_df(
+        "gp_source",
+        source_table,
+        initial,
+        write_mode="replace",
+        retry_cnt=1,
+    )
+    sql.transfer(
+        "gp_source",
+        "gp_target",
+        from_table=source_table,
+        to_table=transfer_table,
+        write_mode="replace",
+        table_schema={"event_date": "DATE", "row_id": "BIGINT"},
+        partition_by="event_date",
+        gp_partitions=partitions,
+        query_label=_query_label("gp_partition_range_transfer_create"),
+        retry_cnt=1,
+        full_retry_cnt=1,
+    )
+    assert len(sql.read("gp_target", f"SELECT * FROM {transfer_table}")) == 2
+
+
+@pytest.mark.sql_scenario("ddl.native.gp.partition_list")
+def test_greenplum_initial_list_partitions(
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_list")
+    partitions = {"values": ["free", "paid"]}
+    frame = pd.DataFrame({"segment": ["free", "paid"], "row_id": [1, 2]})
+    sql.create_sql_table(
+        "gp_target",
+        table,
+        table_schema={"segment": "TEXT", "row_id": "BIGINT"},
+        partition_by="segment",
+        gp_partitions=partitions,
+        query_label=_query_label("gp_partition_list"),
+        retry_cnt=1,
+    )
+    sql.load_df(
+        "gp_target",
+        table,
+        frame,
+        write_mode="append",
+        partition_by="segment",
+        gp_partitions=partitions,
+        query_label=_query_label("gp_partition_list_insert"),
+        retry_cnt=1,
+    )
+    assert_exact_frame(
+        sql.read("gp_target", f"SELECT * FROM {table} ORDER BY row_id"),
+        frame,
+    )
+    extracted = " ".join(sql.extract_ddl("gp_target", table).upper().split())
+    assert "PARTITION BY LIST" in extracted
+    assert "P_FREE" in extracted and "P_PAID" in extracted
+    with pytest.raises(Exception, match=r"(?i)partition|SQL context"):
+        sql.execute(
+            "gp_target",
+            f"INSERT INTO {table} VALUES ('enterprise', 99)",
+            query_label=_query_label("gp_partition_list_reject"),
+            retry_cnt=1,
+        )
+    assert len(sql.read("gp_target", f"SELECT * FROM {table}")) == 2
 
 
 @pytest.mark.sql_scenario("ddl.native.ch.shard_replace")

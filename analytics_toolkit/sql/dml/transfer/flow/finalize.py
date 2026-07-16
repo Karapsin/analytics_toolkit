@@ -109,6 +109,7 @@ def finalize_loaded_stage(
             write_mode=options.write_mode,
             key_columns=options.key_columns,
             gp_distributed_by_key=options.gp_distributed_by_key,
+            gp_partitions=options.gp_partitions,
             partition_by=options.partition_by,
             order_by=options.order_by,
             ch_engine=options.ch_engine,

@@ -385,6 +385,7 @@ def build_load_target_create_kwargs(
     adapter: Any,
     *,
     gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any = None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -406,6 +407,8 @@ def build_load_target_create_kwargs(
     create_kwargs: dict[str, Any] = {
         "gp_distributed_by_key": gp_distributed_by_key,
     }
+    if gp_partitions is not None:
+        create_kwargs["gp_partitions"] = gp_partitions
     if partition_by is not None:
         create_kwargs["partition_by"] = partition_by
     if order_by is not None:
@@ -517,6 +520,28 @@ def validate_gp_distributed_by_key_option(
         raise ValueError(
             f"gp_distributed_by_key can only be used when {option_owner} has type 'gp'."
         )
+
+
+def normalize_gp_partitions_option(
+    adapter: Any,
+    gp_partitions: Any,
+    *,
+    partition_by: Sequence[str] | str | None,
+    option_owner: str,
+) -> Any:
+    del partition_by
+    backend = adapter.backend
+    if gp_partitions is not None:
+        from analytics_toolkit.sql.connection.errors import (  # noqa: PLC0415
+            InvalidSqlInputError,
+        )
+
+        message = (
+            f"gp_partitions can only be used when {option_owner} has type 'gp', "
+            f"not {backend!r}."
+        )
+        raise InvalidSqlInputError(message)
+    return None
 
 
 def validate_gp_insert_chunk_size_option(
@@ -641,6 +666,7 @@ def build_create_from_sql_target_create_kwargs(
     adapter: Any,
     *,
     gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any = None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -662,6 +688,8 @@ def build_create_from_sql_target_create_kwargs(
     create_kwargs: dict[str, Any] = {
         "gp_distributed_by_key": gp_distributed_by_key,
     }
+    if gp_partitions is not None:
+        create_kwargs["gp_partitions"] = gp_partitions
     if partition_by is not None:
         create_kwargs["partition_by"] = partition_by
     if order_by is not None:

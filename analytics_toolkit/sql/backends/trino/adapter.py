@@ -102,6 +102,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         table_name: str,
         joined_columns: str,
         gp_distributed_by_key: list[str] | None,
+        gp_partitions: Any = None,
         partition_by: Sequence[str] | str | None,
         order_by: Sequence[str] | str | None,
         ch_engine: str,
@@ -113,6 +114,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     ) -> list[str]:
         del (
             gp_distributed_by_key,
+            gp_partitions,
             ch_engine,
             ch_cluster,
             ch_sharding_key,

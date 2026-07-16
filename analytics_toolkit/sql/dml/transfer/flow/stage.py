@@ -63,6 +63,7 @@ def ensure_transfer_target_table(
         sample_batch=pd.DataFrame(columns=create_columns),
         target_column_types=stage_state.stage_column_types,
         gp_distributed_by_key=options.gp_distributed_by_key,
+        gp_partitions=options.gp_partitions,
         partition_by=options.partition_by,
         order_by=options.order_by,
         ch_engine=options.ch_engine,

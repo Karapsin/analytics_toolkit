@@ -66,6 +66,7 @@ class StageTargetTableRequest:
     ch_sharding_key: str
     query_label: str | None
     connection_key: str | None
+    gp_partitions: Any = None
     ch_only_shard: bool = False
 
 
@@ -82,6 +83,7 @@ class StageFinalizationRequest:
     write_mode: str = "replace"
     key_columns: list[str] | None = None
     gp_distributed_by_key: list[str] | None = None
+    gp_partitions: Any = None
     partition_by: list[str] | str | None = None
     order_by: list[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"

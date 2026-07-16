@@ -3,12 +3,17 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from contextlib import suppress
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 import sqlparse
 
 from analytics_toolkit.general import time_print
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -68,6 +73,7 @@ def create_table_from_sql(
     insert_data: bool = True,
     drop_target_if_exists: bool = False,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
@@ -77,7 +83,7 @@ def create_table_from_sql(
     ch_retry_per_host_drops: bool = True,
     trino_insert_chunk_size: int | None = None,
     retry_cnt: int = 5,
-    timeout_increment: int | float = 5,
+    timeout_increment: float = 5,
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
@@ -110,6 +116,11 @@ def create_table_from_sql(
         "ch_sharding_key",
     )
     ch_only_shard = _normalize_only_shard(ch_only_shard)
+    normalized_gp_partitions = target_adapter.normalize_gp_partitions_option(
+        gp_partitions,
+        partition_by=partition,
+        option_owner="table_db",
+    )
 
     _validate_backend_options(
         target_backend=target_config.backend,
@@ -136,6 +147,7 @@ def create_table_from_sql(
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
         gp_distributed_by_key=gp_distribution,
+        gp_partitions=normalized_gp_partitions,
         partition_by=partition,
         order_by=order,
         ch_engine=ch_engine_name,
@@ -168,6 +180,7 @@ def create_table_from_sql(
             insert_data=options.insert_data,
             drop_target_if_exists=options.drop_target_if_exists,
             gp_distributed_by_key=options.gp_distributed_by_key,
+            gp_partitions=options.gp_partitions,
             partition_by=options.partition_by,
             order_by=options.order_by,
             ch_engine=options.ch_engine,
@@ -409,13 +422,14 @@ def _execute_generic_create_table_from_sql_attempt(
                 ch_retry_per_host_drops=options.ch_retry_per_host_drops,
             )
 
-            create_kwargs: dict[str, object] = {
+            create_kwargs: dict[str, Any] = {
                 "table_schema": target_column_types,
                 "query_label": options.query_label,
             }
             create_kwargs.update(
                 target_adapter.build_create_from_sql_target_create_kwargs(
                     gp_distributed_by_key=options.gp_distributed_by_key,
+                    gp_partitions=options.gp_partitions,
                     partition_by=options.partition_by,
                     order_by=options.order_by,
                     ch_engine=options.ch_engine,
@@ -618,6 +632,7 @@ def _build_create_table_from_sql_plan(
     insert_data: bool,
     drop_target_if_exists: bool,
     gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
     ch_engine: str,
@@ -638,6 +653,7 @@ def _build_create_table_from_sql_plan(
             "drop_target_if_exists": drop_target_if_exists,
             "table_schema": table_schema,
             "gp_distributed_by_key": gp_distributed_by_key,
+            "gp_partitions": _gp_partition_plan_option(gp_partitions),
             "partition_by": partition_by,
             "order_by": order_by,
             "ch_only_shard": ch_only_shard,
@@ -673,6 +689,7 @@ def _build_create_table_from_sql_plan(
             target_backend
         ).build_create_from_sql_target_create_kwargs(
             gp_distributed_by_key=gp_distributed_by_key,
+            gp_partitions=gp_partitions,
             partition_by=partition_by,
             order_by=order_by,
             ch_engine=ch_engine,

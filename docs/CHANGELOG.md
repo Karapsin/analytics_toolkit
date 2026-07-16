@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Expanded deep SQL integration recovery, cancellation, type, atomicity, authentication, orchestration, and DDL coverage.
 - Expanded deep SQL integration recovery, cancellation, types, atomicity, authentication, orchestration, DDL, and stress coverage.
+- Added inline Greenplum range and list partitions to SQL table-creation workflows.
 
 ## 1.3.10.18 - 2026-07-15
 

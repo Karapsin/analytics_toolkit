@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class LoadOptions:
     append: bool = False
     write_mode: str = "replace"
     gp_distributed_by_key: list[str] | None = None
+    gp_partitions: Any = None
     key_columns: list[str] | None = None
     upsert_partition_column: str | None = None
     trino_upsert_partition_drop_sql_template: str | None = None

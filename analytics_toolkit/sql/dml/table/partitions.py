@@ -25,6 +25,7 @@ from ...execution.operation_runner import (
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from .models import DropManyPartitionsOptions
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.gp import partitions as _gp_partitions
 
 
 @dataclass(frozen=True)
@@ -695,9 +696,7 @@ def _render_gp_partition_name(name_template: str, value: str) -> str:
     )
 
 def _sanitize_gp_partition_name_token(value: str) -> str:
-    sanitized = re.sub(r"[^0-9A-Za-z_]+", "_", str(value).strip())
-    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
-    return sanitized or "partition"
+    return _gp_partitions.sanitize_gp_partition_name_token(value)
 
 def _validate_gp_partition_identifier(value: Any, argument_name: str) -> str:
     if not isinstance(value, str):

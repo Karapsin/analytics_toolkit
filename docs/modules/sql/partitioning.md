@@ -9,7 +9,33 @@ concept is the table shape being managed. Use
 Greenplum creation and
 [sql.drop_partitions](functions/drop_partitions.md) for removal.
 
-## Greenplum Creation
+## Greenplum Initial Creation
+
+When [sql.create_sql_table](functions/create_sql_table.md),
+[sql.load_df](functions/load_df.md), or [sql.transfer](functions/transfer.md)
+creates a Greenplum target, pass one `partition_by` column and `gp_partitions`.
+Range definitions use inclusive `start`, exclusive `end`, and an aligned
+positive day, week, month, or year interval:
+
+```python
+gp_partitions={
+    "start": "2025-01-01",
+    "end": "2026-07-01",
+    "interval": "1 month",
+}
+```
+
+List definitions create one `p_<sanitized_value>` child per value:
+
+```python
+gp_partitions={"values": ["free", "paid"]}
+```
+
+Initial definitions are creation-only. Passing them for an existing target is
+validated but does not alter that target, and normal staging tables remain
+unpartitioned. No default partition is generated.
+
+## Greenplum Later Partitions
 
 Greenplum partition creation supports explicit intervals, list values, days,
 weeks, months, or years. Range partition boundaries are generated in input

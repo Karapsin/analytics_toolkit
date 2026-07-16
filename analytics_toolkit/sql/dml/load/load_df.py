@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -99,6 +104,7 @@ def load_df(
     append: bool = False,
     write_mode: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     key_columns: str | Sequence[str] | None = None,
     upsert_partition_column: str | None = None,
     retry_cnt: int = 5,
@@ -138,6 +144,7 @@ def load_df(
         append=append,
         write_mode=write_mode,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_partitions=gp_partitions,
         key_columns=key_columns,
         upsert_partition_column=upsert_partition_column,
         trino_insert_chunk_size=trino_insert_chunk_size,
@@ -283,6 +290,7 @@ def _build_load_options(
     write_mode: str | None,
     gp_distributed_by_key: str | Sequence[str] | None,
     key_columns: str | Sequence[str] | None,
+    gp_partitions: Mapping[str, Any] | None = None,
     upsert_partition_column: str | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -307,6 +315,15 @@ def _build_load_options(
         write_mode=write_mode,
     )
     retry_per_host_drops = adapter.resolve_ch_retry_per_host_drops(bool(ch_retry_per_host_drops))
+    normalized_partition_by = adapter.normalize_ch_columns_or_expression(
+        partition_by,
+        "partition_by",
+    )
+    normalized_gp_partitions = adapter.normalize_gp_partitions_option(
+        gp_partitions,
+        partition_by=normalized_partition_by,
+        option_owner="db_key",
+    )
     options = LoadOptions(
         connection_key=config.connection_key,
         connection_backend=config.backend,
@@ -318,6 +335,7 @@ def _build_load_options(
             gp_distributed_by_key,
             "gp_distributed_by_key",
         ),
+        gp_partitions=normalized_gp_partitions,
         key_columns=normalize_key_columns(key_columns),
         upsert_partition_column=normalize_upsert_partition_column(upsert_partition_column),
         trino_upsert_partition_drop_sql_template=(
@@ -328,10 +346,7 @@ def _build_load_options(
             if trino_insert_chunk_size is not None
             else target_defaults.insert_chunk_size
         ),
-        partition_by=adapter.normalize_ch_columns_or_expression(
-            partition_by,
-            "partition_by",
-        ),
+        partition_by=normalized_partition_by,
         order_by=adapter.normalize_ch_columns_or_expression(
             order_by,
             "order_by",
@@ -570,6 +585,7 @@ def _create_load_target_table(
     create_kwargs.update(
         get_backend_adapter(options.connection_backend).build_load_target_create_kwargs(
             gp_distributed_by_key=options.gp_distributed_by_key,
+            gp_partitions=options.gp_partitions,
             partition_by=options.partition_by,
             order_by=options.order_by,
             ch_engine=options.ch_engine,
@@ -675,6 +691,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "key_columns": options.key_columns,
             "upsert_partition_column": options.upsert_partition_column,
             "gp_distributed_by_key": options.gp_distributed_by_key,
+            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "table_schema": options.table_schema,
@@ -725,6 +742,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     } or adapter.should_ensure_load_target_table(target_exists=True):
         create_kwargs = adapter.build_load_target_create_kwargs(
             gp_distributed_by_key=options.gp_distributed_by_key,
+            gp_partitions=options.gp_partitions,
             partition_by=options.partition_by,
             order_by=options.order_by,
             ch_engine=options.ch_engine,
@@ -1117,7 +1135,7 @@ def _load_dataframe(
                 target_table=options.destination_table,
                 batch=df,
                 gp_distributed_by_key=options.gp_distributed_by_key,
-                connection_key=options.connection_key,
+        connection_key=options.connection_key,
                 query_label=options.query_label,
                 transfer_staging_schema=options.transfer_staging_schema,
                 transfer_staging_username=options.transfer_staging_username,

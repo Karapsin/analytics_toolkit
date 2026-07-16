@@ -5,10 +5,15 @@ from typing import Any
 
 import pandas as pd
 
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
+
 from ....backends import get_backend_adapter
 from ....connection.config import get_connection_config
 from ....connection.errors import SqlOperationContext, sql_preview
 from ....connection.get_sql_connection import get_sql_connection
+from ....ddl.api import _build_create_table_sqls
+from ....ddl.schema import normalize_table_schema
 from ....execution.operation_runner import (
     run_annotated_once,
     run_retrying_operation,
@@ -19,21 +24,22 @@ from ....execution.operation_runner import (
 from ....execution.plan_steps import (
     add_analyze_step,
     add_cleanup_stage_step,
-    add_count_step,
-    add_create_table_steps,
-    add_create_table_placeholder_step,
     add_clear_target_steps,
+    add_count_step,
+    add_create_table_placeholder_step,
+    add_create_table_steps,
     add_insert_from_stage_step,
     add_load_stage_step,
 )
-from ....ddl.api import _build_create_table_sqls
-from ....ddl.schema import normalize_table_schema
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from analytics_toolkit.general import time_print
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
-from ...table.table_validation import normalize_key_columns
-from ...table.table_validation import normalize_upsert_partition_column
+from ...table.table_validation import normalize_key_columns, normalize_upsert_partition_column
+from ..io.source import TransferSourceStreamReadError
+from ..runtime.models import TransferOptions, TrinoTransferMode
+from ..runtime.retry import run_with_retry
+from ..staging import _sanitize_transfer_staging_username
+from . import options as transfer_options
 from .attempt import run_transfer_attempt
 from .dry_run import (
     add_insert_target_dry_run_steps,
@@ -42,16 +48,10 @@ from .dry_run import (
     dry_run_stage_table_names,
     source_batches_label,
 )
-from . import options as transfer_options
 from .keys import normalize_transfer_slices
 from .parquet_stage import build_create_parquet_stage_table_sql
 from .source import normalize_transfer_source
 from .stream_retries import TransferStreamRetryState
-from ..io.source import TransferSourceStreamReadError
-from ..staging import _sanitize_transfer_staging_username
-from ..runtime.models import TransferOptions
-from ..runtime.models import TrinoTransferMode
-from ..runtime.retry import run_with_retry
 
 
 @timed_public_sql_function
@@ -77,12 +77,13 @@ def transfer_table(
     target_rows_per_second_window: int = 5,
     target_rows_per_second_deadband: float = 0.15,
     retry_cnt: int = 5,
-    timeout_increment: int | float = 5,
+    timeout_increment: float = 5,
     full_retry_cnt: int = 5,
-    full_timeout_increment: int | float = 60 * 10,
+    full_timeout_increment: float = 60 * 10,
     key_columns: str | Sequence[str] | None = None,
     upsert_partition_column: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -134,6 +135,7 @@ def transfer_table(
         key_columns=key_columns,
         upsert_partition_column=upsert_partition_column,
         gp_distributed_by_key=gp_distributed_by_key,
+        gp_partitions=gp_partitions,
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=trino_insert_chunk_size,
         partition_by=partition_by,
@@ -302,12 +304,13 @@ def build_transfer_options(
     target_rows_per_second_window: int = 5,
     target_rows_per_second_deadband: float = 0.15,
     retry_cnt: int = 5,
-    timeout_increment: int | float = 5,
+    timeout_increment: float = 5,
     full_retry_cnt: int = 5,
-    full_timeout_increment: int | float = 60 * 10,
+    full_timeout_increment: float = 60 * 10,
     key_columns: str | Sequence[str] | None = None,
     upsert_partition_column: str | None = None,
     gp_distributed_by_key: str | Sequence[str] | None = None,
+    gp_partitions: Mapping[str, Any] | None = None,
     gp_insert_chunk_size: int | None = None,
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -432,6 +435,15 @@ def build_transfer_options(
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
     )
+    normalized_partition_by = target_adapter.normalize_ch_columns_or_expression(
+        partition_by,
+        "partition_by",
+    )
+    normalized_gp_partitions = target_adapter.normalize_gp_partitions_option(
+        gp_partitions,
+        partition_by=normalized_partition_by,
+        option_owner="to_db",
+    )
     options = TransferOptions(
         from_db_key=from_config.connection_key,
         from_db_backend=from_config.backend,
@@ -475,16 +487,14 @@ def build_transfer_options(
             gp_distributed_by_key,
             "gp_distributed_by_key",
         ),
+        gp_partitions=normalized_gp_partitions,
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=(
             trino_insert_chunk_size
             if trino_insert_chunk_size is not None
             else target_defaults.insert_chunk_size
         ),
-        partition_by=target_adapter.normalize_ch_columns_or_expression(
-            partition_by,
-            "partition_by",
-        ),
+        partition_by=normalized_partition_by,
         order_by=target_adapter.normalize_ch_columns_or_expression(
             order_by,
             "order_by",
@@ -644,6 +654,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "key_columns": options.key_columns,
             "upsert_partition_column": options.upsert_partition_column,
             "gp_distributed_by_key": options.gp_distributed_by_key,
+            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "adaptive_gp_insert_chunk_size": (
                 insert_page_sizing is not None and options.adaptive_batch_size

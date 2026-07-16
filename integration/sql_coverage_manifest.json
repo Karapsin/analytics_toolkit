@@ -966,6 +966,23 @@
             }
           ]
         },
+        "gp_partitions": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": ["lifecycle.trino"]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": ["ddl.native.gp.partition_range"]
+            }
+          ]
+        },
         "partition_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "None",
@@ -2999,6 +3016,23 @@
             }
           ]
         },
+        "gp_partitions": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": ["load.trino.append"]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": ["ddl.native.gp.partition_range"]
+            }
+          ]
+        },
         "key_columns": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "None",
@@ -4764,6 +4798,23 @@
             }
           ]
         },
+        "gp_partitions": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": ["transfer.trino.ch.append"]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": ["ddl.native.gp.partition_range"]
+            }
+          ]
+        },
         "gp_insert_chunk_size": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "None",
@@ -6059,6 +6110,16 @@
     "ddl.native.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_schema_ddl.py::test_greenplum_native_distribution_ddl",
+      "backends": ["gp"]
+    },
+    "ddl.native.gp.partition_range": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_greenplum_initial_range_partitions",
+      "backends": ["gp"]
+    },
+    "ddl.native.gp.partition_list": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_greenplum_initial_list_partitions",
       "backends": ["gp"]
     },
     "ddl.native.trino": {

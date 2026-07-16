@@ -1973,18 +1973,24 @@ def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None
     assert "sorted_by = ARRAY['dt', 'id']" in sql
 
 
-def test_gp_create_table_sql_accepts_partition_column_and_rejects_order() -> None:
+def test_gp_create_table_sql_accepts_initial_partitions_and_rejects_order() -> None:
     sql = create_sql_table_module.create_sql_table(
         db_key="gp",
         table_name="schema.target",
         df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
         gp_distributed_by_key=["id"],
         partition_by="dt",
+        gp_partitions={
+            "start": "2026-05-01",
+            "end": "2026-07-01",
+            "interval": "1 month",
+        },
         only_generate_sql=True,
     )
 
     assert 'DISTRIBUTED BY ("id")' in sql
     assert 'PARTITION BY RANGE ("dt")' in sql
+    assert "EVERY (INTERVAL '1 month')" in sql
 
     with pytest.raises(ValueError, match="order_by is not supported"):
         create_sql_table_module.create_sql_table(
@@ -2065,6 +2071,10 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
             option_owner: str,
         ) -> None:
             events.append(("validate_gp", value, option_owner))
+
+        normalize_gp_partitions_option = staticmethod(
+            lambda value, **kwargs: value
+        )
 
         def validate_ch_create_table_options(self, **kwargs: object) -> None:
             events.append(("validate_ch_options", kwargs))

@@ -25,12 +25,15 @@ operational cleanup, not as normal flow control.
 Created Greenplum tables default to append-only, column-oriented storage with
 compression. Distribution is random unless a distribution key is provided.
 
-Partitioned parent tables can be created with range partitioning options, while
-child partitions are managed separately through the partitioning workflow.
+Partitioned parent tables are created with one `partition_by` column and an
+inline `gp_partitions` range or list mapping. The mapping creates the initial
+children in the same `CREATE TABLE`, with no default partition.
 These defaults apply to table creation and write workflows such as
 [sql.create_sql_table](functions/create_sql_table.md),
 [sql.load_df](functions/load_df.md), and [sql.transfer](functions/transfer.md).
-Use [sql.gp_create_partitions](functions/gp_create_partitions.md) for
-Greenplum child partitions.
+The mapping is creation-only: existing append, truncate, or upsert targets are
+never altered implicitly. Use
+[sql.gp_create_partitions](functions/gp_create_partitions.md) to add later,
+non-overlapping Greenplum child partitions.
 
 [SQL module index](index.md)

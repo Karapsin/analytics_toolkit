@@ -186,6 +186,7 @@ def add_insert_target_dry_run_steps(
                 pd.DataFrame(columns=list(options.table_schema)),
                 table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
+                gp_partitions=options.gp_partitions,
                 partition_by=options.partition_by,
                 order_by=options.order_by,
                 ch_engine=options.ch_engine,

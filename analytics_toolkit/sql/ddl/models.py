@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -14,6 +15,7 @@ class CreateSqlTableOptions:
     df: pd.DataFrame
     table_schema: dict[str, str] | None = None
     gp_distributed_by_key: list[str] | None = None
+    gp_partitions: Any = None
     partition_by: Sequence[str] | str | None = None
     order_by: Sequence[str] | str | None = None
     ch_engine: str = "ReplicatedMergeTree"

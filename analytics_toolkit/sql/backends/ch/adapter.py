@@ -106,6 +106,7 @@ class ClickHouseAdapter(BackendAdapter):
         table_name: str,
         joined_columns: str,
         gp_distributed_by_key: list[str] | None,
+        gp_partitions: Any = None,
         partition_by: Sequence[str] | str | None,
         order_by: Sequence[str] | str | None,
         ch_engine: str,
@@ -115,7 +116,7 @@ class ClickHouseAdapter(BackendAdapter):
         ch_only_shard: bool,
         ch_replace_table: bool,
     ) -> list[str]:
-        del gp_distributed_by_key
+        del gp_distributed_by_key, gp_partitions
         from .ddl import _build_ch_create_table_sqls
 
         return _build_ch_create_table_sqls(

@@ -5,7 +5,7 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -33,6 +33,7 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 ### Backend-Specific Inputs
 
 - `gp_distributed_by_key` - distribution key column or columns for created Greenplum target tables
+- `gp_partitions` - initial Greenplum range or list child definitions used when the final target is created or replaced
 - `gp_insert_chunk_size` - dataframe insert page size for Greenplum
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
 - `ch_engine` - engine to use for created ClickHouse local shard tables
@@ -91,5 +92,8 @@ rows
 - If `transfer_staging_location` is not configured, Trino `load_df` keeps using
   direct dataframe inserts controlled by `trino_insert_chunk_size`.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
+- Greenplum validates `gp_partitions` on every call, but renders it only when
+  creating or recreating the final target. Existing append, truncate, and
+  upsert targets are not repartitioned implicitly.
 
 [SQL functions index](index.md)
