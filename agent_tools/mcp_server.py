@@ -2884,9 +2884,12 @@ def _push_readiness(root: Path) -> dict[str, Any]:
 
 def _push_dev_result(root: Path) -> dict[str, Any]:
     readiness = _push_readiness(root)
+    public_readiness = {
+        key: value for key, value in readiness.items() if key != "command_results"
+    }
     if readiness["blockers"]:
         return {
-            "readiness": readiness,
+            "readiness": public_readiness,
             "command_results": readiness["command_results"],
             "blockers": readiness["blockers"],
         }
@@ -2894,14 +2897,14 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
     head = _run_git(root, ["rev-parse", "HEAD"])
     if not head["ok"]:
         return {
-            "readiness": readiness,
+            "readiness": public_readiness,
             "command_results": [*readiness["command_results"], head],
             "blockers": [_command_blocker("push_sha", head)],
         }
     pushed_sha = head["stdout"].strip()
     if not re.fullmatch(r"[0-9a-fA-F]{40}", pushed_sha):
         return {
-            "readiness": readiness,
+            "readiness": public_readiness,
             "command_results": [*readiness["command_results"], head],
             "blockers": [
                 {
@@ -2922,7 +2925,7 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
     )
     blockers = [] if result["ok"] else [_command_blocker("push", result)]
     return {
-        "readiness": readiness,
+        "readiness": public_readiness,
         "sha": pushed_sha,
         "push_target": f"origin/{WORK_BRANCH}",
         "command_results": [*readiness["command_results"], head, result],

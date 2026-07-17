@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Made async_sql Ctrl+C cancel queued and active database work.
 - Added configurable sql.read output types with direct dictionary reads.
 - Reduced agent workflow output and added implementation preflight diagnostics.
+- Avoided duplicate nested command output in git workflow responses.
 
 ## 1.3.10.18 - 2026-07-15
 

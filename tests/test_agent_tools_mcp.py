@@ -1849,6 +1849,48 @@ def test_push_captures_immutable_sha_before_push(
     assert result["sha"] == captured
 
 
+def test_push_result_does_not_duplicate_nested_command_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    readiness_command = _command_result("git fetch origin dev", "x" * 50_000)
+    monkeypatch.setattr(
+        mcp_server,
+        "_push_readiness",
+        lambda root_path: {
+            "blockers": [],
+            "command_results": [readiness_command],
+            "repo_health": {"branch": "dev"},
+            "remote_dev_status": {"contains_origin_dev": True},
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_git",
+        lambda root_path, args: _command_result(
+            "git rev-parse HEAD", "a" * 40 + "\n"
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_command",
+        lambda root_path, command: _command_result(str(command["display"]), "pushed"),
+    )
+
+    push = mcp_server._push_dev_result(root)
+    payload = mcp_server._tool_output(
+        "git_workflow",
+        {"detail": "summary"},
+        result={"push_readiness": push["readiness"]},
+        command_results=push["command_results"],
+    )
+
+    assert "command_results" not in push["readiness"]
+    assert payload["telemetry"]["response_bytes"] < 8_000
+    assert len(json.dumps(payload)) < 8_000
+
+
 class _FakeClock:
     def __init__(self) -> None:
         self.now = 0.0
