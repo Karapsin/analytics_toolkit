@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
+import inspect
 import json
 import os
 import re
@@ -31,6 +33,11 @@ from release_routines.lib.project_metadata import load_project
 DEFAULT_INDEX_DIR = docs_assistant.DEFAULT_INDEX_DIR
 CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
 RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
+TOOL_LOG_DIR = Path(DEFAULT_INDEX_DIR) / "tool_logs"
+GITHUB_WATCH_DIR = Path(DEFAULT_INDEX_DIR) / "github_checks"
+ENV_STATE_FILE = Path(".venv") / ".agent_env_state.json"
+DETAIL_LEVELS = ("summary", "diagnostic", "full")
+DIAGNOSTIC_EXCERPT_CHARS = 4000
 SENSITIVE_LOCAL_PATHS = {
     ".connections",
     ".env",
@@ -64,6 +71,14 @@ REQUIRED_WORKFLOWS_PATH = Path(".github/required-workflows.json")
 GITHUB_CHECK_TIMEOUT_SECONDS = 60 * 60
 GITHUB_CHECK_POLL_SECONDS = 15
 GITHUB_CHECK_DISCOVERY_SECONDS = 5 * 60
+GITHUB_CHECK_WAIT_SECONDS = 60
+SQL_ARCHITECTURE_MAX_LINES = 900
+SQL_ARCHITECTURE_WARNING_LINES = 50
+PYTHON_CACHE_DIR = "/tmp/utils_dev_pycache"  # noqa: S108 - repository-wide test cache.
+SQL_ARCHITECTURE_EXCEPTIONS = {
+    "analytics_toolkit/sql/connection/config.py",
+    "analytics_toolkit/sql/dml/load/load_df.py",
+}
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 PYTHON_REQUIRES_RE = re.compile(r'^requires-python\s*=\s*"([^"]+)"', flags=re.MULTILINE)
 README_VERSION_RE = re.compile(r"\*\*Version:\*\*\s+`([^`]+)`")
@@ -242,12 +257,13 @@ class _FingerprintError(RuntimeError):
         }
 
 
-def prepare_start(
+def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     task: str,
     module: str | None = None,
     root: str = ".",
     index_dir: str = DEFAULT_INDEX_DIR,
     ensure_project_env: bool = True,
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Run the mandatory startup workflow for coding agents."""
     root_path = _resolve_root(root)
@@ -257,10 +273,19 @@ def prepare_start(
         "root": str(root_path),
         "index_dir": index_dir,
         "ensure_project_env": ensure_project_env,
+        "detail": detail,
     }
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "prepare_start",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
     command_results: list[dict[str, Any]] = []
 
-    for phase, command in _prepare_start_commands(root_path, ensure_project_env):
+    for phase, command in _prepare_sync_commands(root_path):
         result = _run_command(root_path, command)
         command_results.append(result)
         if not result["ok"]:
@@ -274,6 +299,35 @@ def prepare_start(
                 blockers=[_command_blocker(phase, result)],
                 next_actions=["Resolve the startup blocker, then rerun prepare_start."],
             )
+
+    environment_fingerprint = _environment_fingerprint(root_path, ensure_project_env)
+    environment_reused, health_result = _environment_ready(
+        root_path,
+        ensure_project_env=ensure_project_env,
+        fingerprint=environment_fingerprint,
+    )
+    if health_result is not None:
+        command_results.append(health_result)
+    if not environment_reused:
+        for phase, command in _environment_commands(root_path, ensure_project_env):
+            result = _run_command(root_path, command)
+            command_results.append(result)
+            if not result["ok"]:
+                return _tool_output(
+                    "prepare_start",
+                    input_summary,
+                    ok=False,
+                    summary=f"{phase} failed; stop and report the blocker.",
+                    result={"phase": phase},
+                    command_results=command_results,
+                    blockers=[_command_blocker(phase, result)],
+                    next_actions=["Resolve the startup blocker, then rerun prepare_start."],
+                )
+        _write_environment_state(
+            root_path,
+            fingerprint=environment_fingerprint,
+            ensure_project_env=ensure_project_env,
+        )
 
     health = repo_health(root=str(root_path))
     if health["branch"] != WORK_BRANCH:
@@ -327,6 +381,10 @@ def prepare_start(
             },
             "metadata_status": status["result"]["metadata_status"],
             "recommended_checks": status["result"]["recommended_checks"],
+            "environment": {
+                "reused": environment_reused,
+                "fingerprint": environment_fingerprint,
+            },
         },
         command_results=command_results,
         next_actions=[
@@ -451,6 +509,269 @@ def workflow_status(
         blockers=[*metadata["blockers"], *dependency_metadata["blockers"]],
         next_actions=_workflow_next_actions(missing),
     )
+
+
+def change_impact(
+    task: str,
+    module: str | None = None,
+    symbols: list[str] | None = None,
+    paths: list[str] | None = None,
+    root: str = ".",
+) -> dict[str, Any]:
+    """Return read-only implementation constraints before repository changes."""
+    root_path = _resolve_root(root)
+    requested_symbols = _unique(symbols or [])
+    requested_paths = _unique(paths or [])
+    input_summary = {
+        "task": task,
+        "module": module,
+        "symbols": requested_symbols,
+        "paths": requested_paths,
+        "root": str(root_path),
+    }
+    route = route_agent_context(task=f"implementation {task}", module=module)
+    contracts, inferred_paths, contract_blockers = _public_contract_impact(
+        root_path,
+        module=module,
+        symbols=requested_symbols,
+    )
+    architecture = _architecture_impact(
+        root_path,
+        module=module,
+        paths=[*requested_paths, *inferred_paths],
+    )
+    changelog_text = _read_text(root_path / CHANGELOG_PATH)
+    unreleased_count = len(_unreleased_changelog_bullets(changelog_text))
+    docs_response = docs(
+        task,
+        mode="search",
+        top_k=3,
+        index_dir=str(root_path / DEFAULT_INDEX_DIR),
+    )
+    references = []
+    if docs_response["ok"]:
+        references = [
+            {
+                "citation": item["citation"],
+                "heading": item["heading"],
+                "snippet": _bounded_text(item["snippet"], 500),
+            }
+            for item in docs_response["result"].get("results", [])
+        ]
+    documentation = _change_documentation_paths(root_path, module, requested_symbols)
+    return _tool_output(
+        "change_impact",
+        input_summary,
+        ok=not contract_blockers,
+        summary=(
+            "Change impact collected."
+            if not contract_blockers
+            else "Change impact collected with unresolved public symbols."
+        ),
+        result={
+            "required_instruction_files": route["required_files"],
+            "rag_references": references,
+            "public_contracts": contracts,
+            "architecture": architecture,
+            "documentation_paths": documentation,
+            "changelog": {
+                "unreleased_count": unreleased_count,
+                "next_action": (
+                    "roll_unreleased_into_new_version"
+                    if unreleased_count + 1 >= UNRELEASED_CHANGELOG_THRESHOLD
+                    else "add_unreleased_entry"
+                ),
+            },
+            "recommended_checks": recommend_tests(
+                area=module or task,
+                change_type="implementation",
+            ),
+        },
+        blockers=contract_blockers,
+        next_actions=[
+            "Use the reported contract pointers, line budgets, documentation paths, and checks in the implementation plan."
+        ],
+    )
+
+
+def _public_contract_impact(
+    root: Path,
+    *,
+    module: str | None,
+    symbols: list[str],
+) -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
+    if not symbols:
+        return [], [], []
+    module_name = _normalize_area(module or "")
+    if module_name != "sql" and any(symbol.startswith("sql.") for symbol in symbols):
+        module_name = "sql"
+    if module_name != "sql":
+        return (
+            [],
+            [],
+            [
+                {
+                    "phase": "change_impact",
+                    "message": "public contract inspection currently supports module='sql'",
+                }
+            ],
+        )
+    public_module = importlib.import_module("analytics_toolkit.sql")
+    manifest_path = root / "integration" / "sql_coverage_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        exports = manifest["exports"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        return [], [], [{"phase": "sql_manifest", "message": str(exc)}]
+    contracts: list[dict[str, Any]] = []
+    inferred_paths: list[str] = []
+    blockers: list[dict[str, Any]] = []
+    for requested in symbols:
+        name = requested.rsplit(".", 1)[-1]
+        obj = getattr(public_module, name, None)
+        if obj is None:
+            blockers.append(
+                {
+                    "phase": "public_symbol",
+                    "message": f"analytics_toolkit.sql has no public symbol {name!r}",
+                }
+            )
+            continue
+        if not inspect.isfunction(obj):
+            contracts.append(
+                {
+                    "symbol": f"sql.{name}",
+                    "signature": None,
+                    "manifest_pointer": f"/exports/{name}",
+                    "classification": exports.get(name, {}).get("classification"),
+                }
+            )
+            continue
+        signature = inspect.signature(obj)
+        declared_parameters = exports.get(name, {}).get("parameters", {})
+        parameters: list[dict[str, Any]] = []
+        for parameter_name, parameter in signature.parameters.items():
+            expected_default = (
+                "<required>"
+                if parameter.default is inspect.Parameter.empty
+                else repr(parameter.default)
+            )
+            declared = declared_parameters.get(parameter_name)
+            parameters.append(
+                {
+                    "name": parameter_name,
+                    "pointer": f"/exports/{name}/parameters/{parameter_name}",
+                    "signature_default": expected_default,
+                    "kind": str(parameter.kind),
+                    "manifest_status": (
+                        "missing"
+                        if declared is None
+                        else "mismatch"
+                        if declared.get("signature_default") != expected_default
+                        or declared.get("kind") != str(parameter.kind)
+                        else "aligned"
+                    ),
+                    "missing_entry_template": (
+                        {
+                            "signature_default": expected_default,
+                            "kind": str(parameter.kind),
+                            "states": [
+                                {
+                                    "status": "covered",
+                                    "tests": ["<add exact test node id>"],
+                                }
+                            ],
+                        }
+                        if declared is None
+                        else None
+                    ),
+                }
+            )
+        source = inspect.getsourcefile(obj)
+        if source:
+            try:
+                relative_source = Path(source).resolve().relative_to(root).as_posix()
+            except ValueError:
+                relative_source = None
+            if relative_source is not None:
+                inferred_paths.append(relative_source)
+        contracts.append(
+            {
+                "symbol": f"sql.{name}",
+                "signature": str(signature),
+                "manifest_pointer": f"/exports/{name}",
+                "parameters": parameters,
+                "extra_manifest_parameters": sorted(
+                    set(declared_parameters) - set(signature.parameters)
+                ),
+            }
+        )
+    return contracts, _unique(inferred_paths), blockers
+
+
+def _architecture_impact(
+    root: Path,
+    *,
+    module: str | None,
+    paths: list[str],
+) -> dict[str, Any]:
+    normalized = {
+        path
+        for path in paths
+        if path.startswith("analytics_toolkit/sql/") and path.endswith(".py")
+    }
+    if _normalize_area(module or "") == "sql":
+        for path in (root / "analytics_toolkit" / "sql").rglob("*.py"):
+            rel_path = path.relative_to(root).as_posix()
+            if rel_path in SQL_ARCHITECTURE_EXCEPTIONS:
+                continue
+            line_count = len(path.read_text(encoding="utf-8").splitlines())
+            if line_count >= SQL_ARCHITECTURE_MAX_LINES - SQL_ARCHITECTURE_WARNING_LINES:
+                normalized.add(rel_path)
+    modules = []
+    for rel_path in sorted(normalized):
+        path = root / rel_path
+        if not path.is_file():
+            modules.append({"path": rel_path, "status": "missing"})
+            continue
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        excepted = rel_path in SQL_ARCHITECTURE_EXCEPTIONS
+        remaining = None if excepted else SQL_ARCHITECTURE_MAX_LINES - line_count
+        modules.append(
+            {
+                "path": rel_path,
+                "line_count": line_count,
+                "max_lines": None if excepted else SQL_ARCHITECTURE_MAX_LINES,
+                "remaining_lines": remaining,
+                "status": (
+                    "excepted"
+                    if excepted
+                    else "over_limit"
+                    if remaining is not None and remaining < 0
+                    else "at_limit"
+                    if remaining == 0
+                    else "low_headroom"
+                    if remaining is not None and remaining <= SQL_ARCHITECTURE_WARNING_LINES
+                    else "within_limit"
+                ),
+            }
+        )
+    return {"policy": "SQL modules must not exceed 900 lines", "modules": modules}
+
+
+def _change_documentation_paths(
+    root: Path,
+    module: str | None,
+    symbols: list[str],
+) -> list[str]:
+    paths = [CHANGELOG_PATH]
+    if _normalize_area(module or "") == "sql":
+        for symbol in symbols:
+            name = symbol.rsplit(".", 1)[-1]
+            candidate = f"docs/modules/sql/functions/{name}.md"
+            if (root / candidate).is_file():
+                paths.append(candidate)
+    return _unique(paths)
 
 
 def _version_bump_validation_error(
@@ -659,6 +980,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
     dry_run: bool = False,
     integration_profile: str = "all",
     root: str = ".",
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Plan or execute focused, integration, pre-commit, or release checks."""
     root_path = _resolve_root(root)
@@ -669,13 +991,23 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         "dry_run": dry_run,
         "integration_profile": integration_profile,
         "root": str(root_path),
+        "detail": detail,
     }
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "run_checks",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
     try:
         commands = _check_commands(
             area=area,
             change_type=change_type,
             level=level,
             integration_profile=integration_profile,
+            root=root_path,
         )
     except ValueError as exc:
         return _tool_output(
@@ -701,6 +1033,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         result = _run_command(root_path, command)
         command_results.append(result)
         if not result["ok"]:
+            blocker = _check_failure_blocker(result)
             return _tool_output(
                 "run_checks",
                 input_summary,
@@ -708,8 +1041,8 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
                 summary="A validation command failed.",
                 result={"planned_commands": planned},
                 command_results=command_results,
-                blockers=[_command_blocker("run_checks", result)],
-                next_actions=["Fix the failure, then rerun the same check level."],
+                blockers=[blocker],
+                next_actions=[_check_next_action(blocker, level)],
             )
 
     result_data: dict[str, Any] = {"planned_commands": planned}
@@ -748,7 +1081,9 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
     paths: list[str] | None = None,
     sha: str | None = None,
     check_timeout_seconds: int = GITHUB_CHECK_TIMEOUT_SECONDS,
+    wait_seconds: int = GITHUB_CHECK_WAIT_SECONDS,
     root: str = ".",
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
     root_path = _resolve_root(root)
@@ -758,8 +1093,26 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         "paths": paths,
         "sha": sha,
         "check_timeout_seconds": check_timeout_seconds,
+        "wait_seconds": wait_seconds,
         "root": str(root_path),
+        "detail": detail,
     }
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
+    if wait_seconds <= 0:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Invalid GitHub check wait interval.",
+            blockers=[{"phase": "validate", "message": "wait_seconds must be positive"}],
+        )
     if action not in {"checks", "commit", "push"}:
         return _tool_output(
             "git_workflow",
@@ -788,6 +1141,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             input_summary,
             sha=sha,
             timeout_seconds=check_timeout_seconds,
+            wait_seconds=wait_seconds,
         )
 
     if action == "push":
@@ -795,6 +1149,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             root_path,
             input_summary,
             timeout_seconds=check_timeout_seconds,
+            wait_seconds=wait_seconds,
         )
 
     if not message:
@@ -915,6 +1270,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         root_path,
         sha=push["sha"],
         timeout_seconds=check_timeout_seconds,
+        wait_seconds=wait_seconds,
     )
     command_results.extend(checks["command_results"])
     if checks["blockers"]:
@@ -934,15 +1290,25 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 "then push and watch the new exact SHA."
             ],
         )
+    pending = checks["result"].get("status") == "pending"
     return _tool_output(
         "git_workflow",
         input_summary,
-        summary="Commit, push, and exact-SHA GitHub verification completed.",
+        summary=(
+            "Commit and push completed; exact-SHA GitHub verification is pending."
+            if pending
+            else "Commit, push, and exact-SHA GitHub verification completed."
+        ),
         result={
             "push_readiness": push["readiness"],
             "github_checks": checks["result"],
         },
         command_results=command_results,
+        next_actions=(
+            [f"Resume with git_workflow(action='checks', sha='{push['sha']}')."]
+            if pending
+            else []
+        ),
     )
 
 
@@ -1078,6 +1444,7 @@ def create_mcp_server() -> Any:
     server.tool()(prepare_start)
     server.tool()(docs)
     server.tool()(workflow_status)
+    server.tool()(change_impact)
     server.tool()(version_bump)
     server.tool()(run_checks)
     server.tool()(git_workflow)
@@ -1246,7 +1613,7 @@ def changelog_status(root: str = ".") -> dict[str, Any]:
 def recommend_tests(area: str | None, change_type: str = "implementation") -> dict[str, Any]:
     """Recommend focused commands for the requested area."""
     key = _normalize_area(area or "")
-    commands = TEST_COMMANDS.get(key, [])
+    commands = [_sql_focused_command(REPO_ROOT)] if key == "sql" else TEST_COMMANDS.get(key, [])
     if not commands:
         commands = [
             {
@@ -1294,7 +1661,7 @@ def _handle_cli_call(argv: list[str]) -> int:
     return 0
 
 
-def _build_cli_parser() -> argparse.ArgumentParser:
+def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirrors MCP inputs.
     parser = argparse.ArgumentParser(prog="agent_tools/mcp_tool.sh")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1303,6 +1670,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--module")
     prepare_parser.add_argument("--root", default=".")
     prepare_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
+    prepare_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     prepare_parser.add_argument(
         "--ensure-project-env", dest="ensure_project_env", action="store_true", default=True
     )
@@ -1316,6 +1684,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             root=args.root,
             index_dir=args.index_dir,
             ensure_project_env=args.ensure_project_env,
+            detail=args.detail,
         )
     )
 
@@ -1345,6 +1714,22 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             module=args.module,
             change_type=args.change_type,
             instructions_read=args.instructions_read,
+            root=args.root,
+        )
+    )
+
+    impact_parser = subparsers.add_parser("change-impact")
+    impact_parser.add_argument("--task", required=True)
+    impact_parser.add_argument("--module")
+    impact_parser.add_argument("--symbol", dest="symbols", action="append")
+    impact_parser.add_argument("--path", dest="paths", action="append")
+    impact_parser.add_argument("--root", default=".")
+    impact_parser.set_defaults(
+        handler=lambda args: change_impact(
+            task=args.task,
+            module=args.module,
+            symbols=args.symbols,
+            paths=args.paths,
             root=args.root,
         )
     )
@@ -1380,6 +1765,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         default="all",
     )
     checks_parser.add_argument("--root", default=".")
+    checks_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     checks_parser.set_defaults(
         handler=lambda args: run_checks(
             area=args.area,
@@ -1388,6 +1774,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             dry_run=args.dry_run,
             integration_profile=args.integration_profile,
             root=args.root,
+            detail=args.detail,
         )
     )
 
@@ -1401,7 +1788,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         type=int,
         default=GITHUB_CHECK_TIMEOUT_SECONDS,
     )
+    git_parser.add_argument(
+        "--wait-seconds",
+        type=int,
+        default=GITHUB_CHECK_WAIT_SECONDS,
+    )
     git_parser.add_argument("--root", default=".")
+    git_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     git_parser.set_defaults(
         handler=lambda args: git_workflow(
             action=args.action,
@@ -1409,7 +1802,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             paths=args.paths,
             sha=args.sha,
             check_timeout_seconds=args.check_timeout_seconds,
+            wait_seconds=args.wait_seconds,
             root=args.root,
+            detail=args.detail,
         )
     )
 
@@ -1425,11 +1820,8 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _prepare_start_commands(
-    root: Path, ensure_project_env: bool
-) -> list[tuple[str, dict[str, Any]]]:
-    venv_python = root / ".venv" / "bin" / "python"
-    commands: list[tuple[str, dict[str, Any]]] = [
+def _prepare_sync_commands(_root: Path) -> list[tuple[str, dict[str, Any]]]:
+    return [
         (
             "git_fetch_dev",
             {
@@ -1455,6 +1847,13 @@ def _prepare_start_commands(
             },
         ),
     ]
+
+
+def _environment_commands(
+    root: Path, ensure_project_env: bool
+) -> list[tuple[str, dict[str, Any]]]:
+    venv_python = root / ".venv" / "bin" / "python"
+    commands: list[tuple[str, dict[str, Any]]] = []
     if not venv_python.exists():
         commands.append(
             (
@@ -1476,6 +1875,8 @@ def _prepare_start_commands(
                     "-m",
                     "pip",
                     "install",
+                    "--quiet",
+                    "--disable-pip-version-check",
                     "-r",
                     "agent_tools/requirements-mcp.txt",
                 ],
@@ -1489,7 +1890,18 @@ def _prepare_start_commands(
                 "project_env",
                 {
                     "display": ".venv/bin/python -m pip install -e . pytest tox",
-                    "args": [str(venv_python), "-m", "pip", "install", "-e", ".", "pytest", "tox"],
+                    "args": [
+                        str(venv_python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "--quiet",
+                        "--disable-pip-version-check",
+                        "-e",
+                        ".",
+                        "pytest",
+                        "tox",
+                    ],
                     "env": {},
                 },
             )
@@ -1497,11 +1909,80 @@ def _prepare_start_commands(
     return commands
 
 
+def _environment_fingerprint(root: Path, ensure_project_env: bool) -> str:
+    digest = hashlib.sha256()
+    digest.update(f"python={sys.version}\nproject={ensure_project_env}\n".encode())
+    for rel_path in ("agent_tools/requirements-mcp.txt", "pyproject.toml", "tox.ini"):
+        path = root / rel_path
+        digest.update(f"{rel_path}:".encode())
+        if path.is_file():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+    return digest.hexdigest()
+
+
+def _environment_ready(
+    root: Path,
+    *,
+    ensure_project_env: bool,
+    fingerprint: str,
+) -> tuple[bool, dict[str, Any] | None]:
+    state_path = root / ENV_STATE_FILE
+    venv_python = root / ".venv" / "bin" / "python"
+    if not state_path.is_file() or not venv_python.is_file():
+        return False, None
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False, None
+    if (
+        state.get("fingerprint") != fingerprint
+        or state.get("ensure_project_env") is not ensure_project_env
+    ):
+        return False, None
+    imports = "import mcp"
+    if ensure_project_env:
+        imports += "; import analytics_toolkit, pytest, tox"
+    result = _run_command(
+        root,
+        {
+            "display": ".venv/bin/python agent environment health check",
+            "args": [str(venv_python), "-c", imports],
+            "env": {},
+        },
+    )
+    return bool(result["ok"]), result
+
+
+def _write_environment_state(
+    root: Path,
+    *,
+    fingerprint: str,
+    ensure_project_env: bool,
+) -> None:
+    state_path = root / ENV_STATE_FILE
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "fingerprint": fingerprint,
+                "ensure_project_env": ensure_project_env,
+                "python": sys.version,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _check_commands(
     area: str | None,
     change_type: str,
     level: str,
     integration_profile: str = "all",
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
     if integration_profile not in INTEGRATION_PROFILES:
         expected = ", ".join(INTEGRATION_PROFILES)
@@ -1512,6 +1993,8 @@ def _check_commands(
         raise ValueError(message)
     if level == "focused":
         key = _normalize_area(area or "")
+        if key == "sql":
+            return [_sql_focused_command(root or REPO_ROOT)]
         return TEST_COMMANDS.get(
             key,
             [
@@ -1549,9 +2032,29 @@ def _check_commands(
     raise ValueError(msg)
 
 
+def _sql_focused_command(root: Path) -> dict[str, Any]:
+    tests = sorted(
+        path.relative_to(root).as_posix()
+        for path in (root / "tests").glob("test_sql_*.py")
+    )
+    if not tests:
+        tests = ["tests/test_sql_integration_manifest.py"]
+    return {
+        "display": (
+            "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q " + " ".join(tests)
+        ),
+        "args": ["pytest", "-q", *tests],
+        "env": {"PYTHONPYCACHEPREFIX": PYTHON_CACHE_DIR},
+    }
+
+
 def _run_command(root: Path, command: dict[str, Any]) -> dict[str, Any]:
     env = os.environ.copy()
     env.update(command.get("env") or {})
+    venv_bin = root / ".venv" / "bin"
+    if venv_bin.is_dir():
+        env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+    started = time.monotonic()
     try:
         completed = subprocess.run(
             command["args"],
@@ -1569,15 +2072,20 @@ def _run_command(root: Path, command: dict[str, Any]) -> dict[str, Any]:
             "stdout": "",
             "stderr": str(exc),
             "summary": str(exc),
+            "duration_seconds": round(time.monotonic() - started, 3),
         }
-    return {
+    result = {
         "ok": completed.returncode == 0,
         "command": _command_display(command),
         "returncode": completed.returncode,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
         "summary": _command_summary(completed.stdout, completed.stderr),
+        "duration_seconds": round(time.monotonic() - started, 3),
     }
+    if command.get("persist_output", True) and (completed.stdout or completed.stderr):
+        result["log_ref"] = _persist_command_output(root, result)
+    return result
 
 
 def _run_git_pull(root: Path) -> dict[str, Any]:
@@ -1594,6 +2102,10 @@ def _command_display(command: dict[str, Any]) -> str:
     return str(command["display"])
 
 
+def _detail_error(detail: str) -> str:
+    return f"detail must be one of: {', '.join(DETAIL_LEVELS)}; received {detail!r}"
+
+
 def _command_summary(stdout: str, stderr: str, max_chars: int = 500) -> str:
     text = (stdout.strip() or stderr.strip()).replace("\n", " ")
     if len(text) > max_chars:
@@ -1601,14 +2113,135 @@ def _command_summary(stdout: str, stderr: str, max_chars: int = 500) -> str:
     return text
 
 
+def _persist_command_output(root: Path, result: dict[str, Any]) -> str:
+    log_dir = root / TOOL_LOG_DIR
+    log_dir.mkdir(parents=True, exist_ok=True)
+    command = str(result.get("command", "command"))
+    digest = hashlib.sha256(command.encode("utf-8")).hexdigest()[:10]
+    path = log_dir / f"{time.time_ns()}-{digest}.log"
+    text = (
+        f"command: {command}\n"
+        f"returncode: {result.get('returncode')}\n\n"
+        f"[stdout]\n{result.get('stdout', '')}\n\n"
+        f"[stderr]\n{result.get('stderr', '')}\n"
+    )
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o600)
+    return path.relative_to(root).as_posix()
+
+
+def _bounded_text(value: Any, max_chars: int = DIAGNOSTIC_EXCERPT_CHARS) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    half = max_chars // 2
+    return f"{text[:half]}\n... output omitted ...\n{text[-half:]}"
+
+
+def _compact_command_result(result: dict[str, Any], detail: str) -> dict[str, Any]:
+    compact = {
+        "ok": bool(result.get("ok")),
+        "command": result.get("command"),
+        "returncode": result.get("returncode"),
+        "duration_seconds": result.get("duration_seconds"),
+        "summary": _bounded_text(result.get("summary"), 500),
+    }
+    if result.get("log_ref"):
+        compact["log_ref"] = result["log_ref"]
+    if detail == "full":
+        compact["stdout"] = str(result.get("stdout", ""))
+        compact["stderr"] = str(result.get("stderr", ""))
+    elif detail == "diagnostic":
+        stdout = _bounded_text(result.get("stdout"))
+        stderr = _bounded_text(result.get("stderr"))
+        if stdout:
+            compact["stdout_excerpt"] = stdout
+        if stderr:
+            compact["stderr_excerpt"] = stderr
+    return compact
+
+
+def _raw_command_output_bytes(results: list[dict[str, Any]]) -> int:
+    return sum(
+        len(str(result.get("stdout", "")).encode("utf-8"))
+        + len(str(result.get("stderr", "")).encode("utf-8"))
+        for result in results
+    )
+
+
 def _command_blocker(phase: str, result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    blocker = {
         "phase": phase,
         "command": result.get("command"),
         "returncode": result.get("returncode"),
-        "stderr": result.get("stderr", "").strip(),
-        "stdout": result.get("stdout", "").strip(),
+        "stderr": _bounded_text(result.get("stderr")),
+        "stdout": _bounded_text(result.get("stdout")),
     }
+    if result.get("log_ref"):
+        blocker["log_ref"] = result["log_ref"]
+    return blocker
+
+
+def _check_failure_blocker(result: dict[str, Any]) -> dict[str, Any]:
+    output = "\n".join(
+        part for part in (str(result.get("stdout", "")), str(result.get("stderr", ""))) if part
+    )
+    phase = "run_checks"
+    marker_matches = re.findall(
+        r"::agent-check-stage::([^:]+)::(?:start|end)::([^\s]+)", output
+    )
+    stage = marker_matches[-1][0] if marker_matches else None
+    if "Coverage targets raised; review and rerun:" in output:
+        phase = "coverage_ratchet_confirmation"
+        stage = stage or "coverage"
+    blocker = _command_blocker(phase, result)
+    if stage:
+        blocker["stage"] = stage
+    node_ids = sorted(
+        set(re.findall(r"(?:FAILED|ERROR)\s+(tests/[^\s]+::[^\s]+)", output))
+    )
+    if node_ids:
+        blocker["test_node_ids"] = node_ids[:25]
+    architecture = sorted(
+        set(re.findall(r"analytics_toolkit/sql/[^\s]+\.py has \d+ lines", output))
+    )
+    if architecture:
+        blocker["architecture_violations"] = architecture
+    debt_lines = [
+        line.strip()
+        for line in output.splitlines()
+        if re.search(r"\[[A-Z][A-Z0-9-]+\]: \d+ current, \d+ baseline", line)
+    ]
+    if debt_lines:
+        blocker["quality_debt_increases"] = debt_lines[:50]
+    tox_failures = sorted(
+        set(
+            re.findall(
+                r"^\s*([a-z0-9-]+):\s+(?:FAIL|failed)",
+                output,
+                flags=re.MULTILINE | re.IGNORECASE,
+            )
+        )
+    )
+    if tox_failures:
+        blocker["tox_environments"] = tox_failures
+    if phase == "coverage_ratchet_confirmation":
+        marker = "Coverage targets raised; review and rerun:"
+        changes = output.split(marker, 1)[1].strip().splitlines()
+        blocker["target_changes"] = [line.strip() for line in changes if line.strip()][:50]
+    return blocker
+
+
+def _check_next_action(blocker: dict[str, Any], level: str) -> str:
+    if blocker.get("phase") == "coverage_ratchet_confirmation":
+        return (
+            "Review the monotonic coverage target changes, then rerun "
+            f"run_checks(level={level!r})."
+        )
+    stage = blocker.get("stage")
+    if stage:
+        return f"Fix the {stage} stage failure, then rerun run_checks(level={level!r})."
+    return f"Fix the failure, then rerun run_checks(level={level!r})."
 
 
 def _tool_output(
@@ -1622,16 +2255,43 @@ def _tool_output(
     blockers: list[dict[str, Any]] | None = None,
     next_actions: list[str] | None = None,
 ) -> dict[str, Any]:
-    return {
+    detail = str(input_summary.get("detail", "summary"))
+    if detail not in DETAIL_LEVELS:
+        detail = "summary"
+    raw_results = command_results or []
+    compact_results = [_compact_command_result(item, detail) for item in raw_results]
+    raw_bytes = _raw_command_output_bytes(raw_results)
+    returned_bytes = (
+        len(json.dumps(compact_results, ensure_ascii=False, default=str).encode("utf-8"))
+        if compact_results
+        else 0
+    )
+    normalized_blockers = []
+    for blocker in blockers or []:
+        normalized = dict(blocker)
+        for key in ("stdout", "stderr", "excerpt"):
+            if key in normalized:
+                normalized[key] = _bounded_text(normalized[key])
+        normalized_blockers.append(normalized)
+    payload = {
         "ok": ok,
         "tool": tool,
         "input": input_summary,
         "summary": summary,
         "result": result or {},
-        "command_results": command_results or [],
-        "blockers": blockers or [],
+        "command_results": compact_results,
+        "blockers": normalized_blockers,
         "next_actions": next_actions or [],
     }
+    payload["telemetry"] = {
+        "raw_output_bytes": raw_bytes,
+        "returned_output_bytes": returned_bytes,
+        "suppressed_output_bytes": max(0, raw_bytes - returned_bytes),
+    }
+    payload["telemetry"]["response_bytes"] = len(
+        json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    )
+    return payload
 
 
 def _search_result_to_dict(result: docs_assistant.SearchResult) -> dict[str, Any]:
@@ -2275,6 +2935,7 @@ def _push_dev_workflow(
     input_summary: dict[str, Any],
     *,
     timeout_seconds: int,
+    wait_seconds: int,
 ) -> dict[str, Any]:
     push = _push_dev_result(root)
     if push["blockers"]:
@@ -2295,12 +2956,17 @@ def _push_dev_workflow(
         root,
         sha=push["sha"],
         timeout_seconds=timeout_seconds,
+        wait_seconds=wait_seconds,
     )
+    pending = checks["result"].get("status") == "pending"
     return _tool_output(
         "git_workflow",
         input_summary,
         ok=not checks["blockers"],
         summary=(
+            "Push completed; exact-SHA GitHub verification is pending."
+            if pending
+            else
             "Push and exact-SHA GitHub verification completed."
             if not checks["blockers"]
             else "Push completed, but exact-SHA GitHub verification failed."
@@ -2312,9 +2978,9 @@ def _push_dev_workflow(
         command_results=[*push["command_results"], *checks["command_results"]],
         blockers=checks["blockers"],
         next_actions=(
-            []
-            if not checks["blockers"]
-            else ["Resume with git_workflow(action='checks', sha='<pushed-sha>')."]
+            [f"Resume with git_workflow(action='checks', sha='{push['sha']}')."]
+            if pending or checks["blockers"]
+            else []
         ),
     )
 
@@ -2325,13 +2991,23 @@ def _github_checks_workflow(
     *,
     sha: str,
     timeout_seconds: int,
+    wait_seconds: int,
 ) -> dict[str, Any]:
-    checks = _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
+    checks = _watch_github_checks(
+        root,
+        sha=sha,
+        timeout_seconds=timeout_seconds,
+        wait_seconds=wait_seconds,
+    )
+    pending = checks["result"].get("status") == "pending"
     return _tool_output(
         "git_workflow",
         input_summary,
         ok=not checks["blockers"],
         summary=(
+            "Exact-SHA GitHub verification is pending."
+            if pending
+            else
             "Exact-SHA GitHub verification completed."
             if not checks["blockers"]
             else "Exact-SHA GitHub verification failed."
@@ -2339,6 +3015,9 @@ def _github_checks_workflow(
         result={"github_checks": checks["result"]},
         command_results=checks["command_results"],
         blockers=checks["blockers"],
+        next_actions=(
+            [f"Resume with git_workflow(action='checks', sha='{sha}')."] if pending else []
+        ),
     )
 
 
@@ -2347,18 +3026,25 @@ def _watch_pushed_commit(
     *,
     sha: str,
     timeout_seconds: int,
+    wait_seconds: int,
 ) -> dict[str, Any]:
     """Watch the immutable SHA captured immediately before the push."""
-    return _watch_github_checks(root, sha=sha, timeout_seconds=timeout_seconds)
+    return _watch_github_checks(
+        root,
+        sha=sha,
+        timeout_seconds=timeout_seconds,
+        wait_seconds=wait_seconds,
+    )
 
 
-def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded polling state machine.
+def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bounded polling state machine.
     root: Path,
     *,
     sha: str,
     timeout_seconds: int = GITHUB_CHECK_TIMEOUT_SECONDS,
     poll_seconds: int = GITHUB_CHECK_POLL_SECONDS,
     discovery_seconds: int = GITHUB_CHECK_DISCOVERY_SECONDS,
+    wait_seconds: int | None = None,
     command_runner: Any = None,
     monotonic: Any = None,
     sleeper: Any = None,
@@ -2374,6 +3060,8 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
         return _github_check_failure(
             sha, "validate", "poll and discovery intervals must be positive"
         )
+    if wait_seconds is not None and wait_seconds <= 0:
+        return _github_check_failure(sha, "validate", "wait_seconds must be positive")
 
     try:
         manifest = json.loads((root / REQUIRED_WORKFLOWS_PATH).read_text(encoding="utf-8"))
@@ -2409,8 +3097,22 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
         }
     repository = repo_result["stdout"].strip()
     started = monotonic()
-    discovery_deadline = started + min(discovery_seconds, timeout_seconds)
-    deadline = started + timeout_seconds
+    elapsed_before = 0.0
+    if wait_seconds is not None:
+        state = _github_watch_state(
+            root,
+            sha=sha,
+            timeout_seconds=timeout_seconds,
+            discovery_seconds=discovery_seconds,
+        )
+        elapsed_before = max(0.0, time.time() - float(state["started_at"]))
+    remaining_timeout = max(0.0, timeout_seconds - elapsed_before)
+    remaining_discovery = max(0.0, discovery_seconds - elapsed_before)
+    discovery_deadline = started + min(remaining_discovery, remaining_timeout)
+    deadline = started + remaining_timeout
+    call_deadline = (
+        deadline if wait_seconds is None else min(deadline, started + wait_seconds)
+    )
     last_snapshot: dict[str, Any] = {"sha": sha, "repository": repository}
 
     while True:
@@ -2452,10 +3154,14 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
                 {
                     "command": item.get("command"),
                     "ok": item.get("ok"),
-                    "excerpt": str(item.get("stdout") or item.get("stderr") or "")[-12000:],
+                    "excerpt": _bounded_text(
+                        item.get("stdout") or item.get("stderr") or ""
+                    ),
                 }
                 for item in failed_logs
             ]
+            compact["status"] = "failed"
+            _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
                 "result": compact,
                 "command_results": command_results,
@@ -2468,8 +3174,12 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
                 ],
             }
         if not classified["missing"] and not classified["pending"]:
+            compact["status"] = "complete"
+            _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {"result": compact, "command_results": command_results, "blockers": []}
         if classified["missing"] and now >= discovery_deadline:
+            compact["status"] = "missing"
+            _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
                 "result": compact,
                 "command_results": command_results,
@@ -2482,6 +3192,8 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
                 ],
             }
         if now >= deadline:
+            compact["status"] = "timed_out"
+            _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
                 "result": compact,
                 "command_results": command_results,
@@ -2494,7 +3206,17 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913 - bounded pol
                     }
                 ],
             }
-        sleeper(min(poll_seconds, max(0.0, deadline - now)))
+        if now >= call_deadline:
+            compact.update(
+                {
+                    "status": "pending",
+                    "watch_id": sha,
+                    "resume_after_seconds": poll_seconds,
+                }
+            )
+            _attach_github_status_changes(root, compact, enabled=True)
+            return {"result": compact, "command_results": command_results, "blockers": []}
+        sleeper(min(poll_seconds, max(0.0, call_deadline - now)))
 
 
 def _github_check_snapshot(
@@ -2519,6 +3241,7 @@ def _github_check_snapshot(
                 "display": f"gh api {endpoint}",
                 "args": ["gh", "api", endpoint],
                 "env": {},
+                "persist_output": False,
             },
         )
         results.append(result)
@@ -2541,7 +3264,12 @@ def _github_check_snapshot(
         endpoint = f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100"
         result = command_runner(
             root,
-            {"display": f"gh api {endpoint}", "args": ["gh", "api", endpoint], "env": {}},
+            {
+                "display": f"gh api {endpoint}",
+                "args": ["gh", "api", endpoint],
+                "env": {},
+                "persist_output": False,
+            },
         )
         results.append(result)
         if not result["ok"]:
@@ -2562,8 +3290,73 @@ def _github_check_snapshot(
         "jobs": jobs,
         "check_runs": payloads["check_runs"].get("check_runs", []),
         "statuses": payloads["statuses"].get("statuses", []),
-        "command_results": results,
+        "command_results": [],
     }
+
+
+def _github_watch_state(
+    root: Path,
+    *,
+    sha: str,
+    timeout_seconds: int,
+    discovery_seconds: int,
+) -> dict[str, Any]:
+    state_dir = root / GITHUB_WATCH_DIR
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"{sha}.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        state = {}
+    if (
+        state.get("sha") != sha
+        or state.get("timeout_seconds") != timeout_seconds
+        or state.get("discovery_seconds") != discovery_seconds
+    ):
+        state = {
+            "sha": sha,
+            "started_at": time.time(),
+            "timeout_seconds": timeout_seconds,
+            "discovery_seconds": discovery_seconds,
+        }
+        state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+        state_path.chmod(0o600)
+    return state
+
+
+def _attach_github_status_changes(
+    root: Path,
+    compact: dict[str, Any],
+    *,
+    enabled: bool,
+) -> None:
+    if not enabled:
+        return
+    sha = str(compact["sha"])
+    state_path = root / GITHUB_WATCH_DIR / f"{sha}.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        state = {"sha": sha, "started_at": time.time()}
+    current = {
+        item["name"]: {
+            "status": item.get("status"),
+            "conclusion": item.get("conclusion"),
+        }
+        for item in compact.get("required", [])
+    }
+    previous = state.get("workflow_statuses", {})
+    compact["changes"] = [
+        {"name": name, "before": previous.get(name), "after": value}
+        for name, value in sorted(current.items())
+        if previous.get(name) != value
+    ]
+    state["workflow_statuses"] = current
+    state["last_status"] = compact.get("status")
+    state["updated_at"] = time.time()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    state_path.chmod(0o600)
 
 
 def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple GitHub state kinds.

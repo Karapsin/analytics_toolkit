@@ -15,6 +15,22 @@ require_command() {
   fi
 }
 
+run_stage() {
+  local stage_name="$1"
+  local status
+  shift
+
+  printf '::agent-check-stage::%s::start::running\n' "${stage_name}"
+  if "$@"; then
+    printf '::agent-check-stage::%s::end::passed\n' "${stage_name}"
+    return 0
+  else
+    status="$?"
+    printf '::agent-check-stage::%s::end::failed\n' "${stage_name}" >&2
+    return "${status}"
+  fi
+}
+
 pyenv_python() {
   local version="$1"
   local prefix
@@ -47,6 +63,8 @@ export PYTHON312
 export PYTHON313
 export PYTHON314
 export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
+# pip 25.0.1 is the final virtualenv seed line that supports Python 3.8.
+export VIRTUALENV_PIP=25.0.1
 
 PYTHON38="$(pyenv_python 3.8.18)"
 PYTHON39="$(pyenv_python 3.9.25)"
@@ -56,11 +74,11 @@ PYTHON312="$(pyenv_python 3.12.13)"
 PYTHON313="$(pyenv_python 3.13.13)"
 PYTHON314="$(pyenv_python 3.14.5)"
 
-"${script_dir}/scripts/check_package_metadata.sh"
-"${script_dir}/scripts/check_readme_dependencies.sh"
-python -m release_routines.lib.check_minimum_constraints
-"${script_dir}/scripts/check_docs_coverage.sh"
-"${script_dir}/scripts/check_docs_links.sh"
-python -m compileall analytics_toolkit tests
-pytest -q
-tox -e lint,type,coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest
+run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh"
+run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh"
+run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints
+run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh"
+run_stage docs-links "${script_dir}/scripts/check_docs_links.sh"
+run_stage compileall python -m compileall analytics_toolkit tests
+run_stage pytest pytest -q
+run_stage tox tox -e lint,type,coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest

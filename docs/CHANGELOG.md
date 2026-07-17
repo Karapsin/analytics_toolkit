@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Added inline Greenplum range and list partitions to SQL table-creation workflows.
 - Made async_sql Ctrl+C cancel queued and active database work.
 - Added configurable sql.read output types with direct dictionary reads.
+- Reduced agent workflow output and added implementation preflight diagnostics.
 
 ## 1.3.10.18 - 2026-07-15
 

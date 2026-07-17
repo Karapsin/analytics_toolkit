@@ -15,6 +15,7 @@ wrapper:
 agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
 agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
 agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_tools --instructions-read
+agent_tools/mcp_tool.sh change-impact --task "change sql.read" --module sql --symbol sql.read
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
 agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry-run
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
@@ -25,6 +26,23 @@ agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
+
+`prepare-start`, `run-checks`, and `git-workflow` return compact command records
+by default. Each record contains status, duration, a short summary, and a local
+`log_ref`; complete stdout and stderr are stored with private permissions below
+`.rag_index/tool_logs/`. Use `--detail diagnostic` for bounded output excerpts or
+`--detail full` only when complete inline output is necessary. Response telemetry
+reports raw, returned, and suppressed output bytes so response-size regressions
+are visible.
+
+Startup records an environment fingerprint and reuses a healthy `.venv` while
+requirements, project metadata, tox configuration, and the Python runtime are
+unchanged. Dependency installation is quiet when the fingerprint changes.
+
+`change-impact` is a read-only preflight for implementation work. For SQL public
+symbols it reports the live signature, exact integration-manifest JSON pointers,
+signature drift, documentation paths, focused checks, changelog action, and SQL
+module line-budget headroom before editing begins.
 
 Use `git-workflow commit` only when the current batch is ready to commit and
 push to `origin/dev`, and pass explicit `--path` values so unrelated local
@@ -51,6 +69,12 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
+Check failures include the machine-readable pre-commit stage, failing pytest
+node IDs, quality-debt increases, architecture overages, and tox environments
+when available. A monotonic coverage-floor increase is reported as
+`coverage_ratchet_confirmation` with the changed targets so it can be reviewed
+and the mandatory check rerun.
+
 The integration entrypoint accepts `--integration-profile core`, `auth`, `all`,
 or `fault`; `all` is the exhaustive local default and includes every fault
 group. Core and auth are required on each `dev` push. Fault is destructive and
@@ -71,10 +95,14 @@ When a run fails, it waits for terminal state and returns failed steps plus a
 bounded `gh run view --log-failed` excerpt. Rerun only for demonstrated
 infrastructure failure. When resuming after interruption, use
 `git-workflow checks --sha ...`; do not inspect the latest branch run instead.
+Each watch call waits for a bounded interval (60 seconds by default), persists
+the exact-SHA deadline and last reported workflow states below `.rag_index/`, and
+returns `status: pending` plus the immutable SHA when another call is required.
+Successful polling API payloads are parsed and discarded rather than returned.
 
 `mcp_server.py` exposes the consolidated tool surface:
-`prepare_start`, `docs`, `workflow_status`, `version_bump`, `run_checks`,
-`git_workflow`, and `release_workflow`.
+`prepare_start`, `docs`, `workflow_status`, `change_impact`, `version_bump`,
+`run_checks`, `git_workflow`, and `release_workflow`.
 
 ## Docs Assistant
 
