@@ -1196,6 +1196,7 @@ def test_read_sql_with_metadata_delegates_to_shared_implementation(
             "timeout_increment": 0.5,
             "query_label": "metadata",
             "return_metadata": True,
+            "output_type": "df",
         }
     ]
 
@@ -1334,6 +1335,7 @@ def test_execute_and_read_validation_and_direct_helper_paths(
             timeout_increment=0,
             query_label=None,
             return_metadata=False,
+            output_type="df",
         )
     with pytest.raises(read_sql_module.InvalidSqlInputError, match="exactly one"):
         read_sql_module._build_read_sql_options(
@@ -1344,6 +1346,7 @@ def test_execute_and_read_validation_and_direct_helper_paths(
             timeout_increment=0,
             query_label=None,
             return_metadata=False,
+            output_type="df",
         )
 
     commands: list[str] = []

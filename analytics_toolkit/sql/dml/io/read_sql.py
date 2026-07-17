@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import sqlparse
 
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.models import ReadColumnResult
+
 from ...backend_adapters import get_backend_adapter
+from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
     sql_preview,
 )
-from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...connection.protocols import DbApiConnection
 from ...execution.labels import apply_query_label
@@ -23,8 +26,10 @@ from ...execution.operation_runner import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult
 from ...execution.query_timing import run_timed_query
-from analytics_toolkit.general import time_print
-from .models import ReadSqlOptions
+from .models import ReadOutputType, ReadSqlOptions
+
+
+_READ_OUTPUT_TYPES = ("df", "scalar", "list", "dict")
 
 
 def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
@@ -38,6 +43,25 @@ def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
         cursor.close()
 
 
+def _read_dbapi_columns(conn: DbApiConnection, query: str) -> ReadColumnResult:
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query)
+        column_names = tuple(str(column[0]) for column in cursor.description or [])
+        rows = cursor.fetchall()
+        columns: tuple[list[Any], ...] = tuple([] for _ in column_names)
+        for row in rows:
+            for column, value in zip(columns, row):
+                column.append(value)
+        return ReadColumnResult(
+            column_names=column_names,
+            columns=columns,
+            row_count=len(rows),
+        )
+    finally:
+        cursor.close()
+
+
 @timed_public_sql_function
 def read_sql(
     db_key: str,
@@ -47,7 +71,8 @@ def read_sql(
     timeout_increment: int | float = 5,
     query_label: str | None = None,
     return_metadata: bool = False,
-) -> pd.DataFrame | SqlOperationResult:
+    output_type: ReadOutputType = "df",
+) -> Any | SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
         query=query,
@@ -56,6 +81,7 @@ def read_sql(
         timeout_increment=timeout_increment,
         query_label=query_label,
         return_metadata=return_metadata,
+        output_type=output_type,
     )
 
 
@@ -66,6 +92,7 @@ def read_sql_with_metadata(
     retry_cnt: int = 5,
     timeout_increment: int | float = 5,
     query_label: str | None = None,
+    output_type: ReadOutputType = "df",
 ) -> SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -75,6 +102,7 @@ def read_sql_with_metadata(
         timeout_increment=timeout_increment,
         query_label=query_label,
         return_metadata=True,
+        output_type=output_type,
     )
 
 
@@ -87,7 +115,8 @@ def _read_sql_impl(
     timeout_increment: int | float,
     query_label: str | None,
     return_metadata: bool,
-) -> pd.DataFrame | SqlOperationResult:
+    output_type: ReadOutputType,
+) -> Any | SqlOperationResult:
     options = _build_read_sql_options(
         db_key=db_key,
         query=query,
@@ -96,13 +125,17 @@ def _read_sql_impl(
         timeout_increment=timeout_increment,
         query_label=query_label,
         return_metadata=return_metadata,
+        output_type=output_type,
     )
     metadata = SqlOperationMetadata(
         statement_count=1,
         query_label=options.query_label,
     )
 
-    def operation(connection_ref: dict[str, Any], attempt: int) -> pd.DataFrame:
+    def operation(
+        connection_ref: dict[str, Any],
+        attempt: int,
+    ) -> pd.DataFrame | ReadColumnResult:
         with tracked_sql_operation(
             metadata=metadata,
             operation_name="read_sql",
@@ -118,9 +151,11 @@ def _read_sql_impl(
                 connection_ref["connection"],
                 options.sql,
                 print_queries=options.print_queries,
+                output_type=options.output_type,
             )
-            metadata.read_rows = len(result)
-            metadata.source_rows = len(result)
+            row_count = _read_result_row_count(result)
+            metadata.read_rows = row_count
+            metadata.source_rows = row_count
             return result
 
     def context(attempt: int) -> SqlOperationContext:
@@ -143,13 +178,14 @@ def _read_sql_impl(
         operation=operation,
         context_factory=context,
     )
+    output = _format_read_output(result, options.output_type)
     if return_metadata:
         return SqlOperationResult(
-            rows=len(result),
+            rows=metadata.read_rows,
             metadata=metadata,
-            data=result,
+            data=output,
         )
-    return result
+    return output
 
 
 def _build_read_sql_options(
@@ -161,6 +197,7 @@ def _build_read_sql_options(
     timeout_increment: int | float,
     query_label: str | None,
     return_metadata: bool,
+    output_type: ReadOutputType,
 ) -> ReadSqlOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -169,13 +206,13 @@ def _build_read_sql_options(
 
     if not sql:
         raise InvalidSqlInputError("Query string must not be empty.")
+    if output_type not in _READ_OUTPUT_TYPES:
+        supported = ", ".join(repr(value) for value in _READ_OUTPUT_TYPES)
+        message = f"Unsupported output_type {output_type!r}. Supported values: {supported}."
+        raise InvalidSqlInputError(message)
     validate_retry_options(retry_cnt, timeout_increment)
 
-    statements = [
-        statement.strip()
-        for statement in sqlparse.split(sql)
-        if statement.strip()
-    ]
+    statements = [statement.strip() for statement in sqlparse.split(sql) if statement.strip()]
     if len(statements) != 1:
         raise InvalidSqlInputError("read_sql expects exactly one SQL statement.")
     sql = apply_query_label(statements[0].rstrip(";").rstrip(), query_label)
@@ -188,16 +225,13 @@ def _build_read_sql_options(
         timeout_increment=timeout_increment,
         query_label=query_label,
         return_metadata=return_metadata,
+        output_type=output_type,
     )
 
 
 def _maybe_print_query(query: str, print_queries: bool) -> None:
     if print_queries:
-        statements = [
-            statement.strip()
-            for statement in sqlparse.split(query)
-            if statement.strip()
-        ]
+        statements = [statement.strip() for statement in sqlparse.split(query) if statement.strip()]
         statement_to_print = statements[0] if statements else query.strip()
         time_print(f"Executing query:\n{statement_to_print}")
 
@@ -208,10 +242,23 @@ def _read_backend(
     sql: str,
     *,
     print_queries: bool,
-) -> pd.DataFrame:
+    output_type: ReadOutputType,
+) -> pd.DataFrame | ReadColumnResult:
+    adapter = get_backend_adapter(backend)
+    if output_type == "dict":
+        return run_timed_query(
+            backend,
+            lambda: adapter.read_columns(
+                connection,
+                sql,
+                print_queries=print_queries,
+                print_query=_maybe_print_query,
+                read_dbapi_columns=_read_dbapi_columns,
+            ),
+        )
     return run_timed_query(
         backend,
-        lambda: get_backend_adapter(backend).read_dataframe(
+        lambda: adapter.read_dataframe(
             connection,
             sql,
             print_queries=print_queries,
@@ -219,3 +266,51 @@ def _read_backend(
             read_dbapi_query=_read_dbapi_query,
         ),
     )
+
+
+def _read_result_row_count(result: pd.DataFrame | ReadColumnResult) -> int:
+    if isinstance(result, ReadColumnResult):
+        return result.row_count
+    return len(result)
+
+
+def _format_read_output(
+    result: pd.DataFrame | ReadColumnResult,
+    output_type: ReadOutputType,
+) -> Any:
+    if output_type == "dict":
+        column_result = cast("ReadColumnResult", result)
+        duplicate_names = sorted(
+            {
+                name
+                for name in column_result.column_names
+                if column_result.column_names.count(name) > 1
+            }
+        )
+        if duplicate_names:
+            message = (
+                f"output_type='dict' requires unique column names; duplicates: {duplicate_names}."
+            )
+            raise InvalidSqlInputError(message)
+        return {
+            name: list(column)
+            for name, column in zip(column_result.column_names, column_result.columns)
+        }
+
+    dataframe = cast("pd.DataFrame", result)
+    if output_type == "scalar":
+        if dataframe.shape != (1, 1):
+            message = (
+                "output_type='scalar' requires exactly one row and one column; "
+                f"received shape {dataframe.shape}."
+            )
+            raise InvalidSqlInputError(message)
+        return dataframe.iloc[0, 0]
+    if output_type == "list":
+        if dataframe.shape[1] != 1:
+            message = (
+                f"output_type='list' requires exactly one column; received {dataframe.shape[1]}."
+            )
+            raise InvalidSqlInputError(message)
+        return dataframe.iloc[:, 0].tolist()
+    return dataframe

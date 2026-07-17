@@ -5,6 +5,29 @@ from typing import Any
 
 from sqlglot import exp, parse_one
 
+import analytics_toolkit.sql.backends.common_methods as _common_methods
+from analytics_toolkit.sql.backends.models import ReadColumnResult
+
+
+read_columns = _common_methods.read_columns
+
+
+def read_columns_impl(
+    adapter: Any,
+    connection: Any,
+    query: str,
+    read_dbapi_columns: Callable[[Any, str], Any],
+) -> ReadColumnResult:
+    del adapter, read_dbapi_columns
+    result = connection.query(query, column_oriented=True)
+    column_names = tuple(str(name) for name in result.column_names)
+    columns = tuple(list(column) for column in result.result_columns)
+    return ReadColumnResult(
+        column_names=column_names,
+        columns=columns,
+        row_count=int(result.row_count),
+    )
+
 
 def build_show_tables_query(
     adapter: Any,
@@ -20,9 +43,7 @@ def build_show_tables_query(
     if trino_catalog is not None:
         from ...connection.errors import InvalidSqlInputError
 
-        raise InvalidSqlInputError(
-            "trino_catalog is only supported for Trino connections."
-        )
+        raise InvalidSqlInputError("trino_catalog is only supported for Trino connections.")
     from ..metadata import build_clickhouse_show_tables_query
 
     return build_clickhouse_show_tables_query(
@@ -87,8 +108,7 @@ def build_drop_partitions_sqls(
     shard_table = build_ch_shard_table_name(table)
     cluster_clause = ch_cluster_clause(ch_cluster)
     return [
-        f"ALTER TABLE {shard_table}{cluster_clause} "
-        f"DROP PARTITION {sql_string_literal(key)}"
+        f"ALTER TABLE {shard_table}{cluster_clause} DROP PARTITION {sql_string_literal(key)}"
         for key in partition_keys
     ]
 
@@ -140,9 +160,7 @@ def build_drop_tables_sqls(
 
     if _is_default_ch_shard_table_name(table_name):
         if not ch_drop_shard:
-            raise ValueError(
-                "ch_drop_shard must be True when dropping a ClickHouse shard table."
-            )
+            raise ValueError("ch_drop_shard must be True when dropping a ClickHouse shard table.")
         return build_drop_ch_table_sqls(
             table_name,
             ch_cluster=None,
@@ -170,9 +188,7 @@ def build_drop_tables_sqls(
             query_label=query_label,
             if_exists=if_exists,
         )
-    raise ValueError(
-        "At least one of ch_drop_shard or ch_drop_distributed must be True."
-    )
+    raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
 
 
 def build_drop_target_sqls(
@@ -221,15 +237,14 @@ def drop_table_with_options(
 ) -> None:
     del adapter
     from analytics_toolkit.general import time_print
+
     from ...connection.get_sql_connection import get_ch_connection_for_host
     from .ddl import build_ch_shard_table_name
     from .lifecycle import drop_ch_distributed_table_pair, drop_ch_table
 
     if _is_default_ch_shard_table_name(table_name):
         if not ch_drop_shard:
-            raise ValueError(
-                "ch_drop_shard must be True when dropping a ClickHouse shard table."
-            )
+            raise ValueError("ch_drop_shard must be True when dropping a ClickHouse shard table.")
         time_print(
             f"Dropping ClickHouse table {table_name}",
             connection=connection_key,
@@ -312,9 +327,7 @@ def drop_table_with_options(
         )
         return
 
-    raise ValueError(
-        "At least one of ch_drop_shard or ch_drop_distributed must be True."
-    )
+    raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
 
 
 def build_clear_target_sqls(
@@ -383,6 +396,7 @@ def prepare_existing_target_for_create_from_sql(
         return False
 
     from analytics_toolkit.general import time_print
+
     from ...connection.get_sql_connection import get_ch_connection_for_host
     from .lifecycle import drop_ch_distributed_table_pair
 

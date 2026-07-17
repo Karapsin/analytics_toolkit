@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+ReadOutputType = Literal["df", "scalar", "list", "dict"]
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,7 @@ class ReadSqlOptions:
     timeout_increment: int | float = 5
     query_label: str | None = None
     return_metadata: bool = False
+    output_type: ReadOutputType = "df"
 
 
 @dataclass(frozen=True)

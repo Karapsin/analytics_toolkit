@@ -30,8 +30,10 @@ class DbApiConnection(Protocol):
 
 class ClickHouseResult(Protocol):
     result_rows: Sequence[Sequence[Any]]
+    result_columns: Sequence[Sequence[Any]]
     column_names: Sequence[str]
     column_types: Sequence[Any]
+    row_count: int
 
 
 class ClickHouseClient(Protocol):

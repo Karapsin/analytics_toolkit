@@ -46,6 +46,8 @@ class ClickHouseAdapter(BackendAdapter):
     resolve_ch_retry_per_host_drops = staticmethod(bool)
     create_table_from_sql_fast_path = _create_from_sql.create_table_from_sql_fast_path
     uses_create_table_from_sql_fast_path = _create_from_sql.uses_create_table_from_sql_fast_path
+    read_columns = _operations.read_columns
+    _read_columns_impl = _operations.read_columns_impl
 
     def build_connection_config(self, connection_key: str, raw_config: dict[str, Any]) -> Any:
         from .config import build_config

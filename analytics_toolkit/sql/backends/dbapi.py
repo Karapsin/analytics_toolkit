@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from . import common_methods as _common_methods
 from .base import BackendAdapter, BackendName, _apply_query_label
 from .utils import extract_row_count
 
@@ -12,6 +13,8 @@ from .utils import extract_row_count
 class DbApiBackendAdapter(BackendAdapter):
     backend: BackendName
     commit_commands: bool
+    read_columns = _common_methods.read_columns
+    _read_columns_impl = _common_methods.read_columns_impl
 
     def execute_command(self, connection: Any, sql: str) -> Any:
         cursor = connection.cursor()

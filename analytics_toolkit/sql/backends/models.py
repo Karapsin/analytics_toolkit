@@ -17,6 +17,13 @@ class SourceColumn:
 
 
 @dataclass(frozen=True)
+class ReadColumnResult:
+    column_names: tuple[str, ...]
+    columns: tuple[list[Any], ...]
+    row_count: int
+
+
+@dataclass(frozen=True)
 class TransferAttemptPolicy:
     insert_retry_cnt: int
     retry_ambiguous_stage_load: bool = True

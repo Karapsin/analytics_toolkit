@@ -3732,6 +3732,29 @@
               ]
             }
           ]
+        },
+        "output_type": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'df'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'df'",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_read_outputs.py::test_read_output_type_defaults_to_dataframe"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_read_outputs.py::test_read_dict_uses_direct_dbapi_columns_and_preserves_metadata",
+                "tests/test_sql_read_outputs.py::test_read_dict_uses_clickhouse_column_oriented_query",
+                "tests/test_sql_read_outputs.py::test_read_scalar_and_list_outputs"
+              ]
+            }
+          ]
         }
       }
     },
