@@ -1384,7 +1384,6 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         result={
             "mutation": {
                 "sha": push["sha"],
-                "message": message,
                 "path_count": len(commit_paths),
                 "push_target": push["push_target"],
             },
@@ -2518,9 +2517,6 @@ def _compact_input_summary(input_summary: dict[str, Any], *, detail: str) -> dic
             continue
         if key == "paths" and isinstance(value, list):
             compact["path_count"] = len(value)
-            compact["paths_digest"] = hashlib.sha256(
-                json.dumps(value, sort_keys=True).encode("utf-8")
-            ).hexdigest()[:12]
             continue
         compact[key] = value
     return compact

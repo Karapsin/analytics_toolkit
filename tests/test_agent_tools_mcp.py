@@ -1852,7 +1852,6 @@ def test_first_pending_commit_receipt_stays_within_budget() -> None:
         result={
             "mutation": {
                 "sha": sha,
-                "message": "Update agent workflow",
                 "path_count": 10,
                 "push_target": "origin/dev",
             },
@@ -1866,6 +1865,8 @@ def test_first_pending_commit_receipt_stays_within_budget() -> None:
     assert github["pending_required_count"] == 15
     assert len(github["pending_required"]) == 5
     assert all("url" not in change for change in github["changes"])
+    assert "paths_digest" not in payload["input"]
+    assert "message" not in payload["result"]["mutation"]
     assert payload["telemetry"]["response_bytes"] <= 1_500
     assert payload["telemetry"]["within_budget"] is True
 
