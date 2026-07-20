@@ -6,6 +6,12 @@ repo_root="$(CDPATH='' cd -- "${script_dir}/.." && pwd)"
 
 cd "${repo_root}"
 
+mode="${1:---all}"
+if [ "${mode}" != "--quick" ] && [ "${mode}" != "--full" ] && [ "${mode}" != "--all" ]; then
+  printf 'Usage: %s [--quick|--full|--all]\n' "$0" >&2
+  exit 2
+fi
+
 require_command() {
   local command_name="$1"
 
@@ -51,34 +57,48 @@ pyenv_python() {
   printf '%s\n' "${python_path}"
 }
 
-require_command python
-require_command pyenv
-require_command tox
-
-export PYTHON38
-export PYTHON39
-export PYTHON310
-export PYTHON311
-export PYTHON312
-export PYTHON313
-export PYTHON314
 export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
 # pip 25.0.1 is the final virtualenv seed line that supports Python 3.8.
 export VIRTUALENV_PIP=25.0.1
 
-PYTHON38="$(pyenv_python 3.8.18)"
-PYTHON39="$(pyenv_python 3.9.25)"
-PYTHON310="$(pyenv_python 3.10.20)"
-PYTHON311="$(pyenv_python 3.11.15)"
-PYTHON312="$(pyenv_python 3.12.13)"
-PYTHON313="$(pyenv_python 3.13.13)"
-PYTHON314="$(pyenv_python 3.14.5)"
+run_quick_gate() {
+  require_command python
+  require_command tox
+  run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh"
+  run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh"
+  run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints
+  run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh"
+  run_stage docs-links "${script_dir}/scripts/check_docs_links.sh"
+  run_stage compileall python -m compileall analytics_toolkit tests
+  run_stage pytest pytest -q
+  run_stage tox-quick tox -e lint,type
+}
 
-run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh"
-run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh"
-run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints
-run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh"
-run_stage docs-links "${script_dir}/scripts/check_docs_links.sh"
-run_stage compileall python -m compileall analytics_toolkit tests
-run_stage pytest pytest -q
-run_stage tox tox -e lint,type,coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest
+run_full_gate() {
+  require_command pyenv
+  require_command tox
+  export PYTHON38
+  export PYTHON39
+  export PYTHON310
+  export PYTHON311
+  export PYTHON312
+  export PYTHON313
+  export PYTHON314
+
+  PYTHON38="$(pyenv_python 3.8.18)"
+  PYTHON39="$(pyenv_python 3.9.25)"
+  PYTHON310="$(pyenv_python 3.10.20)"
+  PYTHON311="$(pyenv_python 3.11.15)"
+  PYTHON312="$(pyenv_python 3.12.13)"
+  PYTHON313="$(pyenv_python 3.13.13)"
+  PYTHON314="$(pyenv_python 3.14.5)"
+
+  run_stage tox-full tox -e coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest
+}
+
+if [ "${mode}" = "--quick" ] || [ "${mode}" = "--all" ]; then
+  run_quick_gate
+fi
+if [ "${mode}" = "--full" ] || [ "${mode}" = "--all" ]; then
+  run_full_gate
+fi

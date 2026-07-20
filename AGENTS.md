@@ -58,6 +58,13 @@ Use these MCP tools for the corresponding agent workflow steps:
 - Stage/commit and push workflow: `git_workflow`.
 - Release readiness and PyPI publishing entrypoint: `release_workflow`.
 
+Use the default compact `summary` responses for normal workflow progress. Request
+`detail="diagnostic"` only after a blocker needs bounded evidence, and
+`detail="full"` only when the persisted `log_ref` cannot answer the question.
+Successful internal command output is intentionally omitted from summary and
+diagnostic responses; inspect the referenced private log selectively instead of
+returning an entire build or test transcript to the model.
+
 Normal implementation, documentation, test, commit, and push work is done on
 the `dev` branch and syncs with `origin/dev`. `git_workflow(action="commit")`
 must be the final repository step for a coherent task batch: after pre-commit
@@ -189,6 +196,7 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
+- Managed pre-commit validation runs a quick metadata, test, lint, and typing gate before the heavier coverage, artifact, and Python-version matrix. A quick-gate failure stops the heavy gate; the final successful run must still pass both gates.
 - SQL integration `all` is the exhaustive local profile and includes the
   destructive database, staging, and authentication fault groups. Push CI runs
   core and auth with zero skipped manifest scenarios on x86_64; fault groups run

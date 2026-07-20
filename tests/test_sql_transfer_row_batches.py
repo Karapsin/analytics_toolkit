@@ -1548,15 +1548,16 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
     )
 
     assert total_rows == 3
-    assert [item["source_sql"] for item in loaded] == [
+    loaded_by_slice = sorted(loaded, key=lambda item: item["slice_index"])
+    assert [item["source_sql"] for item in loaded_by_slice] == [
         transfer_slice.source_sql for transfer_slice in options.transfer_slices
     ]
-    assert [item["slice_index"] for item in loaded] == [0, 1]
-    assert [item["transfer_key_label"] for item in loaded] == [
+    assert [item["slice_index"] for item in loaded_by_slice] == [0, 1]
+    assert [item["transfer_key_label"] for item in loaded_by_slice] == [
         "event_date='2025-01-01'",
         "event_date='2025-01-02'",
     ]
-    assert [item["stage_table"] for item in loaded] == [
+    assert [item["stage_table"] for item in loaded_by_slice] == [
         "sandbox.target__stage__abcd1234__w00000",
         "sandbox.target__stage__abcd1234__w00001",
     ]
@@ -1564,7 +1565,7 @@ def test_keyed_slice_workers_use_filtered_sql_and_own_connections(
         ("source_db", "source_db-0"),
         ("source_db", "source_db-1"),
     ]
-    assert loaded[0]["source_conn"] != loaded[1]["source_conn"]
+    assert loaded_by_slice[0]["source_conn"] != loaded_by_slice[1]["source_conn"]
 
 
 def test_gp_insert_rows_retry_replaces_closed_connection(

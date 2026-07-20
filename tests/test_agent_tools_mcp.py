@@ -117,7 +117,7 @@ def test_prepare_start_stops_on_failed_step(
     assert result["ok"] is False
     assert result["tool"] == "prepare_start"
     assert result["result"]["phase"] == "git_fetch_dev"
-    assert result["blockers"][0]["stderr"] == "network unavailable"
+    assert result["blockers"][0]["excerpt"] == "network unavailable"
     assert calls == ["git fetch origin dev"]
 
 
@@ -264,7 +264,8 @@ def test_prepare_start_reuses_matching_environment(
     assert result["result"]["environment"]["reused"] is True
     assert ".venv/bin/python agent environment health check" in commands
     assert not any("pip install" in command for command in commands)
-    assert result["telemetry"]["response_bytes"] < 8_000
+    assert result["telemetry"]["response_bytes"] <= 2_500
+    assert result["telemetry"]["within_budget"] is True
 
 
 def test_docs_search_and_ask_modes(tmp_path: Path) -> None:
@@ -287,9 +288,15 @@ def test_docs_search_and_ask_modes(tmp_path: Path) -> None:
 
     assert search_result["ok"] is True
     assert search_result["tool"] == "docs"
-    assert search_result["result"]["results"][0]["path"] == "agent_tools/README.md"
+    assert set(search_result["result"]["results"][0]) == {
+        "citation",
+        "heading",
+        "snippet",
+    }
     assert ask_result["result"]["answer"].startswith("Most relevant passages")
     assert ask_result["result"]["citations"][0].startswith("agent_tools/README.md:L")
+    assert "results" not in ask_result["result"]
+    assert search_result["telemetry"]["response_bytes"] <= 3_500
 
 
 def test_docs_default_index_dir_is_resolved_from_repo_root(
@@ -306,9 +313,11 @@ def test_docs_default_index_dir_is_resolved_from_repo_root(
     result = mcp_server.docs("docs MCP workflow", mode="search", top_k=1)
 
     assert result["ok"] is True
-    assert result["input"]["index_dir"] == ".rag_index"
-    assert result["input"]["resolved_index_dir"] == str(root / ".rag_index")
-    assert result["result"]["results"][0]["path"] == "agent_tools/README.md"
+    assert "index_dir" not in result["input"]
+    assert "resolved_index_dir" not in result["input"]
+    assert result["result"]["results"][0]["citation"].startswith(
+        "agent_tools/README.md:L"
+    )
 
 
 def test_workflow_status_combines_routing_health_metadata_and_checks(
@@ -340,6 +349,7 @@ def test_workflow_status_combines_routing_health_metadata_and_checks(
         module="agent_tools",
         instructions_read=True,
         root=str(root),
+        detail="diagnostic",
     )
 
     assert result["ok"] is True
@@ -452,6 +462,15 @@ def test_workflow_status_suppresses_instruction_reminder_when_confirmed(
 
     assert result["ok"] is True
     assert result["result"]["missing_mandatory_actions"] == []
+    repeated = mcp_server.workflow_status(
+        "implementation",
+        module="agent_tools",
+        instructions_read=True,
+        root=str(root),
+    )
+    assert repeated["result"]["startup_context"]["reused"] is True
+    assert repeated["result"]["required_instruction_files"] == []
+    assert repeated["telemetry"]["response_bytes"] <= 2_500
 
 
 def test_workflow_status_not_ok_when_mandatory_actions_are_missing(
@@ -715,11 +734,22 @@ def test_tool_output_compacts_large_command_output_and_supports_full_detail() ->
         command_results=[command],
     )
 
-    assert "stdout" not in compact["command_results"][0]
+    diagnostic = mcp_server._tool_output(
+        "run_checks",
+        {"detail": "diagnostic"},
+        command_results=[command],
+    )
+
+    assert compact["command_results"] == []
     assert compact["telemetry"]["raw_output_bytes"] == 50_000
     assert compact["telemetry"]["suppressed_output_bytes"] > 49_000
     assert len(json.dumps(compact)) < 2_000
+    assert "stdout_excerpt" not in diagnostic["command_results"][0]
+    assert "stderr_excerpt" not in diagnostic["command_results"][0]
     assert full["command_results"][0]["stdout"] == "x" * 50_000
+    assert compact["telemetry"]["response_bytes"] <= (
+        full["telemetry"]["response_bytes"] * 0.3
+    )
 
 
 def test_run_command_persists_private_full_log(tmp_path: Path) -> None:
@@ -758,6 +788,69 @@ def test_run_checks_bounds_large_failure_response(
     assert result["ok"] is False
     assert len(json.dumps(result)) < 16_000
     assert result["telemetry"]["suppressed_output_bytes"] > 90_000
+
+
+def test_diagnostic_failure_returns_one_bounded_evidence_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_command",
+        lambda root_path, command: _command_result(
+            str(command["display"]), "failure marker\n" + "x" * 50_000, ok=False
+        ),
+    )
+
+    result = mcp_server.run_checks(
+        area="agent_tools",
+        root=str(root),
+        detail="diagnostic",
+    )
+
+    assert "excerpt" in result["blockers"][0]
+    assert "stdout_excerpt" not in result["command_results"][0]
+    assert "stderr_excerpt" not in result["command_results"][0]
+    assert result["telemetry"]["response_bytes"] <= 6_000
+    assert result["telemetry"]["within_budget"] is True
+
+
+def test_command_blocker_ignores_stage_only_stderr_for_actionable_excerpt() -> None:
+    result = _command_result(
+        "validation",
+        "FAILED tests/test_example.py::test_case - assertion",
+        ok=False,
+        stderr="::agent-check-stage::pytest::end::failed",
+    )
+
+    blocker = mcp_server._command_blocker("run_checks", result)
+
+    assert blocker["excerpt"].startswith("FAILED tests/test_example.py::test_case")
+
+
+def test_precommit_checks_stop_before_full_gate_when_quick_gate_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        display = str(command["display"])
+        commands.append(display)
+        return _command_result(display, "lint failed", ok=False)
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.run_checks(level="precommit", root=str(root))
+
+    assert commands == ["release_routines/pre_commit_checks.sh --quick"]
+    assert result["result"] == {
+        "level": "precommit",
+        "command_count": 2,
+        "failed_command_index": 0,
+    }
 
 
 def test_run_checks_reports_stage_nodes_and_coverage_ratchet(
@@ -1082,7 +1175,7 @@ def test_git_workflow_commit_allows_unreleased_changelog_below_threshold(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, sha, timeout_seconds, wait_seconds: {
+        lambda root_path, sha, timeout_seconds, wait_seconds, detail="summary": {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -1143,7 +1236,7 @@ def test_git_workflow_commit_allows_documentation_only_without_version_bump(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, sha, timeout_seconds, wait_seconds: {
+        lambda root_path, sha, timeout_seconds, wait_seconds, detail="summary": {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -1203,7 +1296,7 @@ def test_git_workflow_commit_allows_agent_tools_readme_without_version_bump(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, sha, timeout_seconds, wait_seconds: {
+        lambda root_path, sha, timeout_seconds, wait_seconds, detail="summary": {
             "result": {"sha": "a" * 40},
             "command_results": [],
             "blockers": [],
@@ -1495,7 +1588,7 @@ def test_git_workflow_commit_and_push_dispatch(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, sha, timeout_seconds, wait_seconds: {
+        lambda root_path, sha, timeout_seconds, wait_seconds, detail="summary": {
             "result": {"sha": "a" * 40, "required": []},
             "command_results": [],
             "blockers": [],
@@ -1557,7 +1650,7 @@ def test_git_workflow_push_dispatch(
     monkeypatch.setattr(
         mcp_server,
         "_watch_pushed_commit",
-        lambda root_path, sha, timeout_seconds, wait_seconds: {
+        lambda root_path, sha, timeout_seconds, wait_seconds, detail="summary": {
             "result": {"sha": "a" * 40, "required": []},
             "command_results": [],
             "blockers": [],
@@ -1652,6 +1745,7 @@ def test_github_watcher_handles_delayed_discovery_and_exact_sha(
         command_runner=runner,
         monotonic=clock.monotonic,
         sleeper=clock.sleep,
+        detail="diagnostic",
     )
 
     assert result["blockers"] == []
@@ -1688,6 +1782,16 @@ def test_github_watcher_returns_resumable_pending_slice_and_status_changes(
     assert pending["result"]["watch_id"] == sha
     assert pending["result"]["changes"][0]["name"] == "tests"
     assert len(pending["command_results"]) == 1
+    assert "required" not in pending["result"]
+    assert pending["result"]["pending_required"] == ["tests"]
+    pending_payload = mcp_server._tool_output(
+        "git_workflow",
+        {"detail": "summary", "action": "checks", "sha": sha},
+        result={"github_checks": pending["result"]},
+        command_results=pending["command_results"],
+    )
+    assert pending_payload["telemetry"]["response_bytes"] <= 1_500
+    assert pending_payload["telemetry"]["within_budget"] is True
 
     completed = mcp_server._watch_github_checks(
         root,
@@ -1704,6 +1808,7 @@ def test_github_watcher_returns_resumable_pending_slice_and_status_changes(
     assert completed["result"]["status"] == "complete"
     assert completed["result"]["changes"][0]["before"]["status"] == "in_progress"
     assert completed["result"]["changes"][0]["after"]["conclusion"] == "success"
+    assert completed["command_results"] == []
 
 
 def test_github_snapshot_discards_successful_api_command_payloads(tmp_path: Path) -> None:
@@ -2573,6 +2678,22 @@ def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
     assert "::agent-check-stage::%s::start::running" in script
     assert "::agent-check-stage::%s::end::failed" in script
     assert "export VIRTUALENV_PIP=25.0.1" in script
+    assert 'mode="${1:---all}"' in script
+    assert "run_stage tox-quick tox -e lint,type" in script
+    assert "run_stage tox-full tox -e coverage,artifacts" in script
+
+
+def test_precommit_check_plan_separates_quick_and_full_gates() -> None:
+    commands = mcp_server._check_commands(
+        area="agent_tools",
+        change_type="implementation",
+        level="precommit",
+    )
+
+    assert [command["display"] for command in commands] == [
+        "release_routines/pre_commit_checks.sh --quick",
+        "release_routines/pre_commit_checks.sh --full",
+    ]
 
 
 def _write_minimal_repo_files(root: Path, version: str = "1.3.9.13") -> Path:

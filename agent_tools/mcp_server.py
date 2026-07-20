@@ -35,9 +35,10 @@ CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
 RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
 TOOL_LOG_DIR = Path(DEFAULT_INDEX_DIR) / "tool_logs"
 GITHUB_WATCH_DIR = Path(DEFAULT_INDEX_DIR) / "github_checks"
+STARTUP_CONTEXT_FILE = Path(DEFAULT_INDEX_DIR) / "startup_context.json"
 ENV_STATE_FILE = Path(".venv") / ".agent_env_state.json"
 DETAIL_LEVELS = ("summary", "diagnostic", "full")
-DIAGNOSTIC_EXCERPT_CHARS = 4000
+DIAGNOSTIC_EXCERPT_CHARS = 2000
 SENSITIVE_LOCAL_PATHS = {
     ".connections",
     ".env",
@@ -210,6 +211,19 @@ PRECOMMIT_COMMAND = {
     "env": {},
 }
 
+PRECOMMIT_CHECK_COMMANDS = [
+    {
+        "display": "release_routines/pre_commit_checks.sh --quick",
+        "args": ["release_routines/pre_commit_checks.sh", "--quick"],
+        "env": {},
+    },
+    {
+        "display": "release_routines/pre_commit_checks.sh --full",
+        "args": ["release_routines/pre_commit_checks.sh", "--full"],
+        "env": {},
+    },
+]
+
 RELEASE_CHECK_COMMANDS = [
     {
         "display": "release_routines/scripts/check_package_metadata.sh",
@@ -365,26 +379,39 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
             next_actions=["Fix docs indexing, then rerun prepare_start."],
         )
 
-    status = workflow_status(task=task, module=module, root=str(root_path))
+    status = workflow_status(
+        task=task,
+        module=module,
+        root=str(root_path),
+        detail="diagnostic",
+    )
+    status_result = status["result"]
+    context = _write_startup_context(
+        root_path,
+        task=task,
+        module=module,
+        required_files=status_result["required_instruction_files"],
+        repository_state={
+            "repo_health": status_result["repo_health"],
+            "metadata_status": status_result["metadata_status"],
+        },
+    )
     return _tool_output(
         "prepare_start",
         input_summary,
         summary="Startup workflow completed.",
         result={
             "phase": "complete",
-            "repo_health": status["result"]["repo_health"],
-            "required_instruction_files": status["result"]["required_instruction_files"],
+            "repo_health": _compact_repo_health(status_result["repo_health"]),
+            "required_instruction_files": status_result["required_instruction_files"],
             "docs_index": {
-                "index_dir": str(index.index_dir),
                 "file_count": index.file_count,
                 "chunk_count": index.chunk_count,
             },
-            "metadata_status": status["result"]["metadata_status"],
-            "recommended_checks": status["result"]["recommended_checks"],
             "environment": {
                 "reused": environment_reused,
-                "fingerprint": environment_fingerprint,
             },
+            "startup_context": {"id": context["id"]},
         },
         command_results=command_results,
         next_actions=[
@@ -400,6 +427,7 @@ def docs(
     mode: str = "search",
     top_k: int = 5,
     index_dir: str = DEFAULT_INDEX_DIR,
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Search or answer from the local docs RAG index."""
     resolved_index_dir = _resolve_index_dir(index_dir)
@@ -409,7 +437,16 @@ def docs(
         "top_k": top_k,
         "index_dir": index_dir,
         "resolved_index_dir": str(resolved_index_dir),
+        "detail": detail,
     }
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "docs",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
     if mode not in {"search", "ask"}:
         return _tool_output(
             "docs",
@@ -424,7 +461,7 @@ def docs(
             results = docs_assistant.search_docs(query, index_dir=resolved_index_dir, top_k=top_k)
             result: dict[str, Any] = {
                 "mode": mode,
-                "results": [_search_result_to_dict(item) for item in results],
+                "results": [_search_result_to_dict(item, detail=detail) for item in results],
                 "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
         else:
@@ -438,9 +475,12 @@ def docs(
                 "mode": mode,
                 "answer": answer.answer,
                 "citations": answer.citations,
-                "results": [_search_result_to_dict(item) for item in answer.results],
                 "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
+            if detail != "summary":
+                result["results"] = [
+                    _search_result_to_dict(item, detail=detail) for item in answer.results
+                ]
     except Exception as exc:
         return _tool_output(
             "docs",
@@ -462,12 +502,13 @@ def docs(
     )
 
 
-def workflow_status(
+def workflow_status(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     task: str,
     module: str | None = None,
     change_type: str = "implementation",
     instructions_read: bool = False,
     root: str = ".",
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Return route, repository, metadata, and check status for the workflow."""
     root_path = _resolve_root(root)
@@ -477,7 +518,16 @@ def workflow_status(
         "change_type": change_type,
         "instructions_read": instructions_read,
         "root": str(root_path),
+        "detail": detail,
     }
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "workflow_status",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
     route = route_agent_context(task=task, module=module)
     health = repo_health(root=str(root_path))
     metadata = metadata_status(root=str(root_path))
@@ -492,20 +542,47 @@ def workflow_status(
         root=root_path,
     )
     ok = not metadata["blockers"] and not dependency_metadata["blockers"] and not missing
+    full_result = {
+        "repo_health": health,
+        "required_instruction_files": route["required_files"],
+        "routing": route,
+        "metadata_status": metadata,
+        "dependency_metadata_status": dependency_metadata,
+        "recommended_checks": recommended,
+        "missing_mandatory_actions": missing,
+    }
+    context = _workflow_context(
+        root_path,
+        task=task,
+        module=module,
+        repository_state={"repo_health": health, "metadata_status": metadata},
+        update=True,
+    )
+    result = (
+        full_result
+        if detail != "summary"
+        else {
+            "repo_health": _compact_repo_health(health),
+            "required_instruction_files": (
+                [] if instructions_read and context["reused"] else route["required_files"]
+            ),
+            "check_plan": {
+                "area": recommended["area"],
+                "focused_count": len(recommended["focused_commands"]),
+                "required_final_count": len(recommended["required_final_commands"]),
+            },
+            "missing_mandatory_actions": missing,
+            "startup_context": context,
+        }
+    )
+    if detail != "summary":
+        result["startup_context"] = context
     return _tool_output(
         "workflow_status",
         input_summary,
         ok=ok,
         summary="Workflow status collected." if ok else "Workflow status requires action.",
-        result={
-            "repo_health": health,
-            "required_instruction_files": route["required_files"],
-            "routing": route,
-            "metadata_status": metadata,
-            "dependency_metadata_status": dependency_metadata,
-            "recommended_checks": recommended,
-            "missing_mandatory_actions": missing,
-        },
+        result=result,
         blockers=[*metadata["blockers"], *dependency_metadata["blockers"]],
         next_actions=_workflow_next_actions(missing),
     )
@@ -1029,7 +1106,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         )
 
     command_results: list[dict[str, Any]] = []
-    for command in commands:
+    for command_index, command in enumerate(commands):
         result = _run_command(root_path, command)
         command_results.append(result)
         if not result["ok"]:
@@ -1039,13 +1116,17 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
                 input_summary,
                 ok=False,
                 summary="A validation command failed.",
-                result={"planned_commands": planned},
+                result={
+                    "level": level,
+                    "command_count": len(commands),
+                    "failed_command_index": command_index,
+                },
                 command_results=command_results,
                 blockers=[blocker],
                 next_actions=[_check_next_action(blocker, level)],
             )
 
-    result_data: dict[str, Any] = {"planned_commands": planned}
+    result_data: dict[str, Any] = {"level": level, "command_count": len(commands)}
     if level == "precommit":
         try:
             fingerprint = _working_tree_fingerprint(root_path)
@@ -1271,6 +1352,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         sha=push["sha"],
         timeout_seconds=check_timeout_seconds,
         wait_seconds=wait_seconds,
+        detail=detail,
     )
     command_results.extend(checks["command_results"])
     if checks["blockers"]:
@@ -1300,7 +1382,12 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             else "Commit, push, and exact-SHA GitHub verification completed."
         ),
         result={
-            "push_readiness": push["readiness"],
+            "mutation": {
+                "sha": push["sha"],
+                "message": message,
+                "path_count": len(commit_paths),
+                "push_target": push["push_target"],
+            },
             "github_checks": checks["result"],
         },
         command_results=command_results,
@@ -1693,12 +1780,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     docs_parser.add_argument("--mode", choices=["search", "ask"], default="search")
     docs_parser.add_argument("--top-k", type=int, default=5)
     docs_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
+    docs_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     docs_parser.set_defaults(
         handler=lambda args: docs(
             query=args.query,
             mode=args.mode,
             top_k=args.top_k,
             index_dir=args.index_dir,
+            detail=args.detail,
         )
     )
 
@@ -1708,6 +1797,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     workflow_parser.add_argument("--change-type", default="implementation")
     workflow_parser.add_argument("--instructions-read", action="store_true")
     workflow_parser.add_argument("--root", default=".")
+    workflow_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     workflow_parser.set_defaults(
         handler=lambda args: workflow_status(
             task=args.task,
@@ -1715,6 +1805,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             change_type=args.change_type,
             instructions_read=args.instructions_read,
             root=args.root,
+            detail=args.detail,
         )
     )
 
@@ -1977,6 +2068,96 @@ def _write_environment_state(
     )
 
 
+def _compact_repo_health(health: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: health[key]
+        for key in ("branch", "dirty", "status_short", "diff_stat", "staged_diff_stat")
+        if key in health
+    }
+
+
+def _compact_metadata_status(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: metadata[key]
+        for key in ("ok", "package_version", "readme_version", "latest_changelog", "blockers")
+        if key in metadata
+    }
+
+
+def _startup_context_id(task: str, module: str | None) -> str:
+    value = json.dumps({"task": task, "module": module}, sort_keys=True)
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _write_startup_context(
+    root: Path,
+    *,
+    task: str,
+    module: str | None,
+    required_files: list[str],
+    repository_state: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    state = {
+        "schema_version": 1,
+        "id": _startup_context_id(task, module),
+        "task": task,
+        "module": module,
+        "required_instruction_files": required_files,
+        "repo_health": _compact_repo_health(repository_state["repo_health"]),
+        "metadata_status": _compact_metadata_status(repository_state["metadata_status"]),
+        "updated_at": time.time(),
+    }
+    path = root / STARTUP_CONTEXT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    path.chmod(0o600)
+    return state
+
+
+def _workflow_context(
+    root: Path,
+    *,
+    task: str,
+    module: str | None,
+    repository_state: dict[str, dict[str, Any]],
+    update: bool,
+) -> dict[str, Any]:
+    path = root / STARTUP_CONTEXT_FILE
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        state = {}
+    context_id = _startup_context_id(task, module)
+    reused = state.get("id") == context_id
+    current_health = _compact_repo_health(repository_state["repo_health"])
+    current_metadata = _compact_metadata_status(repository_state["metadata_status"])
+    changes: dict[str, Any] = {}
+    if reused:
+        health_changes = {
+            key: {"before": state.get("repo_health", {}).get(key), "after": value}
+            for key, value in current_health.items()
+            if state.get("repo_health", {}).get(key) != value
+        }
+        metadata_changes = {
+            key: {"before": state.get("metadata_status", {}).get(key), "after": value}
+            for key, value in current_metadata.items()
+            if state.get("metadata_status", {}).get(key) != value
+        }
+        if health_changes:
+            changes["repo_health"] = health_changes
+        if metadata_changes:
+            changes["metadata_status"] = metadata_changes
+    if update:
+        _write_startup_context(
+            root,
+            task=task,
+            module=module,
+            required_files=list(state.get("required_instruction_files", [])) if reused else [],
+            repository_state=repository_state,
+        )
+    return {"id": context_id, "reused": reused, "changes": changes}
+
+
 def _check_commands(
     area: str | None,
     change_type: str,
@@ -2025,7 +2206,7 @@ def _check_commands(
             }
         ]
     if level == "precommit":
-        return [PRECOMMIT_COMMAND]
+        return PRECOMMIT_CHECK_COMMANDS
     if level == "release":
         return RELEASE_CHECK_COMMANDS
     msg = "level must be 'focused', 'integration', 'precommit', or 'release'"
@@ -2151,13 +2332,6 @@ def _compact_command_result(result: dict[str, Any], detail: str) -> dict[str, An
     if detail == "full":
         compact["stdout"] = str(result.get("stdout", ""))
         compact["stderr"] = str(result.get("stderr", ""))
-    elif detail == "diagnostic":
-        stdout = _bounded_text(result.get("stdout"))
-        stderr = _bounded_text(result.get("stderr"))
-        if stdout:
-            compact["stdout_excerpt"] = stdout
-        if stderr:
-            compact["stderr_excerpt"] = stderr
     return compact
 
 
@@ -2174,9 +2348,16 @@ def _command_blocker(phase: str, result: dict[str, Any]) -> dict[str, Any]:
         "phase": phase,
         "command": result.get("command"),
         "returncode": result.get("returncode"),
-        "stderr": _bounded_text(result.get("stderr")),
-        "stdout": _bounded_text(result.get("stdout")),
     }
+    stderr = str(result.get("stderr") or "").strip()
+    stdout = str(result.get("stdout") or "").strip()
+    stderr_lines = [line for line in stderr.splitlines() if line.strip()]
+    stderr_is_stage_only = bool(stderr_lines) and all(
+        line.startswith("::agent-check-stage::") for line in stderr_lines
+    )
+    excerpt = _bounded_text(stdout if stderr_is_stage_only else stderr or stdout)
+    if excerpt:
+        blocker["excerpt"] = excerpt
     if result.get("log_ref"):
         blocker["log_ref"] = result["log_ref"]
     return blocker
@@ -2259,7 +2440,11 @@ def _tool_output(
     if detail not in DETAIL_LEVELS:
         detail = "summary"
     raw_results = command_results or []
-    compact_results = [_compact_command_result(item, detail) for item in raw_results]
+    compact_results = (
+        []
+        if detail == "summary"
+        else [_compact_command_result(item, detail) for item in raw_results]
+    )
     raw_bytes = _raw_command_output_bytes(raw_results)
     returned_bytes = (
         len(json.dumps(compact_results, ensure_ascii=False, default=str).encode("utf-8"))
@@ -2269,42 +2454,126 @@ def _tool_output(
     normalized_blockers = []
     for blocker in blockers or []:
         normalized = dict(blocker)
-        for key in ("stdout", "stderr", "excerpt"):
-            if key in normalized:
-                normalized[key] = _bounded_text(normalized[key])
+        excerpts = [normalized.pop(key, "") for key in ("excerpt", "stderr", "stdout")]
+        excerpt = next((str(value) for value in excerpts if str(value).strip()), "")
+        if excerpt:
+            normalized["excerpt"] = _bounded_text(excerpt)
         normalized_blockers.append(normalized)
     payload = {
         "ok": ok,
         "tool": tool,
-        "input": input_summary,
+        "input": _compact_input_summary(input_summary, detail=detail),
         "summary": summary,
         "result": result or {},
         "command_results": compact_results,
         "blockers": normalized_blockers,
         "next_actions": next_actions or [],
     }
+    section_bytes = {
+        key: len(json.dumps(payload[key], ensure_ascii=False, default=str).encode("utf-8"))
+        for key in ("input", "result", "command_results", "blockers", "next_actions")
+    }
+    budget = _response_budget(tool, detail=detail, ok=ok, result=payload["result"])
     payload["telemetry"] = {
         "raw_output_bytes": raw_bytes,
         "returned_output_bytes": returned_bytes,
         "suppressed_output_bytes": max(0, raw_bytes - returned_bytes),
+        "section_bytes": section_bytes,
+        "response_budget_bytes": budget,
+        "within_budget": True,
+        "response_bytes": 0,
     }
+    response_bytes = len(
+        json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    )
+    payload["telemetry"]["response_bytes"] = response_bytes
+    payload["telemetry"]["within_budget"] = budget is None or response_bytes <= budget
     payload["telemetry"]["response_bytes"] = len(
         json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     )
     return payload
 
 
-def _search_result_to_dict(result: docs_assistant.SearchResult) -> dict[str, Any]:
-    chunk = result.chunk
+def _compact_input_summary(input_summary: dict[str, Any], *, detail: str) -> dict[str, Any]:
+    if detail != "summary":
+        return input_summary
+    compact: dict[str, Any] = {}
+    defaults = {
+        "change_type": "implementation",
+        "check_timeout_seconds": GITHUB_CHECK_TIMEOUT_SECONDS,
+        "detail": "summary",
+        "dry_run": False,
+        "ensure_project_env": True,
+        "force_release": False,
+        "index_dir": DEFAULT_INDEX_DIR,
+        "integration_profile": "all",
+        "mode": "search",
+        "top_k": 5,
+        "wait_seconds": GITHUB_CHECK_WAIT_SECONDS,
+    }
+    for key, value in input_summary.items():
+        if value is None or defaults.get(key) == value or key == "resolved_index_dir":
+            continue
+        if key == "root" and Path(str(value)).resolve() == REPO_ROOT.resolve():
+            continue
+        if key == "paths" and isinstance(value, list):
+            compact["path_count"] = len(value)
+            compact["paths_digest"] = hashlib.sha256(
+                json.dumps(value, sort_keys=True).encode("utf-8")
+            ).hexdigest()[:12]
+            continue
+        compact[key] = value
+    return compact
+
+
+def _response_budget(
+    tool: str,
+    *,
+    detail: str,
+    ok: bool,
+    result: dict[str, Any],
+) -> int | None:
+    if detail == "full":
+        return None
+    if detail == "diagnostic":
+        return 6000 if not ok else 5000
+    if not ok:
+        return 4000
+    github = result.get("github_checks", {}) if isinstance(result, dict) else {}
+    if tool == "git_workflow" and github.get("status") == "pending":
+        return 1500
     return {
-        "score": result.score,
-        "lexical_score": result.lexical_score,
+        "change_impact": 8000,
+        "docs": 3500,
+        "git_workflow": 3000,
+        "prepare_start": 2500,
+        "release_workflow": 5000,
+        "run_checks": 2500,
+        "workflow_status": 2500,
+    }.get(tool, 3000)
+
+
+def _search_result_to_dict(
+    result: docs_assistant.SearchResult,
+    *,
+    detail: str = "summary",
+) -> dict[str, Any]:
+    chunk = result.chunk
+    compact = {
         "citation": chunk.citation,
-        "path": chunk.path,
         "heading": chunk.heading,
-        "source_type": chunk.source_type,
         "snippet": docs_assistant.snippet(chunk.text),
     }
+    if detail != "summary":
+        compact.update(
+            {
+                "score": result.score,
+                "lexical_score": result.lexical_score,
+                "path": chunk.path,
+                "source_type": chunk.source_type,
+            }
+        )
+    return compact
 
 
 def _freshness_warnings(index_dir: str | Path) -> list[str]:
@@ -2960,6 +3229,7 @@ def _push_dev_workflow(
         sha=push["sha"],
         timeout_seconds=timeout_seconds,
         wait_seconds=wait_seconds,
+        detail=str(input_summary.get("detail", "summary")),
     )
     pending = checks["result"].get("status") == "pending"
     return _tool_output(
@@ -2975,7 +3245,10 @@ def _push_dev_workflow(
             else "Push completed, but exact-SHA GitHub verification failed."
         ),
         result={
-            "push_readiness": push["readiness"],
+            "mutation": {
+                "sha": push["sha"],
+                "push_target": push["push_target"],
+            },
             "github_checks": checks["result"],
         },
         command_results=[*push["command_results"], *checks["command_results"]],
@@ -3001,6 +3274,7 @@ def _github_checks_workflow(
         sha=sha,
         timeout_seconds=timeout_seconds,
         wait_seconds=wait_seconds,
+        detail=str(input_summary.get("detail", "summary")),
     )
     pending = checks["result"].get("status") == "pending"
     return _tool_output(
@@ -3030,6 +3304,7 @@ def _watch_pushed_commit(
     sha: str,
     timeout_seconds: int,
     wait_seconds: int,
+    detail: str = "summary",
 ) -> dict[str, Any]:
     """Watch the immutable SHA captured immediately before the push."""
     return _watch_github_checks(
@@ -3037,6 +3312,7 @@ def _watch_pushed_commit(
         sha=sha,
         timeout_seconds=timeout_seconds,
         wait_seconds=wait_seconds,
+        detail=detail,
     )
 
 
@@ -3051,6 +3327,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
     command_runner: Any = None,
     monotonic: Any = None,
     sleeper: Any = None,
+    detail: str = "summary",
 ) -> dict[str, Any]:
     command_runner = command_runner or _run_command
     monotonic = monotonic or time.monotonic
@@ -3083,24 +3360,9 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         return _github_check_failure(sha, "manifest", str(exc))
 
-    repo_result = command_runner(
-        root,
-        {
-            "display": "gh repo view --json nameWithOwner --jq .nameWithOwner",
-            "args": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
-            "env": {},
-        },
-    )
-    command_results = [repo_result]
-    if not repo_result["ok"]:
-        return {
-            "result": {"sha": sha},
-            "command_results": command_results,
-            "blockers": [_command_blocker("github_auth", repo_result)],
-        }
-    repository = repo_result["stdout"].strip()
     started = monotonic()
     elapsed_before = 0.0
+    state: dict[str, Any] = {}
     if wait_seconds is not None:
         state = _github_watch_state(
             root,
@@ -3109,6 +3371,35 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             discovery_seconds=discovery_seconds,
         )
         elapsed_before = max(0.0, time.time() - float(state["started_at"]))
+    repository = str(state.get("repository", "")).strip()
+    command_results: list[dict[str, Any]] = []
+    if not repository:
+        repo_result = command_runner(
+            root,
+            {
+                "display": "gh repo view --json nameWithOwner --jq .nameWithOwner",
+                "args": [
+                    "gh",
+                    "repo",
+                    "view",
+                    "--json",
+                    "nameWithOwner",
+                    "--jq",
+                    ".nameWithOwner",
+                ],
+                "env": {},
+            },
+        )
+        command_results.append(repo_result)
+        if not repo_result["ok"]:
+            return {
+                "result": {"sha": sha},
+                "command_results": command_results,
+                "blockers": [_command_blocker("github_auth", repo_result)],
+            }
+        repository = repo_result["stdout"].strip()
+        if wait_seconds is not None:
+            _update_github_watch_state(root, sha=sha, repository=repository)
     remaining_timeout = max(0.0, timeout_seconds - elapsed_before)
     remaining_discovery = max(0.0, discovery_seconds - elapsed_before)
     discovery_deadline = started + min(remaining_discovery, remaining_timeout)
@@ -3166,7 +3457,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             compact["status"] = "failed"
             _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
-                "result": compact,
+                "result": _github_result_receipt(compact, detail=detail),
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -3179,12 +3470,16 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
         if not classified["missing"] and not classified["pending"]:
             compact["status"] = "complete"
             _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
-            return {"result": compact, "command_results": command_results, "blockers": []}
+            return {
+                "result": _github_result_receipt(compact, detail=detail),
+                "command_results": command_results,
+                "blockers": [],
+            }
         if classified["missing"] and now >= discovery_deadline:
             compact["status"] = "missing"
             _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
-                "result": compact,
+                "result": _github_result_receipt(compact, detail=detail),
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -3198,7 +3493,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             compact["status"] = "timed_out"
             _attach_github_status_changes(root, compact, enabled=wait_seconds is not None)
             return {
-                "result": compact,
+                "result": _github_result_receipt(compact, detail=detail),
                 "command_results": command_results,
                 "blockers": [
                     {
@@ -3218,7 +3513,11 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
                 }
             )
             _attach_github_status_changes(root, compact, enabled=True)
-            return {"result": compact, "command_results": command_results, "blockers": []}
+            return {
+                "result": _github_result_receipt(compact, detail=detail),
+                "command_results": command_results,
+                "blockers": [],
+            }
         sleeper(min(poll_seconds, max(0.0, call_deadline - now)))
 
 
@@ -3327,6 +3626,19 @@ def _github_watch_state(
     return state
 
 
+def _update_github_watch_state(root: Path, *, sha: str, **values: Any) -> None:
+    state_path = root / GITHUB_WATCH_DIR / f"{sha}.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        state = {"sha": sha, "started_at": time.time()}
+    state.update(values)
+    state["updated_at"] = time.time()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    state_path.chmod(0o600)
+
+
 def _attach_github_status_changes(
     root: Path,
     compact: dict[str, Any],
@@ -3341,20 +3653,67 @@ def _attach_github_status_changes(
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         state = {"sha": sha, "started_at": time.time()}
-    current = {
-        item["name"]: {
-            "status": item.get("status"),
-            "conclusion": item.get("conclusion"),
+    items: list[dict[str, Any]] = []
+    for workflow in compact.get("required", []):
+        items.append(
+            {
+                "name": workflow["name"],
+                "kind": "workflow",
+                "status": workflow.get("status"),
+                "conclusion": workflow.get("conclusion"),
+                "url": workflow.get("url"),
+            }
+        )
+        items.extend(
+            {
+                "name": f"{workflow['name']}: {job['name']}",
+                "kind": "job",
+                "status": job.get("status"),
+                "conclusion": job.get("conclusion"),
+                "url": job.get("url"),
+            }
+            for job in workflow.get("jobs", [])
+        )
+    items.extend(
+        {
+            "name": str(check.get("name")),
+            "kind": "check_run",
+            "status": check.get("status"),
+            "conclusion": check.get("conclusion"),
+            "url": check.get("url"),
         }
-        for item in compact.get("required", [])
+        for check in compact.get("check_runs", [])
+    )
+    items.extend(
+        {
+            "name": str(status.get("name")),
+            "kind": "commit_status",
+            "status": status.get("state"),
+            "conclusion": status.get("state") if status.get("state") != "pending" else None,
+            "url": status.get("url"),
+        }
+        for status in compact.get("status_contexts", [])
+    )
+    current = {
+        f"{item['kind']}:{item['name']}": {
+            key: item.get(key)
+            for key in ("kind", "status", "conclusion", "url")
+            if item.get(key) is not None
+        }
+        for item in items
     }
-    previous = state.get("workflow_statuses", {})
+    previous = state.get("reported_statuses", {})
     compact["changes"] = [
-        {"name": name, "before": previous.get(name), "after": value}
-        for name, value in sorted(current.items())
-        if previous.get(name) != value
+        {
+            "name": key.split(":", 1)[1],
+            "kind": value["kind"],
+            "before": previous.get(key),
+            "after": value,
+        }
+        for key, value in current.items()
+        if previous.get(key) != value
     ]
-    state["workflow_statuses"] = current
+    state["reported_statuses"] = current
     state["last_status"] = compact.get("status")
     state["updated_at"] = time.time()
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3400,13 +3759,11 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
             "jobs": [],
         }
         required.append(item)
+        allowed = set(entry.get("allowed_conclusions", ["success"]))
         if run.get("status") != "completed":
             pending.append(name)
-            continue
-        allowed = set(entry.get("allowed_conclusions", ["success"]))
-        if run.get("conclusion") not in allowed:
+        elif run.get("conclusion") not in allowed:
             failed.append(item)
-            continue
         required_jobs = entry.get("required_jobs", [])
         run_jobs = [job for job in jobs if job.get("workflow_run_id") == run.get("id")]
         for job_entry in required_jobs:
@@ -3546,6 +3903,59 @@ def _compact_github_result(
         "discovery_duration_seconds": round(discovery_duration, 3),
         "total_duration_seconds": round(total_duration, 3),
     }
+
+
+def _github_result_receipt(result: dict[str, Any], *, detail: str) -> dict[str, Any]:
+    if detail != "summary":
+        return result
+    status = result.get("status")
+    receipt: dict[str, Any] = {
+        key: result[key]
+        for key in ("sha", "repository", "push_target", "status", "total_duration_seconds")
+        if key in result
+    }
+    if status == "pending":
+        changes = result.get("changes", [])
+        receipt.update(
+            {
+                "watch_id": result.get("watch_id"),
+                "resume_after_seconds": result.get("resume_after_seconds"),
+                "changes": changes[:6],
+                "change_count": len(changes),
+                "pending_required": result.get("pending", []),
+                "missing": result.get("missing", []),
+            }
+        )
+        if len(changes) > 6:  # noqa: PLR2004 - compact response budget.
+            receipt["changes_truncated"] = True
+        return receipt
+    if status == "complete":
+        receipt["required"] = [
+            {
+                "name": workflow.get("name"),
+                "conclusion": workflow.get("conclusion"),
+                "url": workflow.get("url"),
+                "jobs": [
+                    {
+                        "name": job.get("name"),
+                        "conclusion": job.get("conclusion"),
+                        "url": job.get("url"),
+                    }
+                    for job in workflow.get("jobs", [])
+                ],
+            }
+            for workflow in result.get("required", [])
+        ]
+        accepted = result.get("conditional_skips_accepted", [])
+        if accepted:
+            receipt["conditional_skips_accepted"] = accepted
+        if result.get("changes"):
+            receipt["changes"] = result["changes"]
+        return receipt
+    for key in ("failures", "failed_log_excerpts", "missing", "pending", "changes"):
+        if result.get(key):
+            receipt[key] = result[key]
+    return receipt
 
 
 def _github_check_failure(sha: str, phase: str, message: str) -> dict[str, Any]:

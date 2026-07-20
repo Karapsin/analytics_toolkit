@@ -6,6 +6,10 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Stabilized concurrent keyed transfer test ordering.
+
+## 1.3.10.19 - 2026-07-20
+
 - Expanded deep SQL integration recovery, cancellation, type, atomicity, authentication, orchestration, and DDL coverage.
 - Expanded deep SQL integration recovery, cancellation, types, atomicity, authentication, orchestration, DDL, and stress coverage.
 - Added inline Greenplum range and list partitions to SQL table-creation workflows.
@@ -15,6 +19,7 @@ Generated from package version bumps and recent commit history.
 - Avoided duplicate nested command output in git workflow responses.
 - Added ClickHouse table reconfiguration helper.
 - Preserved Trino complex query types and stopped deterministic type mismatch retries.
+- Reduced agent MCP response sizes and added fail-fast validation.
 
 ## 1.3.10.18 - 2026-07-15
 

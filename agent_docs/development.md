@@ -4,18 +4,20 @@ Read this file for implementation, testing, build, or commit work.
 
 ## Development Commands
 
-Use `workflow_status(...)` to get the required instruction files, metadata
-status, and recommended checks for the current task. Use
+Use `workflow_status(...)` to get a compact repository-health receipt and check
+plan for the current task. Startup context is persisted locally, so repeated
+status calls report changes without repeating routing and command details. Use
 `run_checks(area=..., level="focused")` for focused validation and
 `run_checks(level="precommit")` before every commit.
 
-The pre-commit check uses a temporary bytecode cache, runs metadata and minimum
-constraint validation, compileall, and pytest. It then runs strict Ruff and
-mypy checks, 90% branch coverage, isolated wheel/sdist smoke tests, and the full
-tox matrix for Python 3.8 through 3.14 plus the Python 3.8 minimum-dependency
-environment. The minimum environment must also pass `pip check`. Do not commit
-unless all environments pass; if an interpreter or dependency is missing,
-install it or explicitly report the blocker instead of skipping that gate.
+The pre-commit check uses a temporary bytecode cache and a fail-fast quick gate
+for metadata, minimum constraints, documentation, compileall, pytest, Ruff, and
+mypy. Only after that passes does the full gate run 90% branch coverage,
+isolated wheel/sdist smoke tests, and the tox matrix for Python 3.8 through 3.14
+plus the Python 3.8 minimum-dependency environment. The minimum environment
+must also pass `pip check`. Do not commit unless both gates pass; if an
+interpreter or dependency is missing, install it or explicitly report the
+blocker instead of skipping that gate.
 
 The artifact gate copies the project into a temporary source tree outside the
 checkout, builds one wheel and one sdist, validates their metadata and wheel
