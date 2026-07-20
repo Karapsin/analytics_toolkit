@@ -33,6 +33,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 
 ## Backend-Specific Functions
 
+- [ch_reconfigure_table](ch_reconfigure_table.md) - reconfigure ClickHouse table storage and cluster attributes
 - [gp_create_partitions](gp_create_partitions.md) - create Greenplum partitions
 - [gp_vacuum](gp_vacuum.md) - run Greenplum vacuum
 

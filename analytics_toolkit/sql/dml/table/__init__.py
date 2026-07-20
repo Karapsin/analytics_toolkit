@@ -1,5 +1,6 @@
 """Shared table operations and validation helpers used by load and transfer flows."""
 
+from .ch_reconfigure import ch_reconfigure_table
 from .drop_tables import drop_tables
 from .models import (
     ChCreateTableAsOptions,
@@ -49,6 +50,7 @@ __all__ = [
     "build_drop_table_sql",
     "ChCreateTableAsOptions",
     "ChDropTableOptions",
+    "ch_reconfigure_table",
     "clear_target_table",
     "build_insert_from_query_sql",
     "build_insert_from_table_sql",

@@ -16,6 +16,7 @@ from . import create_table_from_sql as _create_from_sql
 from . import insert as _insert
 from . import operations as _operations
 from . import queries as _queries
+from . import reconfigure_proxy as _reconfigure
 from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
@@ -145,6 +146,9 @@ class ClickHouseAdapter(BackendAdapter):
             )
         except TypeError:
             return connection.command(sql)
+
+    plan_table_reconfiguration = _reconfigure.plan
+    execute_table_reconfiguration = _reconfigure.execute
 
     def _read_dataframe_impl(
         self,

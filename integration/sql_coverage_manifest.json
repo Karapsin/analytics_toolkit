@@ -646,6 +646,106 @@
         }
       }
     },
+    "ch_reconfigure_table": {
+      "classification": "integration",
+      "tests": [
+        "tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution",
+        "tests/test_sql_ch_reconfigure.py::test_reset_flags_remove_partition_and_restore_tuple_order",
+        "tests/test_sql_ch_reconfigure.py::test_cross_cluster_plan_routes_wrapper_and_drops_source_shard"
+      ],
+      "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [{"state": "required-explicit", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "table": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [{"state": "required-explicit", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_engine": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_partition_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_order_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_source_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "ch_sharding_key": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "ch_settings": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "ch_reset_partition_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_reset_flags_remove_partition_and_restore_tuple_order"]}]
+        },
+        "ch_reset_order_by": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_reset_flags_remove_partition_and_restore_tuple_order"]}]
+        },
+        "validate_row_count": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "True",
+          "states": [{"state": "default-and-false", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "retry_cnt": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "timeout_increment": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "query_label": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "dry_run": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "return_sql": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+        },
+        "return_metadata": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        }
+      }
+    },
     "cleanup_stale_stage_tables": {
       "classification": "integration",
       "parameters": {
@@ -6173,6 +6273,11 @@
     "ddl.native.ch": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_schema_ddl.py::test_clickhouse_native_distributed_ddl",
+      "backends": ["ch"]
+    },
+    "ddl.reconfigure.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_clickhouse_reconfigure_managed_pair",
       "backends": ["ch"]
     },
     "auth.negative.trino.password": {

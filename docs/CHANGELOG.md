@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added configurable sql.read output types with direct dictionary reads.
 - Reduced agent workflow output and added implementation preflight diagnostics.
 - Avoided duplicate nested command output in git workflow responses.
+- Added ClickHouse table reconfiguration helper.
 
 ## 1.3.10.18 - 2026-07-15
 

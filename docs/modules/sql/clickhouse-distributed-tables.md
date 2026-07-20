@@ -23,6 +23,16 @@ Cluster DDL is queued without making Python wait for the full asynchronous
 ClickHouse DDL operation. The helper still checks local and cluster visibility
 before inserting so lagging metadata does not silently break writes.
 
+Use [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md) to replace a
+stored Distributed cluster, sharding key, MergeTree engine, partition key,
+sorting key, or table settings. The helper resolves cluster macros before
+deciding whether a change stays on the current cluster or requires a
+cross-cluster data migration.
+
+Structural changes create and validate a replacement before cutover. Writers
+must be paused during that window. Atomic and Shared databases use an atomic
+name exchange; other database engines use a reversible rename sequence.
+
 ## Replace and Drop
 
 Replace flows verify that old distributed and shard tables disappear before

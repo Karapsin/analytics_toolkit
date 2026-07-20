@@ -93,6 +93,7 @@ class RecordingClickHouseClient:
 def test_sql_public_api_exports_are_stable() -> None:
     public_names = {
         "async_sql",
+        "ch_reconfigure_table",
         "create_sql_table",
         "drop_partitions",
         "drop_tables",

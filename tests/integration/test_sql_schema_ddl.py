@@ -229,6 +229,67 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
     assert info.shard_table == f"{table}_shard"
 
 
+@pytest.mark.sql_scenario("ddl.reconfigure.ch")
+def test_clickhouse_reconfigure_managed_pair(resource_registry: ResourceRegistry) -> None:
+    table = _registered(
+        resource_registry,
+        "ch",
+        "ch_target",
+        "ddl_ch_reconfigure",
+        distributed=True,
+    )
+    frame = _portable_frame()
+    sql.create_sql_table(
+        "ch_target",
+        table,
+        df=frame,
+        partition_by=["event_date"],
+        order_by=["row_id"],
+        ch_engine="MergeTree",
+        ch_cluster="integration_cluster",
+        ch_distributed_table=True,
+        retry_cnt=1,
+    )
+    sql.load_df(
+        "ch_target",
+        table,
+        frame,
+        write_mode="append",
+        retry_cnt=1,
+    )
+
+    plan = sql.ch_reconfigure_table(
+        "ch_target",
+        table,
+        ch_partition_by="toYYYYMM(event_date)",
+        ch_order_by=["event_date", "row_id"],
+        ch_cluster="integration_cluster",
+        retry_cnt=1,
+        dry_run=True,
+    )
+    assert isinstance(plan, sql.SqlPlan)
+    assert plan.operation == "ch_reconfigure_table"
+    assert any(statement.phase == "cutover" for statement in plan.statements)
+
+    result = sql.ch_reconfigure_table(
+        "ch_target",
+        table,
+        ch_partition_by="toYYYYMM(event_date)",
+        ch_order_by=["event_date", "row_id"],
+        ch_cluster="integration_cluster",
+        retry_cnt=1,
+        return_metadata=True,
+    )
+    assert isinstance(result, sql.SqlOperationResult)
+    assert result.data["strategy"] == "managed_pair_rebuild"
+    assert result.data["row_count_validated"] is True
+    assert result.data["cleanup_complete"] is True
+    assert len(sql.read("ch_target", f"SELECT * FROM {table}")) == 2
+    ddl = " ".join(sql.extract_ddl("ch_target", f"{table}_shard").upper().split())
+    assert "TOYYYYMM(EVENT_DATE)" in ddl
+    assert "ORDER BY (EVENT_DATE, ROW_ID)" in ddl
+
+
 @pytest.mark.parametrize(
     "backend",
     [scenario_param(f"ddl.options.{backend}", backend) for backend in BACKENDS],

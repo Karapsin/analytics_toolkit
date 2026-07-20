@@ -32,6 +32,7 @@ from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.cancel_queries import cancel_queries
 from .dml.table import (
+    ch_reconfigure_table,
     drop_tables,
     drop_partitions,
     gp_create_partitions,
@@ -49,6 +50,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "async_sql",
     "parallel_sql",
     "cancel_queries",
+    "ch_reconfigure_table",
     "create_sql_table",
     "extract_ddl",
     "execute_read",
@@ -74,6 +76,7 @@ __all__ = [
     "ConnectionValidationResult",
     "BackendName",
     "cancel_queries",
+    "ch_reconfigure_table",
     "ConnectionKey",
     "SqlTaskType",
     "SqlText",

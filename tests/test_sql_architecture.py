@@ -18,6 +18,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
 
     public_names = {
         "cancel_queries",
+        "ch_reconfigure_table",
         "create_sql_table",
         "drop_partitions",
         "drop_tables",
@@ -890,6 +891,7 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
     single_db_operations = {
         "create_sql_table",
         "cancel_queries",
+        "ch_reconfigure_table",
         "drop_partitions",
         "drop_tables",
         "execute",

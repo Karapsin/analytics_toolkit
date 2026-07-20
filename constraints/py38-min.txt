@@ -12,7 +12,7 @@ pytz==2022.7
 requests==2.28.2
 s3fs==2024.2.0
 scipy==1.10.1
-sqlglot==20.0.0
+sqlglot==26.33.0
 sqlparse==0.4.3
 tqdm==4.65.0
 trino==0.320.0
