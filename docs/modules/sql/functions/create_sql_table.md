@@ -103,10 +103,14 @@ ddl
 - Cross-backend SQL inserts use a single inner transfer attempt so
   `retry_cnt` controls the total number of whole-operation attempts rather than
   multiplying nested retry counts.
+- Same-Trino SQL sources preserve native type signatures such as
+  `array(varchar)`, `array(varbinary)`, `map(...)`, and `row(...)`; cross-backend
+  sources continue to use portable target-type mapping.
 - A failed attempt removes a target created by that attempt before retrying. If
   cleanup cannot be confirmed, the operation stops instead of retrying against
   a partial target; pre-existing targets are never removed unless
   `drop_target_if_exists=True`.
+- Deterministic Trino `TYPE_MISMATCH` failures are not retried.
 - Pass exactly one of `df`, `sql`, or `table_schema`.
 - Greenplum `partition_by` and `gp_partitions` must be supplied together.
   `gp_partitions` applies only when this operation creates the target; use

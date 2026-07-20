@@ -22,9 +22,17 @@ def inspect_source_query_schema(
 def map_source_schema_to_target(
     source_schema: list[SourceColumn],
     target_backend: str,
+    *,
+    source_backend: str | None = None,
 ) -> dict[str, str]:
+    target_adapter = get_backend_adapter(target_backend)
+    same_backend = source_backend == target_backend
     return {
-        column.name: map_source_type_to_target(column, target_backend)
+        column.name: (
+            target_adapter.map_same_backend_source_type_to_target(column)
+            if same_backend
+            else target_adapter.map_source_type_to_target(column)
+        )
         for column in source_schema
     }
 

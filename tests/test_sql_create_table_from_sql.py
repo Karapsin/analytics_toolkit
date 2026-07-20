@@ -457,6 +457,47 @@ def test_insert_data_same_backend_emits_typed_insert_and_returns_rowcount(
     )
 
 
+def test_insert_data_same_trino_preserves_array_types(monkeypatch) -> None:
+    connection = FakeDbapiConnection(
+        description=[
+            ("campaign_codes", "array(varchar)", None, None, None, None),
+            ("po_bonus_pk", "array(varbinary)", None, None, None, None),
+            ("pers_offers_pk", "array(varbinary)", None, None, None, None),
+        ],
+        insert_rowcount=1,
+    )
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+
+    inserted_rows = create_module.create_table_from_sql(
+        "trino",
+        "iceberg.sandbox.target_table",
+        "select campaign_codes, po_bonus_pk, pers_offers_pk from source_table",
+        insert_data=True,
+    )
+
+    assert inserted_rows == 1
+    assert any(
+        statement.startswith("CREATE TABLE iceberg.sandbox.target_table")
+        and '"campaign_codes" array(varchar)' in statement
+        and '"po_bonus_pk" array(varbinary)' in statement
+        and '"pers_offers_pk" array(varbinary)' in statement
+        for statement in connection.executed
+    )
+    assert connection.executed[-1] == (
+        'INSERT INTO iceberg.sandbox.target_table ("campaign_codes", '
+        '"po_bonus_pk", "pers_offers_pk") '
+        'SELECT CAST("campaign_codes" AS array(varchar)) AS "campaign_codes", '
+        'CAST("po_bonus_pk" AS array(varbinary)) AS "po_bonus_pk", '
+        'CAST("pers_offers_pk" AS array(varbinary)) AS "pers_offers_pk" '
+        "FROM (select campaign_codes, po_bonus_pk, pers_offers_pk from source_table) "
+        "AS source_query"
+    )
+
+
 def test_create_table_from_sql_inserts_by_default(monkeypatch) -> None:
     connection = FakeDbapiConnection(
         description=SOURCE_DESCRIPTION,
@@ -839,6 +880,54 @@ def test_create_table_from_sql_cleans_direct_insert_before_retry(
     assert target_exists is True
     assert len(connections) == 2
     assert [connection.close_calls for connection in connections] == [1, 1]
+
+
+def test_create_table_from_sql_cleans_type_mismatch_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TrinoTypeMismatchError(Exception):
+        error_name = "TYPE_MISMATCH"
+
+    connection = FakeDbapiConnection(
+        description=[
+            ("campaign_codes", "array(varchar)", None, None, None, None),
+        ]
+    )
+    error = TrinoTypeMismatchError("Cannot cast array(varchar) to varchar")
+    insert_calls = 0
+    cleanup_calls = 0
+
+    def fail_insert(*args: object, **kwargs: object) -> int:
+        nonlocal insert_calls
+        insert_calls += 1
+        raise error
+
+    def record_cleanup(**kwargs: object) -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+
+    monkeypatch.setattr(
+        create_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+    monkeypatch.setattr(create_module, "insert_from_query", fail_insert)
+    monkeypatch.setattr(create_module, "_drop_attempt_target", record_cleanup)
+
+    with pytest.raises(TrinoTypeMismatchError) as caught:
+        create_module.create_table_from_sql(
+            "trino",
+            "iceberg.sandbox.target_table",
+            "select campaign_codes from source_table",
+            insert_data=True,
+            retry_cnt=5,
+            timeout_increment=0,
+        )
+
+    assert caught.value is error
+    assert insert_calls == 1
+    assert cleanup_calls == 1
+    assert connection.close_calls == 1
 
 
 def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
@@ -1281,7 +1370,11 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
         "inspect_source_query_schema",
         lambda *_a, **_k: [SimpleNamespace(name="id")],
     )
-    monkeypatch.setattr(create_module, "map_source_schema_to_target", lambda *_a: {"id": "BIGINT"})
+    monkeypatch.setattr(
+        create_module,
+        "map_source_schema_to_target",
+        lambda *_a, **_k: {"id": "BIGINT"},
+    )
     monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
     monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
     monkeypatch.setattr(create_module, "insert_from_query", lambda *_a, **_k: 3)
@@ -1399,7 +1492,11 @@ def test_create_from_sql_delegated_failure_retains_unsafe_attempt(
         "inspect_source_query_schema",
         lambda *_a, **_k: [SimpleNamespace(name="id")],
     )
-    monkeypatch.setattr(create_module, "map_source_schema_to_target", lambda *_a: {"id": "BIGINT"})
+    monkeypatch.setattr(
+        create_module,
+        "map_source_schema_to_target",
+        lambda *_a, **_k: {"id": "BIGINT"},
+    )
     monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
     monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
     monkeypatch.setattr(

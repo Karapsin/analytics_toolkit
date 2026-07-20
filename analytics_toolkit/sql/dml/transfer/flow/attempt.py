@@ -122,6 +122,7 @@ def run_transfer_attempt(
             stage_state.stage_column_types = map_source_schema_to_target(
                 source_schema,
                 options.to_db_backend,
+                source_backend=options.from_db_backend,
             )
         _run_with_fresh_target_connection(
             options,
@@ -315,6 +316,7 @@ def initialize_shared_stage_for_keyed_slices(
         stage_state.stage_column_types = map_source_schema_to_target(
             source_schema,
             options.to_db_backend,
+            source_backend=options.from_db_backend,
         )
     else:
         raise ValueError(

@@ -252,7 +252,7 @@ class BackendAdapter:
 
     def map_source_type_to_target(self, column: SourceColumn) -> str:
         raise NotImplementedError
-
+    map_same_backend_source_type_to_target = _adapter_defaults.map_same_backend_source_type_to_target
     refine_stage_column_types_from_rows = _adapter_defaults.refine_stage_column_types_from_rows
 
     build_show_tables_query = _adapter_defaults.build_show_tables_query

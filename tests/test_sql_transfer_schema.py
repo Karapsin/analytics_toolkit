@@ -223,6 +223,38 @@ def test_map_source_schema_to_target_preserves_binary_types() -> None:
     }
 
 
+def test_map_source_schema_to_target_preserves_same_trino_native_types() -> None:
+    source_schema = [
+        schema_module.SourceColumn("campaign_codes", "array(varchar)"),
+        schema_module.SourceColumn("po_bonus_pk", "array(varbinary)"),
+        schema_module.SourceColumn("attributes", "map(varchar, bigint)"),
+        schema_module.SourceColumn(
+            "details",
+            "row(campaign_code varchar, payload varbinary)",
+        ),
+        schema_module.SourceColumn("untyped_value", "unknown"),
+    ]
+
+    assert schema_module.map_source_schema_to_target(
+        source_schema,
+        "trino",
+        source_backend="trino",
+    ) == {
+        "campaign_codes": "array(varchar)",
+        "po_bonus_pk": "array(varbinary)",
+        "attributes": "map(varchar, bigint)",
+        "details": "row(campaign_code varchar, payload varbinary)",
+        "untyped_value": "VARCHAR",
+    }
+    assert schema_module.map_source_schema_to_target(source_schema, "trino") == {
+        "campaign_codes": "VARCHAR",
+        "po_bonus_pk": "VARCHAR",
+        "attributes": "BIGINT",
+        "details": "VARCHAR",
+        "untyped_value": "VARCHAR",
+    }
+
+
 def test_map_source_schema_to_target_falls_back_for_invalid_decimal_bounds() -> None:
     source_schema = [
         schema_module.SourceColumn("quantity", "numeric(65535, 0)"),

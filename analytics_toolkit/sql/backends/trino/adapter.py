@@ -284,6 +284,12 @@ class TrinoAdapter(DbApiBackendAdapter):
         kind = _source_schema.classify_source_type(source_type)
         return _map_to_trino_type(kind, source_type, precision, scale)
 
+    def map_same_backend_source_type_to_target(self, column: SourceColumn) -> str:
+        source_type = _source_schema.normalize_type_name(column.native_type)
+        if source_type and source_type != "unknown":
+            return source_type
+        return self.map_source_type_to_target(column)
+
     def build_upsert_stage_sqls(
         self,
         target_table: str,

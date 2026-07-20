@@ -25,11 +25,18 @@ the target is created with [sql.transfer](functions/transfer.md). If Python
 already owns the rows, [sql.load_df](functions/load_df.md) is usually the
 simpler workflow.
 
+When both source and target are Trino, query-based creation preserves the full
+native type signatures reported by Trino, including arrays, maps, rows, type
+parameters, and nested combinations. Cross-backend creation continues to map
+types to the target backend's portable representations.
+
 Each SQL-source retry uses fresh source and target connections and repeats
 metadata inspection. A cross-backend insert delegates with one inner transfer
 attempt so retries remain bounded by `retry_cnt`. Partial targets owned by a
 failed attempt are removed before another attempt; a cleanup failure stops the
-workflow rather than risking duplicate rows.
+workflow rather than risking duplicate rows. Deterministic Trino type-mismatch
+errors fail immediately after cleanup instead of recreating the same invalid
+target on later attempts.
 
 Qualified table names are parsed structurally. Quoted dots remain part of one
 identifier, for example `"schema.with.dot"."table.with.dot"`. Unqualified

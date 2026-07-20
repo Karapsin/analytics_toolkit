@@ -155,6 +155,64 @@ def test_create_sql_table_schema_copy_matrix(
     assert list(sql.table_info(target_alias, target_table).columns) == list(frame.columns)
 
 
+@pytest.mark.sql_scenario("schema.copy.trino.complex")
+def test_create_sql_table_preserves_same_trino_array_types(
+    resource_registry: ResourceRegistry,
+) -> None:
+    alias = "trino_target_values"
+    target_table = _registered(
+        resource_registry,
+        "trino",
+        alias,
+        "schema_complex_target",
+    )
+    source_query = """
+        SELECT
+            CAST(ARRAY['campaign-a', 'campaign-b'] AS ARRAY(VARCHAR))
+                AS campaign_codes,
+            CAST(ARRAY[from_hex('01'), from_hex('ff')] AS ARRAY(VARBINARY))
+                AS po_bonus_pk,
+            CAST(ARRAY[from_hex('0a')] AS ARRAY(VARBINARY))
+                AS pers_offers_pk
+    """
+
+    sql.create_sql_table(
+        alias,
+        target_table,
+        sql=source_query,
+        insert_data=False,
+        retry_cnt=1,
+        query_label=_query_label("trino_complex_schema_empty"),
+    )
+    empty_info = sql.table_info(alias, target_table, include_row_count=True)
+    assert empty_info.exists and empty_info.row_count == 0
+    assert {name: type_name.lower() for name, type_name in empty_info.columns.items()} == {
+        "campaign_codes": "array(varchar)",
+        "po_bonus_pk": "array(varbinary)",
+        "pers_offers_pk": "array(varbinary)",
+    }
+
+    inserted = sql.create_sql_table(
+        alias,
+        target_table,
+        sql=source_query,
+        insert_data=True,
+        drop_target_if_exists=True,
+        retry_cnt=1,
+        query_label=_query_label("trino_complex_schema_insert"),
+    )
+
+    assert inserted == 1
+    actual = sql.read(alias, f"SELECT * FROM {target_table}")
+    assert actual.to_dict(orient="records") == [
+        {
+            "campaign_codes": ["campaign-a", "campaign-b"],
+            "po_bonus_pk": [b"\x01", b"\xff"],
+            "pers_offers_pk": [b"\x0a"],
+        }
+    ]
+
+
 @pytest.mark.sql_scenario("ddl.native.gp")
 def test_greenplum_native_distribution_ddl(resource_registry: ResourceRegistry) -> None:
     if not backend_enabled("gp"):

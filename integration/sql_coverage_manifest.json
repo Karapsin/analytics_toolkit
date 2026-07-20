@@ -6230,6 +6230,11 @@
       "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.trino.trino]",
       "backends": ["trino", "trino"]
     },
+    "schema.copy.trino.complex": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_preserves_same_trino_array_types",
+      "backends": ["trino"]
+    },
     "schema.copy.trino.ch": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_schema_ddl.py::test_create_sql_table_schema_copy_matrix[schema.copy.trino.ch]",

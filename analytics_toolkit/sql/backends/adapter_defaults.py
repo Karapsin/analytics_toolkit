@@ -16,6 +16,10 @@ _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
 
 
+def map_same_backend_source_type_to_target(adapter: Any, column: Any) -> str:
+    return str(adapter.map_source_type_to_target(column))
+
+
 def build_show_tables_query(
     adapter: Any,
     config: Any,

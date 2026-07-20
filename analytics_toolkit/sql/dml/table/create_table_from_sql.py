@@ -393,6 +393,7 @@ def _execute_generic_create_table_from_sql_attempt(
                 target_column_types = map_source_schema_to_target(
                     source_schema,
                     options.target_backend,
+                    source_backend=options.source_backend,
                 )
             else:
                 target_column_types = validate_table_schema_columns(

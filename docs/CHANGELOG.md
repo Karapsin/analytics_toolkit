@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Reduced agent workflow output and added implementation preflight diagnostics.
 - Avoided duplicate nested command output in git workflow responses.
 - Added ClickHouse table reconfiguration helper.
+- Preserved Trino complex query types and stopped deterministic type mismatch retries.
 
 ## 1.3.10.18 - 2026-07-15
 

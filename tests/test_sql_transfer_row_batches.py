@@ -7133,7 +7133,7 @@ def test_transfer_attempt_schema_selection_matrix(
     monkeypatch.setattr(
         attempt_module,
         "map_source_schema_to_target",
-        lambda *_a: {"id": "MAPPED"},
+        lambda *_a, **_k: {"id": "MAPPED"},
     )
     monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *_a, **_k: None)
     monkeypatch.setattr(attempt_module, "load_stage_batches", lambda **_k: 0)
@@ -7295,7 +7295,7 @@ def test_initialize_shared_keyed_stage_maps_inspected_schema(
     monkeypatch.setattr(
         attempt_module,
         "map_source_schema_to_target",
-        lambda *_a: {"id": "BIGINT"},
+        lambda *_a, **_k: {"id": "BIGINT"},
     )
     monkeypatch.setattr(
         attempt_module,

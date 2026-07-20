@@ -76,7 +76,9 @@ restartability in mind.
 Transfers prefer native source metadata over pandas-inferred batch types. When
 the target already exists, final stage-to-target inserts cast staged values to
 the target column types. Use `table_schema` when the target type must be
-explicit and portable inference is not enough.
+explicit and portable inference is not enough. Same-Trino transfers preserve
+the complete native source type signature, including arrays, maps, rows, and
+nested combinations; cross-backend transfers retain portable type mapping.
 
 Upsert finalization is backend-specific. Greenplum uses staged
 delete-and-insert on `key_columns`. Trino and ClickHouse require

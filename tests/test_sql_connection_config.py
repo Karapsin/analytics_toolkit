@@ -2130,7 +2130,9 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
     monkeypatch.setattr(
         transfer_schema_module,
         "map_source_schema_to_target",
-        lambda source_schema, backend: {column.name: "BIGINT" for column in source_schema},
+        lambda source_schema, backend, **_kwargs: {
+            column.name: "BIGINT" for column in source_schema
+        },
     )
     monkeypatch.setattr(
         operation_runner_module,

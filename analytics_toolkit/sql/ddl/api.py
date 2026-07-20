@@ -372,6 +372,7 @@ def _generate_create_sql_table_from_query_sql(
     target_column_types = map_source_schema_to_target(
         source_schema,
         target_config.backend,
+        source_backend=source_config.backend,
     )
     create_kwargs = target_adapter.build_create_from_sql_target_create_kwargs(
         gp_distributed_by_key=gp_distribution,

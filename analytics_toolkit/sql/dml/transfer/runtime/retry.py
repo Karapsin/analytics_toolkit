@@ -127,6 +127,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         "FEATURE_NOT_SUPPORTED",
         "INSUFFICIENT_PRIVILEGE",
         "ILLEGAL_TYPE_OF_ARGUMENT",
+        "TYPE_MISMATCH",
     }:
         return True
 

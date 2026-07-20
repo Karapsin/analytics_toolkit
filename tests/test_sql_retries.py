@@ -48,6 +48,10 @@ class FakeTrinoSyntaxError(Exception):
     error_name = "SYNTAX_ERROR"
 
 
+class FakeTrinoTypeMismatchError(Exception):
+    error_name = "TYPE_MISMATCH"
+
+
 class InsufficientPrivilege(Exception):
     pgcode = "42501"
 
@@ -405,6 +409,26 @@ def test_run_with_retry_does_not_retry_trino_syntax_error() -> None:
     else:
         raise AssertionError("Expected syntax error to be raised.")
 
+    assert attempts == [1]
+
+
+def test_run_with_retry_does_not_retry_trino_type_mismatch() -> None:
+    attempts: list[int] = []
+    error = FakeTrinoTypeMismatchError("Cannot cast array(varchar) to varchar")
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise error
+
+    with pytest.raises(FakeTrinoTypeMismatchError) as caught:
+        retry_module.run_with_retry(
+            operation_name="creating table from query on trino",
+            retry_cnt=5,
+            timeout_increment=5,
+            operation=operation,
+        )
+
+    assert caught.value is error
     assert attempts == [1]
 
 
