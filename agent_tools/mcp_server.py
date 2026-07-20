@@ -3916,19 +3916,18 @@ def _github_result_receipt(result: dict[str, Any], *, detail: str) -> dict[str, 
     }
     if status == "pending":
         changes = result.get("changes", [])
-        receipt.update(
-            {
-                "watch_id": result.get("watch_id"),
-                "resume_after_seconds": result.get("resume_after_seconds"),
-                "changes": changes[:6],
-                "change_count": len(changes),
-                "pending_required": result.get("pending", []),
-                "missing": result.get("missing", []),
-            }
-        )
-        if len(changes) > 6:  # noqa: PLR2004 - compact response budget.
-            receipt["changes_truncated"] = True
-        return receipt
+        pending = result.get("pending", [])
+        return {
+            "sha": result.get("sha"),
+            "status": status,
+            "watch_id": result.get("watch_id"),
+            "resume_after_seconds": result.get("resume_after_seconds"),
+            "changes": [_github_change_receipt(change) for change in changes[:3]],
+            "change_count": len(changes),
+            "pending_required": pending[:5],
+            "pending_required_count": len(pending),
+            "missing": result.get("missing", []),
+        }
     if status == "complete":
         receipt["required"] = [
             {
@@ -3956,6 +3955,20 @@ def _github_result_receipt(result: dict[str, Any], *, detail: str) -> dict[str, 
         if result.get(key):
             receipt[key] = result[key]
     return receipt
+
+
+def _github_change_receipt(change: dict[str, Any]) -> dict[str, Any]:
+    def state_label(state: Any) -> str | None:
+        if not isinstance(state, dict):
+            return None
+        return state.get("conclusion") or state.get("status")
+
+    return {
+        "name": change.get("name"),
+        "kind": change.get("kind"),
+        "before": state_label(change.get("before")),
+        "after": state_label(change.get("after")),
+    }
 
 
 def _github_check_failure(sha: str, phase: str, message: str) -> dict[str, Any]:

@@ -107,7 +107,8 @@ infrastructure failure. When resuming after interruption, use
 Each watch call waits for a bounded interval (60 seconds by default), persists
 the repository, exact-SHA deadline, and last reported workflow/job/check states
 below `.rag_index/`, and returns only changed states plus the remaining required
-checks while pending. Terminal success returns required conclusions and URLs;
+checks while pending. Large first-poll sets return bounded status-only samples
+plus total counts. Terminal success returns required conclusions and URLs;
 diagnostic/full detail retains the expanded evidence. Successful polling API
 payloads and repeated repository discovery are not returned.
 

@@ -1811,6 +1811,65 @@ def test_github_watcher_returns_resumable_pending_slice_and_status_changes(
     assert completed["command_results"] == []
 
 
+def test_first_pending_commit_receipt_stays_within_budget() -> None:
+    sha = "a" * 40
+    changes = [
+        {
+            "name": f"check {index}",
+            "kind": "check_run",
+            "before": None,
+            "after": {
+                "kind": "check_run",
+                "status": "in_progress",
+                "url": f"https://example.test/check/{index}",
+            },
+        }
+        for index in range(17)
+    ]
+    github = mcp_server._github_result_receipt(
+        {
+            "sha": sha,
+            "repository": "owner/repository",
+            "push_target": "origin/dev",
+            "status": "pending",
+            "watch_id": sha,
+            "resume_after_seconds": 15,
+            "changes": changes,
+            "pending": [f"check-run: check {index}" for index in range(15)],
+            "missing": [],
+            "total_duration_seconds": 60,
+        },
+        detail="summary",
+    )
+    payload = mcp_server._tool_output(
+        "git_workflow",
+        {
+            "action": "commit",
+            "message": "Update agent workflow",
+            "paths": [f"path-{index}.py" for index in range(10)],
+            "detail": "summary",
+        },
+        result={
+            "mutation": {
+                "sha": sha,
+                "message": "Update agent workflow",
+                "path_count": 10,
+                "push_target": "origin/dev",
+            },
+            "github_checks": github,
+        },
+        next_actions=[f"Resume with git_workflow(action='checks', sha='{sha}')."],
+    )
+
+    assert github["change_count"] == 17
+    assert len(github["changes"]) == 3
+    assert github["pending_required_count"] == 15
+    assert len(github["pending_required"]) == 5
+    assert all("url" not in change for change in github["changes"])
+    assert payload["telemetry"]["response_bytes"] <= 1_500
+    assert payload["telemetry"]["within_budget"] is True
+
+
 def test_github_snapshot_discards_successful_api_command_payloads(tmp_path: Path) -> None:
     root = tmp_path / "project"
     root.mkdir()

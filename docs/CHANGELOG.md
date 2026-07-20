@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Stabilized concurrent keyed transfer test ordering.
+- Bounded first-poll GitHub status receipts.
 
 ## 1.3.10.19 - 2026-07-20
 
