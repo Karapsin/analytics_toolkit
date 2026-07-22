@@ -56,6 +56,43 @@ def test_read_output_type_defaults_to_dataframe(
     assert result.to_dict("list") == {"value": [1]}
 
 
+def test_read_exports_dataframe_to_excel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = FakeDbapiConnection(rows=[(1,)], description=[("value",)])
+    calls: list[tuple[object, bool]] = []
+    monkeypatch.setattr(read_sql_module, "get_sql_connection", lambda _key: connection)
+
+    def fake_to_excel(self: pd.DataFrame, path: object, *, index: bool) -> None:
+        assert self.to_dict("list") == {"value": [1]}
+        calls.append((path, index))
+
+    monkeypatch.setattr(pd.DataFrame, "to_excel", fake_to_excel)
+
+    result = sql_module.read("gp", "select 1", retry_cnt=1, to_excel="example.xlsx")
+
+    assert result.to_dict("list") == {"value": [1]}
+    assert calls == [("example.xlsx", False)]
+
+
+def test_read_rejects_excel_export_for_non_dataframe_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        read_sql_module,
+        "get_sql_connection",
+        lambda _key: pytest.fail("Unsupported export must fail before connecting."),
+    )
+
+    with pytest.raises(read_sql_module.InvalidSqlInputError, match="only supported"):
+        sql_module.read(
+            "gp",
+            "select 1",
+            output_type="scalar",
+            to_excel="example.xlsx",
+        )
+
+
 @pytest.mark.parametrize(
     ("output_type", "rows", "description", "expected"),
     [

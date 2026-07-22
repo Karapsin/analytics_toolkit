@@ -5,7 +5,7 @@
 Run one SQL query through a configured connection and return the selected output shape.
 
 ```python
-read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df') -> 'Any | SqlOperationResult'
+read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None) -> 'Any | SqlOperationResult'
 ```
 
 ## Inputs
@@ -13,6 +13,7 @@ read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int
 - `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
 - `query` - text of SQL to execute or read
 - `output_type` - output shape: `df`, `scalar`, `list`, or `dict`; defaults to `df`
+- `to_excel` - optional `.xlsx` output filename; writes the dataframe without its index and requires `output_type="df"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
@@ -27,6 +28,16 @@ from analytics_toolkit import sql
 orders = sql.read(
     db_key="gp",
     query="select order_id, user_id, amount from sandbox.orders limit 100",
+)
+```
+
+Write the dataframe to Excel while keeping it as the return value:
+
+```python
+orders = sql.read(
+    db_key="gp",
+    query="select order_id, user_id, amount from sandbox.orders limit 100",
+    to_excel="orders.xlsx",
 )
 ```
 

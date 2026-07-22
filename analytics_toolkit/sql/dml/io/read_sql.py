@@ -72,6 +72,7 @@ def read_sql(
     query_label: str | None = None,
     return_metadata: bool = False,
     output_type: ReadOutputType = "df",
+    to_excel: str | None = None,
 ) -> Any | SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -82,6 +83,7 @@ def read_sql(
         query_label=query_label,
         return_metadata=return_metadata,
         output_type=output_type,
+        to_excel=to_excel,
     )
 
 
@@ -93,6 +95,7 @@ def read_sql_with_metadata(
     timeout_increment: int | float = 5,
     query_label: str | None = None,
     output_type: ReadOutputType = "df",
+    to_excel: str | None = None,
 ) -> SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -103,6 +106,7 @@ def read_sql_with_metadata(
         query_label=query_label,
         return_metadata=True,
         output_type=output_type,
+        to_excel=to_excel,
     )
 
 
@@ -116,6 +120,7 @@ def _read_sql_impl(
     query_label: str | None,
     return_metadata: bool,
     output_type: ReadOutputType,
+    to_excel: str | None = None,
 ) -> Any | SqlOperationResult:
     options = _build_read_sql_options(
         db_key=db_key,
@@ -126,6 +131,7 @@ def _read_sql_impl(
         query_label=query_label,
         return_metadata=return_metadata,
         output_type=output_type,
+        to_excel=to_excel,
     )
     metadata = SqlOperationMetadata(
         statement_count=1,
@@ -179,6 +185,8 @@ def _read_sql_impl(
         context_factory=context,
     )
     output = _format_read_output(result, options.output_type)
+    if options.to_excel is not None:
+        cast("pd.DataFrame", output).to_excel(options.to_excel, index=False)
     if return_metadata:
         return SqlOperationResult(
             rows=metadata.read_rows,
@@ -198,6 +206,7 @@ def _build_read_sql_options(
     query_label: str | None,
     return_metadata: bool,
     output_type: ReadOutputType,
+    to_excel: str | None = None,
 ) -> ReadSqlOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -209,6 +218,9 @@ def _build_read_sql_options(
     if output_type not in _READ_OUTPUT_TYPES:
         supported = ", ".join(repr(value) for value in _READ_OUTPUT_TYPES)
         message = f"Unsupported output_type {output_type!r}. Supported values: {supported}."
+        raise InvalidSqlInputError(message)
+    if to_excel is not None and output_type != "df":
+        message = "to_excel is only supported when output_type='df'."
         raise InvalidSqlInputError(message)
     validate_retry_options(retry_cnt, timeout_increment)
 
@@ -226,6 +238,7 @@ def _build_read_sql_options(
         query_label=query_label,
         return_metadata=return_metadata,
         output_type=output_type,
+        to_excel=to_excel,
     )
 
 

@@ -1198,6 +1198,7 @@ def test_read_sql_with_metadata_delegates_to_shared_implementation(
             "query_label": "metadata",
             "return_metadata": True,
             "output_type": "df",
+            "to_excel": None,
         }
     ]
 

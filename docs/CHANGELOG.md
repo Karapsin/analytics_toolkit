@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Stabilized concurrent keyed transfer test ordering.
 - Bounded first-poll GitHub status receipts.
 - Removed duplicate commit receipt metadata.
+- Added Excel file export support to sql.read dataframe results.
 
 ## 1.3.10.19 - 2026-07-20
 

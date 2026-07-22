@@ -17,6 +17,7 @@ class ReadSqlOptions:
     query_label: str | None = None
     return_metadata: bool = False
     output_type: ReadOutputType = "df"
+    to_excel: str | None = None
 
 
 @dataclass(frozen=True)
