@@ -4497,11 +4497,11 @@
         },
         "write_mode": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "None",
+          "signature_default": "'append'",
           "states": [
             {
               "state": "default",
-              "value": "None",
+              "value": "'append'",
               "status": "covered",
               "scenarios": [
                 "transfer.trino.ch.append"

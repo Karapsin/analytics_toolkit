@@ -2784,6 +2784,34 @@ def test_transfer_options_enable_parquet_staging_for_trino_target_with_location(
     assert options.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
+def test_transfer_options_default_and_none_write_modes_append(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+    kwargs = {
+        "from_db": "source",
+        "to_db": "target",
+        "from_sql": "select id from source_table",
+        "to_table": "sandbox.target",
+    }
+
+    default_options = transfer_api_module.build_transfer_options(**kwargs)
+    none_options = transfer_api_module.build_transfer_options(**kwargs, write_mode=None)
+
+    assert default_options.write_mode == "append"
+    assert default_options.replace_target_table is False
+    assert none_options.write_mode == "append"
+    assert none_options.replace_target_table is False
+
+
 def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3064,6 +3092,7 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
         to_db="trino",
         from_sql="select id from source_table",
         to_table="sandbox.target",
+        write_mode="replace",
         table_schema={"id": "BIGINT"},
         dry_run=True,
     )
@@ -5777,7 +5806,7 @@ def test_finalize_loaded_stage_handles_empty_and_invalid_stage_state(
 def test_finalize_empty_transfer_warns_only_for_missing_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    options = make_progress_options()
+    options = make_progress_options(write_mode="replace", replace_target_table=True)
     messages: list[str] = []
     monkeypatch.setattr(
         finalize_module,
@@ -6713,8 +6742,13 @@ def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
 ) -> None:
     options = make_progress_options(replace_target_table=False, write_mode="append")
     closed: list[str] = []
+    option_inputs: list[dict[str, Any]] = []
 
-    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+    def build_options(**kwargs: Any) -> Any:
+        option_inputs.append(kwargs)
+        return options
+
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", build_options)
     monkeypatch.setattr(
         transfer_api_module,
         "get_backend_adapter",
@@ -6748,6 +6782,7 @@ def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
     result = transfer_api_module.transfer_table("source", "target", return_metadata=True)
 
     assert result.rows == 4
+    assert option_inputs[0]["write_mode"] == "append"
     assert result.metadata.final_target_rows is None
     assert closed == ["close"]
 

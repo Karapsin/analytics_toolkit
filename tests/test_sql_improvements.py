@@ -1500,6 +1500,7 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     signature = inspect.signature(sql_module.transfer)
 
     assert "replace_target_table" not in signature.parameters
+    assert signature.parameters["write_mode"].default == "append"
     plan = transfer_api_module.transfer_table(
         from_db="gp",
         to_db="trino",
@@ -1513,10 +1514,14 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     assert plan.source_alias == "gp"
     assert plan.target_alias == "trino"
     assert plan.options["adaptive_batch_size"] is True
+    assert plan.options["write_mode"] == "append"
     assert plan.options["min_batch_size"] == 1_000
     assert plan.options["max_batch_size"] == 400_000
     assert plan.options["target_batch_seconds"] == 10.0
     assert plan.statements[0].phase == "read_source"
+    assert not {"clear_target", "drop_target"} & {
+        statement.phase for statement in plan.statements
+    }
     assert "query_label=copy-target" in plan.statements[0].sql
     assert plan.statements[-1].phase == "drop_stage"
 
@@ -1766,6 +1771,7 @@ def test_transfer_clickhouse_dry_run_preserves_drop_pair_cluster() -> None:
         to_db="ch",
         from_sql="select id from source_table",
         to_table="analytics.events",
+        write_mode="replace",
         dry_run=True,
         ch_cluster="analytics",
     )
@@ -1785,6 +1791,7 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         to_db="ch",
         from_sql="select dt, id from source_table",
         to_table="analytics.events",
+        write_mode="replace",
         ch_only_shard=True,
         dry_run=True,
         table_schema={"dt": "Date", "id": "UInt64"},

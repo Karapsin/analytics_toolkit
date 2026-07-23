@@ -139,6 +139,7 @@ rows = sql.transfer(
     group by order_date
     """,
     to_table="sandbox.daily_order_metrics",
+    write_mode="replace",
     batch_size=50_000,
 )
 ```

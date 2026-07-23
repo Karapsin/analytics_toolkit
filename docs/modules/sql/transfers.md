@@ -24,11 +24,16 @@ row-batch `INSERT` staging behavior.
 
 Use `write_mode` to choose finalization behavior:
 
-- `append` inserts staged rows into the existing target.
+- `append` is the default and inserts staged rows into the existing target.
 - `replace` recreates or clears the target before inserting staged rows.
 - `truncate_insert` clears the existing target shape before inserting staged rows.
 - `upsert` requires `key_columns`, rejects duplicate staged keys, and applies
   backend-specific replacement semantics.
+
+Omitting `write_mode`, or passing `None`, selects `append`. Existing callers
+that require a full-table refresh must pass `write_mode="replace"` explicitly.
+When the source returns zero rows, transfer leaves an existing target unchanged
+for every write mode, including `replace`.
 
 Use [sql.read](functions/read.md) instead when the goal is only to return a
 source query as a dataframe. Use [sql.load_df](functions/load_df.md) when

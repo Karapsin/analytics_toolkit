@@ -61,7 +61,7 @@ def transfer_table(
     from_sql: str | None = None,
     to_table: str | None = None,
     from_table: str | None = None,
-    write_mode: str | None = None,
+    write_mode: str | None = "append",
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
@@ -279,7 +279,7 @@ def build_transfer_options(
     from_sql: str | None = None,
     to_table: str | None = None,
     from_table: str | None = None,
-    write_mode: str | None = None,
+    write_mode: str | None = "append",
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
@@ -570,7 +570,7 @@ def _resolve_transfer_write_mode(
     write_mode: str | None,
 ) -> str:
     if write_mode is None:
-        return "replace"
+        return "append"
     return get_backend_adapter(to_db_backend).validate_write_mode(write_mode)
 
 

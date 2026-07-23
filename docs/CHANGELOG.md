@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Added Excel file export support to sql.read dataframe results.
 - Add concurrent Greenplum leaf-partition analyze helper.
 - Avoid duplicate source query execution during validated SQL transfers.
+- Default SQL transfers to append unless write_mode is explicit.
 
 ## 1.3.10.19 - 2026-07-20
 

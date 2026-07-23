@@ -229,6 +229,7 @@ sql.transfer(
     to_db="airflow_clickhouse",
     from_sql="select * from iceberg.sandbox.source",
     to_table="sandbox.target",
+    write_mode="replace",
 )
 ```
 
