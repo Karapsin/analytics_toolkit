@@ -553,8 +553,8 @@ def workflow_metrics(
         bucket["raw_output_bytes"] += int(entry.get("raw_output_bytes", 0))
         if not entry.get("ok", False):
             bucket["failures"] += 1
-        signature = str(entry.get("failure_signature", ""))
-        if signature:
+        signature = entry.get("failure_signature")
+        if isinstance(signature, str) and signature:
             failure_counts[signature] = failure_counts.get(signature, 0) + 1
     response_bytes = sum(item["response_bytes"] for item in by_tool.values())
     repeated_failures = sum(count - 1 for count in failure_counts.values() if count > 1)

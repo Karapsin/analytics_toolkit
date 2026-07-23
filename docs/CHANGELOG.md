@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Avoid duplicate source query execution during validated SQL transfers.
 - Default SQL transfers to append unless write_mode is explicit.
 - Reduced agent workflow token and retry costs.
+- Fixed workflow metrics repeated-failure aggregation.
 
 ## 1.3.10.19 - 2026-07-20
 

@@ -809,11 +809,15 @@ def test_workflow_metrics_aggregate_active_session(
         result={"failure_signature": "repeat"},
         ok=False,
     )
+    mcp_server._tool_output(
+        "workflow_status",
+        {"root": str(root), "detail": "summary"},
+    )
 
     metrics = mcp_server.workflow_metrics(root=str(root))
 
     assert metrics["result"]["session_id"] == "session-1"
-    assert metrics["result"]["call_count"] == 2
+    assert metrics["result"]["call_count"] == 3
     assert metrics["result"]["repeated_failure_count"] == 1
     assert metrics["result"]["estimated_response_tokens"] > 0
     assert "model tokens unavailable" in metrics["result"]["token_estimate_method"]
