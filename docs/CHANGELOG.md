@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Avoided ClickHouse transfer stream failures for empty validated sources.
+
 ## 1.3.11.0 - 2026-07-23
 
 - Stabilized concurrent keyed transfer test ordering.

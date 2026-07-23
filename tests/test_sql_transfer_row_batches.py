@@ -1351,6 +1351,63 @@ def test_clickhouse_transfer_streams_with_count_limit_when_source_has_no_limit(
     assert streamed_sql == ["select distinct magnit_id from source_table\nLIMIT 6582921"]
 
 
+def test_clickhouse_transfer_does_not_add_count_limit_for_empty_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_conn = FakeTransferConnection("source")
+    target_conn = FakeTransferConnection("target")
+    streamed_sql: list[str] = []
+    options = make_progress_options(
+        to_db_key="target_db",
+        to_db_backend="trino",
+        from_db_key="source_db",
+        from_db_backend="ch",
+        source_sql="select distinct magnit_id from source_table",
+        validate_row_count=True,
+        ch_count_limit_read=True,
+    )
+
+    monkeypatch.setattr(
+        attempt_module,
+        "get_sql_connection",
+        lambda connection_key: source_conn if connection_key == "source_db" else target_conn,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "create_stage_state",
+        lambda *_args, **_kwargs: models_module.TransferStageState(target_exists=False),
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "inspect_source_query_schema",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(name="magnit_id", native_type="UInt64", precision=None, scale=None)
+        ],
+    )
+    monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
+
+    def fake_load_stage_batches(**kwargs: Any) -> int:
+        streamed_sql.append(kwargs["options"].source_sql)
+        kwargs["stage_state"].stage_table = "iceberg.sandbox.target__stage__abcd1234"
+        return 0
+
+    monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda *a, **k: None)
+    monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: None)
+    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: None)
+    monkeypatch.setattr(row_counts_module, "count_source_rows", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 0)
+
+    total_rows = attempt_module.run_transfer_attempt(
+        options=options,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total_rows == 0
+    assert streamed_sql == ["select distinct magnit_id from source_table"]
+
+
 def test_keyed_worker_validates_each_slice_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

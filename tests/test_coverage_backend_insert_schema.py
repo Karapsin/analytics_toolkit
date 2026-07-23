@@ -376,6 +376,7 @@ def test_clickhouse_count_source_rows(rows: list[Any], expected: int) -> None:
     [
         ("SELECT * FROM source", 5, False, "SELECT * FROM source"),
         ("SELECT * FROM source", None, True, "SELECT * FROM source"),
+        ("SELECT * FROM source", 0, True, "SELECT * FROM source"),
         ("SELECT * FROM source LIMIT 2", 5, True, "SELECT * FROM source LIMIT 2"),
         ("SELECT * FROM source;", 5, True, "SELECT * FROM source\nLIMIT 5"),
         ("invalid (", 5, True, "invalid (\nLIMIT 5"),

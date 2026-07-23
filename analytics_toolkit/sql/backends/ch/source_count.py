@@ -26,7 +26,12 @@ def source_sql_for_count_limited_read(
     expected_rows: int | None,
     enabled: bool,
 ) -> str:
-    if not enabled or expected_rows is None or _has_outer_limit(self, source_sql):
+    if (
+        not enabled
+        or expected_rows is None
+        or expected_rows <= 0
+        or _has_outer_limit(self, source_sql)
+    ):
         return source_sql
     return f"{self.strip_query_semicolon(source_sql)}\nLIMIT {int(expected_rows)}"
 

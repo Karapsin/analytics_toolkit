@@ -45,7 +45,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `progress` - whether to show progress bars for supported multi-step or row-loading operations
 - `estimate_total_rows` - whether transfer should ask the source backend for a best-effort row estimate for progress
 - `validate_row_count` - whether transfer should count source rows and validate source, streamed, and stage-table row counts before target finalization
-- `ch_count_limit_read` - for ClickHouse sources, whether transfer should add a count-derived `LIMIT` to unbounded streamed reads during row-count validation
+- `ch_count_limit_read` - for ClickHouse sources, whether transfer should add a positive count-derived `LIMIT` to unbounded streamed reads during row-count validation; zero-count reads keep the original SQL
 - `table_schema` - explicit backend-native column type mapping for created tables
 - `transfer_keys` - optional placeholder name, placeholder-name sequence, or `{placeholder_name: sql_expression}` mapping used to split the source query into explicit keyed slices
 - `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{placeholder_name: values}`, while multiple keys require `{placeholder_name: values}` for every key
