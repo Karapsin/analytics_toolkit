@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.errors import SqlConfigError
 from analytics_toolkit.sql.execution.cancellation import (
     current_cancellation_scope,
     raise_if_cancelled,
@@ -78,7 +79,10 @@ def run_with_retry(
 
 def is_non_retryable_sql_error(exc: Exception) -> bool:
     """Return True for deterministic SQL errors that another attempt won't fix."""
-    if getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False:
+    if (
+        getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+        or isinstance(exc, SqlConfigError)
+    ):
         return True
     class_names = _exception_class_names(exc)
     if class_names & {
@@ -147,6 +151,8 @@ def _exception_message(exc: BaseException) -> str:
 
 
 _NON_RETRYABLE_MESSAGE_PATTERNS = (
+    "trino table operations for schema-qualified names require",
+    "trino table operations for unqualified names require",
     "syntax error",
     "syntax_error",
     "mismatched input",

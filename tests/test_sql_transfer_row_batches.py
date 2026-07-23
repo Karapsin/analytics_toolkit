@@ -863,6 +863,39 @@ def test_transfer_retries_clickhouse_stream_failure_with_smaller_batch(
     assert attempts == [(100, 500), (50, 50)]
 
 
+def test_transfer_does_not_full_retry_missing_trino_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        to_db_key="trino",
+        to_db_backend="trino",
+        target_table="pa_core_sandbox.karapsin_temp_users_filter",
+        replace_target_table=True,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=5,
+        full_timeout_increment=0,
+    )
+    error = ValueError(
+        "Trino table operations for schema-qualified names require "
+        ".connections['trino'].catalog."
+    )
+    attempts: list[int] = []
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+
+    def fail_attempt(**_kwargs: Any) -> int:
+        attempts.append(1)
+        raise error
+
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", fail_attempt)
+
+    with pytest.raises(ValueError, match="schema-qualified names require") as caught:
+        transfer_api_module.transfer_table("gp", "trino")
+
+    assert caught.value is error
+    assert attempts == [1]
+
+
 def test_transfer_exhausted_clickhouse_stream_failure_reports_retry_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

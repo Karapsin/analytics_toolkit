@@ -9,6 +9,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from analytics_toolkit.sql.connection.errors import SqlConfigError
+
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
 execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
 read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
@@ -288,6 +290,70 @@ def test_run_with_retry_does_not_retry_missing_type_message() -> None:
         raise AssertionError("Expected missing-type error to be raised.")
 
     assert attempts == [1]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError(
+            "Trino table operations for schema-qualified names require "
+            ".connections['trino'].catalog."
+        ),
+        ValueError(
+            "Trino table operations for unqualified names require "
+            ".connections['trino'].catalog and schema."
+        ),
+        SqlConfigError(".connections['trino'] is missing required configuration."),
+    ],
+)
+def test_run_with_retry_does_not_retry_deterministic_configuration_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise error
+
+    with pytest.raises(type(error)) as caught:
+        retry_module.run_with_retry(
+            operation_name="resolving Trino transfer target",
+            retry_cnt=5,
+            timeout_increment=600,
+            operation=operation,
+        )
+
+    assert caught.value is error
+    assert attempts == [1]
+    assert sleeps == []
+    output = capsys.readouterr().out
+    assert "Failed with a non-retryable error" in output
+    assert "Retrying in" not in output
+
+
+def test_run_with_retry_keeps_unrelated_value_error_retryable() -> None:
+    attempts: list[int] = []
+    temporary_error = ValueError("temporary response conversion failure")
+
+    def operation(attempt: int) -> str:
+        attempts.append(attempt)
+        if attempt == 1:
+            raise temporary_error
+        return "ok"
+
+    result = retry_module.run_with_retry(
+        operation_name="unit retry",
+        retry_cnt=2,
+        timeout_increment=0,
+        operation=operation,
+    )
+
+    assert result == "ok"
+    assert attempts == [1, 2]
 
 
 def test_execute_sql_retries_whole_flow_with_fresh_connection(monkeypatch) -> None:

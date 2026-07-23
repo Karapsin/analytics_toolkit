@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.0 - 2026-07-23
 
 - Stabilized concurrent keyed transfer test ordering.
 - Bounded first-poll GitHub status receipts.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Default SQL transfers to append unless write_mode is explicit.
 - Reduced agent workflow token and retry costs.
 - Fixed workflow metrics repeated-failure aggregation.
+- Stopped retries for deterministic SQL configuration errors.
 
 ## 1.3.10.19 - 2026-07-20
 
