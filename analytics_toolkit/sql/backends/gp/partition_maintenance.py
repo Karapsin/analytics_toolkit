@@ -30,6 +30,7 @@ from analytics_toolkit.general import time_print
 @dataclass(frozen=True)
 class _Options:
     connection_key: str
+    table_names: tuple[str, ...]
     partition_names: tuple[str, ...] | None
     concurrency: int
     retry_cnt: int
@@ -41,9 +42,18 @@ class _Options:
 
 
 _LEAF_PARTITIONS_SQL = """
+WITH RECURSIVE descendants AS (
+    SELECT inheritance.inhrelid AS relation_oid
+    FROM pg_catalog.pg_inherits AS inheritance
+    WHERE inheritance.inhparent = to_regclass('{parent_table}')
+    UNION
+    SELECT inheritance.inhrelid
+    FROM pg_catalog.pg_inherits AS inheritance
+    JOIN descendants ON descendants.relation_oid = inheritance.inhparent
+)
 SELECT namespace.nspname AS schema_name, relation.relname AS relation_name
-FROM pg_catalog.pg_inherits AS inheritance
-JOIN pg_catalog.pg_class AS relation ON relation.oid = inheritance.inhrelid
+FROM descendants
+JOIN pg_catalog.pg_class AS relation ON relation.oid = descendants.relation_oid
 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
 WHERE NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_inherits AS child_inheritance
@@ -56,6 +66,7 @@ ORDER BY namespace.nspname, relation.relname
 @timed_public_sql_function
 def gp_analyze_partitioned_table(
     db_key: str,
+    table_name: str | Sequence[str],
     partition_names: str | Sequence[str] | None = None,
     *,
     concurrency: int = 1,
@@ -68,6 +79,7 @@ def gp_analyze_partitioned_table(
 ) -> SqlPlan | SqlOperationResult | None:
     options = _build_options(
         db_key,
+        table_name,
         partition_names,
         concurrency,
         retry_cnt,
@@ -77,9 +89,8 @@ def gp_analyze_partitioned_table(
         return_sql,
         return_metadata,
     )
-    names = (
-        list(options.partition_names) if options.partition_names is not None else _discover(options)
-    )
+    names_by_table = _resolve_partitions(options)
+    names = [name for group in names_by_table for name in group]
     plan = _build_plan(options, names)
     if options.dry_run or options.return_sql:
         return plan
@@ -89,7 +100,12 @@ def gp_analyze_partitioned_table(
             connection=options.connection_key,
             backend="gp",
         )
-        attempts = _execute_all(options, names, plan.sqls)
+        attempts = []
+        statement_offset = 0
+        for group in names_by_table:
+            group_sqls = plan.sqls[statement_offset : statement_offset + len(group)]
+            attempts.extend(_execute_all(options, group, group_sqls))
+            statement_offset += len(group)
         plan.metadata.retry_attempts = max(item.retry_attempts or 0 for item in attempts)
     plan.metadata.operation_status = "success"
     if options.return_metadata:
@@ -99,6 +115,7 @@ def gp_analyze_partitioned_table(
 
 def _build_options(
     db_key: str,
+    table_name: str | Sequence[str],
     partition_names: str | Sequence[str] | None,
     concurrency: int,
     retry_cnt: int,
@@ -118,7 +135,8 @@ def _build_options(
     validate_retry_options(retry_cnt, timeout_increment)
     return _Options(
         connection_key=config.connection_key,
-        partition_names=_normalize_names(partition_names),
+        table_names=_normalize_names(table_name, "table_name"),
+        partition_names=_normalize_names(partition_names, "partition_names"),
         concurrency=concurrency,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -129,7 +147,9 @@ def _build_options(
     )
 
 
-def _normalize_names(value: str | Sequence[str] | None) -> tuple[str, ...] | None:
+def _normalize_names(
+    value: str | Sequence[str] | None, argument_name: str
+) -> tuple[str, ...] | None:
     if value is None:
         return None
     raw_names = (
@@ -137,34 +157,51 @@ def _normalize_names(value: str | Sequence[str] | None) -> tuple[str, ...] | Non
     )
     if raw_names is None:
         raise InvalidSqlInputError(
-            "partition_names must be a fully qualified table name or sequence of names."
+            f"{argument_name} must be a fully qualified table name or sequence of names."
         )
     if not raw_names:
-        raise InvalidSqlInputError("partition_names must not be empty.")
+        raise InvalidSqlInputError(f"{argument_name} must not be empty.")
     names: list[str] = []
     for raw_name in raw_names:
         if not isinstance(raw_name, str):
-            raise InvalidSqlInputError("partition_names must contain strings.")
+            raise InvalidSqlInputError(f"{argument_name} must contain strings.")
         try:
             identifier = TableIdentifier.parse(raw_name.strip(), "gp")
         except ValueError as exc:
             raise InvalidSqlInputError(
-                "partition_names must contain valid fully qualified table names."
+                f"{argument_name} must contain valid fully qualified table names."
             ) from exc
         if len(identifier.parts) != 2:
-            raise InvalidSqlInputError("partition_names must contain schema-qualified table names.")
+            raise InvalidSqlInputError(f"{argument_name} must contain schema-qualified table names.")
         names.append(identifier.render_quoted("gp"))
     if len(set(names)) != len(names):
-        raise InvalidSqlInputError("partition_names must not contain duplicates.")
+        raise InvalidSqlInputError(f"{argument_name} must not contain duplicates.")
     return tuple(names)
 
 
-def _discover(options: _Options) -> list[str]:
+def _resolve_partitions(options: _Options) -> list[list[str]]:
+    requested = set(options.partition_names or ())
+    resolved: list[list[str]] = []
+    for parent_table in options.table_names:
+        discovered = _discover(options, parent_table)
+        selected = discovered if options.partition_names is None else [
+            name for name in discovered if name in requested
+        ]
+        requested.difference_update(selected)
+        resolved.append(selected)
+    if requested:
+        raise InvalidSqlInputError(
+            "partition_names must identify leaf partitions of table_name."
+        )
+    return resolved
+
+
+def _discover(options: _Options, parent_table: str) -> list[str]:
     from ...dml.io.read_sql import read_sql
 
     partitions = read_sql(
         options.connection_key,
-        _LEAF_PARTITIONS_SQL,
+        _LEAF_PARTITIONS_SQL.format(parent_table=parent_table.replace("'", "''")),
         retry_cnt=options.retry_cnt,
         timeout_increment=options.timeout_increment,
         query_label=options.query_label,
@@ -184,7 +221,7 @@ def _build_plan(options: _Options, names: Sequence[str]) -> SqlPlan:
         target_backend="gp",
         options={
             "partition_names": list(names),
-            "discovered_partitions": options.partition_names is None,
+            "table_names": list(options.table_names),
             "concurrency": options.concurrency,
         },
         metadata=SqlOperationMetadata(statement_count=len(names), query_label=options.query_label),

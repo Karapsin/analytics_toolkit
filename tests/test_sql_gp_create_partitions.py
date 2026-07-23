@@ -58,6 +58,7 @@ def test_gp_analyze_partitioned_table_is_public_and_timed() -> None:
 def test_gp_analyze_partitioned_table_builds_labeled_plan() -> None:
     plan = gp_maintenance_module.gp_analyze_partitioned_table(
         "gp",
+        "reporting.events",
         ["reporting.events_1_prt_2026_01", "reporting.events_1_prt_2026_02"],
         concurrency=2,
         dry_run=True,
@@ -99,7 +100,9 @@ def test_gp_analyze_partitioned_table_discovers_leaf_partitions_for_dry_run(
     read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
     monkeypatch.setattr(read_sql_module, "read_sql", discover)
 
-    plan = gp_maintenance_module.gp_analyze_partitioned_table("gp", dry_run=True)
+    plan = gp_maintenance_module.gp_analyze_partitioned_table(
+        "gp", "analytics.orders", dry_run=True
+    )
 
     assert len(calls) == 1
     assert "FROM pg_catalog.pg_inherits" in calls[0]
@@ -124,14 +127,16 @@ def test_gp_analyze_partitioned_table_validates_partition_names(
     message: str,
 ) -> None:
     with pytest.raises(InvalidSqlInputError, match=message):
-        gp_maintenance_module.gp_analyze_partitioned_table("gp", partition_names, dry_run=True)
+        gp_maintenance_module.gp_analyze_partitioned_table(
+            "gp", "analytics.orders", partition_names, dry_run=True
+        )
 
 
 @pytest.mark.parametrize("concurrency", [0, True, 1.5])
 def test_gp_analyze_partitioned_table_validates_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="integer >= 1"):
         gp_maintenance_module.gp_analyze_partitioned_table(
-            "gp", "analytics.orders_1_prt_a", concurrency=concurrency, dry_run=True
+            "gp", "analytics.orders", "analytics.orders_1_prt_a", concurrency=concurrency, dry_run=True
         )
 
 
@@ -147,6 +152,7 @@ def test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connect
 
     result = gp_maintenance_module.gp_analyze_partitioned_table(
         "gp",
+        "analytics.orders",
         ["analytics.orders_1_prt_a", "analytics.orders_1_prt_b"],
         retry_cnt=1,
         timeout_increment=0,
@@ -204,6 +210,7 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
     with pytest.raises(RuntimeError, match="analyze failed"):
         gp_maintenance_module.gp_analyze_partitioned_table(
             "gp",
+            "analytics.orders",
             [
                 "analytics.orders_1_prt_a",
                 "analytics.orders_1_prt_b",
