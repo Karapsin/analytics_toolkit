@@ -19,60 +19,28 @@ import analytics_toolkit.general as general_module
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-attempt_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.attempt"
-)
+attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
-finalize_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.finalize"
-)
-transfer_stage_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.stage"
-)
+finalize_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.finalize")
+transfer_stage_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.stage")
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
-transfer_options_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.options"
-)
+transfer_options_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.options")
 keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keys")
-estimate_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.estimate"
-)
-row_counts_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.row_counts"
-)
-progress_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.progress"
-)
-dry_run_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.dry_run"
-)
-keyed_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.keyed"
-)
-transfer_logging_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.logging"
-)
-staging_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.staging"
-)
-load_sql_table_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.load.load_sql_table"
-)
-transfer_api_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.api"
-)
-models_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.runtime.models"
-)
-retry_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.runtime.retry"
-)
+estimate_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.estimate")
+row_counts_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.row_counts")
+progress_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.progress")
+dry_run_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.dry_run")
+keyed_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keyed")
+transfer_logging_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.logging")
+staging_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.staging")
+load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
+transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
+models_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.models")
+retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
 source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.source")
-backend_adapters_module = importlib.import_module(
-    "analytics_toolkit.sql.backend_adapters"
-)
+backend_adapters_module = importlib.import_module("analytics_toolkit.sql.backend_adapters")
 
 
 class RecordingSourceCursor:
@@ -225,7 +193,11 @@ def make_progress_options(**overrides: Any) -> Any:
     return models_module.TransferOptions(**values)
 
 
-def make_gp_config(connection_key: str) -> Any:
+def make_gp_config(
+    connection_key: str,
+    *,
+    transfer_staging_schema: str | None = None,
+) -> Any:
     return config_module.GpConfig(
         connection_key=connection_key,
         backend="gp",
@@ -243,7 +215,7 @@ def make_gp_config(connection_key: str) -> Any:
         ca_certs=[],
         ssl_cert=None,
         ssl_key=None,
-        transfer_staging_schema=None,
+        transfer_staging_schema=transfer_staging_schema,
     )
 
 
@@ -296,8 +268,7 @@ def make_trino_config(
         transfer_staging_schema=transfer_staging_schema,
         transfer_staging_location=transfer_staging_location,
         upsert_partition_drop_sql_template=(
-            "ALTER TABLE {table} DROP PARTITION "
-            "({partition_column} = {partition_value})"
+            "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
     )
 
@@ -320,9 +291,7 @@ def test_normalize_transfer_keys_accepts_list_keys_in_order() -> None:
 
 
 def test_normalize_transfer_keys_accepts_mapping_expression_key() -> None:
-    keys = keys_module.normalize_transfer_keys(
-        {" user_id_suffix ": " right(user_id, 1) "}
-    )
+    keys = keys_module.normalize_transfer_keys({" user_id_suffix ": " right(user_id, 1) "})
 
     assert keys == [
         keys_module.TransferKey(
@@ -369,10 +338,7 @@ def test_normalize_transfer_slices_accepts_single_key_mapping_values() -> None:
 
 def test_normalize_transfer_slices_builds_multi_key_cartesian_values() -> None:
     keys, expressions, values, slices, _concurrency = keys_module.normalize_transfer_slices(
-        source_sql=(
-            "select id, event_date from events "
-            "where {event_date} and {user_id_suffix}"
-        ),
+        source_sql=("select id, event_date from events where {event_date} and {user_id_suffix}"),
         transfer_keys={
             "event_date": "event_date",
             "user_id_suffix": "right(user_id, 1)",
@@ -402,10 +368,7 @@ def test_normalize_transfer_slices_builds_multi_key_cartesian_values() -> None:
     assert "(event_date) = '2025-01-01'\n  AND (right(user_id, 1)) = '0'" in (
         slices[0].predicate_sql
     )
-    assert (
-        "where (event_date) = '2025-01-01' and (right(user_id, 1)) = '0'"
-        in slices[0].source_sql
-    )
+    assert "where (event_date) = '2025-01-01' and (right(user_id, 1)) = '0'" in slices[0].source_sql
 
 
 @pytest.mark.parametrize(
@@ -545,13 +508,11 @@ def test_normalize_transfer_slices_rejects_duplicate_placeholder() -> None:
 
 
 def test_normalize_transfer_slices_leaves_unknown_brace_text() -> None:
-    _keys, _expressions, _values, slices, _concurrency = (
-        keys_module.normalize_transfer_slices(
-            source_sql="select '{not_a_transfer_key}' as token where {id}",
-            transfer_keys="id",
-            transfer_key_values=[1],
-            concurrency=1,
-        )
+    _keys, _expressions, _values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql="select '{not_a_transfer_key}' as token where {id}",
+        transfer_keys="id",
+        transfer_key_values=[1],
+        concurrency=1,
     )
 
     assert "{not_a_transfer_key}" in slices[0].source_sql
@@ -817,9 +778,7 @@ def test_run_transfer_attempt_aborts_stream_failure_before_finalize(
     monkeypatch.setattr(
         attempt_module,
         "load_stage_batches",
-        lambda *_args, **_kwargs: events.append("load") or (_ for _ in ()).throw(
-            stream_error
-        ),
+        lambda *_args, **_kwargs: events.append("load") or (_ for _ in ()).throw(stream_error),
     )
     monkeypatch.setattr(
         attempt_module,
@@ -883,9 +842,7 @@ def test_transfer_retries_clickhouse_stream_failure_with_smaller_batch(
                 connection_key="ch_source",
                 backend="ch",
                 query=options.source_sql,
-                original_exception=ProtocolError(
-                    "unexpected failure to read next chunk"
-                ),
+                original_exception=ProtocolError("unexpected failure to read next chunk"),
             )
         return 3
 
@@ -937,19 +894,14 @@ def test_transfer_exhausted_clickhouse_stream_failure_reports_retry_context(
                 connection_key="ch_source",
                 backend="ch",
                 query=kwargs["options"].source_sql,
-                original_exception=ProtocolError(
-                    "unexpected failure to read next chunk"
-                ),
+                original_exception=ProtocolError("unexpected failure to read next chunk"),
             )
         ),
     )
 
     with pytest.raises(
         source_module.TransferSourceStreamReadError,
-        match=(
-            "target_table=sandbox.target; full_retry_attempt=1; "
-            "retry_batch_size=100"
-        ),
+        match=("target_table=sandbox.target; full_retry_attempt=1; retry_batch_size=100"),
     ):
         transfer_api_module.transfer_table(
             from_db="ch_source",
@@ -996,9 +948,13 @@ def test_run_transfer_attempt_validates_expected_streamed_and_stage_rows(
     )
     monkeypatch.setattr(attempt_module, "ensure_transfer_target_table", lambda *a, **k: None)
     monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
-    monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda *a, **k: events.append("finalize"))
+    monkeypatch.setattr(
+        attempt_module, "finalize_loaded_stage", lambda *a, **k: events.append("finalize")
+    )
     monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: events.append("cleanup"))
-    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: events.append("close"))
+    monkeypatch.setattr(
+        attempt_module, "close_connection_ref", lambda *a, **k: events.append("close")
+    )
     monkeypatch.setattr(
         row_counts_module,
         "count_source_rows",
@@ -1031,6 +987,211 @@ def test_run_transfer_attempt_validates_expected_streamed_and_stage_rows(
         "cleanup",
         "close",
     ]
+
+
+def test_row_count_validation_materializes_source_once_when_schema_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[Any, ...]] = []
+    source_connection = FakeTransferConnection("source")
+    options = make_progress_options(
+        validate_row_count=True,
+        source_transfer_staging_schema="scratch",
+        source_transfer_staging_username="source_user",
+    )
+    stage_state = models_module.TransferStageState(target_exists=False)
+
+    class MaterializingAdapter:
+        def build_materialize_transfer_source_sql(
+            self,
+            table_name: str,
+            source_sql: str,
+            *,
+            query_label: str | None = None,
+        ) -> str:
+            events.append(("build_materialize", table_name, source_sql, query_label))
+            return f"CREATE TABLE {table_name} AS {source_sql}"
+
+        def execute_command(self, connection: Any, sql: str) -> None:
+            events.append(("materialize", connection, sql))
+
+        def count_table_rows(
+            self,
+            connection: Any,
+            table_name: str,
+            *,
+            query_label: str | None = None,
+        ) -> int:
+            events.append(("count", connection, table_name, query_label))
+            return 7
+
+        def source_sql_for_count_limited_read(self, **kwargs: Any) -> str:
+            return str(kwargs["source_sql"])
+
+        def drop_table(self, connection: Any, table_name: str, **kwargs: Any) -> None:
+            events.append(("drop", connection, table_name, kwargs))
+
+    adapter = MaterializingAdapter()
+    monkeypatch.setattr(row_counts_module, "get_backend_adapter", lambda _backend: adapter)
+
+    prepared = row_counts_module.prepare_row_count_validated_options(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(
+            source={"connection": source_connection}
+        ),
+        stage_state=stage_state,
+    )
+
+    assert prepared.source_sql.startswith(
+        "SELECT * FROM scratch.source_result__analytics_toolkit_source_user__stage__"
+    )
+    assert stage_state.expected_source_rows == 7
+    assert [event[0] for event in events] == [
+        "build_materialize",
+        "materialize",
+        "count",
+    ]
+    assert events[0][2] == options.source_sql
+
+    row_counts_module.cleanup_materialized_sources(
+        options=options,
+        connection_ref={"connection": source_connection},
+        stage_state=stage_state,
+    )
+
+    assert [event[0] for event in events] == [
+        "build_materialize",
+        "materialize",
+        "count",
+        "drop",
+    ]
+    assert stage_state.source_stage_tables == []
+
+
+def test_materialized_source_retries_create_count_and_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_connection = FakeTransferConnection("source")
+    source_ref = {"connection": source_connection}
+    options = make_progress_options(
+        validate_row_count=True,
+        source_transfer_staging_schema="scratch",
+        source_transfer_staging_username="source_user",
+        retry_cnt=2,
+        timeout_increment=0,
+    )
+    stage_state = models_module.TransferStageState(target_exists=False)
+    replacements: list[str] = []
+
+    class RetryingAdapter:
+        execute_calls = 0
+        count_calls = 0
+        drop_calls = 0
+        cleanup_phase = False
+
+        def build_materialize_transfer_source_sql(self, *_args: Any, **_kwargs: Any) -> str:
+            return "CREATE TABLE scratch.source_result AS SELECT 1"
+
+        def execute_command(self, _connection: Any, _sql: str) -> None:
+            self.execute_calls += 1
+            if self.execute_calls == 1:
+                raise RuntimeError("create failed")  # noqa: EM101, TRY003
+
+        def count_table_rows(self, *_args: Any, **_kwargs: Any) -> int:
+            self.count_calls += 1
+            if self.count_calls == 1:
+                raise RuntimeError("count failed")  # noqa: EM101, TRY003
+            return 4
+
+        def drop_table(self, *_args: Any, **_kwargs: Any) -> None:
+            self.drop_calls += 1
+            if self.cleanup_phase and self.drop_calls == 2:
+                raise RuntimeError("drop failed")  # noqa: EM101, TRY003
+
+    adapter = RetryingAdapter()
+
+    def retry_operation(*, operation: Any, **_kwargs: Any) -> Any:
+        try:
+            return operation(1)
+        except RuntimeError:
+            return operation(2)
+
+    monkeypatch.setattr(row_counts_module, "get_backend_adapter", lambda _backend: adapter)
+    monkeypatch.setattr(row_counts_module, "run_with_retry", retry_operation)
+    monkeypatch.setattr(
+        row_counts_module,
+        "replace_connection",
+        lambda connection_key, _ref: replacements.append(connection_key),
+    )
+    monkeypatch.setattr(
+        row_counts_module,
+        "build_stage_table_name",
+        lambda *_args, **_kwargs: "scratch.source_result__stage__fixed",
+    )
+
+    source_sql = row_counts_module._materialize_source_with_retry(
+        options,
+        source_ref,
+        stage_state,
+    )
+    assert source_sql == "SELECT * FROM scratch.source_result__stage__fixed"
+    assert (
+        row_counts_module._count_materialized_source_rows_with_retry(
+            options,
+            source_ref,
+            stage_state.source_stage_tables[0],
+        )
+        == 4
+    )
+
+    adapter.cleanup_phase = True
+    row_counts_module.cleanup_materialized_sources(options, source_ref, stage_state)
+
+    assert adapter.execute_calls == 2
+    assert adapter.count_calls == 2
+    assert adapter.drop_calls == 3
+    assert replacements == ["gp", "gp", "gp"]
+    assert source_connection.rollback_calls == 3
+    assert stage_state.source_stage_tables == []
+
+
+def test_materialized_source_requires_source_staging_schema() -> None:
+    options = make_progress_options(source_transfer_staging_schema=None)
+    with pytest.raises(RuntimeError, match="source transfer staging schema"):
+        row_counts_module._materialize_source_with_retry(
+            options,
+            {"connection": FakeTransferConnection("source")},
+            models_module.TransferStageState(target_exists=False),
+        )
+
+
+@pytest.mark.parametrize("target_cleanup_fails", [False, True])
+def test_transfer_attempt_cleanup_captures_source_cleanup_error(
+    monkeypatch: pytest.MonkeyPatch,
+    target_cleanup_fails: bool,
+) -> None:
+    source_error = RuntimeError("source cleanup failed")
+    target_error = RuntimeError("target cleanup failed")
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_materialized_sources",
+        lambda *_args: (_ for _ in ()).throw(source_error),
+    )
+
+    def cleanup_target(**_kwargs: Any) -> None:
+        if target_cleanup_fails:
+            raise target_error
+
+    result = finalize_module.cleanup_transfer_attempt_stages(
+        make_progress_options(),
+        models_module.TransferConnectionRefs(source={"connection": object()}),
+        models_module.TransferStageState(target_exists=False),
+        1,
+        None,
+        cleanup_target,
+    )
+
+    assert result is (target_error if target_cleanup_fails else source_error)
 
 
 def test_run_transfer_attempt_fails_before_finalize_when_stage_count_mismatches(
@@ -1077,7 +1238,9 @@ def test_run_transfer_attempt_fails_before_finalize_when_stage_count_mismatches(
         lambda *a, **k: events.append("finalize"),
     )
     monkeypatch.setattr(attempt_module, "cleanup_stage", lambda *a, **k: events.append("cleanup"))
-    monkeypatch.setattr(attempt_module, "close_connection_ref", lambda *a, **k: events.append("close"))
+    monkeypatch.setattr(
+        attempt_module, "close_connection_ref", lambda *a, **k: events.append("close")
+    )
     monkeypatch.setattr(row_counts_module, "count_source_rows", lambda *_args, **_kwargs: 7)
     monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 6)
 
@@ -1152,9 +1315,7 @@ def test_clickhouse_transfer_streams_with_count_limit_when_source_has_no_limit(
     )
 
     assert total_rows == 6_582_921
-    assert streamed_sql == [
-        "select distinct magnit_id from source_table\nLIMIT 6582921"
-    ]
+    assert streamed_sql == ["select distinct magnit_id from source_table\nLIMIT 6582921"]
 
 
 def test_keyed_worker_validates_each_slice_count(
@@ -1162,7 +1323,10 @@ def test_keyed_worker_validates_each_slice_count(
 ) -> None:
     source_conn = FakeTransferConnection("source")
     count_values = iter([2, 3])
-    streamed_by_sql = {"select id from source where id = 1": 2, "select id from source where id = 2": 3}
+    streamed_by_sql = {
+        "select id from source where id = 1": 2,
+        "select id from source where id = 2": 3,
+    }
     options = make_progress_options(
         from_db_key="source_db",
         from_db_backend="gp",
@@ -1613,9 +1777,7 @@ def test_gp_insert_rows_retry_replaces_closed_connection(
         connection_key="target_alias",
         rollback_fn=retry_module.rollback_quietly,
         replace_connection_fn=fake_replace_connection,
-        on_success=lambda duration, inserted_rows: success_calls.append(
-            (duration, inserted_rows)
-        ),
+        on_success=lambda duration, inserted_rows: success_calls.append((duration, inserted_rows)),
     )
 
     assert rows == 1
@@ -1652,9 +1814,7 @@ def test_keyed_gp_worker_retry_refreshes_only_failed_worker_connection(
 
     def fake_get_sql_connection(connection_key: str) -> FakeTransferConnection:
         with lock:
-            connection = FakeTransferConnection(
-                f"{connection_key}-{len(opened_connections)}"
-            )
+            connection = FakeTransferConnection(f"{connection_key}-{len(opened_connections)}")
             opened_connections.append((connection_key, connection.name))
             return connection
 
@@ -1727,13 +1887,16 @@ def test_keyed_gp_worker_retry_refreshes_only_failed_worker_connection(
         for table_name, connection_name in insert_calls
         if table_name.endswith("w00000")
     ] == [replaced_connections[0][1], "target_db-replacement-0"]
-    assert len(
-        {
-            connection_name
-            for table_name, connection_name in insert_calls
-            if table_name.endswith("w00001")
-        }
-    ) == 1
+    assert (
+        len(
+            {
+                connection_name
+                for table_name, connection_name in insert_calls
+                if table_name.endswith("w00001")
+            }
+        )
+        == 1
+    )
 
 
 def test_keyed_worker_failure_skips_finalize_and_still_cleans_stage(
@@ -1932,9 +2095,7 @@ def test_initialize_keyed_row_stages_creates_one_stage_per_worker(
         f"__w{worker_index:05d}" for worker_index in range(5)
     ]
     assert stage_state.stage_table == "stage_" + created[0]["random_suffix"]
-    assert stage_state.stage_tables == [
-        "stage_" + item["random_suffix"] for item in created
-    ]
+    assert stage_state.stage_tables == ["stage_" + item["random_suffix"] for item in created]
 
 
 def test_consolidate_keyed_worker_stages_inserts_into_aggregate_sequentially(
@@ -2088,8 +2249,8 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
             or [
-            "target__analytics_toolkit_target_user__stage__match",
-            "other__analytics_toolkit_target_user__stage__ignore",
+                "target__analytics_toolkit_target_user__stage__match",
+                "other__analytics_toolkit_target_user__stage__ignore",
             ]
         ),
     )
@@ -2131,10 +2292,10 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
             or [
-            "target__analytics_toolkit_target_user__stage__match",
-            "other__analytics_toolkit_target_user__stage__match",
-            "target__analytics_toolkit_other_user__stage__ignore",
-            "plain_table",
+                "target__analytics_toolkit_target_user__stage__match",
+                "other__analytics_toolkit_target_user__stage__match",
+                "target__analytics_toolkit_other_user__stage__ignore",
+                "plain_table",
             ]
         ),
     )
@@ -2255,8 +2416,8 @@ def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
             or [
-            "target__analytics_toolkit_target_user__stage__match",
-            "target__analytics_toolkit_other_user__stage__ignore",
+                "target__analytics_toolkit_target_user__stage__match",
+                "target__analytics_toolkit_other_user__stage__ignore",
             ]
         ),
     )
@@ -2306,9 +2467,7 @@ def test_cleanup_stale_stage_tables_explicit_stage_tables_allow_missing_target_t
         stage_tables=["target__analytics_toolkit_target_user__stage__explicit"],
     )
 
-    assert discovered == [
-        "transfer_schema.target__analytics_toolkit_target_user__stage__explicit"
-    ]
+    assert discovered == ["transfer_schema.target__analytics_toolkit_target_user__stage__explicit"]
 
 
 def test_cleanup_stale_stage_tables_requires_target_table_for_target_discovery(
@@ -2622,10 +2781,7 @@ def test_transfer_options_enable_parquet_staging_for_trino_target_with_location(
 
     assert options.trino_mode == "parquet"
     assert options.transfer_staging_schema == "object_storage.sandbox"
-    assert (
-        options.transfer_staging_location
-        == "s3://bucket/tmp/analytics_toolkit_transfer"
-    )
+    assert options.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
@@ -2653,6 +2809,33 @@ def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
     assert options.transfer_staging_location is None
 
 
+def test_transfer_options_use_source_connection_staging_schema_for_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "gp_source": make_gp_config(
+            "gp_source",
+            transfer_staging_schema="source_scratch",
+        ),
+        "trino": make_trino_config("trino", transfer_staging_location=None),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db="gp_source",
+        to_db="trino",
+        from_sql="select id from source_table",
+        to_table="sandbox.target",
+    )
+
+    assert options.source_transfer_staging_schema == "source_scratch"
+    assert options.source_transfer_staging_username == "source_user"
+
+
 def test_transfer_options_explicit_values_mode_disables_parquet_staging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2676,10 +2859,7 @@ def test_transfer_options_explicit_values_mode_disables_parquet_staging(
 
     assert options.trino_mode == "values"
     assert options.transfer_staging_schema == "object_storage.sandbox"
-    assert (
-        options.transfer_staging_location
-        == "s3://bucket/tmp/analytics_toolkit_transfer"
-    )
+    assert options.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_transfer_options_reject_explicit_parquet_without_location(
@@ -2900,8 +3080,7 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     )
     assert any(
         sql.startswith("CREATE TABLE object_storage.sandbox.target__")
-        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
-        in sql
+        and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls
     )
     assert any(
@@ -2912,13 +3091,8 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     assert "DROP TABLE IF EXISTS sandbox.target" in plan.sqls
     assert "DELETE FROM sandbox.target" not in plan.sqls
     assert any(sql.startswith("INSERT INTO sandbox.target") for sql in plan.sqls)
-    assert any(
-        sql.startswith("DROP TABLE IF EXISTS object_storage.sandbox")
-        for sql in plan.sqls
-    )
-    assert any(
-        sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls
-    )
+    assert any(sql.startswith("DROP TABLE IF EXISTS object_storage.sandbox") for sql in plan.sqls)
+    assert any(sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls)
 
 
 def test_transfer_dry_run_values_mode_uses_row_stage_plan(
@@ -2950,8 +3124,7 @@ def test_transfer_dry_run_values_mode_uses_row_stage_plan(
     assert not any(sql.startswith("WRITE PARQUET FILES TO ") for sql in plan.sqls)
     assert not any(sql.startswith("DELETE STAGE FILES ") for sql in plan.sqls)
     assert any(
-        sql.startswith("INSERT INTO ")
-        and " SELECT * FROM (<source batches>)" in sql
+        sql.startswith("INSERT INTO ") and " SELECT * FROM (<source batches>)" in sql
         for sql in plan.sqls
     )
 
@@ -3013,9 +3186,7 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
 
     assert plan.options["transfer_keys"] == ["event_date"]
     assert plan.options["transfer_key_expressions"] == {"event_date": "event_date"}
-    assert plan.options["transfer_key_values"] == {
-        "event_date": ["2025-01-01", "2025-01-02"]
-    }
+    assert plan.options["transfer_key_values"] == {"event_date": ["2025-01-01", "2025-01-02"]}
     assert plan.options["concurrency"] == 2
     assert plan.options["transfer_slice_count"] == 2
     read_source_sqls = [
@@ -3024,9 +3195,7 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     assert len(read_source_sqls) == 2
     assert all("analytics_toolkit_transfer_source" not in sql for sql in read_source_sqls)
     assert all("SELECT *\nFROM (" not in sql for sql in read_source_sqls)
-    assert read_source_sqls[0].startswith(
-        "select id, event_date from source_table where "
-    )
+    assert read_source_sqls[0].startswith("select id, event_date from source_table where ")
     assert "(event_date) = '2025-01-01'" in read_source_sqls[0]
     assert "(event_date) = '2025-01-02'" in read_source_sqls[1]
     assert plan.options["worker_stage_count"] == 2
@@ -3069,9 +3238,7 @@ def test_transfer_dry_run_shows_keyed_from_table_slice_plan(
     assert plan.options["from_table"] == "sandbox.source_table"
     assert plan.options["transfer_keys"] == ["event_date"]
     assert plan.options["transfer_key_expressions"] == {"event_date": "event_date"}
-    assert plan.options["transfer_key_values"] == {
-        "event_date": ["2025-01-01", "2025-01-02"]
-    }
+    assert plan.options["transfer_key_values"] == {"event_date": ["2025-01-01", "2025-01-02"]}
     assert plan.options["concurrency"] == 2
     assert plan.options["transfer_slice_count"] == 2
     read_source_sqls = [
@@ -3121,10 +3288,7 @@ def test_transfer_dry_run_keyed_row_staging_uses_per_worker_stage_tables(
     assert phases.count("insert_target") == 1
     assert phases.count("drop_stage") == 5
     assert all("__stage__dryrun__w" in stage for stage in plan.metadata.stage_tables)
-    assert any(
-        "worker 0 streamed keyed source slice batches [0, 5, 10" in sql
-        for sql in plan.sqls
-    )
+    assert any("worker 0 streamed keyed source slice batches [0, 5, 10" in sql for sql in plan.sqls)
 
 
 def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_partition_replacement(
@@ -3808,9 +3972,7 @@ def test_transfer_options_validate_batch_memory_bounds(
     min_batch_memory_mb: Any,
     max_batch_memory_mb: Any,
 ) -> None:
-    match = (
-        "min_batch_memory_mb" if min_batch_memory_mb is not None else "max_batch_memory_mb"
-    )
+    match = "min_batch_memory_mb" if min_batch_memory_mb is not None else "max_batch_memory_mb"
     with pytest.raises(ValueError, match=match):
         transfer_api_module.build_transfer_options(
             from_db="gp",
@@ -4533,7 +4695,7 @@ def test_keyed_parquet_writer_includes_slice_and_part_in_filename() -> None:
 
 def test_load_parquet_stage_infers_schema_from_first_row_group(
     monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+) -> None:
     source = RecordingSourceConnection(rows=[(1, "a")])
     source.cursor_obj.description = [
         ("id", 23, None, None, None, None),
@@ -4693,11 +4855,9 @@ def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
     monkeypatch.setattr(
         finalize_module,
         "cleanup_stage_table_with_retry",
-        lambda connection_type,
-        connection_key,
-        connection_ref,
-        stage_table,
-        **kwargs: dropped.append(stage_table),
+        lambda connection_type, connection_key, connection_ref, stage_table, **kwargs: (
+            dropped.append(stage_table)
+        ),
     )
     monkeypatch.setattr(
         finalize_module,
@@ -4808,9 +4968,7 @@ def test_write_batch_to_parquet_stage_uses_one_spooled_file_without_getvalue(
     monkeypatch.setattr(
         parquet_stage_module,
         "upload_spooled_file",
-        lambda fsspec_module, spooled_file, remote_uri: uploads.append(
-            (remote_uri, spooled_file)
-        ),
+        lambda fsspec_module, spooled_file, remote_uri: uploads.append((remote_uri, spooled_file)),
     )
 
     row_count = parquet_stage_module.write_batch_to_parquet_stage(
@@ -5007,7 +5165,7 @@ def test_load_stage_batches_updates_progress_bar(monkeypatch) -> None:
         "desc": "transfer_table gp_sandbox.sandbox.target",
         "unit": "row",
         "disable": False,
-            "bar_format": progress_module._TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT,
+        "bar_format": progress_module._TRANSFER_PROGRESS_UNKNOWN_TOTAL_FORMAT,
     }
     assert progress_bars[0].updates == [2, 1]
     assert progress_bars[0].closed is True
@@ -5228,10 +5386,7 @@ def test_load_stage_batches_estimated_total_sets_progress_bar_total(
 
     assert total_rows == 3
     assert progress_bars[0].kwargs["total"] == 3
-    assert (
-            progress_bars[0].kwargs["bar_format"]
-            == progress_module._TRANSFER_PROGRESS_TOTAL_FORMAT
-        )
+    assert progress_bars[0].kwargs["bar_format"] == progress_module._TRANSFER_PROGRESS_TOTAL_FORMAT
     assert progress_bars[0].updates == [2, 1]
     assert progress_bars[0].closed is True
 
@@ -5418,8 +5573,7 @@ def test_transfer_progress_bar_formats_unknown_total_counts(monkeypatch) -> None
     progress_bar.update(1_722_355)
 
     assert progress_bars[0].rendered == [
-        "transfer_table gp_sandbox.sandbox.target: "
-        "1_722_355row [00:00, 14087.46row/s]"
+        "transfer_table gp_sandbox.sandbox.target: 1_722_355row [00:00, 14087.46row/s]"
     ]
 
 
@@ -5797,11 +5951,14 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
 def test_row_count_direct_failure_and_worker_paths() -> None:
     disabled = make_progress_options(validate_row_count=False)
     state = models_module.TransferStageState(target_exists=False)
-    assert row_counts_module.prepare_row_count_validated_options(
-        options=disabled,
-        connection_refs=models_module.TransferConnectionRefs(),
-        stage_state=state,
-    ) is disabled
+    assert (
+        row_counts_module.prepare_row_count_validated_options(
+            options=disabled,
+            connection_refs=models_module.TransferConnectionRefs(),
+            stage_state=state,
+        )
+        is disabled
+    )
 
     enabled = make_progress_options(validate_row_count=True)
     with pytest.raises(RuntimeError, match="slice source row count"):
@@ -5846,12 +6003,15 @@ def test_row_count_direct_failure_and_worker_paths() -> None:
 def test_count_loaded_stage_rows_empty_missing_and_format_fallback() -> None:
     options = make_progress_options(validate_row_count=True)
     state = models_module.TransferStageState(target_exists=False)
-    assert row_counts_module._count_loaded_stage_rows(
-        options,
-        state,
-        0,
-        open_connection=lambda _key: object(),
-    ) == 0
+    assert (
+        row_counts_module._count_loaded_stage_rows(
+            options,
+            state,
+            0,
+            open_connection=lambda _key: object(),
+        )
+        == 0
+    )
     with pytest.raises(RuntimeError, match="stage table"):
         row_counts_module._count_loaded_stage_rows(
             options,
@@ -5908,12 +6068,15 @@ def test_resolve_target_adaptation_mode_branches() -> None:
             target_batch_seconds=None,
             target_batch_memory_mb=None,
         )
-    assert transfer_options_module.resolve_target_adaptation_mode(
-        adaptive_batch_size=False,
-        target_rows_per_second=True,
-        target_batch_seconds=1,
-        target_batch_memory_mb=1,
-    ) is True
+    assert (
+        transfer_options_module.resolve_target_adaptation_mode(
+            adaptive_batch_size=False,
+            target_rows_per_second=True,
+            target_batch_seconds=1,
+            target_batch_memory_mb=1,
+        )
+        is True
+    )
     with pytest.raises(ValueError, match="Only one"):
         transfer_options_module.resolve_target_adaptation_mode(
             adaptive_batch_size=True,
@@ -5921,18 +6084,24 @@ def test_resolve_target_adaptation_mode_branches() -> None:
             target_batch_seconds=1,
             target_batch_memory_mb=None,
         )
-    assert transfer_options_module.resolve_target_adaptation_mode(
-        adaptive_batch_size=True,
-        target_rows_per_second=True,
-        target_batch_seconds=None,
-        target_batch_memory_mb=1,
-    ) is False
-    assert transfer_options_module.resolve_target_adaptation_mode(
-        adaptive_batch_size=True,
-        target_rows_per_second=True,
-        target_batch_seconds=1,
-        target_batch_memory_mb=None,
-    ) is False
+    assert (
+        transfer_options_module.resolve_target_adaptation_mode(
+            adaptive_batch_size=True,
+            target_rows_per_second=True,
+            target_batch_seconds=None,
+            target_batch_memory_mb=1,
+        )
+        is False
+    )
+    assert (
+        transfer_options_module.resolve_target_adaptation_mode(
+            adaptive_batch_size=True,
+            target_rows_per_second=True,
+            target_batch_seconds=1,
+            target_batch_memory_mb=None,
+        )
+        is False
+    )
 
 
 def test_resolve_adaptive_batch_bounds_defaults_clamps_and_validates() -> None:
@@ -5981,18 +6150,23 @@ def test_resolve_trino_mode_delegates_to_target_adapter(
         transfer_options_module,
         "get_backend_adapter",
         lambda _backend: SimpleNamespace(
-            resolve_transfer_staging_mode=lambda mode, **kwargs: calls.append(
-                (mode, kwargs["transfer_staging_schema"], kwargs["transfer_staging_location"])
+            resolve_transfer_staging_mode=lambda mode, **kwargs: (
+                calls.append(
+                    (mode, kwargs["transfer_staging_schema"], kwargs["transfer_staging_location"])
+                )
+                or "parquet"
             )
-            or "parquet"
         ),
     )
-    assert transfer_options_module.resolve_trino_mode(
-        "auto",
-        target_backend="trino",
-        transfer_staging_schema="scratch",
-        transfer_staging_location="s3://bucket",
-    ) == "parquet"
+    assert (
+        transfer_options_module.resolve_trino_mode(
+            "auto",
+            target_backend="trino",
+            transfer_staging_schema="scratch",
+            transfer_staging_location="s3://bucket",
+        )
+        == "parquet"
+    )
     assert calls == [("auto", "scratch", "s3://bucket")]
 
 
@@ -6105,10 +6279,13 @@ def test_parquet_location_row_group_and_target_name_helpers(
         transfer_staging_username=None,
         destination_table="schema.target",
     )
-    assert parquet_stage_module.build_stage_external_location(
-        options,
-        stage_suffix="fixed",
-    ) == "s3://bucket/base/schema_target/__analytics_toolkit_unknown__stage__fixed/"
+    assert (
+        parquet_stage_module.build_stage_external_location(
+            options,
+            stage_suffix="fixed",
+        )
+        == "s3://bucket/base/schema_target/__analytics_toolkit_unknown__stage__fixed/"
+    )
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=0)) == 1
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=60_000)) == 50_000
     with pytest.raises(ValueError, match="staging_location"):
@@ -6120,23 +6297,29 @@ def test_parquet_location_row_group_and_target_name_helpers(
 
 
 def test_write_empty_parquet_batch_and_dataframe_are_noops() -> None:
-    assert parquet_stage_module.write_batch_to_parquet_stage(
-        models_module.RowBatch(columns=["id"], rows=[]),
-        file_index=0,
-        stage_external_location="s3://bucket/stage",
-        pa=object(),
-        pq=object(),
-        fsspec_module=object(),
-        row_group_size=1,
-    ) == 0
-    assert parquet_stage_module.write_dataframe_to_parquet_stage(
-        pd.DataFrame(),
-        stage_external_location="s3://bucket/stage",
-        pa=object(),
-        pq=object(),
-        fsspec_module=object(),
-        row_group_size=1,
-    ) == 0
+    assert (
+        parquet_stage_module.write_batch_to_parquet_stage(
+            models_module.RowBatch(columns=["id"], rows=[]),
+            file_index=0,
+            stage_external_location="s3://bucket/stage",
+            pa=object(),
+            pq=object(),
+            fsspec_module=object(),
+            row_group_size=1,
+        )
+        == 0
+    )
+    assert (
+        parquet_stage_module.write_dataframe_to_parquet_stage(
+            pd.DataFrame(),
+            stage_external_location="s3://bucket/stage",
+            pa=object(),
+            pq=object(),
+            fsspec_module=object(),
+            row_group_size=1,
+        )
+        == 0
+    )
 
 
 def test_write_dataframe_to_parquet_stage_chunks_progress_and_collects(
@@ -6388,13 +6571,16 @@ def test_load_stage_batches_skips_empty_source_batch(
         "iter_source_batches",
         lambda *_a, **_k: iter([models_module.RowBatch(columns=["id"], rows=[])]),
     )
-    assert attempt_module.load_stage_batches(
-        options,
-        models_module.TransferConnectionRefs(source={"connection": object()}),
-        models_module.TransferStageState(target_exists=False),
-        read_retry_cnt=1,
-        insert_retry_cnt=1,
-    ) == 0
+    assert (
+        attempt_module.load_stage_batches(
+            options,
+            models_module.TransferConnectionRefs(source={"connection": object()}),
+            models_module.TransferStageState(target_exists=False),
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+        == 0
+    )
 
 
 def test_load_parquet_stage_batches_empty_estimate_and_missing_location(
@@ -6559,9 +6745,7 @@ def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("count failed")),
     )
 
-    result = transfer_api_module.transfer_table(
-        "source", "target", return_metadata=True
-    )
+    result = transfer_api_module.transfer_table("source", "target", return_metadata=True)
 
     assert result.rows == 4
     assert result.metadata.final_target_rows is None
@@ -6640,18 +6824,19 @@ def test_dry_run_fallback_names_locations_labels_and_source_parse(
     assert dry_run_module.dry_run_stage_external_location(options) == (
         "s3://bucket/base/__stage__dryrun/"
     )
-    assert dry_run_module.infer_source_select_columns(
-        "delete from source", source_backend="gp"
-    ) is None
-    assert dry_run_module.infer_source_select_columns(
-        "select *, id from source", source_backend="gp"
-    ) is None
-    assert dry_run_module.infer_source_select_columns(
-        "select id + 1 from source", source_backend="gp"
-    ) is None
-    assert dry_run_module.infer_source_select_columns(
-        "select from", source_backend="gp"
-    ) is None
+    assert (
+        dry_run_module.infer_source_select_columns("delete from source", source_backend="gp")
+        is None
+    )
+    assert (
+        dry_run_module.infer_source_select_columns("select *, id from source", source_backend="gp")
+        is None
+    )
+    assert (
+        dry_run_module.infer_source_select_columns("select id + 1 from source", source_backend="gp")
+        is None
+    )
+    assert dry_run_module.infer_source_select_columns("select from", source_backend="gp") is None
 
 
 def test_key_normalization_empty_invalid_cartesian_literals_and_null_predicate() -> None:
@@ -6673,16 +6858,15 @@ def test_key_normalization_empty_invalid_cartesian_literals_and_null_predicate()
             [1],
         )
     with pytest.raises(ValueError, match="non-empty sequence"):
-        keys_module.normalize_transfer_key_values(
-            [keys_module.TransferKey("id", "id")], "one"
-        )
+        keys_module.normalize_transfer_key_values([keys_module.TransferKey("id", "id")], "one")
     with pytest.raises(ValueError, match="counts must match"):
+        keys_module.build_transfer_slice_predicate([keys_module.TransferKey("id", "id")], ())
+    assert (
         keys_module.build_transfer_slice_predicate(
-            [keys_module.TransferKey("id", "id")], ()
+            [keys_module.TransferKey("id", "coalesce(id, 0)")], (None,)
         )
-    assert keys_module.build_transfer_slice_predicate(
-        [keys_module.TransferKey("id", "coalesce(id, 0)")], (None,)
-    ) == "(coalesce(id, 0)) IS NULL"
+        == "(coalesce(id, 0)) IS NULL"
+    )
     assert keys_module.render_transfer_literal("O'Reilly") == "'O''Reilly'"
     assert keys_module.render_transfer_literal(Decimal("1.25")) == "1.25"
     with pytest.raises(ValueError, match="Decimal values must be finite"):
@@ -6695,21 +6879,18 @@ def test_keyed_state_requires_stage_and_logging_handles_empty_keys() -> None:
     state = models_module.TransferStageState(target_exists=False)
     state.transfer_slices = []
     with pytest.raises(RuntimeError, match="stage table"):
-        keyed_module.build_keyed_worker_stage_states(
-            stage_state=state
-        )
+        keyed_module.build_keyed_worker_stage_states(stage_state=state)
     options = make_progress_options(transfer_keys=[])
     transfer_slice = models_module.TransferSlice(0, (), "", "select 1", "slice-00000")
-    assert transfer_logging_module.format_transfer_slice_log_label(
-        options, transfer_slice
-    ) is None
+    assert transfer_logging_module.format_transfer_slice_log_label(options, transfer_slice) is None
     options = make_progress_options(transfer_keys=["id"])
     transfer_slice = models_module.TransferSlice(
         0, (None,), "id IS NULL", "select 1", "slice-00000"
     )
-    assert transfer_logging_module.format_transfer_slice_log_label(
-        options, transfer_slice
-    ) == "id=NULL"
+    assert (
+        transfer_logging_module.format_transfer_slice_log_label(options, transfer_slice)
+        == "id=NULL"
+    )
 
 
 def test_callable_commit_and_failed_keyed_future_cancels_pending(
@@ -6826,9 +7007,7 @@ def test_row_count_disabled_mismatch_missing_workers_retry_and_labels(
         lambda _key, ref: ref.update(connection=SimpleNamespace(name="new")),
     )
     with pytest.raises(RuntimeError, match="count"):
-        row_counts_module._count_source_rows_with_retry(
-            enabled, source_ref, "select 1"
-        )
+        row_counts_module._count_source_rows_with_retry(enabled, source_ref, "select 1")
     assert calls == ["old", "new"]
 
     messages: list[str] = []
@@ -6888,8 +7067,7 @@ def test_finalize_existing_target_schema_and_cleanup_precedence(
     monkeypatch.setattr(
         finalize_module,
         "_run_with_fresh_target_connection",
-        lambda _options, role, operation: roles.append(role)
-        or operation({"connection": object()}),
+        lambda _options, role, operation: roles.append(role) or operation({"connection": object()}),
     )
     monkeypatch.setattr(finalize_module, "validate_stage_uniqueness", lambda **_k: None)
     monkeypatch.setattr(finalize_module, "validate_stage_target_key_overlap", lambda **_k: None)
@@ -6900,9 +7078,7 @@ def test_finalize_existing_target_schema_and_cleanup_precedence(
     )
     monkeypatch.setattr(finalize_module, "finalize_stage_table", lambda *_a, **_k: None)
     monkeypatch.setattr(finalize_module, "analyze_table", lambda **_k: None)
-    finalize_module.finalize_loaded_stage(
-        options, models_module.TransferConnectionRefs(), state, 1
-    )
+    finalize_module.finalize_loaded_stage(options, models_module.TransferConnectionRefs(), state, 1)
     assert state.insert_column_types == {"id": "INTEGER"}
     assert "target_metadata" in roles
 
@@ -6952,9 +7128,7 @@ def test_ensure_final_upsert_stage_guard_matrix(
     )
     finalize_module._ensure_final_upsert_stage_table(
         upsert,
-        models_module.TransferStageState(
-            target_exists=True, final_upsert_stage_table="already"
-        ),
+        models_module.TransferStageState(target_exists=True, final_upsert_stage_table="already"),
     )
 
 
@@ -6983,16 +7157,17 @@ def test_remaining_key_dry_run_logging_and_row_count_guards(
     no_location = make_progress_options(transfer_staging_location=None)
     assert dry_run_module.dry_run_stage_external_location(no_location) is None
     empty_values = models_module.TransferSlice(0, (), "", "select 1", "slice-0")
-    assert transfer_logging_module.format_transfer_slice_log_label(
-        make_progress_options(transfer_keys=["id"]), empty_values
-    ) is None
+    assert (
+        transfer_logging_module.format_transfer_slice_log_label(
+            make_progress_options(transfer_keys=["id"]), empty_values
+        )
+        is None
+    )
 
     options = make_progress_options(validate_row_count=True)
     state = models_module.TransferStageState(target_exists=False)
     state.worker_stage_states = [
-        SimpleNamespace(
-            stage_state=SimpleNamespace(expected_source_rows=2, slice_counts=[])
-        )
+        SimpleNamespace(stage_state=SimpleNamespace(expected_source_rows=2, slice_counts=[]))
     ]
     with pytest.raises(row_counts_module.TransferRowCountMismatchError):
         row_counts_module.validate_streamed_row_count(
@@ -7024,8 +7199,9 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
     monkeypatch.setattr(
         finalize_module,
         "_run_with_fresh_target_connection",
-        lambda _options, role, operation: events.append(role)
-        or operation({"connection": object()}),
+        lambda _options, role, operation: (
+            events.append(role) or operation({"connection": object()})
+        ),
     )
     monkeypatch.setattr(finalize_module, "validate_stage_uniqueness", lambda **_k: None)
     monkeypatch.setattr(
@@ -7040,9 +7216,7 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
     )
     monkeypatch.setattr(finalize_module, "finalize_stage_table", lambda *_a, **_k: None)
     monkeypatch.setattr(finalize_module, "analyze_table", lambda **_k: None)
-    finalize_module.finalize_loaded_stage(
-        options, models_module.TransferConnectionRefs(), state, 1
-    )
+    finalize_module.finalize_loaded_stage(options, models_module.TransferConnectionRefs(), state, 1)
     assert state.insert_column_types is None
     assert "overlap" not in events
 
@@ -7344,6 +7518,4 @@ def test_transfer_upsert_precondition_matrix(
         ),
     )
     with pytest.raises(ValueError, match="drop_sql_template"):
-        transfer_api_module.transfer_table(
-            **common, upsert_partition_column="event_date"
-        )
+        transfer_api_module.transfer_table(**common, upsert_partition_column="event_date")

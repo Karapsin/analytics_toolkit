@@ -1598,6 +1598,27 @@ def test_source_count_helpers_cover_cursor_shapes_and_labels() -> None:
     )
 
 
+def test_materialized_transfer_source_sql_is_backend_specific() -> None:
+    assert (
+        get_backend_adapter("gp").build_materialize_transfer_source_sql(
+            "scratch.result",
+            "SELECT * FROM source;",
+        )
+        == "CREATE TABLE scratch.result AS SELECT * FROM source DISTRIBUTED RANDOMLY"
+    )
+    assert (
+        get_backend_adapter("trino").build_materialize_transfer_source_sql(
+            "scratch.result",
+            "SELECT * FROM source;",
+        )
+        == "CREATE TABLE scratch.result AS SELECT * FROM source"
+    )
+    assert get_backend_adapter("ch").build_materialize_transfer_source_sql(
+        "scratch.result",
+        "SELECT * FROM source;",
+    ) == ("CREATE TABLE scratch.result ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM source")
+
+
 @pytest.mark.parametrize(
     ("series", "gp_type", "ch_type"),
     [

@@ -43,6 +43,7 @@ from ..schema import (
 )
 from .estimate import estimate_source_rows
 from .finalize import cleanup_stage, finalize_loaded_stage
+from .finalize import cleanup_transfer_attempt_stages as cleanup_attempt_stages
 from .keyed import WorkerStageState, build_keyed_worker_stage_states
 from .logging import (
     ProgressTracker,
@@ -58,6 +59,8 @@ from .parquet_stage import (
 )
 from .progress import format_transfer_progress_count, make_transfer_progress_bar
 from .row_counts import (
+    cleanup_materialized_sources as cleanup_sources,
+    cleanup_sources_and_close,
     disable_query_limit_for_transfer_reads,
     prepare_row_count_validated_options,
     validate_loaded_stage_row_count,
@@ -165,18 +168,15 @@ def run_transfer_attempt(
     except Exception as exc:
         transfer_error = exc
     finally:
-        try:
-            cleanup_stage(
-                options=options,
-                connection_refs=connection_refs,
-                stage_state=stage_state,
-                read_retry_cnt=read_retry_cnt,
-                drop_created_target=transfer_error is not None,
-            )
-        except Exception as exc:
-            cleanup_error = exc
-        finally:
-            close_connection_ref(connection_refs.source, options.from_db_key, "source")
+        cleanup_error = cleanup_attempt_stages(
+            options,
+            connection_refs,
+            stage_state,
+            read_retry_cnt,
+            transfer_error,
+            cleanup_stage,
+        )
+        close_connection_ref(connection_refs.source, options.from_db_key, "source")
 
     if transfer_error is not None:
         if cleanup_error is not None:
@@ -506,6 +506,7 @@ def load_keyed_stage_worker(
     read_retry_cnt: int,
     insert_retry_cnt: int,
 ) -> int:
+    stage_state = worker_stage_state.stage_state
     connection_refs = TransferConnectionRefs(
         source={"connection": get_sql_connection(options.from_db_key)},
         target={},
@@ -521,14 +522,14 @@ def load_keyed_stage_worker(
             worker_options = prepare_row_count_validated_options(
                 options=worker_options,
                 connection_refs=connection_refs,
-                stage_state=worker_stage_state.stage_state,
+                stage_state=stage_state,
                 slice_index=transfer_slice.index,
                 transfer_key_label=transfer_key_label,
             )
             streamed_rows = load_stage_batches(
                 options=worker_options,
                 connection_refs=connection_refs,
-                stage_state=worker_stage_state.stage_state,
+                stage_state=stage_state,
                 read_retry_cnt=read_retry_cnt,
                 insert_retry_cnt=insert_retry_cnt,
                 slice_index=transfer_slice.index,
@@ -536,15 +537,16 @@ def load_keyed_stage_worker(
             )
             validate_slice_row_count(
                 options=worker_options,
-                stage_state=worker_stage_state.stage_state,
+                stage_state=stage_state,
                 slice_index=transfer_slice.index,
                 transfer_key_label=transfer_key_label,
                 streamed_rows=streamed_rows,
             )
+            cleanup_sources(worker_options, connection_refs.source, stage_state)
             total_rows += streamed_rows
         return total_rows
     finally:
-        close_connection_ref(connection_refs.source, options.from_db_key, "source")
+        cleanup_sources_and_close(options, connection_refs.source, stage_state)
 
 
 def consolidate_keyed_worker_stages(

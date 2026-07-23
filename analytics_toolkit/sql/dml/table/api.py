@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.gp.partition_maintenance import (
+    gp_analyze_partitioned_table as gp_analyze_partitioned_table,  # noqa: PLC0414
+)
+
 from ._basic_ops import (
     _build_insert_from_table_sql,
     _build_typed_insert_select_sql,
@@ -43,8 +47,6 @@ from .maintenance import (
     drop_table_with_retry,
     gp_vacuum,
 )
-from analytics_toolkit.sql.backends.gp.partition_maintenance import gp_analyze_partitioned_table
-
 from .partitions import (
     build_drop_many_partitions_plan,
     build_drop_many_partitions_sqls,
@@ -58,4 +60,4 @@ from .write_modes import (
     finalize_stage_table,
 )
 
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

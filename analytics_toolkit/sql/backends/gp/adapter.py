@@ -10,9 +10,7 @@ from . import stage as _stage
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
-from ..models import SourceColumn
-from ..models import TransferAttemptPolicy
-from ..models import TransferInsertPageSizing
+from ..models import SourceColumn, TransferAttemptPolicy, TransferInsertPageSizing
 from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
 
@@ -143,12 +141,11 @@ class GreenplumAdapter(DbApiBackendAdapter):
             "        orientation=column)"
         )
         if gp_distributed_by_key:
-            distribution_sql = (
-                f"DISTRIBUTED BY ({self.column_list_sql(gp_distributed_by_key)})"
-            )
+            distribution_sql = f"DISTRIBUTED BY ({self.column_list_sql(gp_distributed_by_key)})"
         else:
             distribution_sql = "DISTRIBUTED RANDOMLY"
         from ...ddl.identifiers import quote_identifier
+
         partition_sql = _partitions.render_gp_partition_clause(
             partition_by,
             gp_partitions,
@@ -190,6 +187,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     build_create_partition_sql = _operations.build_create_partition_sql
     infer_dataframe_column_type = _dataframe_types.infer_gp_dataframe_column_type
     stage_base_identifier = _stage.stage_base_identifier
+    build_materialize_transfer_source_sql = _stage.build_materialize_transfer_source_sql
 
     def rollback_quietly(self, connection: Any) -> None:
         try:
@@ -493,8 +491,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         )
 
         time_print(
-            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-            "and reading final query",
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
         cursor = connection.cursor()

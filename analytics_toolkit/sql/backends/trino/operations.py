@@ -3,8 +3,23 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.backends.base import _apply_query_label
+
 from ..models import TargetConnectionDefaults
 from ..utils import sql_literal
+
+
+def build_materialize_transfer_source_sql(
+    adapter: Any,
+    table_name: str,
+    source_sql: str,
+    *,
+    query_label: str | None = None,
+) -> str:
+    return _apply_query_label(
+        f"CREATE TABLE {table_name} AS {adapter.strip_query_semicolon(source_sql)}",
+        query_label,
+    )
 
 
 def target_connection_defaults(adapter: Any, config: Any) -> TargetConnectionDefaults:
@@ -116,9 +131,7 @@ def validate_drop_partitions_options(
     from ...connection.errors import InvalidSqlInputError
 
     if gp_truncate:
-        raise InvalidSqlInputError(
-            "gp_truncate=True is only supported for Greenplum connections."
-        )
+        raise InvalidSqlInputError("gp_truncate=True is only supported for Greenplum connections.")
     if partition_column is None:
         raise InvalidSqlInputError(
             "trino_partition_column is required for Trino partition deletes."
@@ -141,12 +154,8 @@ def build_drop_partitions_sqls(
         raise InvalidSqlInputError(
             "trino_partition_column is required for Trino partition deletes."
         )
-    partition_values = ", ".join(
-        f"DATE {sql_literal(key)}" for key in partition_keys
-    )
-    return [
-        f"DELETE FROM {table}\nWHERE {partition_column} IN ({partition_values})"
-    ]
+    partition_values = ", ".join(f"DATE {sql_literal(key)}" for key in partition_keys)
+    return [f"DELETE FROM {table}\nWHERE {partition_column} IN ({partition_values})"]
 
 
 def query_transfer_stage_table_names(

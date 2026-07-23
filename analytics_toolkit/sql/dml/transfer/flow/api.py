@@ -199,10 +199,7 @@ def transfer_table(
                             insert_retry_cnt=attempt_policy.insert_retry_cnt,
                         )
                     except AmbiguousTableLoadError as exc:
-                        time_print(
-                            "Discarding staged load and restarting from scratch: "
-                            f"{exc!r}"
-                        )
+                        time_print(f"Discarding staged load and restarting from scratch: {exc!r}")
                         raise
 
                 return run_with_retry(
@@ -260,17 +257,11 @@ def transfer_table(
         metadata = operation_metadata
         metadata.source_rows = total_rows
         if options.row_count_result is not None:
-            metadata.expected_source_rows = (
-                options.row_count_result.expected_source_rows
-            )
+            metadata.expected_source_rows = options.row_count_result.expected_source_rows
             metadata.streamed_rows = options.row_count_result.streamed_rows
             metadata.stage_rows = options.row_count_result.stage_rows
-            metadata.row_count_validated = (
-                options.row_count_result.row_count_validated
-            )
-            metadata.transfer_slice_counts = (
-                options.row_count_result.slice_counts_as_dicts()
-            )
+            metadata.row_count_validated = options.row_count_result.row_count_validated
+            metadata.transfer_slice_counts = options.row_count_result.slice_counts_as_dicts()
         metadata.staged_rows = total_rows
         metadata.inserted_rows = total_rows
         metadata.affected_rows = total_rows
@@ -404,20 +395,14 @@ def build_transfer_options(
         adaptive_batch_size=adaptive_batch_size,
         unlimited_default_max=resolved_target_batch_memory_bytes is not None,
     )
-    resolved_target_rows_per_second_window = (
-        transfer_options.resolve_target_rows_per_second_window(
-            target_rows_per_second_window,
-        )
+    resolved_target_rows_per_second_window = transfer_options.resolve_target_rows_per_second_window(
+        target_rows_per_second_window,
     )
     resolved_target_rows_per_second_deadband = (
-        transfer_options.resolve_target_rows_per_second_deadband(
-            target_rows_per_second_deadband
-        )
+        transfer_options.resolve_target_rows_per_second_deadband(target_rows_per_second_deadband)
     )
-    resolved_adaptive_batch_size_step = (
-        transfer_options.resolve_adaptive_batch_size_step(
-            adaptive_batch_size_step,
-        )
+    resolved_adaptive_batch_size_step = transfer_options.resolve_adaptive_batch_size_step(
+        adaptive_batch_size_step,
     )
     retry_per_host_drops = target_adapter.resolve_ch_retry_per_host_drops(
         bool(ch_retry_per_host_drops)
@@ -477,9 +462,7 @@ def build_transfer_options(
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
         key_columns=normalize_key_columns(key_columns),
-        upsert_partition_column=normalize_upsert_partition_column(
-            upsert_partition_column
-        ),
+        upsert_partition_column=normalize_upsert_partition_column(upsert_partition_column),
         trino_upsert_partition_drop_sql_template=(
             target_defaults.upsert_partition_drop_sql_template
         ),
@@ -508,6 +491,8 @@ def build_transfer_options(
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
+        source_transfer_staging_schema=from_config.transfer_staging_schema,
+        source_transfer_staging_username=_sanitize_transfer_staging_username(from_config.user),
         transfer_parquet_staging_schema=getattr(
             to_config,
             "transfer_parquet_staging_schema",
@@ -616,18 +601,14 @@ def _normalize_only_shard(ch_only_shard: bool) -> bool:
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
     target_adapter = get_backend_adapter(options.to_db_backend)
-    uses_partition_replacement_upsert = (
-        target_adapter.uses_partition_replacement_upsert()
-    )
+    uses_partition_replacement_upsert = target_adapter.uses_partition_replacement_upsert()
     stage_tables = dry_run_stage_table_names(options)
     stage_table = stage_tables[0]
     insert_page_sizing = target_adapter.transfer_insert_page_sizing(
         gp_insert_chunk_size=options.gp_insert_chunk_size
     )
     stage_external_location = (
-        dry_run_stage_external_location(options)
-        if options.trino_mode == "parquet"
-        else None
+        dry_run_stage_external_location(options) if options.trino_mode == "parquet" else None
     )
     plan = SqlPlan(
         operation="transfer_table",
@@ -660,9 +641,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 insert_page_sizing is not None and options.adaptive_batch_size
             ),
             "initial_gp_insert_chunk_size": (
-                insert_page_sizing.initial_size
-                if insert_page_sizing is not None
-                else None
+                insert_page_sizing.initial_size if insert_page_sizing is not None else None
             ),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "transfer_staging_location": options.transfer_staging_location,
@@ -674,9 +653,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "transfer_key_values": options.transfer_key_values,
             "concurrency": options.concurrency,
             "transfer_slice_count": (
-                len(options.transfer_slices)
-                if options.transfer_slices is not None
-                else None
+                len(options.transfer_slices) if options.transfer_slices is not None else None
             ),
             "worker_stage_count": len(stage_tables),
             "stage_tables": stage_tables,
@@ -823,7 +800,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             options,
             stage_table=stage_table,
             stage_tables=stage_tables,
-    )
+        )
     else:
         add_insert_target_dry_run_steps(
             plan,

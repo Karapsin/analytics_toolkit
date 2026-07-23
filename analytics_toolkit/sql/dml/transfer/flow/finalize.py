@@ -4,19 +4,21 @@ import warnings
 from typing import Any
 
 from analytics_toolkit.general import time_print
-from ....backends import get_backend_adapter
-from ...load.stage import create_stage_table
-from ...load.stage import cleanup_stage_table_with_retry
-from ....connection.get_sql_connection import get_sql_connection
-from ...table.maintenance import analyze_table, drop_table_with_retry
-from ...table.write_modes import (
-    finalize_stage_table,
+from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
+    cleanup_materialized_sources,
 )
+
+from ....backends import get_backend_adapter
+from ....connection.get_sql_connection import get_sql_connection
+from ...load.stage import cleanup_stage_table_with_retry, create_stage_table
+from ...table.maintenance import analyze_table, drop_table_with_retry
 from ...table.table_validation import (
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
 )
-from .parquet_stage import cleanup_parquet_stage_location
+from ...table.write_modes import (
+    finalize_stage_table,
+)
 from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.retry import (
     replace_connection,
@@ -25,6 +27,7 @@ from ..runtime.retry import (
     run_with_retry,
 )
 from ..schema import get_existing_target_insert_types
+from .parquet_stage import cleanup_parquet_stage_location
 
 
 def finalize_loaded_stage(
@@ -50,9 +53,7 @@ def finalize_loaded_stage(
             connection=target_ref["connection"],
             stage_table=stage_state.stage_table,
             key_columns=options.key_columns,
-            stage_tables=(
-                stage_state.stage_tables if options.write_mode == "upsert" else None
-            ),
+            stage_tables=(stage_state.stage_tables if options.write_mode == "upsert" else None),
         ),
     )
     if options.write_mode != "upsert":
@@ -139,6 +140,32 @@ def finalize_loaded_stage(
             query_label=options.query_label,
         ),
     )
+
+
+def cleanup_transfer_attempt_stages(  # noqa: PLR0913
+    options: TransferOptions,
+    connection_refs: TransferConnectionRefs,
+    stage_state: TransferStageState,
+    read_retry_cnt: int,
+    transfer_error: Exception | None,
+    cleanup_stage_fn: Any,
+) -> Exception | None:
+    cleanup_error: Exception | None = None
+    try:
+        cleanup_stage_fn(
+            options=options,
+            connection_refs=connection_refs,
+            stage_state=stage_state,
+            read_retry_cnt=read_retry_cnt,
+            drop_created_target=transfer_error is not None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        cleanup_error = exc
+    try:
+        cleanup_materialized_sources(options, connection_refs.source, stage_state)
+    except Exception as exc:  # noqa: BLE001
+        cleanup_error = cleanup_error or exc
+    return cleanup_error
 
 
 def finalize_empty_transfer(
@@ -305,10 +332,7 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
 
 
 def _should_drop_created_target(stage_state: TransferStageState) -> bool:
-    return (
-        stage_state.target_created_by_operation
-        and stage_state.target_existed_at_start is False
-    )
+    return stage_state.target_created_by_operation and stage_state.target_existed_at_start is False
 
 
 def _run_with_fresh_target_connection(

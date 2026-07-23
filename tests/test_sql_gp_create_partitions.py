@@ -4,17 +4,16 @@ import importlib
 from datetime import date, datetime, timezone
 from threading import Event, Lock
 from time import sleep
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
-
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     UnsupportedConnectionTypeError,
 )
 from tests.sql_fakes import FakeDbapiConnection, FakeDbapiCursor
-
 
 sql_module = importlib.import_module("analytics_toolkit.sql")
 dml_module = importlib.import_module("analytics_toolkit.sql.dml")
@@ -23,6 +22,21 @@ table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.part
 gp_maintenance_module = importlib.import_module(
     "analytics_toolkit.sql.backends.gp.partition_maintenance"
 )
+
+
+def _stub_leaf_partition_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    partition_names: list[str],
+) -> None:
+    rows = [
+        dict(zip(("schema_name", "relation_name"), name.split(".", 1))) for name in partition_names
+    ]
+    read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+    monkeypatch.setattr(
+        read_sql_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pd.DataFrame(rows),
+    )
 
 
 def test_gp_create_partitions_is_public_and_timed() -> None:
@@ -55,7 +69,13 @@ def test_gp_analyze_partitioned_table_is_public_and_timed() -> None:
     assert getattr(sql_module.gp_analyze_partitioned_table, "__sql_public_timing__", False)
 
 
-def test_gp_analyze_partitioned_table_builds_labeled_plan() -> None:
+def test_gp_analyze_partitioned_table_builds_labeled_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_leaf_partition_discovery(
+        monkeypatch,
+        ["reporting.events_1_prt_2026_01", "reporting.events_1_prt_2026_02"],
+    )
     plan = gp_maintenance_module.gp_analyze_partitioned_table(
         "gp",
         "reporting.events",
@@ -71,7 +91,7 @@ def test_gp_analyze_partitioned_table_builds_labeled_plan() -> None:
             '"reporting"."events_1_prt_2026_01"',
             '"reporting"."events_1_prt_2026_02"',
         ],
-        "discovered_partitions": False,
+        "table_names": ['"reporting"."events"'],
         "concurrency": 2,
     }
     assert plan.metadata.statement_count == 2
@@ -106,7 +126,7 @@ def test_gp_analyze_partitioned_table_discovers_leaf_partitions_for_dry_run(
 
     assert len(calls) == 1
     assert "FROM pg_catalog.pg_inherits" in calls[0]
-    assert plan.options["discovered_partitions"] is True
+    assert plan.options["table_names"] == ['"analytics"."orders"']
     assert plan.options["partition_names"] == [
         '"analytics"."orders_1_prt_b"',
         '"analytics"."orders_1_prt_a"',
@@ -136,13 +156,21 @@ def test_gp_analyze_partitioned_table_validates_partition_names(
 def test_gp_analyze_partitioned_table_validates_concurrency(concurrency: Any) -> None:
     with pytest.raises(ValueError, match="integer >= 1"):
         gp_maintenance_module.gp_analyze_partitioned_table(
-            "gp", "analytics.orders", "analytics.orders_1_prt_a", concurrency=concurrency, dry_run=True
+            "gp",
+            "analytics.orders",
+            "analytics.orders_1_prt_a",
+            concurrency=concurrency,
+            dry_run=True,
         )
 
 
 def test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _stub_leaf_partition_discovery(
+        monkeypatch,
+        ["analytics.orders_1_prt_a", "analytics.orders_1_prt_b"],
+    )
     first_connection = FakeDbapiConnection()
     second_connection = FakeDbapiConnection()
     connections = [first_connection, second_connection]
@@ -169,6 +197,14 @@ def test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connect
 def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _stub_leaf_partition_discovery(
+        monkeypatch,
+        [
+            "analytics.orders_1_prt_a",
+            "analytics.orders_1_prt_b",
+            "analytics.orders_1_prt_c",
+        ],
+    )
     started = Event()
     lock = Lock()
     opened = 0
@@ -180,7 +216,7 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
 
             def execute(query: str, *args: Any, **kwargs: Any) -> Any:
                 started.set()
-                raise RuntimeError("analyze failed")
+                raise RuntimeError("analyze failed")  # noqa: EM101, TRY003
 
             cursor.execute = execute
             del original_execute
@@ -222,6 +258,84 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
         )
 
     assert opened == 2
+
+
+def test_gp_analyze_partitioned_table_handles_empty_and_invalid_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+    monkeypatch.setattr(
+        read_sql_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pd.DataFrame(columns=["schema_name", "relation_name"]),
+    )
+    assert (
+        gp_maintenance_module.gp_analyze_partitioned_table("gp", "analytics.empty_parent") is None
+    )
+
+    monkeypatch.setattr(
+        read_sql_module,
+        "read_sql",
+        lambda *_args, **_kwargs: pd.DataFrame(columns=["unexpected"]),
+    )
+    with pytest.raises(RuntimeError, match="invalid result"):
+        gp_maintenance_module.gp_analyze_partitioned_table("gp", "analytics.orders", dry_run=True)
+
+
+def test_gp_analyze_partitioned_table_rejects_invalid_parent_and_unmatched_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(InvalidSqlInputError, match="fully qualified"):
+        gp_maintenance_module.gp_analyze_partitioned_table("gp", object(), dry_run=True)
+    with pytest.raises(InvalidSqlInputError, match="valid fully qualified"):
+        gp_maintenance_module.gp_analyze_partitioned_table("gp", "analytics..broken", dry_run=True)
+
+    _stub_leaf_partition_discovery(monkeypatch, ["analytics.orders_1_prt_a"])
+    with pytest.raises(InvalidSqlInputError, match="identify leaf partitions"):
+        gp_maintenance_module.gp_analyze_partitioned_table(
+            "gp",
+            "analytics.orders",
+            "analytics.orders_1_prt_missing",
+            dry_run=True,
+        )
+
+    monkeypatch.setattr(
+        gp_maintenance_module,
+        "get_connection_config",
+        lambda _key: SimpleNamespace(backend="trino", connection_key="trino"),
+    )
+    with pytest.raises(UnsupportedConnectionTypeError, match="requires a gp"):
+        gp_maintenance_module.gp_analyze_partitioned_table(
+            "trino", "analytics.orders", dry_run=True
+        )
+
+
+def test_gp_analyze_partitioned_table_schedules_later_concurrent_partitions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    partition_names = [
+        "analytics.orders_1_prt_a",
+        "analytics.orders_1_prt_b",
+        "analytics.orders_1_prt_c",
+    ]
+    _stub_leaf_partition_discovery(monkeypatch, partition_names)
+    connections = [FakeDbapiConnection() for _ in partition_names]
+    monkeypatch.setattr(
+        gp_maintenance_module,
+        "get_sql_connection",
+        lambda _key: connections.pop(0),
+    )
+
+    gp_maintenance_module.gp_analyze_partitioned_table(
+        "gp",
+        "analytics.orders",
+        partition_names,
+        concurrency=2,
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert connections == []
 
 
 def test_gp_create_partitions_only_generate_sql_renders_period_ranges() -> None:

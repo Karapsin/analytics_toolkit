@@ -1,11 +1,11 @@
-# ruff: noqa
+# ruff: noqa: EM101, EM102, FBT001, I001, PERF401, PLC0415, PLR0913, PLR2004, PYI041, TID252, TRY003
 # mypy: disable-error-code="index,union-attr"
 from __future__ import annotations
 
 from collections.abc import Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -135,7 +135,7 @@ def _build_options(
     validate_retry_options(retry_cnt, timeout_increment)
     return _Options(
         connection_key=config.connection_key,
-        table_names=_normalize_names(table_name, "table_name"),
+        table_names=cast("tuple[str, ...]", _normalize_names(table_name, "table_name")),
         partition_names=_normalize_names(partition_names, "partition_names"),
         concurrency=concurrency,
         retry_cnt=retry_cnt,
@@ -172,7 +172,9 @@ def _normalize_names(
                 f"{argument_name} must contain valid fully qualified table names."
             ) from exc
         if len(identifier.parts) != 2:
-            raise InvalidSqlInputError(f"{argument_name} must contain schema-qualified table names.")
+            raise InvalidSqlInputError(
+                f"{argument_name} must contain schema-qualified table names."
+            )
         names.append(identifier.render_quoted("gp"))
     if len(set(names)) != len(names):
         raise InvalidSqlInputError(f"{argument_name} must not contain duplicates.")
@@ -184,15 +186,15 @@ def _resolve_partitions(options: _Options) -> list[list[str]]:
     resolved: list[list[str]] = []
     for parent_table in options.table_names:
         discovered = _discover(options, parent_table)
-        selected = discovered if options.partition_names is None else [
-            name for name in discovered if name in requested
-        ]
+        selected = (
+            discovered
+            if options.partition_names is None
+            else [name for name in discovered if name in requested]
+        )
         requested.difference_update(selected)
         resolved.append(selected)
     if requested:
-        raise InvalidSqlInputError(
-            "partition_names must identify leaf partitions of table_name."
-        )
+        raise InvalidSqlInputError("partition_names must identify leaf partitions of table_name.")
     return resolved
 
 

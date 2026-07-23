@@ -10,8 +10,7 @@ entrypoint is [sql.transfer](functions/transfer.md).
 The transfer flow has four conceptual steps:
 
 1. Open source and target connections from `.connections`.
-2. Count source rows and inspect source query metadata when target creation or
-   type casts need it.
+2. Inspect source query metadata and establish the expected row count.
 3. Stream source rows in batches into a stage table.
 4. Validate expected source rows, streamed rows, and actual stage-table rows,
    then finalize the target table.
@@ -62,6 +61,14 @@ by default, `sql.transfer` counts the source query before loading and fails
 before target finalization when the source, streamed, and stage-table counts do
 not match. For ClickHouse sources, this also protects transfer reads from
 connection-level `query_limit` caps.
+
+When the source connection defines `transfer_staging_schema`, validation first
+materializes the query result in that schema. The original query runs once;
+the stable temporary result is counted and streamed, then removed before target
+finalization. This avoids repeating an expensive source query and prevents
+source changes between the count and stream reads. Without a source staging
+schema, transfer retains direct count-then-stream behavior. Keyed transfers use
+and remove one source result stage per rendered slice.
 
 ## Retries
 

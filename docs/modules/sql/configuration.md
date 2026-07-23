@@ -115,9 +115,13 @@ Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
 `transfer_staging_schema`, `transfer_parquet_staging_schema`, and
 `transfer_staging_location` fields.
 
-When `transfer_staging_schema` is set, transfer staging tables for that
+When `transfer_staging_schema` is set, transfer staging tables owned by that
 connection are created under that schema and transfer cleanup scans only
-staging tables matching the target transfer user marker.
+staging tables matching the connection user marker. On a target connection,
+this controls the normal load/finalization stage. On a source connection,
+row-count validation materializes the source query once in that schema, then
+counts and streams the materialized result instead of executing the original
+query separately for counting and streaming.
 
 When a Trino connection defines both `transfer_staging_schema` and
 `transfer_staging_location`, `load_df` and transfers from a different
@@ -137,9 +141,11 @@ ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable` resolves an Airflow Variable lazily when the connection is
 opened, which keeps the certificate path in Airflow instead of the file.
 
-All backends support optional `transfer_staging_schema` for transfer staging tables.
-When omitted, transfer staging defaults to per-connection legacy naming in the
-target table namespace.
+All backends support optional `transfer_staging_schema` for transfer staging
+tables. When omitted on a target connection, transfer staging defaults to
+per-connection legacy naming in the target table namespace. When omitted on a
+source connection, row-count validation retains the direct count-then-stream
+behavior.
 
 For Greenplum, Trino, and ClickHouse, `ca_certs` accepts one certificate file
 name/path or a list of certificate file names/paths. A bare name such as

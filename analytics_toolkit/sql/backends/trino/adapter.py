@@ -126,10 +126,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             partition_by=partition_by,
             order_by=order_by,
         )
-        return [
-            f"CREATE TABLE {table_name} ({joined_columns}) "
-            f"WITH ({properties})"
-        ]
+        return [f"CREATE TABLE {table_name} ({joined_columns}) WITH ({properties})"]
 
     def table_exists(
         self,
@@ -190,6 +187,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     build_show_tables_query = _operations.build_show_tables_query
     extract_table_ddl = _operations.extract_table_ddl
     target_connection_defaults = _operations.target_connection_defaults
+    build_materialize_transfer_source_sql = _operations.build_materialize_transfer_source_sql
     resolve_transfer_staging_mode = _operations.resolve_transfer_staging_mode
     resolve_transfer_stage_column_types = _operations.resolve_transfer_stage_column_types
     validate_drop_partitions_options = _operations.validate_drop_partitions_options
@@ -232,8 +230,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         row_placeholders = f"({', '.join('?' for _ in columns)})"
         values_sql = ", ".join(row_placeholders for _ in range(row_count))
         return _apply_query_label(
-            f"INSERT INTO {table_name} ({self.column_list_sql(columns)}) "
-            f"VALUES {values_sql}",
+            f"INSERT INTO {table_name} ({self.column_list_sql(columns)}) VALUES {values_sql}",
             query_label,
         )
 
@@ -261,8 +258,7 @@ class TrinoAdapter(DbApiBackendAdapter):
                 (schema_name, relation_name),
             )
             return {
-                str(column_name): str(data_type)
-                for column_name, data_type in cursor.fetchall()
+                str(column_name): str(data_type) for column_name, data_type in cursor.fetchall()
             }
         finally:
             cursor.close()
@@ -394,12 +390,12 @@ class TrinoAdapter(DbApiBackendAdapter):
         ch_only_shard: bool = False,
     ) -> list[str]:
         del ch_cluster, ch_only_shard
-        template = _validate_trino_partition_drop_template(
-            trino_partition_drop_sql_template
+        template = _validate_trino_partition_drop_template(trino_partition_drop_sql_template)
+        values = (
+            list(partition_values)
+            if partition_values is not None
+            else ["<affected partition value>"]
         )
-        values = list(partition_values) if partition_values is not None else [
-            "<affected partition value>"
-        ]
         return [
             _apply_query_label(
                 template.format(
@@ -429,14 +425,12 @@ class TrinoAdapter(DbApiBackendAdapter):
             for column_name in key_columns
         )
         assignments = ",\n  ".join(
-            f"{self.quote_identifier(column_name)} = "
-            f"stage_src.{self.quote_identifier(column_name)}"
+            f"{self.quote_identifier(column_name)} = stage_src.{self.quote_identifier(column_name)}"
             for column_name in columns
         )
         insert_columns = self.column_list_sql(columns)
         insert_values = ", ".join(
-            f"stage_src.{self.quote_identifier(column_name)}"
-            for column_name in columns
+            f"stage_src.{self.quote_identifier(column_name)}" for column_name in columns
         )
         return (
             f"MERGE INTO {target_table} AS target_dst\n"
@@ -529,8 +523,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         )
 
         time_print(
-            f"Executing {max(len(statements) - 1, 0)} setup statement(s) "
-            "and reading final query",
+            f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
         cursor = connection.cursor()
@@ -780,9 +773,7 @@ def _build_trino_table_properties(
     ]
     partition_entries = _normalize_trino_property_entries(partition_by, "partition_by")
     if partition_entries:
-        properties.append(
-            f"partitioning = {_trino_string_array_sql(partition_entries)}"
-        )
+        properties.append(f"partitioning = {_trino_string_array_sql(partition_entries)}")
     order_entries = _normalize_trino_property_entries(order_by, "order_by")
     if order_entries:
         properties.append(f"sorted_by = {_trino_string_array_sql(order_entries)}")

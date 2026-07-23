@@ -3,8 +3,23 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from analytics_toolkit.sql.backends.base import _apply_query_label
 
 GP_IDENTIFIER_MAX_BYTES = 63
+
+
+def build_materialize_transfer_source_sql(
+    adapter: Any,
+    table_name: str,
+    source_sql: str,
+    *,
+    query_label: str | None = None,
+) -> str:
+    return _apply_query_label(
+        f"CREATE TABLE {table_name} AS {adapter.strip_query_semicolon(source_sql)} "
+        "DISTRIBUTED RANDOMLY",
+        query_label,
+    )
 
 
 def stage_base_identifier(
@@ -19,9 +34,7 @@ def stage_base_identifier(
         if transfer_staging_username
         else "__stage__"
     )
-    max_base_bytes = GP_IDENTIFIER_MAX_BYTES - len(marker.encode()) - len(
-        stage_suffix.encode()
-    )
+    max_base_bytes = GP_IDENTIFIER_MAX_BYTES - len(marker.encode()) - len(stage_suffix.encode())
     if max_base_bytes <= 0:
         raise ValueError("Stage table marker is too long for Greenplum identifiers.")
     return _fit_identifier_bytes(base_identifier, max_base_bytes)

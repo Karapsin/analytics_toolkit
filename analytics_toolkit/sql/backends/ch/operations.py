@@ -6,10 +6,24 @@ from typing import Any
 from sqlglot import exp, parse_one
 
 import analytics_toolkit.sql.backends.common_methods as _common_methods
+from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
-
 read_columns = _common_methods.read_columns
+
+
+def build_materialize_transfer_source_sql(
+    adapter: Any,
+    table_name: str,
+    source_sql: str,
+    *,
+    query_label: str | None = None,
+) -> str:
+    return _apply_query_label(
+        f"CREATE TABLE {table_name} ENGINE = MergeTree ORDER BY tuple() AS "
+        f"{adapter.strip_query_semicolon(source_sql)}",
+        query_label,
+    )
 
 
 def read_columns_impl(

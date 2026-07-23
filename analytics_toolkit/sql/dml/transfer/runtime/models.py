@@ -182,8 +182,8 @@ class AdaptiveBatchSizer:
         rows_per_second = inserted_rows / duration_seconds
         self.rows_per_second_samples.append(rows_per_second)
         previous_rows_per_second = self.previous_rows_per_second
-        smoothed_rows_per_second = (
-            sum(self.rows_per_second_samples) / len(self.rows_per_second_samples)
+        smoothed_rows_per_second = sum(self.rows_per_second_samples) / len(
+            self.rows_per_second_samples
         )
         if previous_rows_per_second is None:
             self.previous_rows_per_second = smoothed_rows_per_second
@@ -252,10 +252,7 @@ class AdaptiveBatchSizer:
         baseline_size = self.baseline_size
         if baseline_size is None:
             return False
-        if (
-            self.noop_probe_size == baseline_size
-            and self.noop_probe_direction == direction
-        ):
+        if self.noop_probe_size == baseline_size and self.noop_probe_direction == direction:
             return False
 
         step_delta = max(1, int(baseline_size * self.adaptive_batch_size_step))
@@ -383,6 +380,8 @@ class TransferOptions:
     validate_row_count: bool = False
     ch_count_limit_read: bool = True
     transfer_staging_schema: str | None = None
+    source_transfer_staging_schema: str | None = None
+    source_transfer_staging_username: str | None = None
     transfer_parquet_staging_schema: str | None = None
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None
@@ -416,6 +415,7 @@ class TransferStageState:
     stage_rows: int | None = None
     row_count_validated: bool = False
     slice_counts: list[TransferSliceRowCount] = field(default_factory=list)
+    source_stage_tables: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -218,9 +218,11 @@ rows = sql.transfer(
   actual stage-table `COUNT(*)`, and fails before target writes when they differ.
   For keyed transfers, every rendered slice is counted and validated before the
   aggregate stage table is finalized.
-- Source row-count validation runs the source query twice: once for `COUNT(*)`
-  and once for streaming. If source data changes between those reads, validation
-  can fail to prevent a partial or inconsistent transfer.
+- When the source connection defines `transfer_staging_schema`, row-count
+  validation materializes the source query once in that schema, counts and
+  streams the stable result, and removes it before target finalization. Without
+  a source staging schema, validation runs the source query twice: once for
+  `COUNT(*)` and once for streaming.
 - For ClickHouse sources with no explicit `LIMIT`, row-count validation streams
   with `LIMIT <counted_source_rows>` and temporarily disables the client
   `query_limit` while opening the stream, so connection-level query caps do not
