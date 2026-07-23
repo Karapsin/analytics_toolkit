@@ -292,6 +292,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="raise existing floors to measured values rounded down to two decimals",
     )
     mode.add_argument(
+        "--update-targets-managed",
+        action="store_true",
+        help="raise floors and continue after reporting the exact managed changes",
+    )
+    mode.add_argument(
         "--check-only",
         action="store_true",
         help="validate configured floors without changing the target file",
@@ -307,14 +312,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if failures:
         print("Coverage floors missed:\n" + "\n".join(failures))
         return 1
-    if args.update_targets:
+    if args.update_targets or args.update_targets_managed:
         try:
             changes = ratchet_targets(args.targets, files, overall, prefixes)
         except CoverageGateError as exc:
             parser.exit(2, f"coverage gate input error: {exc}\n")
         if changes:
-            print("Coverage targets raised; review and rerun:\n" + "\n".join(changes))
-            return 1
+            if args.update_targets_managed:
+                print("Coverage targets raised; managed update accepted:\n" + "\n".join(changes))
+            else:
+                print("Coverage targets raised; review and rerun:\n" + "\n".join(changes))
+                return 1
     return 0
 
 

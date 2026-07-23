@@ -13,8 +13,9 @@ wrapper:
 
 ```bash
 agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
-agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
+agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 3
 agent_tools/mcp_tool.sh workflow-status --task "implementation" --module agent_tools --instructions-read
+agent_tools/mcp_tool.sh workflow-metrics
 agent_tools/mcp_tool.sh change-impact --task "change sql.read" --module sql --symbol sql.read
 agent_tools/mcp_tool.sh version-bump "Updated agent workflow" --dry-run
 agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry-run
@@ -32,8 +33,11 @@ internal command records; failures return a structured blocker with one bounded
 excerpt. Complete stdout and stderr remain available with private permissions
 below `.rag_index/tool_logs/`. Use `--detail diagnostic` for command metadata
 after a blocker or `--detail full` only when complete inline output is necessary.
-Response telemetry reports per-section sizes, the applicable response budget,
-and raw, returned, and suppressed output bytes.
+Summary budgets are enforced before receipts are returned. Summary telemetry
+contains final size, budget, and truncation state; diagnostic telemetry adds
+per-section and raw/suppressed sizes. `workflow-metrics` aggregates the active
+startup session and labels its byte-based token estimate because model billing
+tokens are unavailable to repository tools.
 
 Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
@@ -64,8 +68,8 @@ count, and change information without repeating routing, metadata, or full check
 commands. Use `--detail diagnostic` when the complete routing and check plan is
 needed, and use the consolidated status instead of separate shell probes.
 
-Docs search summary results contain only citations, headings, and bounded
-snippets. Ranking scores, source metadata, and the supporting result list for
+Docs search defaults to three deduplicated citations with bounded snippets and
+returned/considered counts. Ranking scores, source metadata, and the supporting result list for
 `ask` mode are available through diagnostic detail.
 
 `run-checks --area sql --level integration` starts the repository-owned
@@ -78,11 +82,13 @@ Pre-commit checks run as a quick gate followed by a full gate. The quick gate
 covers metadata, documentation, compilation, pytest, Ruff, and mypy; the full
 gate covers coverage, artifacts, and every supported Python environment. A
 quick failure prevents the expensive full gate, while a successful managed run
-always records both. Check failures include the machine-readable pre-commit stage, failing pytest
+always records both. Independent quick stages are aggregated. Managed coverage
+target increases are reported and accepted in the same full run, while the
+manual coverage command keeps its review-and-rerun behavior. Check failures
+include every failed stage, failing pytest
 node IDs, quality-debt increases, architecture overages, and tox environments
-when available. A monotonic coverage-floor increase is reported as
-`coverage_ratchet_confirmation` with the changed targets so it can be reviewed
-and the mandatory check rerun.
+when available. Repeated identical failures return a compact unchanged receipt
+pointing to persisted evidence.
 
 The integration entrypoint accepts `--integration-profile core`, `auth`, `all`,
 or `fault`; `all` is the exhaustive local default and includes every fault
@@ -106,14 +112,15 @@ infrastructure failure. When resuming after interruption, use
 `git-workflow checks --sha ...`; do not inspect the latest branch run instead.
 Each watch call waits for a bounded interval (60 seconds by default), persists
 the repository, exact-SHA deadline, and last reported workflow/job/check states
-below `.rag_index/`, and returns only changed states plus the remaining required
-checks while pending. Large first-poll sets return bounded status-only samples
+below `.rag_index/`, and returns changed states plus remaining required checks
+on the first pending receipt. Unchanged polls omit the repeated check list.
+Large first-poll sets return bounded status-only samples
 plus total counts. Terminal success returns required conclusions and URLs;
 diagnostic/full detail retains the expanded evidence. Successful polling API
 payloads and repeated repository discovery are not returned.
 
 `mcp_server.py` exposes the consolidated tool surface:
-`prepare_start`, `docs`, `workflow_status`, `change_impact`, `version_bump`,
+`prepare_start`, `docs`, `workflow_status`, `workflow_metrics`, `change_impact`, `version_bump`,
 `run_checks`, `git_workflow`, and `release_workflow`.
 
 ## Docs Assistant

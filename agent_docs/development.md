@@ -10,9 +10,10 @@ status calls report changes without repeating routing and command details. Use
 `run_checks(area=..., level="focused")` for focused validation and
 `run_checks(level="precommit")` before every commit.
 
-The pre-commit check uses a temporary bytecode cache and a fail-fast quick gate
+The pre-commit check uses a temporary bytecode cache and an aggregated quick gate
 for metadata, minimum constraints, documentation, compileall, pytest, Ruff, and
-mypy. Only after that passes does the full gate run 90% branch coverage,
+mypy. Independent failures are reported together; pytest is skipped only when
+compilation fails. Only after that passes does the full gate run 90% branch coverage,
 isolated wheel/sdist smoke tests, and the tox matrix for Python 3.8 through 3.14
 plus the Python 3.8 minimum-dependency environment. The minimum environment
 must also pass `pip check`. Do not commit unless both gates pass; if an
@@ -48,8 +49,9 @@ scenario is a failure.
 ## Fresh-Agent Sequence
 
 1. Run `prepare_start(...)`.
-2. Run focused `docs(...)` RAG retrieval.
-3. Read every routed instruction file.
+2. Read `instruction_routing.read_next`; do not reread auto-discovered `AGENTS.md`.
+3. Run `change_impact(...)` for consolidated focused RAG, contract, architecture,
+   documentation, and check planning.
 4. Run `workflow_status(...)`.
 5. Implement only the requested coherent batch.
 6. Run focused checks.
@@ -60,6 +62,13 @@ scenario is a failure.
 11. Wait for every required GitHub check for the exact pushed SHA.
 12. Diagnose failures, fix in-scope defects, and recommit until the new SHA is green.
 13. Report the final SHA, push target, conclusions, and run URLs.
+
+Default direct `docs(...)` calls to `top_k=3`, avoid parallel broad reads, and
+inspect cited line ranges with narrow `rg` queries. On failure, act on the
+structured blocker before requesting diagnostic detail or reading `log_ref`.
+An unchanged failure receipt means the tree should change before retry. Use
+`workflow_metrics(...)` for response-cost analysis; its token count is a
+serialized-byte estimate, not model billing telemetry.
 
 If a watch is interrupted, resume it with
 `git_workflow(action="checks", sha="<exact-pushed-sha>")` or

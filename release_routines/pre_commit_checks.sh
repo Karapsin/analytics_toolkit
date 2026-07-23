@@ -62,16 +62,25 @@ export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
 export VIRTUALENV_PIP=25.0.1
 
 run_quick_gate() {
+  local compile_status=0
+  local quick_status=0
+
   require_command python
   require_command tox
-  run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh"
-  run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh"
-  run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints
-  run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh"
-  run_stage docs-links "${script_dir}/scripts/check_docs_links.sh"
-  run_stage compileall python -m compileall analytics_toolkit tests
-  run_stage pytest pytest -q
-  run_stage tox-quick tox -e lint,type
+  run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh" || quick_status=1
+  run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh" || quick_status=1
+  run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints || quick_status=1
+  run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh" || quick_status=1
+  run_stage docs-links "${script_dir}/scripts/check_docs_links.sh" || quick_status=1
+  run_stage compileall python -m compileall analytics_toolkit tests || compile_status=1
+  if [ "${compile_status}" -eq 0 ]; then
+    run_stage pytest pytest -q || quick_status=1
+  else
+    quick_status=1
+    printf '::agent-check-stage::pytest::skip::compileall-failed\n'
+  fi
+  run_stage tox-quick tox -e lint,type || quick_status=1
+  return "${quick_status}"
 }
 
 run_full_gate() {

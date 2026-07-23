@@ -65,6 +65,7 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
         "prepare_start",
         "docs",
         "workflow_status",
+        "workflow_metrics",
         "change_impact",
         "version_bump",
         "run_checks",
@@ -297,6 +298,23 @@ def test_docs_search_and_ask_modes(tmp_path: Path) -> None:
     assert ask_result["result"]["citations"][0].startswith("agent_tools/README.md:L")
     assert "results" not in ask_result["result"]
     assert search_result["telemetry"]["response_bytes"] <= 3_500
+
+
+def test_docs_summary_deduplicates_results_and_reports_counts(tmp_path: Path) -> None:
+    root = _write_docs_project(tmp_path / "project")
+    index_dir = tmp_path / "rag-index"
+    mcp_server.docs_assistant.build_docs_index(root=root, index_dir=index_dir)
+
+    result = mcp_server.docs(
+        "docs MCP workflow",
+        top_k=3,
+        index_dir=str(index_dir),
+    )
+
+    keys = [(item["citation"], item["heading"]) for item in result["result"]["results"]]
+    assert len(keys) == len(set(keys))
+    assert result["result"]["returned_count"] == len(keys)
+    assert result["result"]["total_count"] >= len(keys)
 
 
 def test_docs_default_index_dir_is_resolved_from_repo_root(
@@ -741,8 +759,9 @@ def test_tool_output_compacts_large_command_output_and_supports_full_detail() ->
     )
 
     assert compact["command_results"] == []
-    assert compact["telemetry"]["raw_output_bytes"] == 50_000
-    assert compact["telemetry"]["suppressed_output_bytes"] > 49_000
+    assert "raw_output_bytes" not in compact["telemetry"]
+    assert diagnostic["telemetry"]["raw_output_bytes"] == 50_000
+    assert diagnostic["telemetry"]["suppressed_output_bytes"] > 49_000
     assert len(json.dumps(compact)) < 2_000
     assert "stdout_excerpt" not in diagnostic["command_results"][0]
     assert "stderr_excerpt" not in diagnostic["command_results"][0]
@@ -750,6 +769,54 @@ def test_tool_output_compacts_large_command_output_and_supports_full_detail() ->
     assert compact["telemetry"]["response_bytes"] <= (
         full["telemetry"]["response_bytes"] * 0.3
     )
+
+
+def test_summary_response_budget_is_enforced() -> None:
+    result = mcp_server._tool_output(
+        "run_checks",
+        {"detail": "summary"},
+        result={"items": ["x" * 2_000 for _ in range(20)]},
+        blockers=[{"phase": "test", "message": "y" * 5_000}],
+    )
+
+    assert result["telemetry"]["truncated"] is True
+    assert result["telemetry"]["within_budget"] is True
+    assert result["telemetry"]["response_bytes"] <= 2_500
+
+
+def test_workflow_metrics_aggregate_active_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    root = tmp_path / "project"
+    state_dir = root / ".rag_index"
+    state_dir.mkdir(parents=True)
+    (state_dir / "startup_context.json").write_text(
+        json.dumps({"id": "session-1"}),
+        encoding="utf-8",
+    )
+
+    mcp_server._tool_output(
+        "run_checks",
+        {"root": str(root), "detail": "summary"},
+        result={"failure_signature": "repeat"},
+        ok=False,
+    )
+    mcp_server._tool_output(
+        "run_checks",
+        {"root": str(root), "detail": "summary"},
+        result={"failure_signature": "repeat"},
+        ok=False,
+    )
+
+    metrics = mcp_server.workflow_metrics(root=str(root))
+
+    assert metrics["result"]["session_id"] == "session-1"
+    assert metrics["result"]["call_count"] == 2
+    assert metrics["result"]["repeated_failure_count"] == 1
+    assert metrics["result"]["estimated_response_tokens"] > 0
+    assert "model tokens unavailable" in metrics["result"]["token_estimate_method"]
 
 
 def test_run_command_persists_private_full_log(tmp_path: Path) -> None:
@@ -787,7 +854,8 @@ def test_run_checks_bounds_large_failure_response(
 
     assert result["ok"] is False
     assert len(json.dumps(result)) < 16_000
-    assert result["telemetry"]["suppressed_output_bytes"] > 90_000
+    assert result["telemetry"]["response_bytes"] <= 4_000
+    assert result["telemetry"]["within_budget"] is True
 
 
 def test_diagnostic_failure_returns_one_bounded_evidence_copy(
@@ -846,11 +914,11 @@ def test_precommit_checks_stop_before_full_gate_when_quick_gate_fails(
     result = mcp_server.run_checks(level="precommit", root=str(root))
 
     assert commands == ["release_routines/pre_commit_checks.sh --quick"]
-    assert result["result"] == {
-        "level": "precommit",
-        "command_count": 2,
-        "failed_command_index": 0,
-    }
+    assert result["result"]["level"] == "precommit"
+    assert result["result"]["command_count"] == 2
+    assert result["result"]["failed_command_index"] == 0
+    assert result["result"]["failure_changed"] is True
+    assert result["result"]["failure_signature"]
 
 
 def test_run_checks_reports_stage_nodes_and_coverage_ratchet(
@@ -880,9 +948,55 @@ def test_run_checks_reports_stage_nodes_and_coverage_ratchet(
     blocker = result["blockers"][0]
     assert blocker["phase"] == "coverage_ratchet_confirmation"
     assert blocker["stage"] == "tox"
+    assert blocker["failed_stages"] == ["tox"]
     assert blocker["test_node_ids"] == ["tests/test_example.py::test_case"]
     assert blocker["target_changes"][0].startswith("overall branch:")
     assert "Review the monotonic coverage target changes" in result["next_actions"][0]
+
+
+def test_repeated_check_failure_returns_unchanged_compact_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_command",
+        lambda root_path, command: _command_result(
+            str(command["display"]),
+            "::agent-check-stage::pytest::end::failed\n"
+            "FAILED tests/test_example.py::test_case - AssertionError",
+            ok=False,
+        ),
+    )
+
+    first = mcp_server.run_checks(area="agent_tools", root=str(root))
+    second = mcp_server.run_checks(area="agent_tools", root=str(root))
+
+    assert first["result"]["failure_changed"] is True
+    assert second["result"]["failure_changed"] is False
+    assert second["blockers"][0]["unchanged"] is True
+    assert "excerpt" not in second["blockers"][0]
+
+
+def test_run_checks_reports_managed_coverage_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    output = (
+        "Coverage targets raised; managed update accepted:\n"
+        "overall branch: 90.00% -> 91.00% covered=91/100 missing=9 prefix=overall\n"
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_command",
+        lambda root_path, command: _command_result(str(command["display"]), output),
+    )
+
+    result = mcp_server.run_checks(area="agent_tools", root=str(root))
+
+    assert result["result"]["coverage_target_changes"][0].startswith("overall branch:")
 
 
 def test_sql_focused_checks_include_all_sql_unit_modules() -> None:
@@ -1450,15 +1564,10 @@ def test_working_tree_fingerprint_excludes_sensitive_tracked_diffs(
 
     def fake_run_git(root_path: Path, args: list[str]) -> dict[str, object]:
         commands.append(args)
-        if args == ["diff", "--name-only"]:
-            stdout = ".connections/dev.toml\n.env.local\nsafe.txt\n"
-        elif args == ["diff", "--cached", "--name-only"]:
-            stdout = "config/.env.production\nstaged_safe.txt\n"
-        elif args in (
-            ["diff", "--binary", "--", "safe.txt"],
-            ["diff", "--cached", "--binary", "--", "staged_safe.txt"],
-        ):
-            stdout = "safe diff contents\n"
+        if args == ["diff", "--name-only", "-z"]:
+            stdout = ".connections/dev.toml\0.env.local\0safe.txt\0"
+        elif args == ["diff", "--cached", "--raw", "-z"]:
+            stdout = ":100644 100644 old new M\0config/.env.production\0"
         elif args == ["ls-files", "--others", "--exclude-standard"]:
             stdout = ""
         else:
@@ -1476,11 +1585,9 @@ def test_working_tree_fingerprint_excludes_sensitive_tracked_diffs(
 
     mcp_server._working_tree_fingerprint(root)
 
-    assert ["diff", "--binary", "--", ".connections/dev.toml"] not in commands
-    assert ["diff", "--binary", "--", ".env.local"] not in commands
-    assert ["diff", "--cached", "--binary", "--", "config/.env.production"] not in commands
-    assert ["diff", "--binary", "--", "safe.txt"] in commands
-    assert ["diff", "--cached", "--binary", "--", "staged_safe.txt"] in commands
+    assert ["diff", "--name-only", "-z"] in commands
+    assert ["diff", "--cached", "--raw", "-z"] in commands
+    assert not any("--binary" in command for command in commands)
 
 
 def test_check_verification_fails_closed_when_fingerprint_git_fails(
@@ -1869,6 +1976,51 @@ def test_first_pending_commit_receipt_stays_within_budget() -> None:
     assert "message" not in payload["result"]["mutation"]
     assert payload["telemetry"]["response_bytes"] <= 1_500
     assert payload["telemetry"]["within_budget"] is True
+
+
+def test_unchanged_pending_receipt_omits_repeated_check_names() -> None:
+    receipt = mcp_server._github_result_receipt(
+        {
+            "sha": "a" * 40,
+            "status": "pending",
+            "watch_id": "a" * 40,
+            "resume_after_seconds": 15,
+            "changes": [],
+            "pending": ["tests", "sql integration"],
+            "missing": [],
+        },
+        detail="summary",
+    )
+
+    assert receipt["pending_required_count"] == 2
+    assert "pending_required" not in receipt
+    assert "missing" not in receipt
+
+
+def test_completed_summary_omits_job_level_details() -> None:
+    receipt = mcp_server._github_result_receipt(
+        {
+            "sha": "a" * 40,
+            "status": "complete",
+            "required": [
+                {
+                    "name": "tests",
+                    "conclusion": "success",
+                    "url": "https://example.test/run",
+                    "jobs": [{"name": "py3.14", "conclusion": "success"}],
+                }
+            ],
+        },
+        detail="summary",
+    )
+
+    assert receipt["required"] == [
+        {
+            "name": "tests",
+            "conclusion": "success",
+            "url": "https://example.test/run",
+        }
+    ]
 
 
 def test_github_snapshot_discards_successful_api_command_payloads(tmp_path: Path) -> None:

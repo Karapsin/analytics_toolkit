@@ -202,6 +202,36 @@ def test_gate_ratchets_targets_downward_rounded_and_requires_rerun(
     )
 
 
+def test_managed_ratchet_reports_changes_without_forcing_rerun(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = _write(
+        tmp_path / "coverage.json",
+        {"files": {"analytics_toolkit/sql/a.py": _file(3, 0, 4, 1)}},
+    )
+    targets = _write(
+        tmp_path / "targets.json",
+        {
+            "overall": {"statements": 90, "branches": 70, "combined": 80},
+            "prefixes": {"sql": {"combined": 80}},
+        },
+    )
+
+    status = check_coverage.main(
+        [
+            str(report),
+            "--targets",
+            str(targets),
+            "--update-targets-managed",
+        ]
+    )
+
+    assert status == 0
+    assert "Coverage targets raised; managed update accepted" in capsys.readouterr().out
+    assert json.loads(targets.read_text(encoding="utf-8"))["overall"]["branches"] == 75.0
+
+
 def test_gate_does_not_lower_or_rewrite_targets_after_regression(
     tmp_path: Path,
 ) -> None:

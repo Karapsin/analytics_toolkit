@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import inspect
 import json
+import math
 import os
 import re
 import subprocess
@@ -36,6 +37,8 @@ RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
 TOOL_LOG_DIR = Path(DEFAULT_INDEX_DIR) / "tool_logs"
 GITHUB_WATCH_DIR = Path(DEFAULT_INDEX_DIR) / "github_checks"
 STARTUP_CONTEXT_FILE = Path(DEFAULT_INDEX_DIR) / "startup_context.json"
+TOOL_METRICS_FILE = Path(DEFAULT_INDEX_DIR) / "tool_metrics.jsonl"
+CHECK_FAILURE_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "check_failure.json"
 ENV_STATE_FILE = Path(".venv") / ".agent_env_state.json"
 DETAIL_LEVELS = ("summary", "diagnostic", "full")
 DIAGNOSTIC_EXCERPT_CHARS = 2000
@@ -404,6 +407,14 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
             "phase": "complete",
             "repo_health": _compact_repo_health(status_result["repo_health"]),
             "required_instruction_files": status_result["required_instruction_files"],
+            "instruction_routing": {
+                "auto_discovered": ["AGENTS.md"],
+                "read_next": [
+                    path
+                    for path in status_result["required_instruction_files"]
+                    if path != "AGENTS.md"
+                ],
+            },
             "docs_index": {
                 "file_count": index.file_count,
                 "chunk_count": index.chunk_count,
@@ -415,8 +426,8 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
         },
         command_results=command_results,
         next_actions=[
-            "Read every required instruction file.",
-            "Call docs(...) for focused RAG retrieval before normal repository inspection.",
+            "Read instruction_routing.read_next; do not reread auto-discovered AGENTS.md.",
+            "Call change_impact(...) for consolidated RAG and implementation preflight context.",
             "Call workflow_status(...) before and after changes.",
         ],
     )
@@ -425,7 +436,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
 def docs(
     query: str,
     mode: str = "search",
-    top_k: int = 5,
+    top_k: int = 3,
     index_dir: str = DEFAULT_INDEX_DIR,
     detail: str = "summary",
 ) -> dict[str, Any]:
@@ -458,10 +469,17 @@ def docs(
 
     try:
         if mode == "search":
-            results = docs_assistant.search_docs(query, index_dir=resolved_index_dir, top_k=top_k)
+            candidates = docs_assistant.search_docs(
+                query,
+                index_dir=resolved_index_dir,
+                top_k=max(top_k * 3, top_k),
+            )
+            results = _dedupe_search_results(candidates)[:top_k]
             result: dict[str, Any] = {
                 "mode": mode,
                 "results": [_search_result_to_dict(item, detail=detail) for item in results],
+                "returned_count": len(results),
+                "total_count": len(candidates),
                 "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
         else:
@@ -473,8 +491,10 @@ def docs(
             )
             result = {
                 "mode": mode,
-                "answer": answer.answer,
-                "citations": answer.citations,
+                "answer": _bounded_text(answer.answer, 1200),
+                "citations": _unique(answer.citations)[:top_k],
+                "returned_count": min(len(answer.citations), top_k),
+                "total_count": len(answer.citations),
                 "freshness_warnings": _freshness_warnings(resolved_index_dir),
             }
             if detail != "summary":
@@ -499,6 +519,61 @@ def docs(
         summary=f"Docs {mode} completed.",
         result=result,
         next_actions=["Use cited files as focused context before repository inspection."],
+    )
+
+
+def workflow_metrics(
+    session_id: str | None = None,
+    root: str = ".",
+    detail: str = "summary",
+) -> dict[str, Any]:
+    """Summarize persisted MCP response and retry costs for one startup session."""
+    root_path = _resolve_root(root)
+    input_summary = {"session_id": session_id, "root": str(root_path), "detail": detail}
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "workflow_metrics",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
+    active = _read_startup_context(root_path)
+    selected = session_id or str(active.get("id", ""))
+    entries = _read_tool_metrics(root_path, selected)
+    by_tool: dict[str, dict[str, int]] = {}
+    failure_counts: dict[str, int] = {}
+    for entry in entries:
+        bucket = by_tool.setdefault(
+            str(entry.get("tool", "unknown")),
+            {"calls": 0, "response_bytes": 0, "raw_output_bytes": 0, "failures": 0},
+        )
+        bucket["calls"] += 1
+        bucket["response_bytes"] += int(entry.get("response_bytes", 0))
+        bucket["raw_output_bytes"] += int(entry.get("raw_output_bytes", 0))
+        if not entry.get("ok", False):
+            bucket["failures"] += 1
+        signature = str(entry.get("failure_signature", ""))
+        if signature:
+            failure_counts[signature] = failure_counts.get(signature, 0) + 1
+    response_bytes = sum(item["response_bytes"] for item in by_tool.values())
+    repeated_failures = sum(count - 1 for count in failure_counts.values() if count > 1)
+    result: dict[str, Any] = {
+        "session_id": selected or None,
+        "call_count": len(entries),
+        "response_bytes": response_bytes,
+        "estimated_response_tokens": math.ceil(response_bytes / 4),
+        "token_estimate_method": "ceil(serialized_response_bytes / 4); model tokens unavailable",
+        "repeated_failure_count": repeated_failures,
+        "by_tool": by_tool,
+    }
+    if detail != "summary":
+        result["entries"] = entries
+    return _tool_output(
+        "workflow_metrics",
+        input_summary,
+        summary="Workflow metrics collected.",
+        result=result,
     )
 
 
@@ -1111,6 +1186,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         command_results.append(result)
         if not result["ok"]:
             blocker = _check_failure_blocker(result)
+            blocker, failure = _annotate_check_failure(root_path, blocker)
             return _tool_output(
                 "run_checks",
                 input_summary,
@@ -1120,6 +1196,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
                     "level": level,
                     "command_count": len(commands),
                     "failed_command_index": command_index,
+                    **failure,
                 },
                 command_results=command_results,
                 blockers=[blocker],
@@ -1127,6 +1204,9 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
             )
 
     result_data: dict[str, Any] = {"level": level, "command_count": len(commands)}
+    coverage_changes = _managed_coverage_changes(command_results)
+    if coverage_changes:
+        result_data["coverage_target_changes"] = coverage_changes
     if level == "precommit":
         try:
             fingerprint = _working_tree_fingerprint(root_path)
@@ -1530,6 +1610,7 @@ def create_mcp_server() -> Any:
     server.tool()(prepare_start)
     server.tool()(docs)
     server.tool()(workflow_status)
+    server.tool()(workflow_metrics)
     server.tool()(change_impact)
     server.tool()(version_bump)
     server.tool()(run_checks)
@@ -1777,7 +1858,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     docs_parser = subparsers.add_parser("docs")
     docs_parser.add_argument("query")
     docs_parser.add_argument("--mode", choices=["search", "ask"], default="search")
-    docs_parser.add_argument("--top-k", type=int, default=5)
+    docs_parser.add_argument("--top-k", type=int, default=3)
     docs_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
     docs_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     docs_parser.set_defaults(
@@ -1803,6 +1884,18 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             module=args.module,
             change_type=args.change_type,
             instructions_read=args.instructions_read,
+            root=args.root,
+            detail=args.detail,
+        )
+    )
+
+    metrics_parser = subparsers.add_parser("workflow-metrics")
+    metrics_parser.add_argument("--session-id")
+    metrics_parser.add_argument("--root", default=".")
+    metrics_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
+    metrics_parser.set_defaults(
+        handler=lambda args: workflow_metrics(
+            session_id=args.session_id,
             root=args.root,
             detail=args.detail,
         )
@@ -2068,11 +2161,15 @@ def _write_environment_state(
 
 
 def _compact_repo_health(health: dict[str, Any]) -> dict[str, Any]:
-    return {
+    compact = {
         key: health[key]
         for key in ("branch", "dirty", "status_short", "diff_stat", "staged_diff_stat")
         if key in health
     }
+    compact["status_count"] = len(health.get("status_short", []))
+    compact["diff_stat_count"] = len(health.get("diff_stat", []))
+    compact["staged_diff_stat_count"] = len(health.get("staged_diff_stat", []))
+    return compact
 
 
 def _compact_metadata_status(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -2110,7 +2207,70 @@ def _write_startup_context(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
     path.chmod(0o600)
+    metrics_path = root / TOOL_METRICS_FILE
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text("", encoding="utf-8")
+    metrics_path.chmod(0o600)
     return state
+
+
+def _read_startup_context(root: Path) -> dict[str, Any]:
+    try:
+        value = json.loads((root / STARTUP_CONTEXT_FILE).read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _read_tool_metrics(root: Path, session_id: str) -> list[dict[str, Any]]:
+    if not session_id:
+        return []
+    try:
+        lines = (root / TOOL_METRICS_FILE).read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, OSError):
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and entry.get("session_id") == session_id:
+            entries.append(entry)
+    return entries
+
+
+def _record_tool_metric(  # noqa: PLR0913 - persisted metric fields stay explicit.
+    root: Path,
+    *,
+    tool: str,
+    ok: bool,
+    response_bytes: int,
+    raw_output_bytes: int,
+    duration_seconds: float,
+    failure_signature: str | None,
+) -> None:
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    context = _read_startup_context(root)
+    session_id = str(context.get("id", ""))
+    if not session_id:
+        return
+    entry = {
+        "session_id": session_id,
+        "tool": tool,
+        "ok": ok,
+        "response_bytes": response_bytes,
+        "raw_output_bytes": raw_output_bytes,
+        "duration_seconds": round(duration_seconds, 3),
+        "failure_signature": failure_signature,
+        "recorded_at": time.time(),
+    }
+    path = root / TOOL_METRICS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, sort_keys=True) + "\n")
+    path.chmod(0o600)
 
 
 def _workflow_context(
@@ -2371,12 +2531,17 @@ def _check_failure_blocker(result: dict[str, Any]) -> dict[str, Any]:
         r"::agent-check-stage::([^:]+)::(?:start|end)::([^\s]+)", output
     )
     stage = marker_matches[-1][0] if marker_matches else None
+    failed_stages = _unique(
+        re.findall(r"::agent-check-stage::([^:]+)::end::failed", output)
+    )
     if "Coverage targets raised; review and rerun:" in output:
         phase = "coverage_ratchet_confirmation"
         stage = stage or "coverage"
     blocker = _command_blocker(phase, result)
     if stage:
         blocker["stage"] = stage
+    if failed_stages:
+        blocker["failed_stages"] = failed_stages
     node_ids = sorted(
         set(re.findall(r"(?:FAILED|ERROR)\s+(tests/[^\s]+::[^\s]+)", output))
     )
@@ -2410,6 +2575,58 @@ def _check_failure_blocker(result: dict[str, Any]) -> dict[str, Any]:
         changes = output.split(marker, 1)[1].strip().splitlines()
         blocker["target_changes"] = [line.strip() for line in changes if line.strip()][:50]
     return blocker
+
+
+def _annotate_check_failure(
+    root: Path,
+    blocker: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    stable = {
+        key: value
+        for key, value in blocker.items()
+        if key not in {"excerpt", "log_ref"}
+    }
+    signature = hashlib.sha256(
+        json.dumps(stable, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    state_path = root / CHECK_FAILURE_STATE_FILE
+    try:
+        previous = json.loads(state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        previous = {}
+    changed = previous.get("failure_signature") != signature
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {"failure_signature": signature, "updated_at": time.time()},
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    state_path.chmod(0o600)
+    compact = dict(blocker)
+    if not changed:
+        compact.pop("excerpt", None)
+        compact["unchanged"] = True
+    return compact, {"failure_signature": signature, "failure_changed": changed}
+
+
+def _managed_coverage_changes(results: list[dict[str, Any]]) -> list[str]:
+    marker = "Coverage targets raised; managed update accepted:"
+    for result in results:
+        output = "\n".join(
+            str(result.get(key, "")) for key in ("stdout", "stderr")
+        )
+        if marker not in output:
+            continue
+        tail = output.split(marker, 1)[1]
+        return [
+            line.strip()
+            for line in tail.splitlines()
+            if line.strip() and not line.startswith("::agent-check-stage::")
+        ][:50]
+    return []
 
 
 def _check_next_action(blocker: dict[str, Any], level: str) -> str:
@@ -2468,29 +2685,117 @@ def _tool_output(
         "blockers": normalized_blockers,
         "next_actions": next_actions or [],
     }
-    section_bytes = {
-        key: len(json.dumps(payload[key], ensure_ascii=False, default=str).encode("utf-8"))
-        for key in ("input", "result", "command_results", "blockers", "next_actions")
-    }
     budget = _response_budget(tool, detail=detail, ok=ok, result=payload["result"])
-    payload["telemetry"] = {
-        "raw_output_bytes": raw_bytes,
-        "returned_output_bytes": returned_bytes,
-        "suppressed_output_bytes": max(0, raw_bytes - returned_bytes),
-        "section_bytes": section_bytes,
+    telemetry: dict[str, Any] = {
         "response_budget_bytes": budget,
         "within_budget": True,
         "response_bytes": 0,
+        "truncated": False,
     }
-    response_bytes = len(
-        json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    if detail != "summary":
+        telemetry.update(
+            {
+                "raw_output_bytes": raw_bytes,
+                "returned_output_bytes": returned_bytes,
+                "suppressed_output_bytes": max(0, raw_bytes - returned_bytes),
+                "section_bytes": {
+                    key: len(
+                        json.dumps(payload[key], ensure_ascii=False, default=str).encode("utf-8")
+                    )
+                    for key in ("input", "result", "command_results", "blockers", "next_actions")
+                },
+            }
+        )
+    payload["telemetry"] = telemetry
+    if budget is not None and _serialized_bytes(payload) > budget:
+        _compact_payload_to_budget(payload, budget)
+    for _ in range(3):
+        payload["telemetry"]["response_bytes"] = _serialized_bytes(payload)
+    payload["telemetry"]["within_budget"] = (
+        budget is None or payload["telemetry"]["response_bytes"] <= budget
     )
-    payload["telemetry"]["response_bytes"] = response_bytes
-    payload["telemetry"]["within_budget"] = budget is None or response_bytes <= budget
-    payload["telemetry"]["response_bytes"] = len(
-        json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-    )
+    root_value = input_summary.get("root", ".")
+    try:
+        metrics_root = _resolve_root(str(root_value))
+        signature = str(payload["result"].get("failure_signature", "")) or None
+        _record_tool_metric(
+            metrics_root,
+            tool=tool,
+            ok=ok,
+            response_bytes=int(payload["telemetry"]["response_bytes"]),
+            raw_output_bytes=raw_bytes,
+            duration_seconds=sum(float(item.get("duration_seconds", 0)) for item in raw_results),
+            failure_signature=signature,
+        )
+    except OSError:
+        pass
     return payload
+
+
+def _serialized_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+
+
+def _bounded_structure(value: Any, *, max_items: int, max_string: int) -> Any:
+    if isinstance(value, str):
+        return _bounded_text(value, max_string)
+    if isinstance(value, list):
+        return [
+            _bounded_structure(item, max_items=max_items, max_string=max_string)
+            for item in value[:max_items]
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _bounded_structure(item, max_items=max_items, max_string=max_string)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _compact_payload_to_budget(payload: dict[str, Any], budget: int) -> None:
+    payload["telemetry"]["truncated"] = True
+    for max_items, max_string in ((8, 400), (5, 240), (3, 120)):
+        payload["result"] = _bounded_structure(
+            payload["result"], max_items=max_items, max_string=max_string
+        )
+        payload["blockers"] = _bounded_structure(
+            payload["blockers"], max_items=max_items, max_string=max_string
+        )
+        payload["next_actions"] = _bounded_structure(
+            payload["next_actions"], max_items=max_items, max_string=max_string
+        )
+        payload["command_results"] = _bounded_structure(
+            payload["command_results"], max_items=max_items, max_string=max_string
+        )
+        if _serialized_bytes(payload) <= budget:
+            return
+    payload["result"] = {
+        "truncated": True,
+        "available_via": "Use diagnostic detail or the returned log_ref for bounded evidence.",
+    }
+    payload["blockers"] = _bounded_structure(
+        payload["blockers"], max_items=2, max_string=100
+    )
+    payload["next_actions"] = _bounded_structure(
+        payload["next_actions"], max_items=1, max_string=100
+    )
+    payload["command_results"] = []
+    if _serialized_bytes(payload) > budget:
+        payload["blockers"] = [
+            {
+                key: item[key]
+                for key in ("phase", "message", "log_ref")
+                if key in item
+            }
+            for item in payload["blockers"][:1]
+            if isinstance(item, dict)
+        ]
+        payload["telemetry"] = {
+            "response_budget_bytes": budget,
+            "within_budget": True,
+            "response_bytes": 0,
+            "truncated": True,
+        }
 
 
 def _compact_input_summary(input_summary: dict[str, Any], *, detail: str) -> dict[str, Any]:
@@ -2507,7 +2812,7 @@ def _compact_input_summary(input_summary: dict[str, Any], *, detail: str) -> dic
         "index_dir": DEFAULT_INDEX_DIR,
         "integration_profile": "all",
         "mode": "search",
-        "top_k": 5,
+        "top_k": 3,
         "wait_seconds": GITHUB_CHECK_WAIT_SECONDS,
     }
     for key, value in input_summary.items():
@@ -2539,12 +2844,13 @@ def _response_budget(
     if tool == "git_workflow" and github.get("status") == "pending":
         return 1500
     return {
-        "change_impact": 8000,
+        "change_impact": 6000,
         "docs": 3500,
         "git_workflow": 3000,
         "prepare_start": 2500,
         "release_workflow": 5000,
         "run_checks": 2500,
+        "workflow_metrics": 3000,
         "workflow_status": 2500,
     }.get(tool, 3000)
 
@@ -2558,7 +2864,7 @@ def _search_result_to_dict(
     compact = {
         "citation": chunk.citation,
         "heading": chunk.heading,
-        "snippet": docs_assistant.snippet(chunk.text),
+        "snippet": docs_assistant.snippet(chunk.text, 180),
     }
     if detail != "summary":
         compact.update(
@@ -2570,6 +2876,20 @@ def _search_result_to_dict(
             }
         )
     return compact
+
+
+def _dedupe_search_results(
+    results: list[docs_assistant.SearchResult],
+) -> list[docs_assistant.SearchResult]:
+    unique_results: list[docs_assistant.SearchResult] = []
+    seen: set[tuple[str, str]] = set()
+    for item in results:
+        key = (item.chunk.citation, item.chunk.heading)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_results.append(item)
+    return unique_results
 
 
 def _freshness_warnings(index_dir: str | Path) -> list[str]:
@@ -3029,22 +3349,30 @@ def _is_sensitive_path_part(part: str) -> bool:
 
 def _tracked_diff_fingerprint_parts(root: Path, *, staged: bool) -> list[str]:
     label = "staged-diff" if staged else "working-diff"
-    name_only_args = ["diff", "--cached", "--name-only"] if staged else ["diff", "--name-only"]
-    changed = _require_git_for_fingerprint(root, name_only_args)
+    if staged:
+        changed = _require_git_for_fingerprint(root, ["diff", "--cached", "--raw", "-z"])
+        return [label, changed.get("stdout", ""), changed.get("stderr", "")]
+    changed = _require_git_for_fingerprint(root, ["diff", "--name-only", "-z"])
     parts = [label, changed.get("stderr", "")]
-    for rel_path in sorted(path for path in changed.get("stdout", "").splitlines() if path):
+    for rel_path in sorted(path for path in changed.get("stdout", "").split("\0") if path):
         if _is_sensitive_local_path(rel_path):
             parts.append(f"{rel_path}:excluded-sensitive-local-path")
             continue
-        diff_args = (
-            ["diff", "--cached", "--binary", "--", rel_path]
-            if staged
-            else ["diff", "--binary", "--", rel_path]
-        )
-        diff = _require_git_for_fingerprint(root, diff_args)
-        parts.append(diff.get("stdout", ""))
-        parts.append(diff.get("stderr", ""))
+        parts.append(f"{rel_path}:{_working_path_digest(root / rel_path)}")
     return parts
+
+
+def _working_path_digest(path: Path) -> str:
+    try:
+        if path.is_symlink():
+            return "symlink:" + hashlib.sha256(os.readlink(path).encode("utf-8")).hexdigest()
+        if not path.exists():
+            return "deleted"
+        if not path.is_file():
+            return "non-file"
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        return f"unreadable:{type(exc).__name__}:{exc}"
 
 
 def _untracked_file_fingerprint_parts(root: Path) -> list[str]:
@@ -3913,31 +4241,25 @@ def _github_result_receipt(result: dict[str, Any], *, detail: str) -> dict[str, 
     if status == "pending":
         changes = result.get("changes", [])
         pending = result.get("pending", [])
-        return {
+        pending_receipt = {
             "sha": result.get("sha"),
             "status": status,
             "watch_id": result.get("watch_id"),
             "resume_after_seconds": result.get("resume_after_seconds"),
             "changes": [_github_change_receipt(change) for change in changes[:3]],
             "change_count": len(changes),
-            "pending_required": pending[:5],
             "pending_required_count": len(pending),
-            "missing": result.get("missing", []),
         }
+        if changes:
+            pending_receipt["pending_required"] = pending[:5]
+            pending_receipt["missing"] = result.get("missing", [])
+        return pending_receipt
     if status == "complete":
         receipt["required"] = [
             {
                 "name": workflow.get("name"),
                 "conclusion": workflow.get("conclusion"),
                 "url": workflow.get("url"),
-                "jobs": [
-                    {
-                        "name": job.get("name"),
-                        "conclusion": job.get("conclusion"),
-                        "url": job.get("url"),
-                    }
-                    for job in workflow.get("jobs", [])
-                ],
             }
             for workflow in result.get("required", [])
         ]

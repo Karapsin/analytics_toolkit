@@ -50,7 +50,9 @@ revalidated after startup sync.
 Use these MCP tools for the corresponding agent workflow steps:
 
 - Startup orchestration and required instruction routing: `prepare_start`.
-- RAG retrieval: `docs(query, mode="search"|"ask", top_k=5)`.
+- RAG retrieval: `docs(query, mode="search"|"ask", top_k=3)`.
+- Consolidated implementation preflight: `change_impact`.
+- Per-startup response and retry accounting: `workflow_metrics`.
 - Repository routing, health, metadata, and recommended checks:
   `workflow_status`.
 - Version, README version, and changelog updates: `version_bump`.
@@ -64,6 +66,13 @@ Use the default compact `summary` responses for normal workflow progress. Reques
 Successful internal command output is intentionally omitted from summary and
 diagnostic responses; inspect the referenced private log selectively instead of
 returning an entire build or test transcript to the model.
+
+For implementation work, use `change_impact(...)` after startup routing instead
+of duplicating separate RAG, contract, architecture, documentation, and test-plan
+lookups. Do not batch multiple potentially large retrievals or broad file reads
+into one response; follow citations with narrow searches and line ranges. Act on
+structured check blockers first, and do not rerun an unchanged failure without
+changing the tree.
 
 Normal implementation, documentation, test, commit, and push work is done on
 the `dev` branch and syncs with `origin/dev`. `git_workflow(action="commit")`
@@ -92,8 +101,10 @@ repository wrapper instead of inline Python:
 
 ```bash
 agent_tools/mcp_tool.sh prepare-start --task "implementation" --module agent_tools
-agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 5
+agent_tools/mcp_tool.sh docs "specific topic" --mode search --top-k 3
 agent_tools/mcp_tool.sh docs "specific question" --mode ask
+agent_tools/mcp_tool.sh change-impact --task "specific change" --module sql --symbol sql.read
+agent_tools/mcp_tool.sh workflow-metrics
 agent_tools/mcp_tool.sh workflow-status --task "documentation" --module sql
 agent_tools/mcp_tool.sh version-bump "Updated SQL docs" --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level focused --dry-run
@@ -167,7 +178,7 @@ RAG is intentionally an agent-only repository workflow, not a public
 commands, package extras, vector-store dependencies, hosted LLM SDKs, Ollama,
 or embedding-model dependencies for it.
 
-Use `docs(query, mode="search")` for ranked snippets and
+Use `docs(query, mode="search", top_k=3)` for ranked snippets and
 `docs(query, mode="ask")` for a grounded no-LLM summary with citations. Keep
 retrieved context focused; rebuilding `.rag_index/` is local work and does not
 itself consume LLM context tokens, but reading retrieved output does.
