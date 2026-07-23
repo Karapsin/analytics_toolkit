@@ -5,6 +5,7 @@ from .load.load_df import build_load_df_plan, load_df
 from .table import (
     ch_reconfigure_table,
     drop_partitions,
+    gp_analyze_partitioned_table,
     gp_create_partitions,
     gp_vacuum,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "ch_reconfigure_table",
     "drop_partitions",
     "execute_sql",
+    "gp_analyze_partitioned_table",
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",

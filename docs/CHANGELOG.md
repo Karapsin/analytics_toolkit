@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Bounded first-poll GitHub status receipts.
 - Removed duplicate commit receipt metadata.
 - Added Excel file export support to sql.read dataframe results.
+- Add concurrent Greenplum leaf-partition analyze helper.
 
 ## 1.3.10.19 - 2026-07-20
 

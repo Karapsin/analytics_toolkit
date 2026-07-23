@@ -35,6 +35,7 @@ from .dml.table import (
     ch_reconfigure_table,
     drop_tables,
     drop_partitions,
+    gp_analyze_partitioned_table,
     gp_create_partitions,
     gp_vacuum,
 )
@@ -57,6 +58,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "execute",
     "drop_tables",
     "drop_partitions",
+    "gp_analyze_partitioned_table",
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",
@@ -89,6 +91,7 @@ __all__ = [
     "create_sql_table",
     "drop_tables",
     "drop_partitions",
+    "gp_analyze_partitioned_table",
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",

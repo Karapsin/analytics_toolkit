@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib
 from datetime import date, datetime, timezone
+from threading import Event, Lock
+from time import sleep
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from analytics_toolkit.sql.connection.errors import (
@@ -17,21 +20,15 @@ sql_module = importlib.import_module("analytics_toolkit.sql")
 dml_module = importlib.import_module("analytics_toolkit.sql.dml")
 dml_table_module = importlib.import_module("analytics_toolkit.sql.dml.table")
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.partitions")
+gp_maintenance_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.gp.partition_maintenance"
+)
 
 
 def test_gp_create_partitions_is_public_and_timed() -> None:
-    assert (
-        sql_module.gp_create_partitions
-        is table_ops_module.gp_create_partitions
-    )
-    assert (
-        dml_module.gp_create_partitions
-        is table_ops_module.gp_create_partitions
-    )
-    assert (
-        dml_table_module.gp_create_partitions
-        is table_ops_module.gp_create_partitions
-    )
+    assert sql_module.gp_create_partitions is table_ops_module.gp_create_partitions
+    assert dml_module.gp_create_partitions is table_ops_module.gp_create_partitions
+    assert dml_table_module.gp_create_partitions is table_ops_module.gp_create_partitions
     assert "gp_create_partitions" in sql_module.__all__
     assert "gp_create_partitions" in dml_module.__all__
     assert "gp_create_partitions" in dml_table_module.__all__
@@ -44,6 +41,180 @@ def test_gp_create_partitions_is_public_and_timed() -> None:
     assert not hasattr(sql_module, "gp_create_many_partitions")
     assert "build_gp_create_partitions_sqls" not in sql_module.__all__
     assert not hasattr(sql_module, "build_gp_create_partitions_sqls")
+
+
+def test_gp_analyze_partitioned_table_is_public_and_timed() -> None:
+    assert (
+        sql_module.gp_analyze_partitioned_table
+        is gp_maintenance_module.gp_analyze_partitioned_table
+    )
+    assert "gp_analyze_partitioned_table" in sql_module.__all__
+    assert "gp_analyze_partitioned_table" in dml_module.__all__
+    assert "gp_analyze_partitioned_table" in dml_table_module.__all__
+    assert "gp_analyze_partitioned_table" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
+    assert getattr(sql_module.gp_analyze_partitioned_table, "__sql_public_timing__", False)
+
+
+def test_gp_analyze_partitioned_table_builds_labeled_plan() -> None:
+    plan = gp_maintenance_module.gp_analyze_partitioned_table(
+        "gp",
+        ["reporting.events_1_prt_2026_01", "reporting.events_1_prt_2026_02"],
+        concurrency=2,
+        dry_run=True,
+        query_label="refresh partition statistics",
+    )
+
+    assert plan.operation == "gp_analyze_partitioned_table"
+    assert plan.options == {
+        "partition_names": [
+            '"reporting"."events_1_prt_2026_01"',
+            '"reporting"."events_1_prt_2026_02"',
+        ],
+        "discovered_partitions": False,
+        "concurrency": 2,
+    }
+    assert plan.metadata.statement_count == 2
+    assert plan.sqls == [
+        "/* analytics_toolkit query_label=refresh partition statistics */\n"
+        'ANALYZE "reporting"."events_1_prt_2026_01"',
+        "/* analytics_toolkit query_label=refresh partition statistics */\n"
+        'ANALYZE "reporting"."events_1_prt_2026_02"',
+    ]
+
+
+def test_gp_analyze_partitioned_table_discovers_leaf_partitions_for_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def discover(_db_key: str, query: str, **_kwargs: Any) -> pd.DataFrame:
+        calls.append(query)
+        return pd.DataFrame(
+            [
+                {"schema_name": "analytics", "relation_name": "orders_1_prt_b"},
+                {"schema_name": "analytics", "relation_name": "orders_1_prt_a"},
+            ]
+        )
+
+    read_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+    monkeypatch.setattr(read_sql_module, "read_sql", discover)
+
+    plan = gp_maintenance_module.gp_analyze_partitioned_table("gp", dry_run=True)
+
+    assert len(calls) == 1
+    assert "FROM pg_catalog.pg_inherits" in calls[0]
+    assert plan.options["discovered_partitions"] is True
+    assert plan.options["partition_names"] == [
+        '"analytics"."orders_1_prt_b"',
+        '"analytics"."orders_1_prt_a"',
+    ]
+
+
+@pytest.mark.parametrize(
+    ("partition_names", "message"),
+    [
+        ([], "must not be empty"),
+        (["orders"], "schema-qualified"),
+        (["analytics.orders", "analytics.orders"], "duplicates"),
+        ([1], "must contain strings"),
+    ],
+)
+def test_gp_analyze_partitioned_table_validates_partition_names(
+    partition_names: Any,
+    message: str,
+) -> None:
+    with pytest.raises(InvalidSqlInputError, match=message):
+        gp_maintenance_module.gp_analyze_partitioned_table("gp", partition_names, dry_run=True)
+
+
+@pytest.mark.parametrize("concurrency", [0, True, 1.5])
+def test_gp_analyze_partitioned_table_validates_concurrency(concurrency: Any) -> None:
+    with pytest.raises(ValueError, match="integer >= 1"):
+        gp_maintenance_module.gp_analyze_partitioned_table(
+            "gp", "analytics.orders_1_prt_a", concurrency=concurrency, dry_run=True
+        )
+
+
+def test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_connection = FakeDbapiConnection()
+    second_connection = FakeDbapiConnection()
+    connections = [first_connection, second_connection]
+    monkeypatch.setattr(
+        gp_maintenance_module, "get_sql_connection", lambda _key: connections.pop(0)
+    )
+
+    result = gp_maintenance_module.gp_analyze_partitioned_table(
+        "gp",
+        ["analytics.orders_1_prt_a", "analytics.orders_1_prt_b"],
+        retry_cnt=1,
+        timeout_increment=0,
+        return_metadata=True,
+    )
+
+    assert first_connection.executed == ['ANALYZE "analytics"."orders_1_prt_a"']
+    assert second_connection.executed == ['ANALYZE "analytics"."orders_1_prt_b"']
+    assert first_connection.close_calls == second_connection.close_calls == 1
+    assert result.metadata.operation_status == "success"
+    assert result.metadata.retry_attempts == 1
+
+
+def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = Event()
+    lock = Lock()
+    opened = 0
+
+    class FailingConnection(FakeDbapiConnection):
+        def cursor(self) -> Any:
+            cursor = super().cursor()
+            original_execute = cursor.execute
+
+            def execute(query: str, *args: Any, **kwargs: Any) -> Any:
+                started.set()
+                raise RuntimeError("analyze failed")
+
+            cursor.execute = execute
+            del original_execute
+            return cursor
+
+    class WaitingConnection(FakeDbapiConnection):
+        def cursor(self) -> Any:
+            cursor = super().cursor()
+            original_execute = cursor.execute
+
+            def execute(query: str, *args: Any, **kwargs: Any) -> Any:
+                assert started.wait(timeout=1)
+                sleep(0.02)
+                return original_execute(query, *args, **kwargs)
+
+            cursor.execute = execute
+            return cursor
+
+    def open_connection(_key: str) -> FakeDbapiConnection:
+        nonlocal opened
+        with lock:
+            opened += 1
+            return FailingConnection() if opened == 1 else WaitingConnection()
+
+    monkeypatch.setattr(gp_maintenance_module, "get_sql_connection", open_connection)
+
+    with pytest.raises(RuntimeError, match="analyze failed"):
+        gp_maintenance_module.gp_analyze_partitioned_table(
+            "gp",
+            [
+                "analytics.orders_1_prt_a",
+                "analytics.orders_1_prt_b",
+                "analytics.orders_1_prt_c",
+            ],
+            concurrency=2,
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+
+    assert opened == 2
 
 
 def test_gp_create_partitions_only_generate_sql_renders_period_ranges() -> None:
@@ -166,9 +337,7 @@ def test_gp_create_partitions_dry_run_returns_plan_without_connection(
         "create_partitions",
         "create_partitions",
     ]
-    assert plan.sqls[0].startswith(
-        "/* analytics_toolkit query_label=create partitions */"
-    )
+    assert plan.sqls[0].startswith("/* analytics_toolkit query_label=create partitions */")
 
 
 def test_gp_create_partitions_return_sql_returns_plan_without_connection(
@@ -188,9 +357,7 @@ def test_gp_create_partitions_return_sql_returns_plan_without_connection(
     )
 
     assert plan.operation == "gp_create_partitions"
-    assert plan.sqls == [
-        "ALTER TABLE sandbox.events ADD PARTITION p_RU VALUES ('RU')"
-    ]
+    assert plan.sqls == ["ALTER TABLE sandbox.events ADD PARTITION p_RU VALUES ('RU')"]
 
 
 def test_gp_create_partitions_executes_in_order_and_commits(
@@ -338,12 +505,9 @@ def test_gp_create_partitions_validates_period_starts(
             "after interval start",
         ),
         ({"intervals": [{"start": "2026-05-01"}]}, "ISO date"),
-        ({"days": ["2026-05-01"], "name_template": "p"},
-            "name_template"),
-        ({"days": ["2026-05-01"], "name_template": "p_{}_{}"},
-            "name_template"),
-        ({"days": ["2026-05-01"], "name_template": "{}"},
-            "unquoted SQL identifier"),
+        ({"days": ["2026-05-01"], "name_template": "p"}, "name_template"),
+        ({"days": ["2026-05-01"], "name_template": "p_{}_{}"}, "name_template"),
+        ({"days": ["2026-05-01"], "name_template": "{}"}, "unquoted SQL identifier"),
         (
             {
                 "intervals": [
@@ -400,35 +564,55 @@ def test_partition_lifecycle_metadata_results_and_contexts(
         contexts.append(kwargs["context_factory"](1))
 
     monkeypatch.setattr(
-        table_ops_module, "run_connection_operation", fake_run_connection_operation,
+        table_ops_module,
+        "run_connection_operation",
+        fake_run_connection_operation,
     )
     created = table_ops_module.gp_create_partitions(
-        "gp", "sandbox.events", days=["2026-05-01"], return_metadata=True,
+        "gp",
+        "sandbox.events",
+        days=["2026-05-01"],
+        return_metadata=True,
     )
     dropped = table_ops_module.drop_partitions(
-        "gp", "sandbox.events", ["2026-05-01"], return_metadata=True,
+        "gp",
+        "sandbox.events",
+        ["2026-05-01"],
+        return_metadata=True,
     )
     assert created.metadata.statement_count == 1
     assert dropped.metadata.statement_count == 1
     assert [context.operation for context in contexts] == [
-        "gp_create_partitions", "drop_partitions",
+        "gp_create_partitions",
+        "drop_partitions",
     ]
-    assert table_ops_module.gp_create_partitions(
-        "gp", "sandbox.events", days=["2026-05-02"],
-    ) is None
+    assert (
+        table_ops_module.gp_create_partitions(
+            "gp",
+            "sandbox.events",
+            days=["2026-05-02"],
+        )
+        is None
+    )
 
 
 def test_gp_partition_normalizers_cover_remaining_type_and_date_guards(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        table_ops_module, "_selected_gp_create_partition_input",
+        table_ops_module,
+        "_selected_gp_create_partition_input",
         lambda **_kwargs: "unexpected",
     )
     with pytest.raises(AssertionError, match="Unexpected"):
         table_ops_module._normalize_gp_create_partitions(
-            intervals=None, values=None, days=None, weeks=None, months=None,
-            years=None, name_template="p_{}",
+            intervals=None,
+            values=None,
+            days=None,
+            weeks=None,
+            months=None,
+            years=None,
+            name_template="p_{}",
         )
 
     with pytest.raises(InvalidSqlInputError, match="contain mappings"):
@@ -441,10 +625,12 @@ def test_gp_partition_normalizers_cover_remaining_type_and_date_guards(
             table_ops_module._validate_gp_partition_sequence(value, "values")
 
     assert table_ops_module._parse_gp_partition_date(
-        datetime(2026, 5, 1, 12, tzinfo=timezone.utc), "date",
+        datetime(2026, 5, 1, 12, tzinfo=timezone.utc),
+        "date",
     ) == date(2026, 5, 1)
     assert table_ops_module._parse_gp_partition_date(
-        date(2026, 5, 2), "date",
+        date(2026, 5, 2),
+        "date",
     ) == date(2026, 5, 2)
     with pytest.raises(InvalidSqlInputError, match="ISO date"):
         table_ops_module._parse_gp_partition_date(" ", "date")

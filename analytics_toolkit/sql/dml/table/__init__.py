@@ -24,6 +24,7 @@ from .api import (
     finalize_stage_table,
     get_table_column_types,
     get_trino_table_column_types,
+    gp_analyze_partitioned_table,  # type: ignore[attr-defined]
     gp_create_partitions,
     gp_vacuum,
     insert_from_query,
@@ -63,6 +64,7 @@ __all__ = [
     "finalize_stage_table",
     "get_table_column_types",
     "get_trino_table_column_types",
+    "gp_analyze_partitioned_table",
     "gp_create_partitions",
     "gp_vacuum",
     "insert_from_query",

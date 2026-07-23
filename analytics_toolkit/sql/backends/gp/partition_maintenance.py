@@ -1,0 +1,265 @@
+# ruff: noqa
+# mypy: disable-error-code="index,union-attr"
+from __future__ import annotations
+
+from collections.abc import Sequence
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
+from typing import Any
+
+from ...backend_adapters import get_backend_adapter
+from ...connection.config import get_connection_config
+from ...connection.errors import (
+    InvalidSqlInputError,
+    SqlOperationContext,
+    UnsupportedConnectionTypeError,
+    sql_preview,
+)
+from ...connection.get_sql_connection import get_sql_connection
+from ...core.identifiers import TableIdentifier
+from ...execution.operation_runner import (
+    run_connection_operation,
+    timed_public_sql_function,
+    tracked_sql_operation,
+    validate_retry_options,
+)
+from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from analytics_toolkit.general import time_print
+
+
+@dataclass(frozen=True)
+class _Options:
+    connection_key: str
+    partition_names: tuple[str, ...] | None
+    concurrency: int
+    retry_cnt: int
+    timeout_increment: int | float
+    query_label: str | None
+    dry_run: bool
+    return_sql: bool
+    return_metadata: bool
+
+
+_LEAF_PARTITIONS_SQL = """
+SELECT namespace.nspname AS schema_name, relation.relname AS relation_name
+FROM pg_catalog.pg_inherits AS inheritance
+JOIN pg_catalog.pg_class AS relation ON relation.oid = inheritance.inhrelid
+JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+WHERE NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_inherits AS child_inheritance
+    WHERE child_inheritance.inhparent = relation.oid
+)
+ORDER BY namespace.nspname, relation.relname
+""".strip()
+
+
+@timed_public_sql_function
+def gp_analyze_partitioned_table(
+    db_key: str,
+    partition_names: str | Sequence[str] | None = None,
+    *,
+    concurrency: int = 1,
+    retry_cnt: int = 5,
+    timeout_increment: int | float = 5,
+    query_label: str | None = None,
+    dry_run: bool = False,
+    return_sql: bool = False,
+    return_metadata: bool = False,
+) -> SqlPlan | SqlOperationResult | None:
+    options = _build_options(
+        db_key,
+        partition_names,
+        concurrency,
+        retry_cnt,
+        timeout_increment,
+        query_label,
+        dry_run,
+        return_sql,
+        return_metadata,
+    )
+    names = (
+        list(options.partition_names) if options.partition_names is not None else _discover(options)
+    )
+    plan = _build_plan(options, names)
+    if options.dry_run or options.return_sql:
+        return plan
+    if names:
+        time_print(
+            f"Analyzing {len(names)} Greenplum partition(s)",
+            connection=options.connection_key,
+            backend="gp",
+        )
+        attempts = _execute_all(options, names, plan.sqls)
+        plan.metadata.retry_attempts = max(item.retry_attempts or 0 for item in attempts)
+    plan.metadata.operation_status = "success"
+    if options.return_metadata:
+        return SqlOperationResult(rows=None, metadata=plan.metadata, plan=plan)
+    return None
+
+
+def _build_options(
+    db_key: str,
+    partition_names: str | Sequence[str] | None,
+    concurrency: int,
+    retry_cnt: int,
+    timeout_increment: int | float,
+    query_label: str | None,
+    dry_run: bool,
+    return_sql: bool,
+    return_metadata: bool,
+) -> _Options:
+    config = get_connection_config(db_key)
+    if config.backend != "gp":
+        raise UnsupportedConnectionTypeError(
+            f"gp_analyze_partitioned_table requires a gp connection, got '{config.backend}'."
+        )
+    if concurrency.__class__ is not int or concurrency < 1:
+        raise ValueError("concurrency must be an integer >= 1.")
+    validate_retry_options(retry_cnt, timeout_increment)
+    return _Options(
+        connection_key=config.connection_key,
+        partition_names=_normalize_names(partition_names),
+        concurrency=concurrency,
+        retry_cnt=retry_cnt,
+        timeout_increment=timeout_increment,
+        query_label=query_label,
+        dry_run=dry_run,
+        return_sql=return_sql,
+        return_metadata=return_metadata,
+    )
+
+
+def _normalize_names(value: str | Sequence[str] | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    raw_names = (
+        [value] if isinstance(value, str) else list(value) if isinstance(value, Sequence) else None
+    )
+    if raw_names is None:
+        raise InvalidSqlInputError(
+            "partition_names must be a fully qualified table name or sequence of names."
+        )
+    if not raw_names:
+        raise InvalidSqlInputError("partition_names must not be empty.")
+    names: list[str] = []
+    for raw_name in raw_names:
+        if not isinstance(raw_name, str):
+            raise InvalidSqlInputError("partition_names must contain strings.")
+        try:
+            identifier = TableIdentifier.parse(raw_name.strip(), "gp")
+        except ValueError as exc:
+            raise InvalidSqlInputError(
+                "partition_names must contain valid fully qualified table names."
+            ) from exc
+        if len(identifier.parts) != 2:
+            raise InvalidSqlInputError("partition_names must contain schema-qualified table names.")
+        names.append(identifier.render_quoted("gp"))
+    if len(set(names)) != len(names):
+        raise InvalidSqlInputError("partition_names must not contain duplicates.")
+    return tuple(names)
+
+
+def _discover(options: _Options) -> list[str]:
+    from ...dml.io.read_sql import read_sql
+
+    partitions = read_sql(
+        options.connection_key,
+        _LEAF_PARTITIONS_SQL,
+        retry_cnt=options.retry_cnt,
+        timeout_increment=options.timeout_increment,
+        query_label=options.query_label,
+    )
+    if not {"schema_name", "relation_name"}.issubset(partitions.columns):
+        raise RuntimeError("Greenplum partition discovery returned an invalid result.")
+    return [
+        TableIdentifier.parse(f"{row.schema_name}.{row.relation_name}", "gp").render_quoted("gp")
+        for row in partitions[["schema_name", "relation_name"]].itertuples(index=False)
+    ]
+
+
+def _build_plan(options: _Options, names: Sequence[str]) -> SqlPlan:
+    plan = SqlPlan(
+        operation="gp_analyze_partitioned_table",
+        target_alias=options.connection_key,
+        target_backend="gp",
+        options={
+            "partition_names": list(names),
+            "discovered_partitions": options.partition_names is None,
+            "concurrency": options.concurrency,
+        },
+        metadata=SqlOperationMetadata(statement_count=len(names), query_label=options.query_label),
+    )
+    adapter = get_backend_adapter("gp")
+    for name in names:
+        plan.add(
+            adapter.analyze_table_sql(name, query_label=options.query_label),
+            alias=options.connection_key,
+            backend="gp",
+            phase="analyze_partition",
+            target_table=name,
+        )
+    return plan
+
+
+def _execute_all(
+    options: _Options, names: Sequence[str], sqls: Sequence[str]
+) -> list[SqlOperationMetadata]:
+    if options.concurrency == 1:
+        return [_execute_one(options, name, sql) for name, sql in zip(names, sqls)]
+    completed: list[SqlOperationMetadata] = []
+    next_index = 0
+    futures: set[Future[SqlOperationMetadata]] = set()
+    with ThreadPoolExecutor(max_workers=min(options.concurrency, len(names))) as executor:
+        while next_index < len(names) and len(futures) < options.concurrency:
+            futures.add(executor.submit(_execute_one, options, names[next_index], sqls[next_index]))
+            next_index += 1
+        while futures:
+            done, futures = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                completed.append(future.result())
+            while next_index < len(names) and len(futures) < options.concurrency:
+                futures.add(
+                    executor.submit(_execute_one, options, names[next_index], sqls[next_index])
+                )
+                next_index += 1
+    return completed
+
+
+def _execute_one(options: _Options, name: str, sql: str) -> SqlOperationMetadata:
+    metadata = SqlOperationMetadata(statement_count=1, query_label=options.query_label)
+
+    def operation(connection_ref: dict[str, Any], attempt: int) -> None:
+        with tracked_sql_operation(
+            metadata=metadata,
+            operation_name="gp_analyze_partitioned_table",
+            alias=options.connection_key,
+            backend="gp",
+            phase="analyze_partition",
+            retry_attempt=attempt,
+            query_label=options.query_label,
+            preview_sql=sql,
+        ):
+            get_backend_adapter("gp").execute_commands(connection_ref["connection"], [sql])
+
+    def context(attempt: int) -> SqlOperationContext:
+        return SqlOperationContext(
+            operation="gp_analyze_partitioned_table",
+            alias=options.connection_key,
+            backend="gp",
+            phase="analyze_partition",
+            target_table=name,
+            retry_attempt=attempt,
+            sql_preview=sql_preview(sql),
+        )
+
+    run_connection_operation(
+        operation_name=f"analyzing partition {name} on {options.connection_key}",
+        connection_key=options.connection_key,
+        backend="gp",
+        retry_cnt=options.retry_cnt,
+        timeout_increment=options.timeout_increment,
+        open_connection=get_sql_connection,
+        operation=operation,
+        context_factory=context,
+    )
+    return metadata

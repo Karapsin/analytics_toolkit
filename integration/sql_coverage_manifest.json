@@ -2542,6 +2542,20 @@
       ],
       "parameters": {}
     },
+    "gp_analyze_partitioned_table": {
+      "classification": "integration",
+      "parameters": {
+        "db_key": {"kind": "POSITIONAL_OR_KEYWORD", "signature_default": "<required>", "states": [{"state": "required-explicit", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}]},
+        "partition_names": {"kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None", "states": [{"state": "default", "value": "None", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_discovers_leaf_partitions_for_dry_run"]}, {"state": "supported-non-default", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}]},
+        "concurrency": {"kind": "KEYWORD_ONLY", "signature_default": "1", "states": [{"state": "default", "value": "1", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}, {"state": "supported-non-default", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure"]}]},
+        "retry_cnt": {"kind": "KEYWORD_ONLY", "signature_default": "5", "states": [{"state": "default", "value": "5", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}, {"state": "supported-non-default", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}]},
+        "timeout_increment": {"kind": "KEYWORD_ONLY", "signature_default": "5", "states": [{"state": "default", "value": "5", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}, {"state": "supported-non-default", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}]},
+        "query_label": {"kind": "KEYWORD_ONLY", "signature_default": "None", "states": [{"state": "default", "value": "None", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}, {"state": "supported-non-default", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}]},
+        "dry_run": {"kind": "KEYWORD_ONLY", "signature_default": "False", "states": [{"state": "default", "value": "False", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}, {"state": "true", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}]},
+        "return_sql": {"kind": "KEYWORD_ONLY", "signature_default": "False", "states": [{"state": "default", "value": "False", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}]},
+        "return_metadata": {"kind": "KEYWORD_ONLY", "signature_default": "False", "states": [{"state": "default", "value": "False", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_builds_labeled_plan"]}, {"state": "true", "status": "covered", "tests": ["tests/test_sql_gp_create_partitions.py::test_gp_analyze_partitioned_table_executes_each_partition_with_fresh_connection"]}]}
+      }
+    },
     "gp_create_partitions": {
       "classification": "integration",
       "parameters": {

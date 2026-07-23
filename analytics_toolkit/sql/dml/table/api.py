@@ -43,6 +43,8 @@ from .maintenance import (
     drop_table_with_retry,
     gp_vacuum,
 )
+from analytics_toolkit.sql.backends.gp.partition_maintenance import gp_analyze_partitioned_table
+
 from .partitions import (
     build_drop_many_partitions_plan,
     build_drop_many_partitions_sqls,

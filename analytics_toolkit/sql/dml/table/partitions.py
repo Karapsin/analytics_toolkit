@@ -55,6 +55,7 @@ class _GpCreatePartitionsOptions:
     return_metadata: bool = False
     query_label: str | None = None
 
+
 def build_drop_many_partitions_sqls(
     connection_type: str,
     table: str,
@@ -216,6 +217,8 @@ def gp_create_partitions(
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
     return None
 
+
+@timed_public_sql_function
 @timed_public_sql_function
 def drop_partitions(
     db_key: str,
