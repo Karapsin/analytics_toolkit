@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import inspect
 import importlib
-from pathlib import Path
+import inspect
 from typing import Any
 
 import pandas as pd
@@ -14,6 +13,7 @@ from tests.sql_fakes import (
     FakeDbapiConnection,
 )
 
+pytestmark = pytest.mark.filterwarnings("ignore:ch_cluster is deprecated:DeprecationWarning")
 
 capabilities_module = importlib.import_module("analytics_toolkit.sql.core.capabilities")
 identifiers_module = importlib.import_module("analytics_toolkit.sql.core.identifiers")
@@ -39,7 +39,7 @@ cli_module = importlib.import_module("analytics_toolkit.cli")
 
 
 class RoutingCursor:
-    def __init__(self, connection: "RoutingDbapiConnection") -> None:
+    def __init__(self, connection: RoutingDbapiConnection) -> None:
         self.connection = connection
         self.rows: list[tuple[Any, ...]] = []
         self.close_calls = 0
@@ -1519,9 +1519,7 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     assert plan.options["max_batch_size"] == 400_000
     assert plan.options["target_batch_seconds"] == 10.0
     assert plan.statements[0].phase == "read_source"
-    assert not {"clear_target", "drop_target"} & {
-        statement.phase for statement in plan.statements
-    }
+    assert not {"clear_target", "drop_target"} & {statement.phase for statement in plan.statements}
     assert "query_label=copy-target" in plan.statements[0].sql
     assert plan.statements[-1].phase == "drop_stage"
 
@@ -1756,12 +1754,12 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
     create_sql = next(
         statement.sql for statement in plan.statements if statement.phase == "create_target"
     )
-    assert create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
     assert "ENGINE = ReplicatedMergeTree" in create_sql
     assert "PARTITION BY `dt`" in create_sql
     assert "ORDER BY (`dt`, `id`)" in create_sql
-    assert "_shard" not in "\n".join(plan.sqls)
-    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "analytics.events_shard" in "\n".join(plan.sqls)
+    assert "ON CLUSTER analytics" in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
 
@@ -1808,12 +1806,12 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         for statement in plan.statements
         if statement.phase == "create_target" and statement.target_table == "analytics.events"
     ][0]
-    assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
     assert "ENGINE = ReplicatedMergeTree" in target_create_sql
     assert "PARTITION BY `dt`" in target_create_sql
     assert "ORDER BY (`dt`, `id`)" in target_create_sql
-    assert "_shard" not in "\n".join(plan.sqls)
-    assert "ON CLUSTER" not in "\n".join(plan.sqls)
+    assert "analytics.events_shard" in "\n".join(plan.sqls)
+    assert "ON CLUSTER analytics" in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
 

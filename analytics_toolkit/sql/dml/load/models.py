@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,11 @@ class LoadOptions:
     use_parquet_staging: bool = False
     retry_cnt: int = 5
     timeout_increment: int | float = 5
+    regular_ddl_properties: Mapping[str, Any] | None = None
+    staging_ddl_properties: Mapping[str, Any] | None = None
+    parquet_ddl_properties: Mapping[str, Any] | None = None
+    regular_ch_policy: Any = None
+    staging_ch_policy: Any = None
 
 
 @dataclass

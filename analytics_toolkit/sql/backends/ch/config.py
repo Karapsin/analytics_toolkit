@@ -2,8 +2,28 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+AIRFLOW_EXTRA_FIELDS = (
+    "secure",
+    "verify",
+    "ca_certs",
+    "transfer_staging_schema",
+    "ca_certs_variable",
+    "connect_timeout",
+    "send_receive_timeout",
+    "settings",
+    "interface",
+    "query_limit",
+    "query_retries",
+    "client_name",
+    "ddl_defaults",
+)
+
 
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
+    from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
+        parse_ddl_defaults,
+    )
+
     from ...connection.config import (
         ChConfig,
         _optional_bool,
@@ -79,6 +99,7 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             connection_key,
             "transfer_staging_schema",
         ),
+        ddl_defaults=parse_ddl_defaults(raw_config.get("ddl_defaults"), connection_key, "ch"),
     )
 
 

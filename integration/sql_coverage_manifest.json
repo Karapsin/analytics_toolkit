@@ -1127,11 +1127,11 @@
         },
         "ch_engine": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "'ReplicatedMergeTree'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'ReplicatedMergeTree'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "lifecycle.trino"
@@ -1148,11 +1148,11 @@
         },
         "ch_cluster": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "'{cluster}'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'{cluster}'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "lifecycle.trino"
@@ -1169,11 +1169,11 @@
         },
         "ch_sharding_key": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "'rand()'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'rand()'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "lifecycle.trino"
@@ -1190,11 +1190,11 @@
         },
         "ch_distributed_table": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "False",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "False",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "lifecycle.trino"
@@ -1208,6 +1208,22 @@
               ]
             }
           ]
+        },
+        "ch_distributed_engine_template": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_cluster": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_shard_on_cluster": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_on_cluster": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
         },
         "ch_only_shard": {
           "kind": "KEYWORD_ONLY",
@@ -3297,11 +3313,11 @@
         },
         "ch_engine": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'ReplicatedMergeTree'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'ReplicatedMergeTree'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "load.trino.append"
@@ -3318,11 +3334,11 @@
         },
         "ch_cluster": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'{cluster}'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'{cluster}'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "load.trino.append"
@@ -3339,11 +3355,11 @@
         },
         "ch_sharding_key": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'rand()'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'rand()'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "load.trino.append"
@@ -3357,6 +3373,26 @@
               ]
             }
           ]
+        },
+        "ch_distributed_table": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_engine_template": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_shard_on_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_on_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
         },
         "ch_only_shard": {
           "kind": "POSITIONAL_OR_KEYWORD",
@@ -5060,11 +5096,11 @@
         },
         "ch_engine": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'ReplicatedMergeTree'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'ReplicatedMergeTree'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "transfer.trino.ch.append"
@@ -5081,11 +5117,11 @@
         },
         "ch_cluster": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'{cluster}'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'{cluster}'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "transfer.trino.ch.append"
@@ -5102,11 +5138,11 @@
         },
         "ch_sharding_key": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'rand()'",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "'rand()'",
+              "value": "None",
               "status": "covered",
               "scenarios": [
                 "transfer.trino.ch.append"
@@ -5120,6 +5156,26 @@
               ]
             }
           ]
+        },
+        "ch_distributed_table": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_engine_template": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_shard_on_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_distributed_on_cluster": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
         },
         "ch_only_shard": {
           "kind": "POSITIONAL_OR_KEYWORD",

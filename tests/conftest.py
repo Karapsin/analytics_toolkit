@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: E501
 import json
 import sys
 from collections.abc import Callable
@@ -36,8 +37,7 @@ DEFAULT_SQL_CONNECTIONS = {
         "catalog": "iceberg",
         "schema": "sandbox",
         "upsert_partition_drop_sql_template": (
-            "ALTER TABLE {table} DROP PARTITION "
-            "({partition_column} = {partition_value})"
+            "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
     },
     "ch": {
@@ -48,6 +48,22 @@ DEFAULT_SQL_CONNECTIONS = {
         "password": "password",
         "database": "default",
         "transfer_staging_schema": "analytics_toolkit_transfer",
+        "ddl_defaults": {
+            "regular": {
+                "create_distributed_pair": True,
+                "shard": {"engine": "ReplicatedMergeTree", "on_cluster": "{cluster}"},
+                "distributed": {
+                    "engine_template": "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
+                    "cluster": "{cluster}",
+                    "on_cluster": "{cluster}",
+                    "sharding_key": "rand()",
+                },
+            },
+            "staging": {
+                "create_distributed_pair": False,
+                "shard": {"engine": "MergeTree", "on_cluster": None},
+            },
+        },
     },
 }
 

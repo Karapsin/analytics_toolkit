@@ -311,15 +311,19 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
 
     assert transferred_rows == 1
     assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" in target.commands
-    assert all("ON CLUSTER" not in command for command in target.commands)
+    assert any(
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}_shard")
+        and "ON CLUSTER '{cluster}'" in command
+        for command in target.commands
+    )
     assert all("ENGINE = Distributed(" not in command for command in target.commands)
-    assert not any(TARGET_SHARD_TABLE in command for command in target.commands)
+    assert any(TARGET_SHARD_TABLE in command for command in target.commands)
     target_creates = [
         command
         for command in target.commands
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}\n")
+        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}_shard")
     ]
-    assert len(target_creates) == 1
+    assert len(target_creates) == 2
     assert "ENGINE = ReplicatedMergeTree" in target_creates[0]
     assert "PARTITION BY `month_date`" in target_creates[0]
     assert "ORDER BY `month_date`" in target_creates[0]

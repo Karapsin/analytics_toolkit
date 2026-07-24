@@ -19,7 +19,6 @@ from ....execution.operation_runner import (
     run_retrying_operation,
     timed_public_sql_function,
     tracked_sql_operation,
-    validate_progress_option,
 )
 from ....execution.plan_steps import (
     add_analyze_step,
@@ -33,6 +32,7 @@ from ....execution.plan_steps import (
 )
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...load.load_sql_table import AmbiguousTableLoadError
+from ...ddl_options import resolve_operation_ddl
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns, normalize_upsert_partition_column
 from ..io.source import TransferSourceStreamReadError
@@ -88,9 +88,14 @@ def transfer_table(
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
+    ch_engine: str | None = None,
+    ch_cluster: str | None = None,
+    ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     dry_run: bool = False,
@@ -143,6 +148,11 @@ def transfer_table(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         query_label=query_label,
@@ -306,9 +316,14 @@ def build_transfer_options(
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
+    ch_engine: str | None = None,
+    ch_cluster: str | None = None,
+    ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     query_label: str | None = None,
@@ -356,9 +371,8 @@ def build_transfer_options(
         transfer_staging_schema=to_config.transfer_staging_schema,
         transfer_staging_location=target_defaults.transfer_staging_location,
     )
-    resolved_write_mode = _resolve_transfer_write_mode(
-        to_config.backend,
-        write_mode=write_mode,
+    resolved_write_mode = transfer_options.resolve_transfer_write_mode(
+        to_config.backend, write_mode
     )
     resolved_target_rows_per_second = transfer_options.resolve_target_adaptation_mode(
         adaptive_batch_size=adaptive_batch_size,
@@ -429,6 +443,18 @@ def build_transfer_options(
         partition_by=normalized_partition_by,
         option_owner="to_db",
     )
+    ddl = resolve_operation_ddl(
+        to_config,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_only_shard=ch_only_shard,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
+    )
     options = TransferOptions(
         from_db_key=from_config.connection_key,
         from_db_backend=from_config.backend,
@@ -482,13 +508,24 @@ def build_transfer_options(
             order_by,
             "order_by",
         ),
-        ch_engine=target_adapter.normalize_ch_string(ch_engine, "ch_engine"),
-        ch_cluster=target_adapter.normalize_ch_string(ch_cluster, "ch_cluster"),
-        ch_sharding_key=target_adapter.normalize_ch_string(
-            ch_sharding_key,
-            "ch_sharding_key",
+        ch_engine=(
+            ddl.regular_ch_policy.shard_engine
+            if ddl.regular_ch_policy
+            else ch_engine or "ReplicatedMergeTree"
         ),
-        ch_only_shard=_normalize_only_shard(ch_only_shard),
+        ch_cluster=(
+            ddl.regular_ch_policy.distributed_cluster
+            or ddl.regular_ch_policy.shard_on_cluster
+            or "{cluster}"
+            if ddl.regular_ch_policy
+            else ch_cluster or "{cluster}"
+        ),
+        ch_sharding_key=(
+            ddl.regular_ch_policy.sharding_key or "rand()"
+            if ddl.regular_ch_policy
+            else ch_sharding_key or "rand()"
+        ),
+        ch_only_shard=transfer_options.normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
         source_transfer_staging_schema=from_config.transfer_staging_schema,
@@ -511,6 +548,11 @@ def build_transfer_options(
         estimate_total_rows=estimate_total_rows,
         validate_row_count=validate_row_count,
         ch_count_limit_read=ch_count_limit_read,
+        regular_ddl_properties=ddl.regular_properties,
+        staging_ddl_properties=ddl.staging_properties,
+        parquet_ddl_properties=ddl.parquet_properties,
+        regular_ch_policy=ddl.regular_ch_policy,
+        staging_ch_policy=ddl.staging_ch_policy,
     )
 
     if options.from_db_key == options.to_db_key:
@@ -537,9 +579,11 @@ def build_transfer_options(
             "Trino write_mode='upsert' requires "
             "upsert_partition_drop_sql_template in the target connection config."
         )
-    _validate_progress(options.progress)
-    _validate_estimate_total_rows(options.estimate_total_rows)
-    _validate_row_count_options(options.validate_row_count, options.ch_count_limit_read)
+    transfer_options.validate_progress(options.progress)
+    transfer_options.validate_estimate_total_rows(options.estimate_total_rows)
+    transfer_options.validate_row_count_options(
+        options.validate_row_count, options.ch_count_limit_read
+    )
     target_adapter.validate_gp_distributed_by_key_option(
         options.gp_distributed_by_key,
         option_owner="to_db",
@@ -562,41 +606,6 @@ def build_transfer_options(
         ch_only_shard=options.ch_only_shard,
     )
     return options
-
-
-def _resolve_transfer_write_mode(
-    to_db_backend: str,
-    *,
-    write_mode: str | None,
-) -> str:
-    if write_mode is None:
-        return "append"
-    return get_backend_adapter(to_db_backend).validate_write_mode(write_mode)
-
-
-def _validate_progress(progress: bool) -> None:
-    validate_progress_option(progress)
-
-
-def _validate_estimate_total_rows(estimate_total_rows: bool) -> None:
-    if not isinstance(estimate_total_rows, bool):
-        raise ValueError("estimate_total_rows must be a boolean.")
-
-
-def _validate_row_count_options(
-    validate_row_count: bool,
-    ch_count_limit_read: bool,
-) -> None:
-    if not isinstance(validate_row_count, bool):
-        raise ValueError("validate_row_count must be a boolean.")
-    if not isinstance(ch_count_limit_read, bool):
-        raise ValueError("ch_count_limit_read must be a boolean.")
-
-
-def _normalize_only_shard(ch_only_shard: bool) -> bool:
-    if not isinstance(ch_only_shard, bool):
-        raise ValueError("ch_only_shard must be a boolean.")
-    return ch_only_shard
 
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
@@ -701,6 +710,10 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 options.table_schema,
                 stage_external_location or "<stage external location>",
                 query_label=options.query_label,
+                ddl_properties={
+                    **(options.staging_ddl_properties or {}),
+                    **(options.parquet_ddl_properties or {}),
+                },
             ),
             alias=options.to_db_key,
             backend=options.to_db_backend,
@@ -728,6 +741,8 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                     table_schema=options.table_schema,
                     gp_distributed_by_key=options.gp_distributed_by_key,
                     query_label=options.query_label,
+                    ddl_properties=options.staging_ddl_properties,
+                    ch_creation_policy=options.staging_ch_policy,
                 ),
                 alias=options.to_db_key,
                 backend=options.to_db_backend,

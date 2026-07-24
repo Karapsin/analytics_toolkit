@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: FBT001
+
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
+from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -112,9 +115,14 @@ def load_df(
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
+    ch_engine: str | None = None,
+    ch_cluster: str | None = None,
+    ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     dry_run: bool = False,
@@ -153,6 +161,11 @@ def load_df(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         query_label=query_label,
@@ -295,9 +308,14 @@ def _build_load_options(
     trino_insert_chunk_size: int | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
+    ch_engine: str | None = None,
+    ch_cluster: str | None = None,
+    ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     query_label: str | None = None,
@@ -323,6 +341,18 @@ def _build_load_options(
         gp_partitions,
         partition_by=normalized_partition_by,
         option_owner="db_key",
+    )
+    ddl = resolve_operation_ddl(
+        config,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_only_shard=ch_only_shard,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
     )
     options = LoadOptions(
         connection_key=config.connection_key,
@@ -351,11 +381,22 @@ def _build_load_options(
             order_by,
             "order_by",
         ),
-        ch_engine=adapter.normalize_ch_string(ch_engine, "ch_engine"),
-        ch_cluster=adapter.normalize_ch_string(ch_cluster, "ch_cluster"),
-        ch_sharding_key=adapter.normalize_ch_string(
-            ch_sharding_key,
-            "ch_sharding_key",
+        ch_engine=(
+            ddl.regular_ch_policy.shard_engine
+            if ddl.regular_ch_policy
+            else ch_engine or "ReplicatedMergeTree"
+        ),
+        ch_cluster=(
+            ddl.regular_ch_policy.distributed_cluster
+            or ddl.regular_ch_policy.shard_on_cluster
+            or "{cluster}"
+            if ddl.regular_ch_policy
+            else ch_cluster or "{cluster}"
+        ),
+        ch_sharding_key=(
+            ddl.regular_ch_policy.sharding_key or "rand()"
+            if ddl.regular_ch_policy
+            else ch_sharding_key or "rand()"
         ),
         ch_only_shard=_normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
@@ -379,6 +420,11 @@ def _build_load_options(
         ),
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
+        regular_ddl_properties=ddl.regular_properties,
+        staging_ddl_properties=ddl.staging_properties,
+        parquet_ddl_properties=ddl.parquet_properties,
+        regular_ch_policy=ddl.regular_ch_policy,
+        staging_ch_policy=ddl.staging_ch_policy,
     )
 
     if not options.destination_table:
@@ -596,6 +642,10 @@ def _create_load_target_table(
             original_target_exists=state.original_target_exists,
         )
     )
+    if options.regular_ddl_properties:
+        create_kwargs["ddl_properties"] = options.regular_ddl_properties
+    if options.regular_ch_policy is not None:
+        create_kwargs["ch_creation_policy"] = options.regular_ch_policy
 
     _create_sql_table_with_connection(
         options.connection_backend,
@@ -760,6 +810,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 df,
                 table_schema=options.table_schema,
                 query_label=options.query_label,
+                ddl_properties=options.regular_ddl_properties,
+                ch_creation_policy=options.regular_ch_policy,
                 **create_kwargs,
             ),
             alias=options.connection_key,
@@ -782,6 +834,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
                 query_label=options.query_label,
+                ddl_properties=options.staging_ddl_properties,
+                ch_creation_policy=options.staging_ch_policy,
             ),
             alias=options.connection_key,
             backend=options.connection_backend,
@@ -810,6 +864,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                     table_schema=options.table_schema,
                     gp_distributed_by_key=options.gp_distributed_by_key,
                     query_label=options.query_label,
+                    ddl_properties=options.staging_ddl_properties,
+                    ch_creation_policy=options.staging_ch_policy,
                 ),
                 alias=options.connection_key,
                 backend=options.connection_backend,
@@ -867,6 +923,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 table_schema=options.table_schema,
                 gp_distributed_by_key=options.gp_distributed_by_key,
                 query_label=options.query_label,
+                ddl_properties=options.staging_ddl_properties,
+                ch_creation_policy=options.staging_ch_policy,
             ),
             alias=options.connection_key,
             backend=options.connection_backend,
@@ -1011,6 +1069,8 @@ def _add_parquet_load_plan_steps(
                     df,
                     table_schema=options.table_schema,
                     query_label=options.query_label,
+                    ddl_properties=options.staging_ddl_properties,
+                    ch_creation_policy=options.staging_ch_policy,
                 ),
                 alias=options.connection_key,
                 backend=options.connection_backend,
@@ -1135,7 +1195,7 @@ def _load_dataframe(
                 target_table=options.destination_table,
                 batch=df,
                 gp_distributed_by_key=options.gp_distributed_by_key,
-        connection_key=options.connection_key,
+                connection_key=options.connection_key,
                 query_label=options.query_label,
                 transfer_staging_schema=options.transfer_staging_schema,
                 transfer_staging_username=options.transfer_staging_username,

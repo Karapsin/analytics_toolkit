@@ -84,6 +84,100 @@ for an Airflow-source file. The helper never overwrites an existing
 }
 ```
 
+## Per-Connection DDL Defaults
+
+Each connection may define `ddl_defaults`. `regular` applies to persistent
+targets created by `create_sql_table`, create-from-SQL, `load_df`, and
+`transfer`; `staging` applies to toolkit-owned stage, worker, upsert, and
+materialized-source tables. Trino alone also accepts `parquet_staging`, which
+is layered after `staging` for external Parquet stages.
+
+Precedence is path-specific toolkit defaults, the selected connection scope,
+Trino `parquet_staging` when applicable, explicit helper arguments, and finally
+workflow-required properties. Missing scopes and keys retain Greenplum and
+Trino behavior. JSON `null` removes an inherited configurable property.
+
+```json
+{
+  "gp": {
+    "type": "gp", "host": "gp.example", "user": "user",
+    "password": "password", "database": "db",
+    "ddl_defaults": {
+      "regular": {
+        "appendonly": true, "blocksize": 32768,
+        "compresstype": "zstd", "compresslevel": 4,
+        "orientation": "column"
+      },
+      "staging": {}
+    }
+  },
+  "trino": {
+    "type": "trino", "host": "trino.example", "user": "user",
+    "catalog": "iceberg", "schema": "sandbox",
+    "ddl_defaults": {
+      "regular": {"format": "'PARQUET'", "object_store_layout_enabled": true},
+      "staging": {},
+      "parquet_staging": {}
+    }
+  },
+  "ch": {
+    "type": "ch", "host": "ch.example", "user": "user",
+    "password": "password", "database": "default",
+    "ddl_defaults": {
+      "regular": {
+        "create_distributed_pair": true,
+        "shard": {"engine": "ReplicatedMergeTree", "on_cluster": "CORE"},
+        "distributed": {
+          "engine_template": "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
+          "cluster": "{cluster}", "on_cluster": "{cluster}",
+          "sharding_key": "rand()"
+        }
+      },
+      "staging": {
+        "create_distributed_pair": false,
+        "shard": {"engine": "MergeTree", "on_cluster": null}
+      }
+    }
+  }
+}
+```
+
+Greenplum and Trino property names are unquoted SQL identifiers and are
+normalized to lowercase. Native `true` and the raw string `"true"` both render
+as SQL `true`. Numbers render directly. Strings are trimmed and emitted as raw
+SQL fragments, so SQL string literals need their own quotes: use
+`"'PARQUET'"`, not `"PARQUET"`. Expressions such as `"ARRAY['day']"` remain
+valid. JSON arrays render as SQL `ARRAY[...]`, with string elements quoted and
+escaped. Empty strings, nested objects, non-finite numbers, invalid keys, and
+case-insensitive duplicate keys are rejected.
+
+External Trino Parquet stages apply `staging` and then `parquet_staging`, but
+always restore `format = 'PARQUET'` and the generated `external_location`.
+Those protected values describe the files produced by the workflow.
+
+For ClickHouse, `shard.on_cluster` controls physical-table execution while
+`distributed.on_cluster` independently controls facade execution.
+`distributed.cluster` is the routing cluster inside `Distributed(...)`; it is
+not an execution cluster. Templates accept `{cluster}`, `{database}`,
+`{shard_table}`, and `{sharding_key}`. The actual target database and generated
+shard relation always replace template positions. Explicit
+`ch_distributed_cluster` and `ch_sharding_key` replace hardcoded template
+arguments, including appending a fourth sharding argument to a three-argument
+template. Optional trailing arguments are preserved.
+
+The dedicated ClickHouse overrides are `ch_distributed_engine_template`,
+`ch_distributed_cluster`, `ch_shard_on_cluster`, and
+`ch_distributed_on_cluster`, alongside nullable `ch_engine`,
+`ch_sharding_key`, and `ch_distributed_table`. `ch_only_shard=True` is the
+strongest topology override. `ch_cluster` remains a deprecated shortcut that
+fills both execution clusters and the routing cluster when dedicated values
+are absent.
+
+Older ClickHouse entries that relied on helper defaults must add explicit
+`regular` and `staging` policies (the generated dummy file is a working
+template) or pass all required helper overrides. Missing required effective
+settings fail before dry-run SQL generation or database access.
+
 ## Validation
 
 Use [sql.validate_connections](functions/validate_connections.md) to validate
@@ -209,6 +303,11 @@ Airflow-source entries support resolver objects for optional connection extras.
 Use `{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
 `extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
+`ddl_defaults` is a literal nested mapping, even when a DDL property is named
+`from`. The whole object may also come from Airflow extras with an explicit
+resolver, for example
+`"ddl_defaults": {"from": "extra", "key": "ddl_defaults"}`; a literal
+mapping with additional scope keys is never mistaken for a resolver.
 
 Airflow task working directories can differ from the DAG project root. If the
 default search from the current working directory upward cannot find the

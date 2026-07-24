@@ -86,6 +86,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
                 "ca_certs",
                 "ssl_cert",
                 "ssl_key",
+                "ddl_defaults",
             ],
         )
 

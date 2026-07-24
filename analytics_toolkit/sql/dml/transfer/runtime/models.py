@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
 from collections import deque
-from typing import Any, Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 TrinoTransferMode = Literal["parquet", "values"]
 
@@ -393,6 +396,11 @@ class TransferOptions:
     concurrency: int = 1
     source_table: str | None = None
     row_count_result: TransferRowCountResult | None = None
+    regular_ddl_properties: Mapping[str, Any] | None = None
+    staging_ddl_properties: Mapping[str, Any] | None = None
+    parquet_ddl_properties: Mapping[str, Any] | None = None
+    regular_ch_policy: Any = None
+    staging_ch_policy: Any = None
 
 
 @dataclass

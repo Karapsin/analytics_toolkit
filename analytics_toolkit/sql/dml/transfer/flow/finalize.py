@@ -128,6 +128,7 @@ def finalize_loaded_stage(
             trino_upsert_partition_drop_sql_template=(
                 options.trino_upsert_partition_drop_sql_template
             ),
+            ch_creation_policy=options.regular_ch_policy,
         ),
     )
     _run_with_fresh_target_connection(

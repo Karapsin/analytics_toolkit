@@ -49,9 +49,7 @@ def create_stage_table(
             connection_key=connection_key or connection_type,
         ):
             if random_suffix is not None:
-                raise RuntimeError(
-                    f"Stage table name collision detected for {stage_table}."
-                )
+                raise RuntimeError(f"Stage table name collision detected for {stage_table}.")
             time_print(
                 f"Stage table name collision detected for {stage_table}; "
                 f"retrying with a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
@@ -70,6 +68,7 @@ def create_stage_table(
             stage_table,
             None if create_schema is not None else batch,
             connection_key=connection_key or connection_type,
+            ddl_scope="staging",
             gp_distributed_by_key=gp_distributed_by_key,
             **create_kwargs,
         )
@@ -145,13 +144,11 @@ def build_stage_table_name(
             read=dialect,
             into=exp.Table,
         )
-        if (
-            not isinstance(staging_schema_table, exp.Table)
-            or not isinstance(staging_schema_table.this, exp.Identifier)
+        if not isinstance(staging_schema_table, exp.Table) or not isinstance(
+            staging_schema_table.this, exp.Identifier
         ):
             raise ValueError(
-                f"Invalid transfer_staging_schema for {connection_type}: "
-                f"{transfer_staging_schema}"
+                f"Invalid transfer_staging_schema for {connection_type}: {transfer_staging_schema}"
             )
         table.set("catalog", staging_schema_table.args.get("catalog"))
         table.set("db", staging_schema_table.args.get("db") or staging_schema_table.this)
@@ -185,10 +182,7 @@ def build_stage_table_prefix(
         stage_suffix="x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH,
     )
     if transfer_staging_username:
-        return (
-            f"{base_identifier}__analytics_toolkit_"
-            f"{transfer_staging_username}__stage__"
-        )
+        return f"{base_identifier}__analytics_toolkit_{transfer_staging_username}__stage__"
     return f"{base_identifier}__stage__"
 
 

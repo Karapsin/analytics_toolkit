@@ -4,6 +4,10 @@ from typing import Any, Callable
 
 
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
+    from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
+        parse_ddl_defaults,
+    )
+
     from ...connection.config import (
         DEFAULT_GP_CONNECT_TIMEOUT_SECONDS,
         DEFAULT_GP_KEEPALIVES,
@@ -75,6 +79,7 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             connection_key,
             "transfer_staging_schema",
         ),
+        ddl_defaults=parse_ddl_defaults(raw_config.get("ddl_defaults"), connection_key, "gp"),
     )
 
 
@@ -87,9 +92,7 @@ def open_connection(
     try:
         import psycopg2
     except ImportError as exc:
-        raise ImportError(
-            "The 'psycopg2' package is required for Greenplum connections."
-        ) from exc
+        raise ImportError("The 'psycopg2' package is required for Greenplum connections.") from exc
 
     connect_kwargs: dict[str, Any] = {
         "host": config.host,

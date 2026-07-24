@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,8 @@ class CreateTableFromSqlOptions:
     return_sql: bool = False
     return_metadata: bool = False
     query_label: str | None = None
+    ddl_properties: Mapping[str, Any] | None = None
+    ch_creation_policy: Any = None
 
 
 @dataclass(frozen=True)

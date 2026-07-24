@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
 
@@ -28,3 +28,5 @@ class CreateSqlTableOptions:
     return_sql: bool = False
     query_label: str | None = None
     return_metadata: bool = False
+    ddl_properties: Mapping[str, Any] | None = None
+    ch_creation_policy: Any = None

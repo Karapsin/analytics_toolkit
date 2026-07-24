@@ -52,8 +52,7 @@ def dry_run_stage_table_name(
             options.to_db_backend,
             options.target_table,
             transfer_staging_schema=(
-                options.transfer_parquet_staging_schema
-                or options.transfer_staging_schema
+                options.transfer_parquet_staging_schema or options.transfer_staging_schema
             ),
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=suffix,
@@ -75,10 +74,7 @@ def source_batches_label(
         transfer_slice.index
         for transfer_slice in options.transfer_slices[worker_index::worker_count]
     ]
-    return (
-        f"worker {worker_index} streamed keyed source slice batches "
-        f"{slice_indexes}"
-    )
+    return f"worker {worker_index} streamed keyed source slice batches {slice_indexes}"
 
 
 def dry_run_stage_external_location(options: TransferOptions) -> str | None:
@@ -107,9 +103,7 @@ def add_upsert_target_dry_run_steps(
     stage_tables: list[str],
 ) -> None:
     target_adapter = get_backend_adapter(options.to_db_backend)
-    uses_partition_replacement_upsert = (
-        target_adapter.uses_partition_replacement_upsert()
-    )
+    uses_partition_replacement_upsert = target_adapter.uses_partition_replacement_upsert()
     columns = resolve_dry_run_upsert_columns(options)
     final_stage_table = f"{options.target_table}__upsert_final__dry_run"
     if uses_partition_replacement_upsert:
@@ -126,13 +120,9 @@ def add_upsert_target_dry_run_steps(
             ch_only_shard=options.ch_only_shard,
             query_label=options.query_label,
             upsert_partition_column=options.upsert_partition_column,
-            final_stage_table=(
-                final_stage_table if uses_partition_replacement_upsert else None
-            ),
+            final_stage_table=(final_stage_table if uses_partition_replacement_upsert else None),
             incoming_stage_tables=stage_tables,
-            trino_partition_drop_sql_template=(
-                options.trino_upsert_partition_drop_sql_template
-            ),
+            trino_partition_drop_sql_template=(options.trino_upsert_partition_drop_sql_template),
         )
         if columns is not None
         else build_upsert_stage_placeholder_sqls(
@@ -144,13 +134,9 @@ def add_upsert_target_dry_run_steps(
             ch_only_shard=options.ch_only_shard,
             query_label=options.query_label,
             upsert_partition_column=options.upsert_partition_column,
-            final_stage_table=(
-                final_stage_table if uses_partition_replacement_upsert else None
-            ),
+            final_stage_table=(final_stage_table if uses_partition_replacement_upsert else None),
             incoming_stage_tables=stage_tables,
-            trino_partition_drop_sql_template=(
-                options.trino_upsert_partition_drop_sql_template
-            ),
+            trino_partition_drop_sql_template=(options.trino_upsert_partition_drop_sql_template),
         )
     )
     plan.extend(
@@ -203,6 +189,8 @@ def add_insert_target_dry_run_steps(
                     and not options.ch_only_shard
                 ),
                 query_label=options.query_label,
+                ddl_properties=options.regular_ddl_properties,
+                ch_creation_policy=options.regular_ch_policy,
             ),
             alias=options.to_db_key,
             backend=options.to_db_backend,

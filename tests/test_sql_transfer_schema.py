@@ -388,8 +388,9 @@ def test_create_stage_table_retries_collision_and_uses_explicit_schema(
         None,
     )
     assert created["kwargs"] == {
-        "connection_key": "warehouse",
-        "gp_distributed_by_key": ["id"],
+            "connection_key": "warehouse",
+            "ddl_scope": "staging",
+            "gp_distributed_by_key": ["id"],
         "query_label": "load stage",
         "table_schema": {"id": "BIGINT"},
     }
@@ -455,6 +456,7 @@ def test_create_stage_table_uses_batch_when_schema_is_not_supplied(
     assert captured["args"][3] is batch
     assert captured["kwargs"] == {
         "connection_key": "ch",
+        "ddl_scope": "staging",
         "gp_distributed_by_key": None,
     }
 

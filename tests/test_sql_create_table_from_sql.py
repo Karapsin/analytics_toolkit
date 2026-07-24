@@ -752,11 +752,14 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
     assert inserted_rows == 5
     assert transfer_calls[0]["ch_only_shard"] is True
     assert any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
         and "ENGINE = ReplicatedMergeTree" in command
         for command in target.commands
     )
-    assert not any("events_shard" in command for command in target.commands)
+    assert not any(
+        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events\n")
+        for command in target.commands
+    )
     assert not any("ENGINE = Distributed(" in command for command in target.commands)
 
 

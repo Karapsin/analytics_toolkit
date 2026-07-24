@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+# ruff: noqa: EM101, FBT001, TRY003, TRY004
 import math
 from numbers import Real
 from typing import Any
 
+from analytics_toolkit.sql.execution.operation_runner import (
+    validate_progress_option,
+    validate_retry_options,
+)
+
 from ....backends import get_backend_adapter
-from ....execution.operation_runner import validate_retry_options
 from ....execution.validation import (
     validate_non_negative_number,
     validate_optional_positive_int,
@@ -15,8 +20,35 @@ from ....execution.validation import (
 )
 from ..runtime.models import TrinoTransferMode
 
-
 _DEFAULT_TARGET_BATCH_SECONDS = 10.0
+
+
+def resolve_transfer_write_mode(to_db_backend: str, write_mode: str | None) -> str:
+    if write_mode is None:
+        return "append"
+    return get_backend_adapter(to_db_backend).validate_write_mode(write_mode)
+
+
+def validate_progress(progress: bool) -> None:
+    validate_progress_option(progress)
+
+
+def validate_estimate_total_rows(value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValueError("estimate_total_rows must be a boolean.")
+
+
+def validate_row_count_options(validate_row_count: bool, ch_count_limit_read: bool) -> None:
+    if not isinstance(validate_row_count, bool):
+        raise ValueError("validate_row_count must be a boolean.")
+    if not isinstance(ch_count_limit_read, bool):
+        raise ValueError("ch_count_limit_read must be a boolean.")
+
+
+def normalize_only_shard(value: bool) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError("ch_only_shard must be a boolean.")
+    return value
 
 
 def validate_transfer_runtime_options(
@@ -50,8 +82,7 @@ def validate_transfer_runtime_options(
     )
     if step >= 1:
         raise ValueError(
-            "adaptive_batch_size_step must be a finite number greater than 0 "
-            "and less than 1."
+            "adaptive_batch_size_step must be a finite number greater than 0 and less than 1."
         )
     for value, option_name in (
         (target_batch_seconds, "target_batch_seconds"),
@@ -177,9 +208,7 @@ def resolve_adaptive_batch_bounds(
         and resolved_max_batch_seconds is not None
         and resolved_min_batch_seconds > resolved_max_batch_seconds
     ):
-        raise ValueError(
-            "min_batch_seconds must be less than or equal to max_batch_seconds."
-        )
+        raise ValueError("min_batch_seconds must be less than or equal to max_batch_seconds.")
 
     if resolved_min_batch_seconds is not None:
         resolved_target_batch_seconds = max(
@@ -199,9 +228,7 @@ def resolve_adaptive_batch_bounds(
     if max_batch_size is None and unlimited_default_max:
         resolved_max_batch_size = None
     else:
-        resolved_max_batch_size = (
-            batch_size * 4 if max_batch_size is None else max_batch_size
-        )
+        resolved_max_batch_size = batch_size * 4 if max_batch_size is None else max_batch_size
     if resolved_min_batch_size > batch_size:
         raise ValueError("min_batch_size must be less than or equal to batch_size.")
     if resolved_max_batch_size is not None and batch_size > resolved_max_batch_size:
@@ -227,10 +254,7 @@ def resolve_target_batch_memory(
         raise ValueError("target_batch_memory_mb must be a positive number.")
 
     resolved_target_batch_memory_mb = float(target_batch_memory_mb)
-    if (
-        not math.isfinite(resolved_target_batch_memory_mb)
-        or resolved_target_batch_memory_mb <= 0
-    ):
+    if not math.isfinite(resolved_target_batch_memory_mb) or resolved_target_batch_memory_mb <= 0:
         raise ValueError("target_batch_memory_mb must be a positive number.")
 
     return (
@@ -258,9 +282,7 @@ def resolve_target_batch_memory_limits(
         and resolved_max_batch_memory_mb is not None
         and resolved_min_batch_memory_mb > resolved_max_batch_memory_mb
     ):
-        raise ValueError(
-            "min_batch_memory_mb must be less than or equal to max_batch_memory_mb."
-        )
+        raise ValueError("min_batch_memory_mb must be less than or equal to max_batch_memory_mb.")
 
     resolved_min_batch_memory_bytes = (
         None
@@ -300,9 +322,7 @@ def resolve_target_rows_per_second_deadband(
         target_rows_per_second_deadband,
         Real,
     ):
-        raise ValueError(
-            "target_rows_per_second_deadband must be a finite non-negative number."
-        )
+        raise ValueError("target_rows_per_second_deadband must be a finite non-negative number.")
     resolved_target_rows_per_second_deadband = float(
         target_rows_per_second_deadband,
     )
@@ -310,9 +330,7 @@ def resolve_target_rows_per_second_deadband(
         not math.isfinite(resolved_target_rows_per_second_deadband)
         or resolved_target_rows_per_second_deadband < 0
     ):
-        raise ValueError(
-            "target_rows_per_second_deadband must be a finite non-negative number."
-        )
+        raise ValueError("target_rows_per_second_deadband must be a finite non-negative number.")
     return resolved_target_rows_per_second_deadband
 
 
@@ -324,8 +342,7 @@ def resolve_adaptive_batch_size_step(
         Real,
     ):
         raise ValueError(
-            "adaptive_batch_size_step must be a finite number greater than 0 "
-            "and less than 1."
+            "adaptive_batch_size_step must be a finite number greater than 0 and less than 1."
         )
     resolved_adaptive_batch_size_step = float(adaptive_batch_size_step)
     if (
@@ -334,8 +351,7 @@ def resolve_adaptive_batch_size_step(
         or resolved_adaptive_batch_size_step >= 1
     ):
         raise ValueError(
-            "adaptive_batch_size_step must be a finite number greater than 0 "
-            "and less than 1."
+            "adaptive_batch_size_step must be a finite number greater than 0 and less than 1."
         )
     return resolved_adaptive_batch_size_step
 

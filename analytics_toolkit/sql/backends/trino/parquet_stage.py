@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: PLR0913
 from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
@@ -7,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 from sqlglot import exp, parse_one
+
+from analytics_toolkit.sql.ddl.properties import merge_ddl_properties, overlay_with_properties
 
 from ..base import _apply_query_label
 
@@ -18,6 +21,7 @@ def build_parquet_stage_table_sql(
     stage_external_location: str,
     *,
     query_label: str | None = None,
+    ddl_properties: Mapping[str, Any] | None = None,
 ) -> str:
     if column_types:
         columns_sql = ", ".join(
@@ -33,6 +37,12 @@ def build_parquet_stage_table_sql(
         f"external_location = {trino_string_literal(stage_external_location)}"
         ")"
     )
+    if ddl_properties:
+        protected = {
+            "format": "'PARQUET'",
+            "external_location": trino_string_literal(stage_external_location),
+        }
+        sql = overlay_with_properties(sql, merge_ddl_properties(ddl_properties, protected))
     return _apply_query_label(sql, query_label)
 
 
@@ -43,9 +53,7 @@ def infer_parquet_stage_column_types_from_rows(
     del adapter
     inferred: dict[str, str] = {}
     for index, column_name in enumerate(batch.columns):
-        inferred[column_name] = _infer_trino_type_from_values(
-            row[index] for row in batch.rows
-        )
+        inferred[column_name] = _infer_trino_type_from_values(row[index] for row in batch.rows)
     return inferred
 
 

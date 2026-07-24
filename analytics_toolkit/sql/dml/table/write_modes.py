@@ -64,6 +64,7 @@ def clear_target_table(
     )
     return None
 
+
 def apply_target_write_mode(
     connection_type: str,
     connection: Any,
@@ -98,6 +99,7 @@ def apply_target_write_mode(
             ch_only_shard=ch_only_shard,
         )
     )
+
 
 def build_upsert_stage_sqls(
     connection_type: str,
@@ -363,6 +365,7 @@ def finalize_stage_table(
     final_upsert_stage_table: str | None = None,
     incoming_stage_tables: list[str] | None = None,
     trino_upsert_partition_drop_sql_template: str | None = None,
+    ch_creation_policy: Any = None,
 ) -> None:
     backend = resolve_connection_backend(connection_type)
     time_print(
@@ -396,9 +399,8 @@ def finalize_stage_table(
             upsert_partition_column=upsert_partition_column,
             final_upsert_stage_table=final_upsert_stage_table,
             incoming_stage_tables=incoming_stage_tables,
-            trino_upsert_partition_drop_sql_template=(
-                trino_upsert_partition_drop_sql_template
-            ),
+            trino_upsert_partition_drop_sql_template=(trino_upsert_partition_drop_sql_template),
+            ch_creation_policy=ch_creation_policy,
         )
     )
 
@@ -420,6 +422,7 @@ def _ensure_stage_target_table(
     query_label: str | None,
     connection_key: str | None,
     ch_only_shard: bool = False,
+    ch_creation_policy: Any = None,
 ) -> bool:
     return get_backend_adapter(backend).ensure_stage_target_table(
         StageTargetTableRequest(
@@ -437,6 +440,7 @@ def _ensure_stage_target_table(
             query_label=query_label,
             connection_key=connection_key,
             ch_only_shard=ch_only_shard,
+            ch_creation_policy=ch_creation_policy,
         )
     )
 

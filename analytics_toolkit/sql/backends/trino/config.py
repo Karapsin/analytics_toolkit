@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-
 EXAMPLE_UPSERT_PARTITION_DROP_SQL_TEMPLATE = (
-    "ALTER TABLE {table} DROP PARTITION "
-    "({partition_column} = {partition_value})"
+    "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
 )
 
 
@@ -14,15 +12,19 @@ def example_upsert_partition_drop_sql_template() -> str:
 
 
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
+    from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
+        parse_ddl_defaults,
+    )
+
     from ...connection.config import (
         TrinoConfig,
         _optional_bool_or_string_as_string,
+        _optional_int,
         _optional_positive_int,
         _optional_string,
         _optional_string_or_string_list,
         _reject_removed_fields,
         _require_string,
-        _optional_int,
     )
 
     _reject_removed_fields(
@@ -95,6 +97,7 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             "request_timeout",
         ),
         source=_optional_string(raw_config, connection_key, "source"),
+        ddl_defaults=parse_ddl_defaults(raw_config.get("ddl_defaults"), connection_key, "trino"),
     )
 
 
@@ -108,9 +111,7 @@ def open_connection(
         import trino
         from trino.auth import BasicAuthentication
     except ImportError as exc:
-        raise ImportError(
-            "The 'trino' package is required for Trino connections."
-        ) from exc
+        raise ImportError("The 'trino' package is required for Trino connections.") from exc
 
     ca_certs = resolve_ca_certs(config.connection_key, config.ca_certs)
     verify_value = ca_certs or config.verify_value

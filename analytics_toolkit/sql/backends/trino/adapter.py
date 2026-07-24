@@ -39,6 +39,20 @@ class TrinoAdapter(DbApiBackendAdapter):
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)
 
+    def explicit_create_property_overrides(
+        self,
+        partition_by: Sequence[str] | str | None,
+        order_by: Sequence[str] | str | None,
+    ) -> dict[str, Any]:
+        overrides: dict[str, Any] = {}
+        partition_entries = _normalize_trino_property_entries(partition_by, "partition_by")
+        order_entries = _normalize_trino_property_entries(order_by, "order_by")
+        if partition_entries:
+            overrides["partitioning"] = partition_entries
+        if order_entries:
+            overrides["sorted_by"] = order_entries
+        return overrides
+
     def build_connection_config(
         self,
         connection_key: str,
@@ -73,6 +87,7 @@ class TrinoAdapter(DbApiBackendAdapter):
                 "insert_chunk_size",
                 "request_timeout",
                 "source",
+                "ddl_defaults",
             ],
         )
         if isinstance(raw_config.get("verify"), bool):

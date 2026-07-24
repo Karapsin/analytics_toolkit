@@ -755,6 +755,16 @@ def test_generate_dummy_connections_writes_direct_file(
             "password": "password",
             "database": "db",
             "ca_certs": "gp-ca.pem",
+            "ddl_defaults": {
+                "regular": {
+                    "appendonly": True,
+                    "blocksize": 32768,
+                    "compresstype": "zstd",
+                    "compresslevel": 4,
+                    "orientation": "column",
+                },
+                "staging": {},
+            },
         },
         "trino": {
             "type": "trino",
@@ -771,6 +781,11 @@ def test_generate_dummy_connections_writes_direct_file(
             "upsert_partition_drop_sql_template": (
                 "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
             ),
+            "ddl_defaults": {
+                "regular": {"format": "'PARQUET'", "object_store_layout_enabled": True},
+                "staging": {},
+                "parquet_staging": {},
+            },
         },
         "ch": {
             "type": "ch",
@@ -781,6 +796,7 @@ def test_generate_dummy_connections_writes_direct_file(
             "database": "default",
             "secure": True,
             "ca_certs": "clickhouse-ca.pem",
+            "ddl_defaults": config_module._dummy_ch_ddl_defaults(),
         },
     }
     output = capsys.readouterr().out
@@ -805,7 +821,20 @@ def test_generate_dummy_connections_writes_airflow_file(
     assert json.loads(created.read_text(encoding="utf-8")) == {
         "source": "airflow",
         "connections": {
-            "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
+            "gp": {
+                "type": "gp",
+                "ca_certs": "gp-ca.pem",
+                "ddl_defaults": {
+                    "regular": {
+                        "appendonly": True,
+                        "blocksize": 32768,
+                        "compresstype": "zstd",
+                        "compresslevel": 4,
+                        "orientation": "column",
+                    },
+                    "staging": {},
+                },
+            },
             "trino": {
                 "type": "trino",
                 "ca_certs": "trino-ca.pem",
@@ -814,8 +843,17 @@ def test_generate_dummy_connections_writes_airflow_file(
                 "upsert_partition_drop_sql_template": (
                     "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
                 ),
+                "ddl_defaults": {
+                    "regular": {"format": "'PARQUET'", "object_store_layout_enabled": True},
+                    "staging": {},
+                    "parquet_staging": {},
+                },
             },
-            "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
+            "ch": {
+                "type": "ch",
+                "ca_certs": "clickhouse-ca.pem",
+                "ddl_defaults": config_module._dummy_ch_ddl_defaults(),
+            },
         },
     }
     output = capsys.readouterr().out
@@ -2072,9 +2110,7 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
         ) -> None:
             events.append(("validate_gp", value, option_owner))
 
-        normalize_gp_partitions_option = staticmethod(
-            lambda value, **kwargs: value
-        )
+        normalize_gp_partitions_option = staticmethod(lambda value, **kwargs: value)
 
         def validate_ch_create_table_options(self, **kwargs: object) -> None:
             events.append(("validate_ch_options", kwargs))

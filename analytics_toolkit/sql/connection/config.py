@@ -1,23 +1,29 @@
 from __future__ import annotations
 
+# ruff: noqa: E501
 import json
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Union, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
-from .errors import SqlConfigError, UnsupportedConnectionTypeError
+from analytics_toolkit.general.connections import get_connections_path_override
+
 from ..backends.registry import (
     BACKEND_REGISTRY,
     get_backend,
-    normalize_backend_name as _registry_normalize_backend_name,
     require_backend_name,
 )
+from ..backends.registry import (
+    normalize_backend_name as _registry_normalize_backend_name,
+)
 from ..execution.operation_runner import timed_public_sql_function
-from analytics_toolkit.general.connections import get_connections_path_override
+from .errors import SqlConfigError, UnsupportedConnectionTypeError
 
+if TYPE_CHECKING:
+    from .ddl_defaults import DdlDefaults
 
 BackendName = str
 SUPPORTED_BACKENDS: set[str] = set(BACKEND_REGISTRY)
@@ -71,6 +77,7 @@ class TrinoConfig:
     transfer_staging_location: str | None
     upsert_partition_drop_sql_template: str | None = None
     transfer_parquet_staging_schema: str | None = None
+    ddl_defaults: DdlDefaults | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,7 @@ class GpConfig:
     ssl_cert: str | None
     ssl_key: str | None
     transfer_staging_schema: str | None
+    ddl_defaults: DdlDefaults | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +123,7 @@ class ChConfig:
     query_retries: int | None
     client_name: str | None
     transfer_staging_schema: str | None
+    ddl_defaults: DdlDefaults | None = None
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]
@@ -236,6 +245,16 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "password": "password",
             "database": "db",
             "ca_certs": "gp-ca.pem",
+            "ddl_defaults": {
+                "regular": {
+                    "appendonly": True,
+                    "blocksize": 32768,
+                    "compresstype": "zstd",
+                    "compresslevel": 4,
+                    "orientation": "column",
+                },
+                "staging": {},
+            },
         },
         "trino": {
             "type": "trino",
@@ -250,6 +269,11 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "transfer_staging_schema": "object_storage.sandbox",
             "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
             "upsert_partition_drop_sql_template": (example_upsert_partition_drop_sql_template()),
+            "ddl_defaults": {
+                "regular": {"format": "'PARQUET'", "object_store_layout_enabled": True},
+                "staging": {},
+                "parquet_staging": {},
+            },
         },
         "ch": {
             "type": "ch",
@@ -260,6 +284,7 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "database": "default",
             "secure": True,
             "ca_certs": "clickhouse-ca.pem",
+            "ddl_defaults": _dummy_ch_ddl_defaults(),
         },
     }
 
@@ -270,7 +295,20 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
     return {
         "source": "airflow",
         "connections": {
-            "gp": {"type": "gp", "ca_certs": "gp-ca.pem"},
+            "gp": {
+                "type": "gp",
+                "ca_certs": "gp-ca.pem",
+                "ddl_defaults": {
+                    "regular": {
+                        "appendonly": True,
+                        "blocksize": 32768,
+                        "compresstype": "zstd",
+                        "compresslevel": 4,
+                        "orientation": "column",
+                    },
+                    "staging": {},
+                },
+            },
             "trino": {
                 "type": "trino",
                 "ca_certs": "trino-ca.pem",
@@ -279,8 +317,36 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
                 "upsert_partition_drop_sql_template": (
                     example_upsert_partition_drop_sql_template()
                 ),
+                "ddl_defaults": {
+                    "regular": {"format": "'PARQUET'", "object_store_layout_enabled": True},
+                    "staging": {},
+                    "parquet_staging": {},
+                },
             },
-            "ch": {"type": "ch", "ca_certs": "clickhouse-ca.pem"},
+            "ch": {
+                "type": "ch",
+                "ca_certs": "clickhouse-ca.pem",
+                "ddl_defaults": _dummy_ch_ddl_defaults(),
+            },
+        },
+    }
+
+
+def _dummy_ch_ddl_defaults() -> dict[str, Any]:
+    return {
+        "regular": {
+            "create_distributed_pair": True,
+            "shard": {"engine": "ReplicatedMergeTree", "on_cluster": "CORE"},
+            "distributed": {
+                "engine_template": "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
+                "cluster": "{cluster}",
+                "on_cluster": "{cluster}",
+                "sharding_key": "rand()",
+            },
+        },
+        "staging": {
+            "create_distributed_pair": False,
+            "shard": {"engine": "MergeTree", "on_cluster": None},
         },
     }
 
@@ -339,7 +405,7 @@ def _open_validation_connection(connection_key: str) -> Any:
 def resolve_connection_backend(connection_type_or_key: str) -> BackendName:
     normalized = normalize_connection_key(connection_type_or_key)
     if normalized in SUPPORTED_BACKENDS:
-        return cast(BackendName, normalized)
+        return cast("BackendName", normalized)
     if _AIRFLOW_CONNECTION_SOURCE.get() is not None:
         return get_connection_backend(connection_type_or_key)
     return get_connection_backend(normalized)
@@ -770,7 +836,7 @@ def _is_airflow_extra_resolver(field_name: str, value: Any) -> bool:
     # ClickHouse settings are themselves a mapping. Treat settings as a resolver
     # only when it has the explicit resolver shape, so normal settings maps keep
     # working even if they contain a setting named "from".
-    if field_name == "settings":
+    if field_name in {"settings", "ddl_defaults"}:
         return set(value).issubset(_AIRFLOW_EXTRA_RESOLVER_KEYS) or (
             "from" in value and "default" in value
         )
@@ -858,7 +924,7 @@ def _optional_string(
         )
 
     normalized = value.strip()
-    return normalized if normalized else default
+    return normalized or default
 
 
 def _optional_int(
@@ -978,7 +1044,7 @@ def _optional_bool_or_string_as_string(
         return str(value).lower()
     if isinstance(value, str):
         normalized = value.strip()
-        return normalized if normalized else None
+        return normalized or None
 
     raise SqlConfigError(
         f"SQL connection '{connection_key}' field '{field_name}' must be a boolean or string."

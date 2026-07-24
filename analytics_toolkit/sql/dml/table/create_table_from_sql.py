@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
+from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
 from ...backend_adapters import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -76,9 +77,14 @@ def create_table_from_sql(
     gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
     order_by: Sequence[str] | str | None = None,
-    ch_engine: str = "ReplicatedMergeTree",
-    ch_cluster: str = "{cluster}",
-    ch_sharding_key: str = "rand()",
+    ch_engine: str | None = None,
+    ch_cluster: str | None = None,
+    ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     trino_insert_chunk_size: int | None = None,
@@ -109,13 +115,29 @@ def create_table_from_sql(
         "partition_by",
     )
     order = target_adapter.normalize_ch_columns_or_expression(order_by, "order_by")
-    ch_engine_name = target_adapter.normalize_ch_string(ch_engine, "ch_engine")
-    ch_cluster_name = target_adapter.normalize_ch_string(ch_cluster, "ch_cluster")
-    ch_sharding_key = target_adapter.normalize_ch_string(
-        ch_sharding_key,
-        "ch_sharding_key",
-    )
     ch_only_shard = _normalize_only_shard(ch_only_shard)
+    ddl = resolve_operation_ddl(
+        target_config,
+        ch_engine=ch_engine,
+        ch_cluster=ch_cluster,
+        ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_only_shard=ch_only_shard,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
+    )
+    ch_policy = ddl.regular_ch_policy
+    ch_engine_name = ch_policy.shard_engine if ch_policy else ch_engine or "ReplicatedMergeTree"
+    ch_cluster_name = (
+        ch_policy.distributed_cluster or ch_policy.shard_on_cluster or "{cluster}"
+        if ch_policy
+        else ch_cluster or "{cluster}"
+    )
+    ch_sharding_key = (
+        ch_policy.sharding_key or "rand()" if ch_policy else ch_sharding_key or "rand()"
+    )
     normalized_gp_partitions = target_adapter.normalize_gp_partitions_option(
         gp_partitions,
         partition_by=partition,
@@ -160,6 +182,8 @@ def create_table_from_sql(
         return_sql=return_sql,
         return_metadata=return_metadata,
         query_label=query_label,
+        ddl_properties=ddl.regular_properties,
+        ch_creation_policy=ch_policy,
     )
 
     if options.dry_run or options.return_sql:
@@ -188,6 +212,8 @@ def create_table_from_sql(
             ch_sharding_key=options.ch_sharding_key,
             ch_only_shard=options.ch_only_shard,
             query_label=options.query_label,
+            ddl_properties=options.ddl_properties,
+            ch_creation_policy=options.ch_creation_policy,
         )
 
     def execute_attempt(attempt: int) -> object:
@@ -426,6 +452,8 @@ def _execute_generic_create_table_from_sql_attempt(
             create_kwargs: dict[str, Any] = {
                 "table_schema": target_column_types,
                 "query_label": options.query_label,
+                "ddl_properties": options.ddl_properties,
+                "ch_creation_policy": options.ch_creation_policy,
             }
             create_kwargs.update(
                 target_adapter.build_create_from_sql_target_create_kwargs(
@@ -641,6 +669,8 @@ def _build_create_table_from_sql_plan(
     ch_sharding_key: str,
     ch_only_shard: bool,
     query_label: str | None,
+    ddl_properties: dict[str, Any] | None,
+    ch_creation_policy: Any,
 ) -> SqlPlan:
     plan = SqlPlan(
         operation="create_table_from_sql",
@@ -708,6 +738,8 @@ def _build_create_table_from_sql_plan(
                 pd.DataFrame(columns=list(table_schema)),
                 table_schema=table_schema,
                 query_label=query_label,
+                ddl_properties=ddl_properties,
+                ch_creation_policy=ch_creation_policy,
                 **create_kwargs,
             ),
             alias=target_key,

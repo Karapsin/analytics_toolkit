@@ -37,9 +37,7 @@ def create_parquet_stage_table(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
 ) -> None:
-    parquet_schema = (
-        options.transfer_parquet_staging_schema or options.transfer_staging_schema
-    )
+    parquet_schema = options.transfer_parquet_staging_schema or options.transfer_staging_schema
     if not parquet_schema:
         raise ValueError("transfer_staging_schema is required for Parquet staging.")
     if not options.transfer_staging_location:
@@ -76,6 +74,10 @@ def create_parquet_stage_table(
             stage_state.stage_column_types,
             stage_external_location,
             query_label=options.query_label,
+            ddl_properties={
+                **(options.staging_ddl_properties or {}),
+                **(options.parquet_ddl_properties or {}),
+            },
         )
         adapter.execute_command(
             connection_refs.target["connection"],
@@ -98,12 +100,14 @@ def build_create_parquet_stage_table_sql(
     stage_external_location: str,
     *,
     query_label: str | None = None,
+    ddl_properties: Mapping[str, Any] | None = None,
 ) -> str:
     return get_backend_adapter("trino").build_parquet_stage_table_sql(
         stage_table,
         column_types,
         stage_external_location,
         query_label=query_label,
+        ddl_properties=ddl_properties,
     )
 
 
@@ -121,8 +125,7 @@ def build_stage_external_location(
     username = options.transfer_staging_username or "unknown"
     resolved_suffix = stage_suffix or uuid.uuid4().hex
     return (
-        f"{base_location}/{target_base}/"
-        f"__analytics_toolkit_{username}__stage__{resolved_suffix}/"
+        f"{base_location}/{target_base}/__analytics_toolkit_{username}__stage__{resolved_suffix}/"
     )
 
 
@@ -173,10 +176,7 @@ def write_batch_to_parquet_stage(
             if slice_index is not None
             else f"part-{file_index:05d}.parquet"
         )
-        remote_uri = (
-            f"{stage_external_location.rstrip('/')}/"
-            f"{file_name}"
-        )
+        remote_uri = f"{stage_external_location.rstrip('/')}/{file_name}"
         upload_spooled_file(fsspec_module, spooled_file, remote_uri)
         if _spooled_file_rolled_to_disk(spooled_file):
             gc.collect()
@@ -216,10 +216,7 @@ def write_dataframe_to_parquet_stage(
             )
             del arrow_table
             spooled_file.seek(0)
-            remote_uri = (
-                f"{stage_external_location.rstrip('/')}/"
-                f"part-{file_index:05d}.parquet"
-            )
+            remote_uri = f"{stage_external_location.rstrip('/')}/part-{file_index:05d}.parquet"
             upload_spooled_file(fsspec_module, spooled_file, remote_uri)
             written_count = len(chunk)
             written_rows += written_count

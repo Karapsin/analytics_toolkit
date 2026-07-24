@@ -72,6 +72,7 @@ def ensure_transfer_target_table(
         query_label=options.query_label,
         connection_key=options.to_db_key,
         ch_only_shard=options.ch_only_shard,
+        ch_creation_policy=options.regular_ch_policy,
     )
     if stage_state.target_existed_at_start is None:
         stage_state.target_existed_at_start = False

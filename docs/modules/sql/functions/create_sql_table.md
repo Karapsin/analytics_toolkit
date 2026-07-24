@@ -6,7 +6,7 @@ Create a SQL table from exactly one schema source: a dataframe, a source SQL
 query, or an explicit table schema.
 
 ```python
-create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, sql: 'str | None' = None, source_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str' = 'ReplicatedMergeTree', ch_cluster: 'str' = '{cluster}', ch_sharding_key: 'str' = 'rand()', ch_distributed_table: 'bool' = False, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'str | int | SqlPlan | SqlOperationResult | None'
+create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None, *, sql: 'str | None' = None, source_db: 'str | None' = None, insert_data: 'bool' = False, drop_target_if_exists: 'bool' = False, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_replace_table: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, dry_run: 'bool' = False, return_sql: 'bool' = False, only_generate_sql: 'bool' = False, query_label: 'str | None' = None, return_metadata: 'bool' = False, table_schema: 'Mapping[str, str] | None' = None) -> 'str | int | SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -36,9 +36,13 @@ create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = N
 - `gp_distributed_by_key` - distribution key column or columns for created Greenplum target tables
 - `gp_partitions` - initial Greenplum range or list child definitions used with the single `partition_by` column
 - `ch_engine` - engine to use for created ClickHouse local shard tables
-- `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_cluster` - deprecated compatibility shortcut for both execution clusters and the routing cluster
 - `ch_sharding_key` - sharding expression used for generated ClickHouse distributed table DDL
 - `ch_distributed_table` - whether the rendered ClickHouse DDL should include a `Distributed` table
+- `ch_distributed_engine_template` - override for the configured `Distributed(...)` engine template
+- `ch_distributed_cluster` - routing cluster inside the Distributed engine
+- `ch_shard_on_cluster` - execution cluster for shard or physical-table DDL
+- `ch_distributed_on_cluster` - execution cluster for Distributed facade DDL
 - `ch_only_shard` - for ClickHouse, create or mutate only the local table instead of a distributed/shard pair
 - `ch_replace_table` - whether rendered ClickHouse DDL should use replace-style table creation
 

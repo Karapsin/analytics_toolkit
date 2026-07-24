@@ -75,6 +75,7 @@ class StageTargetTableRequest:
     connection_key: str | None
     gp_partitions: Any = None
     ch_only_shard: bool = False
+    ch_creation_policy: Any = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ class StageFinalizationRequest:
     final_upsert_stage_table: str | None = None
     incoming_stage_tables: list[str] | None = None
     trino_upsert_partition_drop_sql_template: str | None = None
+    ch_creation_policy: Any = None
 
 
 @dataclass(frozen=True)

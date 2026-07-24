@@ -21,6 +21,7 @@ from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
 from . import upsert as _upsert
+from .config import AIRFLOW_EXTRA_FIELDS
 
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
@@ -66,24 +67,7 @@ class ClickHouseAdapter(BackendAdapter):
         set_if_not_none(raw_config, "database", getattr(connection, "schema", None))
         raw_config["send_receive_timeout"] = 6000
         raw_config["settings"] = {"connect_timeout": "500"}
-        copy_extra_fields(
-            raw_config,
-            extras,
-            [
-                "secure",
-                "verify",
-                "ca_certs",
-                "transfer_staging_schema",
-                "ca_certs_variable",
-                "connect_timeout",
-                "send_receive_timeout",
-                "settings",
-                "interface",
-                "query_limit",
-                "query_retries",
-                "client_name",
-            ],
-        )
+        copy_extra_fields(raw_config, extras, AIRFLOW_EXTRA_FIELDS)
 
     def open_connection(
         self,
@@ -657,6 +641,7 @@ class ClickHouseAdapter(BackendAdapter):
             connection_key=request.connection_key,
             ch_replace_table=False,
             ch_only_shard=request.ch_only_shard,
+            ch_creation_policy=request.ch_creation_policy,
         )
         return True
 
@@ -680,6 +665,7 @@ class ClickHouseAdapter(BackendAdapter):
                         query_label=request.query_label,
                         connection_key=request.connection_key,
                         ch_only_shard=request.ch_only_shard,
+                        ch_creation_policy=request.ch_creation_policy,
                     )
                 )
                 self.insert_from_table(
@@ -708,6 +694,7 @@ class ClickHouseAdapter(BackendAdapter):
                 connection_key=request.connection_key,
                 ch_replace_table=False,
                 ch_only_shard=request.ch_only_shard,
+                ch_creation_policy=request.ch_creation_policy,
             )
             if request.upsert_partition_column is None:
                 raise ValueError(
@@ -778,6 +765,7 @@ class ClickHouseAdapter(BackendAdapter):
                 and not request.ch_only_shard
             ),
             ch_only_shard=request.ch_only_shard,
+            ch_creation_policy=request.ch_creation_policy,
         )
         self.insert_from_table(
             request.connection,
@@ -806,6 +794,7 @@ class ClickHouseAdapter(BackendAdapter):
         connection_key: str | None,
         ch_replace_table: bool = False,
         ch_only_shard: bool = False,
+        ch_creation_policy: Any = None,
     ) -> None:
         import pandas as pd
 
@@ -840,6 +829,7 @@ class ClickHouseAdapter(BackendAdapter):
             ch_only_shard=ch_only_shard,
             ch_replace_table=ch_replace_table,
             query_label=query_label,
+            ch_creation_policy=ch_creation_policy,
         )
 
     should_ensure_load_target_table = _target_create.should_ensure_load_target_table
