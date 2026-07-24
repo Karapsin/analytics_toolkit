@@ -10,7 +10,7 @@ from ...backends.base import (
     StageTargetTableRequest,
     TargetWriteModeRequest,
 )
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import resolve_connection_backend
 from ...execution.plans import SqlOperationMetadata, SqlPlan
 from analytics_toolkit.general import time_print

@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any
 
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql.backend_adapters import get_backend_adapter
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.connection.errors import sql_preview
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.dml.load.stage import build_stage_table_name

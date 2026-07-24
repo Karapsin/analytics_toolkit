@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
-from analytics_toolkit.sql.backend_adapters import get_backend_adapter
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.gp import partitions as gp_partitions_module
 from analytics_toolkit.sql.backends.models import StageTargetTableRequest
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError

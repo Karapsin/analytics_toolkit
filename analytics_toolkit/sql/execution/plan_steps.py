@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from .plans import SqlPlan
 
@@ -188,12 +189,15 @@ def build_clear_target_sqls(
 ) -> list[str]:
     from ..backends import get_backend_adapter
 
-    return get_backend_adapter(backend).build_clear_target_sqls(
-        table_name,
-        query_label=query_label,
-        include_ch_shard=include_ch_shard,
-        ch_cluster=ch_cluster,
-        ch_only_shard=ch_only_shard,
+    return cast(
+        "list[str]",
+        get_backend_adapter(backend).build_clear_target_sqls(
+            table_name,
+            query_label=query_label,
+            include_ch_shard=include_ch_shard,
+            ch_cluster=ch_cluster,
+            ch_only_shard=ch_only_shard,
+        ),
     )
 
 

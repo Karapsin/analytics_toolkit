@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 import re
 from typing import Any
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,

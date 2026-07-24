@@ -5,7 +5,7 @@ from typing import Any, Iterator
 import sqlparse
 from tqdm import tqdm
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,

@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
 
-from ....backend_adapters import get_backend_adapter
+from ....backends import get_backend_adapter
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
 from ....execution.operation_runner import _format_duration
@@ -43,7 +43,7 @@ from ..schema import (
     inspect_source_query_schema,
     map_source_schema_to_target,
 )
-from .estimate import estimate_source_rows
+from ....backends.source_estimate import estimate_source_rows
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .finalize import cleanup_transfer_attempt_stages as cleanup_attempt_stages
 from .keyed import WorkerStageState, build_keyed_worker_stage_states

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ...backend_adapters import (
+from ...backends import (
     ch_cluster_clause,
     extract_row_count,
     format_ch_cluster_name,

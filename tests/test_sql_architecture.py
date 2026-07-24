@@ -153,32 +153,51 @@ def test_generic_identifier_helpers_use_backend_adapters() -> None:
             assert needle not in text
 
 
-def test_sql_backend_compatibility_shims_do_not_own_implementations() -> None:
-    shim_paths = {
+def test_legacy_sql_compatibility_paths_are_removed() -> None:
+    removed_files = {
         SQL_ROOT / "backend_adapters.py",
-        *(SQL_ROOT / "_backend_adapters").glob("*.py"),
+        SQL_ROOT / "ddl" / "clickhouse.py",
+        SQL_ROOT / "dml" / "table" / "ch_create_table_as.py",
+        SQL_ROOT / "dml" / "transfer" / "flow" / "estimate.py",
     }
-    offenders: list[str] = []
-    for path in SQL_ROOT.rglob("*.py"):
-        if path in shim_paths:
-            continue
-        text = path.read_text()
-        if "._backend_adapters" in text or "sql._backend_adapters" in text:
-            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    removed_package_files = {
+        *(SQL_ROOT / "_backend_adapters").glob("*.py"),
+        *(SQL_ROOT / "clickhouse").glob("*.py"),
+    }
+    assert [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in removed_files | removed_package_files
+        if path.exists()
+    ] == []
 
+    forbidden_import_fragments = {
+        "backend_adapters",
+        "clickhouse.lifecycle",
+        "clickhouse.options",
+        "clickhouse.wait",
+        "ddl.clickhouse",
+        "flow.estimate",
+    }
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {fragment}"
+        for path in SQL_ROOT.rglob("*.py")
+        for fragment in forbidden_import_fragments
+        if fragment in path.read_text()
+    ]
     assert offenders == []
+    assert "refine_ch_column_types_nullability_from_rows" not in (
+        SQL_ROOT / "dml" / "transfer" / "schema.py"
+    ).read_text()
 
 
 def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
     allowed_counts = {
-        "analytics_toolkit/sql/clickhouse/options.py": 0,
         "analytics_toolkit/sql/ddl/api.py": 0,
         "analytics_toolkit/sql/ddl/builders.py": 0,
         "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
         "analytics_toolkit/sql/dml/io/execute_sql.py": 0,
         "analytics_toolkit/sql/dml/load/load_df.py": 0,
         "analytics_toolkit/sql/dml/load/load_sql_table.py": 0,
-        "analytics_toolkit/sql/dml/table/ch_create_table_as.py": 0,
         "analytics_toolkit/sql/dml/table/create_table_from_sql.py": 0,
         "analytics_toolkit/sql/dml/table/drop_tables.py": 0,
         "analytics_toolkit/sql/dml/table/maintenance.py": 1,
@@ -186,7 +205,6 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/dml/table/write_modes.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/api.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/attempt.py": 0,
-        "analytics_toolkit/sql/dml/transfer/flow/estimate.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/finalize.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/options.py": 0,
         "analytics_toolkit/sql/dml/transfer/flow/stage.py": 0,
@@ -223,15 +241,12 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "transfer_backend ==",
         "transfer_backend !=",
     )
-    excluded_paths = {
-        SQL_ROOT / "backend_adapters.py",
-    }
-    excluded_parts = {"backends", "_backend_adapters"}
+    excluded_parts = {"backends"}
     offenders: list[str] = []
 
     for path in SQL_ROOT.rglob("*.py"):
         relative = str(path.relative_to(PROJECT_ROOT))
-        if path in excluded_paths or any(part in excluded_parts for part in path.parts):
+        if any(part in excluded_parts for part in path.parts):
             continue
         count = sum(
             1
@@ -254,15 +269,12 @@ def test_generic_sql_modules_do_not_pin_literal_backend_sets() -> None:
         '{"gp","trino","ch"}',
         '{"trino","gp","ch"}',
     }
-    excluded_paths = {
-        SQL_ROOT / "backend_adapters.py",
-    }
-    excluded_parts = {"backends", "_backend_adapters"}
+    excluded_parts = {"backends"}
     offenders: list[str] = []
 
     for path in SQL_ROOT.rglob("*.py"):
         relative = str(path.relative_to(PROJECT_ROOT))
-        if path in excluded_paths or any(part in excluded_parts for part in path.parts):
+        if any(part in excluded_parts for part in path.parts):
             continue
         text = path.read_text()
         if any(literal_set in text for literal_set in literal_sets):
@@ -309,38 +321,6 @@ def test_backend_policy_sql_templates_stay_backend_owned() -> None:
     for path in SQL_ROOT.rglob("*.py"):
         if "backends" in path.parts:
             continue
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
-    assert offenders == []
-
-
-def test_clickhouse_compatibility_wrappers_do_not_own_sql() -> None:
-    wrapper_paths = [
-        SQL_ROOT / "ddl" / "clickhouse.py",
-        SQL_ROOT / "clickhouse" / "lifecycle.py",
-        SQL_ROOT / "clickhouse" / "wait.py",
-        SQL_ROOT / "dml" / "table" / "ch_create_table_as.py",
-        SQL_ROOT / "dml" / "transfer" / "flow" / "estimate.py",
-    ]
-    forbidden_snippets = {
-        "CREATE TABLE",
-        "DROP TABLE",
-        "TRUNCATE TABLE",
-        "INSERT INTO",
-        "EXPLAIN",
-        "VACUUM",
-        "ENGINE =",
-        "MergeTree",
-        "Distributed(",
-        "ON CLUSTER",
-        "system.",
-    }
-    offenders: list[str] = []
-
-    for path in wrapper_paths:
         text = path.read_text()
         for snippet in forbidden_snippets:
             if snippet in text:
@@ -520,7 +500,6 @@ def test_generic_analyze_support_policy_is_adapter_owned() -> None:
 
 def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
     branch_checked_paths = [
-        SQL_ROOT / "clickhouse" / "options.py",
         SQL_ROOT / "ddl" / "api.py",
         SQL_ROOT / "dml" / "load" / "load_df.py",
         SQL_ROOT / "dml" / "table" / "create_table_from_sql.py",
@@ -528,7 +507,7 @@ def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
         SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "stage.py",
     ]
-    generic_callers = branch_checked_paths[1:]
+    generic_callers = branch_checked_paths
     branch_snippets = {
         'target_backend == "ch"',
         'target_backend == "gp"',
@@ -548,18 +527,6 @@ def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
             )
         if "clickhouse.options" in text:
             offenders.append(f"{path.relative_to(PROJECT_ROOT)}: clickhouse.options")
-
-    assert offenders == []
-
-
-def test_clickhouse_backend_modules_do_not_import_legacy_wait_shim() -> None:
-    offenders: list[str] = []
-    for path in (SQL_ROOT / "backends" / "ch").rglob("*.py"):
-        text = path.read_text()
-        if "clickhouse.wait" in text:
-            offenders.append(str(path.relative_to(PROJECT_ROOT)))
-    if "clickhouse.wait" in (SQL_ROOT / "ddl" / "api.py").read_text():
-        offenders.append("analytics_toolkit/sql/ddl/api.py")
 
     assert offenders == []
 
@@ -838,24 +805,6 @@ def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> 
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
 
     assert offenders == []
-
-
-def test_transfer_schema_backend_compatibility_wrapper_delegates_to_adapter() -> None:
-    schema_path = SQL_ROOT / "dml" / "transfer" / "schema.py"
-    tree = ast.parse(schema_path.read_text(), filename=str(schema_path))
-    wrapper = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "refine_ch_column_types_nullability_from_rows"
-    )
-
-    call_names = {
-        node.func.id
-        for node in ast.walk(wrapper)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    assert call_names == {"refine_stage_column_types_from_rows"}
 
 
 def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> None:

@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql.backend_adapters import get_backend_adapter
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.reconfigure_models import (
     ChReconfiguration,
     ChReconfigureOptions,

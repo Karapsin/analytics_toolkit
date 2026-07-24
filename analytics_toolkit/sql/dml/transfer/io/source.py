@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from ....backend_adapters import get_backend_adapter
+from ....backends import get_backend_adapter
 from ....connection.errors import sql_preview
 from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print

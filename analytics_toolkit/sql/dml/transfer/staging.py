@@ -5,7 +5,7 @@ import warnings
 from typing import Any
 from typing import Sequence
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.errors import InvalidSqlInputError
 from ...connection.get_sql_connection import get_sql_connection

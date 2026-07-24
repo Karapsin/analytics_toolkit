@@ -6,7 +6,7 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 
-from ..backend_adapters import get_backend_adapter
+from ..backends import get_backend_adapter
 from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..connection.get_sql_connection import get_sql_connection

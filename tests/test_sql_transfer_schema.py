@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from analytics_toolkit.sql.backend_adapters import get_backend_adapter
+from analytics_toolkit.sql.backends import get_backend_adapter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -535,8 +535,9 @@ def test_build_stage_table_prefix(username: str | None, expected: str) -> None:
     assert stage_module.build_stage_table_prefix("gp", "sales.target", username) == expected
 
 
-def test_refine_clickhouse_nullability_from_rows() -> None:
-    result = schema_module.refine_ch_column_types_nullability_from_rows(
+def test_refine_stage_column_types_for_clickhouse() -> None:
+    result = schema_module.refine_stage_column_types_from_rows(
+        "ch",
         {
             "dt": "Nullable(Date)",
             "amount": "Nullable(Decimal(12, 2))",

@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Redesigned SQL transfer staging around immutable ordinal snapshots and shared transfer identities.
 - Kept Trino timestamp normalization scoped to transfer source metadata.
 - Expanded cross-backend transfer integrity coverage for values, schemas, Parquet staging, and range retries.
+- Removed legacy SQL compatibility modules and consolidated backend imports.
 
 ## 1.3.11.0 - 2026-07-23
 

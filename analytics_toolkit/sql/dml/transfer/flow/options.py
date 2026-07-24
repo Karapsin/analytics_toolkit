@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: EM101, FBT001, TRY003, TRY004
 import math
 from numbers import Real
-from typing import Any
+from typing import Any, cast
 
 from analytics_toolkit.sql.execution.operation_runner import (
     validate_progress_option,
@@ -26,7 +26,7 @@ _DEFAULT_TARGET_BATCH_SECONDS = 10.0
 def resolve_transfer_write_mode(to_db_backend: str, write_mode: str | None) -> str:
     if write_mode is None:
         return "append"
-    return get_backend_adapter(to_db_backend).validate_write_mode(write_mode)
+    return cast("str", get_backend_adapter(to_db_backend).validate_write_mode(write_mode))
 
 
 def validate_progress(progress: bool) -> None:
@@ -125,10 +125,13 @@ def resolve_trino_mode(
     transfer_staging_schema: str | None,
     transfer_staging_location: str | None,
 ) -> TrinoTransferMode | None:
-    return get_backend_adapter(target_backend).resolve_transfer_staging_mode(
-        trino_mode,
-        transfer_staging_schema=transfer_staging_schema,
-        transfer_staging_location=transfer_staging_location,
+    return cast(
+        "TrinoTransferMode | None",
+        get_backend_adapter(target_backend).resolve_transfer_staging_mode(
+            trino_mode,
+            transfer_staging_schema=transfer_staging_schema,
+            transfer_staging_location=transfer_staging_location,
+        ),
     )
 
 

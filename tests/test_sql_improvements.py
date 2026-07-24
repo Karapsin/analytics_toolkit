@@ -26,7 +26,7 @@ transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfe
 models_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.models")
 backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends")
 ddl_create_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
-ch_ctas_module = importlib.import_module("analytics_toolkit.sql.dml.table.ch_create_table_as")
+ch_ctas_module = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as")
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.execution.operation_runner"
 )
@@ -127,6 +127,10 @@ def test_backend_support_matrix_includes_write_modes() -> None:
 def test_capability_directory_lists_lazy_exports() -> None:
     assert "BackendCapability" in capabilities_module.__dir__()
     assert "WriteMode" in dir(capabilities_module)
+    assert (
+        capabilities_module.BackendCapability
+        is backend_registry_module.BackendCapability
+    )
 
 
 def test_table_identifier_preserves_qualified_parts_and_quotes() -> None:

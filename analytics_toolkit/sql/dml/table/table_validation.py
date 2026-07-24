@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...backends import is_simple_identifier
 from analytics_toolkit.general import time_print
 

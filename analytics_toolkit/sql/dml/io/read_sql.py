@@ -8,7 +8,7 @@ import sqlparse
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,

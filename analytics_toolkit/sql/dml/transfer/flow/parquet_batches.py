@@ -19,7 +19,7 @@ from ...table.table_validation import (
 from ..io.source import iter_source_batches
 from ..runtime.models import RowBatch, TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.retry import run_with_fresh_connection
-from .estimate import estimate_source_rows
+from ....backends.source_estimate import estimate_source_rows
 from .logging import ProgressTracker, format_transfer_key_log_fragment
 from .parquet_stage import (
     create_parquet_stage_table,

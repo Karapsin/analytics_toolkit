@@ -6,7 +6,7 @@ from typing import Any, Sequence, Union
 
 import pandas as pd
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...execution.operation_runner import timed_public_sql_function, validate_retry_options
 from ...metadata.show_queries import show_queries

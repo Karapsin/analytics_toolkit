@@ -19,8 +19,6 @@ backend_utils = importlib.import_module("analytics_toolkit.sql.backends.utils")
 backend_upsert = importlib.import_module("analytics_toolkit.sql.backends.upsert")
 backend_dbapi = importlib.import_module("analytics_toolkit.sql.backends.dbapi")
 backend_validation = importlib.import_module("analytics_toolkit.sql.backends.validation")
-ch_options = importlib.import_module("analytics_toolkit.sql.clickhouse.options")
-backends = importlib.import_module("analytics_toolkit.sql.backends")
 
 
 class LifecycleAdapter:
@@ -750,38 +748,3 @@ def test_backend_sql_literal_helpers() -> None:
 )
 def test_backend_row_count_coercion(value: Any, expected: int | None) -> None:
     assert backend_utils._coerce_row_count(value) == expected
-
-
-def test_clickhouse_option_facade_delegates_to_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
-    adapter = SimpleNamespace(
-        normalize_ch_columns_or_expression=lambda *args: (
-            calls.append(("columns", args, {})) or ["id"]
-        ),
-        normalize_ch_string=lambda *args: calls.append(("string", args, {})) or "value",
-        validate_ch_create_table_options=lambda **kwargs: calls.append(("options", (), kwargs)),
-        validate_ch_columns_in_columns=lambda *args, **kwargs: calls.append(
-            ("in_columns", args, kwargs)
-        ),
-    )
-    monkeypatch.setattr(backends, "get_backend_adapter", lambda _backend: adapter)
-
-    assert ch_options.normalize_ch_columns_or_expression("id", "order_by") == ["id"]
-    assert ch_options.normalize_ch_string(" value ", "engine") == "value"
-    ch_options.validate_ch_options_not_used(
-        target_backend="gp",
-        option_owner="load_df",
-        partition_by=None,
-        order_by=None,
-        ch_engine="ReplicatedMergeTree",
-        ch_cluster="cluster",
-        ch_sharding_key="rand()",
-    )
-    ch_options.validate_ch_columns_in_columns(
-        ["id"],
-        ["id", "value"],
-        "order_by",
-        data_name="dataframe",
-    )
-
-    assert [call[0] for call in calls] == ["columns", "string", "options", "in_columns"]

@@ -10,11 +10,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ch_ctas_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.table.ch_create_table_as"
-)
-ch_ctas_impl = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.create_table_as"
 )
+ch_ctas_impl = ch_ctas_module
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 

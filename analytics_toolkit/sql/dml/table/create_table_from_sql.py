@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,

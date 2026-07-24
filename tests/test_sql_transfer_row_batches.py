@@ -28,7 +28,7 @@ parquet_stage_module = importlib.import_module(
 )
 transfer_options_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.options")
 keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keys")
-estimate_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.estimate")
+estimate_module = importlib.import_module("analytics_toolkit.sql.backends.source_estimate")
 row_counts_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.row_counts")
 progress_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.progress")
 dry_run_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.dry_run")
@@ -40,7 +40,7 @@ transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfe
 models_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.models")
 retry_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.runtime.retry")
 source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.source")
-backend_adapters_module = importlib.import_module("analytics_toolkit.sql.backend_adapters")
+backends_module = importlib.import_module("analytics_toolkit.sql.backends")
 
 
 class RecordingSourceCursor:
@@ -2333,7 +2333,7 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
@@ -2376,7 +2376,7 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
@@ -2424,7 +2424,7 @@ def test_cleanup_stale_stage_tables_quotes_discovered_gp_stage_names(
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: [
             "26cc4c2__analytics_toolkit_karapsin_de__stage__9bd5fbfe__w00000",
@@ -2466,7 +2466,7 @@ def test_cleanup_stale_stage_tables_public_clean_all_allows_missing_target_table
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: [
             "target__analytics_toolkit_target_user__stage__match",
@@ -2500,7 +2500,7 @@ def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("trino"),
+        backends_module.get_backend_adapter("trino"),
         "query_transfer_stage_table_names",
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
@@ -2679,7 +2679,7 @@ def test_cleanup_stale_stage_tables_drops_explicit_stage_tables_without_discover
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         fake_query_stage_tables,
     )
@@ -2740,7 +2740,7 @@ def test_cleanup_stale_stage_tables_empty_explicit_list_drops_nothing(
         ),
     )
     monkeypatch.setattr(
-        backend_adapters_module.get_backend_adapter("gp"),
+        backends_module.get_backend_adapter("gp"),
         "query_transfer_stage_table_names",
         fake_query_stage_tables,
     )

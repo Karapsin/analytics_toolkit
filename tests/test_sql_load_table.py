@@ -22,7 +22,7 @@ TEST_CH_STAGE_TABLE = f"test_table_{CURRENT_DT}__stage__abcd1234"
 TEST_CH_SHARD_RELATION = f"test_table_{CURRENT_DT}_shard"
 
 create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
-ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
+ch_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
 load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
 gp_insert_module = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")

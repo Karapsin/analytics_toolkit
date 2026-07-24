@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...backends.models import SourceColumn
 from ..table._basic_ops import get_table_column_types
 
@@ -52,14 +52,6 @@ def refine_stage_column_types_from_rows(
         columns,
         rows,
     )
-
-
-def refine_ch_column_types_nullability_from_rows(
-    column_types: dict[str, str] | None,
-    columns: Sequence[str],
-    rows: Sequence[Sequence[Any]],
-) -> dict[str, str] | None:
-    return refine_stage_column_types_from_rows("ch", column_types, columns, rows)
 
 
 def get_existing_target_insert_types(

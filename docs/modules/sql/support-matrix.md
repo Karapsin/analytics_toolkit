@@ -91,8 +91,7 @@ functions accept configured connection keys, not backend objects.
 
 A normal in-repo backend addition should add a backend package with adapter and
 config/opening logic, register it in `analytics_toolkit.sql.backends.registry`,
-then add focused behavior tests and documentation. Legacy compatibility imports
-under `analytics_toolkit.sql.backend_adapters` and
-`analytics_toolkit.sql._backend_adapters` resolve to the canonical registry.
+then add focused behavior tests and documentation. Internal backend imports use
+the canonical `analytics_toolkit.sql.backends` package.
 
 [SQL module index](index.md)

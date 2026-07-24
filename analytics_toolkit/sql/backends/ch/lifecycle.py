@@ -24,6 +24,9 @@ from .ddl import (
 from ...execution.labels import apply_query_label
 
 
+_DEFAULT_CH_PER_HOST_DROP_WORKERS = 5
+
+
 @dataclass(frozen=True)
 class ChDistributedTablePair:
     distributed_table: str
@@ -156,14 +159,12 @@ def drop_ch_distributed_table_pair(
                     "ClickHouse connection factory."
                 ) from exc
 
-        from ...clickhouse.options import DEFAULT_CH_PER_HOST_DROP_WORKERS
-
         _drop_ch_distributed_table_pair_on_cluster_hosts(
             connection,
             pair,
             ch_cluster=ch_cluster,
             query_label=query_label,
-            per_host_drop_workers=DEFAULT_CH_PER_HOST_DROP_WORKERS,
+            per_host_drop_workers=_DEFAULT_CH_PER_HOST_DROP_WORKERS,
             per_host_connection_factory=per_host_connection_factory,
         )
         _wait_for_ch_distributed_table_pair_absence(

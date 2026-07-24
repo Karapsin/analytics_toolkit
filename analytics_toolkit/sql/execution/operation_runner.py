@@ -194,7 +194,7 @@ def run_connection_operation(
             return operation(connection_ref, attempt)
         except Exception as exc:
             annotate_sql_exception(exc, context_factory(attempt))
-            from ..backend_adapters import get_backend_adapter
+            from ..backends import get_backend_adapter
 
             get_backend_adapter(backend).rollback_quietly(connection_ref["connection"])
             raise

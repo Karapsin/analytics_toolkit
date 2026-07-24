@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from ....backend_adapters import get_backend_adapter
+from ....backends import get_backend_adapter
 from analytics_toolkit.general import time_print
 from ...load.stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,

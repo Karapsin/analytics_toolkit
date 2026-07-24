@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
@@ -68,11 +69,11 @@ def quote_identifier_part(
 ) -> str:
     if not quoted:
         return identifier
-    return get_backend_adapter(connection_type).quote_identifier(identifier)
+    return cast("str", get_backend_adapter(connection_type).quote_identifier(identifier))
 
 
 def sqlglot_dialect(connection_type: str) -> str:
-    return get_backend_adapter(connection_type).sqlglot_dialect
+    return cast("str", get_backend_adapter(connection_type).sqlglot_dialect)
 
 
 def split_gp_table_name(table_name: str) -> tuple[str, str]:

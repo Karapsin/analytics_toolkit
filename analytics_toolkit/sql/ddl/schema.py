@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 
 import pandas as pd
 
-from ..backend_adapters import get_backend_adapter
+from ..backends import get_backend_adapter
 from ..connection.config import resolve_connection_backend
 from .identifiers import quote_identifier
 

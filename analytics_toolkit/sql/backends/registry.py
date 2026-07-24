@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
+from typing import Any, cast
 
 from .base import (
     BackendAdapter,
@@ -94,7 +94,7 @@ def get_backend(name_or_key: str) -> BackendAdapter:
         raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE)
 
 
-def get_backend_adapter(name_or_key: str) -> BackendAdapter:
+def get_backend_adapter(name_or_key: str) -> Any:
     return get_backend(name_or_key)
 
 

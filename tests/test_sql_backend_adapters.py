@@ -10,8 +10,13 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from analytics_toolkit.sql.backend_adapters import BACKEND_ADAPTERS, get_backend_adapter
-from analytics_toolkit.sql.backends import BACKEND_REGISTRY, get_backend, get_backend_names
+from analytics_toolkit.sql.backends import (
+    BACKEND_ADAPTERS,
+    BACKEND_REGISTRY,
+    get_backend,
+    get_backend_adapter,
+    get_backend_names,
+)
 from analytics_toolkit.sql.backends.base import BackendAdapter
 from analytics_toolkit.sql.backends.gp.adapter import GP_IDENTIFIER_MAX_BYTES
 from analytics_toolkit.sql.backends.models import (
@@ -41,8 +46,7 @@ execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.exec
 load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
 table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.api")
 table_basic_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table._basic_ops")
-ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.clickhouse.lifecycle")
-ch_wait_module = importlib.import_module("analytics_toolkit.sql.clickhouse.wait")
+ch_lifecycle_module = importlib.import_module("analytics_toolkit.sql.backends.ch.lifecycle")
 ch_backend_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
 backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends.registry")
 backend_validation_module = importlib.import_module("analytics_toolkit.sql.backends.validation")
@@ -51,7 +55,7 @@ gp_stage_module = importlib.import_module("analytics_toolkit.sql.backends.gp.sta
 adapter_defaults_module = importlib.import_module("analytics_toolkit.sql.backends.adapter_defaults")
 trino_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.trino.adapter")
 ch_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.ch.adapter")
-ch_lifecycle_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.lifecycle")
+ch_lifecycle_backend_module = ch_lifecycle_module
 ch_ddl_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.ddl")
 ch_insert_backend_module = importlib.import_module("analytics_toolkit.sql.backends.ch.insert")
 ch_operations_backend_module = importlib.import_module(
@@ -207,27 +211,6 @@ def test_table_ops_reexports_split_basic_helpers() -> None:
 
     for name in helper_names:
         assert getattr(table_ops_module, name) is getattr(table_basic_ops_module, name)
-
-
-def test_clickhouse_wait_helpers_are_backend_owned_with_ddl_shims() -> None:
-    assert (
-        ch_lifecycle_module._wait_for_ch_distributed_table_pair
-        is ch_backend_wait_module._wait_for_ch_distributed_table_pair
-    )
-    assert (
-        ch_lifecycle_module._wait_for_ch_distributed_table_pair_absence
-        is ch_backend_wait_module._wait_for_ch_distributed_table_pair_absence
-    )
-    assert (
-        ch_lifecycle_module._query_ch_cluster_table_rows
-        is ch_backend_wait_module._query_ch_cluster_table_rows
-    )
-    assert (
-        ch_wait_module._wait_for_ch_distributed_table_pair
-        is ch_backend_wait_module._wait_for_ch_distributed_table_pair
-    )
-    assert "from .wait import" in inspect.getsource(ch_lifecycle_module)
-    assert "from ..backends.ch.wait import" in inspect.getsource(ch_wait_module)
 
 
 def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
@@ -778,121 +761,6 @@ def test_backend_lookup_preserves_connection_config_errors(
 def test_backend_lookup_preserves_unknown_connection_key_errors() -> None:
     with pytest.raises(UnsupportedConnectionTypeError, match="Unknown SQL connection key"):
         get_backend("missing_alias")
-
-
-def test_legacy_backend_imports_resolve_to_canonical_objects() -> None:
-    legacy_module = importlib.import_module("analytics_toolkit.sql._backend_adapters")
-    public_compat_module = importlib.import_module("analytics_toolkit.sql.backend_adapters")
-
-    assert legacy_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
-    assert public_compat_module.BACKEND_ADAPTERS is BACKEND_REGISTRY
-    for backend_name in get_backend_names():
-        assert legacy_module.get_backend_adapter(backend_name) is BACKEND_REGISTRY[backend_name]
-        assert (
-            public_compat_module.get_backend_adapter(backend_name) is BACKEND_REGISTRY[backend_name]
-        )
-
-
-def test_backend_compatibility_class_exports_are_lazy() -> None:
-    from analytics_toolkit.sql.backends import (
-        BackendAdapter as CanonicalBackendAdapter,
-    )
-    from analytics_toolkit.sql.backends import (
-        BackendCapability as CanonicalBackendCapability,
-    )
-    from analytics_toolkit.sql.backends import (
-        ClickHouseAdapter as CanonicalClickHouseAdapter,
-    )
-    from analytics_toolkit.sql.backends import (
-        DbApiBackendAdapter as CanonicalDbApiBackendAdapter,
-    )
-    from analytics_toolkit.sql.backends import (
-        GreenplumAdapter as CanonicalGreenplumAdapter,
-    )
-    from analytics_toolkit.sql.backends import TrinoAdapter as CanonicalTrinoAdapter
-
-    class_exports = [
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "BackendAdapter",
-            CanonicalBackendAdapter,
-        ),
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "BackendCapability",
-            CanonicalBackendCapability,
-        ),
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "ClickHouseAdapter",
-            CanonicalClickHouseAdapter,
-        ),
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "DbApiBackendAdapter",
-            CanonicalDbApiBackendAdapter,
-        ),
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "GreenplumAdapter",
-            CanonicalGreenplumAdapter,
-        ),
-        (
-            "analytics_toolkit.sql.backend_adapters",
-            "TrinoAdapter",
-            CanonicalTrinoAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters",
-            "BackendAdapter",
-            CanonicalBackendAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters",
-            "BackendCapability",
-            CanonicalBackendCapability,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.base",
-            "BackendAdapter",
-            CanonicalBackendAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.base",
-            "BackendCapability",
-            CanonicalBackendCapability,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.dbapi",
-            "DbApiBackendAdapter",
-            CanonicalDbApiBackendAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.gp",
-            "GreenplumAdapter",
-            CanonicalGreenplumAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.trino",
-            "TrinoAdapter",
-            CanonicalTrinoAdapter,
-        ),
-        (
-            "analytics_toolkit.sql._backend_adapters.clickhouse",
-            "ClickHouseAdapter",
-            CanonicalClickHouseAdapter,
-        ),
-        (
-            "analytics_toolkit.sql.core.capabilities",
-            "BackendCapability",
-            CanonicalBackendCapability,
-        ),
-    ]
-
-    for module_name, export_name, canonical_object in class_exports:
-        module = importlib.import_module(module_name)
-        assert getattr(module, export_name) is canonical_object
-        assert export_name not in vars(module)
 
 
 def test_sql_backend_dispatch_uses_adapter_boundary() -> None:

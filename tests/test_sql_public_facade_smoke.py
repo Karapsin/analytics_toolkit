@@ -26,22 +26,6 @@ transfer_api_module = importlib.import_module(
 )
 
 
-def test_compatibility_adapter_modules_expose_complete_directories() -> None:
-    module_names = [
-        "analytics_toolkit.sql.backend_adapters",
-        "analytics_toolkit.sql._backend_adapters",
-        "analytics_toolkit.sql._backend_adapters.base",
-        "analytics_toolkit.sql._backend_adapters.clickhouse",
-        "analytics_toolkit.sql._backend_adapters.dbapi",
-        "analytics_toolkit.sql._backend_adapters.gp",
-        "analytics_toolkit.sql._backend_adapters.trino",
-    ]
-
-    for module_name in module_names:
-        module = importlib.import_module(module_name)
-        assert set(module.__all__) <= set(dir(module))
-
-
 def _make_ch_config(connection_key: str) -> Any:
     return config_module.ChConfig(
         connection_key=connection_key,

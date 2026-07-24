@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation

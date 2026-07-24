@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Any
+from typing import Any, cast
 
 import sqlparse
 from sqlglot import exp, parse_one
@@ -63,10 +63,13 @@ def _estimate_source_rows(
     *,
     query_label: str | None,
 ) -> int | None:
-    return get_backend_adapter(backend).estimate_source_rows(
-        connection,
-        source_sql,
-        query_label=query_label,
+    return cast(
+        "int | None",
+        get_backend_adapter(backend).estimate_source_rows(
+            connection,
+            source_sql,
+            query_label=query_label,
+        ),
     )
 
 

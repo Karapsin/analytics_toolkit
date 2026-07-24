@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 from sqlglot import exp, parse_one
 
-from ...backend_adapters import get_backend_adapter
+from ...backends import get_backend_adapter
 from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
 from ...ddl.api import _create_sql_table_with_connection
