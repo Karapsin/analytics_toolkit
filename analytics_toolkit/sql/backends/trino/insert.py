@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Callable, Iterator, Sequence
 from itertools import islice
 from typing import Any
@@ -114,9 +115,7 @@ def iter_row_values(
         normalized_values = []
         for column_name, value in zip(columns, row):
             target_type = (
-                target_column_types.get(column_name)
-                if target_column_types is not None
-                else None
+                target_column_types.get(column_name) if target_column_types is not None else None
             )
             normalized_values.append(normalize_value(value, target_type))
         yield tuple(normalized_values)
@@ -131,7 +130,20 @@ def normalize_value(value: Any, target_type: str | None) -> Any:
         return str(value)
     if normalized_target_type == "bigint":
         return int(value)
+    if isinstance(value, (dt.datetime, pd.Timestamp)) and _is_timestamp_with_time_zone(
+        normalized_target_type,
+    ):
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("UTC")
+        return timestamp.to_pydatetime()
     return value
+
+
+def _is_timestamp_with_time_zone(normalized_target_type: str) -> bool:
+    return normalized_target_type.startswith("timestamp") and normalized_target_type.endswith(
+        "with time zone"
+    )
 
 
 def build_values_tuple(
@@ -143,9 +155,7 @@ def build_values_tuple(
     values_sql = []
     for column_name, value in zip(columns, row):
         target_type = (
-            target_column_types.get(column_name)
-            if target_column_types is not None
-            else None
+            target_column_types.get(column_name) if target_column_types is not None else None
         )
         values_sql.append(literal(value, target_type))
     return f"({', '.join(values_sql)})"

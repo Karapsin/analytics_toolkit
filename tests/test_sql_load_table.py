@@ -1740,16 +1740,16 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
         }
     ]
     assert inserts[0][0] == "iceberg.sandbox.target"
-    assert inserts[0][1].startswith("hive.pa_core_stage.target__")
+    assert inserts[0][1].startswith("hive.pa_core_stage.daf6958bfec1c9f7__")
     assert cleaned_locations[0].startswith("s3://bucket/tmp/analytics_toolkit_transfer/target/")
     assert "__analytics_toolkit_target_user__stage__" in cleaned_locations[0]
     assert any(
-        sql.startswith("CREATE TABLE hive.pa_core_stage.target__")
+        sql.startswith("CREATE TABLE hive.pa_core_stage.daf6958bfec1c9f7__")
         and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/" in sql
         for sql in connection.executed
     )
     assert any(
-        sql.startswith("DROP TABLE IF EXISTS hive.pa_core_stage.target__")
+        sql.startswith("DROP TABLE IF EXISTS hive.pa_core_stage.daf6958bfec1c9f7__")
         for sql in connection.executed
     )
 
@@ -1896,7 +1896,8 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
 
     assert plan.options["use_parquet_staging"] is True
     assert plan.metadata.stage_table == (
-        "object_storage.pa_core_stage.target__analytics_toolkit_target_user__stage__dryrun"
+        "object_storage.pa_core_stage.daf6958bfec1c9f7__target"
+        "__analytics_toolkit_target_user__stage__dryrun"
     )
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -1914,7 +1915,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
         "count_target",
     ]
     assert any(
-        "CREATE TABLE object_storage.pa_core_stage.target__analytics_toolkit_target_user__stage__dryrun "
+        "CREATE TABLE object_storage.pa_core_stage.daf6958bfec1c9f7__target__analytics_toolkit_target_user__stage__dryrun "
         in sql
         and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls

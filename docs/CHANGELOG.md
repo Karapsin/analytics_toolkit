@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Avoided ClickHouse transfer stream failures for empty validated sources.
 - Added per-connection DDL creation policies for Greenplum, Trino, and ClickHouse.
+- Redesigned SQL transfer staging around immutable ordinal snapshots and shared transfer identities.
 
 ## 1.3.11.0 - 2026-07-23
 

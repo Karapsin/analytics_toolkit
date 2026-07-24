@@ -34,6 +34,12 @@ def dry_run_stage_table_names(options: TransferOptions) -> list[str]:
 def dry_run_worker_stage_count(options: TransferOptions) -> int:
     if (
         options.transfer_slices is None
+        and options.source_transfer_staging_schema is not None
+        and options.trino_mode != "parquet"
+    ):
+        return options.concurrency
+    if (
+        options.transfer_slices is None
         or options.trino_mode == "parquet"
         or options.concurrency <= 1
     ):
@@ -46,7 +52,10 @@ def dry_run_stage_table_name(
     *,
     worker_index: int | None = None,
 ) -> str:
-    suffix = "dryrun" if worker_index is None else f"dryrun__w{worker_index:05d}"
+    runtime_id = options.transfer_id or "<runtime-transfer-id>"
+    suffix = (
+        f"{runtime_id}__w00000" if worker_index is None else f"{runtime_id}__w{worker_index:05d}"
+    )
     try:
         return build_stage_table_name(
             options.to_db_backend,
@@ -56,9 +65,14 @@ def dry_run_stage_table_name(
             ),
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=suffix,
+            destination_hash=options.destination_hash,
         )
     except Exception:
         return f"{options.target_table}__stage__{suffix}"
+
+
+def dry_run_final_upsert_stage_table_name(options: TransferOptions) -> str:
+    return dry_run_stage_table_name(options).replace("__w00000", "__upsert")
 
 
 def source_batches_label(
@@ -81,7 +95,10 @@ def dry_run_stage_external_location(options: TransferOptions) -> str | None:
     if not options.transfer_staging_location:
         return None
     try:
-        return build_stage_external_location(options, stage_suffix="dryrun")
+        return build_stage_external_location(
+            options,
+            stage_suffix=options.transfer_id or "<runtime-transfer-id>",
+        )
     except Exception:
         return options.transfer_staging_location.rstrip("/") + "/__stage__dryrun/"
 
@@ -105,7 +122,7 @@ def add_upsert_target_dry_run_steps(
     target_adapter = get_backend_adapter(options.to_db_backend)
     uses_partition_replacement_upsert = target_adapter.uses_partition_replacement_upsert()
     columns = resolve_dry_run_upsert_columns(options)
-    final_stage_table = f"{options.target_table}__upsert_final__dry_run"
+    final_stage_table = dry_run_final_upsert_stage_table_name(options)
     if uses_partition_replacement_upsert:
         _add_final_upsert_stage_create_step(plan, options, final_stage_table)
     upsert_sqls = (

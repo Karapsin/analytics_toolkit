@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: PLR0913, TID252
+
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -13,6 +15,11 @@ from analytics_toolkit.general import time_print
 from ...ddl.api import _create_sql_table_with_connection
 from ..table.maintenance import drop_table, drop_table_with_retry
 from ..table._basic_ops import table_exists
+from ...backends.transfer_stage import (
+    build_transfer_stage_tail,
+    collision_stage_suffix,
+    fit_hashed_stage_identifier,
+)
 
 
 STAGE_TABLE_NAME_MAX_ATTEMPTS = 10
@@ -32,15 +39,26 @@ def create_stage_table(
     transfer_staging_schema: str | None = None,
     transfer_staging_username: str | None = None,
     random_suffix: str | None = None,
+    destination_hash: str | None = None,
 ) -> str:
-    max_attempts = 1 if random_suffix is not None else STAGE_TABLE_NAME_MAX_ATTEMPTS
-    for attempt in range(1, max_attempts + 1):
+    preferred_suffix = random_suffix or uuid.uuid4().hex[:8]
+    for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
+        candidate_suffix = (
+            preferred_suffix
+            if attempt == 1
+            else _collision_stage_suffix(
+                connection_type,
+                preferred_suffix,
+                destination_hash=destination_hash,
+            )
+        )
         stage_table = build_stage_table_name(
             connection_type,
             target_table,
             transfer_staging_schema=transfer_staging_schema,
             transfer_staging_username=transfer_staging_username,
-            random_suffix=random_suffix,
+            random_suffix=candidate_suffix,
+            destination_hash=destination_hash,
         )
         if table_exists(
             connection_type,
@@ -48,8 +66,6 @@ def create_stage_table(
             stage_table,
             connection_key=connection_key or connection_type,
         ):
-            if random_suffix is not None:
-                raise RuntimeError(f"Stage table name collision detected for {stage_table}.")
             time_print(
                 f"Stage table name collision detected for {stage_table}; "
                 f"retrying with a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
@@ -62,22 +78,52 @@ def create_stage_table(
         create_schema = table_schema or column_types
         if create_schema is not None:
             create_kwargs["table_schema"] = create_schema
-        _create_sql_table_with_connection(
-            connection_type,
-            connection,
-            stage_table,
-            None if create_schema is not None else batch,
-            connection_key=connection_key or connection_type,
-            ddl_scope="staging",
-            gp_distributed_by_key=gp_distributed_by_key,
-            **create_kwargs,
-        )
+        try:
+            _create_sql_table_with_connection(
+                connection_type,
+                connection,
+                stage_table,
+                None if create_schema is not None else batch,
+                connection_key=connection_key or connection_type,
+                ddl_scope="staging",
+                gp_distributed_by_key=gp_distributed_by_key,
+                **create_kwargs,
+            )
+        except Exception:
+            if not table_exists(
+                connection_type,
+                connection,
+                stage_table,
+                connection_key=connection_key or connection_type,
+            ):
+                raise
+            time_print(
+                f"Stage table creation raced for {stage_table}; retrying with "
+                f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
+            )
+            continue
         return stage_table
 
     raise RuntimeError(
-        "Could not generate a unique stage table name after "
+        "Stage table name collision detected; could not generate a unique "
+        "stage table name after "
         f"{STAGE_TABLE_NAME_MAX_ATTEMPTS} attempts."
     )
+
+
+def _collision_stage_suffix(
+    connection_type: str,
+    preferred_suffix: str,
+    *,
+    destination_hash: str | None,
+) -> str:
+    if destination_hash is not None:
+        return collision_stage_suffix(
+            connection_type,
+            preferred_suffix,
+            uuid.uuid4().hex,
+        )
+    return f"{preferred_suffix}__c_{uuid.uuid4().hex[:8]}"
 
 
 def cleanup_stage_table(
@@ -132,6 +178,7 @@ def build_stage_table_name(
     transfer_staging_schema: str | None = None,
     transfer_staging_username: str | None = None,
     random_suffix: str | None = None,
+    destination_hash: str | None = None,
 ) -> str:
     dialect = sqlglot_dialect(connection_type)
     table = parse_one(table_name, read=dialect, into=exp.Table)
@@ -154,11 +201,23 @@ def build_stage_table_name(
         table.set("db", staging_schema_table.args.get("db") or staging_schema_table.this)
 
     stage_suffix = random_suffix or uuid.uuid4().hex[:8]
+    if destination_hash is None:
+        stage_identifier = _build_legacy_stage_identifier(
+            connection_type,
+            table,
+            transfer_staging_username,
+            stage_suffix,
+        )
+        stage_table = table.copy()
+        stage_table.set("this", stage_identifier)
+        return stage_table.sql(dialect=dialect)
+    resolved_destination_hash = destination_hash
     stage_identifier = _build_stage_identifier(
         connection_type,
         table,
         transfer_staging_username,
         stage_suffix,
+        resolved_destination_hash,
     )
     stage_table = table.copy()
     stage_table.set("this", stage_identifier)
@@ -169,24 +228,62 @@ def build_stage_table_prefix(
     connection_type: str,
     table_name: str,
     transfer_staging_username: str | None,
+    destination_hash: str | None = None,
 ) -> str:
     dialect = sqlglot_dialect(connection_type)
     table = parse_one(table_name, read=dialect, into=exp.Table)
     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
         raise ValueError(f"Invalid target table name: {table_name}")
 
-    base_identifier = _stage_base_identifier(
+    if destination_hash is None:
+        base_identifier = _stage_base_identifier(
+            connection_type,
+            str(table.this.this),
+            transfer_staging_username,
+            stage_suffix="x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH,
+        )
+        if transfer_staging_username:
+            return f"{base_identifier}__analytics_toolkit_{transfer_staging_username}__stage__"
+        return f"{base_identifier}__stage__"
+    resolved_destination_hash = destination_hash
+    suffix = "x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH
+    identifier = _build_stage_identifier(
         connection_type,
-        str(table.this.this),
+        table,
         transfer_staging_username,
-        stage_suffix="x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH,
+        suffix,
+        resolved_destination_hash,
     )
-    if transfer_staging_username:
-        return f"{base_identifier}__analytics_toolkit_{transfer_staging_username}__stage__"
-    return f"{base_identifier}__stage__"
+    return str(identifier.this)[: -len(suffix)]
 
 
 def _build_stage_identifier(
+    connection_type: str,
+    table: exp.Table,
+    transfer_staging_username: str | None,
+    stage_suffix: str,
+    destination_hash: str,
+) -> exp.Identifier:
+    prefix = f"{destination_hash}__"
+    readable_base = str(table.this.this)
+    tail = build_transfer_stage_tail(
+        connection_type,
+        transfer_staging_username,
+        stage_suffix,
+    )
+    identifier = fit_hashed_stage_identifier(
+        connection_type,
+        prefix,
+        readable_base,
+        tail,
+    )
+    return exp.to_identifier(
+        identifier,
+        quoted=bool(table.this.args.get("quoted")),
+    )
+
+
+def _build_legacy_stage_identifier(
     connection_type: str,
     table: exp.Table,
     transfer_staging_username: str | None,

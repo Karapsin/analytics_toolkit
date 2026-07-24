@@ -117,6 +117,27 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "database": "integration",
             "secure": False,
             "transfer_staging_schema": "integration",
+            "ddl_defaults": {
+                "regular": {
+                    "create_distributed_pair": True,
+                    "shard": {
+                        "engine": "MergeTree",
+                        "on_cluster": "integration_cluster",
+                    },
+                    "distributed": {
+                        "engine_template": (
+                            "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
+                        ),
+                        "cluster": "integration_cluster",
+                        "on_cluster": "integration_cluster",
+                        "sharding_key": "cityHash64(randCanonical())",
+                    },
+                },
+                "staging": {
+                    "create_distributed_pair": False,
+                    "shard": {"engine": "MergeTree", "on_cluster": None},
+                },
+            },
         },
     }
     connections["trino_values"] = {

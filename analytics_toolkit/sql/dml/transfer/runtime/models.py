@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: TID252
+
 import sys
 from collections import deque
 from dataclasses import dataclass, field
@@ -9,6 +11,8 @@ import pandas as pd
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from ..flow.stage_identity import TransferInternalColumns
 
 TrinoTransferMode = Literal["parquet", "values"]
 
@@ -339,6 +343,10 @@ class TransferOptions:
     to_db_backend: str
     source_sql: str
     target_table: str
+    transfer_id: str | None = None
+    canonical_destination_identity: str | None = None
+    full_destination_fingerprint: str | None = None
+    destination_hash: str | None = None
     table_schema: dict[str, str] | None = None
     replace_target_table: bool = True
     write_mode: str = "replace"
@@ -424,6 +432,10 @@ class TransferStageState:
     row_count_validated: bool = False
     slice_counts: list[TransferSliceRowCount] = field(default_factory=list)
     source_stage_tables: list[str] = field(default_factory=list)
+    source_columns: list[str] = field(default_factory=list)
+    internal_columns: TransferInternalColumns | None = None
+    transfer_id: str | None = None
+    canonical_destination_identity: str | None = None
 
 
 @dataclass

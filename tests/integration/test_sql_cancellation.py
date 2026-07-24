@@ -143,7 +143,11 @@ def _short_running_query(backend: str) -> str:
         return (
             "SELECT count() FROM numbers(20) WHERE sleepEachRow(0.1) = 0 SETTINGS max_block_size=1"
         )
-    return "SELECT count(*) FROM UNNEST(sequence(1, 25000000))"
+    return (
+        "SELECT sum(sin(a.x + b.x)) "
+        "FROM UNNEST(sequence(1, 10000)) AS a(x) "
+        "CROSS JOIN UNNEST(sequence(1, 10000)) AS b(x)"
+    )
 
 
 @pytest.mark.parametrize(

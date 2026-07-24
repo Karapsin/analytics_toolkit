@@ -39,7 +39,9 @@ def _load_options(backend: str) -> dict[str, object]:
         "partition_by": ["dt"],
         "order_by": ["id"],
         "ch_engine": "MergeTree",
-        "ch_cluster": "integration_cluster",
+        "ch_shard_on_cluster": "integration_cluster",
+        "ch_distributed_on_cluster": "integration_cluster",
+        "ch_distributed_cluster": "integration_cluster",
         "ch_only_shard": True,
     }
 
@@ -157,7 +159,9 @@ def test_representative_cross_backend_transfers() -> None:
             target_rows_per_second=False,
             partition_by=["dt"],
             order_by=["id"],
-            ch_cluster="integration_cluster",
+            ch_shard_on_cluster="integration_cluster",
+            ch_distributed_on_cluster="integration_cluster",
+            ch_distributed_cluster="integration_cluster",
         ) == len(source)
         assert sql.transfer(
             "ch",

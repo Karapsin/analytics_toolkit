@@ -49,7 +49,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `table_schema` - explicit backend-native column type mapping for created tables
 - `transfer_keys` - optional placeholder name, placeholder-name sequence, or `{placeholder_name: sql_expression}` mapping used to split the source query into explicit keyed slices
 - `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{placeholder_name: values}`, while multiple keys require `{placeholder_name: values}` for every key
-- `concurrency` - number of keyed source slices to load at once; values above `1` require `transfer_keys`
+- `concurrency` - number of target-stage workers; unkeyed values above `1` require `transfer_staging_schema` on `from_db`, while the direct-streaming path still requires `transfer_keys`
 - `partition_by` - partitioning columns or expression for created tables, interpreted according to the target backend
 - `order_by` - ordering or sorting columns or expression for created tables, interpreted according to the target backend
 
@@ -165,6 +165,33 @@ rows = sql.transfer(
 
 ## Notes
 
+- Every real call generates one immutable UUID4 transfer ID. The same full ID
+  appears in source snapshots, worker stages, Parquet resources, query labels,
+  progress/log messages, errors, and `SqlOperationResult.metadata.transfer_id`.
+  Dry-run plans use `<runtime-transfer-id>` and create no resources.
+- Workers created by one call are supported and share that transfer ID. Two
+  independent transfers targeting the same exact destination at the same time
+  are unsupported. Startup cleanup is best effort, not a distributed lock; an
+  older process can still execute SQL and overlapping finalization has no
+  portable cross-backend fencing or atomic “new transfer wins” guarantee.
+- A configured source `transfer_staging_schema` creates one immutable source
+  snapshot before extraction. Keyed slices share that table and use partitioned
+  1-based ordinals; unkeyed transfers use slice zero. Workers claim bounded,
+  non-overlapping ordinal ranges and may steal work across slices. Without
+  source staging, transfer preserves direct cursor streaming and rejects
+  unkeyed concurrency above one because `LIMIT`/`OFFSET` is not snapshot-safe.
+- Transfer SQL stage names begin with a stable 16-hex destination hash and also
+  carry the full transfer ID and worker/role identity. The hash is a naming
+  prefix, not deletion authority. Exact canonical destination values stored in
+  stage rows control validation and automatic cleanup; collisions allocate a
+  different stage name instead of reusing, overwriting, or dropping a table.
+- Four collision-resolved generated columns carry transfer ID, exact canonical
+  destination, slice ID, and row ordinal through staging. They are mandatory
+  integrity metadata even with `validate_row_count=False` and are explicitly
+  excluded from final-target DDL and inserts.
+- No manifest, lease, owner marker, heartbeat, bookkeeping, or other persistent
+  coordination table is created. In-process checkpoints exist only for the
+  current call.
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
 - Deterministic input and configuration errors stop immediately without an
@@ -198,10 +225,10 @@ rows = sql.transfer(
 - Values are always explicit; the helper does not query distinct key values
   automatically.
 - Keyed transfers render each source slice by replacing placeholders inline.
-  With SQL row staging and `concurrency > 1`, workers stream their assigned
-  slices batch-by-batch into one private stage table per worker, then the worker
-  stages are consolidated sequentially into the first stage table before one
-  final target write. The helper does not buffer all slice data in memory.
+  With source staging, every slice is materialized incrementally into one
+  snapshot before range workers start. On the compatibility path without source
+  staging, workers stream assigned slices into private target stages as before.
+  Worker stages are consolidated before one final target write.
   Trino Parquet staging keeps one external stage table and uses unique staged
   files instead of concurrent SQL inserts into a shared stage table.
 - When `transfer_keys` is used, per-batch transfer logs include the active
@@ -230,11 +257,16 @@ rows = sql.transfer(
   actual stage-table `COUNT(*)`, and fails before target writes when they differ.
   For keyed transfers, every rendered slice is counted and validated before the
   aggregate stage table is finalized.
-- When the source connection defines `transfer_staging_schema`, row-count
-  validation materializes the source query once in that schema, counts and
-  streams the stable result, and removes it before target finalization. Without
-  a source staging schema, validation runs the source query twice: once for
-  `COUNT(*)` and once for streaming.
+- When the source connection defines `transfer_staging_schema`, snapshot
+  materialization is the extraction mechanism regardless of public row-count
+  validation. `validate_row_count=False` disables only the public
+  source-to-target count comparison; transfer ID, destination, uniqueness, and
+  ordinal coverage checks remain mandatory.
+- A new call removes discoverable non-empty stages on its current source and
+  target connections only when their stored exact destination matches and their
+  transfer ID differs. Empty, malformed, unverifiable, legacy, and `load_df`
+  stages are preserved. Historical source stages on another connection alias
+  may require explicit `cleanup_stale_stage_tables(stage_tables=[...])` cleanup.
 - For ClickHouse sources with no explicit `LIMIT`, row-count validation streams
   with `LIMIT <counted_source_rows>` and temporarily disables the client
   `query_limit` while opening the stream, so connection-level query caps do not

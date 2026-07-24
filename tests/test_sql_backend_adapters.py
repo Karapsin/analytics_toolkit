@@ -1704,6 +1704,32 @@ def test_noncommitting_dbapi_failures_do_not_require_rollback() -> None:
     assert cursor.closed is True
 
 
+def test_trino_materialization_command_drains_results_before_close() -> None:
+    events: list[str] = []
+
+    class Cursor:
+        def execute(self, sql: str) -> None:
+            events.append(f"execute:{sql}")
+
+        def fetchall(self) -> list[object]:
+            events.append("fetchall")
+            return []
+
+        def close(self) -> None:
+            events.append("close")
+
+    get_backend_adapter("trino").execute_materialization_command(
+        SimpleNamespace(cursor=Cursor),
+        "CREATE TABLE snapshot AS SELECT 1",
+    )
+
+    assert events == [
+        "execute:CREATE TABLE snapshot AS SELECT 1",
+        "fetchall",
+        "close",
+    ]
+
+
 def test_dbapi_insert_from_query_rolls_back_failed_committed_insert() -> None:
     insert_error = RuntimeError("insert failed")
 

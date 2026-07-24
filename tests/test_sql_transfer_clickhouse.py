@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: C901, I001
+
 import importlib
 import sys
 from datetime import date
@@ -11,12 +13,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-transfer_api_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.api"
-)
-transfer_attempt_module = importlib.import_module(
-    "analytics_toolkit.sql.dml.transfer.flow.attempt"
-)
+transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
+transfer_attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
 transfer_finalize_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.finalize"
 )
@@ -29,6 +27,13 @@ TARGET_SHARD_TABLE = "test_transfer_target_shard"
 class FakeResult:
     def __init__(self, rows: list[tuple[Any, ...]]) -> None:
         self.result_rows = rows
+        self.row_count = len(rows)
+        self.column_names = (
+            tuple(f"column_{index}" for index in range(len(rows[0]))) if rows else ()
+        )
+        self.result_columns = (
+            tuple([row[index] for row in rows] for index in range(len(rows[0]))) if rows else ()
+        )
 
 
 class FakeSourceCursor:
@@ -88,10 +93,23 @@ class FakeClickHouseClient:
         self.command_settings.append(settings)
         self._track_table_ddl(sql)
 
-    def query(self, sql: str) -> FakeResult:
+    def query(self, sql: str, column_oriented: bool = False) -> FakeResult:
+        del column_oriented
         self.queries.append(sql)
+        sql = _strip_query_label(sql)
+        if "__analytics_toolkit_" in sql and "GROUP BY" in sql:
+            row = next(
+                (insert["data"][0] for insert in self.inserts if insert.get("data")),
+                None,
+            )
+            if row is None:
+                return FakeResult([])
+            if "__analytics_toolkit_row_ordinal" in sql and "MIN(" in sql:
+                rows = [item for insert in self.inserts for item in insert.get("data", [])]
+                return FakeResult([(int(row[-2]), 1, len(rows), len(rows), len(rows))])
+            return FakeResult([(row[-4], row[-3])])
         if sql.startswith("SELECT count() FROM "):
-            table_name = sql[len("SELECT count() FROM "):].strip()
+            table_name = sql[len("SELECT count() FROM ") :].strip()
             return FakeResult([(self._inserted_rows(table_name),)])
         if sql.startswith("SELECT getMacro("):
             return FakeResult([("core",)])
@@ -106,7 +124,7 @@ class FakeClickHouseClient:
         if "clusterAllReplicas" in sql:
             return FakeResult([(len(self.created_tables),)])
         if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE "):].strip()
+            table_name = sql[len("EXISTS TABLE ") :].strip()
             return FakeResult([(int(table_name in self.created_tables),)])
         return FakeResult([])
 
@@ -137,9 +155,7 @@ class FakeClickHouseClient:
                 "data": list(data),
                 "column_names": list(column_names),
                 "column_type_names": (
-                    list(column_type_names)
-                    if column_type_names is not None
-                    else None
+                    list(column_type_names) if column_type_names is not None else None
                 ),
             }
         )
@@ -150,15 +166,15 @@ class FakeClickHouseClient:
     def _track_table_ddl(self, sql: str) -> None:
         body = _strip_query_label(sql)
         if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body[len("CREATE TABLE IF NOT EXISTS "):].split()[0]
+            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0]
             self.created_tables.add(table_name)
             return
         if body.startswith("CREATE TABLE "):
-            table_name = body[len("CREATE TABLE "):].split()[0]
+            table_name = body[len("CREATE TABLE ") :].split()[0]
             self.created_tables.add(table_name)
             return
         if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body[len("DROP TABLE IF EXISTS "):].split()[0]
+            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0]
             self.created_tables.discard(table_name)
 
     def _cluster_table_count(self, sql: str) -> int:
@@ -232,17 +248,23 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
 
     assert transferred_rows == 1
     assert "test_transfer_target__analytics_toolkit_user__stage__" in target.inserts[0]["table"]
-    assert target.inserts[0]["data"] == [(date(2024, 2, 1), 10)]
-    assert target.inserts[0]["column_names"] == ["month_date", "users"]
-    assert target.inserts[0]["column_type_names"] == [
-        "Date",
-        "Int64",
+    staged_row = target.inserts[0]["data"][0]
+    assert staged_row[:2] == (date(2024, 2, 1), 10)
+    assert len(staged_row[2]) == 32
+    assert staged_row[3:] == (TARGET_TABLE, 0, 1)
+    assert target.inserts[0]["column_names"][:2] == ["month_date", "users"]
+    assert target.inserts[0]["column_names"][2:] == [
+        "__analytics_toolkit_transfer_id",
+        "__analytics_toolkit_destination_table",
+        "__analytics_toolkit_slice_id",
+        "__analytics_toolkit_row_ordinal",
     ]
+    assert target.inserts[0]["column_type_names"][:2] == ["Date", "Int64"]
     assert "df" not in target.inserts[0]
 
     cluster_distributed_creates = [
         command
-        for command in target.commands
+        for command in map(_strip_query_label, target.commands)
         if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}\n")
         and "ON CLUSTER '{cluster}'" in command
     ]
@@ -255,18 +277,16 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert any(
         "INSERT INTO test_transfer_target (`month_date`, `users`) SELECT CAST(`month_date` AS Date)"
         in command
-        and "FROM analytics_toolkit_transfer.test_transfer_target__analytics_toolkit_user__stage__"
-        in command
-        for command in target.commands
+        and "FROM analytics_toolkit_transfer." in command
+        and "__test_transfer_target__analytics_toolkit_user__stage__" in command
+        for command in map(_strip_query_label, target.commands)
     )
 
-    assert (
-        f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'"
-        in target.commands
+    assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" in map(
+        _strip_query_label, target.commands
     )
-    assert (
-        f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'"
-        in target.commands
+    assert f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in map(
+        _strip_query_label, target.commands
     )
 
 
@@ -310,18 +330,24 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     )
 
     assert transferred_rows == 1
-    assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" in target.commands
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}_shard")
-        and "ON CLUSTER '{cluster}'" in command
-        for command in target.commands
+    assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" in map(
+        _strip_query_label,
+        target.commands,
     )
-    assert all("ENGINE = Distributed(" not in command for command in target.commands)
-    assert any(TARGET_SHARD_TABLE in command for command in target.commands)
+    assert any(
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
+        and "ON CLUSTER '{cluster}'" in command
+        for command in map(_strip_query_label, target.commands)
+    )
+    assert all(
+        "ENGINE = Distributed(" not in command
+        for command in map(_strip_query_label, target.commands)
+    )
+    assert all(TARGET_SHARD_TABLE not in command for command in target.commands)
     target_creates = [
         command
-        for command in target.commands
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}_shard")
+        for command in map(_strip_query_label, target.commands)
+        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
     ]
     assert len(target_creates) == 2
     assert "ENGINE = ReplicatedMergeTree" in target_creates[0]
@@ -329,10 +355,8 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     assert "ORDER BY `month_date`" in target_creates[0]
     assert not any("clusterAllReplicas" in query for query in target.queries)
     assert any(
-        command.startswith(
-            f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) "
-        )
-        for command in target.commands
+        command.startswith(f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) ")
+        for command in map(_strip_query_label, target.commands)
     )
 
 

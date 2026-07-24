@@ -45,13 +45,17 @@ from .dry_run import (
     add_insert_target_dry_run_steps,
     add_upsert_target_dry_run_steps,
     dry_run_stage_external_location,
+    dry_run_final_upsert_stage_table_name,
     dry_run_stage_table_names,
     source_batches_label,
 )
 from .keys import normalize_transfer_slices
 from .parquet_stage import build_create_parquet_stage_table_sql
+from .row_counts import best_effort_transfer_target_count
+from .runtime_identity import prepare_transfer_runtime
 from .source import normalize_transfer_source
 from .stream_retries import TransferStreamRetryState
+from .stage_identity import resolve_destination_identity
 
 
 @timed_public_sql_function
@@ -168,13 +172,20 @@ def transfer_table(
     )
 
     if dry_run or return_sql:
-        return build_transfer_table_plan(options)
+        return build_transfer_table_plan(prepare_transfer_runtime(options, dry_run=True))
+
+    options = prepare_transfer_runtime(options, dry_run=False)
+    transfer_id = options.transfer_id or ""
 
     time_print(
         f"Starting table transfer from {options.from_db_key} "
-        f"to {options.to_db_key}: {options.target_table}"
+        f"to {options.to_db_key}: {options.target_table} "
+        f"(transfer_id={transfer_id})"
     )
-    operation_metadata = SqlOperationMetadata(query_label=options.query_label)
+    operation_metadata = SqlOperationMetadata(
+        query_label=options.query_label,
+        transfer_id=transfer_id,
+    )
     stream_retry_state = TransferStreamRetryState(options)
 
     def transfer_operation(attempt: int) -> int:
@@ -261,7 +272,8 @@ def transfer_table(
 
     time_print(
         f"Finished table transfer from {options.from_db_key} "
-        f"to {options.to_db_key}: {total_rows} row(s)"
+        f"to {options.to_db_key}: {total_rows} row(s) "
+        f"(transfer_id={transfer_id})"
     )
     if return_metadata:
         metadata = operation_metadata
@@ -275,7 +287,11 @@ def transfer_table(
         metadata.staged_rows = total_rows
         metadata.inserted_rows = total_rows
         metadata.affected_rows = total_rows
-        metadata.final_target_rows = _best_effort_transfer_target_count(options)
+        metadata.final_target_rows = best_effort_transfer_target_count(
+            options,
+            open_connection=get_sql_connection,
+            count_rows=count_table_rows,
+        )
         return SqlOperationResult(
             rows=total_rows,
             metadata=metadata,
@@ -433,6 +449,11 @@ def build_transfer_options(
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
+        allow_unkeyed_concurrency=from_config.transfer_staging_schema is not None,
+    )
+    destination_identity = resolve_destination_identity(
+        to_table.strip() if isinstance(to_table, str) and to_table.strip() else "_invalid_",
+        to_config.backend,
     )
     normalized_partition_by = target_adapter.normalize_ch_columns_or_expression(
         partition_by,
@@ -463,6 +484,9 @@ def build_transfer_options(
         source_sql=source_sql,
         source_table=source_table,
         target_table=to_table.strip() if isinstance(to_table, str) else "",
+        canonical_destination_identity=destination_identity.canonical,
+        full_destination_fingerprint=destination_identity.fingerprint,
+        destination_hash=destination_identity.hash_prefix,
         table_schema=normalize_table_schema(table_schema),
         replace_target_table=resolved_write_mode != "append",
         write_mode=resolved_write_mode,
@@ -628,6 +652,9 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         target_table=options.target_table,
         options={
             "write_mode": options.write_mode,
+            "transfer_id": options.transfer_id,
+            "canonical_destination_identity": options.canonical_destination_identity,
+            "destination_hash": options.destination_hash,
             "batch_size": options.batch_size,
             "adaptive_batch_size": options.adaptive_batch_size,
             "min_batch_size": options.min_batch_size,
@@ -677,8 +704,16 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "estimate_total_rows": options.estimate_total_rows,
             "validate_row_count": options.validate_row_count,
             "ch_count_limit_read": options.ch_count_limit_read,
+            "runtime_collision_allocation": (
+                "preferred stage names are shown; runtime collisions allocate "
+                "a different retained name"
+            ),
+            "internal_columns": (
+                "<resolved after source schema inspection; generated names avoid collisions>"
+            ),
         },
         metadata=SqlOperationMetadata(
+            transfer_id=options.transfer_id,
             stage_table=stage_table,
             stage_external_location=stage_external_location,
             worker_stage_count=len(stage_tables),
@@ -849,7 +884,7 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             plan,
             alias=options.to_db_key,
             backend=options.to_db_backend,
-            stage_table=f"{options.target_table}__upsert_final__dry_run",
+            stage_table=dry_run_final_upsert_stage_table_name(options),
             query_label=options.query_label,
         )
     if options.trino_mode == "parquet":
@@ -861,23 +896,3 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             target_table=stage_table,
         )
     return plan
-
-
-def _best_effort_transfer_target_count(options: TransferOptions) -> int | None:
-    connection = None
-    try:
-        connection = get_sql_connection(options.to_db_key)
-        return count_table_rows(
-            options.to_db_backend,
-            connection,
-            options.target_table,
-            query_label=options.query_label,
-        )
-    except Exception:
-        return None
-    finally:
-        if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass

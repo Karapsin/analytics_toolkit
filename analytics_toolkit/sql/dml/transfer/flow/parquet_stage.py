@@ -49,11 +49,21 @@ def create_parquet_stage_table(
         )
 
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
+        preferred_suffix = (
+            f"{options.transfer_id}__w00000"
+            if options.transfer_id is not None
+            else uuid.uuid4().hex
+        )
+        suffix = (
+            preferred_suffix if attempt == 1 else f"{preferred_suffix}__c_{uuid.uuid4().hex[:8]}"
+        )
         stage_table = build_stage_table_name(
             "trino",
             options.target_table,
             transfer_staging_schema=parquet_schema,
             transfer_staging_username=options.transfer_staging_username,
+            random_suffix=suffix,
+            destination_hash=options.destination_hash,
         )
         if table_exists(
             "trino",
@@ -67,7 +77,10 @@ def create_parquet_stage_table(
             )
             continue
 
-        stage_external_location = build_stage_external_location(options)
+        stage_external_location = build_stage_external_location(
+            options,
+            stage_suffix=suffix,
+        )
         adapter = get_backend_adapter(options.to_db_backend)
         create_sql = adapter.build_parquet_stage_table_sql(
             stage_table,
@@ -123,7 +136,7 @@ def build_stage_external_location(
         _stage_target_table_name(options)
     )
     username = options.transfer_staging_username or "unknown"
-    resolved_suffix = stage_suffix or uuid.uuid4().hex
+    resolved_suffix = stage_suffix or getattr(options, "transfer_id", None) or uuid.uuid4().hex
     return (
         f"{base_location}/{target_base}/__analytics_toolkit_{username}__stage__{resolved_suffix}/"
     )
@@ -153,6 +166,10 @@ def write_batch_to_parquet_stage(
     pq: Any,
     fsspec_module: Any,
     row_group_size: int,
+    transfer_id: str | None = None,
+    worker_id: int = 0,
+    start_ordinal: int | None = None,
+    stop_ordinal: int | None = None,
 ) -> int:
     row_count = len(batch.rows)
     if row_count == 0:
@@ -171,11 +188,23 @@ def write_batch_to_parquet_stage(
         )
         del arrow_table
         spooled_file.seek(0)
-        file_name = (
-            f"slice-{slice_index:05d}-part-{file_index:05d}.parquet"
-            if slice_index is not None
-            else f"part-{file_index:05d}.parquet"
-        )
+        if transfer_id is None:
+            file_name = (
+                f"slice-{slice_index:05d}-part-{file_index:05d}.parquet"
+                if slice_index is not None
+                else f"part-{file_index:05d}.parquet"
+            )
+        else:
+            slice_token = 0 if slice_index is None else slice_index
+            range_token = (
+                f"-range-{start_ordinal:020d}-{stop_ordinal:020d}"
+                if start_ordinal is not None and stop_ordinal is not None
+                else ""
+            )
+            file_name = (
+                f"transfer-{transfer_id}-worker-{worker_id:05d}-"
+                f"slice-{slice_token:05d}{range_token}-part-{file_index:05d}.parquet"
+            )
         remote_uri = f"{stage_external_location.rstrip('/')}/{file_name}"
         upload_spooled_file(fsspec_module, spooled_file, remote_uri)
         if _spooled_file_rolled_to_disk(spooled_file):

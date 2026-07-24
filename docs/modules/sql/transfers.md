@@ -7,13 +7,14 @@ right workflow when the source data is already in a database and Python should
 coordinate extraction, batching, type mapping, and target writes. The public
 entrypoint is [sql.transfer](functions/transfer.md).
 
-The transfer flow has four conceptual steps:
+The staged-source transfer flow has five conceptual steps:
 
 1. Open source and target connections from `.connections`.
-2. Inspect source query metadata and establish the expected row count.
-3. Stream source rows in batches into a stage table.
-4. Validate expected source rows, streamed rows, and actual stage-table rows,
-   then finalize the target table.
+2. Generate one transfer ID and resolve the exact canonical destination.
+3. Materialize one immutable, indexed/ordered source snapshot when the source
+   connection defines `transfer_staging_schema`.
+4. Let workers claim bounded ordinal ranges into private target stages.
+5. Validate transfer/destination identity and ordinal coverage, then finalize.
 
 For Trino targets, a target connection with both `transfer_staging_schema` and
 `transfer_staging_location` stages transfers from different connection keys
@@ -67,21 +68,35 @@ before target finalization when the source, streamed, and stage-table counts do
 not match. For ClickHouse sources, this also protects transfer reads from
 connection-level `query_limit` caps.
 
-When the source connection defines `transfer_staging_schema`, validation first
-materializes the query result in that schema. The original query runs once;
-the stable temporary result is counted and streamed, then removed before target
-finalization. This avoids repeating an expensive source query and prevents
-source changes between the count and stream reads. Without a source staging
-schema, transfer retains direct count-then-stream behavior. Keyed transfers use
-and remove one source result stage per rendered slice.
+When the source connection defines `transfer_staging_schema`, transfer always
+materializes one shared immutable snapshot. Keyed inputs are inserted slice by
+slice with partitioned ordinals; unkeyed rows use slice zero. This enables safe
+unkeyed `concurrency > 1`. Without source staging, transfer retains direct
+count-then-stream behavior and requires keys for concurrency above one.
+
+All transfer SQL stages start with a stable destination-hash prefix, while
+stage rows store the exact canonical destination and full transfer ID. Hashes
+are collision-resistant naming aids, not proof of ownership and never authorize
+deletion. Runtime allocation checks existence and selects a collision-adjusted
+name rather than reusing an existing table.
+
+Only workers inside one `sql.transfer` invocation are supported concurrently.
+Independent simultaneous calls to the same destination are unsupported.
+Best-effort startup cleanup is not a lock or fencing mechanism, and the design
+creates no manifest, lease, heartbeat, owner marker, or bookkeeping table.
+Empty or unverifiable stages and historical source stages on another connection
+remain for explicit cleanup.
 
 ## Retries
 
 Operation retries reopen connections and retry the failed public operation.
-Transfer-level retries restart the whole transfer flow, including source reads
-and target staging. This is safer than resuming from an unknown partial batch,
-but it means target write mode and staging behavior should be chosen with
-restartability in mind.
+With a staged source, a safe source-range failure requeues only that half-open
+ordinal interval and preserves completed target-stage ranges. An ambiguous
+target-stage write discards current target stages and checkpoints before a
+reload from the retained snapshot. Direct streaming preserves whole-attempt
+restart behavior. Finalization never treats retained staging as proof that the
+target mutation succeeded, and append is not retried after an ambiguous final
+append.
 
 ## Types
 

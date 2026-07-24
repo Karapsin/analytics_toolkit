@@ -18,6 +18,7 @@ class SqlStatement:
 
 @dataclass
 class SqlOperationMetadata:
+    transfer_id: str | None = None
     source_rows: int | None = None
     expected_source_rows: int | None = None
     streamed_rows: int | None = None
@@ -42,6 +43,7 @@ class SqlOperationMetadata:
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "transfer_id": self.transfer_id,
             "source_rows": self.source_rows,
             "expected_source_rows": self.expected_source_rows,
             "streamed_rows": self.streamed_rows,
@@ -189,10 +191,7 @@ def format_plan(
             f"target={_format_empty(statement.target_table)}"
         )
         if include_sql:
-            row = (
-                f"{row} "
-                f"sql={_short_sql_preview(statement.sql, max_sql_chars)}"
-            )
+            row = f"{row} sql={_short_sql_preview(statement.sql, max_sql_chars)}"
         lines.append(row)
     return "\n".join(lines)
 
@@ -218,9 +217,7 @@ def _format_options(options: dict[str, Any]) -> str:
 def _format_mapping(values: dict[str, Any]) -> str:
     if not values:
         return "<none>"
-    return ", ".join(
-        f"{key}={_format_value(values[key])}" for key in sorted(values)
-    )
+    return ", ".join(f"{key}={_format_value(values[key])}" for key in sorted(values))
 
 
 def _format_value(value: Any) -> str:

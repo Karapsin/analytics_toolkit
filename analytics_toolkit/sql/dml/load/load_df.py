@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: FBT001
+# ruff: noqa: FBT001, I001, TID252
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -50,6 +50,7 @@ from ...execution.plan_steps import (
     add_load_stage_step,
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ..transfer.flow.stage_identity import resolve_destination_identity
 from ...execution.validation import validate_optional_positive_int
 from ..table._basic_ops import (
     count_table_rows,
@@ -354,10 +355,17 @@ def _build_load_options(
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
     )
+    resolved_destination_table = destination_table.strip()
+    if not resolved_destination_table:
+        raise ValueError("destination_table must not be empty.")
     options = LoadOptions(
         connection_key=config.connection_key,
         connection_backend=config.backend,
-        destination_table=destination_table.strip(),
+        destination_table=resolved_destination_table,
+        destination_hash=resolve_destination_identity(
+            resolved_destination_table,
+            config.backend,
+        ).hash_prefix,
         table_schema=normalize_table_schema(table_schema),
         append=resolved_write_mode == "append",
         write_mode=resolved_write_mode,
@@ -427,8 +435,6 @@ def _build_load_options(
         staging_ch_policy=ddl.staging_ch_policy,
     )
 
-    if not options.destination_table:
-        raise ValueError("destination_table must not be empty.")
     if options.write_mode == "upsert" and not options.key_columns:
         raise ValueError("key_columns are required for write_mode='upsert'.")
     if (
@@ -822,8 +828,8 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     if options.use_parquet_staging:
         _add_parquet_load_plan_steps(plan, options, df, metadata)
     elif options.write_mode == "upsert":
-        stage_table = f"{options.destination_table}__stage__dry_run"
-        final_stage_table = f"{options.destination_table}__upsert_final__dry_run"
+        stage_table = _dry_run_load_stage_name(options, "dry_run")
+        final_stage_table = _dry_run_load_stage_name(options, "upsert_final__dry_run")
         metadata.stage_table = stage_table
         add_create_table_steps(
             plan,
@@ -912,7 +918,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 query_label=options.query_label,
             )
     elif options.append and options.key_columns:
-        stage_table = f"{options.destination_table}__stage__dry_run"
+        stage_table = _dry_run_load_stage_name(options, "dry_run")
         metadata.stage_table = stage_table
         add_create_table_steps(
             plan,
@@ -1022,6 +1028,7 @@ def _add_parquet_load_plan_steps(
         transfer_staging_schema=parquet_schema,
         transfer_staging_username=options.transfer_staging_username,
         random_suffix="dryrun",
+        destination_hash=options.destination_hash,
     )
     stage_external_location = build_stage_external_location(
         options,
@@ -1059,7 +1066,7 @@ def _add_parquet_load_plan_steps(
     )
 
     if options.write_mode == "upsert":
-        final_stage_table = f"{options.destination_table}__upsert_final__dry_run"
+        final_stage_table = _dry_run_load_stage_name(options, "upsert_final__dry_run")
         if uses_partition_replacement_upsert:
             add_create_table_steps(
                 plan,
@@ -1122,7 +1129,7 @@ def _add_parquet_load_plan_steps(
             plan,
             alias=options.connection_key,
             backend=options.connection_backend,
-            stage_table=f"{options.destination_table}__upsert_final__dry_run",
+            stage_table=_dry_run_load_stage_name(options, "upsert_final__dry_run"),
             query_label=options.query_label,
         )
     plan.add(
@@ -1132,6 +1139,19 @@ def _add_parquet_load_plan_steps(
         phase="cleanup_stage_location",
         target_table=stage_table,
         query_label=options.query_label,
+    )
+
+
+def _dry_run_load_stage_name(options: LoadOptions, suffix: str) -> str:
+    return build_stage_table_name(
+        options.connection_backend,
+        options.destination_table,
+        transfer_staging_schema=(
+            options.transfer_parquet_staging_schema or options.transfer_staging_schema
+        ),
+        transfer_staging_username=options.transfer_staging_username,
+        random_suffix=suffix,
+        destination_hash=options.destination_hash,
     )
 
 
@@ -1199,6 +1219,7 @@ def _load_dataframe(
                 query_label=options.query_label,
                 transfer_staging_schema=options.transfer_staging_schema,
                 transfer_staging_username=options.transfer_staging_username,
+                destination_hash=options.destination_hash,
                 **stage_create_kwargs,
             ),
         )
@@ -1379,6 +1400,7 @@ def _create_load_parquet_stage_table(
             options.destination_table,
             transfer_staging_schema=parquet_schema,
             transfer_staging_username=options.transfer_staging_username,
+            destination_hash=options.destination_hash,
         )
         if table_exists(
             options.connection_backend,
@@ -1496,6 +1518,7 @@ def _ensure_final_upsert_stage_table(
             query_label=options.query_label,
             transfer_staging_schema=options.transfer_staging_schema,
             transfer_staging_username=options.transfer_staging_username,
+            destination_hash=options.destination_hash,
         ),
     )
 

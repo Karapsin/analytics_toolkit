@@ -39,6 +39,14 @@ class TrinoAdapter(DbApiBackendAdapter):
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)
 
+    def execute_materialization_command(self, connection: Any, sql: str) -> None:
+        cursor = connection.cursor()
+        try:
+            cursor.execute(sql)
+            cursor.fetchall()
+        finally:
+            cursor.close()
+
     def explicit_create_property_overrides(
         self,
         partition_by: Sequence[str] | str | None,

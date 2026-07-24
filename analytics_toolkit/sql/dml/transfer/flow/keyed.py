@@ -22,9 +22,7 @@ def build_keyed_worker_stage_states(
     stage_state: TransferStageState,
 ) -> list[WorkerStageState]:
     transfer_slices = (
-        options.transfer_slices
-        if options is not None
-        else stage_state.transfer_slices
+        options.transfer_slices if options is not None else stage_state.transfer_slices
     ) or []
     stage_tables = stage_state.stage_tables or (
         [stage_state.stage_table] if stage_state.stage_table is not None else []
@@ -60,4 +58,8 @@ def _copy_stage_state_for_worker(
         stage_table=stage_table,
         stage_tables=[stage_table],
         stage_external_location=stage_state.stage_external_location,
+        source_columns=list(stage_state.source_columns),
+        internal_columns=stage_state.internal_columns,
+        transfer_id=stage_state.transfer_id,
+        canonical_destination_identity=stage_state.canonical_destination_identity,
     )

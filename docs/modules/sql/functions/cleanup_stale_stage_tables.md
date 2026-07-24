@@ -48,6 +48,18 @@ sql.cleanup_stale_stage_tables(
 
 ## Notes
 
+- Supported concurrency is limited to workers created by one `sql.transfer`
+  call. Independent simultaneous calls to the same destination are unsupported;
+  cleanup is best effort and is not a distributed lock or cross-backend fence.
+- New-format automatic transfer cleanup verifies the full transfer ID and exact
+  stored canonical destination. A destination-hash prefix match alone never
+  authorizes deletion, and no atomic “new transfer wins” behavior is promised.
+- Empty, malformed, or unverifiable new-format stages are preserved. Historical
+  source snapshots on a different source connection may not be discoverable;
+  pass explicit `stage_tables=[...]` or deliberately use `clean_all=True` for
+  operator-authorized cleanup.
+- This helper creates no manifest, lease, heartbeat, owner marker, bookkeeping,
+  or other coordination table.
 - Uses `transfer_staging_schema` and target user metadata from `.connections` to find stage tables.
 - Passing `stage_tables=None` with `clean_all=False` discovers matching stale
   stage tables for `target_table`; passing `[]` drops nothing; passing explicit

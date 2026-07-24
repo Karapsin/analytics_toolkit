@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: EM101, TRY003
+
 import warnings
 from typing import Any
 
@@ -28,6 +30,7 @@ from ..runtime.retry import (
 )
 from ..schema import get_existing_target_insert_types
 from .parquet_stage import cleanup_parquet_stage_location
+from .stage_validation import validate_transfer_stage_identity
 
 
 def finalize_loaded_stage(
@@ -44,6 +47,31 @@ def finalize_loaded_stage(
         raise RuntimeError("Expected a non-empty batch when rows were transferred.")
     if stage_state.stage_table is None:
         raise RuntimeError("Expected stage table to be initialized.")
+
+    if options.transfer_id is not None:
+        if stage_state.internal_columns is None:
+            raise RuntimeError("Transfer internal columns were not resolved.")
+        stage_tables = (
+            stage_state.stage_tables
+            if options.write_mode == "upsert" and stage_state.stage_tables
+            else [stage_state.stage_table]
+        )
+        expected_slice_counts = (
+            {item.index: item.streamed_rows for item in stage_state.slice_counts}
+            if stage_state.slice_counts
+            else {0: total_rows}
+        )
+        _run_with_fresh_target_connection(
+            options,
+            "validate_stage_identity",
+            lambda target_ref: validate_transfer_stage_identity(
+                options=options,
+                connection=target_ref["connection"],
+                stage_tables=stage_tables,
+                internal_columns=stage_state.internal_columns,
+                expected_slice_counts=expected_slice_counts,
+            ),
+        )
 
     _run_with_fresh_target_connection(
         options,
@@ -70,7 +98,20 @@ def finalize_loaded_stage(
                 replace_target_table=options.replace_target_table,
             ),
         )
-    if stage_state.stage_column_types is None:
+    source_stage_column_types = (
+        stage_state.stage_column_types
+        if options.transfer_id is None
+        else (
+            {
+                column: stage_state.stage_column_types[column]
+                for column in stage_state.source_columns
+                if column in stage_state.stage_column_types
+            }
+            if stage_state.stage_column_types is not None
+            else None
+        )
+    )
+    if source_stage_column_types is None:
         stage_state.insert_column_types = None
         target_column_types = None
     elif stage_state.target_exists and (
@@ -83,14 +124,14 @@ def finalize_loaded_stage(
                 options.to_db_backend,
                 target_ref["connection"],
                 options.target_table,
-                stage_state.stage_column_types,
+                source_stage_column_types,
                 connection_key=options.to_db_key,
             ),
         )
         target_column_types = None
     else:
-        stage_state.insert_column_types = stage_state.stage_column_types
-        target_column_types = stage_state.stage_column_types
+        stage_state.insert_column_types = source_stage_column_types
+        target_column_types = source_stage_column_types
 
     _ensure_final_upsert_stage_table(options, stage_state)
 
@@ -212,6 +253,10 @@ def _ensure_final_upsert_stage_table(
             query_label=options.query_label,
             transfer_staging_schema=options.transfer_staging_schema,
             transfer_staging_username=options.transfer_staging_username,
+            random_suffix=(
+                f"{options.transfer_id}__upsert" if options.transfer_id is not None else None
+            ),
+            destination_hash=options.destination_hash,
         ),
     )
 

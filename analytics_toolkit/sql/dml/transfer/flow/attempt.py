@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: C901
+
 import contextvars
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
@@ -54,8 +56,12 @@ from .parquet_stage import (
     create_parquet_stage_table,
     ensure_parquet_staging_dependencies,
     parquet_row_group_size,
-    sample_dataframe_from_batch,
     write_batch_to_parquet_stage,
+)
+from .parquet_batches import (
+    append_transfer_identity_columns as _append_transfer_identity_columns,
+    initialize_parquet_stage_for_first_batch as _initialize_parquet_stage_for_first_batch_impl,
+    load_parquet_stage_batches as _load_parquet_stage_batches_impl,
 )
 from .progress import format_transfer_progress_count, make_transfer_progress_bar
 from .row_counts import (
@@ -68,10 +74,14 @@ from .row_counts import (
     validate_streamed_row_count,
 )
 from .stage import (
+    _with_internal_column_types,
     create_stage_state,
     ensure_transfer_target_table,
     initialize_stage_for_first_batch,
 )
+from .stage_identity import resolve_internal_columns
+from .staged_attempt import run_staged_source_transfer_attempt
+from .superseded import cleanup_superseded_transfer_stages
 
 
 def run_transfer_attempt(
@@ -79,6 +89,11 @@ def run_transfer_attempt(
     read_retry_cnt: int,
     insert_retry_cnt: int,
 ) -> int:
+    if options.source_transfer_staging_schema is not None:
+        return run_staged_source_transfer_attempt(
+            options,
+            insert_retry_cnt=insert_retry_cnt,
+        )
     if options.transfer_slices is not None:
         return run_keyed_transfer_attempt(
             options=options,
@@ -114,6 +129,13 @@ def run_transfer_attempt(
         stage_state.source_column_types = {
             column.name: column.native_type for column in source_schema
         }
+        stage_state.source_columns = [column.name for column in source_schema]
+        stage_state.internal_columns = resolve_internal_columns(
+            stage_state.source_columns,
+            options.from_db_backend,
+            table_schema_names=(options.table_schema or {}).keys(),
+        )
+        _cleanup_target_superseded_stages(options, stage_state)
         if options.table_schema is not None and source_schema:
             stage_state.stage_column_types = validate_table_schema_columns(
                 options.table_schema,
@@ -225,6 +247,13 @@ def run_keyed_transfer_attempt(
         stage_state.source_column_types = {
             column.name: column.native_type for column in source_schema
         }
+        stage_state.source_columns = [column.name for column in source_schema]
+        stage_state.internal_columns = resolve_internal_columns(
+            stage_state.source_columns,
+            options.from_db_backend,
+            table_schema_names=(options.table_schema or {}).keys(),
+        )
+        _cleanup_target_superseded_stages(options, stage_state)
         _run_with_fresh_target_connection(
             options,
             "create_stage",
@@ -358,8 +387,18 @@ def initialize_shared_stage_for_keyed_slices(
         source_columns,
     )
 
-    sample_batch = pd.DataFrame(columns=source_columns)
-    stage_state.first_non_empty_batch = sample_batch
+    stage_state.source_columns = list(source_columns)
+    stage_state.stage_column_types = _with_internal_column_types(
+        stage_state.stage_column_types,
+        options,
+        stage_state,
+    )
+    stage_columns = [
+        *source_columns,
+        *(stage_state.internal_columns.names() if stage_state.internal_columns else ()),
+    ]
+    sample_batch = pd.DataFrame(columns=stage_columns)
+    stage_state.first_non_empty_batch = pd.DataFrame(columns=source_columns)
     if options.trino_mode == "parquet":
         create_parquet_stage_table(
             options=options,
@@ -419,6 +458,26 @@ def _run_with_fresh_target_connection(
     )
 
 
+def _cleanup_target_superseded_stages(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+) -> None:
+    if stage_state.internal_columns is None:
+        return
+    _run_with_fresh_target_connection(
+        options,
+        "cleanup_superseded_stages",
+        lambda target_ref: cleanup_superseded_transfer_stages(
+            options=options,
+            connection=target_ref["connection"],
+            backend=options.to_db_backend,
+            connection_key=options.to_db_key,
+            staging_schema=options.transfer_staging_schema,
+            internal_columns=stage_state.internal_columns,
+        ),
+    )
+
+
 def _create_keyed_worker_stage_tables(
     *,
     options: TransferOptions,
@@ -429,7 +488,7 @@ def _create_keyed_worker_stage_tables(
 ) -> list[str]:
     transfer_slices = options.transfer_slices or []
     worker_count = min(options.concurrency, len(transfer_slices))
-    run_token = uuid.uuid4().hex[:8]
+    run_token = options.transfer_id or uuid.uuid4().hex[:8]
     stage_tables: list[str] = []
     for worker_index in range(worker_count):
         stage_table = create_stage_table(
@@ -444,6 +503,7 @@ def _create_keyed_worker_stage_tables(
             transfer_staging_schema=options.transfer_staging_schema,
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{run_token}__w{worker_index:05d}",
+            destination_hash=options.destination_hash,
         )
         stage_tables.append(stage_table)
         stage_state.stage_table = stage_tables[0]
@@ -647,6 +707,7 @@ def load_stage_batches(
             adaptive_batch_size_step=options.adaptive_batch_size_step,
         )
     )
+    next_ordinal = 1
     try:
         for source_batch in iter_source_batches(
             options.from_db_key,
@@ -668,6 +729,22 @@ def load_stage_batches(
                 source_batch,
                 stage_state.source_column_types,
             )
+            if not stage_state.source_columns:
+                stage_state.source_columns = list(batch.columns)
+            if stage_state.internal_columns is None:
+                stage_state.internal_columns = resolve_internal_columns(
+                    batch.columns,
+                    options.from_db_backend,
+                    table_schema_names=(options.table_schema or {}).keys(),
+                )
+            batch = _append_transfer_identity_columns(
+                batch,
+                options=options,
+                stage_state=stage_state,
+                slice_id=0 if slice_index is None else slice_index,
+                start_ordinal=next_ordinal,
+            )
+            next_ordinal += batch.row_count
 
             if stage_state.first_non_empty_batch is None:
                 _run_with_fresh_target_connection(
@@ -781,90 +858,21 @@ def load_parquet_stage_batches(
     slice_index: int | None = None,
     transfer_key_label: str | None = None,
 ) -> int:
-    pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
-    total_rows = 0
-    file_index = 0
-    row_group_size = parquet_row_group_size(options)
-    estimated_total_rows = None
-    if options.progress and options.estimate_total_rows:
-        estimated_total_rows = estimate_source_rows(
-            options,
-            connection_refs.source["connection"],
-        )
-    progress_bar = make_transfer_progress_bar(
+    return _load_parquet_stage_batches_impl(
         options,
-        total=estimated_total_rows,
-        base_tqdm=tqdm,
+        connection_refs,
+        stage_state,
+        read_retry_cnt,
+        slice_index,
+        transfer_key_label,
+        ensure_dependencies=ensure_parquet_staging_dependencies,
+        write_batch=write_batch_to_parquet_stage,
+        initialize_stage=_initialize_parquet_stage_for_first_batch,
+        row_group_size_fn=parquet_row_group_size,
+        estimate_rows=estimate_source_rows,
+        progress_bar_factory=make_transfer_progress_bar,
+        source_batches=iter_source_batches,
     )
-    progress_tracker = ProgressTracker(progress_bar)
-    try:
-        for source_batch in iter_source_batches(
-            options.from_db_key,
-            options.from_db_backend,
-            connection_refs.source,
-            options.source_sql,
-            row_group_size,
-            retry_cnt=read_retry_cnt,
-            timeout_increment=options.timeout_increment,
-            query_label=options.query_label,
-            get_batch_size=lambda: row_group_size,
-            disable_ch_query_limit=disable_query_limit_for_transfer_reads(
-                options.from_db_backend,
-            ),
-        ):
-            if source_batch.empty:
-                continue
-            batch = get_backend_adapter(options.from_db_backend).normalize_transfer_source_batch(
-                source_batch,
-                stage_state.source_column_types,
-            )
-
-            if stage_state.first_non_empty_batch is None:
-                _run_with_fresh_target_connection(
-                    options,
-                    "create_stage",
-                    lambda target_ref: _initialize_parquet_stage_for_first_batch(
-                        options=options,
-                        connection_refs=TransferConnectionRefs(
-                            source=connection_refs.source,
-                            target=target_ref,
-                        ),
-                        stage_state=stage_state,
-                        batch=batch,
-                    ),
-                )
-
-            if stage_state.stage_external_location is None:
-                raise RuntimeError("Expected Parquet stage location to be initialized.")
-
-            progress_tracker.start_batch()
-            inserted_rows = write_batch_to_parquet_stage(
-                batch,
-                file_index=file_index,
-                slice_index=slice_index,
-                stage_external_location=stage_state.stage_external_location,
-                pa=pa,
-                pq=pq,
-                fsspec_module=fsspec_module,
-                row_group_size=row_group_size,
-            )
-            file_index += 1
-            progress_tracker.update(inserted_rows)
-            progress_tracker.complete_batch(inserted_rows)
-            total_rows += inserted_rows
-            time_print(
-                f"Wrote Parquet transfer batch of "
-                f"{format_transfer_progress_count(inserted_rows)} row(s) "
-                f"{format_transfer_key_log_fragment(transfer_key_label)}"
-                f"to {stage_state.stage_external_location}; total transferred "
-                f"{format_transfer_progress_count(total_rows)} row(s)",
-                connection=options.to_db_key,
-                backend=options.to_db_backend,
-            )
-            del batch
-        return total_rows
-    finally:
-        progress_bar.close()
 
 
 def _initialize_parquet_stage_for_first_batch(
@@ -873,27 +881,10 @@ def _initialize_parquet_stage_for_first_batch(
     stage_state: TransferStageState,
     batch: RowBatch,
 ) -> None:
-    if options.table_schema is not None:
-        stage_state.stage_column_types = validate_table_schema_columns(
-            options.table_schema,
-            batch.columns,
-        )
-    elif stage_state.stage_column_types is None:
-        stage_state.stage_column_types = get_backend_adapter(
-            options.to_db_backend
-        ).infer_parquet_stage_column_types_from_rows(batch)
-
-    validate_key_columns_in_columns(
-        options.key_columns,
-        batch.columns,
-    )
-    validate_upsert_partition_column_in_columns(
-        options.upsert_partition_column,
-        batch.columns,
-    )
-    stage_state.first_non_empty_batch = sample_dataframe_from_batch(batch)
-    create_parquet_stage_table(
-        options=options,
-        connection_refs=connection_refs,
-        stage_state=stage_state,
+    _initialize_parquet_stage_for_first_batch_impl(
+        options,
+        connection_refs,
+        stage_state,
+        batch,
+        create_stage=create_parquet_stage_table,
     )

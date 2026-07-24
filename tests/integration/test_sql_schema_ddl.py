@@ -86,7 +86,9 @@ def _copy_options(backend: str) -> dict[str, object]:
         return {
             "order_by": "tuple()",
             "ch_engine": "MergeTree",
-            "ch_cluster": "integration_cluster",
+            "ch_shard_on_cluster": "integration_cluster",
+            "ch_distributed_on_cluster": "integration_cluster",
+            "ch_distributed_cluster": "integration_cluster",
             "ch_only_shard": True,
         }
     return table_options(backend)
@@ -259,7 +261,9 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
         "partition_by": ["event_date"],
         "order_by": ["row_id"],
         "ch_engine": "MergeTree",
-        "ch_cluster": "integration_cluster",
+        "ch_shard_on_cluster": "integration_cluster",
+        "ch_distributed_on_cluster": "integration_cluster",
+        "ch_distributed_cluster": "integration_cluster",
         "ch_distributed_table": True,
         "ch_sharding_key": "row_id",
         "retry_cnt": 1,
@@ -304,7 +308,9 @@ def test_clickhouse_reconfigure_managed_pair(resource_registry: ResourceRegistry
         partition_by=["event_date"],
         order_by=["row_id"],
         ch_engine="MergeTree",
-        ch_cluster="integration_cluster",
+        ch_shard_on_cluster="integration_cluster",
+        ch_distributed_on_cluster="integration_cluster",
+        ch_distributed_cluster="integration_cluster",
         ch_distributed_table=True,
         retry_cnt=1,
     )

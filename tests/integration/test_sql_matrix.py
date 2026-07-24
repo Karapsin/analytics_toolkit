@@ -50,7 +50,9 @@ def _shape_options(
         "partition_by": ["dt"],
         "order_by": ["id"],
         "ch_engine": "MergeTree",
-        "ch_cluster": "integration_cluster",
+        "ch_shard_on_cluster": "integration_cluster",
+        "ch_distributed_on_cluster": "integration_cluster",
+        "ch_distributed_cluster": "integration_cluster",
         "ch_only_shard": ch_only_shard,
     }
 
@@ -166,6 +168,12 @@ def test_transfer_pair_and_write_mode_matrix(
         )
         if write_mode == "upsert":
             options.update(_upsert_options(target))
+        if target == "ch":
+            options["table_schema"] = {
+                "id": "Int64",
+                "dt": "DateTime64(6)",
+                "value": "String",
+            }
         transferred = sql.transfer(
             source_alias,
             target_alias,
@@ -175,6 +183,10 @@ def test_transfer_pair_and_write_mode_matrix(
             batch_size=1,
             adaptive_batch_size=False,
             target_rows_per_second=False,
+            retry_cnt=1,
+            timeout_increment=0,
+            full_retry_cnt=1,
+            full_timeout_increment=0,
             **options,
         )
         assert transferred == 2

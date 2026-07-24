@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: PLR0913
+
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -14,8 +16,7 @@ from ..runtime.models import TransferSlice
 
 
 _INVALID_SIMPLE_KEY_MESSAGE = (
-    "transfer_keys string/list entries must be simple placeholder names such as "
-    "'event_date'."
+    "transfer_keys string/list entries must be simple placeholder names such as 'event_date'."
 )
 
 
@@ -32,6 +33,7 @@ def normalize_transfer_slices(
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None,
     concurrency: int,
+    allow_unkeyed_concurrency: bool = False,
 ) -> tuple[
     list[str] | None,
     dict[str, str] | None,
@@ -43,8 +45,10 @@ def normalize_transfer_slices(
     if transfer_keys is None:
         if transfer_key_values is not None:
             raise ValueError("transfer_key_values requires transfer_keys.")
-        if resolved_concurrency > 1:
-            raise ValueError("concurrency > 1 requires transfer_keys.")
+        if resolved_concurrency > 1 and not allow_unkeyed_concurrency:
+            raise ValueError(
+                "concurrency > 1 without transfer_keys requires transfer_staging_schema on from_db."
+            )
         return None, None, None, None, resolved_concurrency
 
     keys = normalize_transfer_keys(transfer_keys)
@@ -171,8 +175,7 @@ def normalize_transfer_key_values(
                 + ")."
             )
         return {
-            key: _normalize_single_key_values(transfer_key_values[key], key)
-            for key in key_names
+            key: _normalize_single_key_values(transfer_key_values[key], key) for key in key_names
         }
 
     if len(keys) != 1:
@@ -324,6 +327,4 @@ def validate_single_source_statement(source_sql: str) -> None:
 def validate_single_rendered_slice_statement(source_sql: str) -> None:
     statements = [statement for statement in sqlparse.split(source_sql) if statement.strip()]
     if len(statements) != 1:
-        raise ValueError(
-            "transfer_keys rendered slice SQL must contain exactly one SQL statement."
-        )
+        raise ValueError("transfer_keys rendered slice SQL must contain exactly one SQL statement.")

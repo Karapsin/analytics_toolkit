@@ -86,7 +86,9 @@ def test_every_orchestration_task_type_returns_real_results(
         table_schema={"row_id": "Int64"},
         ch_engine="MergeTree",
         order_by="row_id",
-        ch_cluster="integration_cluster",
+        ch_shard_on_cluster="integration_cluster",
+        ch_distributed_on_cluster="integration_cluster",
+        ch_distributed_cluster="integration_cluster",
         ch_only_shard=True,
     )
 
@@ -117,7 +119,9 @@ def test_every_orchestration_task_type_returns_real_results(
             "write_mode": "replace",
             "ch_engine": "MergeTree",
             "order_by": "row_id",
-            "ch_cluster": "integration_cluster",
+            "ch_shard_on_cluster": "integration_cluster",
+            "ch_distributed_on_cluster": "integration_cluster",
+            "ch_distributed_cluster": "integration_cluster",
             "ch_only_shard": True,
         },
         {
@@ -304,7 +308,9 @@ def test_async_sql_interrupt_cancels_only_its_batch(
         load_kwargs.update(
             ch_engine="MergeTree",
             order_by="row_id",
-            ch_cluster="integration_cluster",
+            ch_shard_on_cluster="integration_cluster",
+            ch_distributed_on_cluster="integration_cluster",
+            ch_distributed_cluster="integration_cluster",
             ch_only_shard=True,
         )
     sql.load_df(

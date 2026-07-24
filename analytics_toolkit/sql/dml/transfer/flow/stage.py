@@ -33,6 +33,8 @@ def create_stage_state(
     return TransferStageState(
         target_exists=target_exists,
         target_existed_at_start=target_exists,
+        transfer_id=options.transfer_id,
+        canonical_destination_identity=options.canonical_destination_identity,
     )
 
 
@@ -86,43 +88,56 @@ def initialize_stage_for_first_batch(
     stage_state: TransferStageState,
     batch: RowBatch,
 ) -> None:
+    source_columns = stage_state.source_columns or list(batch.columns)
+    stage_state.source_columns = list(source_columns)
     if options.table_schema is not None:
-        stage_state.stage_column_types = validate_table_schema_columns(
+        source_stage_types = validate_table_schema_columns(
             options.table_schema,
-            batch.columns,
+            source_columns,
         )
     else:
-        stage_state.stage_column_types = refine_stage_column_types_from_rows(
-            options.to_db_backend,
-            stage_state.stage_column_types,
-            batch.columns,
-            batch.rows,
+        source_stage_types = (
+            refine_stage_column_types_from_rows(
+                options.to_db_backend,
+                stage_state.stage_column_types,
+                source_columns,
+                [row[: len(source_columns)] for row in batch.rows],
+            )
+            or {}
         )
-    sample_batch = batch.to_dataframe(
+    stage_state.stage_column_types = _with_internal_column_types(
+        source_stage_types,
+        options,
+        stage_state,
+    )
+    stage_sample_batch = batch.to_dataframe(
         include_rows=stage_state.stage_column_types is None,
     )
-    stage_state.first_non_empty_batch = sample_batch
+    stage_state.first_non_empty_batch = pd.DataFrame.from_records(
+        [row[: len(source_columns)] for row in batch.rows[:1]],
+        columns=source_columns,
+    )
     validate_key_columns_in_columns(
         options.key_columns,
-        batch.columns,
+        source_columns,
     )
     validate_upsert_partition_column_in_columns(
         options.upsert_partition_column,
-        batch.columns,
+        source_columns,
     )
     validate_key_columns_in_columns(
         options.gp_distributed_by_key,
-        batch.columns,
+        source_columns,
     )
     get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.partition_by,
-        batch.columns,
+        source_columns,
         "partition_by",
         data_name="staged data",
     )
     get_backend_adapter(options.to_db_backend).validate_ch_columns_in_columns(
         options.order_by,
-        batch.columns,
+        source_columns,
         "order_by",
         data_name="staged data",
     )
@@ -130,13 +145,17 @@ def initialize_stage_for_first_batch(
         connection_type=options.to_db_backend,
         connection=connection_refs.target["connection"],
         target_table=options.target_table,
-        batch=sample_batch,
+        batch=stage_sample_batch,
         column_types=stage_state.stage_column_types,
         gp_distributed_by_key=options.gp_distributed_by_key,
         connection_key=options.to_db_key,
         query_label=options.query_label,
         transfer_staging_schema=options.transfer_staging_schema,
         transfer_staging_username=options.transfer_staging_username,
+        random_suffix=(
+            f"{options.transfer_id}__w00000" if options.transfer_id is not None else None
+        ),
+        destination_hash=options.destination_hash,
     )
     stage_state.stage_table_created = True
     stage_state.stage_column_types = get_backend_adapter(
@@ -147,3 +166,25 @@ def initialize_stage_for_first_batch(
         connection_key=options.to_db_key,
         current_column_types=stage_state.stage_column_types,
     )
+
+
+def _with_internal_column_types(
+    source_types: dict[str, str] | None,
+    options: TransferOptions,
+    stage_state: TransferStageState,
+) -> dict[str, str] | None:
+    internal = stage_state.internal_columns
+    if source_types is None or internal is None or options.transfer_id is None:
+        return source_types
+    string_type, integer_type = {
+        "gp": ("TEXT", "BIGINT"),
+        "trino": ("VARCHAR", "BIGINT"),
+        "ch": ("String", "Int64"),
+    }[options.to_db_backend]
+    return {
+        **source_types,
+        internal.transfer_id: string_type,
+        internal.destination_table: string_type,
+        internal.slice_id: integer_type,
+        internal.row_ordinal: integer_type,
+    }

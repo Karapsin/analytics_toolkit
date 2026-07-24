@@ -71,6 +71,11 @@ rows
 
 ## Notes
 
+- Every SQL data-stage name created by `load_df` begins with the first 16 hex
+  characters of SHA-256 over the exact canonical destination, followed by
+  `__`. This stable prefix is collision-resistant but is not proof of identity.
+  Existing names are never reused or overwritten; runtime collisions allocate
+  another name, and cleanup retains the actual created name.
 - `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.

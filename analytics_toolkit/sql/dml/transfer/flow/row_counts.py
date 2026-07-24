@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: BLE001, S110, SIM105
+
 import uuid
 from dataclasses import replace
 from typing import Any
@@ -7,6 +9,7 @@ from typing import Any
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backend_adapters import get_backend_adapter
 from analytics_toolkit.sql.connection.errors import sql_preview
+from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.dml.load.stage import build_stage_table_name
 from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
 from analytics_toolkit.sql.dml.transfer.flow.logging import (
@@ -30,6 +33,33 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
 
 class TransferRowCountMismatchError(ValueError):
     pass
+
+
+def best_effort_transfer_target_count(
+    options: TransferOptions,
+    *,
+    open_connection: Any = get_sql_connection,
+    count_rows: Any = count_table_rows,
+) -> int | None:
+    connection = None
+    try:
+        connection = open_connection(options.to_db_key)
+        return int(
+            count_rows(
+                options.to_db_backend,
+                connection,
+                options.target_table,
+                query_label=options.query_label,
+            )
+        )
+    except Exception:
+        return None
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
 
 
 def count_source_rows(
@@ -357,7 +387,12 @@ def _materialize_source_with_retry(
         "source_result",
         transfer_staging_schema=staging_schema,
         transfer_staging_username=options.source_transfer_staging_username,
-        random_suffix=uuid.uuid4().hex[:8],
+        random_suffix=(
+            f"{options.transfer_id}__source"
+            if options.transfer_id is not None
+            else uuid.uuid4().hex[:8]
+        ),
+        destination_hash=options.destination_hash,
     )
     stage_state.source_stage_tables.append(stage_table)
 

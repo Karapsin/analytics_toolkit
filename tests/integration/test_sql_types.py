@@ -106,7 +106,9 @@ def test_inferred_portable_subset_roundtrip(
         options = {
             "order_by": "row_id",
             "ch_engine": "MergeTree",
-            "ch_cluster": "integration_cluster",
+            "ch_shard_on_cluster": "integration_cluster",
+            "ch_distributed_on_cluster": "integration_cluster",
+            "ch_distributed_cluster": "integration_cluster",
             "ch_only_shard": True,
         }
     else:

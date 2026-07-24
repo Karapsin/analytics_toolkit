@@ -877,8 +877,7 @@ def test_transfer_does_not_full_retry_missing_trino_catalog(
         full_timeout_increment=0,
     )
     error = ValueError(
-        "Trino table operations for schema-qualified names require "
-        ".connections['trino'].catalog."
+        "Trino table operations for schema-qualified names require .connections['trino'].catalog."
     )
     attempts: list[int] = []
     monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
@@ -3192,19 +3191,20 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     assert plan.options["worker_stage_count"] == 1
     assert plan.metadata.worker_stage_count == 1
     assert plan.metadata.stage_tables == [plan.metadata.stage_table]
-    assert plan.metadata.stage_table.startswith("object_storage.sandbox.target__")
+    assert plan.metadata.stage_table.startswith('object_storage.sandbox."39539a1e20d7e1c9__')
+    assert "<runtime-transfer-id>__w00000" in plan.metadata.stage_table
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
-        "__analytics_toolkit_target_user__stage__dryrun/"
+        "__analytics_toolkit_target_user__stage__<runtime-transfer-id>/"
     )
     assert any(
-        sql.startswith("CREATE TABLE object_storage.sandbox.target__")
+        sql.startswith('CREATE TABLE object_storage.sandbox."39539a1e20d7e1c9__')
         and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls
     )
     assert any(
         sql.startswith("WRITE PARQUET FILES TO ")
-        and "__analytics_toolkit_target_user__stage__dryrun/" in sql
+        and "__analytics_toolkit_target_user__stage__<runtime-transfer-id>/" in sql
         for sql in plan.sqls
     )
     assert "DROP TABLE IF EXISTS sandbox.target" in plan.sqls
@@ -3406,7 +3406,8 @@ def test_transfer_dry_run_keyed_row_staging_uses_per_worker_stage_tables(
     assert phases.count("consolidate_stage") == 4
     assert phases.count("insert_target") == 1
     assert phases.count("drop_stage") == 5
-    assert all("__stage__dryrun__w" in stage for stage in plan.metadata.stage_tables)
+    assert all("<runtime-transfer-id>__w" in stage for stage in plan.metadata.stage_tables)
+    assert all("39539a1e20d7e1c9__" in stage for stage in plan.metadata.stage_tables)
     assert any("worker 0 streamed keyed source slice batches [0, 5, 10" in sql for sql in plan.sqls)
 
 
@@ -3436,8 +3437,9 @@ def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_partition_replaceme
     )
 
     assert any(
-        sql.startswith('INSERT INTO sandbox.target__upsert_final__dry_run ("id", "amount")\n')
-        and "object_storage.sandbox.target__" in sql
+        sql.startswith("INSERT INTO ")
+        and "__upsert" in sql
+        and 'object_storage.sandbox."39539a1e20d7e1c9__' in sql
         for sql in plan.sqls
     )
     assert any("DROP PARTITION" in sql for sql in plan.sqls)
@@ -6941,8 +6943,8 @@ def test_dry_run_fallback_names_locations_labels_and_source_parse(
         lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad location")),
     )
     assert dry_run_module.dry_run_stage_table_names(options) == [
-        "schema.target__stage__dryrun__w00000",
-        "schema.target__stage__dryrun__w00001",
+        "schema.target__stage__<runtime-transfer-id>__w00000",
+        "schema.target__stage__<runtime-transfer-id>__w00001",
     ]
     assert dry_run_module.source_batches_label(options, 1).endswith("[1]")
     assert dry_run_module.source_batches_label(options) == "shared keyed source slice batches"

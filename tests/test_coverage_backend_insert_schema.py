@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import datetime as dt
 import importlib
 from datetime import date
 from types import SimpleNamespace
@@ -12,12 +13,8 @@ from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.connection.errors import SqlConfigError
 
 trino_insert = importlib.import_module("analytics_toolkit.sql.backends.trino.insert")
-ch_source_count = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.source_count"
-)
-ch_source_schema = importlib.import_module(
-    "analytics_toolkit.sql.backends.ch.source_schema"
-)
+ch_source_count = importlib.import_module("analytics_toolkit.sql.backends.ch.source_count")
+ch_source_schema = importlib.import_module("analytics_toolkit.sql.backends.ch.source_schema")
 connection_config = importlib.import_module("analytics_toolkit.sql.connection.config")
 source_schema = importlib.import_module("analytics_toolkit.sql.backends.source_schema")
 gp_config = importlib.import_module("analytics_toolkit.sql.backends.gp.config")
@@ -53,9 +50,7 @@ class FakeTrinoAdapter:
         query_label: str | None,
     ) -> str:
         self.calls.append((table_name, tuple(columns), row_count, query_label))
-        return f"INSERT INTO {table_name} VALUES " + ", ".join(
-            ["(?, ?)"] * row_count
-        )
+        return f"INSERT INTO {table_name} VALUES " + ", ".join(["(?, ?)"] * row_count)
 
 
 def test_shared_source_schema_description_and_type_normalization_edges() -> None:
@@ -73,23 +68,22 @@ def test_shared_source_schema_description_and_type_normalization_edges() -> None
     assert source_schema.optional_int("invalid") is None
 
     assert source_schema.normalize_type_name(None) == ""
-    assert (
-        source_schema.normalize_type_name(" Nullable(LowCardinality(String)) ")
-        == "string"
-    )
+    assert source_schema.normalize_type_name(" Nullable(LowCardinality(String)) ") == "string"
     assert source_schema.unwrap_type("string", "nullable") == "string"
     assert source_schema.classify_source_type("") == "string"
     assert source_schema.classify_source_type("geography") == "string"
 
 
 def test_shared_source_schema_clickhouse_nullability_refinement_edges() -> None:
-    assert source_schema.refine_clickhouse_column_types_nullability_from_rows(
-        None, ["id"], [(1,)]
-    ) is None
+    assert (
+        source_schema.refine_clickhouse_column_types_nullability_from_rows(None, ["id"], [(1,)])
+        is None
+    )
     original = {"id": "Nullable(Int64)"}
-    assert source_schema.refine_clickhouse_column_types_nullability_from_rows(
-        original, ["id"], []
-    ) is original
+    assert (
+        source_schema.refine_clickhouse_column_types_nullability_from_rows(original, ["id"], [])
+        is original
+    )
 
     refined = source_schema.refine_clickhouse_column_types_nullability_from_rows(
         {"id": "Nullable(Int64)", "payload": "String", "unseen": "UInt8"},
@@ -283,6 +277,22 @@ def test_normalize_value(value: Any, target_type: str | None, expected: Any) -> 
     assert trino_insert.normalize_value(value, target_type) == expected
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        pd.Timestamp("2026-01-02 03:04:05.123456"),
+        pd.Timestamp("2026-01-02 03:04:05.123456", tz="UTC"),
+        dt.datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001 - verifies naive input.
+    ],
+)
+def test_normalize_value_preserves_utc_for_trino_timestamp_with_time_zone(
+    value: Any,
+) -> None:
+    result = trino_insert.normalize_value(value, "TIMESTAMP(6) WITH TIME ZONE")
+
+    assert result == dt.datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=dt.timezone.utc)
+
+
 def test_build_values_tuple_renders_each_target_type() -> None:
     row = [1, "O'Reilly", pd.Timestamp("2026-01-02"), object()]
 
@@ -313,7 +323,11 @@ def test_validate_row_width_rejects_mismatch() -> None:
         (True, None, "TRUE"),
         (False, None, "FALSE"),
         (pd.Timestamp("NaT"), None, "NULL"),
-        (pd.Timestamp("2026-01-02 03:04:05.123456"), "timestamp", "TIMESTAMP '2026-01-02 03:04:05.123456'"),
+        (
+            pd.Timestamp("2026-01-02 03:04:05.123456"),
+            "timestamp",
+            "TIMESTAMP '2026-01-02 03:04:05.123456'",
+        ),
         (pd.Timestamp("2026-01-02"), "date", "DATE '2026-01-02'"),
         (date(2026, 1, 2), "date", "DATE '2026-01-02'"),
         ("O'Reilly", None, "'O''Reilly'"),
@@ -359,16 +373,17 @@ class FakeClickHouseSourceAdapter:
 
 @pytest.mark.parametrize(("rows", "expected"), [([(7,)], 7), ([], 0)])
 def test_clickhouse_count_source_rows(rows: list[Any], expected: int) -> None:
-    connection = SimpleNamespace(
-        query=lambda _sql: SimpleNamespace(result_rows=rows)
-    )
+    connection = SimpleNamespace(query=lambda _sql: SimpleNamespace(result_rows=rows))
 
-    assert ch_source_count.count_source_rows(
-        FakeClickHouseSourceAdapter(),
-        connection,
-        "SELECT * FROM source",
-        query_label="q",
-    ) == expected
+    assert (
+        ch_source_count.count_source_rows(
+            FakeClickHouseSourceAdapter(),
+            connection,
+            "SELECT * FROM source",
+            query_label="q",
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -388,12 +403,15 @@ def test_clickhouse_count_limited_read(
     enabled: bool,
     expected: str,
 ) -> None:
-    assert ch_source_count.source_sql_for_count_limited_read(
-        FakeClickHouseSourceAdapter(),
-        source_sql=source_sql,
-        expected_rows=expected_rows,
-        enabled=enabled,
-    ) == expected
+    assert (
+        ch_source_count.source_sql_for_count_limited_read(
+            FakeClickHouseSourceAdapter(),
+            source_sql=source_sql,
+            expected_rows=expected_rows,
+            enabled=enabled,
+        )
+        == expected
+    )
 
 
 def test_clickhouse_disables_query_limit_for_transfer_reads() -> None:
@@ -415,9 +433,10 @@ def test_clickhouse_source_schema_inspection_and_refinement_delegate(
         lambda column_types, columns, rows: {"id": "Int64"},
     )
 
-    assert ch_source_schema.inspect_source_query_schema(
-        object(), "connection", "SELECT id"
-    ) is expected_columns
+    assert (
+        ch_source_schema.inspect_source_query_schema(object(), "connection", "SELECT id")
+        is expected_columns
+    )
     assert ch_source_schema.refine_stage_column_types_from_rows(
         object(), {"id": "Nullable(Int64)"}, ["id"], [(1,)]
     ) == {"id": "Int64"}
@@ -465,9 +484,12 @@ def test_clickhouse_base_type_fallbacks(
     scale: int | None,
     expected: str,
 ) -> None:
-    assert ch_source_schema._map_to_ch_base_type(
-        kind,
-        source_type,
-        precision,
-        scale,
-    ) == expected
+    assert (
+        ch_source_schema._map_to_ch_base_type(
+            kind,
+            source_type,
+            precision,
+            scale,
+        )
+        == expected
+    )

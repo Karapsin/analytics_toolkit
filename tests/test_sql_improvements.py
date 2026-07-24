@@ -886,7 +886,7 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
         dry_run=True,
     )
     assert any("DELETE FROM sandbox.scores AS target_dst" in sql for sql in gp_plan.sqls)
-    assert any("USING sandbox.scores__stage__dry_run AS stage_src" in sql for sql in gp_plan.sqls)
+    assert any(f"USING {gp_plan.metadata.stage_table} AS stage_src" in sql for sql in gp_plan.sqls)
     assert any(
         'target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL' in sql for sql in gp_plan.sqls
     )
@@ -905,7 +905,7 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
         upsert_partition_column="id",
         dry_run=True,
     )
-    assert any("sandbox.scores__upsert_final__dry_run" in sql for sql in trino_plan.sqls)
+    assert any("__upsert" in sql for sql in trino_plan.sqls)
     assert any("SELECT target_dst." in sql for sql in trino_plan.sqls)
     assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
     assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
@@ -939,7 +939,7 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
         table_schema={"id": "BIGINT", "score": "INTEGER"},
         dry_run=True,
     )
-    assert any("sandbox.scores__upsert_final__dry_run" in sql for sql in trino_plan.sqls)
+    assert any("__upsert" in sql for sql in trino_plan.sqls)
     assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
     assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
 
@@ -978,7 +978,8 @@ def test_transfer_upsert_dry_run_infers_source_columns_without_table_schema() ->
     final_insert_sql = next(
         sql
         for sql in trino_plan.sqls
-        if sql.startswith('INSERT INTO sandbox.scores__upsert_final__dry_run ("id", "score")')
+        if sql.startswith("INSERT INTO ")
+        and "__upsert" in sql
         and 'SELECT "id", "score" FROM' in sql
     )
     assert 'SELECT CAST("id" AS BIGINT)' not in final_insert_sql
@@ -1754,11 +1755,11 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
     create_sql = next(
         statement.sql for statement in plan.statements if statement.phase == "create_target"
     )
-    assert create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+    assert create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events\n")
     assert "ENGINE = ReplicatedMergeTree" in create_sql
     assert "PARTITION BY `dt`" in create_sql
     assert "ORDER BY (`dt`, `id`)" in create_sql
-    assert "analytics.events_shard" in "\n".join(plan.sqls)
+    assert "analytics.events_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER analytics" in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 
@@ -1806,11 +1807,11 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         for statement in plan.statements
         if statement.phase == "create_target" and statement.target_table == "analytics.events"
     ][0]
-    assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+    assert target_create_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events\n")
     assert "ENGINE = ReplicatedMergeTree" in target_create_sql
     assert "PARTITION BY `dt`" in target_create_sql
     assert "ORDER BY (`dt`, `id`)" in target_create_sql
-    assert "analytics.events_shard" in "\n".join(plan.sqls)
+    assert "analytics.events_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER analytics" in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
 

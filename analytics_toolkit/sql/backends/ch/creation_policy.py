@@ -58,12 +58,16 @@ def resolve_clickhouse_creation_policy(
             stacklevel=3,
         )
     pair = (
-        ch_distributed_table if ch_distributed_table is not None else scope.create_distributed_pair
+        False
+        if ch_only_shard
+        else (
+            ch_distributed_table
+            if ch_distributed_table is not None
+            else scope.create_distributed_pair
+        )
     )
     if pair is MISSING_DDL_VALUE:
         _missing("create_distributed_pair", "ch_distributed_table")
-    if ch_only_shard:
-        pair = False
     engine = ch_engine if ch_engine is not None else scope.shard.engine
     if engine is MISSING_DDL_VALUE:
         _missing("shard.engine", "ch_engine")
@@ -174,7 +178,7 @@ def build_policy_create_sqls(
     statement = "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
     shard_name = (
         build_ch_shard_table_name(table_name)
-        if (policy.create_distributed_pair or ch_only_shard)
+        if policy.create_distributed_pair and not ch_only_shard
         else table_name
     )
     shard_sql = _physical_sql(

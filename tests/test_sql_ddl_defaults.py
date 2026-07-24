@@ -373,6 +373,25 @@ def test_legacy_clickhouse_staging_scope_is_complete() -> None:
     assert regular.distributed.cluster == "{cluster}"
 
 
+def test_clickhouse_only_shard_does_not_require_distributed_pair_default() -> None:
+    defaults = parse_ddl_defaults({}, "target", "ch")
+    policy = resolve_clickhouse_creation_policy(
+        defaults.regular,
+        ch_engine="MergeTree",
+        ch_cluster="integration_cluster",
+        ch_sharding_key=None,
+        ch_distributed_table=None,
+        ch_only_shard=True,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        ch_shard_on_cluster=None,
+        ch_distributed_on_cluster=None,
+        warn_ch_cluster=False,
+    )
+    assert policy.create_distributed_pair is False
+    assert policy.shard_on_cluster == "integration_cluster"
+
+
 def test_clickhouse_null_on_cluster_omits_cluster_and_local_duplicate() -> None:
     defaults = parse_ddl_defaults(
         {
