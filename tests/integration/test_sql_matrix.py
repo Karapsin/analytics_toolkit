@@ -8,6 +8,7 @@ import pytest
 from analytics_toolkit import sql
 from tests.integration.manifest import scenario_param
 from tests.integration.support.identity import resource_name
+from tests.integration.support.normalization import assert_exact_frame
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 BACKENDS = ("gp", "trino", "ch")
@@ -68,10 +69,35 @@ def _frame(first: int = 1) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "id": [first, first + 1],
-            "dt": [pd.Timestamp("2026-04-01"), pd.Timestamp("2026-04-02")],
+            "dt": [
+                pd.Timestamp("2026-04-01").date(),
+                pd.Timestamp("2026-04-02").date(),
+            ],
             "value": [f"value-{first}", f"value-{first + 1}"],
         }
     )
+
+
+def _transfer_seed_and_expected(write_mode: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    source = _frame()
+    if write_mode == "upsert":
+        seed = pd.DataFrame(
+            {
+                "id": [1, 10],
+                "dt": [
+                    pd.Timestamp("2026-04-01").date(),
+                    pd.Timestamp("2026-05-01").date(),
+                ],
+                "value": ["stale-value", "unaffected-value"],
+            }
+        )
+        expected = pd.concat([source, seed.iloc[[1]]], ignore_index=True)
+    else:
+        seed = _frame(10)
+        expected = (
+            pd.concat([source, seed], ignore_index=True) if write_mode == "append" else source
+        )
+    return seed, expected.sort_values("id").reset_index(drop=True)
 
 
 @pytest.mark.parametrize(
@@ -144,6 +170,7 @@ def test_transfer_pair_and_write_mode_matrix(
     target_alias = _alias(target, target=True)
     source_table = _table(source, "transfer_source")
     target_table = _table(target, f"transfer_{write_mode}")
+    seed, expected = _transfer_seed_and_expected(write_mode)
     try:
         sql.load_df(
             source_alias,
@@ -155,7 +182,7 @@ def test_transfer_pair_and_write_mode_matrix(
         sql.load_df(
             target_alias,
             target_table,
-            _frame(10),
+            seed,
             write_mode="replace",
             **_shape_options(
                 target,
@@ -171,7 +198,7 @@ def test_transfer_pair_and_write_mode_matrix(
         if target == "ch":
             options["table_schema"] = {
                 "id": "Int64",
-                "dt": "DateTime64(6)",
+                "dt": "Date",
                 "value": "String",
             }
         transferred = sql.transfer(
@@ -190,6 +217,11 @@ def test_transfer_pair_and_write_mode_matrix(
             **options,
         )
         assert transferred == 2
+        actual = sql.read(
+            target_alias,
+            f"SELECT id, dt, value FROM {target_table} ORDER BY id",
+        )
+        assert_exact_frame(actual, expected, date_columns=("dt",))
     finally:
         sql.drop_tables(
             source_alias,

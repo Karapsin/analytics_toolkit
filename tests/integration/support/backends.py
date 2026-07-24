@@ -6,7 +6,7 @@ import datetime as dt
 import os
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 
@@ -138,3 +138,51 @@ def canonical_schema(backend: str) -> dict[str, str]:
             "all_null_text": "Nullable(String)",
         }
     return common
+
+
+def canonical_type_tokens(backend: str) -> dict[str, Sequence[str]]:
+    """Return accepted backend-native physical types for canonical columns."""
+    if backend == "gp":
+        return {
+            "row_id": ("bigint", "int8"),
+            "flag": ("boolean", "bool"),
+            "signed_value": ("bigint", "int8"),
+            "decimal_value": ("numeric(18,4)", "decimal(18,4)"),
+            "float_value": ("doubleprecision", "float8"),
+            "unicode_text": ("text", "charactervarying", "varchar"),
+            "event_date": ("date",),
+            "event_ts": ("timestampwithtimezone", "timestamptz"),
+            "nullable_ts": ("timestampwithtimezone", "timestamptz"),
+            "uuid_value": ("uuid",),
+            "json_value": ("jsonb",),
+            "all_null_text": ("text", "charactervarying", "varchar"),
+        }
+    if backend == "ch":
+        return {
+            "row_id": ("int64",),
+            "flag": ("nullable(bool)", "nullable(boolean)"),
+            "signed_value": ("nullable(int64)",),
+            "decimal_value": ("nullable(decimal(18,4))",),
+            "float_value": ("nullable(float64)",),
+            "unicode_text": ("nullable(string)",),
+            "event_date": ("date",),
+            "event_ts": ("datetime64(6,'utc')",),
+            "nullable_ts": ("nullable(datetime64(6,'utc'))",),
+            "uuid_value": ("uuid",),
+            "json_value": ("string",),
+            "all_null_text": ("nullable(string)",),
+        }
+    return {
+        "row_id": ("bigint",),
+        "flag": ("boolean",),
+        "signed_value": ("bigint",),
+        "decimal_value": ("decimal(18,4)",),
+        "float_value": ("double",),
+        "unicode_text": ("varchar",),
+        "event_date": ("date",),
+        "event_ts": ("timestamp(6)withtimezone",),
+        "nullable_ts": ("timestamp(6)withtimezone",),
+        "uuid_value": ("uuid",),
+        "json_value": ("varchar",),
+        "all_null_text": ("varchar",),
+    }

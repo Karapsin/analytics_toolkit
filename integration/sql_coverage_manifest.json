@@ -6207,6 +6207,16 @@
       "node_id": "tests/integration/test_sql_types.py::test_cross_backend_exact_type_transfer[types.transfer.ch.ch]",
       "backends": ["ch", "ch"]
     },
+    "types.transfer.parquet.ch.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_rich_type_parquet_transfer",
+      "backends": ["ch", "trino"]
+    },
+    "types.transfer.retry.trino.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_staged_source_retry_preserves_completed_ranges",
+      "backends": ["trino", "ch"]
+    },
     "atomicity.load.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_atomicity.py::test_validation_failures_preserve_existing_target[atomicity.load.gp]",

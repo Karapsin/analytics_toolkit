@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Added per-connection DDL creation policies for Greenplum, Trino, and ClickHouse.
 - Redesigned SQL transfer staging around immutable ordinal snapshots and shared transfer identities.
 - Kept Trino timestamp normalization scoped to transfer source metadata.
+- Expanded cross-backend transfer integrity coverage for values, schemas, Parquet staging, and range retries.
 
 ## 1.3.11.0 - 2026-07-23
 
