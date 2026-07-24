@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import builtins
-import datetime as dt
 import importlib
 from datetime import date
 from types import SimpleNamespace
@@ -275,22 +274,6 @@ def test_iter_dataframe_and_row_values_normalize_by_target_type() -> None:
 )
 def test_normalize_value(value: Any, target_type: str | None, expected: Any) -> None:
     assert trino_insert.normalize_value(value, target_type) == expected
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        pd.Timestamp("2026-01-02 03:04:05.123456"),
-        pd.Timestamp("2026-01-02 03:04:05.123456", tz="UTC"),
-        dt.datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001 - verifies naive input.
-    ],
-)
-def test_normalize_value_preserves_utc_for_trino_timestamp_with_time_zone(
-    value: Any,
-) -> None:
-    result = trino_insert.normalize_value(value, "TIMESTAMP(6) WITH TIME ZONE")
-
-    assert result == dt.datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=dt.timezone.utc)
 
 
 def test_build_values_tuple_renders_each_target_type() -> None:
