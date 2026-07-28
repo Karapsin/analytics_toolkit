@@ -16,50 +16,52 @@ current working directory:
 ```python
 from analytics_toolkit import sql
 
-sql.generate_dummy_connections()
+connections_path = sql.generate_dummy_connections()
+print(connections_path)
+# /path/to/your/project/.connections
 ```
 
-The generated direct file has one starter entry per supported backend. Replace
-the placeholder values before use, and put any referenced certificate files in
-`.certs/`:
+The generated direct file has one starter entry per supported backend, including
+recommended DDL and transfer-staging defaults. Replace its example values before
+use. A compact direct configuration has this shape:
 
 ```json
 {
   "gp": {
     "type": "gp",
-    "host": "put_your_gp_host_here",
+    "host": "gp.example",
     "port": 5432,
-    "user": "put_your_user_here",
-    "password": "put_your_password_here",
-    "database": "put_your_database_here",
-    "ca_certs": "gp-ca.pem"
+    "user": "user",
+    "password": "password",
+    "database": "analytics"
   },
   "trino": {
     "type": "trino",
-    "host": "put_your_trino_host_here",
+    "host": "trino.example",
     "port": 8080,
-    "user": "put_your_user_here",
-    "password": "put_your_password_here",
-    "catalog": "put_your_catalog_here",
-    "schema": "put_your_schema_here",
-    "http_scheme": "https",
-    "ca_certs": "trino-ca.pem"
+    "user": "user",
+    "password": "password",
+    "catalog": "iceberg",
+    "schema": "analytics",
+    "http_scheme": "https"
   },
   "ch": {
     "type": "ch",
-    "host": "put_your_clickhouse_host_here",
+    "host": "ch.example",
     "port": 8123,
-    "user": "put_your_user_here",
-    "password": "put_your_password_here",
-    "database": "put_your_database_here",
-    "secure": true,
-    "ca_certs": "clickhouse-ca.pem"
+    "user": "user",
+    "password": "password",
+    "database": "analytics",
+    "secure": true
   }
 }
 ```
 
-All supported connection options are described in the
-[SQL configuration docs](modules/sql/configuration.md).
+The generated file also includes example certificate references. Put retained
+certificate files in `.certs/`, or remove those options when custom CA files are
+not required. DDL defaults, staging settings, certificates, aliases, and all
+other supported options are described in the
+[SQL configuration guide](modules/sql/configuration.md).
 
 For Airflow DAGs, generate routing metadata instead:
 
@@ -144,11 +146,41 @@ rows = sql.transfer(
 )
 ```
 
+Use [sql.load_df](modules/sql/functions/load_df.md) when Python already owns the
+rows. Columns containing Python `uuid.UUID` values infer as native `UUID` on
+Greenplum, Trino, and ClickHouse; ClickHouse uses `Nullable(UUID)` when the
+column contains nulls:
+
+```python
+from uuid import uuid4
+
+import pandas as pd
+
+events = pd.DataFrame(
+    {
+        "event_id": [uuid4(), uuid4()],
+        "event_name": ["checkout_started", "order_completed"],
+    }
+)
+
+inserted = sql.load_df(
+    "ch",
+    "quick_start_events",
+    events,
+    write_mode="replace",
+    order_by="event_id",
+    ch_engine="MergeTree",
+    ch_only_shard=True,
+)
+print(inserted)
+# 2
+```
+
 ## AB Utilities
 
 ```python
 from analytics_toolkit import sql
-from analytics_toolkit.ab_utils import RatioMetricSpec, compute_test_metrics
+from analytics_toolkit.ab_utils import compute_test_metrics
 
 experiment_df = sql.read(
     "gp",
@@ -170,11 +202,7 @@ result = compute_test_metrics(
     control="control",
     user_id="user_id",
     ratio_metrics=[
-        RatioMetricSpec(
-            name="ctr",
-            numerator="clicks",
-            denominator="views",
-        )
+        {"name": "ctr", "numerator": "clicks", "denominator": "views"},
     ],
 )
 ```
@@ -185,13 +213,14 @@ result = compute_test_metrics(
 from analytics_toolkit.dates import first_day, gen_dates_list
 
 month_start = first_day("2026-03-18", "month")
-weeks = gen_dates_list("2026-03-01", "2026-03-31", interval="week")
+weeks = gen_dates_list("2026-03-02", "2026-03-30", interval="weeks")
 ```
 
 Date lists are useful for batch SQL jobs where the same query runs once per
-period. Use `gen_dates_list(..., interval="months")` for monthly fan-out jobs;
-because the helper includes `end_dt`, pass the last month start when the SQL
-window uses a half-open upper bound. For example, keep this template in
+period. Both endpoints are included. Weekly and monthly sequences normalize
+their inputs to period starts and warn when an input is not already aligned.
+
+For a daily job using half-open SQL windows, keep this template in
 `queries/load_daily_order_metrics.sql`:
 
 ```sql
@@ -206,21 +235,39 @@ where order_created_at >= timestamp '{start_dt}'
 group by 1
 ```
 
-Then execute it one day at a time:
+Build one task per day and run up to five tasks at once:
 
 ```python
 from analytics_toolkit import sql
 from analytics_toolkit.dates import add_days, gen_dates_list
 from analytics_toolkit.general import read_file
 
+tasks = []
 for start_dt in gen_dates_list("2026-03-01", "2026-03-31", interval="day"):
     end_dt = add_days(start_dt, 1)
     query = read_file(
         "queries/load_daily_order_metrics.sql",
         params_dict={"start_dt": start_dt, "end_dt": end_dt},
     )
-    sql.execute("gp", query)
+    tasks.append(
+        {
+            "name": f"load_{start_dt}",
+            "type": "execute",
+            "db_key": "gp",
+            "query": query,
+        }
+    )
+
+results = sql.parallel_sql(tasks, concurrency=5)
+print(len(results))
+# 31
 ```
+
+The default hard concurrency cap is `5`. Use `soft_concurrency_cap` to throttle
+a larger task graph below its requested concurrency, or pass an explicit higher
+`hard_concurrency_cap` when the database and client are sized for it. See the
+[parallel SQL workflow guide](modules/sql/parallel-workflows.md) for task types,
+nested batches, progress, and failure handling.
 
 ## Excel
 
