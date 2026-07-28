@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.2 - 2026-07-28
 
 - Preserved native UUID types across SQL backends and lowered default concurrency caps to five.
 
