@@ -729,7 +729,7 @@ def _load_sql_native_mde_stats(
         concurrency=concurrency,
         fail_fast=True,
         progress=False,
-        hard_concurrency_cap=max(10, concurrency),
+        hard_concurrency_cap=max(5, concurrency),
     )
     stats: dict[tuple[int, int], dict[str, object]] = {}
     for task_name, result in loaded.items():
@@ -2180,7 +2180,7 @@ def _load_sql_mde_window_frames(
         concurrency=concurrency,
         fail_fast=True,
         progress=False,
-        hard_concurrency_cap=max(10, concurrency),
+        hard_concurrency_cap=max(5, concurrency),
     )
     normalized_frames = {
         name: _normalize_sql_mde_window_frame(

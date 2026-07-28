@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 
@@ -33,7 +34,9 @@ def infer_ch_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
         base_type = "DateTime64(6)"
     else:
         non_null = series.dropna()
-        if not non_null.empty and all(isinstance(value, Decimal) for value in non_null):
+        if _is_uuid_series(non_null):
+            base_type = "UUID"
+        elif not non_null.empty and all(isinstance(value, Decimal) for value in non_null):
             base_type = "Float64"
         elif not non_null.empty and all(
             hasattr(value, "year")
@@ -66,4 +69,8 @@ def _infer_common_sql_type(series: pd.Series) -> str:
         for value in non_null
     ):
         return "DATE"
-    return "TEXT"
+    return "UUID" if _is_uuid_series(non_null) else "TEXT"
+
+
+def _is_uuid_series(non_null: pd.Series) -> bool:
+    return not non_null.empty and all(isinstance(value, UUID) for value in non_null)

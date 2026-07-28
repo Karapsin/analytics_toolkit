@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import threading
 import time
 from typing import Any
@@ -13,6 +14,20 @@ from analytics_toolkit.general import time_print
 parallel_module = importlib.import_module("analytics_toolkit.sql.orchestration.parallel_sql")
 tasks_module = importlib.import_module("analytics_toolkit.sql.orchestration.tasks")
 sql_module = importlib.import_module("analytics_toolkit.sql")
+
+
+def test_parallel_sql_defaults_hard_concurrency_cap_to_five() -> None:
+    assert inspect.signature(sql_module.parallel_sql).parameters[
+        "hard_concurrency_cap"
+    ].default == 5
+
+
+def test_parallel_sql_default_hard_cap_rejects_six_workers() -> None:
+    with pytest.raises(ValueError, match=r"effective concurrency.*\(6 > 5\)"):
+        parallel_module.parallel_sql(
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
+            concurrency=6,
+        )
 
 
 def named_tasks(tasks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:

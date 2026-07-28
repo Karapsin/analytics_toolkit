@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Preserved native UUID types across SQL backends and lowered default concurrency caps to five.
+
 ## 1.3.11.1 - 2026-07-28
 
 - Avoided ClickHouse transfer stream failures for empty validated sources.

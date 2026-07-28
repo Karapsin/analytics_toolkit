@@ -163,10 +163,10 @@ def test_inferred_portable_subset_roundtrip(
     alias = backend_alias(backend, target=True)
     table = _register_table(resource_registry, backend, alias, "type_inferred")
     expected = canonical_frame()[
-        ["row_id", "flag", "signed_value", "float_value", "unicode_text"]
+        ["row_id", "flag", "signed_value", "float_value", "unicode_text", "uuid_value"]
     ].copy()
     # Keep inference portable: nullable/all-null and backend-native temporal,
-    # decimal, UUID, and JSON types are exercised by the explicit-schema case.
+    # decimal, and JSON types are exercised by the explicit-schema case.
     expected = expected.iloc[:2].copy()
     expected["flag"] = expected["flag"].astype(bool)
     if backend == "gp":
@@ -193,6 +193,8 @@ def test_inferred_portable_subset_roundtrip(
     assert inserted == len(expected)
     actual = sql.read(alias, f"SELECT * FROM {table} ORDER BY row_id")
     assert_exact_frame(actual, expected)
+    info = sql.table_info(alias, table)
+    schema_contains(info.columns, {"uuid_value": ("uuid",)})
 
 
 @pytest.mark.parametrize(

@@ -35,7 +35,7 @@ compute_test_metrics_sql_native(
     concurrency=1,
     fail_fast=True,
     soft_concurrency_cap=None,
-    hard_concurrency_cap=10,
+    hard_concurrency_cap=5,
     progress=False,
     print_queries=False,
     retry_cnt=5,

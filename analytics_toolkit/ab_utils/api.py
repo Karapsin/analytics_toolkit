@@ -48,7 +48,7 @@ def compute_test_metrics(
     concurrency: int = 1,
     fail_fast: bool = True,
     soft_concurrency_cap: int | None = None,
-    hard_concurrency_cap: int = 10,
+    hard_concurrency_cap: int = 5,
     progress: bool = False,
 ) -> pd.DataFrame | dict[str, pd.DataFrame | str]:
     """Compute experiment metric statistics for one dataframe or named tasks."""

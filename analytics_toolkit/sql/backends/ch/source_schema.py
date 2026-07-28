@@ -122,4 +122,6 @@ def _map_to_ch_base_type(
         return "Date"
     if kind == "timestamp":
         return "DateTime64(6)"
+    if kind == "uuid":
+        return "UUID"
     return "String"

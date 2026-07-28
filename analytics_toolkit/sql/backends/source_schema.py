@@ -124,7 +124,7 @@ def classify_source_type(source_type: str) -> str:
             "ip",
         )
     ):
-        return "string"
+        return "uuid" if source_type == "uuid" else "string"
     return "string"
 
 

@@ -83,6 +83,11 @@ microsecond ISO-8601, UUIDs to lowercase, JSON with sorted keys, and backend
 null/scalar wrappers to Python values. Column and deterministic row order must
 still match exactly.
 
+Dataframe columns containing only non-null Python `uuid.UUID` values infer as
+native `UUID` on every backend. ClickHouse inference adds `Nullable(...)` when
+the column contains nulls. Schema-inferred transfers likewise preserve native
+UUID source metadata across all supported source and target pairs.
+
 ## Backend Extension Notes
 
 Backend implementations live under `analytics_toolkit/sql/backends/<backend>/`.

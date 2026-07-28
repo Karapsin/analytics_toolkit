@@ -15,6 +15,26 @@ parallel_module = importlib.import_module("analytics_toolkit.ab_utils.parallel")
 async_sql_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 
 
+@pytest.mark.parametrize(
+    "function_name",
+    ["compute_test_metrics", "compute_metrics_from_sql", "compute_test_metrics_sql_native"],
+)
+def test_ab_parallel_apis_default_hard_concurrency_cap_to_five(
+    function_name: str,
+) -> None:
+    function = getattr(ab_utils_module, function_name)
+    assert inspect.signature(function).parameters["hard_concurrency_cap"].default == 5
+
+
+def test_parallel_compute_metrics_default_hard_cap_rejects_six_workers() -> None:
+    with pytest.raises(ValueError, match=r"effective concurrency.*\(6 > 5\)"):
+        ab_utils_module.compute_test_metrics(
+            {"task": {"df": pd.DataFrame()}},
+            concurrency=6,
+            progress=False,
+        )
+
+
 def test_executor_shutdown_falls_back_without_cancel_futures() -> None:
     class LegacyExecutor:
         def __init__(self) -> None:
@@ -43,7 +63,7 @@ def test_nested_concurrency_state_tightens_soft_cap_and_can_raise_hard_cap() -> 
         tightened = parallel_module._build_concurrency_state(
             concurrency=2,
             soft_concurrency_cap=2,
-            hard_concurrency_cap=10,
+            hard_concurrency_cap=5,
         )
         raised = parallel_module._build_concurrency_state(
             concurrency=2,

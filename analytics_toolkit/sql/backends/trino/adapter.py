@@ -870,7 +870,7 @@ def _map_to_trino_type(
         if "with time zone" in source_type or "timestamptz" in source_type:
             return "TIMESTAMP WITH TIME ZONE"
         return "TIMESTAMP"
-    return "VARCHAR"
+    return "UUID" if kind == "uuid" else "VARCHAR"
 
 
 def _validate_trino_partition_drop_template(template: str | None) -> str:

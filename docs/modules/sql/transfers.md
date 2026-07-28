@@ -106,6 +106,10 @@ the target column types. Use `table_schema` when the target type must be
 explicit and portable inference is not enough. Same-Trino transfers preserve
 the complete native source type signature, including arrays, maps, rows, and
 nested combinations; cross-backend transfers retain portable type mapping.
+Native UUID source metadata maps to `UUID` on Greenplum and Trino and to
+`Nullable(UUID)` for an initially nullable ClickHouse stage. ClickHouse stage
+nullability is refined from rows, and an explicit `table_schema` still takes
+precedence.
 
 Upsert finalization is backend-specific. Greenplum uses staged
 delete-and-insert on `key_columns`. Trino and ClickHouse require

@@ -443,6 +443,8 @@ def test_clickhouse_source_schema_inspection_and_refinement_delegate(
         ("decimal(20, 4)", "Nullable(Decimal(20, 4))"),
         ("date", "Nullable(Date)"),
         ("timestamp", "Nullable(DateTime64(6))"),
+        ("uuid", "Nullable(UUID)"),
+        ("Nullable(UUID)", "Nullable(UUID)"),
         ("varchar", "Nullable(String)"),
     ],
 )

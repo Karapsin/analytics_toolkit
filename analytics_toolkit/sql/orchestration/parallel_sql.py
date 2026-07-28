@@ -33,7 +33,7 @@ from .tasks import (
     _validate_tasks,
 )
 
-_DEFAULT_HARD_CONCURRENCY_CAP = 10
+_DEFAULT_HARD_CONCURRENCY_CAP = 5
 _SYNC_TASK_RUNNERS = {
     "read": lambda kwargs: read_sql(**kwargs),
     "execute": lambda kwargs: execute_sql(**kwargs),

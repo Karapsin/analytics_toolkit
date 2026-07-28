@@ -13,7 +13,7 @@ compute_metrics_from_sql(
     fail_fast=True,
     start_comment=None,
     soft_concurrency_cap=None,
-    hard_concurrency_cap=10,
+    hard_concurrency_cap=5,
     progress=False,
     **metric_defaults,
 )

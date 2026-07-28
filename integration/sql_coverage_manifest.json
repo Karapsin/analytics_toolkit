@@ -432,11 +432,11 @@
         },
         "hard_concurrency_cap": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "10",
+          "signature_default": "5",
           "states": [
             {
               "state": "default",
-              "value": "10",
+              "value": "5",
               "status": "covered",
               "scenarios": [
                 "orchestration.parallel_async"
@@ -3694,11 +3694,11 @@
         },
         "hard_concurrency_cap": {
           "kind": "KEYWORD_ONLY",
-          "signature_default": "10",
+          "signature_default": "5",
           "states": [
             {
               "state": "default",
-              "value": "10",
+              "value": "5",
               "status": "covered",
               "scenarios": [
                 "orchestration.parallel_async"

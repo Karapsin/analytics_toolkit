@@ -2534,7 +2534,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
         "concurrency": 2,
         "fail_fast": True,
         "progress": False,
-        "hard_concurrency_cap": 10,
+        "hard_concurrency_cap": 5,
     }
     assert max_active_loads == 2
     assert events.count("aggregate") == 2

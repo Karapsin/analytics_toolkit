@@ -895,4 +895,4 @@ def _map_to_gp_type(
         if "with time zone" in source_type or "timestamptz" in source_type:
             return "TIMESTAMP WITH TIME ZONE"
         return "TIMESTAMP"
-    return "TEXT"
+    return "UUID" if kind == "uuid" else "TEXT"

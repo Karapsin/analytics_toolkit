@@ -25,6 +25,12 @@ source data can produce ambiguous pandas dtypes. Use
 [sql.create_sql_table](functions/create_sql_table.md) when you need the table
 creation step independently from loading rows.
 
+Object columns whose non-null values are all Python `uuid.UUID` instances infer
+as native `UUID` on Greenplum, Trino, and ClickHouse. ClickHouse uses
+`Nullable(UUID)` when the dataframe column contains nulls. UUID-looking strings,
+mixed object columns, and all-null object columns remain string types unless an
+explicit `table_schema` selects `UUID`.
+
 `key_columns` lets the load validate staged rows against an existing target
 before final insertion. Use it when duplicate keys in append-like flows would be
 more expensive to fix after the load finishes.

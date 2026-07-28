@@ -7,6 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -1508,6 +1509,35 @@ def test_dataframe_type_inference_covers_temporal_and_boolean_types(
     assert get_backend_adapter("ch").infer_dataframe_column_type(series) == ch_type
 
 
+def test_dataframe_type_inference_preserves_uuid_values() -> None:
+    values = pd.Series([UUID(int=1), UUID(int=2)])
+    nullable_values = pd.Series([UUID(int=1), None])
+    mixed_values = pd.Series([UUID(int=1), "not-a-uuid"])
+
+    assert get_backend_adapter("gp").infer_dataframe_column_type(values) == "UUID"
+    assert get_backend_adapter("trino").infer_dataframe_column_type(values) == "UUID"
+    assert get_backend_adapter("ch").infer_dataframe_column_type(values) == "UUID"
+    assert get_backend_adapter("ch").infer_dataframe_column_type(nullable_values) == (
+        "Nullable(UUID)"
+    )
+    assert get_backend_adapter("gp").infer_dataframe_column_type(mixed_values) == "TEXT"
+    assert get_backend_adapter("trino").infer_dataframe_column_type(mixed_values) == "VARCHAR"
+    assert get_backend_adapter("ch").infer_dataframe_column_type(mixed_values) == "String"
+
+
+@pytest.mark.parametrize(
+    ("backend", "expected"),
+    [("gp", "UUID"), ("trino", "UUID"), ("ch", "Nullable(UUID)")],
+)
+def test_source_type_mapping_preserves_uuid(backend: str, expected: str) -> None:
+    assert (
+        get_backend_adapter(backend).map_source_type_to_target(
+            SourceColumn("value", "Nullable(UUID)")
+        )
+        == expected
+    )
+
+
 def test_dbapi_execute_commands_rolls_back_and_closes_on_later_failure() -> None:
     command_error = RuntimeError("command failed")
 
@@ -2122,6 +2152,7 @@ def test_trino_adapter_query_states_and_properties() -> None:
         ("date", "DATE"),
         ("timestamp with time zone", "TIMESTAMP WITH TIME ZONE"),
         ("timestamp", "TIMESTAMP"),
+        ("uuid", "UUID"),
         ("text", "VARCHAR"),
     ],
 )

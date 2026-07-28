@@ -24,7 +24,7 @@ _SQL_DATAFRAME_FIELDS = frozenset({"df", "pre_exp_df", "pre_exp_metrics_df"})
 _COMPUTE_TEST_METRICS_FIELDS = frozenset(
     inspect.signature(_compute_test_metrics_dataframe).parameters
 )
-_DEFAULT_HARD_CONCURRENCY_CAP = 10
+_DEFAULT_HARD_CONCURRENCY_CAP = 5
 _CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = (
     contextvars.ContextVar("analytics_toolkit_ab_parallel_concurrency", default=None)
 )

@@ -20,6 +20,20 @@ async_module = importlib.import_module("analytics_toolkit.sql.orchestration.asyn
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
+def test_async_sql_defaults_hard_concurrency_cap_to_five() -> None:
+    assert inspect.signature(sql_module.async_sql).parameters[
+        "hard_concurrency_cap"
+    ].default == 5
+
+
+def test_async_sql_default_hard_cap_rejects_six_workers() -> None:
+    with pytest.raises(ValueError, match=r"effective concurrency.*\(6 > 5\)"):
+        async_module.async_sql(
+            [{"type": "read", "db_key": "gp", "query": "select 1"}],
+            concurrency=6,
+        )
+
+
 def named_tasks(tasks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"name": name, **spec} for name, spec in tasks.items()]
 

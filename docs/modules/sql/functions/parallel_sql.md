@@ -5,7 +5,7 @@
 Run independent SQL task specs with thread-based parallelism.
 
 ```python
-parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_fast: 'bool' = True, start_comment: 'str | None' = None, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 10, progress: 'bool' = False) -> 'dict[str, Any]'
+parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_fast: 'bool' = True, start_comment: 'str | None' = None, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, progress: 'bool' = False) -> 'dict[str, Any]'
 ```
 
 ## Inputs
