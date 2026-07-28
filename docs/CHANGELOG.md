@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.1 - 2026-07-28
 
 - Avoided ClickHouse transfer stream failures for empty validated sources.
 - Added per-connection DDL creation policies for Greenplum, Trino, and ClickHouse.
