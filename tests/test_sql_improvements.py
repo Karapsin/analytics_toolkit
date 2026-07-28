@@ -414,6 +414,26 @@ def test_run_timed_query_inherits_sql_operation_tags(capsys) -> None:
     assert ("[timed_query] [gp/gp] [read] Finished SQL query in ") in output
 
 
+def test_run_timed_query_overrides_inherited_phase(capsys) -> None:
+    with operation_runner_module.tracked_sql_operation(
+        operation_name="timed_query",
+        alias="gp",
+        backend="gp",
+        phase=None,
+    ):
+        result = query_timing_module.run_timed_query(
+            "gp",
+            lambda: "ok",
+            phase="setup",
+        )
+
+    output = capsys.readouterr().out
+    assert result == "ok"
+    assert "[timed_query] [gp/gp] [setup] Finished SQL query in " in output
+    assert "[timed_query] [gp/gp] Starting SQL" in output
+    assert "[timed_query] [gp/gp] Finished SQL in " in output
+
+
 def test_run_timed_query_logs_human_readable_elapsed(
     monkeypatch,
     capsys,

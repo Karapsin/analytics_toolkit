@@ -502,7 +502,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
             if setup_statements and not gp_break_query:
                 setup_sql = ";\n".join(setup_statements)
                 _maybe_print_query(setup_sql, print_queries, split_preview=False)
-                run_timed_query(self.backend, lambda: cursor.execute(setup_sql))
+                run_timed_query(self.backend, lambda: cursor.execute(setup_sql), phase="setup")
             else:
                 for statement in _iterate_statements_with_progress(
                     setup_statements,
@@ -513,6 +513,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
                     run_timed_query(
                         self.backend,
                         lambda statement=statement: cursor.execute(statement),
+                        phase="setup",
                     )
                     if gp_commit_each_statement:
                         connection.commit()

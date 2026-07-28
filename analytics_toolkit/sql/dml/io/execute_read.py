@@ -67,7 +67,7 @@ def execute_read(
             operation_name="execute_read",
             alias=options.connection_key,
             backend=options.backend,
-            phase="execute_read",
+            phase=None,
             retry_attempt=attempt,
             query_label=options.query_label,
             preview_sql="\n".join(options.statements),
@@ -181,6 +181,7 @@ def _execute_setup_statements(
         run_timed_query(
             connection_type,
             lambda statement=statement: execute_statement(executor, statement),
+            phase="setup",
         )
 
 
@@ -190,7 +191,7 @@ def _read_dbapi_cursor(
     connection_type: str,
     print_queries: bool,
 ) -> pd.DataFrame:
-    time_print("Reading DataFrame", backend=connection_type)
+    time_print("Reading DataFrame", backend=connection_type, phase="read")
     _maybe_print_query(query, print_queries, split_preview=True)
 
     def read_query() -> pd.DataFrame:
@@ -199,7 +200,7 @@ def _read_dbapi_cursor(
         rows = cursor.fetchall()
         return pd.DataFrame(rows, columns=columns)
 
-    return run_timed_query(connection_type, read_query)
+    return run_timed_query(connection_type, read_query, phase="read")
 
 
 def _execute_read_backend(

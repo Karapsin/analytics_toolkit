@@ -447,6 +447,7 @@ class ClickHouseAdapter(BackendAdapter):
             return run_timed_query(
                 self.backend,
                 lambda: connection.query_df(statements[-1]),
+                phase="read",
             )
         except Exception:
             time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)

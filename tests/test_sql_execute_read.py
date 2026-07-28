@@ -80,6 +80,7 @@ def test_execute_read_is_exported() -> None:
 
 def test_execute_read_clickhouse_executes_setup_and_reads_last(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     expected = pd.DataFrame({"value": [10]})
     client = FakeClickHouseClient(expected)
@@ -102,10 +103,15 @@ def test_execute_read_clickhouse_executes_setup_and_reads_last(
     assert client.commands == ["CREATE TEMPORARY TABLE tmp AS SELECT 1 AS value"]
     assert client.read_queries == ["SELECT value FROM tmp"]
     assert client.close_calls == 1
+    output = capsys.readouterr().out
+    assert output.count("[execute_read] [ch/ch] [setup] Finished SQL query in ") == 1
+    assert output.count("[execute_read] [ch/ch] [read] Finished SQL query in ") == 1
+    assert "[execute_read] [ch/ch] [execute_read]" not in output
 
 
 def test_execute_read_gp_executes_setup_statement_set_and_reads_last(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     connection = FakeDbapiConnection()
     monkeypatch.setattr(
@@ -136,6 +142,34 @@ def test_execute_read_gp_executes_setup_statement_set_and_reads_last(
     assert connection.commit_calls == 1
     assert connection.close_calls == 1
     assert connection.cursor_obj.close_calls == 1
+    output = capsys.readouterr().out
+    assert output.count("[execute_read] [gp/gp] [setup] Finished SQL query in ") == 1
+    assert output.count("[execute_read] [gp/gp] [read] Finished SQL query in ") == 1
+    assert "[execute_read] [gp/gp] [execute_read]" not in output
+
+
+def test_execute_read_trino_logs_setup_and_read_phases(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    connection = FakeDbapiConnection()
+    monkeypatch.setattr(
+        execute_read_module,
+        "get_sql_connection",
+        lambda connection_key: connection,
+    )
+
+    execute_read_module.execute_read(
+        "trino",
+        "CREATE TABLE tmp AS SELECT 1; SELECT * FROM tmp",
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    output = capsys.readouterr().out
+    assert output.count("[execute_read] [trino/trino] [setup] Finished SQL query in ") == 1
+    assert output.count("[execute_read] [trino/trino] [read] Finished SQL query in ") == 1
+    assert "[execute_read] [trino/trino] [execute_read]" not in output
 
 
 def test_execute_read_gp_break_query_executes_setup_statements_separately(
@@ -177,7 +211,7 @@ def test_execute_read_logs_elapsed_for_setup_and_final_query_by_default(
 
     execute_read_module.execute_read(
         "gp",
-        "CREATE TEMP TABLE tmp AS SELECT 1; SELECT * FROM tmp",
+        "CREATE TEMP TABLE tmp AS SELECT 1; INSERT INTO tmp SELECT 2; SELECT * FROM tmp",
         gp_break_query=True,
         retry_cnt=1,
         timeout_increment=0,
@@ -185,7 +219,9 @@ def test_execute_read_logs_elapsed_for_setup_and_final_query_by_default(
 
     output = capsys.readouterr().out
     assert "Executing query:" not in output
-    assert output.count("[execute_read] [gp/gp] [execute_read] Finished SQL query in ") == 2
+    assert output.count("[execute_read] [gp/gp] [setup] Finished SQL query in ") == 2
+    assert output.count("[execute_read] [gp/gp] [read] Finished SQL query in ") == 1
+    assert "[execute_read] [gp/gp] [execute_read]" not in output
 
 
 def test_execute_read_retries_with_fresh_connection(

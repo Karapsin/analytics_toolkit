@@ -54,5 +54,6 @@ result.head()
 ## Notes
 
 - Every statement except the last is executed first; the last statement is read into a dataframe.
+- Timing logs label setup execution as `[setup]` and the final dataframe query as `[read]`.
 
 [SQL functions index](index.md)

@@ -47,7 +47,7 @@ def tracked_sql_operation(
     operation_name: str,
     alias: str | None,
     backend: str | None,
-    phase: str,
+    phase: str | None,
     retry_attempt: int | None = None,
     query_label: str | None = None,
     preview_sql: str | None = None,

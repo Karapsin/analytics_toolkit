@@ -13,7 +13,12 @@ from .operation_runner import _format_duration
 T = TypeVar("T")
 
 
-def run_timed_query(backend: str, action: Callable[[], T]) -> T:
+def run_timed_query(
+    backend: str,
+    action: Callable[[], T],
+    *,
+    phase: str | None = None,
+) -> T:
     raise_if_cancelled()
     started_at = time.perf_counter()
     status = "failed"
@@ -30,4 +35,5 @@ def run_timed_query(backend: str, action: Callable[[], T]) -> T:
         time_print(
             f"{message_prefix} in {_format_duration(elapsed_seconds)}",
             backend=backend,
+            phase=phase,
         )

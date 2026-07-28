@@ -21,6 +21,9 @@ Query printing and labels are available on common entrypoints such as
 Public SQL operations log elapsed time and a final function-duration line.
 Messages include structured context such as operation, connection, backend, and
 phase so repeated details do not have to be embedded in every message body.
+For `execute_read`, setup statement timings use the `setup` phase and the final
+dataframe query uses `read`; the operation-level start and finish messages do
+not repeat the operation name as a phase.
 
 The timing sink can be routed through Python logging, which is usually a better
 fit for Airflow task logs than direct printing.
