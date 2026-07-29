@@ -197,7 +197,10 @@ rows = sql.transfer(
 - Retries restart the public operation with fresh connections.
 - Deterministic input and configuration errors stop immediately without an
   operation or full-transfer retry. This includes missing Trino `catalog` or
-  `schema` settings required to resolve qualified target table names.
+  `schema` settings required to resolve qualified target table names and
+  ClickHouse server-side parsing or type-conversion failures. ClickHouse
+  transport and incomplete-stream failures remain retryable when they do not
+  include a deterministic conversion diagnostic.
 - Row counts, chunk sizes, retry counts, adaptation windows, and concurrency
   must be built-in positive integers. Retry delays and adaptation rates must be
   finite real numbers with the documented positive or non-negative bounds.

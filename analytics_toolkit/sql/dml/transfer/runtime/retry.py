@@ -136,7 +136,9 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         return True
 
     message = _exception_message(exc)
-    if any(pattern in message for pattern in _NON_RETRYABLE_MESSAGE_PATTERNS):
+    if _is_clickhouse_conversion_error(message) or any(
+        pattern in message for pattern in _NON_RETRYABLE_MESSAGE_PATTERNS
+    ):
         return True
     missing_object = "does not exist" in message or "doesn't exist" in message
     return missing_object and ("table" in message or "type " in message)
@@ -148,6 +150,15 @@ def _exception_class_names(exc: BaseException) -> set[str]:
 
 def _exception_message(exc: BaseException) -> str:
     return " ".join(str(part) for part in exc.args if part).lower() or str(exc).lower()
+
+
+def _is_clickhouse_conversion_error(message: str) -> bool:
+    is_server_error = (
+        "received clickhouse exception" in message or "db::exception" in message
+    )
+    return is_server_error and (
+        "cannot parse" in message or "cannot convert" in message
+    )
 
 
 _NON_RETRYABLE_MESSAGE_PATTERNS = (

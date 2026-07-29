@@ -34,6 +34,10 @@ class FakeConnection:
         self.rollback_calls += 1
 
 
+class DatabaseError(Exception):
+    pass
+
+
 class FakeUndefinedTableError(Exception):
     pgcode = "42P01"
 
@@ -347,6 +351,76 @@ def test_run_with_retry_keeps_unrelated_value_error_retryable() -> None:
 
     result = retry_module.run_with_retry(
         operation_name="unit retry",
+        retry_cnt=2,
+        timeout_increment=0,
+        operation=operation,
+    )
+
+    assert result == "ok"
+    assert attempts == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        (
+            "Received ClickHouse exception, code: 32, server response: Code: 32. "
+            "DB::Exception: Attempt to read after eof: Cannot parse Int64 from "
+            "String, because value is too short: while executing 'FUNCTION "
+            "CAST(customer_id, Int64)'. (ATTEMPT_TO_READ_AFTER_EOF)"
+        ),
+        (
+            "Received ClickHouse exception, code: 70, server response: Code: 70. "
+            "DB::Exception: Cannot convert String to UInt64. "
+            "(CANNOT_CONVERT_TYPE)"
+        ),
+    ],
+)
+def test_run_with_retry_does_not_retry_clickhouse_conversion_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    message: str,
+) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    error = DatabaseError(message)
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise error
+
+    with pytest.raises(DatabaseError) as caught:
+        retry_module.run_with_retry(
+            operation_name="reading query on ch (ch)",
+            retry_cnt=5,
+            timeout_increment=600,
+            operation=operation,
+        )
+
+    assert caught.value is error
+    assert attempts == [1]
+    assert sleeps == []
+    output = capsys.readouterr().out
+    assert "Failed with a non-retryable error" in output
+    assert "Retrying in" not in output
+
+
+def test_run_with_retry_keeps_clickhouse_transport_eof_retryable() -> None:
+    attempts: list[int] = []
+    error = DatabaseError(
+        "Received ClickHouse exception, code: 32, server response: Code: 32. "
+        "DB::Exception: Attempt to read after eof. (ATTEMPT_TO_READ_AFTER_EOF)"
+    )
+
+    def operation(attempt: int) -> str:
+        attempts.append(attempt)
+        if attempt == 1:
+            raise error
+        return "ok"
+
+    result = retry_module.run_with_retry(
+        operation_name="reading query on ch (ch)",
         retry_cnt=2,
         timeout_increment=0,
         operation=operation,

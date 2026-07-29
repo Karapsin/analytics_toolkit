@@ -43,6 +43,10 @@ source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.s
 backends_module = importlib.import_module("analytics_toolkit.sql.backends")
 
 
+class DatabaseError(Exception):
+    pass
+
+
 class RecordingSourceCursor:
     def __init__(self, rows: list[tuple[int]]) -> None:
         self._rows = rows
@@ -926,6 +930,43 @@ def test_transfer_does_not_full_retry_missing_trino_catalog(
 
     with pytest.raises(ValueError, match="schema-qualified names require") as caught:
         transfer_api_module.transfer_table("gp", "trino")
+
+    assert caught.value is error
+    assert attempts == [1]
+
+
+def test_transfer_does_not_full_retry_clickhouse_conversion_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        from_db_key="ch_source",
+        from_db_backend="ch",
+        to_db_key="gp_target",
+        to_db_backend="gp",
+        target_table="sandbox.target",
+        replace_target_table=True,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=5,
+        full_timeout_increment=0,
+    )
+    error = DatabaseError(
+        "Received ClickHouse exception, code: 32, server response: Code: 32. "
+        "DB::Exception: Attempt to read after eof: Cannot parse Int64 from String, "
+        "because value is too short: while executing 'FUNCTION CAST(customer_id, "
+        "Int64)'. (ATTEMPT_TO_READ_AFTER_EOF)"
+    )
+    attempts: list[int] = []
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+
+    def fail_attempt(**_kwargs: Any) -> int:
+        attempts.append(1)
+        raise error
+
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", fail_attempt)
+
+    with pytest.raises(DatabaseError) as caught:
+        transfer_api_module.transfer_table("ch_source", "gp_target")
 
     assert caught.value is error
     assert attempts == [1]
