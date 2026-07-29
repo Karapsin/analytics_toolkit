@@ -497,14 +497,50 @@ def test_normalize_transfer_slices_rejects_missing_placeholder() -> None:
         )
 
 
-def test_normalize_transfer_slices_rejects_duplicate_placeholder() -> None:
-    with pytest.raises(ValueError, match=r"\{event_date\} must appear exactly once"):
+@pytest.mark.parametrize(
+    ("value", "expected_predicate"),
+    [
+        ("2025-01-01", "(event_date) = '2025-01-01'"),
+        (None, "(event_date) IS NULL"),
+    ],
+)
+def test_normalize_transfer_slices_replaces_every_placeholder_occurrence(
+    value: Any,
+    expected_predicate: str,
+) -> None:
+    _keys, _expressions, _values, slices, _concurrency = (
         keys_module.normalize_transfer_slices(
-            source_sql="select id from events where {event_date} or {event_date}",
+            source_sql=(
+                "select id from current_events where {event_date} "
+                "union all select id from archived_events where {event_date}"
+            ),
             transfer_keys="event_date",
-            transfer_key_values=["2025-01-01"],
+            transfer_key_values=[value],
             concurrency=1,
         )
+    )
+
+    assert slices[0].source_sql.count(expected_predicate) == 2
+    assert "{event_date}" not in slices[0].source_sql
+
+
+def test_normalize_transfer_slices_replaces_keys_with_different_occurrence_counts() -> None:
+    _keys, _expressions, _values, slices, _concurrency = (
+        keys_module.normalize_transfer_slices(
+            source_sql=(
+                "select id from events where {event_date} and {bucket} "
+                "union all select id from archived_events where {event_date}"
+            ),
+            transfer_keys=["event_date", "bucket"],
+            transfer_key_values={"event_date": ["2025-01-01"], "bucket": [7]},
+            concurrency=1,
+        )
+    )
+
+    assert slices[0].source_sql.count("(event_date) = '2025-01-01'") == 2
+    assert slices[0].source_sql.count("(bucket) = 7") == 1
+    assert "{event_date}" not in slices[0].source_sql
+    assert "{bucket}" not in slices[0].source_sql
 
 
 def test_normalize_transfer_slices_leaves_unknown_brace_text() -> None:

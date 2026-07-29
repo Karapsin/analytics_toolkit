@@ -261,7 +261,7 @@ def test_public_transfer_dry_run_renders_keyed_placeholders_inline(
             "select event_date as dt, store_id, product_id as article_id "
             "from dm_nrt.loyalty_events "
             "where event_name = 'catalog_itemScreen_productListing_item_view' "
-            "and {event_date}"
+            "and {event_date} and ({event_date})"
         ),
         to_table="iceberg.sandbox.target",
         table_schema={"dt": "DATE", "store_id": "BIGINT", "article_id": "BIGINT"},
@@ -279,8 +279,9 @@ def test_public_transfer_dry_run_renders_keyed_placeholders_inline(
     assert all(
         "analytics_toolkit_transfer_source" not in text for text in read_source_sqls
     )
-    assert "(event_date) = '2026-04-01'" in read_source_sqls[0]
-    assert "(event_date) = '2026-04-02'" in read_source_sqls[1]
+    assert read_source_sqls[0].count("(event_date) = '2026-04-01'") == 2
+    assert read_source_sqls[1].count("(event_date) = '2026-04-02'") == 2
+    assert all("{event_date}" not in text for text in read_source_sqls)
 
 
 def test_public_transfer_dry_run_renders_keyed_from_table_predicates(

@@ -96,8 +96,9 @@ Omitting `write_mode` appends rows. Pass `write_mode="replace"` explicitly for
 full-table refreshes. A zero-row source leaves an existing target unchanged,
 including in replace mode.
 
-Single-key slices require a predicate placeholder in `from_sql`. The
-placeholder is replaced with the full predicate, not just the literal value:
+Single-key slices require one or more predicate placeholder occurrences in
+`from_sql`. Every occurrence is replaced with the full predicate, not just the
+literal value:
 
 ```python
 from analytics_toolkit import sql
@@ -216,9 +217,11 @@ rows = sql.transfer(
 - `transfer_keys` string and list forms accept only simple placeholder names
   such as `"event_date"`. Use mapping form for SQL expressions, for example
   `{"user_id_suffix": "right(user_id, 1)"}`.
-- Each keyed transfer requires exactly one `{placeholder_name}` occurrence in
-  `from_sql` for every transfer key. `from_table` keyed transfers do not need
-  placeholders. If `from_sql` is an f-string, escape braces as `{{event_date}}`.
+- Each keyed transfer requires at least one `{placeholder_name}` occurrence in
+  `from_sql` for every transfer key. The same placeholder may appear multiple
+  times, and every occurrence receives the active slice predicate. `from_table`
+  keyed transfers do not need placeholders. If `from_sql` is an f-string,
+  escape braces as `{{event_date}}`.
 - Key placeholders are replaced by predicates such as
   `(event_date) = DATE '2026-04-01'` or `(event_date) IS NULL`; they are not
   value-only placeholders.

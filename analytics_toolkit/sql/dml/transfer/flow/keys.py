@@ -269,11 +269,6 @@ def render_transfer_slice_source_sql(
                 f'The placeholder is replaced with "({key.expression}) = <value>" '
                 f'or "({key.expression}) IS NULL".'
             )
-        if count != 1:
-            raise ValueError(
-                f"transfer key placeholder {token} must appear exactly once in "
-                f"from_sql; found {count}."
-            )
     rendered_sql = source_sql
     for key, value in zip(transfer_keys, values):
         token = "{" + key.name + "}"
