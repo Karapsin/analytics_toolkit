@@ -41,11 +41,13 @@ from ..runtime.retry import run_with_retry
 from ..staging import _sanitize_transfer_staging_username
 from . import options as transfer_options
 from .attempt import run_transfer_attempt
+from .concurrency import resolve_transfer_concurrency
 from .dry_run import (
     add_insert_target_dry_run_steps,
     add_upsert_target_dry_run_steps,
     dry_run_stage_external_location,
     dry_run_final_upsert_stage_table_name,
+    dry_run_reader_slice_assignments,
     dry_run_stage_table_names,
     source_batches_label,
 )
@@ -111,7 +113,9 @@ def transfer_table(
     table_schema: dict[str, str] | None = None,
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
-    concurrency: int = 1,
+    concurrency: int | None = None,
+    read_concurrency: int | None = None,
+    write_concurrency: int | None = None,
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
@@ -166,6 +170,8 @@ def transfer_table(
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
+        read_concurrency=read_concurrency,
+        write_concurrency=write_concurrency,
         trino_mode=trino_mode,
         validate_row_count=validate_row_count,
         ch_count_limit_read=ch_count_limit_read,
@@ -185,6 +191,10 @@ def transfer_table(
     operation_metadata = SqlOperationMetadata(
         query_label=options.query_label,
         transfer_id=transfer_id,
+        requested_read_concurrency=options.transfer_concurrency.requested_read,
+        requested_write_concurrency=options.transfer_concurrency.requested_write,
+        effective_read_concurrency=options.transfer_concurrency.effective_read,
+        effective_write_concurrency=options.transfer_concurrency.effective_write,
     )
     stream_retry_state = TransferStreamRetryState(options)
 
@@ -348,7 +358,9 @@ def build_transfer_options(
     table_schema: dict[str, str] | None = None,
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None = None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None = None,
-    concurrency: int = 1,
+    concurrency: int | None = None,
+    read_concurrency: int | None = None,
+    write_concurrency: int | None = None,
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
@@ -373,6 +385,8 @@ def build_transfer_options(
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=trino_insert_chunk_size,
         concurrency=concurrency,
+        read_concurrency=read_concurrency,
+        write_concurrency=write_concurrency,
     )
     source_sql, source_table = normalize_transfer_source(
         from_sql=from_sql,
@@ -442,7 +456,7 @@ def build_transfer_options(
         normalized_transfer_key_expressions,
         normalized_transfer_key_values,
         transfer_slices,
-        resolved_concurrency,
+        normalized_legacy_concurrency,
     ) = normalize_transfer_slices(
         source_sql=source_sql,
         source_table=source_table,
@@ -450,6 +464,13 @@ def build_transfer_options(
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
         allow_unkeyed_concurrency=from_config.transfer_staging_schema is not None,
+    )
+    resolved_concurrency = resolve_transfer_concurrency(
+        concurrency=concurrency,
+        read_concurrency=read_concurrency,
+        write_concurrency=write_concurrency,
+        slice_count=len(transfer_slices) if transfer_slices is not None else None,
+        direct_keyed=(transfer_slices is not None and from_config.transfer_staging_schema is None),
     )
     destination_identity = resolve_destination_identity(
         to_table.strip() if isinstance(to_table, str) and to_table.strip() else "_invalid_",
@@ -566,7 +587,8 @@ def build_transfer_options(
         transfer_key_expressions=normalized_transfer_key_expressions,
         transfer_key_values=normalized_transfer_key_values,
         transfer_slices=transfer_slices,
-        concurrency=resolved_concurrency,
+        concurrency=normalized_legacy_concurrency,
+        transfer_concurrency=resolved_concurrency,
         query_label=query_label,
         progress=progress,
         estimate_total_rows=estimate_total_rows,
@@ -579,56 +601,7 @@ def build_transfer_options(
         staging_ch_policy=ddl.staging_ch_policy,
     )
 
-    if options.from_db_key == options.to_db_key:
-        raise ValueError("from_db and to_db must be different.")
-    if not options.target_table:
-        raise ValueError("to_table must not be empty.")
-    if options.write_mode == "upsert" and not options.key_columns:
-        raise ValueError("key_columns are required for write_mode='upsert'.")
-    if (
-        options.write_mode == "upsert"
-        and target_adapter.uses_partition_replacement_upsert()
-        and options.upsert_partition_column is None
-    ):
-        raise ValueError(
-            "upsert_partition_column is required for write_mode='upsert' "
-            "when to_db has type 'trino' or 'ch'."
-        )
-    if (
-        options.write_mode == "upsert"
-        and target_adapter.needs_upsert_partition_drop_template()
-        and not options.trino_upsert_partition_drop_sql_template
-    ):
-        raise ValueError(
-            "Trino write_mode='upsert' requires "
-            "upsert_partition_drop_sql_template in the target connection config."
-        )
-    transfer_options.validate_progress(options.progress)
-    transfer_options.validate_estimate_total_rows(options.estimate_total_rows)
-    transfer_options.validate_row_count_options(
-        options.validate_row_count, options.ch_count_limit_read
-    )
-    target_adapter.validate_gp_distributed_by_key_option(
-        options.gp_distributed_by_key,
-        option_owner="to_db",
-    )
-    target_adapter.validate_gp_insert_chunk_size_option(
-        options.gp_insert_chunk_size,
-        option_owner="to_db",
-    )
-    target_adapter.validate_trino_insert_chunk_size_option(
-        options.trino_insert_chunk_size,
-        option_owner="to_db",
-    )
-    target_adapter.validate_ch_create_table_options(
-        option_owner="to_db",
-        partition_by=options.partition_by,
-        order_by=options.order_by,
-        ch_engine=options.ch_engine,
-        ch_cluster=options.ch_cluster,
-        ch_sharding_key=options.ch_sharding_key,
-        ch_only_shard=options.ch_only_shard,
-    )
+    transfer_options.validate_built_transfer_options(options, target_adapter)
     return options
 
 
@@ -687,7 +660,27 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             "transfer_keys": options.transfer_keys,
             "transfer_key_expressions": options.transfer_key_expressions,
             "transfer_key_values": options.transfer_key_values,
-            "concurrency": options.concurrency,
+            "concurrency": options.transfer_concurrency.legacy_value,
+            "read_concurrency": (
+                options.transfer_concurrency.requested_read
+                if options.transfer_concurrency.split_requested
+                else None
+            ),
+            "write_concurrency": (
+                options.transfer_concurrency.requested_write
+                if options.transfer_concurrency.split_requested
+                else None
+            ),
+            "effective_read_concurrency": options.transfer_concurrency.effective_read,
+            "effective_write_concurrency": options.transfer_concurrency.effective_write,
+            "queue_capacity": (
+                options.transfer_concurrency.effective_write
+                if options.transfer_slices is not None
+                and options.source_transfer_staging_schema is None
+                else None
+            ),
+            "reader_slice_assignments": dry_run_reader_slice_assignments(options),
+            "target_stage_count": len(stage_tables),
             "transfer_slice_count": (
                 len(options.transfer_slices) if options.transfer_slices is not None else None
             ),
@@ -719,6 +712,10 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             worker_stage_count=len(stage_tables),
             stage_tables=stage_tables,
             aggregate_stage_table=stage_table,
+            requested_read_concurrency=options.transfer_concurrency.requested_read,
+            requested_write_concurrency=options.transfer_concurrency.requested_write,
+            effective_read_concurrency=options.transfer_concurrency.effective_read,
+            effective_write_concurrency=options.transfer_concurrency.effective_write,
         ),
     )
     if options.transfer_slices is None:

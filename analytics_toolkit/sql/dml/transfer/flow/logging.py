@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: PLR0913
 from typing import Any
 
 from ..runtime.models import TransferOptions, TransferSlice
@@ -51,3 +52,49 @@ def format_transfer_key_log_fragment(label: str | None) -> str:
     if label is None:
         return ""
     return f"for {label} "
+
+
+def pipeline_start_message(
+    slice_count: int,
+    read_workers: int,
+    write_workers: int,
+) -> str:
+    return (
+        f"Starting keyed transfer pipeline: {slice_count} slice(s), "
+        f"{read_workers} read worker(s), {write_workers} target writer(s), "
+        f"queue capacity {write_workers}"
+    )
+
+
+def reader_slice_message(
+    worker_index: int,
+    worker_count: int,
+    slice_position: int,
+    slice_count: int,
+    key_label: str | None,
+    action: str,
+) -> str:
+    suffix = f" for {key_label}" if key_label else ""
+    return (
+        f"Read worker {worker_index + 1}/{worker_count} {action} "
+        f"slice {slice_position}/{slice_count}{suffix}"
+    )
+
+
+def writer_batch_message(
+    worker_index: int,
+    worker_count: int,
+    batch_index: int,
+    slice_position: int,
+    slice_count: int,
+    stage_table: str,
+) -> str:
+    return (
+        f"Target writer {worker_index + 1}/{worker_count} staging batch {batch_index} "
+        f"for slice {slice_position}/{slice_count} into {stage_table}"
+    )
+
+
+def pipeline_phase_message(phase: str, *, complete: bool = False) -> str:
+    prefix = "Completed" if complete else "Starting"
+    return f"{prefix} keyed transfer pipeline {phase}"

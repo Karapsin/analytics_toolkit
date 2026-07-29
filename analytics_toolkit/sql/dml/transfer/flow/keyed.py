@@ -22,7 +22,9 @@ def build_keyed_worker_stage_states(
     stage_state: TransferStageState,
 ) -> list[WorkerStageState]:
     transfer_slices = (
-        options.transfer_slices if options is not None else stage_state.transfer_slices
+        options.transfer_slices
+        if options is not None
+        else getattr(stage_state, "transfer_slices", None)
     ) or []
     stage_tables = stage_state.stage_tables or (
         [stage_state.stage_table] if stage_state.stage_table is not None else []

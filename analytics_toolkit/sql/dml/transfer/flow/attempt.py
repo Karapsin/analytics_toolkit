@@ -47,6 +47,8 @@ from ....backends.source_estimate import estimate_source_rows
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .finalize import cleanup_transfer_attempt_stages as cleanup_attempt_stages
 from .keyed import WorkerStageState, build_keyed_worker_stage_states
+from .keyed_pipeline import run_keyed_transfer_pipeline
+from .keyed_phases import finish_keyed_transfer
 from .logging import (
     ProgressTracker,
     format_transfer_key_log_fragment,
@@ -272,38 +274,28 @@ def run_keyed_transfer_attempt(
         stage_state.worker_stage_states = worker_stage_states
         total_rows = load_keyed_stage_slices(
             options=options,
+            stage_state=stage_state,
             worker_stage_states=worker_stage_states,
             read_retry_cnt=read_retry_cnt,
             insert_retry_cnt=insert_retry_cnt,
         )
-        validate_streamed_row_count(
-            options=options,
-            stage_state=stage_state,
-            total_rows=total_rows,
-        )
-        consolidate_keyed_worker_stages(
+        finish_keyed_transfer(
             options=options,
             connection_refs=connection_refs,
             worker_stage_states=worker_stage_states,
             stage_state=stage_state,
-        )
-        validate_loaded_stage_row_count(
-            options=options,
-            connection_refs=connection_refs,
-            stage_state=stage_state,
             total_rows=total_rows,
             open_connection=get_sql_connection,
-        )
-        finalize_loaded_stage(
-            options=options,
-            connection_refs=connection_refs,
-            stage_state=stage_state,
-            total_rows=total_rows,
+            consolidate=consolidate_keyed_worker_stages,
+            validate=validate_loaded_stage_row_count,
+            finalize=finalize_loaded_stage,
         )
     except Exception as exc:
         transfer_error = exc
     finally:
         try:
+            if transfer_error is None:
+                time_print("Starting keyed transfer pipeline stage cleanup")
             cleanup_stage(
                 options=options,
                 connection_refs=connection_refs,
@@ -311,6 +303,8 @@ def run_keyed_transfer_attempt(
                 read_retry_cnt=read_retry_cnt,
                 drop_created_target=transfer_error is not None,
             )
+            if transfer_error is None:
+                time_print("Completed keyed transfer pipeline stage cleanup")
         except Exception as exc:
             cleanup_error = exc
         finally:
@@ -440,7 +434,7 @@ def _uses_keyed_worker_stages(options: TransferOptions) -> bool:
     return (
         options.transfer_slices is not None
         and options.trino_mode != "parquet"
-        and options.concurrency > 1
+        and options.transfer_concurrency.effective_write > 1
         and len(options.transfer_slices) > 1
     )
 
@@ -487,7 +481,10 @@ def _create_keyed_worker_stage_tables(
     column_types: dict[str, str] | None,
 ) -> list[str]:
     transfer_slices = options.transfer_slices or []
-    worker_count = min(options.concurrency, len(transfer_slices))
+    worker_count = min(
+        options.transfer_concurrency.effective_write,
+        len(transfer_slices),
+    )
     run_token = options.transfer_id or uuid.uuid4().hex[:8]
     stage_tables: list[str] = []
     for worker_index in range(worker_count):
@@ -524,7 +521,16 @@ def load_keyed_stage_slices(
     worker_stage_states: list[WorkerStageState],
     read_retry_cnt: int,
     insert_retry_cnt: int,
+    stage_state: TransferStageState | None = None,
 ) -> int:
+    if stage_state is not None:
+        return run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=stage_state,
+            writer_stage_states=worker_stage_states,
+            read_retry_cnt=read_retry_cnt,
+            insert_retry_cnt=insert_retry_cnt,
+        )
     total_rows = 0
     with ThreadPoolExecutor(max_workers=len(worker_stage_states)) as executor:
         pending = {

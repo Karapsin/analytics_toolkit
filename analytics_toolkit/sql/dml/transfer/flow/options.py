@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: EM101, FBT001, TRY003, TRY004
 import math
 from numbers import Real
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.sql.execution.operation_runner import (
     validate_progress_option,
@@ -19,8 +19,60 @@ from ....execution.validation import (
     validate_positive_number,
 )
 from ..runtime.models import TrinoTransferMode
+from .concurrency import CONCURRENCY_CONFLICT_ERROR, validate_concurrency_value
+
+if TYPE_CHECKING:
+    from ..runtime.models import TransferOptions
 
 _DEFAULT_TARGET_BATCH_SECONDS = 10.0
+
+
+def validate_built_transfer_options(options: TransferOptions, target_adapter: Any) -> None:
+    if options.from_db_key == options.to_db_key:
+        raise ValueError("from_db and to_db must be different.")
+    if not options.target_table:
+        raise ValueError("to_table must not be empty.")
+    if options.write_mode == "upsert" and not options.key_columns:
+        raise ValueError("key_columns are required for write_mode='upsert'.")
+    if (
+        options.write_mode == "upsert"
+        and target_adapter.uses_partition_replacement_upsert()
+        and options.upsert_partition_column is None
+    ):
+        raise ValueError(
+            "upsert_partition_column is required for write_mode='upsert' "
+            "when to_db has type 'trino' or 'ch'."
+        )
+    if (
+        options.write_mode == "upsert"
+        and target_adapter.needs_upsert_partition_drop_template()
+        and not options.trino_upsert_partition_drop_sql_template
+    ):
+        raise ValueError(
+            "Trino write_mode='upsert' requires upsert_partition_drop_sql_template "
+            "in the target connection config."
+        )
+    validate_progress(options.progress)
+    validate_estimate_total_rows(options.estimate_total_rows)
+    validate_row_count_options(options.validate_row_count, options.ch_count_limit_read)
+    target_adapter.validate_gp_distributed_by_key_option(
+        options.gp_distributed_by_key, option_owner="to_db"
+    )
+    target_adapter.validate_gp_insert_chunk_size_option(
+        options.gp_insert_chunk_size, option_owner="to_db"
+    )
+    target_adapter.validate_trino_insert_chunk_size_option(
+        options.trino_insert_chunk_size, option_owner="to_db"
+    )
+    target_adapter.validate_ch_create_table_options(
+        option_owner="to_db",
+        partition_by=options.partition_by,
+        order_by=options.order_by,
+        ch_engine=options.ch_engine,
+        ch_cluster=options.ch_cluster,
+        ch_sharding_key=options.ch_sharding_key,
+        ch_only_shard=options.ch_only_shard,
+    )
 
 
 def resolve_transfer_write_mode(to_db_backend: str, write_mode: str | None) -> str:
@@ -72,6 +124,8 @@ def validate_transfer_runtime_options(
     gp_insert_chunk_size: Any,
     trino_insert_chunk_size: Any,
     concurrency: Any,
+    read_concurrency: Any,
+    write_concurrency: Any,
 ) -> None:
     validate_positive_int(batch_size, "batch_size")
     validate_positive_int(min_batch_size, "min_batch_size")
@@ -115,7 +169,11 @@ def validate_transfer_runtime_options(
         trino_insert_chunk_size,
         "trino_insert_chunk_size",
     )
-    validate_positive_int(concurrency, "concurrency")
+    validate_concurrency_value(concurrency, "concurrency")
+    validate_concurrency_value(read_concurrency, "read_concurrency")
+    validate_concurrency_value(write_concurrency, "write_concurrency")
+    if concurrency is not None and (read_concurrency is not None or write_concurrency is not None):
+        raise ValueError(CONCURRENCY_CONFLICT_ERROR)
 
 
 def resolve_trino_mode(

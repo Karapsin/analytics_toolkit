@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Added setup and read phases to execute_read timing logs.
 - Allowed repeated SQL transfer key placeholders.
 - Stopped retries for deterministic ClickHouse conversion failures.
+- Split keyed SQL transfer reader and writer concurrency with a bounded observable pipeline.
 
 ## 1.3.11.2 - 2026-07-28
 

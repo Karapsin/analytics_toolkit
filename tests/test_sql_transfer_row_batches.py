@@ -6,6 +6,7 @@ import io
 import threading
 import warnings
 import sys
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -27,12 +28,18 @@ parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
 transfer_options_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.options")
+transfer_concurrency_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.concurrency"
+)
 keys_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keys")
 estimate_module = importlib.import_module("analytics_toolkit.sql.backends.source_estimate")
 row_counts_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.row_counts")
 progress_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.progress")
 dry_run_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.dry_run")
 keyed_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.keyed")
+keyed_pipeline_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.keyed_pipeline"
+)
 transfer_logging_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.logging")
 staging_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.staging")
 load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
@@ -512,16 +519,14 @@ def test_normalize_transfer_slices_replaces_every_placeholder_occurrence(
     value: Any,
     expected_predicate: str,
 ) -> None:
-    _keys, _expressions, _values, slices, _concurrency = (
-        keys_module.normalize_transfer_slices(
-            source_sql=(
-                "select id from current_events where {event_date} "
-                "union all select id from archived_events where {event_date}"
-            ),
-            transfer_keys="event_date",
-            transfer_key_values=[value],
-            concurrency=1,
-        )
+    _keys, _expressions, _values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql=(
+            "select id from current_events where {event_date} "
+            "union all select id from archived_events where {event_date}"
+        ),
+        transfer_keys="event_date",
+        transfer_key_values=[value],
+        concurrency=1,
     )
 
     assert slices[0].source_sql.count(expected_predicate) == 2
@@ -529,16 +534,14 @@ def test_normalize_transfer_slices_replaces_every_placeholder_occurrence(
 
 
 def test_normalize_transfer_slices_replaces_keys_with_different_occurrence_counts() -> None:
-    _keys, _expressions, _values, slices, _concurrency = (
-        keys_module.normalize_transfer_slices(
-            source_sql=(
-                "select id from events where {event_date} and {bucket} "
-                "union all select id from archived_events where {event_date}"
-            ),
-            transfer_keys=["event_date", "bucket"],
-            transfer_key_values={"event_date": ["2025-01-01"], "bucket": [7]},
-            concurrency=1,
-        )
+    _keys, _expressions, _values, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql=(
+            "select id from events where {event_date} and {bucket} "
+            "union all select id from archived_events where {event_date}"
+        ),
+        transfer_keys=["event_date", "bucket"],
+        transfer_key_values={"event_date": ["2025-01-01"], "bucket": [7]},
+        concurrency=1,
     )
 
     assert slices[0].source_sql.count("(event_date) = '2025-01-01'") == 2
@@ -3404,6 +3407,643 @@ def test_transfer_dry_run_shows_keyed_slice_plan(
     assert [statement.phase for statement in plan.statements].count("drop_stage") == 2
     assert any("worker 0 streamed keyed source slice batches [0]" in sql for sql in plan.sqls)
     assert any("worker 1 streamed keyed source slice batches [1]" in sql for sql in plan.sqls)
+
+
+def test_transfer_dry_run_reports_split_concurrency_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {"source": make_gp_config("source"), "target": make_gp_config("target")}
+    monkeypatch.setattr(
+        transfer_api_module, "get_connection_config", lambda db_key: configs[db_key]
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id from source_table where {event_date}",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        transfer_keys="event_date",
+        transfer_key_values=[1, 2, 3, 4],
+        read_concurrency=6,
+        write_concurrency=2,
+        dry_run=True,
+    )
+
+    assert plan.options["concurrency"] is None
+    assert plan.options["read_concurrency"] == 6
+    assert plan.options["write_concurrency"] == 2
+    assert plan.options["effective_read_concurrency"] == 4
+    assert plan.options["effective_write_concurrency"] == 2
+    assert plan.options["queue_capacity"] == 2
+    assert plan.options["reader_slice_assignments"] == {
+        0: [0],
+        1: [1],
+        2: [2],
+        3: [3],
+    }
+    assert plan.options["target_stage_count"] == 2
+    assert plan.metadata.requested_read_concurrency == 6
+    assert plan.metadata.effective_write_concurrency == 2
+
+
+def test_transfer_rejects_legacy_and_split_concurrency_conflict() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "concurrency cannot be combined with read_concurrency or write_concurrency; "
+            "use either the legacy combined setting or the split settings\\."
+        ),
+    ):
+        transfer_api_module.transfer_table(
+            from_db="source",
+            to_db="target",
+            from_table="sandbox.source",
+            to_table="sandbox.target",
+            concurrency=3,
+            read_concurrency=6,
+            write_concurrency=2,
+            dry_run=True,
+        )
+    with pytest.raises(ValueError, match="concurrency cannot be combined"):
+        transfer_concurrency_module.resolve_transfer_concurrency(
+            concurrency=3,
+            read_concurrency=6,
+            write_concurrency=2,
+            slice_count=4,
+            direct_keyed=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("legacy", "read", "write", "expected"),
+    [
+        (None, None, None, (1, 1)),
+        (3, None, None, (3, 3)),
+        (None, 6, 2, (6, 2)),
+        (None, 4, None, (4, 1)),
+        (None, None, 3, (1, 3)),
+    ],
+)
+def test_transfer_resolves_concurrency_modes(
+    legacy: int | None,
+    read: int | None,
+    write: int | None,
+    expected: tuple[int, int],
+) -> None:
+    resolved = transfer_concurrency_module.resolve_transfer_concurrency(
+        concurrency=legacy,
+        read_concurrency=read,
+        write_concurrency=write,
+        slice_count=10,
+        direct_keyed=True,
+    )
+    assert (resolved.effective_read, resolved.effective_write) == expected
+
+
+def test_transfer_rejects_split_concurrency_outside_direct_keyed_scope() -> None:
+    with pytest.raises(ValueError, match="supported only for direct keyed transfers"):
+        transfer_concurrency_module.resolve_transfer_concurrency(
+            concurrency=None,
+            read_concurrency=2,
+            write_concurrency=None,
+            slice_count=None,
+            direct_keyed=False,
+        )
+
+
+def test_keyed_pipeline_runs_independent_reader_and_writer_pools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slices = [
+        models_module.TransferSlice(index, (index,), "", f"slice-{index}", f"key={index}")
+        for index in range(2)
+    ]
+    options = models_module.TransferOptions(
+        from_db_key="source",
+        from_db_backend="gp",
+        to_db_key="target",
+        to_db_backend="gp",
+        source_sql="source",
+        target_table="sandbox.target",
+        transfer_slices=slices,
+        transfer_keys=["key"],
+        validate_row_count=False,
+        adaptive_batch_size=False,
+        transfer_concurrency=models_module.TransferConcurrency(None, 2, 2, 2, 2, True),
+    )
+    shared_state = models_module.TransferStageState(
+        target_exists=False,
+        source_columns=["id"],
+        source_column_types={"id": "integer"},
+    )
+    writer_states = [
+        SimpleNamespace(
+            stage_state=models_module.TransferStageState(
+                target_exists=False,
+                stage_table=f"stage_{index}",
+                stage_column_types={"id": "INTEGER"},
+            )
+        )
+        for index in range(2)
+    ]
+    read_barrier = threading.Barrier(2)
+    write_barrier = threading.Barrier(2)
+    staged: list[tuple[str, int]] = []
+
+    class Connection:
+        def close(self) -> None:
+            return None
+
+    def source_batches(*_args: Any, **_kwargs: Any) -> Any:
+        read_barrier.wait(timeout=2)
+        yield models_module.RowBatch(["id"], [(1,), (2,)])
+
+    def insert_batch(
+        _backend: str,
+        _target_ref: dict[str, Any],
+        stage_table: str,
+        _columns: list[str],
+        rows: list[tuple[Any, ...]],
+        **_kwargs: Any,
+    ) -> int:
+        write_barrier.wait(timeout=2)
+        staged.append((stage_table, len(rows)))
+        return len(rows)
+
+    monkeypatch.setattr(keyed_pipeline_module, "get_sql_connection", lambda _key: Connection())
+    monkeypatch.setattr(keyed_pipeline_module, "iter_source_batches", source_batches)
+    monkeypatch.setattr(keyed_pipeline_module, "insert_rows_batch", insert_batch)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "cleanup_sources_and_close",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            normalize_transfer_source_batch=lambda batch, _types: batch,
+            transfer_insert_page_sizing=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "time_print", lambda *_args, **_kwargs: None)
+
+    total = keyed_pipeline_module.run_keyed_transfer_pipeline(
+        options=options,
+        stage_state=shared_state,
+        writer_stage_states=writer_states,
+        read_retry_cnt=1,
+        insert_retry_cnt=1,
+    )
+
+    assert total == 4
+    assert sorted(staged) == [("stage_0", 2), ("stage_1", 2)]
+    assert [item.streamed_rows for item in shared_state.slice_counts] == [2, 2]
+
+    monkeypatch.setattr(attempt_module, "run_keyed_transfer_pipeline", lambda **_kwargs: 9)
+    assert (
+        attempt_module.load_keyed_stage_slices(
+            options=options,
+            stage_state=shared_state,
+            worker_stage_states=writer_states,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+        == 9
+    )
+
+
+def test_keyed_pipeline_failure_paths_cancel_without_final_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transfer_slice = models_module.TransferSlice(0, (0,), "", "slice-0", "key=0")
+    options = models_module.TransferOptions(
+        from_db_key="source",
+        from_db_backend="gp",
+        to_db_key="target",
+        to_db_backend="gp",
+        source_sql="source",
+        target_table="sandbox.target",
+        transfer_slices=[transfer_slice],
+        transfer_keys=["key"],
+        validate_row_count=False,
+        adaptive_batch_size=False,
+    )
+    shared_state = models_module.TransferStageState(
+        target_exists=False,
+        source_columns=["id"],
+        source_column_types={"id": "integer"},
+    )
+    writers = [
+        SimpleNamespace(
+            stage_state=models_module.TransferStageState(
+                target_exists=False,
+                stage_table="stage_0",
+                stage_column_types={"id": "INTEGER"},
+            )
+        )
+    ]
+
+    class Connection:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(keyed_pipeline_module, "get_sql_connection", lambda _key: Connection())
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            normalize_transfer_source_batch=lambda batch, _types: batch,
+            transfer_insert_page_sizing=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "cleanup_sources_and_close",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "time_print", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "iter_source_batches",
+        lambda *_args, **_kwargs: iter(
+            [models_module.RowBatch(["id"], [(1,)]), models_module.RowBatch(["id"], [])]
+        ),
+    )
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "insert_rows_batch",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("write failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        keyed_pipeline_module.run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=shared_state,
+            writer_stage_states=writers,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "iter_source_batches",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("read failed")),
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "insert_rows_batch", lambda *_a, **_k: 1)
+    with pytest.raises(RuntimeError, match="read failed"):
+        keyed_pipeline_module.run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=shared_state,
+            writer_stage_states=writers,
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+
+def test_keyed_pipeline_internal_guards_and_stage_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = models_module.TransferOptions(
+        from_db_key="source",
+        from_db_backend="gp",
+        to_db_key="target",
+        to_db_backend="gp",
+        source_sql="source",
+        target_table="sandbox.target",
+        validate_row_count=True,
+    )
+    state = keyed_pipeline_module.PipelineState()
+    first_error = RuntimeError("first")
+    state.fail(first_error)
+    state.fail(RuntimeError("second"))
+    assert state.first_error is first_error
+
+    controller = keyed_pipeline_module.AdaptiveBatchController(options)
+    assert controller.current_size() == options.batch_size
+    controller.update(1.0, 10, None)
+
+    with pytest.raises(RuntimeError, match="cancelled while enqueueing"):
+        keyed_pipeline_module._put_until_accepted(keyed_pipeline_module.Queue(), object(), state)
+
+    class FullOnceQueue:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def put(self, _item: object, timeout: float) -> None:
+            assert timeout == 0.1
+            self.calls += 1
+            if self.calls == 1:
+                raise keyed_pipeline_module.Full
+
+    active_state = keyed_pipeline_module.PipelineState()
+    queue = FullOnceQueue()
+    keyed_pipeline_module._put_until_accepted(queue, object(), active_state)
+    assert queue.calls == 2
+
+    mismatch_state = keyed_pipeline_module.PipelineState(expected_rows={0: 2}, staged_rows={0: 1})
+    with pytest.raises(ValueError, match="row-count mismatch"):
+        keyed_pipeline_module._publish_row_counts(
+            options, models_module.TransferStageState(target_exists=False), mismatch_state
+        )
+
+    item = models_module.QueuedTransferBatch(
+        0, 1, 1, None, 1, 1, models_module.RowBatch(["id"], [(1,)])
+    )
+    parquet_state = models_module.TransferStageState(
+        target_exists=False,
+        stage_external_location="memory://stage",
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "parquet_row_group_size", lambda _o: 10)
+    monkeypatch.setattr(keyed_pipeline_module, "write_batch_to_parquet_stage", lambda *_a, **_k: 1)
+    assert (
+        keyed_pipeline_module._stage_batch(
+            options,
+            parquet_state,
+            {},
+            item,
+            0,
+            1,
+            (object(), object(), object()),
+            None,
+        )
+        == 1
+    )
+    parquet_state.stage_external_location = None
+    with pytest.raises(RuntimeError, match="external location"):
+        keyed_pipeline_module._stage_batch(
+            options,
+            parquet_state,
+            {},
+            item,
+            0,
+            1,
+            (object(), object(), object()),
+            None,
+        )
+    with pytest.raises(RuntimeError, match="writer stage table"):
+        keyed_pipeline_module._stage_batch(
+            options,
+            models_module.TransferStageState(target_exists=False),
+            {},
+            item,
+            0,
+            1,
+            None,
+            None,
+        )
+
+    sizing = SimpleNamespace(initial_size=10, min_size=1, max_size=20)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(transfer_insert_page_sizing=lambda **_kwargs: sizing),
+    )
+    assert keyed_pipeline_module._build_gp_insert_sizer(options).current_size == 10
+
+    matching_state = keyed_pipeline_module.PipelineState(expected_rows={0: 1}, staged_rows={0: 1})
+    matching_stage = models_module.TransferStageState(target_exists=False)
+    keyed_pipeline_module._publish_row_counts(options, matching_stage, matching_state)
+    assert matching_stage.expected_source_rows == 1
+    keyed_pipeline_module._log_slice_complete_locked(
+        keyed_pipeline_module.PipelineState(), 0, None, 1, 1
+    )
+
+    parquet_options = replace(options, trino_mode="parquet")
+    parquet_queue = keyed_pipeline_module.Queue()
+    parquet_queue.put(keyed_pipeline_module._STOP)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "ensure_parquet_staging_dependencies",
+        lambda: (object(), object(), object()),
+    )
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(transfer_insert_page_sizing=lambda **_kwargs: None),
+    )
+    keyed_pipeline_module._writer_impl(
+        0,
+        1,
+        parquet_options,
+        parquet_state,
+        parquet_queue,
+        keyed_pipeline_module.PipelineState(),
+        controller,
+        1,
+    )
+
+    drain_queue = keyed_pipeline_module.Queue()
+    drain_queue.put(object())
+    drain_queue.put(keyed_pipeline_module._STOP)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "_writer_impl",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("startup")),
+    )
+    with pytest.raises(RuntimeError, match="startup"):
+        keyed_pipeline_module._writer(
+            0,
+            1,
+            options,
+            parquet_state,
+            drain_queue,
+            keyed_pipeline_module.PipelineState(),
+            controller,
+            1,
+        )
+
+
+def test_keyed_pipeline_worker_guards_and_coordinator_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transfer_slice = models_module.TransferSlice(0, (0,), "", "slice-0", "key=0")
+    options = models_module.TransferOptions(
+        from_db_key="source",
+        from_db_backend="gp",
+        to_db_key="target",
+        to_db_backend="gp",
+        source_sql="source",
+        target_table="sandbox.target",
+        transfer_slices=[transfer_slice],
+        transfer_keys=["key"],
+        validate_row_count=False,
+        adaptive_batch_size=False,
+    )
+    stage = models_module.TransferStageState(
+        target_exists=False,
+        stage_table="stage_0",
+        source_columns=["id"],
+        source_column_types={"id": "integer"},
+    )
+    writer = SimpleNamespace(stage_state=stage)
+
+    class Connection:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(keyed_pipeline_module, "get_sql_connection", lambda _key: Connection())
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(
+            normalize_transfer_source_batch=lambda batch, _types: batch,
+            transfer_insert_page_sizing=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "cleanup_sources_and_close",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "time_print", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(RuntimeError, match="stage count"):
+        keyed_pipeline_module.run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=stage,
+            writer_stage_states=[],
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+    queue = keyed_pipeline_module.Queue()
+    queue.put(object())
+    queue.put(keyed_pipeline_module._STOP)
+    state = keyed_pipeline_module.PipelineState()
+    controller = keyed_pipeline_module.AdaptiveBatchController(options)
+    keyed_pipeline_module._writer_impl(0, 1, options, stage, queue, state, controller, 1)
+    assert state.failed_batches == 1
+
+    queue = keyed_pipeline_module.Queue()
+    queue.put(
+        models_module.QueuedTransferBatch(
+            0, 1, 1, None, 1, 1, models_module.RowBatch(["id"], [(1,)])
+        )
+    )
+    queue.put(keyed_pipeline_module._STOP)
+    cancelled = keyed_pipeline_module.PipelineState()
+    cancelled.cancellation.set()
+    keyed_pipeline_module._writer_impl(0, 1, options, stage, queue, cancelled, controller, 1)
+
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "iter_source_batches",
+        lambda *_args, **_kwargs: iter([models_module.RowBatch(["id"], [(1,)])]),
+    )
+    cancelled = keyed_pipeline_module.PipelineState()
+    cancelled.cancellation.set()
+    keyed_pipeline_module._reader(
+        0,
+        1,
+        options,
+        [transfer_slice],
+        keyed_pipeline_module.Queue(),
+        cancelled,
+        controller,
+        stage,
+        1,
+    )
+
+    during_read = keyed_pipeline_module.PipelineState()
+
+    def cancel_then_yield(*_args: Any, **_kwargs: Any) -> Any:
+        during_read.cancellation.set()
+        yield models_module.RowBatch(["id"], [(1,)])
+
+    monkeypatch.setattr(keyed_pipeline_module, "iter_source_batches", cancel_then_yield)
+    keyed_pipeline_module._reader(
+        0,
+        1,
+        options,
+        [transfer_slice],
+        keyed_pipeline_module.Queue(),
+        during_read,
+        controller,
+        stage,
+        1,
+    )
+
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "iter_source_batches",
+        lambda *_args, **_kwargs: iter([models_module.RowBatch(["id"], [(1,)])]),
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "insert_rows_batch", lambda *_a, **_k: 1)
+
+    def stage_without_ack(state: Any, item: models_module.QueuedTransferBatch, rows: int) -> None:
+        state.staged_rows[item.slice_index] = rows
+
+    monkeypatch.setattr(keyed_pipeline_module, "_acknowledge", stage_without_ack)
+    with pytest.raises(RuntimeError, match="acknowledge every queued batch"):
+        keyed_pipeline_module.run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=stage,
+            writer_stage_states=[writer],
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+
+def test_keyed_pipeline_writer_start_failure_drains_and_preserves_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transfer_slice = models_module.TransferSlice(0, (0,), "", "slice-0", "key=0")
+    options = models_module.TransferOptions(
+        from_db_key="source",
+        from_db_backend="gp",
+        to_db_key="target",
+        to_db_backend="gp",
+        source_sql="source",
+        target_table="sandbox.target",
+        transfer_slices=[transfer_slice],
+        transfer_keys=["key"],
+        validate_row_count=False,
+        adaptive_batch_size=False,
+    )
+    stage = models_module.TransferStageState(
+        target_exists=False, stage_table="stage_0", source_columns=["id"]
+    )
+
+    class Connection:
+        def close(self) -> None:
+            return None
+
+    def connection(key: str) -> Connection:
+        if key == "target":
+            message = "writer connection failed"
+            raise RuntimeError(message)
+        return Connection()
+
+    monkeypatch.setattr(keyed_pipeline_module, "get_sql_connection", connection)
+    monkeypatch.setattr(
+        keyed_pipeline_module,
+        "cleanup_sources_and_close",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(keyed_pipeline_module, "time_print", lambda *_args, **_kwargs: None)
+    with pytest.raises(RuntimeError, match="writer connection failed"):
+        keyed_pipeline_module.run_keyed_transfer_pipeline(
+            options=options,
+            stage_state=stage,
+            writer_stage_states=[SimpleNamespace(stage_state=stage)],
+            read_retry_cnt=1,
+            insert_retry_cnt=1,
+        )
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5, "2"])
+@pytest.mark.parametrize("name", ["concurrency", "read_concurrency", "write_concurrency"])
+def test_transfer_rejects_invalid_concurrency_values(name: str, value: Any) -> None:
+    values = {"concurrency": None, "read_concurrency": None, "write_concurrency": None}
+    values[name] = value
+    with pytest.raises(ValueError, match=rf"{name} must be a positive integer"):
+        transfer_concurrency_module.resolve_transfer_concurrency(
+            **values,
+            slice_count=2,
+            direct_keyed=True,
+        )
 
 
 def test_transfer_dry_run_shows_keyed_from_table_slice_plan(

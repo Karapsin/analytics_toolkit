@@ -32,7 +32,7 @@ def normalize_transfer_slices(
     source_table: str | None = None,
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None,
-    concurrency: int,
+    concurrency: int | None,
     allow_unkeyed_concurrency: bool = False,
 ) -> tuple[
     list[str] | None,
@@ -82,7 +82,9 @@ def normalize_transfer_slices(
     return key_names, key_expressions, values_by_key, slices, resolved_concurrency
 
 
-def normalize_transfer_concurrency(concurrency: int) -> int:
+def normalize_transfer_concurrency(concurrency: int | None) -> int:
+    if concurrency is None:
+        return 1
     if isinstance(concurrency, bool) or not isinstance(concurrency, int):
         raise ValueError("concurrency must be a positive integer.")
     if concurrency < 1:

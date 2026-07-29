@@ -37,14 +37,14 @@ def dry_run_worker_stage_count(options: TransferOptions) -> int:
         and options.source_transfer_staging_schema is not None
         and options.trino_mode != "parquet"
     ):
-        return options.concurrency
+        return options.transfer_concurrency.effective_write
     if (
         options.transfer_slices is None
         or options.trino_mode == "parquet"
-        or options.concurrency <= 1
+        or options.transfer_concurrency.effective_write <= 1
     ):
         return 1
-    return min(options.concurrency, len(options.transfer_slices))
+    return min(options.transfer_concurrency.effective_write, len(options.transfer_slices))
 
 
 def dry_run_stage_table_name(
@@ -89,6 +89,16 @@ def source_batches_label(
         for transfer_slice in options.transfer_slices[worker_index::worker_count]
     ]
     return f"worker {worker_index} streamed keyed source slice batches {slice_indexes}"
+
+
+def dry_run_reader_slice_assignments(options: TransferOptions) -> dict[int, list[int]] | None:
+    if options.transfer_slices is None or options.source_transfer_staging_schema is not None:
+        return None
+    worker_count = options.transfer_concurrency.effective_read
+    return {
+        worker_index: [item.index for item in options.transfer_slices[worker_index::worker_count]]
+        for worker_index in range(worker_count)
+    }
 
 
 def dry_run_stage_external_location(options: TransferOptions) -> str | None:

@@ -40,6 +40,10 @@ class SqlOperationMetadata:
     worker_stage_count: int | None = None
     stage_tables: list[str] | None = None
     aggregate_stage_table: str | None = None
+    requested_read_concurrency: int | None = None
+    requested_write_concurrency: int | None = None
+    effective_read_concurrency: int | None = None
+    effective_write_concurrency: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +69,10 @@ class SqlOperationMetadata:
             "worker_stage_count": self.worker_stage_count,
             "stage_tables": self.stage_tables,
             "aggregate_stage_table": self.aggregate_stage_table,
+            "requested_read_concurrency": self.requested_read_concurrency,
+            "requested_write_concurrency": self.requested_write_concurrency,
+            "effective_read_concurrency": self.effective_read_concurrency,
+            "effective_write_concurrency": self.effective_write_concurrency,
         }
 
 

@@ -336,6 +336,34 @@ class TransferSlice:
 
 
 @dataclass(frozen=True)
+class TransferConcurrency:
+    legacy_value: int | None
+    requested_read: int
+    requested_write: int
+    effective_read: int
+    effective_write: int
+    split_requested: bool
+
+
+@dataclass(frozen=True)
+class QueuedTransferBatch:
+    slice_index: int
+    slice_position: int
+    slice_count: int
+    key_label: str | None
+    batch_index: int
+    start_ordinal: int
+    batch: RowBatch
+
+
+@dataclass(frozen=True)
+class SliceReadComplete:
+    slice_index: int
+    source_rows: int
+    batch_count: int
+
+
+@dataclass(frozen=True)
 class TransferOptions:
     from_db_key: str
     from_db_backend: str
@@ -402,6 +430,16 @@ class TransferOptions:
     transfer_key_values: dict[str, list[Any]] | None = None
     transfer_slices: list[TransferSlice] | None = None
     concurrency: int = 1
+    transfer_concurrency: TransferConcurrency = field(
+        default_factory=lambda: TransferConcurrency(
+            legacy_value=None,
+            requested_read=1,
+            requested_write=1,
+            effective_read=1,
+            effective_write=1,
+            split_requested=False,
+        )
+    )
     source_table: str | None = None
     row_count_result: TransferRowCountResult | None = None
     regular_ddl_properties: Mapping[str, Any] | None = None
@@ -409,6 +447,29 @@ class TransferOptions:
     parquet_ddl_properties: Mapping[str, Any] | None = None
     regular_ch_policy: Any = None
     staging_ch_policy: Any = None
+
+    def __post_init__(self) -> None:
+        default = TransferConcurrency(
+            legacy_value=None,
+            requested_read=1,
+            requested_write=1,
+            effective_read=1,
+            effective_write=1,
+            split_requested=False,
+        )
+        if self.transfer_concurrency == default and self.concurrency != 1:
+            object.__setattr__(
+                self,
+                "transfer_concurrency",
+                TransferConcurrency(
+                    legacy_value=self.concurrency,
+                    requested_read=self.concurrency,
+                    requested_write=self.concurrency,
+                    effective_read=self.concurrency,
+                    effective_write=self.concurrency,
+                    split_requested=False,
+                ),
+            )
 
 
 @dataclass

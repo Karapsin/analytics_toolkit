@@ -5410,14 +5410,14 @@
         },
         "concurrency": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "1",
+          "signature_default": "None",
           "states": [
             {
               "state": "default",
-              "value": "1",
+              "value": "None",
               "status": "covered",
-              "scenarios": [
-                "transfer.trino.ch.append"
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_resolves_concurrency_modes"
               ]
             },
             {
@@ -5425,6 +5425,83 @@
               "status": "covered",
               "scenarios": [
                 "transfer.trino.ch.append"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_invalid_concurrency_values"
+              ]
+            }
+          ]
+        },
+        "read_concurrency": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_resolves_concurrency_modes"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_dry_run_reports_split_concurrency_pipeline"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_invalid_concurrency_values"
+              ]
+            },
+            {
+              "state": "conflict",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_legacy_and_split_concurrency_conflict"
+              ]
+            }
+          ]
+        },
+        "write_concurrency": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_resolves_concurrency_modes"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_dry_run_reports_split_concurrency_pipeline"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_invalid_concurrency_values"
+              ]
+            },
+            {
+              "state": "conflict",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_legacy_and_split_concurrency_conflict"
               ]
             }
           ]
