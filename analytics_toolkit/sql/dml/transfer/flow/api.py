@@ -31,8 +31,8 @@ from ....execution.plan_steps import (
     add_load_stage_step,
 )
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...load.load_sql_table import AmbiguousTableLoadError
 from ...ddl_options import resolve_operation_ddl
+from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns, normalize_upsert_partition_column
 from ..io.source import TransferSourceStreamReadError
@@ -45,10 +45,10 @@ from .concurrency import resolve_transfer_concurrency
 from .dry_run import (
     add_insert_target_dry_run_steps,
     add_upsert_target_dry_run_steps,
-    dry_run_stage_external_location,
     dry_run_final_upsert_stage_table_name,
-    dry_run_reader_slice_assignments,
+    dry_run_stage_external_location,
     dry_run_stage_table_names,
+    dry_run_transfer_options,
     source_batches_label,
 )
 from .keys import normalize_transfer_slices
@@ -56,8 +56,8 @@ from .parquet_stage import build_create_parquet_stage_table_sql
 from .row_counts import best_effort_transfer_target_count
 from .runtime_identity import prepare_transfer_runtime
 from .source import normalize_transfer_source
-from .stream_retries import TransferStreamRetryState
 from .stage_identity import resolve_destination_identity
+from .stream_retries import TransferStreamRetryState
 
 
 @timed_public_sql_function
@@ -116,6 +116,7 @@ def transfer_table(
     concurrency: int | None = None,
     read_concurrency: int | None = None,
     write_concurrency: int | None = None,
+    ignore_source_staging: bool = False,  # noqa: FBT002
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
@@ -172,6 +173,7 @@ def transfer_table(
         concurrency=concurrency,
         read_concurrency=read_concurrency,
         write_concurrency=write_concurrency,
+        ignore_source_staging=ignore_source_staging,
         trino_mode=trino_mode,
         validate_row_count=validate_row_count,
         ch_count_limit_read=ch_count_limit_read,
@@ -195,6 +197,15 @@ def transfer_table(
         requested_write_concurrency=options.transfer_concurrency.requested_write,
         effective_read_concurrency=options.transfer_concurrency.effective_read,
         effective_write_concurrency=options.transfer_concurrency.effective_write,
+        ignore_source_staging=options.ignore_source_staging,
+        source_staging_mode=(
+            "source_staged" if options.source_transfer_staging_schema else "direct"
+        ),
+        source_stage_count=(
+            options.transfer_concurrency.effective_read
+            if options.transfer_slices and options.source_transfer_staging_schema
+            else int(options.source_transfer_staging_schema is not None)
+        ),
     )
     stream_retry_state = TransferStreamRetryState(options)
 
@@ -361,10 +372,12 @@ def build_transfer_options(
     concurrency: int | None = None,
     read_concurrency: int | None = None,
     write_concurrency: int | None = None,
+    ignore_source_staging: bool = False,  # noqa: FBT002
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
 ) -> TransferOptions:
+    transfer_options.validate_ignore_source_staging(ignore_source_staging)
     transfer_options.validate_transfer_runtime_options(
         batch_size=batch_size,
         min_batch_size=min_batch_size,
@@ -394,6 +407,7 @@ def build_transfer_options(
     )
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
+    source_staging_schema = None if ignore_source_staging else from_config.transfer_staging_schema
     target_adapter = get_backend_adapter(to_config.backend)
     target_defaults = target_adapter.target_connection_defaults(to_config)
     resolved_trino_mode = target_adapter.resolve_transfer_staging_mode(
@@ -463,14 +477,14 @@ def build_transfer_options(
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
         concurrency=concurrency,
-        allow_unkeyed_concurrency=from_config.transfer_staging_schema is not None,
+        allow_unkeyed_concurrency=source_staging_schema is not None,
     )
     resolved_concurrency = resolve_transfer_concurrency(
         concurrency=concurrency,
         read_concurrency=read_concurrency,
         write_concurrency=write_concurrency,
         slice_count=len(transfer_slices) if transfer_slices is not None else None,
-        direct_keyed=(transfer_slices is not None and from_config.transfer_staging_schema is None),
+        direct_keyed=transfer_slices is not None,
     )
     destination_identity = resolve_destination_identity(
         to_table.strip() if isinstance(to_table, str) and to_table.strip() else "_invalid_",
@@ -573,8 +587,9 @@ def build_transfer_options(
         ch_only_shard=transfer_options.normalize_only_shard(ch_only_shard),
         ch_retry_per_host_drops=retry_per_host_drops,
         transfer_staging_schema=to_config.transfer_staging_schema,
-        source_transfer_staging_schema=from_config.transfer_staging_schema,
+        source_transfer_staging_schema=source_staging_schema,
         source_transfer_staging_username=_sanitize_transfer_staging_username(from_config.user),
+        ignore_source_staging=ignore_source_staging,
         transfer_parquet_staging_schema=getattr(
             to_config,
             "transfer_parquet_staging_schema",
@@ -623,88 +638,12 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         source_backend=options.from_db_backend,
         target_backend=options.to_db_backend,
         target_table=options.target_table,
-        options={
-            "write_mode": options.write_mode,
-            "transfer_id": options.transfer_id,
-            "canonical_destination_identity": options.canonical_destination_identity,
-            "destination_hash": options.destination_hash,
-            "batch_size": options.batch_size,
-            "adaptive_batch_size": options.adaptive_batch_size,
-            "min_batch_size": options.min_batch_size,
-            "max_batch_size": options.max_batch_size,
-            "adaptive_batch_size_step": options.adaptive_batch_size_step,
-            "target_batch_seconds": options.target_batch_seconds,
-            "min_batch_seconds": options.min_batch_seconds,
-            "max_batch_seconds": options.max_batch_seconds,
-            "target_batch_memory_mb": options.target_batch_memory_mb,
-            "min_batch_memory_mb": options.min_batch_memory_mb,
-            "max_batch_memory_mb": options.max_batch_memory_mb,
-            "target_rows_per_second_window": options.target_rows_per_second_window,
-            "target_rows_per_second_deadband": options.target_rows_per_second_deadband,
-            "key_columns": options.key_columns,
-            "upsert_partition_column": options.upsert_partition_column,
-            "gp_distributed_by_key": options.gp_distributed_by_key,
-            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
-            "gp_insert_chunk_size": options.gp_insert_chunk_size,
-            "adaptive_gp_insert_chunk_size": (
-                insert_page_sizing is not None and options.adaptive_batch_size
-            ),
-            "initial_gp_insert_chunk_size": (
-                insert_page_sizing.initial_size if insert_page_sizing is not None else None
-            ),
-            "trino_insert_chunk_size": options.trino_insert_chunk_size,
-            "transfer_staging_location": options.transfer_staging_location,
-            "trino_mode": options.trino_mode,
-            "from_table": options.source_table,
-            "source_table": options.source_table,
-            "transfer_keys": options.transfer_keys,
-            "transfer_key_expressions": options.transfer_key_expressions,
-            "transfer_key_values": options.transfer_key_values,
-            "concurrency": options.transfer_concurrency.legacy_value,
-            "read_concurrency": (
-                options.transfer_concurrency.requested_read
-                if options.transfer_concurrency.split_requested
-                else None
-            ),
-            "write_concurrency": (
-                options.transfer_concurrency.requested_write
-                if options.transfer_concurrency.split_requested
-                else None
-            ),
-            "effective_read_concurrency": options.transfer_concurrency.effective_read,
-            "effective_write_concurrency": options.transfer_concurrency.effective_write,
-            "queue_capacity": (
-                options.transfer_concurrency.effective_write
-                if options.transfer_slices is not None
-                and options.source_transfer_staging_schema is None
-                else None
-            ),
-            "reader_slice_assignments": dry_run_reader_slice_assignments(options),
-            "target_stage_count": len(stage_tables),
-            "transfer_slice_count": (
-                len(options.transfer_slices) if options.transfer_slices is not None else None
-            ),
-            "worker_stage_count": len(stage_tables),
-            "stage_tables": stage_tables,
-            "aggregate_stage_table": stage_table,
-            "table_schema": options.table_schema,
-            "partition_by": options.partition_by,
-            "order_by": options.order_by,
-            "ch_engine": options.ch_engine,
-            "ch_cluster": options.ch_cluster,
-            "ch_sharding_key": options.ch_sharding_key,
-            "ch_only_shard": options.ch_only_shard,
-            "estimate_total_rows": options.estimate_total_rows,
-            "validate_row_count": options.validate_row_count,
-            "ch_count_limit_read": options.ch_count_limit_read,
-            "runtime_collision_allocation": (
-                "preferred stage names are shown; runtime collisions allocate "
-                "a different retained name"
-            ),
-            "internal_columns": (
-                "<resolved after source schema inspection; generated names avoid collisions>"
-            ),
-        },
+        options=dry_run_transfer_options(
+            options,
+            stage_tables,
+            insert_page_sizing,
+            gp_partitions=_gp_partition_plan_option(options.gp_partitions),
+        ),
         metadata=SqlOperationMetadata(
             transfer_id=options.transfer_id,
             stage_table=stage_table,
@@ -716,6 +655,15 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             requested_write_concurrency=options.transfer_concurrency.requested_write,
             effective_read_concurrency=options.transfer_concurrency.effective_read,
             effective_write_concurrency=options.transfer_concurrency.effective_write,
+            ignore_source_staging=options.ignore_source_staging,
+            source_staging_mode=(
+                "source_staged" if options.source_transfer_staging_schema else "direct"
+            ),
+            source_stage_count=(
+                options.transfer_concurrency.effective_read
+                if options.transfer_slices and options.source_transfer_staging_schema
+                else int(options.source_transfer_staging_schema is not None)
+            ),
         ),
     )
     if options.transfer_slices is None:
@@ -732,7 +680,11 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
                 transfer_slice.source_sql,
                 alias=options.from_db_key,
                 backend=options.from_db_backend,
-                phase="read_source",
+                phase=(
+                    "materialize_source_stage"
+                    if options.source_transfer_staging_schema
+                    else "read_source"
+                ),
                 query_label=options.query_label,
             )
     if options.trino_mode == "parquet":

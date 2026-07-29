@@ -421,6 +421,7 @@ class TransferOptions:
     transfer_staging_schema: str | None = None
     source_transfer_staging_schema: str | None = None
     source_transfer_staging_username: str | None = None
+    ignore_source_staging: bool = False
     transfer_parquet_staging_schema: str | None = None
     transfer_staging_location: str | None = None
     transfer_staging_username: str | None = None

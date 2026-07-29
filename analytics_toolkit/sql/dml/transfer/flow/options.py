@@ -90,6 +90,11 @@ def validate_estimate_total_rows(value: bool) -> None:
         raise ValueError("estimate_total_rows must be a boolean.")
 
 
+def validate_ignore_source_staging(value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValueError("ignore_source_staging must be a boolean.")
+
+
 def validate_row_count_options(validate_row_count: bool, ch_count_limit_read: bool) -> None:
     if not isinstance(validate_row_count, bool):
         raise ValueError("validate_row_count must be a boolean.")

@@ -45,6 +45,7 @@ from .source_snapshot import (
 )
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
+from .staged_keyed_pipeline import run_keyed_staged_source_transfer_attempt
 from .superseded import cleanup_superseded_transfer_stages
 
 
@@ -55,6 +56,11 @@ def run_staged_source_transfer_attempt(
 ) -> int:
     if options.transfer_id is None or options.canonical_destination_identity is None:
         raise RuntimeError("Transfer runtime identity must be initialized.")
+    if options.transfer_slices is not None:
+        return run_keyed_staged_source_transfer_attempt(
+            options,
+            insert_retry_cnt=insert_retry_cnt,
+        )
     source_ref = {"connection": get_sql_connection(options.from_db_key)}
     target_ref = {"connection": get_sql_connection(options.to_db_key)}
     refs = TransferConnectionRefs(source=source_ref, target=target_ref)

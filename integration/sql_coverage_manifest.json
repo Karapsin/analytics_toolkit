@@ -5506,6 +5506,34 @@
             }
           ]
         },
+        "ignore_source_staging": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "False",
+          "states": [
+            {
+              "state": "default",
+              "value": "False",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_split_concurrency_supports_keyed_source_staging"
+              ]
+            },
+            {
+              "state": "true",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_ignore_source_staging_uses_direct_keyed_pipeline"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_non_boolean_ignore_source_staging"
+              ]
+            }
+          ]
+        },
         "trino_mode": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "None",

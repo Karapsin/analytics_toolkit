@@ -3501,14 +3501,93 @@ def test_transfer_resolves_concurrency_modes(
     assert (resolved.effective_read, resolved.effective_write) == expected
 
 
-def test_transfer_rejects_split_concurrency_outside_direct_keyed_scope() -> None:
-    with pytest.raises(ValueError, match="supported only for direct keyed transfers"):
+def test_transfer_rejects_split_concurrency_outside_keyed_scope() -> None:
+    with pytest.raises(ValueError, match="supported only for keyed transfers"):
         transfer_concurrency_module.resolve_transfer_concurrency(
             concurrency=None,
             read_concurrency=2,
             write_concurrency=None,
             slice_count=None,
             direct_keyed=False,
+        )
+
+
+def test_transfer_split_concurrency_supports_keyed_source_staging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source", transfer_staging_schema="source_stage"),
+        "target": make_gp_config("target", transfer_staging_schema="target_stage"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id from source_table where {event_date}",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        transfer_keys="event_date",
+        transfer_key_values=[1, 2, 3],
+        read_concurrency=6,
+        write_concurrency=2,
+        dry_run=True,
+    )
+
+    assert plan.options["source_staging_mode"] == "source_staged"
+    assert plan.options["source_stage_count"] == 3
+    assert plan.options["source_stage_phase_barrier"] is True
+    assert plan.options["writer_scheduling"] == "whole_key"
+    assert plan.options["queue_capacity"] is None
+    assert plan.options["reader_slice_assignments"] == {0: [0], 1: [1], 2: [2]}
+    assert [step.phase for step in plan.statements].count("materialize_source_stage") == 3
+    assert plan.metadata.ignore_source_staging is False
+    assert plan.metadata.source_staging_mode == "source_staged"
+    assert plan.metadata.source_stage_count == 3
+
+
+def test_transfer_ignore_source_staging_uses_direct_keyed_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source", transfer_staging_schema="source_stage"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    options = transfer_api_module.build_transfer_options(
+        from_db="source",
+        to_db="target",
+        from_sql="select id from source_table where {event_date}",
+        to_table="sandbox.target",
+        transfer_keys="event_date",
+        transfer_key_values=[1, 2],
+        read_concurrency=2,
+        ignore_source_staging=True,
+    )
+
+    assert options.ignore_source_staging is True
+    assert options.source_transfer_staging_schema is None
+    assert options.transfer_concurrency.effective_read == 2
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "true"])
+def test_transfer_rejects_non_boolean_ignore_source_staging(value: Any) -> None:
+    with pytest.raises(ValueError, match="ignore_source_staging must be a boolean"):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            from_table="sandbox.source",
+            to_table="sandbox.target",
+            ignore_source_staging=value,
         )
 
 

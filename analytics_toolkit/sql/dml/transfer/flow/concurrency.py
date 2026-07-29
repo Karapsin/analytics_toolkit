@@ -10,9 +10,8 @@ CONCURRENCY_CONFLICT_ERROR = (
     "use either the legacy combined setting or the split settings."
 )
 SPLIT_CONCURRENCY_SCOPE_ERROR = (
-    "read_concurrency and write_concurrency are supported only for direct keyed "
-    "transfers using transfer_keys and transfer_key_values without "
-    "source_transfer_staging_schema."
+    "read_concurrency and write_concurrency are supported only for keyed transfers "
+    "using transfer_keys and transfer_key_values."
 )
 
 

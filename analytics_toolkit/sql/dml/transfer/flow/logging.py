@@ -66,6 +66,50 @@ def pipeline_start_message(
     )
 
 
+def staged_pipeline_start_message(
+    slice_count: int,
+    read_workers: int,
+    write_workers: int,
+) -> str:
+    return (
+        f"Starting keyed source-staging pipeline: {slice_count} slice(s), "
+        f"{read_workers} source-stage reader(s), {write_workers} target writer(s); "
+        "target writers start after all source stages complete"
+    )
+
+
+def staged_reader_slice_message(
+    worker_index: int,
+    worker_count: int,
+    slice_position: int,
+    slice_count: int,
+    key_label: str | None,
+    action: str,
+    stage_table: str,
+) -> str:
+    suffix = f" for {key_label}" if key_label else ""
+    return (
+        f"Source-stage reader {worker_index + 1}/{worker_count} {action} "
+        f"slice {slice_position}/{slice_count}{suffix} {stage_table}"
+    )
+
+
+def staged_writer_key_message(
+    worker_index: int,
+    worker_count: int,
+    slice_index: int,
+    slice_count: int,
+    key_label: str | None,
+    action: str,
+    stage_table: str,
+) -> str:
+    suffix = f" for {key_label}" if key_label else ""
+    return (
+        f"Target writer {worker_index + 1}/{worker_count} {action} whole slice "
+        f"{slice_index + 1}/{slice_count}{suffix} {stage_table}"
+    )
+
+
 def reader_slice_message(
     worker_index: int,
     worker_count: int,

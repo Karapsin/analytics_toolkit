@@ -44,6 +44,9 @@ class SqlOperationMetadata:
     requested_write_concurrency: int | None = None
     effective_read_concurrency: int | None = None
     effective_write_concurrency: int | None = None
+    ignore_source_staging: bool | None = None
+    source_staging_mode: str | None = None
+    source_stage_count: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -73,6 +76,9 @@ class SqlOperationMetadata:
             "requested_write_concurrency": self.requested_write_concurrency,
             "effective_read_concurrency": self.effective_read_concurrency,
             "effective_write_concurrency": self.effective_write_concurrency,
+            "ignore_source_staging": self.ignore_source_staging,
+            "source_staging_mode": self.source_staging_mode,
+            "source_stage_count": self.source_stage_count,
         }
 
 

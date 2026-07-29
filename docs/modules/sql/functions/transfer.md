@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'append', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'append', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, ignore_source_staging: 'bool' = False, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -50,8 +50,9 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `transfer_keys` - optional placeholder name, placeholder-name sequence, or `{placeholder_name: sql_expression}` mapping used to split the source query into explicit keyed slices
 - `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{placeholder_name: values}`, while multiple keys require `{placeholder_name: values}` for every key
 - `concurrency` - legacy combined reader/writer count; omission resolves to one reader and one writer, and it cannot be combined with either split setting
-- `read_concurrency` - source-reader count for direct keyed transfers; defaults to `1` when omitted and is capped by the slice count
-- `write_concurrency` - target-stage writer count for direct keyed transfers; defaults to `1` when omitted, is capped by the slice count, and sets the bounded queue capacity
+- `read_concurrency` - source-reader count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
+- `write_concurrency` - target-stage writer count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
+- `ignore_source_staging` - when `True`, ignore the source connection's `transfer_staging_schema` for this call and use direct streaming; target-side staging is unchanged
 - `partition_by` - partitioning columns or expression for created tables, interpreted according to the target backend
 - `order_by` - ordering or sorting columns or expression for created tables, interpreted according to the target backend
 
@@ -139,6 +140,16 @@ rows = sql.transfer(
 )
 ```
 
+When the source connection defines `transfer_staging_schema`, keyed transfers
+use a strict two-phase flow. Reader workers first materialize their assigned
+keys into one private source-side stage each. After every reader finishes,
+target writers dynamically claim whole keys, stream them through RAM batches,
+and write private target-side stages. A key is never split between writers.
+Independent readers may observe slightly different source moments.
+
+Set `ignore_source_staging=True` to bypass the configured source schema for one
+call and use the direct bounded-queue pipeline instead.
+
 For simple table sources, use `from_table`; keyed table transfers do not need
 placeholders because the helper generates the `WHERE` clause:
 
@@ -201,16 +212,14 @@ rows = sql.transfer(
   may move between slices and writers while immutable slice IDs and row
   ordinals preserve validation. Stage rows remain until the single final target
   operation succeeds or attempt cleanup runs.
-- Split concurrency is intentionally limited to direct keyed transfers without
-  source snapshot staging. Legacy `concurrency=N` retains the existing combined
-  behavior (`N` readers and `N` writers for direct keyed transfers, and the
-  existing worker behavior for source-snapshot or unkeyed transfers).
+- Split concurrency is limited to keyed transfers. Legacy `concurrency=N`
+  retains combined `N/N` behavior; unkeyed source-staged transfers retain their
+  existing single-snapshot implementation.
 - A configured source `transfer_staging_schema` creates one immutable source
-  snapshot before extraction. Keyed slices share that table and use partitioned
-  1-based ordinals; unkeyed transfers use slice zero. Workers claim bounded,
-  non-overlapping ordinal ranges and may steal work across slices. Without
-  source staging, transfer preserves direct cursor streaming and rejects
-  unkeyed concurrency above one because `LIMIT`/`OFFSET` is not snapshot-safe.
+  stage per effective reader for keyed transfers. Each key belongs to exactly
+  one source reader and one target writer, and target writing begins only after
+  all source stages finish. Unkeyed transfers continue to use slice zero in one
+  source snapshot with bounded ordinal ranges.
 - Transfer SQL stage names begin with a stable 16-hex destination hash and also
   carry the full transfer ID and worker/role identity. The hash is a naming
   prefix, not deletion authority. Exact canonical destination values stored in
