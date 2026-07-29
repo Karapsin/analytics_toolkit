@@ -406,6 +406,38 @@ def test_run_with_retry_does_not_retry_clickhouse_conversion_errors(
     assert "Retrying in" not in output
 
 
+def test_run_with_retry_does_not_retry_clickhouse_unknown_identifier(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    error = DatabaseError(
+        "Received ClickHouse exception, code: 47, server response: Code: 47. "
+        "DB::Exception: Missing columns: 'talbe_name'. (UNKNOWN_IDENTIFIER)"
+    )
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise error
+
+    with pytest.raises(DatabaseError) as caught:
+        retry_module.run_with_retry(
+            operation_name="reading query on ch (ch)",
+            retry_cnt=5,
+            timeout_increment=600,
+            operation=operation,
+        )
+
+    assert caught.value is error
+    assert attempts == [1]
+    assert sleeps == []
+    output = capsys.readouterr().out
+    assert "Failed with a non-retryable error" in output
+    assert "Retrying in" not in output
+
+
 def test_run_with_retry_keeps_clickhouse_transport_eof_retryable() -> None:
     attempts: list[int] = []
     error = DatabaseError(

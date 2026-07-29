@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -706,6 +707,32 @@ def test_insert_rows_batch_gp_uses_row_tuples_and_normalizes_nulls(monkeypatch) 
     assert captured["rows"] == [(1, None), (2, None)]
     assert captured["page_size"] == 2
     assert connection.commit_calls == 1
+
+
+def test_insert_rows_batch_gp_normalizes_uuid_values(monkeypatch) -> None:
+    connection = FakeDbapiConnection()
+    captured_rows: list[tuple[object, ...]] = []
+    uuid_value = UUID("f5d10b74-0409-4f31-bc7c-df82b8688f19")
+
+    def fake_execute_values(cursor, sql, rows, page_size):
+        del cursor, sql, page_size
+        captured_rows.extend(rows)
+
+    monkeypatch.setattr(gp_insert_module, "execute_values", fake_execute_values)
+
+    inserted_rows = load_sql_table_module.insert_rows_batch(
+        connection_type="gp",
+        connection_ref={"connection": connection},
+        table_name="schema.stage_table",
+        columns=["uuid_value"],
+        rows=[(uuid_value,)],
+        retry_fn=lambda **kwargs: kwargs["operation"](1),
+        retry_cnt=1,
+        timeout_increment=0,
+    )
+
+    assert inserted_rows == 1
+    assert captured_rows == [(str(uuid_value),)]
 
 
 def test_insert_rows_batch_gp_honors_insert_chunk_size(monkeypatch) -> None:

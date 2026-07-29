@@ -5,6 +5,7 @@ import importlib
 import sys
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -123,10 +124,20 @@ def test_gp_execute_values_import_paths(monkeypatch: pytest.MonkeyPatch) -> None
 def test_gp_insert_normalization_and_dataframe_delegation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    batch = pd.DataFrame({"value": [1.0, float("nan")], "text": ["x", None]})
+    uuid_value = UUID(int=1)
+    batch = pd.DataFrame(
+        {
+            "value": [1.0, float("nan")],
+            "text": ["x", None],
+            "uuid_value": [uuid_value, None],
+        }
+    )
     normalized = gp_insert.normalize_insert_batch(object(), batch)
-    assert normalized.iloc[1].tolist() == [None, None]
-    assert gp_insert.normalize_insert_rows(object(), [[pd.NA, 1]]) == [(None, 1)]
+    assert normalized.iloc[0].tolist() == [1.0, "x", str(uuid_value)]
+    assert normalized.iloc[1].tolist() == [None, None, None]
+    assert gp_insert.normalize_insert_rows(object(), [[pd.NA, uuid_value]]) == [
+        (None, str(uuid_value))
+    ]
     assert gp_insert._is_null_like([1, 2]) is False
 
     captured: dict[str, Any] = {}

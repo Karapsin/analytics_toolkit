@@ -6,9 +6,11 @@ from typing import Any, Callable, Iterator, Sequence
 
 import pandas as pd
 
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
+
 from ...backends import get_backend_adapter
 from ...connection.config import resolve_connection_backend
-from analytics_toolkit.general import time_print
 
 
 class AmbiguousTableLoadError(Exception):
@@ -89,6 +91,7 @@ def insert_table_batch(
                 replace_connection_fn=replace_connection_fn,
                 attempt=attempt,
                 retry_cnt=retry_cnt,
+                error=exc,
             )
             raise
 
@@ -174,6 +177,7 @@ def insert_rows_batch(
                 replace_connection_fn=replace_connection_fn,
                 attempt=attempt,
                 retry_cnt=retry_cnt,
+                error=exc,
             )
             raise
 
@@ -198,9 +202,11 @@ def _replace_connection_before_next_insert_retry(
     replace_connection_fn: Callable[[str, dict[str, Any]], None] | None,
     attempt: int,
     retry_cnt: int,
+    error: Exception | None = None,
 ) -> None:
     if (
-        not adapter.should_refresh_connection_before_insert_retry()
+        (error is not None and is_non_retryable_sql_error(error))
+        or not adapter.should_refresh_connection_before_insert_retry()
         or attempt >= retry_cnt
         or connection_key is None
         or replace_connection_fn is None

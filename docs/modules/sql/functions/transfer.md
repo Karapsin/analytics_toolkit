@@ -237,9 +237,12 @@ rows = sql.transfer(
 - Deterministic input and configuration errors stop immediately without an
   operation or full-transfer retry. This includes missing Trino `catalog` or
   `schema` settings required to resolve qualified target table names and
-  ClickHouse server-side parsing or type-conversion failures. ClickHouse
-  transport and incomplete-stream failures remain retryable when they do not
-  include a deterministic conversion diagnostic.
+  ClickHouse server-side parsing, unknown-identifier, or type-conversion
+  failures. Client-side value-adaptation failures also stop immediately.
+  ClickHouse transport and incomplete-stream failures remain retryable when
+  they do not include a deterministic conversion diagnostic.
+- Greenplum stages normalize native Python UUID values to driver-safe canonical
+  strings while preserving the destination column's `UUID` type.
 - Row counts, chunk sizes, retry counts, adaptation windows, and concurrency
   must be built-in positive integers. Retry delays and adaptation rates must be
   finite real numbers with the documented positive or non-negative bounds.

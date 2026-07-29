@@ -216,6 +216,25 @@ def test_replace_connection_before_retry_allows_missing_rollback() -> None:
     assert replacements == ["alias"]
 
 
+def test_replace_connection_before_retry_skips_non_retryable_error() -> None:
+    replacements: list[str] = []
+    rollbacks: list[Any] = []
+
+    load_table._replace_connection_before_next_insert_retry(
+        adapter=LoadAdapter(refresh=True),
+        connection_key="alias",
+        connection_ref={"connection": object()},
+        rollback_fn=rollbacks.append,
+        replace_connection_fn=lambda key, _ref: replacements.append(key),
+        attempt=1,
+        retry_cnt=5,
+        error=RuntimeError("can't adapt type 'UUID'"),
+    )
+
+    assert replacements == []
+    assert rollbacks == []
+
+
 def test_load_table_normalization_and_adapter_insert_compatibility_wrappers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

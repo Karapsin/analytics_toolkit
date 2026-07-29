@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Sequence
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 
@@ -30,7 +31,10 @@ def normalize_insert_batch(adapter: Any, batch: pd.DataFrame) -> pd.DataFrame:
     normalized = batch.copy()
     for column_name in normalized.columns:
         series = normalized[column_name]
-        normalized[column_name] = series.astype(object).where(series.notna(), None)
+        normalized_series = series.astype(object).where(series.notna(), None)
+        if any(isinstance(value, UUID) for value in normalized_series):
+            normalized_series = normalized_series.map(_normalize_uuid_scalar)
+        normalized[column_name] = normalized_series
     return normalized
 
 
@@ -129,7 +133,11 @@ def get_insert_chunk_size(explicit_value: int | None) -> int:
 def _normalize_nullable_scalar(value: Any) -> Any:
     if _is_null_like(value):
         return None
-    return value
+    return _normalize_uuid_scalar(value)
+
+
+def _normalize_uuid_scalar(value: Any) -> Any:
+    return str(value) if isinstance(value, UUID) else value
 
 
 def _is_null_like(value: Any) -> bool:

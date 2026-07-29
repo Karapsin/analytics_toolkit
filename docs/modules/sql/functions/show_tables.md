@@ -41,6 +41,17 @@ tables = sql.show_tables(
 )
 ```
 
+`conditions` uses the backend's physical metadata columns. For example,
+ClickHouse exposes the table name as `name` in `system.tables`:
+
+```python
+tables = sql.show_tables(
+    "ch",
+    schema="analytics",
+    conditions="name LIKE '%temp_users%'",
+)
+```
+
 Output example:
 
 ```python
@@ -49,5 +60,8 @@ tables[["schema", "table_name"]]
 # 0   sandbox    orders
 # 1   sandbox    events
 ```
+
+Invalid identifiers and other deterministic metadata-query errors fail
+immediately without retrying the same query.
 
 [SQL functions index](index.md)

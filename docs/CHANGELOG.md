@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Stopped retries for deterministic ClickHouse conversion failures.
 - Split keyed SQL transfer reader and writer concurrency with a bounded observable pipeline.
 - Added two-phase keyed source staging and per-call source-stage bypass.
+- Fixed UUID inserts and deterministic SQL retries.
 
 ## 1.3.11.2 - 2026-07-28
 
