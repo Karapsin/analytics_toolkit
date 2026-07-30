@@ -5711,6 +5711,20 @@
     }
   },
   "scenarios": {
+    "format.rewrite_equivalence.gp.report_ctes": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_format.py::test_gp_rewrite_preserves_report_query_results",
+      "backends": [
+        "gp"
+      ]
+    },
+    "format.rewrite_equivalence.gp.set_operations": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_format.py::test_gp_rewrite_preserves_set_operation_results",
+      "backends": [
+        "gp"
+      ]
+    },
     "query.read.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_matrix.py::test_read_execute_matrix[query.read.gp]",

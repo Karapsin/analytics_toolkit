@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
+from typing import cast
 
 import sqlparse
 from sqlglot import Dialect, exp, parse
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.tokens import Tokenizer
-
 
 _SUPPORTED_DIALECTS = {"postgres", "trino", "clickhouse"}
 _SUPPORTED_GROUP_ORDER_FORMATS = {"expressions", "ordinal"}
@@ -43,7 +43,7 @@ class _SingleStatement:
 @dataclass(frozen=True)
 class _GpTempTable:
     name: str
-    query: exp.Select
+    query: exp.Query
 
 
 @dataclass(frozen=True)
@@ -938,8 +938,28 @@ class _GpTempTablePlanner:
         self._next_generated_index = 1
 
     def rewrite_select(self, select: exp.Select) -> None:
-        self._materialize_with_clause(select)
-        self._rewrite_expression_children(select)
+        self._rewrite_query(select)
+
+    def _rewrite_query(self, query: exp.Query) -> None:
+        self._materialize_with_clause(query)
+        if isinstance(query, exp.SetOperation):
+            self._rewrite_set_operand(query.this)
+            self._rewrite_set_operand(query.expression)
+            self._rewrite_expression_children(
+                cast("exp.Expression", query),
+                skipped_args={"this", "expression"},
+            )
+            return
+        self._rewrite_expression_children(cast("exp.Expression", query))
+
+    def _rewrite_set_operand(self, operand: exp.Expression) -> None:
+        if isinstance(operand, exp.Subquery) and isinstance(operand.this, exp.Query):
+            self._rewrite_query(operand.this)
+            return
+        if isinstance(operand, exp.Query):
+            self._rewrite_query(operand)
+            return
+        self._rewrite_child_expression(operand)
 
     def validate_complete_rewrite(self, expression: exp.Expression) -> None:
         temp_names = self._temp_name_keys()
@@ -957,12 +977,12 @@ class _GpTempTablePlanner:
                     "nested SELECT queries."
                 )
         for temp_table in self.temp_tables:
-            self._assert_select_is_uncorrelated(temp_table.query)
+            self._assert_query_is_uncorrelated(temp_table.query)
 
     def render_temp_table_blocks(self, final_expression: exp.Select) -> list[str]:
         consumer_expressions = [
-            temp_table.query for temp_table in self.temp_tables
-        ] + [final_expression]
+            cast("exp.Expression", temp_table.query) for temp_table in self.temp_tables
+        ] + [cast("exp.Expression", final_expression)]
         blocks: list[str] = []
         for temp_table in self.temp_tables:
             distributed_columns = self._distributed_columns(
@@ -977,9 +997,9 @@ class _GpTempTablePlanner:
             )
         return blocks
 
-    def _materialize_with_clause(self, select: exp.Select) -> None:
+    def _materialize_with_clause(self, query: exp.Query) -> None:
         with_arg = _with_arg_name()
-        with_expression = select.args.get(with_arg)
+        with_expression = query.args.get(with_arg)
         if with_expression is None:
             return
         if with_expression.args.get("recursive"):
@@ -988,7 +1008,7 @@ class _GpTempTablePlanner:
             )
 
         for cte in list(with_expression.expressions):
-            if not isinstance(cte, exp.CTE) or not isinstance(cte.this, exp.Select):
+            if not isinstance(cte, exp.CTE) or not isinstance(cte.this, exp.Query):
                 raise ValueError(
                     "gp_rewrite_to_temp_tables only supports SELECT CTEs."
                 )
@@ -999,15 +1019,23 @@ class _GpTempTablePlanner:
                 )
             name = cte.alias_or_name
             self._reserve_temp_name(name, label="CTE alias")
-            query = cte.this.copy()
-            self.rewrite_select(query)
-            self.temp_tables.append(_GpTempTable(name=name, query=query))
+            cte_query = cte.this.copy()
+            self._rewrite_query(cte_query)
+            self.temp_tables.append(_GpTempTable(name=name, query=cte_query))
 
-        select.set(with_arg, None)
+        query.set(with_arg, None)
 
-    def _rewrite_expression_children(self, expression: exp.Expression) -> None:
+    def _rewrite_expression_children(
+        self,
+        expression: exp.Expression,
+        *,
+        skipped_args: set[str] | None = None,
+    ) -> None:
+        skipped_args = skipped_args or set()
         for key, value in list(expression.args.items()):
-            if isinstance(expression, exp.Select) and key == _with_arg_name():
+            if key in skipped_args:
+                continue
+            if isinstance(expression, exp.Query) and key == _with_arg_name():
                 continue
             if isinstance(value, list):
                 for child in list(value):
@@ -1018,14 +1046,14 @@ class _GpTempTablePlanner:
                 self._rewrite_child_expression(value)
 
     def _rewrite_child_expression(self, child: exp.Expression) -> None:
-        if isinstance(child, exp.Subquery) and isinstance(child.this, exp.Select):
+        if isinstance(child, exp.Subquery) and isinstance(child.this, exp.Query):
             self._materialize_subquery(child)
             return
-        if isinstance(child, exp.Exists) and isinstance(child.this, exp.Select):
+        if isinstance(child, exp.Exists) and isinstance(child.this, exp.Query):
             self._materialize_exists(child)
             return
-        if isinstance(child, exp.Select):
-            self._materialize_direct_select(child)
+        if isinstance(child, exp.Query):
+            self._materialize_direct_query(child)
             return
         self._rewrite_expression_children(child)
 
@@ -1041,29 +1069,29 @@ class _GpTempTablePlanner:
                 )
             name = subquery.alias_or_name
             self._reserve_temp_name(name, label="derived-table alias")
-            self.rewrite_select(query)
+            self._rewrite_query(query)
             self.temp_tables.append(_GpTempTable(name=name, query=query))
             subquery.replace(exp.Table(this=exp.to_identifier(name)))
             return
 
         name = self._next_generated_temp_name()
-        self.rewrite_select(query)
+        self._rewrite_query(query)
         self.temp_tables.append(_GpTempTable(name=name, query=query))
         subquery.set("this", _temp_reference_select(name))
 
     def _materialize_exists(self, exists: exp.Exists) -> None:
         query = exists.this.copy()
         name = self._next_generated_temp_name()
-        self.rewrite_select(query)
+        self._rewrite_query(query)
         self.temp_tables.append(_GpTempTable(name=name, query=query))
         exists.set("this", _temp_reference_select(name))
 
-    def _materialize_direct_select(self, select: exp.Select) -> None:
-        query = select.copy()
+    def _materialize_direct_query(self, child_query: exp.Query) -> None:
+        query = child_query.copy()
         name = self._next_generated_temp_name()
-        self.rewrite_select(query)
+        self._rewrite_query(query)
         self.temp_tables.append(_GpTempTable(name=name, query=query))
-        select.replace(_temp_reference_select(name))
+        child_query.replace(_temp_reference_select(name))
 
     def _reserve_temp_name(self, name: str, *, label: str) -> None:
         _validate_temp_table_name(name, label=label)
@@ -1086,17 +1114,18 @@ class _GpTempTablePlanner:
     def _temp_name_keys(self) -> set[str]:
         return {temp_table.name.casefold() for temp_table in self.temp_tables}
 
-    def _assert_select_is_uncorrelated(self, select: exp.Select) -> None:
-        local_names = _local_select_source_names(select)
-        for column in select.find_all(exp.Column):
-            qualifier = column.table
-            if not qualifier:
-                continue
-            if qualifier.casefold() not in local_names:
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables does not support correlated "
-                    "subqueries."
-                )
+    def _assert_query_is_uncorrelated(self, query: exp.Query) -> None:
+        for select in query.find_all(exp.Select):
+            local_names = _local_select_source_names(select)
+            for column in select.find_all(exp.Column):
+                qualifier = column.table
+                if not qualifier:
+                    continue
+                if qualifier.casefold() not in local_names:
+                    raise ValueError(
+                        "gp_rewrite_to_temp_tables does not support correlated "
+                        "subqueries."
+                    )
 
     def _distributed_columns(
         self,
@@ -1140,7 +1169,7 @@ class _GpTempTablePlanner:
         distributed_columns: list[str],
     ) -> str:
         rendered_query = _render_expression(
-            temp_table.query,
+            cast("exp.Expression", temp_table.query),
             dialect=self.dialect,
             leading_commas=False,
             where_anchor=None,

@@ -46,6 +46,8 @@ returning a partial rewrite.
 Use [gp_rewrite_to_temp_tables](functions/gp_rewrite_to_temp_tables.md) when a
 Greenplum SELECT should be split into explicit temp-table creation, analyze, and
 final-query steps. The helper keeps the work local to SQL text: it does not
-open a database connection or execute the generated script.
+open a database connection or execute the generated script. CTE and subquery
+bodies may contain `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT`; each
+compound body is kept together in one generated temp table.
 
 [Module index](index.md)

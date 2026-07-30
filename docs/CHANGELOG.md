@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Added segmented SQL AB metrics report helper with optional Excel output.
 - Added concurrent list execution to sql.execute with soft and hard concurrency caps.
 - Resolved here paths from active Positron editor execution metadata.
+- Supported compound queries in Greenplum temp-table rewrites.
 
 ## 1.3.11.3 - 2026-07-30
 

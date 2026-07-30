@@ -696,6 +696,89 @@ def test_gp_rewrite_to_temp_tables_materializes_cte_names() -> None:
     )
 
 
+def test_gp_rewrite_to_temp_tables_materializes_compound_cte_as_one_table() -> None:
+    rewritten = sql_format.gp_rewrite_to_temp_tables(
+        "with users as ("
+        "select distinct contact_id from user_flags where mandatory_user_flg = 0"
+        "), cheques as ("
+        "select t1.contact_id, t1.cheque_pk from cheques_source as t1 "
+        "where t1.operation_type_id = 1"
+        "), articles_filter as ("
+        "select article_id from supplier_codes "
+        "union "
+        "select t1.article_id from articles as t1 "
+        "join promo_codes as t2 on t1.code = cast(t2.promo_code as text)"
+        "), cheque_items as ("
+        "select t2.contact_id, t1.article_id, sum(t1.amount) as volume "
+        "from cheque_items_source as t1 "
+        "join cheques as t2 on t1.cheque_pk = t2.cheque_pk "
+        "join articles_filter as t3 on t1.article_id = t3.article_id "
+        "group by t2.contact_id, t1.article_id"
+        ") "
+        "select contact_id, article_id, volume from cheque_items"
+    )
+
+    assert rewritten.count("create temporary table") == 4
+    assert "create temporary table articles_filter as (" in rewritten
+    assert "\n    union\n" in rewritten
+    assert "create temporary table tmp_" not in rewritten
+
+
+@pytest.mark.parametrize("operator", ["union all", "intersect", "except"])
+def test_gp_rewrite_to_temp_tables_supports_nested_set_operations(
+    operator: str,
+) -> None:
+    rewritten = sql_format.gp_rewrite_to_temp_tables(
+        f"with combined as (select id from first_source {operator} "
+        "select id from second_source) select * from combined"
+    )
+
+    assert rewritten.count("create temporary table") == 1
+    assert "create temporary table combined as (" in rewritten
+    assert f"\n    {operator}\n" in rewritten
+
+
+def test_gp_rewrite_to_temp_tables_preserves_parenthesized_set_operand() -> None:
+    rewritten = sql_format.gp_rewrite_to_temp_tables(
+        "with combined as (select id from first_source union "
+        "(select id from second_source union select id from third_source)) "
+        "select * from combined"
+    )
+
+    assert rewritten.count("create temporary table") == 1
+    assert rewritten.count("union\n") == 2
+
+
+@pytest.mark.parametrize(
+    ("sql", "temp_name", "final_reference"),
+    [
+        (
+            "select * from (select id from first_source "
+            "union select id from second_source) as combined",
+            "combined",
+            "from combined",
+        ),
+        (
+            "select * from users where id in (select id from first_source "
+            "union select id from second_source)",
+            "tmp_1",
+            "from tmp_1",
+        ),
+    ],
+)
+def test_gp_rewrite_to_temp_tables_materializes_compound_subquery_as_one_table(
+    sql: str,
+    temp_name: str,
+    final_reference: str,
+) -> None:
+    rewritten = sql_format.gp_rewrite_to_temp_tables(sql)
+
+    assert rewritten.count("create temporary table") == 1
+    assert f"create temporary table {temp_name} as (" in rewritten
+    assert "\n    union\n" in rewritten
+    assert final_reference in rewritten.rsplit("analyze", maxsplit=1)[-1]
+
+
 def test_gp_rewrite_to_temp_tables_materializes_derived_aliases() -> None:
     from analytics_toolkit.sql_format import gp_rewrite_to_temp_tables
 
@@ -829,6 +912,7 @@ def test_gp_rewrite_to_temp_tables_uppercase_keyword_case() -> None:
     [
         "",
         "select 1; select 2",
+        "select 1 union select 2",
         "delete from users",
         "select * from orders",
         "with c as (select id from orders), c as (select id from users) "
@@ -1425,6 +1509,24 @@ def test_gp_planner_rejects_non_select_cte_body() -> None:
 
     with pytest.raises(ValueError, match="only supports SELECT CTEs"):
         planner.rewrite_select(select)
+
+
+def test_gp_planner_safely_traverses_non_query_set_operands() -> None:
+    planner = sql_format._GpTempTablePlanner(
+        dialect=None,
+        temp_prefix="tmp",
+        group_by_format="ordinal",
+        order_by_format="ordinal",
+        keyword_case="lower",
+        indent=4,
+        cte_blank_lines=1,
+        union_blank_lines=1,
+    )
+
+    planner._rewrite_set_operand(exp.Literal.number(1))
+    planner._rewrite_set_operand(exp.Subquery(this=exp.to_table("events")))
+
+    assert planner.temp_tables == []
 
 
 def test_gp_planner_child_loop_skips_with_and_non_expression_items() -> None:

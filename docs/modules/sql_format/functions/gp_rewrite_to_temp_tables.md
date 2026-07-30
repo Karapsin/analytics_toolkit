@@ -2,7 +2,8 @@
 
 # gp_rewrite_to_temp_tables
 
-Rewrite SELECT CTEs and subqueries into a Greenplum temp-table script.
+Rewrite SELECT CTEs and subqueries into a Greenplum temp-table script. Nested
+query bodies may use `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT`.
 
 ```python
 gp_rewrite_to_temp_tables(sql, *, dialect="postgres", temp_prefix="tmp", group_by_format="ordinal", order_by_format="ordinal", keyword_case="lower", indent=4, cte_blank_lines=1, union_blank_lines=1) -> str
@@ -62,6 +63,8 @@ join users as u
 - CTEs use their CTE alias as the temp table name
 - Derived-table subqueries use their table alias as the temp table name
 - Scalar and predicate SELECT subqueries use generated names such as `tmp_1`
+- Compound CTEs and subqueries are materialized as one temp table while preserving their set operation
+- The final top-level statement must remain a SELECT rather than a top-level set operation
 - Temp tables use `distributed by` when equality join keys can be inferred, otherwise `distributed randomly`
 - Grouping and sorting clauses use compact ordinals by default; pass `"expressions"` modes to preserve expression output
 - Empty SQL, multi-statement SQL, non-SELECT SQL, invalid prefixes, name collisions, correlated subqueries, and unsafe partial rewrites raise `ValueError`
