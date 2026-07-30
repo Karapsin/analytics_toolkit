@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Resolved here paths from active Positron editor execution metadata.
 - Supported compound queries in Greenplum temp-table rewrites.
 - Required explicit Greenplum connection keys for gp_vacuum.
+- Made create_sql_table replace existing targets for every schema source.
 
 ## 1.3.11.3 - 2026-07-30
 

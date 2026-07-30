@@ -280,6 +280,14 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
         table,
         **create_options,
     )
+    replacement = sql.create_sql_table(
+        "ch_target",
+        table,
+        drop_target_if_exists=True,
+        return_metadata=True,
+        **create_options,
+    )
+    assert replacement.plan.statements[0].phase == "drop_target"
     ddl = " ".join(sql.extract_ddl("ch_target", [table, f"{table}_shard"]).upper().split())
     assert "ENGINE = DISTRIBUTED" in ddl or "ENGINE= DISTRIBUTED" in ddl
     assert "MERGETREE" in ddl
@@ -396,6 +404,19 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
         **options,
     )
     assert result.metadata.statement_count >= 1
+    assert sql.table_info(alias, dry_table).exists
+
+    replacement = sql.create_sql_table(
+        alias,
+        dry_table,
+        table_schema=_schema(backend),
+        drop_target_if_exists=True,
+        return_metadata=True,
+        retry_cnt=1,
+        **options,
+    )
+    assert replacement.plan.statements[0].phase == "drop_target"
+    assert replacement.metadata.statement_count > result.metadata.statement_count
     assert sql.table_info(alias, dry_table).exists
 
     invalid_table = resource_registry.table(alias, integration_table(backend, "ddl_invalid"))

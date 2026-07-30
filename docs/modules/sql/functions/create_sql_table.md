@@ -20,7 +20,8 @@ create_sql_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = N
 - `table_schema` - explicit backend-native column type mapping for created tables
 - `source_db` - source connection key for `sql`; defaults to `db_key`
 - `insert_data` - when `sql` is provided, also insert the query result after creating the table
-- `drop_target_if_exists` - drop an existing target before SQL-source creation
+- `drop_target_if_exists` - drop an existing target before creation from any
+  schema source (`df`, `sql`, or `table_schema`)
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `dry_run` - when `True`, return a plan without mutating the database
@@ -102,8 +103,10 @@ ddl
 ## Notes
 
 - The public helper opens and closes its own connections and retries the whole
-  create operation. For SQL schema sources, each attempt starts again with
-  source schema inspection, then target creation and the optional insert.
+  create operation. With `drop_target_if_exists=True`, every attempt safely
+  drops the target before creating it, including dataframe and explicit-schema
+  creation. SQL schema sources also repeat source schema inspection and the
+  optional insert.
 - Cross-backend SQL inserts use a single inner transfer attempt so
   `retry_cnt` controls the total number of whole-operation attempts rather than
   multiplying nested retry counts.
@@ -114,6 +117,8 @@ ddl
   cleanup cannot be confirmed, the operation stops instead of retrying against
   a partial target; pre-existing targets are never removed unless
   `drop_target_if_exists=True`.
+- Dry-run plans and generated SQL place backend-appropriate target drops before
+  the create statements when `drop_target_if_exists=True`.
 - Deterministic Trino `TYPE_MISMATCH` failures are not retried.
 - Pass exactly one of `df`, `sql`, or `table_schema`.
 - Greenplum `partition_by` and `gp_partitions` must be supplied together.

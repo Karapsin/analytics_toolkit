@@ -19,6 +19,8 @@ from analytics_toolkit.sql.connection.errors import (
     SqlConfigError,
     UnsupportedConnectionTypeError,
 )
+from analytics_toolkit.sql.ddl.models import CreateSqlTableOptions
+from analytics_toolkit.sql.execution.plans import SqlOperationMetadata
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -26,6 +28,7 @@ config_module = importlib.import_module("analytics_toolkit.sql.connection.config
 connection_module = importlib.import_module("analytics_toolkit.sql.connection.get_sql_connection")
 api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
 create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
+target_replace_module = importlib.import_module("analytics_toolkit.sql.ddl.target_replace")
 operation_runner_module = importlib.import_module(
     "analytics_toolkit.sql.execution.operation_runner"
 )
@@ -35,6 +38,10 @@ trino_config_module = importlib.import_module("analytics_toolkit.sql.backends.tr
 ch_config_module = importlib.import_module("analytics_toolkit.sql.backends.ch.config")
 
 _MISSING = object()
+
+
+def _fake_drop_target_sqls(*_args: object, **_kwargs: object) -> list[str]:
+    return ["drop target;"]
 
 
 def test_sql_facade_import_is_airflow_parse_safe(tmp_path: Path) -> None:
@@ -2130,7 +2137,10 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
             **kwargs: object,
         ) -> dict[str, object]:
             events.append(("create_kwargs", kwargs))
+            assert kwargs["drop_target_if_exists"] is True
             return {"ch_distributed_table": False}
+
+        build_drop_target_sqls = staticmethod(_fake_drop_target_sqls)
 
     def fake_config(key: str) -> types.SimpleNamespace:
         backend = "trino" if key == "source_alias" else "gp"
@@ -2187,15 +2197,190 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
         table_name="mart.target",
         sql="select id, amount from source",
         gp_distributed_by_key="id",
+        drop_target_if_exists=True,
         only_generate_sql=True,
         query_label="coverage-ddl",
     )
 
-    assert generated == "create first;\ncreate second"
+    assert generated == "drop target;\ncreate first;\ncreate second"
     assert "close" in events
     inspect_event = next(event for event in events if event[0] == "inspect")
     assert inspect_event[1] == "trino"
     assert "coverage-ddl" in inspect_event[3]
+
+
+@pytest.mark.parametrize(
+    "schema_source",
+    [
+        {"df": pd.DataFrame({"id": [1]})},
+        {"table_schema": {"id": "BIGINT"}},
+    ],
+)
+def test_create_table_drop_target_runs_before_every_create_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    schema_source: dict[str, object],
+) -> None:
+    events: list[tuple[str, int, bool]] = []
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_connection_config",
+        lambda key: types.SimpleNamespace(connection_key=key, backend="gp"),
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_build_create_sql_table_sqls",
+        lambda options, option_owner: ["CREATE TABLE mart.target (id BIGINT)"],
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "build_drop_target_sqls",
+        lambda options: ["DROP TABLE IF EXISTS mart.target"],
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "drop_existing_target",
+        lambda **kwargs: events.append(
+            (
+                "drop",
+                kwargs["retry_attempt"],
+                kwargs["options"].drop_target_if_exists,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "_execute_create_sql_table",
+        lambda **kwargs: events.append(
+            (
+                "create",
+                kwargs["retry_attempt"],
+                kwargs["options"].drop_target_if_exists,
+            )
+        ),
+    )
+
+    def fake_run_connection_operation(**kwargs: object) -> None:
+        kwargs["operation"]({"connection": object()}, 1)
+        context = kwargs["context_factory"](2)
+        assert context.phase == "replace_target"
+        assert context.sql_preview == "DROP TABLE IF EXISTS mart.target"
+        kwargs["operation"]({"connection": object()}, 2)
+
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "run_connection_operation",
+        fake_run_connection_operation,
+    )
+
+    result = create_sql_table_module.create_sql_table(
+        "gp_alias",
+        "mart.target",
+        drop_target_if_exists=True,
+        return_metadata=True,
+        **schema_source,
+    )
+
+    assert events == [
+        ("drop", 1, True),
+        ("create", 1, True),
+        ("drop", 2, True),
+        ("create", 2, True),
+    ]
+    assert result.metadata.statement_count == 2
+    assert result.plan.sqls == [
+        "DROP TABLE IF EXISTS mart.target",
+        "CREATE TABLE mart.target (id BIGINT)",
+    ]
+    assert [statement.phase for statement in result.plan.statements] == [
+        "drop_target",
+        "create_table",
+    ]
+    assert result.plan.options["drop_target_if_exists"] is True
+
+
+@pytest.mark.parametrize(
+    "schema_source",
+    [
+        {"df": pd.DataFrame({"id": [1]})},
+        {"table_schema": {"id": "BIGINT"}},
+    ],
+)
+def test_create_table_only_generate_includes_drop_for_regular_schema_sources(
+    schema_source: dict[str, object],
+) -> None:
+    generated = create_sql_table_module.create_sql_table(
+        "gp",
+        "schema.target",
+        drop_target_if_exists=True,
+        only_generate_sql=True,
+        **schema_source,
+    )
+
+    assert generated.startswith("DROP TABLE IF EXISTS schema.target;\nCREATE TABLE")
+
+
+def test_create_table_target_replace_helper_uses_backend_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[object, ...]] = []
+
+    class FakeAdapter:
+        def build_drop_target_sqls(
+            self,
+            table_name: str,
+            **kwargs: object,
+        ) -> list[str]:
+            events.append(("build", table_name, kwargs))
+            return ["DROP TARGET"]
+
+        def prepare_existing_target_for_create_from_sql(
+            self,
+            connection: object,
+            table_name: str,
+            **kwargs: object,
+        ) -> None:
+            events.append(("drop", connection, table_name, kwargs))
+
+    monkeypatch.setattr(
+        target_replace_module,
+        "get_backend_adapter",
+        lambda backend: FakeAdapter(),
+    )
+    base_options = CreateSqlTableOptions(
+        connection_key="gp_alias",
+        backend="gp",
+        table_name="mart.target",
+        df=pd.DataFrame({"id": [1]}),
+    )
+    metadata = SqlOperationMetadata()
+
+    assert target_replace_module.build_drop_target_sqls(base_options) == []
+    target_replace_module.drop_existing_target(
+        options=base_options,
+        connection=object(),
+        drop_sqls=[],
+        metadata=metadata,
+        retry_attempt=1,
+    )
+    assert events == []
+
+    replace_options = replace(base_options, drop_target_if_exists=True)
+    assert target_replace_module.build_drop_target_sqls(replace_options) == ["DROP TARGET"]
+    connection = object()
+    target_replace_module.drop_existing_target(
+        options=replace_options,
+        connection=connection,
+        drop_sqls=["DROP TARGET"],
+        metadata=metadata,
+        retry_attempt=2,
+    )
+
+    assert events[0][0:2] == ("build", "mart.target")
+    assert events[1][0:3] == ("drop", connection, "mart.target")
+    assert events[1][3]["drop_target_if_exists"] is True
+    assert events[1][3]["connection_key"] == "gp_alias"
+    assert metadata.retry_attempts == 2
+    assert metadata.operation_status == "success"
 
 
 def test_create_table_execution_returns_metadata_and_builds_context(

@@ -35,6 +35,7 @@ from .schema import (
     _build_column_definitions,
     normalize_table_schema,
 )
+from .target_replace import build_drop_target_sqls, drop_existing_target
 
 
 @timed_public_sql_function
@@ -118,6 +119,7 @@ def create_sql_table(
         ch_distributed_table=ch_distributed_table,
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
+        drop_target_if_exists=drop_target_if_exists,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -138,14 +140,22 @@ def create_sql_table(
         option_owner="db_key",
     )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="db_key")
-    metadata, plan = _build_create_table_plan(options, create_sqls)
+    drop_sqls = build_drop_target_sqls(options)
+    metadata, plan = _build_create_table_plan(options, drop_sqls, create_sqls)
 
     if only_generate_sql:
-        return _format_sql_statements(create_sqls)
+        return _format_sql_statements([*drop_sqls, *create_sqls])
     if options.dry_run or options.return_sql:
         return plan
 
     def operation(connection_ref: dict[str, Any], attempt: int) -> None:
+        drop_existing_target(
+            options=options,
+            connection=connection_ref["connection"],
+            drop_sqls=drop_sqls,
+            metadata=metadata,
+            retry_attempt=attempt,
+        )
         _execute_create_sql_table(
             options=options,
             connection=connection_ref["connection"],
@@ -159,10 +169,10 @@ def create_sql_table(
             operation="create_sql_table",
             alias=options.connection_key,
             backend=options.backend,
-            phase="create_target",
+            phase=("replace_target" if options.drop_target_if_exists else "create_target"),
             target_table=options.table_name,
             retry_attempt=attempt,
-            sql_preview=sql_preview(create_sqls[0] if create_sqls else options.table_name),
+            sql_preview=sql_preview((drop_sqls or create_sqls or [options.table_name])[0]),
         )
 
     run_connection_operation(
@@ -262,6 +272,7 @@ def _create_sql_table_from_sql_source(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_only_shard=ch_only_shard,
+            drop_target_if_exists=drop_target_if_exists,
             query_label=query_label,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
@@ -307,6 +318,7 @@ def _generate_create_sql_table_from_query_sql(
     ch_cluster: str,
     ch_sharding_key: str,
     ch_only_shard: bool,
+    drop_target_if_exists: bool,
     query_label: str | None,
     retry_cnt: int,
     timeout_increment: float,
@@ -427,7 +439,7 @@ def _generate_create_sql_table_from_query_sql(
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key_name,
         ch_only_shard=only_shard,
-        drop_target_if_exists=False,
+        drop_target_if_exists=drop_target_if_exists,
         target_exists_before_drop=False,
     )
     create_sqls = _build_create_table_sqls(
@@ -440,7 +452,17 @@ def _generate_create_sql_table_from_query_sql(
         ddl_properties=_regular_ddl_properties(target_config),
         **create_kwargs,
     )
-    return _format_sql_statements(create_sqls)
+    drop_sqls = (
+        target_adapter.build_drop_target_sqls(
+            table_name,
+            ch_cluster=ch_cluster_name,
+            ch_only_shard=only_shard,
+            query_label=query_label,
+        )
+        if drop_target_if_exists
+        else []
+    )
+    return _format_sql_statements([*drop_sqls, *create_sqls])
 
 
 def _format_sql_statements(sqls: Sequence[str]) -> str:
@@ -518,6 +540,7 @@ def _create_sql_table_with_connection(
         ch_distributed_table=ch_distributed_table,
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
+        drop_target_if_exists=False,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -527,7 +550,7 @@ def _create_sql_table_with_connection(
         option_owner="connection",
     )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="connection")
-    metadata, plan = _build_create_table_plan(options, create_sqls)
+    metadata, plan = _build_create_table_plan(options, [], create_sqls)
 
     if options.dry_run or options.return_sql:
         return plan
@@ -561,6 +584,7 @@ def _build_create_table_options(
     ch_distributed_table: bool | None,
     ch_only_shard: bool,
     ch_replace_table: bool,
+    drop_target_if_exists: bool,
     dry_run: bool,
     return_sql: bool,
     query_label: str | None,
@@ -617,6 +641,7 @@ def _build_create_table_options(
         ch_distributed_table=ch_distributed_table,
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
+        drop_target_if_exists=drop_target_if_exists,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -677,10 +702,11 @@ def _build_create_sql_table_sqls(
 
 def _build_create_table_plan(
     options: CreateSqlTableOptions,
+    drop_sqls: list[str],
     create_sqls: list[str],
 ) -> tuple[SqlOperationMetadata, SqlPlan]:
     metadata = SqlOperationMetadata(
-        statement_count=len(create_sqls),
+        statement_count=len(drop_sqls) + len(create_sqls),
         query_label=options.query_label,
     )
     plan = SqlPlan(
@@ -689,9 +715,17 @@ def _build_create_table_plan(
         target_backend=options.backend,
         target_table=options.table_name,
         options={
+            "drop_target_if_exists": options.drop_target_if_exists,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
         },
         metadata=metadata,
+    )
+    plan.extend(
+        drop_sqls,
+        alias=options.connection_key,
+        backend=options.backend,
+        phase="drop_target",
+        target_table=options.table_name,
     )
     plan.extend(
         create_sqls,
