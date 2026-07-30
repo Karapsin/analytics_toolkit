@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.3 - 2026-07-30
 
 - Added setup and read phases to execute_read timing logs.
 - Allowed repeated SQL transfer key placeholders.
