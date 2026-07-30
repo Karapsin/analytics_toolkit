@@ -1587,11 +1587,55 @@ def test_sql_native_cuped_query_builds_mean_and_ratio_comparisons() -> None:
     )
     assert query.count("WITH exp_raw AS") == 4
     assert query.count("UNION ALL") == 3
+    assert query.count("SELECT * FROM (\nWITH exp_raw AS") == 4
+    assert "UNION ALL\nWITH" not in query
+    assert "AS __analytics_toolkit_union_0003" in query
     assert "metric_pre" in query
     assert "test_a" in query
     assert "test_b" in query
     assert "clicks" in query
     assert "views" in query
+
+
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_sql_native_group_stats_wraps_ctes_before_union(backend: str) -> None:
+    metric_definitions = [
+        {"kind": "mean", "metric_key": "orders", "column": "orders"},
+        {"kind": "mean", "metric_key": "revenue", "column": "revenue"},
+    ]
+
+    query = sql_native._build_sql_native_group_stats_query(
+        backend=backend,
+        source_sql='"mart"."ab_source"',
+        sql_where=None,
+        group="group_name",
+        user_id="user_id",
+        metric_definitions=metric_definitions,
+        outliers_quantile=0.99,
+        outliers_policy="truncate",
+    )
+
+    assert query.count("SELECT * FROM (\nWITH source AS") == 2
+    assert query.count("UNION ALL") == 1
+    assert "UNION ALL\nWITH" not in query
+    assert "AS __analytics_toolkit_union_0000" in query
+    assert "AS __analytics_toolkit_union_0001" in query
+
+
+def test_sql_native_group_stats_keeps_single_cte_query_unwrapped() -> None:
+    query = sql_native._build_sql_native_group_stats_query(
+        backend="gp",
+        source_sql='"mart"."ab_source"',
+        sql_where=None,
+        group="group_name",
+        user_id="user_id",
+        metric_definitions=[{"kind": "mean", "metric_key": "orders", "column": "orders"}],
+        outliers_quantile=0.99,
+        outliers_policy="truncate",
+    )
+
+    assert query.startswith("WITH source AS")
+    assert "__analytics_toolkit_union_" not in query
 
 
 def test_sql_native_observed_statistics_cover_aggregate_ratio_and_missing_groups() -> None:

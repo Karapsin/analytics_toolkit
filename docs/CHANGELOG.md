@@ -12,6 +12,8 @@ Generated from package version bumps and recent commit history.
 - Supported compound queries in Greenplum temp-table rewrites.
 - Required explicit Greenplum connection keys for gp_vacuum.
 - Made create_sql_table replace existing targets for every schema source.
+- Renamed the AB metrics report helper, made segmentation optional, and fixed
+  multi-metric SQL composition.
 
 ## 1.3.11.3 - 2026-07-30
 

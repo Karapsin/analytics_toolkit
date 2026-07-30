@@ -10,7 +10,7 @@ helpers most likely to be used in normal workflows appear first.
 
 - [compute_test_metrics](compute-test-metrics.md) - compare experiment groups across metrics
 - [compute_test_metrics_sql_native](compute-test-metrics-sql-native.md) - compare experiment groups with SQL-side stats
-- [compute_segment_metrics_report](compute-segment-metrics-report.md) - calculate segmented SQL metrics and write an optional report
+- [compute_metrics_report](compute-metrics-report.md) - calculate total or segmented SQL metrics and write an optional report
 - [format_ab_metrics](format-ab-metrics.md) - reshape metric output for reports
 - [do_split](do-split.md) - assign users to AB groups
 - [compute_mde](compute-mde.md) - estimate MDE planning scenarios

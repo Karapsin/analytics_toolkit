@@ -42,9 +42,9 @@ class _ReportSource:
     metric_columns: tuple[str, ...]
 
 
-def compute_segment_metrics_report(
+def compute_metrics_report(
     table_name: str,
-    segment: str,
+    segment: str | None = None,
     *,
     db_key: str,
     sql_where: str | None = None,
@@ -86,7 +86,7 @@ def compute_segment_metrics_report(
     excel_file_name: str | Path | None = None,
     report_significance_alpha: float = 0.01,
 ) -> pd.DataFrame:
-    """Compute overall and segmented SQL-native AB metrics and optionally write Excel."""
+    """Compute SQL-native AB metrics, optionally by segment, and write Excel."""
     _validate_report_options(
         segment=segment,
         group=group,
@@ -125,19 +125,23 @@ def compute_segment_metrics_report(
     if pre_source is not None and pre_source.backend != source.backend:
         raise ValueError("pre_exp_table_name must use the same backend as table_name.")
 
-    segment_values = _read_distinct_values(
-        db_key=db_key,
-        table_sql=source.table_sql,
-        column=segment,
-        backend=source.backend,
-        sql_where=normalized_sql_where,
-        output_column=_SEGMENT_VALUE_COLUMN,
-        print_queries=print_queries,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
+    segment_values = (
+        _read_distinct_values(
+            db_key=db_key,
+            table_sql=source.table_sql,
+            column=segment,
+            backend=source.backend,
+            sql_where=normalized_sql_where,
+            output_column=_SEGMENT_VALUE_COLUMN,
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+        if segment is not None
+        else []
     )
-    if any(str(value) == all_segment_label for value in segment_values):
+    if segment is not None and any(str(value) == all_segment_label for value in segment_values):
         raise ValueError(
             f"all_segment_label {all_segment_label!r} conflicts with an observed segment value."
         )
@@ -245,7 +249,7 @@ def _resolve_report_source(
     *,
     db_key: str,
     table_name: str,
-    segment: str,
+    segment: str | None,
     group: str,
     user_id: str,
     metric_columns: Sequence[str] | None,
@@ -255,19 +259,21 @@ def _resolve_report_source(
     if not info.exists:
         raise ValueError(f"SQL table {table_name!r} does not exist.")
     available = list(info.columns)
-    required = [segment, group, user_id]
+    required = [group, user_id] if segment is None else [segment, group, user_id]
     missing = [column for column in required if column not in info.columns]
     if missing:
         raise ValueError(f"Missing required column(s): {', '.join(missing)}.")
     ratio_columns = _ratio_component_columns(ratio_metrics)
+    excluded_columns = {group, user_id}
+    if segment is not None:
+        excluded_columns.add(segment)
     requested_metrics = (
         [str(column) for column in metric_columns]
         if metric_columns is not None
         else [
             column
             for column in available
-            if column not in {segment, group, user_id}
-            and _is_sql_numeric_type(str(info.columns[column]))
+            if column not in excluded_columns and _is_sql_numeric_type(str(info.columns[column]))
         ]
     )
     if len(set(requested_metrics)) != len(requested_metrics):
@@ -347,7 +353,7 @@ def _build_report_tasks(
     pre_exp_table_name: str | None,
     pre_exp_table_sql: str | None,
     backend: str,
-    segment: str,
+    segment: str | None,
     segment_values: Sequence[Any],
     all_segment_label: str,
     sql_where: str | None,
@@ -360,7 +366,11 @@ def _build_report_tasks(
     pooled_test_group: str,
 ) -> dict[str, dict[str, object]]:
     tasks: dict[str, dict[str, object]] = {}
-    labels_and_values = [(all_segment_label, None), *zip(segment_values, segment_values)]
+    labels_and_values = (
+        [(all_segment_label, None), *zip(segment_values, segment_values)]
+        if segment is not None
+        else [(None, None)]
+    )
     pooled_source = _build_pooled_source_sql(
         table_sql=table_sql,
         backend=backend,
@@ -387,15 +397,14 @@ def _build_report_tasks(
         if pre_exp_table_sql is not None
         else None
     )
-    segment_sql = _quote_sql_identifier(segment, backend)
+    segment_sql = _quote_sql_identifier(segment, backend) if segment is not None else None
     for index, (label, value) in enumerate(labels_and_values):
         segment_filter = None if value is None else f"{segment_sql} = {sql_literal(value)}"
         current_where = _combine_where(sql_where, segment_filter)
         current_pre_where = _combine_where(pre_exp_sql_where, segment_filter)
-        common: dict[str, object] = {
-            "labels": {segment: label},
-            "sql_where": current_where,
-        }
+        common: dict[str, object] = {"sql_where": current_where}
+        if segment is not None:
+            common["labels"] = {segment: label}
         if pre_exp_table_name is not None:
             common.update(
                 {
@@ -404,7 +413,8 @@ def _build_report_tasks(
                     "pre_exp_sql_where": current_pre_where,
                 }
             )
-        tasks[f"segment_{index:04d}_groups"] = {
+        task_prefix = f"segment_{index:04d}" if segment is not None else "total"
+        tasks[f"{task_prefix}_groups"] = {
             **common,
             "source": table_name,
             "source_type": "table",
@@ -417,7 +427,7 @@ def _build_report_tasks(
                     "pre_exp_source_type": "sql",
                 }
             )
-        tasks[f"segment_{index:04d}_pooled"] = {
+        tasks[f"{task_prefix}_pooled"] = {
             **pooled_common,
             "source": pooled_source,
             "source_type": "sql",
@@ -429,7 +439,7 @@ def _build_pooled_source_sql(
     *,
     table_sql: str,
     backend: str,
-    segment: str,
+    segment: str | None,
     group: str,
     control: str,
     user_id: str,
@@ -438,12 +448,10 @@ def _build_pooled_source_sql(
     pooled_test_group: str,
 ) -> str:
     group_sql = _quote_sql_identifier(group, backend)
-    projected_columns = [
-        user_id,
-        segment,
-        *metric_columns,
-        *_ratio_component_columns(ratio_metrics),
-    ]
+    projected_columns = [user_id]
+    if segment is not None:
+        projected_columns.append(segment)
+    projected_columns.extend([*metric_columns, *_ratio_component_columns(ratio_metrics)])
     projected_columns = list(dict.fromkeys(projected_columns))
     projection = [
         f"{_quote_sql_identifier(column, backend)} AS {_quote_sql_identifier(column, backend)}"
@@ -477,7 +485,7 @@ def _combine_report_results(
     failures = {name: value for name, value in result.items() if isinstance(value, str)}
     if failures:
         details = "; ".join(f"{name}: {error}" for name, error in failures.items())
-        raise RuntimeError(f"Segment metric task(s) failed: {details}")
+        raise RuntimeError(f"Metric report task(s) failed: {details}")
     frames = [value for value in result.values() if isinstance(value, pd.DataFrame)]
     if not frames:
         raise ValueError("Segment metric computation returned no dataframes.")
@@ -535,15 +543,13 @@ def _resolve_group_order(
 def _sort_metrics_df(
     df: pd.DataFrame,
     *,
-    segment: str,
+    segment: str | None,
     segment_order: Sequence[Any],
     groups_order: Sequence[str],
 ) -> pd.DataFrame:
     result = df.copy()
-    segment_rank = {value: index for index, value in enumerate(segment_order)}
     metric_rank = {value: index for index, value in enumerate(pd.unique(result["metric_name"]))}
     group_rank = {value: index for index, value in enumerate(groups_order)}
-    result["__segment_rank"] = result[segment].map(segment_rank)
     result["__metric_rank"] = result["metric_name"].map(metric_rank)
     result["__group_1_rank"] = result["group_1"].map(
         lambda value: group_rank.get(str(value), len(group_rank))
@@ -551,18 +557,22 @@ def _sort_metrics_df(
     result["__group_2_rank"] = result["group_2"].map(
         lambda value: group_rank.get(str(value), len(group_rank))
     )
-    result = result.sort_values(
-        ["__segment_rank", "__metric_rank", "__group_1_rank", "__group_2_rank"],
-        kind="stable",
-    ).drop(columns=["__segment_rank", "__metric_rank", "__group_1_rank", "__group_2_rank"])
-    ordered_columns = [segment, *(column for column in result.columns if column != segment)]
-    return result[ordered_columns].reset_index(drop=True)
+    sort_columns = ["__metric_rank", "__group_1_rank", "__group_2_rank"]
+    if segment is not None:
+        segment_rank = {value: index for index, value in enumerate(segment_order)}
+        result["__segment_rank"] = result[segment].map(segment_rank)
+        sort_columns.insert(0, "__segment_rank")
+    result = result.sort_values(sort_columns, kind="stable").drop(columns=sort_columns)
+    if segment is not None:
+        ordered_columns = [segment, *(column for column in result.columns if column != segment)]
+        result = result[ordered_columns]
+    return result.reset_index(drop=True)
 
 
 def _write_metrics_workbook(
     *,
     metrics_df: pd.DataFrame,
-    segment: str,
+    segment: str | None,
     control: str,
     groups_order: Sequence[str],
     output: Path,
@@ -572,7 +582,7 @@ def _write_metrics_workbook(
 ) -> None:
     values_df = format_ab_metrics(
         metrics_df,
-        label_cols=[segment],
+        label_cols=[] if segment is None else [segment],
         output_type=["metric_values"],
         allow_repeated_groups=[control],
     )
@@ -580,7 +590,7 @@ def _write_metrics_workbook(
     simple_comparison_names = not test_vs_test
     uplifts_df = format_ab_metrics(
         metrics_df,
-        label_cols=[segment],
+        label_cols=[] if segment is None else [segment],
         output_type=["delta_relative_significant"],
         significance_alpha=significance_alpha,
         significance_p_value=significance_p_value,
@@ -591,8 +601,9 @@ def _write_metrics_workbook(
         metrics_df,
         simple_names=simple_comparison_names,
     )
+    leading_columns = ([] if segment is None else [segment]) + ["metric"]
     uplifts_df = uplifts_df[
-        [segment, "metric", *(column for column in comparison_columns if column in uplifts_df)]
+        [*leading_columns, *(column for column in comparison_columns if column in uplifts_df)]
     ]
     excel.break_table(
         [
@@ -615,10 +626,10 @@ def _write_metrics_workbook(
 
 def _reorder_formatted_columns(
     df: pd.DataFrame,
-    segment: str,
+    segment: str | None,
     groups_order: Sequence[str],
 ) -> pd.DataFrame:
-    leading = [segment, "metric"]
+    leading = ([] if segment is None else [segment]) + ["metric"]
     ordered = [group for group in groups_order if group in df.columns]
     remaining = [column for column in df.columns if column not in {*leading, *ordered}]
     return df[[*leading, *ordered, *remaining]]
@@ -665,7 +676,7 @@ def _resolve_excel_output(
 
 def _validate_report_options(
     *,
-    segment: str,
+    segment: str | None,
     group: str,
     control: str,
     user_id: str,
@@ -675,7 +686,6 @@ def _validate_report_options(
     report_significance_alpha: float,
 ) -> None:
     named_values = {
-        "segment": segment,
         "group": group,
         "control": control,
         "user_id": user_id,
@@ -685,9 +695,13 @@ def _validate_report_options(
     for name, value in named_values.items():
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{name} must be a non-empty string.")
-    if len({segment, group, user_id}) != _REQUIRED_DISTINCT_REPORT_COLUMNS:
+    if segment is not None and (not isinstance(segment, str) or not segment.strip()):
+        raise ValueError("segment must be a non-empty string or None.")
+    required_columns = {group, user_id} if segment is None else {segment, group, user_id}
+    expected_column_count = 2 if segment is None else _REQUIRED_DISTINCT_REPORT_COLUMNS
+    if len(required_columns) != expected_column_count:
         raise ValueError("segment, group, and user_id must name different columns.")
-    if segment in {_SEGMENT_VALUE_COLUMN, _REPORT_SHEET_COLUMN}:
+    if segment is not None and segment in {_SEGMENT_VALUE_COLUMN, _REPORT_SHEET_COLUMN}:
         raise ValueError("segment conflicts with an internal report column name.")
     if pooled_test_group == control:
         raise ValueError("pooled_test_group must differ from control.")

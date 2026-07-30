@@ -676,7 +676,16 @@ def _build_sql_native_group_stats_query(
         )
         for metric_definition in metric_definitions
     ]
-    return "\nUNION ALL\n".join(parts)
+    return _union_sql_queries(parts)
+
+
+def _union_sql_queries(parts: Sequence[str]) -> str:
+    if len(parts) <= 1:
+        return "" if not parts else parts[0]
+    return "\nUNION ALL\n".join(
+        f"SELECT * FROM (\n{part}\n) AS __analytics_toolkit_union_{index:04d}"  # noqa: S608 - complete internally built queries.
+        for index, part in enumerate(parts)
+    )
 
 
 def _build_sql_native_metric_group_stats_query(
@@ -1003,7 +1012,7 @@ def _build_sql_native_cuped_query(
         for test_group, baseline_group in comparisons
         for metric_definition in metric_definitions
     ]
-    return "\nUNION ALL\n".join(parts)
+    return _union_sql_queries(parts)
 
 
 def _build_sql_native_metric_cuped_query(

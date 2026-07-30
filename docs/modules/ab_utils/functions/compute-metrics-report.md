@@ -1,15 +1,15 @@
 [All AB functions](index.md)
 
-# compute_segment_metrics_report
+# compute_metrics_report
 
-Compute SQL-native AB metrics for the complete source and each value of a
-segment column, return one long-form dataframe, and optionally write a formatted
-Excel workbook.
+Compute SQL-native AB metrics for the complete source, optionally repeat the
+calculations for each value of a segment column, return one long-form dataframe,
+and optionally write a formatted Excel workbook.
 
 ```python
-compute_segment_metrics_report(
+compute_metrics_report(
     table_name,
-    segment,
+    segment=None,
     *,
     db_key,
     sql_where=None,
@@ -54,7 +54,8 @@ compute_segment_metrics_report(
 ## Report inputs
 
 - `table_name` - one-row-per-user SQL table
-- `segment` - column used to create the overall and per-segment calculations
+- `segment` - optional column used to add per-segment calculations; omit it to
+  compute only the total comparisons
 - `db_key` - configured SQL connection alias
 - `pre_exp_table_name` - optional compatible pre-experiment table for CUPED
 - `metric_columns` - mean metrics; numeric non-ID/group/segment columns are inferred when omitted
@@ -75,9 +76,9 @@ against the control group.
 ## Usage
 
 ```python
-from analytics_toolkit.ab_utils import compute_segment_metrics_report
+from analytics_toolkit.ab_utils import compute_metrics_report
 
-metrics = compute_segment_metrics_report(
+metrics = compute_metrics_report(
     "mart.experiment_user_metrics",
     "customer_segment",
     db_key="analytics_prod",
@@ -92,9 +93,11 @@ metrics = compute_segment_metrics_report(
 )
 ```
 
-The returned dataframe starts with the segment column and contains `ALL` before
-the distinct non-null segment values. The workbook contains `summary` and
-`raw_metrics` sheets. Set `create_excel=False` to return the same dataframe
-without creating or changing a file.
+When `segment` is provided, the returned dataframe starts with that column and
+contains `ALL` before the distinct non-null segment values. When it is omitted,
+the dataframe contains only total comparisons and has no synthetic segment
+column. In both modes, the workbook contains `summary` and `raw_metrics` sheets.
+Set `create_excel=False` to return the same dataframe without creating or
+changing a file.
 
 [All AB functions](index.md)

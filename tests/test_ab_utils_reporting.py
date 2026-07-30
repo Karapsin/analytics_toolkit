@@ -66,6 +66,7 @@ def _install_sql_fakes(
     monkeypatch.setattr(reporting.sql, "table_info", lambda _db_key, table: _table_info(table))
 
     def fake_read(_db_key: str, query: str, **_kwargs: object) -> pd.DataFrame:
+        captured.setdefault("read_queries", []).append(query)
         if reporting._SEGMENT_VALUE_COLUMN in query:
             return pd.DataFrame({reporting._SEGMENT_VALUE_COLUMN: ["north"]})
         return pd.DataFrame({"__analytics_toolkit_group_value__": ["control", "test_1"]})
@@ -78,22 +79,27 @@ def _install_sql_fakes(
         **kwargs: object,
     ) -> dict[str, pd.DataFrame]:
         captured.update({"db_key": db_key, "tasks": tasks, "kwargs": kwargs})
-        return {
-            name: _metric_row(
-                spec["labels"]["segment_name"],
+        frames: dict[str, pd.DataFrame] = {}
+        for name, spec in tasks.items():
+            labels = spec.get("labels", {})
+            frame = _metric_row(
+                labels.get("segment_name") if isinstance(labels, dict) else None,
                 "test_all" if name.endswith("pooled") else "test_1",
             )
-            for name, spec in tasks.items()
-        }
+            if not labels:
+                frame = frame.drop(columns="segment_name")
+            frames[name] = frame
+        return frames
 
     monkeypatch.setattr(reporting, "compute_test_metrics_sql_native", fake_compute)
 
 
-def test_compute_segment_metrics_report_is_exported() -> None:
-    assert (
-        ab_utils_module.compute_segment_metrics_report is reporting.compute_segment_metrics_report
-    )
-    assert metrics_module.compute_segment_metrics_report is reporting.compute_segment_metrics_report
+def test_compute_metrics_report_is_exported() -> None:
+    assert ab_utils_module.compute_metrics_report is reporting.compute_metrics_report
+    assert metrics_module.compute_metrics_report is reporting.compute_metrics_report
+    assert not hasattr(ab_utils_module, "compute_segment_metrics_report")
+    assert not hasattr(metrics_module, "compute_segment_metrics_report")
+    assert not hasattr(reporting, "compute_segment_metrics_report")
 
 
 def test_resolve_group_order_appends_omitted_observed_groups() -> None:
@@ -103,7 +109,7 @@ def test_resolve_group_order_appends_omitted_observed_groups() -> None:
     ) == ["control", "test_all", "test_3", "test_2"]
 
 
-def test_compute_segment_metrics_report_builds_segment_and_pooled_tasks(
+def test_compute_metrics_report_builds_segment_and_pooled_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
@@ -114,7 +120,7 @@ def test_compute_segment_metrics_report_builds_segment_and_pooled_tasks(
         lambda *_args, **_kwargs: pytest.fail("Excel must be disabled"),
     )
 
-    result = reporting.compute_segment_metrics_report(
+    result = reporting.compute_metrics_report(
         "sandbox.user_metrics",
         "segment_name",
         db_key="analytics",
@@ -149,7 +155,30 @@ def test_compute_segment_metrics_report_builds_segment_and_pooled_tasks(
     assert "test_all" in str(tasks["segment_0000_pooled"]["source"])
 
 
-def test_compute_segment_metrics_report_writes_ordered_named_workbook(
+def test_compute_metrics_report_without_segment_builds_only_total_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    _install_sql_fakes(monkeypatch, captured=captured)
+
+    result = reporting.compute_metrics_report(
+        "sandbox.user_metrics",
+        db_key="analytics",
+        sql_where="experiment_id = 7",
+        create_excel=False,
+    )
+
+    assert "segment_name" not in result.columns
+    assert result["group_1"].tolist() == ["test_1", "test_all"]
+    assert list(captured["tasks"]) == ["total_groups", "total_pooled"]
+    assert captured["tasks"]["total_groups"]["sql_where"] == "(experiment_id = 7)"
+    assert "labels" not in captured["tasks"]["total_groups"]
+    assert "segment_name" not in str(captured["tasks"]["total_pooled"]["source"])
+    assert all(reporting._SEGMENT_VALUE_COLUMN not in query for query in captured["read_queries"])
+    assert captured["kwargs"]["metric_columns"] == ["orders", "revenue", "views"]
+
+
+def test_compute_metrics_report_writes_ordered_named_workbook(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -157,7 +186,7 @@ def test_compute_segment_metrics_report_writes_ordered_named_workbook(
     _install_sql_fakes(monkeypatch, captured=captured)
     output = tmp_path / "custom.xlsx"
 
-    result = reporting.compute_segment_metrics_report(
+    result = reporting.compute_metrics_report(
         "sandbox.user_metrics",
         "segment_name",
         db_key="analytics",
@@ -178,13 +207,40 @@ def test_compute_segment_metrics_report_writes_ordered_named_workbook(
     assert "Orders per user" in {row[4] for row in raw_rows[1:]}
 
 
-def test_compute_segment_metrics_report_uses_pre_experiment_table(
+def test_compute_metrics_report_writes_unsegmented_workbook(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+    _install_sql_fakes(monkeypatch, captured=captured)
+    output = tmp_path / "total.xlsx"
+
+    result = reporting.compute_metrics_report(
+        "sandbox.user_metrics",
+        db_key="analytics",
+        metric_columns=["orders"],
+        excel_file_name=output,
+    )
+
+    assert "segment_name" not in result.columns
+    workbook = load_workbook(output, read_only=True)
+    assert workbook.sheetnames == ["summary", "raw_metrics"]
+    assert next(iter(workbook["summary"].values))[:4] == (
+        "metric",
+        "control",
+        "test_1",
+        "test_all",
+    )
+    assert next(iter(workbook["raw_metrics"].values))[0] == "metric_type"
+
+
+def test_compute_metrics_report_uses_pre_experiment_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
     _install_sql_fakes(monkeypatch, captured=captured)
 
-    reporting.compute_segment_metrics_report(
+    reporting.compute_metrics_report(
         "sandbox.user_metrics",
         "segment_name",
         db_key="analytics",
@@ -213,7 +269,7 @@ def test_compute_segment_metrics_report_uses_pre_experiment_table(
         ({"pooled_test_group": "test_1"}, "conflicts with an observed group"),
     ],
 )
-def test_compute_segment_metrics_report_validates_presentation_options(
+def test_compute_metrics_report_validates_presentation_options(
     monkeypatch: pytest.MonkeyPatch,
     kwargs: dict[str, object],
     match: str,
@@ -222,7 +278,7 @@ def test_compute_segment_metrics_report_validates_presentation_options(
     _install_sql_fakes(monkeypatch, captured=captured)
 
     with pytest.raises((TypeError, ValueError), match=match):
-        reporting.compute_segment_metrics_report(
+        reporting.compute_metrics_report(
             "sandbox.user_metrics",
             "segment_name",
             db_key="analytics",
@@ -236,6 +292,7 @@ def test_compute_segment_metrics_report_validates_presentation_options(
     ("updates", "error", "match"),
     [
         ({"segment": ""}, ValueError, "segment must be a non-empty string"),
+        ({"group": ""}, ValueError, "group must be a non-empty string"),
         ({"group": "segment_name"}, ValueError, "must name different columns"),
         (
             {"segment": reporting._REPORT_SHEET_COLUMN},
@@ -365,7 +422,7 @@ def test_read_distinct_values_requires_output_column(
         )
 
 
-def test_compute_segment_metrics_report_rejects_mismatched_pre_backend(
+def test_compute_metrics_report_rejects_mismatched_pre_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_table_info(_db_key: str, table: str) -> SimpleNamespace:
@@ -377,7 +434,7 @@ def test_compute_segment_metrics_report_rejects_mismatched_pre_backend(
     monkeypatch.setattr(reporting.sql, "table_info", fake_table_info)
 
     with pytest.raises(ValueError, match="same backend"):
-        reporting.compute_segment_metrics_report(
+        reporting.compute_metrics_report(
             "sandbox.metrics",
             "segment_name",
             db_key="analytics",

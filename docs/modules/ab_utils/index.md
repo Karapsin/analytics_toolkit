@@ -5,7 +5,7 @@
 AB-test helpers for user splitting, metric comparison, MDE planning, parallel
 execution, and presentation output.
 
-Use [compute_segment_metrics_report](functions/compute-segment-metrics-report.md)
+Use [compute_metrics_report](functions/compute-metrics-report.md)
 to calculate overall and per-segment SQL metrics and optionally create a
 presentation workbook in one call.
 
