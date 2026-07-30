@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Added segmented SQL AB metrics report helper with optional Excel output.
+- Added concurrent list execution to sql.execute with soft and hard concurrency caps.
+
 ## 1.3.11.3 - 2026-07-30
 
 - Added setup and read phases to execute_read timing logs.

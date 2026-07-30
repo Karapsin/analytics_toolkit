@@ -78,7 +78,7 @@ rows = sql.transfer(
 ```
 
 - `sql.read`: run a query and return a dataframe.
-- `sql.execute`: run DDL or DML without returning a dataframe.
+- `sql.execute`: run one DDL/DML string or a concurrent list of independent queries.
 - `sql.execute_read`: run setup SQL and return the final result as a dataframe.
 - `sql.load_df`: load a pandas dataframe into a configured backend table.
 - `sql.transfer`: move rows from a source query to a target table across backends.

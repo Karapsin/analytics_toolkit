@@ -10,6 +10,7 @@ from .metrics import (
     compute_test_metrics_sql_native,
     format_ab_metrics,
 )
+from .reporting import compute_segment_metrics_report
 from .split import do_split
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "compute_mde_from_sql",
     "compute_mde_sql_native",
     "compute_metrics_from_sql",
+    "compute_segment_metrics_report",
     "compute_test_metrics",
     "compute_test_metrics_sql_native",
     "do_split",

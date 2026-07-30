@@ -2219,6 +2219,69 @@
               ]
             }
           ]
+        },
+        "concurrency": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_list_defaults_to_sequential_execution"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_list_returns_results_in_input_order"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_list_defaults_to_sequential_execution"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_soft_cap_limits_active_workers"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_list_defaults_to_sequential_execution"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_execute_concurrency.py::test_execute_sql_hard_cap_rejects_effective_batch_concurrency"
+              ]
+            }
+          ]
         }
       }
     },

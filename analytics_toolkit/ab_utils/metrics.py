@@ -9,6 +9,7 @@ from .planning import (
     compute_mde_from_sql,
     compute_mde_sql_native,
 )
+from .reporting import compute_segment_metrics_report
 from .sql_native import compute_test_metrics_sql_native
 from .bootstrap import (
     _apply_multiple_comparisons_adjustment,
@@ -100,6 +101,7 @@ __all__ = [
     "compute_test_metrics",
     "compute_test_metrics_sql_native",
     "compute_metrics_from_sql",
+    "compute_segment_metrics_report",
     "format_ab_metrics",
     "_apply_multiple_comparisons_adjustment",
     "_apply_outliers_to_agg_ratio_components",
