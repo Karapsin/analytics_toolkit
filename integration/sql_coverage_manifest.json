@@ -2978,6 +2978,26 @@
     "gp_vacuum": {
       "classification": "integration",
       "parameters": {
+        "db_key": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "<required>",
+          "states": [
+            {
+              "state": "required-explicit",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "scenarios": [
+                "maintenance.gp"
+              ]
+            }
+          ]
+        },
         "table_name": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "<required>",
@@ -3057,27 +3077,6 @@
               "status": "covered",
               "tests": [
                 "tests/test_sql_improvements.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
-              ]
-            }
-          ]
-        },
-        "db_key": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'gp'",
-          "states": [
-            {
-              "state": "default",
-              "value": "'gp'",
-              "status": "covered",
-              "scenarios": [
-                "maintenance.gp"
-              ]
-            },
-            {
-              "state": "supported-non-default",
-              "status": "covered",
-              "scenarios": [
-                "maintenance.gp"
               ]
             }
           ]

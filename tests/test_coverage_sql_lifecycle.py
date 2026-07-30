@@ -132,7 +132,12 @@ def test_gp_vacuum_rejects_non_gp_connection(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     with pytest.raises(UnsupportedConnectionTypeError, match="requires a gp connection"):
-        maintenance.gp_vacuum("schema.table", db_key="warehouse")
+        maintenance.gp_vacuum("warehouse", "schema.table")
+
+
+def test_gp_vacuum_requires_db_key() -> None:
+    with pytest.raises(TypeError, match="db_key"):
+        maintenance.gp_vacuum(table_name="schema.table")
 
 
 @pytest.mark.parametrize("vacuum_error", [None, RuntimeError("vacuum failed")])
@@ -161,15 +166,15 @@ def test_gp_vacuum_always_closes_connection(
 
     if vacuum_error is None:
         maintenance.gp_vacuum(
+            "gp_alias",
             "schema.table",
             analyze=True,
             full=True,
             verbose=False,
-            db_key="gp_alias",
         )
     else:
         with pytest.raises(RuntimeError, match="vacuum failed"):
-            maintenance.gp_vacuum("schema.table", db_key="gp_alias")
+            maintenance.gp_vacuum("gp_alias", "schema.table")
 
     assert closed == [True]
     assert adapter.calls[0][0] == "vacuum_table"

@@ -80,11 +80,11 @@ def analyze_table(
 
 @timed_public_sql_function
 def gp_vacuum(
+    db_key: str,
     table_name: str,
     analyze: bool = False,
     full: bool = False,
     verbose: bool = True,
-    db_key: str = "gp",
 ) -> None:
     config = get_connection_config(db_key)
     if config.backend != "gp":

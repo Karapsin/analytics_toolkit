@@ -282,7 +282,7 @@ def test_greenplum_partition_and_vacuum() -> None:
     table = _table("gp", "vacuum")
     try:
         sql.load_df("gp", table, _frame(), write_mode="replace", gp_distributed_by_key="id")
-        sql.gp_vacuum(table, analyze=True, verbose=False, db_key="gp")
+        sql.gp_vacuum("gp", table, analyze=True, verbose=False)
         plan = sql.gp_create_partitions(
             "gp",
             table,

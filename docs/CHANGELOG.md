@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Added concurrent list execution to sql.execute with soft and hard concurrency caps.
 - Resolved here paths from active Positron editor execution metadata.
 - Supported compound queries in Greenplum temp-table rewrites.
+- Required explicit Greenplum connection keys for gp_vacuum.
 
 ## 1.3.11.3 - 2026-07-30
 

@@ -5,7 +5,7 @@
 Run Greenplum `VACUUM` outside a transaction block.
 
 ```python
-gp_vacuum(table_name: 'str', analyze: 'bool' = False, full: 'bool' = False, verbose: 'bool' = True, db_key: 'str' = 'gp') -> 'None'
+gp_vacuum(db_key: 'str', table_name: 'str', analyze: 'bool' = False, full: 'bool' = False, verbose: 'bool' = True) -> 'None'
 ```
 
 ## Inputs
@@ -21,7 +21,7 @@ gp_vacuum(table_name: 'str', analyze: 'bool' = False, full: 'bool' = False, verb
 ```python
 from analytics_toolkit import sql
 
-sql.gp_vacuum("sandbox.orders", analyze=True)
+sql.gp_vacuum("gp", "sandbox.orders", analyze=True)
 ```
 
 Output example:
