@@ -243,6 +243,7 @@ def test_million_row_transfer_has_bounded_batches_and_memory(
         "full_retry_cnt": 1,
         "adaptive_batch_size": False,
         "target_rows_per_second": False,
+        "ignore_source_staging": True,
     }
     if mode == "values":
         options.update(table_options("ch", only_shard=True))

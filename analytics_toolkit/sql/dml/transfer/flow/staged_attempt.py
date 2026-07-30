@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-# ruff: noqa: EM101, EM102, I001, PLR0913, PLR2004, S608, TC006, TID252, TRY003, TRY300, TRY301
+# ruff: noqa: EM101, EM102, I001, PLR0913, PLR0915, PLR2004, S608, TC006, TID252, TRY003, TRY300, TRY301
 
 import contextvars
+import math
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from typing import Any, cast
 
 import pandas as pd
+
+from analytics_toolkit.general import time_print
 
 from ....backends import get_backend_adapter
 from ....backends.transfer_stage import (
@@ -127,11 +130,21 @@ def run_staged_source_transfer_attempt(
             stage_state,
         )
         stage_state.source_stage_tables = [snapshot_table]
+        total_rows = sum(slice_counts.values())
+        worker_count = _effective_transfer_worker_count(
+            options.concurrency,
+            total_rows,
+            options.batch_size,
+        )
+        time_print(
+            f"Transfer worker selection: requested={options.concurrency}, effective={worker_count}",
+            phase="select_workers",
+        )
         stage_tables = _create_worker_stages(
             options,
             target_ref,
             stage_state,
-            worker_count=max(1, min(options.concurrency, max(1, sum(slice_counts.values())))),
+            worker_count=worker_count,
         )
         scheduler = AdaptiveRangeScheduler(slice_counts)
         _run_range_workers(
@@ -144,7 +157,6 @@ def run_staged_source_transfer_attempt(
             insert_retry_cnt=insert_retry_cnt,
         )
         scheduler.validate_complete()
-        total_rows = sum(slice_counts.values())
         stage_state.slice_counts = [
             TransferSliceRowCount(
                 index=slice_id,
@@ -311,6 +323,8 @@ def _snapshot_slice_counts(
         f"SELECT {slice_column}, COUNT(*) FROM {snapshot_table} GROUP BY {slice_column}",
         print_queries=False,
         output_type="dict",
+        action_name="snapshot counting",
+        phase="count_snapshot",
     )
     counts = {
         int(slice_id): int(count) for slice_id, count in zip(result.columns[0], result.columns[1])
@@ -319,6 +333,15 @@ def _snapshot_slice_counts(
         [item.index for item in options.transfer_slices] if options.transfer_slices else [0]
     )
     return {slice_id: counts.get(slice_id, 0) for slice_id in expected_slices}
+
+
+def _effective_transfer_worker_count(
+    requested_concurrency: int,
+    total_rows: int,
+    batch_size: int,
+) -> int:
+    batch_count = max(1, math.ceil(total_rows / batch_size))
+    return min(requested_concurrency, batch_count)
 
 
 def _create_worker_stages(
@@ -491,6 +514,8 @@ def _read_snapshot_range(
         sql,
         print_queries=False,
         output_type="dict",
+        action_name="source-batch reading",
+        phase="read_source_batch",
     )
     batch = RowBatch(
         columns=list(result.column_names),
@@ -515,6 +540,7 @@ def _consolidate_worker_stages(
 ) -> None:
     if options.write_mode == "upsert" or len(stage_tables) < 2:
         return
+    replace_connection(options.to_db_key, target_ref)
     for stage_table in stage_tables[1:]:
         insert_from_table(
             options.to_db_backend,

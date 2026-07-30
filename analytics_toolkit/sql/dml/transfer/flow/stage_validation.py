@@ -32,6 +32,8 @@ def validate_transfer_stage_identity(
                 stage_table,
                 internal_columns,
             ),
+            action_name="stage-identity validation",
+            phase="validate_stage_identity",
         )
         if identity_rows and identity_rows != [(transfer_id, destination)]:
             raise RuntimeError(
@@ -50,6 +52,8 @@ def validate_transfer_stage_identity(
             aggregate_sql,
             internal_columns,
         ),
+        action_name="ordinal validation",
+        phase="validate_stage_ordinals",
     )
     actual = {
         int(slice_id): (int(minimum), int(maximum), int(count), int(distinct_count))
@@ -99,12 +103,21 @@ def build_stage_ordinal_validation_sql(
     )
 
 
-def _rows(backend: str, connection: Any, sql: str) -> list[tuple[Any, ...]]:
+def _rows(
+    backend: str,
+    connection: Any,
+    sql: str,
+    *,
+    action_name: str,
+    phase: str,
+) -> list[tuple[Any, ...]]:
     result = _read_backend(
         backend,
         connection,
         sql,
         print_queries=False,
         output_type="dict",
+        action_name=action_name,
+        phase=phase,
     )
     return [tuple(values) for values in zip(*result.columns)]

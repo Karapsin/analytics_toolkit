@@ -15,7 +15,7 @@ show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None'
 - `db_key` - connection key or alias from `.connections`
 - `table_name` - target or source table name, depending on the helper
 - `schema` - schema/database filter for table listing
-- `conditions` - backend-native metadata predicate appended to the table-listing query
+- `conditions` - SQL predicate evaluated against the normalized metadata aliases `db`, `schema`, `table_name`, `row_count`, and `table_size_bytes`
 
 ### Backend-Specific Inputs
 
@@ -41,16 +41,20 @@ tables = sql.show_tables(
 )
 ```
 
-`conditions` uses the backend's physical metadata columns. For example,
-ClickHouse exposes the table name as `name` in `system.tables`:
+The same normalized condition works across Greenplum, Trino, and ClickHouse.
+Wildcard syntax is passed through unchanged, so callers provide `%` and `_`
+directly:
 
 ```python
 tables = sql.show_tables(
     "ch",
     schema="analytics",
-    conditions="name LIKE '%temp_users%'",
+    conditions="table_name LIKE '%temp_users%'",
 )
 ```
+
+`table_name` remains an exact string or exact-name-list filter and can be
+combined with `schema` and `conditions`.
 
 Output example:
 

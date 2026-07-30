@@ -18,6 +18,7 @@ def run_timed_query(
     action: Callable[[], T],
     *,
     phase: str | None = None,
+    action_name: str = "SQL query",
 ) -> T:
     raise_if_cancelled()
     started_at = time.perf_counter()
@@ -31,9 +32,12 @@ def run_timed_query(
         return result
     finally:
         elapsed_seconds = time.perf_counter() - started_at
-        message_prefix = "Failed SQL query" if status == "failed" else "Finished SQL query"
+        message_prefix = (
+            f"Failed {action_name}" if status == "failed" else f"Finished {action_name}"
+        )
         time_print(
             f"{message_prefix} in {_format_duration(elapsed_seconds)}",
+            level="info",
             backend=backend,
             phase=phase,
         )

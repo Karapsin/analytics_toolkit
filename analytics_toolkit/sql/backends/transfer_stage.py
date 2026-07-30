@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 
+TRINO_IDENTIFIER_MAX_CHARS = 128
+
 
 def execute_transfer_materialization(
     adapter: Any,
@@ -47,7 +49,7 @@ def fit_hashed_stage_identifier(
 ) -> str:
     fitter: Callable[[str, str, str], str] = {
         "gp": _fit_gp_hashed_stage_identifier,
-        "trino": _unlimited_hashed_stage_identifier,
+        "trino": _fit_trino_hashed_stage_identifier,
         "ch": _unlimited_hashed_stage_identifier,
     }[connection_type]
     return fitter(prefix, readable_base, tail)
@@ -110,6 +112,19 @@ def _unlimited_hashed_stage_identifier(
     tail: str,
 ) -> str:
     return f"{prefix}{readable_base}{tail}"
+
+
+def _fit_trino_hashed_stage_identifier(
+    prefix: str,
+    readable_base: str,
+    tail: str,
+) -> str:
+    available = TRINO_IDENTIFIER_MAX_CHARS - len(prefix) - len(tail)
+    if available < 0:
+        raise ValueError(
+            "Destination hash and stage identity components are too long for Trino identifiers."
+        )
+    return f"{prefix}{readable_base[:available]}{tail}"
 
 
 def _gp_source_snapshot_sqls(

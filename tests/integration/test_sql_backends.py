@@ -105,6 +105,7 @@ def test_backend_load_metadata_upsert_and_cleanup(backend: str) -> None:
         listed = sql.show_tables(
             backend,
             schema="public" if backend == "gp" else "integration",
+            conditions=f"table_name LIKE '%{table.rsplit('.', 1)[-1]}%'",
             table_name=table.rsplit(".", 1)[-1],
             trino_catalog="iceberg" if backend == "trino" else None,
         )

@@ -435,6 +435,8 @@ def _count_source_slice(
         f"SELECT COUNT(*) FROM {stage_table} WHERE {slice_column} = {slice_id}",
         print_queries=False,
         output_type="dict",
+        action_name="snapshot counting",
+        phase="count_snapshot",
     )
     return int(result.columns[0][0])
 

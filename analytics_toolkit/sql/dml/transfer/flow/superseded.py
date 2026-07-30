@@ -7,6 +7,7 @@ from typing import Any
 
 from ....backends import get_backend_adapter
 from ....dml.io.read_sql import _read_backend
+from ....execution.query_timing import run_timed_query
 from ...load.stage import cleanup_stage_table
 from ..runtime.models import TransferOptions
 from .stage_identity import TransferInternalColumns
@@ -29,11 +30,16 @@ def cleanup_superseded_transfer_stages(
         return []
     adapter = get_backend_adapter(backend)
     try:
-        table_names = adapter.query_transfer_stage_table_names(
-            connection,
-            connection_key=connection_key,
-            transfer_staging_schema=staging_schema,
-            table_pattern=f"{options.destination_hash}__%",
+        table_names = run_timed_query(
+            backend,
+            lambda: adapter.query_transfer_stage_table_names(
+                connection,
+                connection_key=connection_key,
+                transfer_staging_schema=staging_schema,
+                table_pattern=f"{options.destination_hash}__%",
+            ),
+            action_name="superseded-stage inspection",
+            phase="inspect_superseded_stages",
         )
     except Exception:
         return []
@@ -94,5 +100,7 @@ def _read_stage_identities(
         ),
         print_queries=False,
         output_type="dict",
+        action_name="superseded-stage inspection",
+        phase="inspect_superseded_stages",
     )
     return list(zip(result.columns[0], result.columns[1])) if result.row_count else []

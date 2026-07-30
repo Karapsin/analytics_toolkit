@@ -155,31 +155,12 @@ def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(
     )
 
     assert calls[0][0] == "gp"
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            current_database() AS db,
-            table_schema AS schema,
-            table_name,
-            CASE
-                WHEN c.reltuples >= 0 THEN c.reltuples::bigint
-                ELSE NULL
-            END AS row_count,
-            CASE
-                WHEN c.relkind IN ('r', 'm', 'p') THEN pg_total_relation_size(c.oid)
-                ELSE NULL
-            END AS table_size_bytes
-        FROM information_schema.tables AS t
-        LEFT JOIN pg_catalog.pg_namespace AS n
-          ON n.nspname = t.table_schema
-        LEFT JOIN pg_catalog.pg_class AS c
-          ON c.relnamespace = n.oid
-          AND c.relname = t.table_name
-        WHERE 1 = 1
-          AND table_schema = 'mart'
-          AND (table_name ILIKE '%collections%')
-        ORDER BY table_schema, table_name
-        """
+    query = _compact(calls[0][1])
+    assert "FROM ( SELECT current_database() AS db" in query
+    assert "FROM information_schema.tables AS t" in query
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND schema = 'mart' "
+        "AND (table_name ILIKE '%collections%') ORDER BY schema, table_name"
     )
     assert list(result.columns) == [
         "db",
@@ -200,19 +181,11 @@ def test_show_tables_clickhouse_filters_database(
     show_tables_module.show_tables("ch", schema="analytics")
 
     assert calls[0][0] == "ch"
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            database AS db,
-            database AS schema,
-            name AS table_name,
-            total_rows AS row_count,
-            total_bytes AS table_size_bytes
-        FROM system.tables
-        WHERE 1 = 1
-          AND database = 'analytics'
-        ORDER BY database, name
-        """
+    query = _compact(calls[0][1])
+    assert "FROM ( SELECT database AS db" in query
+    assert "name AS table_name" in query
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND schema = 'analytics' ORDER BY schema, table_name"
     )
 
 
@@ -223,19 +196,9 @@ def test_show_tables_filters_single_table_name(
 
     show_tables_module.show_tables("ch", table_name="events")
 
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            database AS db,
-            database AS schema,
-            name AS table_name,
-            total_rows AS row_count,
-            total_bytes AS table_size_bytes
-        FROM system.tables
-        WHERE 1 = 1
-          AND name = 'events'
-        ORDER BY database, name
-        """
+    query = _compact(calls[0][1])
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND table_name = 'events' ORDER BY schema, table_name"
     )
 
 
@@ -250,20 +213,10 @@ def test_show_tables_filters_schema_qualified_table_name_when_schema_is_supplied
         table_name="pa_core_stage.funnels_dash_cvmoffers_daily",
     )
 
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            database AS db,
-            database AS schema,
-            name AS table_name,
-            total_rows AS row_count,
-            total_bytes AS table_size_bytes
-        FROM system.tables
-        WHERE 1 = 1
-          AND database = 'pa_core_stage'
-          AND name = 'funnels_dash_cvmoffers_daily'
-        ORDER BY database, name
-        """
+    query = _compact(calls[0][1])
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND schema = 'pa_core_stage' "
+        "AND table_name = 'funnels_dash_cvmoffers_daily' ORDER BY schema, table_name"
     )
 
 
@@ -429,35 +382,14 @@ def test_show_tables_filters_multiple_table_names_and_escapes_values(
         "gp",
         schema="mart",
         table_name=["orders", "customer's"],
-        conditions="table_type = 'BASE TABLE'",
+        conditions="row_count >= 0",
     )
 
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            current_database() AS db,
-            table_schema AS schema,
-            table_name,
-            CASE
-                WHEN c.reltuples >= 0 THEN c.reltuples::bigint
-                ELSE NULL
-            END AS row_count,
-            CASE
-                WHEN c.relkind IN ('r', 'm', 'p') THEN pg_total_relation_size(c.oid)
-                ELSE NULL
-            END AS table_size_bytes
-        FROM information_schema.tables AS t
-        LEFT JOIN pg_catalog.pg_namespace AS n
-          ON n.nspname = t.table_schema
-        LEFT JOIN pg_catalog.pg_class AS c
-          ON c.relnamespace = n.oid
-          AND c.relname = t.table_name
-        WHERE 1 = 1
-          AND table_schema = 'mart'
-          AND table_name IN ('orders', 'customer''s')
-          AND (table_type = 'BASE TABLE')
-        ORDER BY table_schema, table_name
-        """
+    query = _compact(calls[0][1])
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND schema = 'mart' "
+        "AND table_name IN ('orders', 'customer''s') AND (row_count >= 0) "
+        "ORDER BY schema, table_name"
     )
 
 
@@ -469,20 +401,44 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
     show_tables_module.show_tables("TRINO", schema="sandbox")
 
     assert calls[0][0] == "trino"
-    assert _compact(calls[0][1]) == _compact(
-        """
-        SELECT
-            table_catalog AS db,
-            table_schema AS schema,
-            table_name,
-            CAST(NULL AS BIGINT) AS row_count,
-            CAST(NULL AS BIGINT) AS table_size_bytes
-        FROM iceberg.information_schema.tables
-        WHERE 1 = 1
-          AND table_schema = 'sandbox'
-        ORDER BY table_schema, table_name
-        """
+    query = _compact(calls[0][1])
+    assert "FROM iceberg.information_schema.tables" in query
+    assert query.endswith(
+        ") AS table_metadata WHERE 1 = 1 AND schema = 'sandbox' ORDER BY schema, table_name"
     )
+
+
+@pytest.mark.parametrize(
+    ("db_key", "schema", "inner_source"),
+    [
+        ("gp", "public", "FROM information_schema.tables AS t"),
+        ("trino", "sandbox", "FROM iceberg.information_schema.tables"),
+        ("ch", "analytics", "FROM system.tables"),
+    ],
+)
+def test_show_tables_conditions_use_portable_outer_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+    db_key: str,
+    schema: str,
+    inner_source: str,
+) -> None:
+    calls = _capture_read_sql(monkeypatch)
+
+    show_tables_module.show_tables(
+        db_key,
+        schema=schema,
+        conditions="table_name LIKE '%temp_users%'",
+        table_name=["temp_users", "temp_users_archive"],
+    )
+
+    query = _compact(calls[0][1])
+    assert inner_source in query
+    assert (
+        f") AS table_metadata WHERE 1 = 1 AND schema = '{schema}' "
+        "AND table_name IN ('temp_users', 'temp_users_archive') "
+        "AND (table_name LIKE '%temp_users%') ORDER BY schema, table_name"
+    ) in query
+    assert "%temp_users%" in query
 
 
 def test_show_tables_trino_catalog_argument_overrides_config(

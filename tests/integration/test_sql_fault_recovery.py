@@ -100,7 +100,9 @@ def test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambi
     )
     options = table_options(backend, only_shard=backend == "ch")
     sql.load_df(alias, table, original, write_mode="replace", **options)
-    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+    attempt_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.staged_attempt"
+    )
     gate = FaultGate(phase="second_stage_batch", trigger_call=2, timeout=90, hold_exception=True)
     monkeypatch.setattr(
         attempt_module,
@@ -356,6 +358,22 @@ def test_minio_unavailable_after_first_parquet_object_cleans_attempt(
     parquet_module = importlib.import_module(
         "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
     )
+    attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.attempt")
+
+    def initialize_object_stage(*, options: Any, stage_state: Any, **_kwargs: Any) -> None:
+        suffix = f"{options.transfer_id}__w00000"
+        stage_state.stage_table = f"hive.integration_stage.fault_{options.transfer_id}"
+        stage_state.stage_external_location = parquet_module.build_stage_external_location(
+            options,
+            stage_suffix=suffix,
+        )
+        stage_state.stage_table_created = True
+
+    monkeypatch.setattr(
+        attempt_module,
+        "create_parquet_stage_table",
+        initialize_object_stage,
+    )
     gate = FaultGate(
         phase="second_parquet_upload",
         trigger_call=2,
@@ -388,6 +406,7 @@ def test_minio_unavailable_after_first_parquet_object_cleans_attempt(
                 full_retry_cnt=1,
                 adaptive_batch_size=False,
                 target_rows_per_second=False,
+                ignore_source_staging=True,
             )
         ).start()
     )
@@ -423,14 +442,14 @@ def test_hive_metastore_failure_during_external_registration_preserves_target(
         gate.wrap(attempt_module.create_parquet_stage_table),
     )
     table = resource_registry.table(
-        "trino_target_parquet",
+        "trino_target_values",
         integration_table("trino", "fault_hive_registration"),
     )
     original = pd.DataFrame(
         {"row_id": [100], "event_date": [pd.Timestamp("2026-07-01")], "value": ["original"]}
     )
     sql.load_df(
-        "trino_target_parquet", table, original, write_mode="replace", partition_by=["event_date"]
+        "trino_target_values", table, original, write_mode="replace", partition_by=["event_date"]
     )
     worker = resource_registry.worker(
         _OperationWorker(
@@ -446,6 +465,7 @@ def test_hive_metastore_failure_during_external_registration_preserves_target(
                 full_retry_cnt=1,
                 adaptive_batch_size=False,
                 target_rows_per_second=False,
+                ignore_source_staging=True,
             )
         ).start()
     )
@@ -459,7 +479,7 @@ def test_hive_metastore_failure_during_external_registration_preserves_target(
     worker.join(30)
     assert worker.error is not None
     actual = sql.read(
-        "trino_target_parquet",
+        "trino_target_values",
         f"SELECT row_id, event_date, value FROM {table} ORDER BY row_id",
     )
     assert_exact_frame(actual, original)
@@ -503,6 +523,7 @@ def test_iceberg_catalog_failure_during_finalization_preserves_exact_target(
                 full_retry_cnt=1,
                 adaptive_batch_size=False,
                 target_rows_per_second=False,
+                ignore_source_staging=True,
             )
         ).start()
     )
@@ -557,6 +578,7 @@ def test_cleanup_failure_is_reported_without_masking_primary_failure(
             full_retry_cnt=1,
             adaptive_batch_size=False,
             target_rows_per_second=False,
+            ignore_source_staging=True,
         )
     captured = capsys.readouterr().out
     assert "Cleanup failed while handling transfer error" in captured

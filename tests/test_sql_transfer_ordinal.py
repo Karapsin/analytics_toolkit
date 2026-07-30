@@ -654,6 +654,32 @@ def test_snapshot_name_counts_and_worker_stage_allocation(monkeypatch: Any) -> N
     assert state.stage_table == tables[0]
 
 
+@pytest.mark.parametrize(
+    ("total_rows", "batch_size", "requested", "expected"),
+    [
+        (0, 100, 3, 1),
+        (20, 100, 3, 1),
+        (100, 100, 3, 1),
+        (201, 100, 5, 3),
+        (1_000, 100, 3, 3),
+    ],
+)
+def test_effective_transfer_worker_count_uses_initial_batch_count(
+    total_rows: int,
+    batch_size: int,
+    requested: int,
+    expected: int,
+) -> None:
+    assert (
+        staged_attempt._effective_transfer_worker_count(
+            requested,
+            total_rows,
+            batch_size,
+        )
+        == expected
+    )
+
+
 def test_range_worker_retries_only_failed_interval_and_validates_size(monkeypatch: Any) -> None:
     options = _staged_options()
     state = TransferStageState(
@@ -775,6 +801,12 @@ def test_range_read_workers_and_consolidation(monkeypatch: Any) -> None:
         "insert_from_table",
         lambda _backend, _connection, target, source, **_kwargs: inserted.append((target, source)),
     )
+    refreshed: list[str] = []
+    monkeypatch.setattr(
+        staged_attempt,
+        "replace_connection",
+        lambda connection_key, _ref: refreshed.append(connection_key),
+    )
     staged_attempt._consolidate_worker_stages(
         options,
         {"connection": object()},
@@ -782,6 +814,7 @@ def test_range_read_workers_and_consolidation(monkeypatch: Any) -> None:
         ["stage_0", "stage_1", "stage_2"],
     )
     assert inserted == [("stage_0", "stage_1"), ("stage_0", "stage_2")]
+    assert refreshed == ["target"]
     staged_attempt._consolidate_worker_stages(
         _staged_options(write_mode="upsert"),
         {"connection": object()},
@@ -789,6 +822,7 @@ def test_range_read_workers_and_consolidation(monkeypatch: Any) -> None:
         ["stage_0", "stage_1"],
     )
     assert len(inserted) == 2
+    assert refreshed == ["target"]
 
     ran: list[int] = []
     monkeypatch.setattr(
@@ -851,6 +885,23 @@ def test_transfer_stage_backend_helpers_cover_storage_and_identifier_edges() -> 
     assert transfer_stage.fit_hashed_stage_identifier("trino", "hash__", "name", "__tail") == (
         "hash__name__tail"
     )
+    trino_tail = "__analytics_toolkit_integration__stage__" + "a" * 32 + "__w00000"
+    trino_name = transfer_stage.fit_hashed_stage_identifier(
+        "trino",
+        "f" * 16 + "__",
+        "destination_" * 20,
+        trino_tail,
+    )
+    assert len(trino_name) == transfer_stage.TRINO_IDENTIFIER_MAX_CHARS
+    assert trino_name.startswith("f" * 16 + "__")
+    assert trino_name.endswith(trino_tail)
+    with pytest.raises(ValueError, match="too long for Trino"):
+        transfer_stage.fit_hashed_stage_identifier(
+            "trino",
+            "x" * transfer_stage.TRINO_IDENTIFIER_MAX_CHARS,
+            "name",
+            "tail",
+        )
     gp_name = transfer_stage.fit_hashed_stage_identifier(
         "gp",
         "hash__",
@@ -960,7 +1011,7 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
             [(0, 1, 2, 2, 2)],
         ]
     )
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args: next(results))
+    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
     stage_validation.validate_transfer_stage_identity(
         options=options,
         connection=object(),
@@ -977,7 +1028,11 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
             internal_columns=internal,
             expected_slice_counts={},
         )
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args: [("wrong", "target")])
+    monkeypatch.setattr(
+        stage_validation,
+        "_rows",
+        lambda *_args, **_kwargs: [("wrong", "target")],
+    )
     with pytest.raises(RuntimeError, match="mixed or unexpected"):
         stage_validation.validate_transfer_stage_identity(
             options=options,
@@ -993,7 +1048,11 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
         ([(1, 1, 1, 1, 1)], {0: 0}, "unexpected slice"),
     ]:
         calls = iter([[], ordinal_rows])
-        monkeypatch.setattr(stage_validation, "_rows", lambda *_args, calls=calls: next(calls))
+        monkeypatch.setattr(
+            stage_validation,
+            "_rows",
+            lambda *_args, calls=calls, **_kwargs: next(calls),
+        )
         with pytest.raises(RuntimeError, match=message):
             stage_validation.validate_transfer_stage_identity(
                 options=options,
@@ -1009,7 +1068,13 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
         lambda *_args, **_kwargs: SimpleNamespace(columns=([1, 2], [3, 4])),
     )
     monkeypatch.setattr(stage_validation, "_rows", read_rows)
-    assert stage_validation._rows("gp", object(), "SELECT") == [(1, 3), (2, 4)]
+    assert stage_validation._rows(
+        "gp",
+        object(),
+        "SELECT",
+        action_name="stage-identity validation",
+        phase="validate_stage_identity",
+    ) == [(1, 3), (2, 4)]
 
 
 def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatch: Any) -> None:

@@ -6322,6 +6322,16 @@
       "node_id": "tests/integration/test_sql_types.py::test_staged_source_retry_preserves_completed_ranges",
       "backends": ["trino", "ch"]
     },
+    "types.transfer.staged_small.ch.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_staged_ch_to_gp_transfer_caps_workers_for_one_batch",
+      "backends": ["ch", "gp"]
+    },
+    "types.transfer.staged_refresh.ch.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_types.py::test_staged_ch_to_gp_consolidation_replaces_closed_coordinator",
+      "backends": ["ch", "gp"]
+    },
     "atomicity.load.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_atomicity.py::test_validation_failures_preserve_existing_target[atomicity.load.gp]",

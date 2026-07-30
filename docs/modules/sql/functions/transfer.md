@@ -49,7 +49,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `table_schema` - explicit backend-native column type mapping for created tables
 - `transfer_keys` - optional placeholder name, placeholder-name sequence, or `{placeholder_name: sql_expression}` mapping used to split the source query into explicit keyed slices
 - `transfer_key_values` - explicit values to transfer for `transfer_keys`; a single key accepts a sequence or `{placeholder_name: values}`, while multiple keys require `{placeholder_name: values}` for every key
-- `concurrency` - legacy combined reader/writer count; omission resolves to one reader and one writer, and it cannot be combined with either split setting
+- `concurrency` - legacy combined reader/writer count; omission resolves to one reader and one writer, it cannot be combined with either split setting, and unkeyed source-staged transfers cap workers at `ceil(total_rows / batch_size)`
 - `read_concurrency` - source-reader count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
 - `write_concurrency` - target-stage writer count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
 - `ignore_source_staging` - when `True`, ignore the source connection's `transfer_staging_schema` for this call and use direct streaming; target-side staging is unchanged
@@ -220,6 +220,13 @@ rows = sql.transfer(
   one source reader and one target writer, and target writing begins only after
   all source stages finish. Unkeyed transfers continue to use slice zero in one
   source snapshot with bounded ordinal ranges.
+- Unkeyed source-staged transfers keep at least one worker and use no more than
+  `min(concurrency, ceil(total_rows / batch_size))` workers. Logs report both
+  requested and effective counts. Before multiple non-upsert worker stages are
+  consolidated, the coordinator opens a fresh target connection so idle
+  expiry during worker loading cannot break the merge.
+- Internal snapshot, source-batch, stage-identity, ordinal, and superseded-stage
+  queries use distinct info-level action and phase labels in transfer logs.
 - Transfer SQL stage names begin with a stable 16-hex destination hash and also
   carry the full transfer ID and worker/role identity. The hash is a naming
   prefix, not deletion authority. Exact canonical destination values stored in

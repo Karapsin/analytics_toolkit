@@ -434,6 +434,32 @@ def test_run_timed_query_overrides_inherited_phase(capsys) -> None:
     assert "[timed_query] [gp/gp] Finished SQL in " in output
 
 
+@pytest.mark.parametrize(
+    ("action_name", "phase"),
+    [
+        ("superseded-stage inspection", "inspect_superseded_stages"),
+        ("snapshot counting", "count_snapshot"),
+        ("source-batch reading", "read_source_batch"),
+        ("stage-identity validation", "validate_stage_identity"),
+        ("ordinal validation", "validate_stage_ordinals"),
+    ],
+)
+def test_run_timed_query_logs_precise_transfer_action_and_phase(
+    action_name: str,
+    phase: str,
+    capsys,
+) -> None:
+    query_timing_module.run_timed_query(
+        "gp",
+        lambda: None,
+        action_name=action_name,
+        phase=phase,
+    )
+
+    output = capsys.readouterr().out
+    assert f"[gp] [{phase}] Finished {action_name} in " in output
+
+
 def test_run_timed_query_logs_human_readable_elapsed(
     monkeypatch,
     capsys,

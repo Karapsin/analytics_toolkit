@@ -433,3 +433,123 @@ def test_staged_source_retry_preserves_completed_ranges(  # noqa: PLR0915
     assert completed.count(completed_first) == 1
     assert attempt_count == 1
     _assert_canonical_table(target_alias, target_table, "ch", frame)
+
+
+@pytest.mark.sql_scenario("types.transfer.staged_small.ch.gp")
+def test_staged_ch_to_gp_transfer_caps_workers_for_one_batch(
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    source_alias = backend_alias("ch")
+    target_alias = backend_alias("gp", target=True)
+    source_table = _register_table(
+        resource_registry,
+        "ch",
+        source_alias,
+        "staged_small_source",
+    )
+    target_table = _register_table(
+        resource_registry,
+        "gp",
+        target_alias,
+        "staged_small_target",
+    )
+    frame = canonical_frame().iloc[:2].copy()
+    sql.load_df(
+        source_alias,
+        source_table,
+        frame,
+        write_mode="replace",
+        table_schema=canonical_schema("ch"),
+        retry_cnt=1,
+        **table_options("ch", only_shard=True),
+    )
+
+    transferred = sql.transfer(
+        source_alias,
+        target_alias,
+        from_table=source_table,
+        to_table=target_table,
+        write_mode="replace",
+        concurrency=3,
+        batch_size=100,
+        adaptive_batch_size=False,
+        target_rows_per_second=False,
+        table_schema=canonical_schema("gp"),
+        retry_cnt=1,
+        **table_options("gp"),
+    )
+
+    assert transferred == len(frame)
+    _assert_canonical_table(target_alias, target_table, "gp", frame)
+
+
+@pytest.mark.sql_scenario("types.transfer.staged_refresh.ch.gp")
+def test_staged_ch_to_gp_consolidation_replaces_closed_coordinator(
+    resource_registry: ResourceRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    staged_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.staged_attempt"
+    )
+    real_consolidate = staged_module._consolidate_worker_stages
+    coordinator_closed = False
+
+    def close_before_consolidation(*args: Any, **kwargs: Any) -> Any:
+        nonlocal coordinator_closed
+        target_ref = args[1]
+        target_ref["connection"].close()
+        coordinator_closed = True
+        return real_consolidate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        staged_module,
+        "_consolidate_worker_stages",
+        close_before_consolidation,
+    )
+    source_alias = backend_alias("ch")
+    target_alias = backend_alias("gp", target=True)
+    source_table = _register_table(
+        resource_registry,
+        "ch",
+        source_alias,
+        "staged_refresh_source",
+    )
+    target_table = _register_table(
+        resource_registry,
+        "gp",
+        target_alias,
+        "staged_refresh_target",
+    )
+    frame = canonical_frame()
+    sql.load_df(
+        source_alias,
+        source_table,
+        frame,
+        write_mode="replace",
+        table_schema=canonical_schema("ch"),
+        retry_cnt=1,
+        **table_options("ch", only_shard=True),
+    )
+
+    transferred = sql.transfer(
+        source_alias,
+        target_alias,
+        from_table=source_table,
+        to_table=target_table,
+        write_mode="replace",
+        concurrency=3,
+        batch_size=2,
+        adaptive_batch_size=False,
+        target_rows_per_second=False,
+        table_schema=canonical_schema("gp"),
+        retry_cnt=1,
+        **table_options("gp"),
+    )
+
+    assert coordinator_closed
+    assert transferred == len(frame)
+    _assert_canonical_table(target_alias, target_table, "gp", frame)

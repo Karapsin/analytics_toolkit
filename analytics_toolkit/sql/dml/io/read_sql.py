@@ -249,13 +249,15 @@ def _maybe_print_query(query: str, print_queries: bool) -> None:
         time_print(f"Executing query:\n{statement_to_print}")
 
 
-def _read_backend(
+def _read_backend(  # noqa: PLR0913
     backend: str,
     connection: Any,
     sql: str,
     *,
     print_queries: bool,
     output_type: ReadOutputType,
+    action_name: str = "SQL query",
+    phase: str | None = None,
 ) -> pd.DataFrame | ReadColumnResult:
     adapter = get_backend_adapter(backend)
     if output_type == "dict":
@@ -268,6 +270,8 @@ def _read_backend(
                 print_query=_maybe_print_query,
                 read_dbapi_columns=_read_dbapi_columns,
             ),
+            action_name=action_name,
+            phase=phase,
         )
     return run_timed_query(
         backend,
@@ -278,6 +282,8 @@ def _read_backend(
             print_query=_maybe_print_query,
             read_dbapi_query=_read_dbapi_query,
         ),
+        action_name=action_name,
+        phase=phase,
     )
 
 
