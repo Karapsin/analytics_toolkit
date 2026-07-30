@@ -3,8 +3,11 @@ from __future__ import annotations
 import inspect
 import sys
 import sysconfig
+from importlib import import_module
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
@@ -96,6 +99,10 @@ def _base_dir_for_recursive_match(
 
 
 def _resolve_base_dir() -> Path | None:
+    positron_dir = _resolve_positron_editor_dir()
+    if positron_dir is not None:
+        return positron_dir
+
     main_dir = _resolve_main_file_dir()
     if main_dir is not None:
         return main_dir
@@ -112,6 +119,47 @@ def _resolve_base_dir() -> Path | None:
         return frame_path.parent
 
     return None
+
+
+def _resolve_positron_editor_dir() -> Path | None:
+    editor_dir = None
+    try:
+        ipython_module = import_module("IPython")
+        get_ipython = getattr(ipython_module, "get_ipython", None)
+        if callable(get_ipython):
+            shell = get_ipython()
+            kernel = getattr(shell, "kernel", None)
+            get_parent = getattr(kernel, "get_parent", None)
+            if callable(get_parent):
+                uri = _positron_code_location_uri(get_parent("shell"))
+                if uri is not None:
+                    parsed_uri = urlparse(uri)
+                    if parsed_uri.scheme.lower() == "file" and parsed_uri.path:
+                        decoded_path = url2pathname(parsed_uri.path)
+                        local_path = (
+                            f"//{parsed_uri.netloc}{decoded_path}"
+                            if parsed_uri.netloc
+                            else decoded_path
+                        )
+                        editor_dir = Path(local_path).parent
+    except Exception:  # noqa: BLE001, S110 -- optional IDE metadata must fail closed.
+        pass
+    return editor_dir
+
+
+def _positron_code_location_uri(parent: object) -> str | None:
+    uri = None
+    if isinstance(parent, dict):
+        content = parent.get("content")
+        if isinstance(content, dict):
+            positron = content.get("positron")
+            if isinstance(positron, dict):
+                code_location = positron.get("code_location")
+                if isinstance(code_location, dict):
+                    candidate = code_location.get("uri")
+                    if isinstance(candidate, str):
+                        uri = candidate
+    return uri
 
 
 def _is_this_module_path(path: Path, module_path: Path) -> bool:
