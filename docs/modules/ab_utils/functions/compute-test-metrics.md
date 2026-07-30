@@ -75,10 +75,10 @@ result = compute_test_metrics(
 Output example:
 
 ```python
-result[["metric", "metric_type", "group A", "group B", "p-value"]]
-#   metric metric_type  group A  group B  p-value
-# 0 orders        mean  control   test_1    0.041
-# 1    ctr       ratio  control   test_1    0.018
+result[["metric_name", "metric_type", "group_1", "group_2", "p-value"]]
+#   metric_name metric_type group_1  group_2  p-value
+# 0      orders        mean  test_1  control    0.041
+# 1         ctr       ratio  test_1  control    0.018
 ```
 
 Task-map usage:

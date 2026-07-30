@@ -11,29 +11,29 @@ _REQUIRED_COLUMNS = frozenset(
         "metric_name",
         "group_1",
         "group_2",
-        "metric_control",
-        "metric_test",
-        "n0",
-        "n1",
+        "metric_group_1",
+        "metric_group_2",
+        "n_group_1",
+        "n_group_2",
     }
 )
 
 _GROUP_OUTPUTS = {
     "metric_values": (
-        ("group_2", "metric_control", "metric_value"),
-        ("group_1", "metric_test", "metric_value"),
+        ("group_1", "metric_group_1", "metric_value"),
+        ("group_2", "metric_group_2", "metric_value"),
     ),
     "n": (
-        ("group_2", "n0", "n"),
-        ("group_1", "n1", "n"),
+        ("group_1", "n_group_1", "n"),
+        ("group_2", "n_group_2", "n"),
     ),
     "outliers_n": (
-        ("group_2", "outliers_n_control", "outliers_n"),
-        ("group_1", "outliers_n_test", "outliers_n"),
+        ("group_1", "outliers_n_group_1", "outliers_n"),
+        ("group_2", "outliers_n_group_2", "outliers_n"),
     ),
     "variance": (
-        ("group_2", "variance_control", "variance"),
-        ("group_1", "variance_test", "variance"),
+        ("group_1", "variance_group_1", "variance"),
+        ("group_2", "variance_group_2", "variance"),
     ),
 }
 
@@ -130,7 +130,10 @@ def format_ab_metrics(
                 "metric": "group_size",
             }
         group_size_row = group_size_rows_by_label[label_key]
-        for group_col, value_col in (("group_2", "n0"), ("group_1", "n1")):
+        for group_col, value_col in (
+            ("group_1", "n_group_1"),
+            ("group_2", "n_group_2"),
+        ):
             group_name = _column_part(source_row[group_col])
             _set_group_size_value(
                 label_key=label_key,

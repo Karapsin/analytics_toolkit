@@ -130,7 +130,7 @@ result = compute_test_metrics(
 
 Example output with CUPED and bootstrap columns enabled:
 
-| metric_type | group_1 | group_2 | metric_name | n0 | n1 | outliers_cutoff | outliers_n_control | outliers_n_test | metric_control | metric_test | variance_control | variance_test | delta_abs | delta_relative | mde_abs | mde_relative | s.e. | p-value | s.e. CUPED | p-value CUPED | mde_abs CUPED | mde_relative CUPED | s.e. bootstrap | bootstrap_adj_p |
+| metric_type | group_1 | group_2 | metric_name | n_group_1 | n_group_2 | outliers_cutoff | outliers_n_group_1 | outliers_n_group_2 | metric_group_1 | metric_group_2 | variance_group_1 | variance_group_2 | delta_abs | delta_relative | mde_abs | mde_relative | s.e. | p-value | s.e. CUPED | p-value CUPED | mde_abs CUPED | mde_relative CUPED | s.e. bootstrap | bootstrap_adj_p |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | mean | test | control | revenue | 10000 | 10050 | 250.0 | 3 | 4 | 12.40 | 13.10 | 45.20 | 47.80 | 0.70 | 0.056 | 0.42 | 0.034 | 0.15 | 0.003 | 0.11 | 0.001 | 0.31 | 0.025 | 0.14 | 0.012 |
 | ratio | test | control | ctr | 10000 | 10050 | 1.0 | 0 | 0 | 0.082 | 0.087 | 0.0009 | 0.0010 | 0.005 | 0.061 | 0.003 | 0.037 | 0.001 | 0.008 | 0.001 | 0.006 | 0.002 | 0.024 | 0.001 | 0.019 |

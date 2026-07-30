@@ -9,17 +9,40 @@ which metric and comparison each row represents, then choose the uncertainty
 columns that match the analysis mode.
 
 - `metric_type` is `"mean"` for regular metrics and `"ratio"` for ratio metrics.
-- `group_1` and `group_2` are included when there are more than two experiment groups.
-- `metric_control` and `metric_test` contain values in the baseline and test groups.
-- `variance_control` and `variance_test` contain the variance inputs for each group.
+- `group_1` identifies the candidate side of the comparison and `group_2`
+  identifies its baseline side. For test-versus-test rows, `group_2` is another
+  test group rather than the experiment's configured control group.
+- `metric_group_1` and `metric_group_2` contain the values for the corresponding
+  group columns.
+- `n_group_1` and `n_group_2` contain the corresponding sample sizes.
+- `variance_group_1` and `variance_group_2` contain the variance inputs for the
+  corresponding groups.
 - `s.e.` is the standard error of `delta_abs`.
-- `delta_relative` and `mde_relative` are raw relative changes, e.g. `0.05` for 5%.
+- `delta_abs` is `metric_group_1 - metric_group_2`; `delta_relative` and
+  `mde_relative` use group 2 as the baseline denominator and are raw relative
+  changes, e.g. `0.05` for 5%.
 - `outliers_cutoff` contains the global metric cutoff used for the comparison.
-- `outliers_n_control` and `outliers_n_test` count values or rows above the cutoff.
+- `outliers_n_group_1` and `outliers_n_group_2` count values or rows above the
+  cutoff for the corresponding groups.
 - CUPED columns such as `s.e. CUPED`, `p-value CUPED`, `mde_abs CUPED`, and
   `mde_relative CUPED` are added when pre-experiment data is supplied.
 - Bootstrap columns such as `s.e. bootstrap` and `bootstrap_adj_p` are added
   when multiple-comparison adjustment is enabled.
+
+## Group-position schema migration
+
+The raw comparison schema uses group positions instead of control/test labels:
+
+| Previous column | Current column |
+| --- | --- |
+| `n1` | `n_group_1` |
+| `n0` | `n_group_2` |
+| `outliers_n_test` | `outliers_n_group_1` |
+| `outliers_n_control` | `outliers_n_group_2` |
+| `metric_test` | `metric_group_1` |
+| `metric_control` | `metric_group_2` |
+| `variance_test` | `variance_group_1` |
+| `variance_control` | `variance_group_2` |
 
 `pre_exp_metrics_df` must contain the same group and user id columns used for
 the main call, include the control label, and keep overlapping users in the same

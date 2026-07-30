@@ -1144,12 +1144,12 @@ SELECT
     {_sql_string_literal(baseline_group)} AS group_2,
     summary.pair_n AS pair_n,
     summary.pre_var AS pre_var,
-    test_stats.n AS n1,
-    control_stats.n AS n0,
-    test_stats.metric_value AS metric_test,
-    control_stats.metric_value AS metric_control,
-    test_stats.variance_value AS variance_test,
-    control_stats.variance_value AS variance_control
+    test_stats.n AS n_group_1,
+    control_stats.n AS n_group_2,
+    test_stats.metric_value AS metric_group_1,
+    control_stats.metric_value AS metric_group_2,
+    test_stats.variance_value AS variance_group_1,
+    control_stats.variance_value AS variance_group_2
 FROM summary
 LEFT JOIN group_stats AS test_stats
     ON test_stats.group_name = {_sql_string_literal(test_group)}
@@ -1433,15 +1433,15 @@ def _finalize_sql_native_metric_result(
         "group_1",
         "group_2",
         "metric_name",
-        "n0",
-        "n1",
+        "n_group_1",
+        "n_group_2",
         "outliers_cutoff",
-        "outliers_n_control",
-        "outliers_n_test",
-        "metric_control",
-        "metric_test",
-        "variance_control",
-        "variance_test",
+        "outliers_n_group_1",
+        "outliers_n_group_2",
+        "metric_group_1",
+        "metric_group_2",
+        "variance_group_1",
+        "variance_group_2",
         "delta_abs",
         "delta_relative",
         "mde_abs",
@@ -1512,15 +1512,15 @@ def _build_sql_native_metric_row(
         "group_1": test_group,
         "group_2": baseline_group,
         "metric_name": metric_name,
-        "n0": baseline_n,
-        "n1": test_n,
+        "n_group_1": test_n,
+        "n_group_2": baseline_n,
         "outliers_cutoff": _coerce_sql_float(baseline.get("outliers_cutoff")),
-        "outliers_n_control": _coerce_sql_int(baseline.get("outliers_n")),
-        "outliers_n_test": _coerce_sql_int(test.get("outliers_n")),
-        "metric_control": baseline_mean,
-        "metric_test": test_mean,
-        "variance_control": baseline_variance,
-        "variance_test": test_variance,
+        "outliers_n_group_1": _coerce_sql_int(test.get("outliers_n")),
+        "outliers_n_group_2": _coerce_sql_int(baseline.get("outliers_n")),
+        "metric_group_1": test_mean,
+        "metric_group_2": baseline_mean,
+        "variance_group_1": test_variance,
+        "variance_group_2": baseline_variance,
         "delta_abs": delta_abs,
         "delta_relative": _safe_relative(delta_abs, baseline_mean),
         "mde_abs": mde_abs,
@@ -1559,12 +1559,12 @@ def _add_sql_native_cuped_fields(
             se = math.nan
             p_value = math.nan
         else:
-            baseline_variance = _coerce_sql_float(cuped_row.get("variance_control"))
-            test_variance = _coerce_sql_float(cuped_row.get("variance_test"))
-            baseline_n = _coerce_sql_int(cuped_row.get("n0"))
-            test_n = _coerce_sql_int(cuped_row.get("n1"))
-            baseline_mean = _coerce_sql_float(cuped_row.get("metric_control"))
-            test_mean = _coerce_sql_float(cuped_row.get("metric_test"))
+            baseline_variance = _coerce_sql_float(cuped_row.get("variance_group_2"))
+            test_variance = _coerce_sql_float(cuped_row.get("variance_group_1"))
+            baseline_n = _coerce_sql_int(cuped_row.get("n_group_2"))
+            test_n = _coerce_sql_int(cuped_row.get("n_group_1"))
+            baseline_mean = _coerce_sql_float(cuped_row.get("metric_group_2"))
+            test_mean = _coerce_sql_float(cuped_row.get("metric_group_1"))
             delta_abs = (
                 test_mean - baseline_mean if _both_present(test_mean, baseline_mean) else math.nan
             )
@@ -1599,7 +1599,7 @@ def _add_sql_native_cuped_fields(
     row["s.e. CUPED"] = se
     row["p-value CUPED"] = p_value
     row["mde_abs CUPED"] = mde_abs
-    row["mde_relative CUPED"] = _safe_relative(mde_abs, float(row["metric_control"]))
+    row["mde_relative CUPED"] = _safe_relative(mde_abs, float(row["metric_group_2"]))
 
 
 def _warn_sql_native_cuped(

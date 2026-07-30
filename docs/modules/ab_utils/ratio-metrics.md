@@ -2,7 +2,7 @@
 
 # Ratio Metrics
 
-The output also reports `variance_control`, `variance_test`, and `s.e.` for each
+The output also reports `variance_group_1`, `variance_group_2`, and `s.e.` for each
 comparison. Mean metrics and `level="user"` ratio metrics use sample variances
 with `ddof=1`; `level="agg"` ratio metrics use delta-method ratio variances.
 

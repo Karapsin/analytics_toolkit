@@ -503,7 +503,7 @@ def _assert_cuped_row_matches_frame(
     assert row["s.e. CUPED"] == pytest.approx(expected_standard_error)
     assert row["p-value CUPED"] == pytest.approx(expected_p_value)
     assert row["mde_abs CUPED"] == pytest.approx(expected_mde_abs)
-    assert row["mde_relative CUPED"] == pytest.approx(expected_mde_abs / row["metric_control"])
+    assert row["mde_relative CUPED"] == pytest.approx(expected_mde_abs / row["metric_group_2"])
 
 
 def _manual_cuped_adjusted_variance(
@@ -1007,7 +1007,7 @@ def test_compute_test_metrics_aggregate_ratio_bootstrap_is_scale_invariant() -> 
     assert scaled_ratio["s.e. bootstrap"] == pytest.approx(original_ratio["s.e. bootstrap"])
 
 
-def test_compute_test_metrics_adds_metric_control_and_metric_test_columns() -> None:
+def test_compute_test_metrics_aligns_group_position_columns() -> None:
     df = _build_sample_metrics_df()
 
     result = compute_test_metrics(df, test_vs_test=False)
@@ -1017,19 +1017,29 @@ def test_compute_test_metrics_adds_metric_control_and_metric_test_columns() -> N
         "group_1",
         "group_2",
         "metric_name",
+        "n_group_1",
+        "n_group_2",
+        "outliers_cutoff",
+        "outliers_n_group_1",
+        "outliers_n_group_2",
+        "metric_group_1",
+        "metric_group_2",
+        "variance_group_1",
+        "variance_group_2",
+        "delta_abs",
+    ]
+    assert result.columns[result.columns.get_loc("mde_relative") + 1] == "s.e."
+    assert result.columns[result.columns.get_loc("s.e.") + 1] == "p-value"
+    assert {
         "n0",
         "n1",
-        "outliers_cutoff",
         "outliers_n_control",
         "outliers_n_test",
         "metric_control",
         "metric_test",
         "variance_control",
         "variance_test",
-        "delta_abs",
-    ]
-    assert result.columns[result.columns.get_loc("mde_relative") + 1] == "s.e."
-    assert result.columns[result.columns.get_loc("s.e.") + 1] == "p-value"
+    }.isdisjoint(result.columns)
 
     orders_row = result[
         (result["group_1"] == "test_a")
@@ -1038,17 +1048,17 @@ def test_compute_test_metrics_adds_metric_control_and_metric_test_columns() -> N
     ].iloc[0]
     orders_cutoff = float(df["orders"].quantile(0.999))
     assert orders_row["metric_type"] == "mean"
-    assert orders_row["metric_control"] == pytest.approx((10 + 12 + 9) / 3)
-    assert orders_row["metric_test"] == pytest.approx((13 + orders_cutoff + 11 + 14) / 4)
+    assert orders_row["metric_group_2"] == pytest.approx((10 + 12 + 9) / 3)
+    assert orders_row["metric_group_1"] == pytest.approx((13 + orders_cutoff + 11 + 14) / 4)
     assert orders_row["outliers_cutoff"] == pytest.approx(orders_cutoff)
-    assert orders_row["outliers_n_control"] == 0
-    assert orders_row["outliers_n_test"] == 1
+    assert orders_row["outliers_n_group_2"] == 0
+    assert orders_row["outliers_n_group_1"] == 1
     control_values = pd.Series([10, 12, 9], dtype=float)
     test_values = pd.Series([13, orders_cutoff, 11, 14], dtype=float)
     expected_control_variance = control_values.var(ddof=1)
     expected_test_variance = test_values.var(ddof=1)
-    assert orders_row["variance_control"] == pytest.approx(expected_control_variance)
-    assert orders_row["variance_test"] == pytest.approx(expected_test_variance)
+    assert orders_row["variance_group_2"] == pytest.approx(expected_control_variance)
+    assert orders_row["variance_group_1"] == pytest.approx(expected_test_variance)
     assert orders_row["s.e."] == pytest.approx(
         math.sqrt((expected_control_variance / 3) + (expected_test_variance / 4))
     )
@@ -3612,7 +3622,7 @@ def test_ratio_metrics_default_to_agg_level() -> None:
     result = compute_test_metrics(
         df,
         ratio_metrics=[{"name": "ctr", "numerator": "clicks", "denominator": "impressions"}],
-        test_vs_test=False,
+        test_vs_test=True,
     )
 
     ratio_row = result[
@@ -3621,8 +3631,8 @@ def test_ratio_metrics_default_to_agg_level() -> None:
         & (result["metric_name"] == "ctr")
     ].iloc[0]
     assert ratio_row["metric_type"] == "ratio"
-    assert ratio_row["metric_control"] == pytest.approx((5 + 3 + 4 + 2) / (10 + 8 + 0 + 4))
-    assert ratio_row["metric_test"] == pytest.approx((7 + 5 + 6 + 8) / (14 + 10 + 12 + 16))
+    assert ratio_row["metric_group_2"] == pytest.approx((5 + 3 + 4 + 2) / (10 + 8 + 0 + 4))
+    assert ratio_row["metric_group_1"] == pytest.approx((7 + 5 + 6 + 8) / (14 + 10 + 12 + 16))
 
     numerator = _get_numeric_metric_series(df, "clicks")
     denominator = _get_numeric_metric_series(df, "impressions")
@@ -3646,8 +3656,8 @@ def test_ratio_metrics_default_to_agg_level() -> None:
         baseline_stats["ratio"],
     )
     expected_test_variance = _compute_agg_ratio_variance(test_frame, test_stats["ratio"])
-    assert ratio_row["variance_control"] == pytest.approx(expected_control_variance)
-    assert ratio_row["variance_test"] == pytest.approx(expected_test_variance)
+    assert ratio_row["variance_group_2"] == pytest.approx(expected_control_variance)
+    assert ratio_row["variance_group_1"] == pytest.approx(expected_test_variance)
     assert ratio_row["s.e."] == pytest.approx(
         _compute_agg_ratio_diff_standard_error(
             baseline_frame=baseline_frame,
@@ -3656,6 +3666,14 @@ def test_ratio_metrics_default_to_agg_level() -> None:
             test_ratio=test_stats["ratio"],
         )
     )
+
+    test_vs_test_row = result[
+        (result["group_1"] == "test_a")
+        & (result["group_2"] == "test_b")
+        & (result["metric_name"] == "ctr")
+    ].iloc[0]
+    assert test_vs_test_row["metric_group_1"] == pytest.approx((7 + 5 + 6 + 8) / 52)
+    assert test_vs_test_row["metric_group_2"] == pytest.approx((4 + 5 + 3 + 4) / 32)
 
 
 def test_compute_test_metrics_drop_outliers_updates_counts() -> None:
@@ -3677,11 +3695,11 @@ def test_compute_test_metrics_drop_outliers_updates_counts() -> None:
 
     orders_row = result[result["metric_name"] == "orders"].iloc[0]
     assert orders_row["outliers_cutoff"] == pytest.approx(float(df["orders"].quantile(0.8)))
-    assert orders_row["outliers_n_control"] == 0
-    assert orders_row["outliers_n_test"] == 1
-    assert orders_row["n0"] == 3
-    assert orders_row["n1"] == 2
-    assert orders_row["metric_test"] == pytest.approx((3 + 4) / 2)
+    assert orders_row["outliers_n_group_2"] == 0
+    assert orders_row["outliers_n_group_1"] == 1
+    assert orders_row["n_group_2"] == 3
+    assert orders_row["n_group_1"] == 2
+    assert orders_row["metric_group_1"] == pytest.approx((3 + 4) / 2)
 
 
 def test_compute_test_metrics_uses_global_outlier_cutoff_across_groups() -> None:
@@ -3704,7 +3722,7 @@ def test_compute_test_metrics_uses_global_outlier_cutoff_across_groups() -> None
     cutoff = float(df["orders"].quantile(0.75))
     assert cutoff == pytest.approx(125.0)
     assert orders_row["outliers_cutoff"] == pytest.approx(cutoff)
-    assert orders_row["metric_test"] == pytest.approx((100 + cutoff) / 2)
+    assert orders_row["metric_group_1"] == pytest.approx((100 + cutoff) / 2)
 
 
 def test_compute_test_metrics_default_non_zero_truncate_ignores_zeros_for_cutoff() -> None:
@@ -3733,11 +3751,11 @@ def test_compute_test_metrics_default_non_zero_truncate_ignores_zeros_for_cutoff
     default_row = _single_metric_row(default_result, "orders")
     truncate_row = _single_metric_row(truncate_result, "orders")
     assert default_row["outliers_cutoff"] == pytest.approx(100.0)
-    assert default_row["outliers_n_test"] == 0
-    assert default_row["metric_test"] == pytest.approx(20.0)
+    assert default_row["outliers_n_group_1"] == 0
+    assert default_row["metric_group_1"] == pytest.approx(20.0)
     assert truncate_row["outliers_cutoff"] == pytest.approx(0.0)
-    assert truncate_row["outliers_n_test"] == 1
-    assert truncate_row["metric_test"] == pytest.approx(0.0)
+    assert truncate_row["outliers_n_group_1"] == 1
+    assert truncate_row["metric_group_1"] == pytest.approx(0.0)
 
 
 def test_compute_test_metrics_accepts_non_zero_truncate_explicitly() -> None:
@@ -3791,11 +3809,11 @@ def test_compute_test_metrics_user_ratio_outliers_truncate_and_drop() -> None:
     truncate_row = truncate_result[truncate_result["metric_name"] == "ctr_user"].iloc[0]
     drop_row = drop_result[drop_result["metric_name"] == "ctr_user"].iloc[0]
     assert truncate_row["outliers_cutoff"] == pytest.approx(cutoff)
-    assert truncate_row["outliers_n_test"] == 1
-    assert truncate_row["metric_test"] == pytest.approx((0.3 + cutoff) / 2)
-    assert truncate_row["n1"] == 2
-    assert drop_row["metric_test"] == pytest.approx(0.3)
-    assert drop_row["n1"] == 1
+    assert truncate_row["outliers_n_group_1"] == 1
+    assert truncate_row["metric_group_1"] == pytest.approx((0.3 + cutoff) / 2)
+    assert truncate_row["n_group_1"] == 2
+    assert drop_row["metric_group_1"] == pytest.approx(0.3)
+    assert drop_row["n_group_1"] == 1
 
 
 def test_compute_test_metrics_user_ratio_default_non_zero_truncate() -> None:
@@ -3826,8 +3844,8 @@ def test_compute_test_metrics_user_ratio_default_non_zero_truncate() -> None:
 
     row = _single_metric_row(result, "ctr_user")
     assert row["outliers_cutoff"] == pytest.approx(10.0)
-    assert row["outliers_n_test"] == 0
-    assert row["metric_test"] == pytest.approx(2.0)
+    assert row["outliers_n_group_1"] == 0
+    assert row["metric_group_1"] == pytest.approx(2.0)
 
 
 def test_compute_test_metrics_agg_ratio_outliers_drop_and_truncate() -> None:
@@ -3862,11 +3880,11 @@ def test_compute_test_metrics_agg_ratio_outliers_drop_and_truncate() -> None:
     truncate_row = truncate_result[truncate_result["metric_name"] == "ctr"].iloc[0]
     drop_row = drop_result[drop_result["metric_name"] == "ctr"].iloc[0]
     assert truncate_row["outliers_cutoff"] == pytest.approx(cutoff)
-    assert truncate_row["outliers_n_test"] == 1
-    assert truncate_row["metric_test"] == pytest.approx((3 + cutoff * 10) / 20)
-    assert truncate_row["n1"] == 2
-    assert drop_row["metric_test"] == pytest.approx(3 / 10)
-    assert drop_row["n1"] == 1
+    assert truncate_row["outliers_n_group_1"] == 1
+    assert truncate_row["metric_group_1"] == pytest.approx((3 + cutoff * 10) / 20)
+    assert truncate_row["n_group_1"] == 2
+    assert drop_row["metric_group_1"] == pytest.approx(3 / 10)
+    assert drop_row["n_group_1"] == 1
 
 
 def test_compute_test_metrics_agg_ratio_default_non_zero_truncate() -> None:
@@ -3890,8 +3908,8 @@ def test_compute_test_metrics_agg_ratio_default_non_zero_truncate() -> None:
 
     row = _single_metric_row(result, "ctr")
     assert row["outliers_cutoff"] == pytest.approx(10.0)
-    assert row["outliers_n_test"] == 0
-    assert row["metric_test"] == pytest.approx(2.0)
+    assert row["outliers_n_group_1"] == 0
+    assert row["metric_group_1"] == pytest.approx(2.0)
 
 
 @pytest.mark.filterwarnings("ignore:Precision loss occurred in moment calculation:RuntimeWarning")
@@ -4030,9 +4048,9 @@ def test_compute_test_metrics_accepts_outliers_quantile_one_without_truncation()
 
     orders_row = _single_metric_row(result, "orders")
     assert orders_row["outliers_cutoff"] == pytest.approx(1000.0)
-    assert orders_row["outliers_n_control"] == 0
-    assert orders_row["outliers_n_test"] == 0
-    assert orders_row["metric_test"] == pytest.approx(515.0)
+    assert orders_row["outliers_n_group_2"] == 0
+    assert orders_row["outliers_n_group_1"] == 0
+    assert orders_row["metric_group_1"] == pytest.approx(515.0)
 
 
 def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
@@ -4072,7 +4090,7 @@ def test_compute_test_metrics_adds_cuped_p_value_for_mean_metrics() -> None:
     assert not math.isnan(float(orders_row["p-value CUPED"]))
     assert orders_row["mde_abs CUPED"] == pytest.approx(expected_mde_abs)
     assert orders_row["mde_relative CUPED"] == pytest.approx(
-        expected_mde_abs / orders_row["metric_control"]
+        expected_mde_abs / orders_row["metric_group_2"]
     )
 
 
@@ -4145,7 +4163,7 @@ def test_compute_test_metrics_cuped_uses_transformed_values() -> None:
 
     orders_row = result[result["metric_name"] == "orders"].iloc[0]
     assert orders_row["outliers_cutoff"] == pytest.approx(5.0)
-    assert orders_row["outliers_n_test"] == 1
+    assert orders_row["outliers_n_group_1"] == 1
     assert orders_row["s.e. CUPED"] == pytest.approx(expected_standard_error)
     assert orders_row["p-value CUPED"] == pytest.approx(expected_p_value)
 

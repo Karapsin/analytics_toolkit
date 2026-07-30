@@ -15,15 +15,15 @@ def _build_metric_rows() -> pd.DataFrame:
             "group_1": ["test", "test"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "gmv"],
-            "metric_control": [10.0, 100.0],
-            "metric_test": [12.0, 110.0],
-            "n0": [3, 3],
-            "n1": [4, 4],
+            "metric_group_2": [10.0, 100.0],
+            "metric_group_1": [12.0, 110.0],
+            "n_group_2": [3, 3],
+            "n_group_1": [4, 4],
             "outliers_cutoff": [99.0, 999.0],
-            "outliers_n_control": [0, 1],
-            "outliers_n_test": [1, 2],
-            "variance_control": [1.5, 10.0],
-            "variance_test": [2.5, 12.0],
+            "outliers_n_group_2": [0, 1],
+            "outliers_n_group_1": [1, 2],
+            "variance_group_2": [1.5, 10.0],
+            "variance_group_1": [2.5, 12.0],
             "delta_abs": [2.0, 10.0],
             "delta_relative": [0.2, 0.1],
             "mde_abs": [3.0, 30.0],
@@ -106,10 +106,10 @@ def test_format_ab_metrics_accepts_consistent_repeated_group_values() -> None:
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 10.0],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 100],
-            "n1": [120, 130],
+            "metric_group_2": [10.0, 10.0],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 100],
+            "n_group_1": [120, 130],
         }
     )
 
@@ -132,10 +132,10 @@ def test_format_ab_metrics_allows_configured_repeated_group_values() -> None:
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 10.000000000001],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 100],
-            "n1": [120, 130],
+            "metric_group_2": [10.0, 10.000000000001],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 100],
+            "n_group_1": [120, 130],
         }
     )
 
@@ -158,12 +158,12 @@ def test_format_ab_metrics_allows_configured_repeated_group_values_for_group_out
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 11.0],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 100],
-            "n1": [120, 130],
-            "variance_control": [1.5, 1.6],
-            "variance_test": [2.5, 2.6],
+            "metric_group_2": [10.0, 11.0],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 100],
+            "n_group_1": [120, 130],
+            "variance_group_2": [1.5, 1.6],
+            "variance_group_1": [2.5, 2.6],
         }
     )
 
@@ -196,10 +196,10 @@ def test_format_ab_metrics_rejects_conflicting_group_size_for_repeated_groups() 
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 11.0],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 101],
-            "n1": [120, 130],
+            "metric_group_2": [10.0, 11.0],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 101],
+            "n_group_1": [120, 130],
         }
     )
 
@@ -213,10 +213,10 @@ def test_format_ab_metrics_rejects_unconfigured_repeated_group_values() -> None:
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 11.0],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 100],
-            "n1": [120, 130],
+            "metric_group_2": [10.0, 11.0],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 100],
+            "n_group_1": [120, 130],
         }
     )
 
@@ -230,10 +230,10 @@ def test_format_ab_metrics_rejects_repeated_values_for_groups_not_configured() -
             "group_1": ["test", "test"],
             "group_2": ["control_1", "control_2"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 11.0],
-            "metric_test": [12.0, 13.0],
-            "n0": [100, 110],
-            "n1": [120, 120],
+            "metric_group_2": [10.0, 11.0],
+            "metric_group_1": [12.0, 13.0],
+            "n_group_2": [100, 110],
+            "n_group_1": [120, 120],
         }
     )
 
@@ -249,10 +249,10 @@ def test_format_ab_metrics_keeps_labels_and_first_seen_order() -> None:
             "group_1": ["variant_b", "variant_a", "variant_b"],
             "group_2": ["control", "control", "control"],
             "metric_name": ["orders", "orders", "gmv"],
-            "metric_control": [10.0, 20.0, 100.0],
-            "metric_test": [12.0, 22.0, 115.0],
-            "n0": [100, 200, 100],
-            "n1": [120, 220, 120],
+            "metric_group_2": [10.0, 20.0, 100.0],
+            "metric_group_1": [12.0, 22.0, 115.0],
+            "n_group_2": [100, 200, 100],
+            "n_group_1": [120, 220, 120],
         }
     )
 
@@ -279,10 +279,10 @@ def test_format_ab_metrics_puts_group_size_first_in_each_label_block() -> None:
             "group_1": ["variant_b", "variant_a", "variant_b", "variant_a"],
             "group_2": ["control", "control", "control", "control"],
             "metric_name": ["orders", "orders", "gmv", "gmv"],
-            "metric_control": [10.0, 20.0, 100.0, 200.0],
-            "metric_test": [12.0, 22.0, 115.0, 210.0],
-            "n0": [100, 200, 100, 200],
-            "n1": [120, 220, 120, 220],
+            "metric_group_2": [10.0, 20.0, 100.0, 200.0],
+            "metric_group_1": [12.0, 22.0, 115.0, 210.0],
+            "n_group_2": [100, 200, 100, 200],
+            "n_group_1": [120, 220, 120, 220],
         }
     )
 
@@ -371,11 +371,11 @@ def test_format_ab_metrics_keeps_simple_group_names_for_single_comparison_output
             "group_1": ["test_1", "test_2"],
             "group_2": ["control", "control"],
             "metric_name": ["orders", "orders"],
-            "metric_control": [10.0, 10.0],
-            "metric_test": [12.0, 13.0],
+            "metric_group_2": [10.0, 10.0],
+            "metric_group_1": [12.0, 13.0],
             "delta_relative": [0.2, 0.3],
-            "n0": [100, 100],
-            "n1": [120, 130],
+            "n_group_2": [100, 100],
+            "n_group_1": [120, 130],
         }
     )
 

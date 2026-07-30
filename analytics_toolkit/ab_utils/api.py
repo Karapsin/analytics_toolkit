@@ -346,7 +346,7 @@ def _compute_test_metrics_dataframe(
                 )
                 row["mde_relative CUPED"] = _safe_relative(
                     row["mde_abs CUPED"],
-                    row["metric_control"],
+                    row["metric_group_2"],
                 )
             row = {
                 "metric_type": str(metric_definition["kind"]),
@@ -377,15 +377,15 @@ def _compute_test_metrics_dataframe(
 
     columns = [
         "metric_name",
-        "n0",
-        "n1",
+        "n_group_1",
+        "n_group_2",
         "outliers_cutoff",
-        "outliers_n_control",
-        "outliers_n_test",
-        "metric_control",
-        "metric_test",
-        "variance_control",
-        "variance_test",
+        "outliers_n_group_1",
+        "outliers_n_group_2",
+        "metric_group_1",
+        "metric_group_2",
+        "variance_group_1",
+        "variance_group_2",
         "delta_abs",
         "delta_relative",
         "mde_abs",

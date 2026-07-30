@@ -83,11 +83,11 @@ def _base_stats_from_expected(expected: pd.DataFrame) -> pd.DataFrame:
                 "metric_name": row["metric_name"],
                 "metric_type": row["metric_type"],
                 "group_name": row["group_2"],
-                "n": row["n0"],
-                "metric_value": row["metric_control"],
-                "variance_value": row["variance_control"],
+                "n": row["n_group_2"],
+                "metric_value": row["metric_group_2"],
+                "variance_value": row["variance_group_2"],
                 "outliers_cutoff": row["outliers_cutoff"],
-                "outliers_n": row["outliers_n_control"],
+                "outliers_n": row["outliers_n_group_2"],
             }
         )
         rows.append(
@@ -95,11 +95,11 @@ def _base_stats_from_expected(expected: pd.DataFrame) -> pd.DataFrame:
                 "metric_name": row["metric_name"],
                 "metric_type": row["metric_type"],
                 "group_name": row["group_1"],
-                "n": row["n1"],
-                "metric_value": row["metric_test"],
-                "variance_value": row["variance_test"],
+                "n": row["n_group_1"],
+                "metric_value": row["metric_group_1"],
+                "variance_value": row["variance_group_1"],
                 "outliers_cutoff": row["outliers_cutoff"],
-                "outliers_n": row["outliers_n_test"],
+                "outliers_n": row["outliers_n_group_1"],
             }
         )
     return pd.DataFrame(rows)

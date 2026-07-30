@@ -479,8 +479,8 @@ def test_metric_row_residual_paths_cover_implicit_context_masks_and_ratio_varian
         0.8,
         prepared_metric_context=prepared_mean,
     )
-    assert legacy_mean_row["outliers_n_control"] == 1
-    assert prepared_mean_row["outliers_n_test"] == 1
+    assert legacy_mean_row["outliers_n_group_2"] == 1
+    assert prepared_mean_row["outliers_n_group_1"] == 1
 
     ratio_definition = {
         "kind": "ratio",
@@ -521,8 +521,8 @@ def test_metric_row_residual_paths_cover_implicit_context_masks_and_ratio_varian
     )
     for row in (prepared_invalid_row, legacy_invalid_row):
         assert math.isnan(row["delta_abs"])
-        assert math.isnan(row["variance_control"])
-        assert math.isnan(row["variance_test"])
+        assert math.isnan(row["variance_group_2"])
+        assert math.isnan(row["variance_group_1"])
         assert math.isnan(row["s.e."])
 
     valid_frame = invalid_frame.assign(
@@ -539,8 +539,8 @@ def test_metric_row_residual_paths_cover_implicit_context_masks_and_ratio_varian
         0.8,
     )
     assert math.isfinite(valid_row["delta_abs"])
-    assert math.isfinite(valid_row["variance_control"])
-    assert math.isfinite(valid_row["variance_test"])
+    assert math.isfinite(valid_row["variance_group_2"])
+    assert math.isfinite(valid_row["variance_group_1"])
     assert math.isfinite(valid_row["s.e."])
 
 
@@ -1729,12 +1729,12 @@ def test_finalize_sql_native_result_fills_missing_cuped_and_bootstrap_fields() -
                 {
                     "pair_n": 2,
                     "pre_var": 1.0,
-                    "variance_control": 1.0,
-                    "variance_test": 1.0,
-                    "n0": 1,
-                    "n1": 1,
-                    "metric_control": 1.0,
-                    "metric_test": 2.0,
+                    "variance_group_2": 1.0,
+                    "variance_group_1": 1.0,
+                    "n_group_2": 1,
+                    "n_group_1": 1,
+                    "metric_group_2": 1.0,
+                    "metric_group_1": 2.0,
                 }
             ),
             "not enough overlapping",
@@ -1745,7 +1745,7 @@ def test_add_sql_native_cuped_fields_warns_for_unusable_summaries(
     cuped_row: pd.Series | None,
     message: str,
 ) -> None:
-    row: dict[str, object] = {"metric_control": 1.0}
+    row: dict[str, object] = {"metric_group_2": 1.0}
     with pytest.warns(UserWarning, match=message):
         sql_native._add_sql_native_cuped_fields(
             row=row,
@@ -1761,19 +1761,19 @@ def test_add_sql_native_cuped_fields_warns_for_unusable_summaries(
 
 
 def test_add_sql_native_cuped_fields_computes_valid_summary() -> None:
-    row: dict[str, object] = {"metric_control": 1.0}
+    row: dict[str, object] = {"metric_group_2": 1.0}
     sql_native._add_sql_native_cuped_fields(
         row=row,
         cuped_row=pd.Series(
             {
                 "pair_n": 8,
                 "pre_var": 1.0,
-                "variance_control": 1.0,
-                "variance_test": 1.0,
-                "n0": 4,
-                "n1": 4,
-                "metric_control": 1.0,
-                "metric_test": 2.0,
+                "variance_group_2": 1.0,
+                "variance_group_1": 1.0,
+                "n_group_2": 4,
+                "n_group_1": 4,
+                "metric_group_2": 1.0,
+                "metric_group_1": 2.0,
             }
         ),
         metric_name="orders",
