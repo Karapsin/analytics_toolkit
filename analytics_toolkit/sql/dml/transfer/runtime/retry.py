@@ -163,6 +163,7 @@ def _is_clickhouse_conversion_error(message: str) -> bool:
 
 
 _NON_RETRYABLE_MESSAGE_PATTERNS = (
+    "sql must not return duplicate columns:",
     "trino table operations for schema-qualified names require",
     "trino table operations for unqualified names require",
     "syntax error",

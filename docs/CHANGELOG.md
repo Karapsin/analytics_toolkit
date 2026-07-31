@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Renamed the AB metrics report helper, made segmentation optional, and fixed
   multi-metric SQL composition.
 - Replaced ambiguous AB control/test output columns with group-position names.
+- Stop retries for duplicate SQL result columns.
 
 ## 1.3.11.3 - 2026-07-30
 

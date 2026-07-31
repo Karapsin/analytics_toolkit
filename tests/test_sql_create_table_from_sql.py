@@ -826,6 +826,40 @@ def test_create_table_from_sql_retries_schema_inspection_with_fresh_connections(
     )
 
 
+def test_create_table_from_sql_does_not_retry_duplicate_source_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[FakeDbapiConnection] = []
+    duplicate_description = [
+        ("suppliers_cheques", "int8", None, None, None, None),
+        ("suppliers_cheques", "int8", None, None, None, None),
+    ]
+
+    def fake_get_sql_connection(connection_key: str) -> FakeDbapiConnection:
+        assert connection_key == "gp"
+        connection = FakeDbapiConnection(description=duplicate_description)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
+
+    with pytest.raises(
+        ValueError,
+        match="sql must not return duplicate columns: suppliers_cheques",
+    ):
+        create_module.create_table_from_sql(
+            "gp",
+            "sandbox.target_table",
+            "select suppliers_cheques, suppliers_cheques from source_table",
+            retry_cnt=5,
+            timeout_increment=0,
+        )
+
+    assert len(connections) == 1
+    assert connections[0].close_calls == 1
+    assert not any(sql.startswith("CREATE TABLE") for sql in connections[0].executed)
+
+
 def test_create_table_from_sql_cleans_direct_insert_before_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

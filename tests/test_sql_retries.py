@@ -360,6 +360,38 @@ def test_run_with_retry_keeps_unrelated_value_error_retryable() -> None:
     assert attempts == [1, 2]
 
 
+def test_run_with_retry_does_not_retry_duplicate_query_columns(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    attempts: list[int] = []
+    sleeps: list[float] = []
+    error = ValueError("sql must not return duplicate columns: suppliers_cheques")
+    monkeypatch.setattr(retry_module.time, "sleep", sleeps.append)
+
+    def operation(attempt: int) -> None:
+        attempts.append(attempt)
+        raise error
+
+    with pytest.raises(
+        ValueError,
+        match="sql must not return duplicate columns: suppliers_cheques",
+    ) as caught:
+        retry_module.run_with_retry(
+            operation_name="creating table gp.sandbox.target from query",
+            retry_cnt=5,
+            timeout_increment=600,
+            operation=operation,
+        )
+
+    assert caught.value is error
+    assert attempts == [1]
+    assert sleeps == []
+    output = capsys.readouterr().out
+    assert "Failed with a non-retryable error" in output
+    assert "Retrying in" not in output
+
+
 @pytest.mark.parametrize(
     "message",
     [

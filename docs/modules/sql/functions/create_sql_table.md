@@ -120,6 +120,8 @@ ddl
 - Dry-run plans and generated SQL place backend-appropriate target drops before
   the create statements when `drop_target_if_exists=True`.
 - Deterministic Trino `TYPE_MISMATCH` failures are not retried.
+- Source queries that return duplicate column names fail immediately without
+  retrying.
 - Pass exactly one of `df`, `sql`, or `table_schema`.
 - Greenplum `partition_by` and `gp_partitions` must be supplied together.
   `gp_partitions` applies only when this operation creates the target; use
