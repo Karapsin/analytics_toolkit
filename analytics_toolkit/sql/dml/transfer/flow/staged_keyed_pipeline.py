@@ -119,6 +119,7 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: PLR0915
             "source-stage row-count validation",
             lambda: _validate_source_stage_counts(options, slice_counts),
         )
+        replace_connection(options.to_db_key, target_ref)
         stage_tables = _create_target_worker_stages(
             options,
             target_ref,
@@ -150,6 +151,7 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: PLR0915
             )
             for item in options.transfer_slices
         ]
+        replace_connection(options.to_db_key, target_ref)
         _run_logged_phase(
             "source/stage row-count validation",
             lambda: _validate_target_stages(

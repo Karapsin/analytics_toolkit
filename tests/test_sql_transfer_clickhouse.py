@@ -247,7 +247,12 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     )
 
     assert transferred_rows == 1
-    assert "test_transfer_target__analytics_toolkit_user__stage__" in target.inserts[0]["table"]
+    stage_table = target.inserts[0]["table"]
+    stage_identifier = stage_table.split(".")[-1]
+    assert stage_table.startswith("analytics_toolkit_transfer.")
+    assert stage_identifier[16:18] == "__"
+    assert stage_identifier.endswith("__w00000")
+    assert len(stage_identifier.encode()) <= 63
     staged_row = target.inserts[0]["data"][0]
     assert staged_row[:2] == (date(2024, 2, 1), 10)
     assert len(staged_row[2]) == 32
@@ -286,7 +291,7 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         "INSERT INTO test_transfer_target (`month_date`, `users`) SELECT CAST(`month_date` AS Date)"
         in command
         and "FROM analytics_toolkit_transfer." in command
-        and "__test_transfer_target__analytics_toolkit_user__stage__" in command
+        and stage_identifier in command
         for command in map(_strip_query_label, target.commands)
     )
 

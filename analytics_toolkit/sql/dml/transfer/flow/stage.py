@@ -51,7 +51,23 @@ def ensure_transfer_target_table(
     ).can_create_transfer_target_before_batches():
         return
 
-    create_columns = source_columns or list(stage_state.stage_column_types or {})
+    internal_columns = set(
+        stage_state.internal_columns.names() if stage_state.internal_columns is not None else ()
+    )
+    create_columns = source_columns or [
+        column
+        for column in (stage_state.stage_column_types or {})
+        if column not in internal_columns
+    ]
+    target_column_types = (
+        {
+            column: stage_state.stage_column_types[column]
+            for column in create_columns
+            if column in stage_state.stage_column_types
+        }
+        if stage_state.stage_column_types is not None
+        else None
+    )
     if not create_columns:
         raise ValueError(
             "Cannot create target table before transfer batches because the "
@@ -63,7 +79,7 @@ def ensure_transfer_target_table(
         connection=connection_refs.target["connection"],
         target_table=options.target_table,
         sample_batch=pd.DataFrame(columns=create_columns),
-        target_column_types=stage_state.stage_column_types,
+        target_column_types=target_column_types,
         gp_distributed_by_key=options.gp_distributed_by_key,
         gp_partitions=options.gp_partitions,
         partition_by=options.partition_by,

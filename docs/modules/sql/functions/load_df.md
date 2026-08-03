@@ -102,6 +102,9 @@ rows
 - If `transfer_staging_location` is not configured, Trino `load_df` keeps using
   direct dataframe inserts controlled by `trino_insert_chunk_size`.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
+- SQL stage identifiers use one maximum-63-byte naming policy on Greenplum,
+  Trino, and ClickHouse. Backend-specific catalog/schema qualification and
+  quoting are preserved.
 - Greenplum validates `gp_partitions` on every call, but renders it only when
   creating or recreating the final target. Existing append, truncate, and
   upsert targets are not repartitioned implicitly.

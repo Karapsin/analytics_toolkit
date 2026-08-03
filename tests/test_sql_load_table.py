@@ -1923,8 +1923,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
 
     assert plan.options["use_parquet_staging"] is True
     assert plan.metadata.stage_table == (
-        "object_storage.pa_core_stage.daf6958bfec1c9f7__target"
-        "__analytics_toolkit_target_user__stage__dryrun"
+        "object_storage.pa_core_stage.daf6958bfec1c9f7__targetdryrun"
     )
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -1942,7 +1941,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
         "count_target",
     ]
     assert any(
-        "CREATE TABLE object_storage.pa_core_stage.daf6958bfec1c9f7__target__analytics_toolkit_target_user__stage__dryrun "
+        "CREATE TABLE object_storage.pa_core_stage.daf6958bfec1c9f7__targetdryrun "
         in sql
         and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls

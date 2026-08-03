@@ -222,16 +222,18 @@ rows = sql.transfer(
   source snapshot with bounded ordinal ranges.
 - Unkeyed source-staged transfers keep at least one worker and use no more than
   `min(concurrency, ceil(total_rows / batch_size))` workers. Logs report both
-  requested and effective counts. Before multiple non-upsert worker stages are
-  consolidated, the coordinator opens a fresh target connection so idle
-  expiry during worker loading cannot break the merge.
+  requested and effective counts. Source-staged transfers refresh coordinator
+  target connections before creating worker stages and after long worker-loading
+  phases so idle expiry cannot break stage creation, validation, or consolidation.
 - Internal snapshot, source-batch, stage-identity, ordinal, and superseded-stage
   queries use distinct info-level action and phase labels in transfer logs.
-- Transfer SQL stage names begin with a stable 16-hex destination hash and also
-  carry the full transfer ID and worker/role identity. The hash is a naming
-  prefix, not deletion authority. Exact canonical destination values stored in
-  stage rows control validation and automatic cleanup; collisions allocate a
-  different stage name instead of reusing, overwriting, or dropping a table.
+- Transfer SQL stage names use one identifier policy on every backend: at most
+  63 UTF-8 bytes, beginning with a stable 16-hex destination hash and carrying
+  the full transfer ID and worker/role identity.
+  Catalog/schema qualification and quoting remain backend-specific. The hash is
+  a naming prefix, not deletion authority. Exact canonical destination values
+  stored in stage rows control validation and automatic cleanup; collisions use
+  the same compact suffix policy without reusing, overwriting, or dropping a table.
 - Four collision-resolved generated columns carry transfer ID, exact canonical
   destination, slice ID, and row ordinal through staging. They are mandatory
   integrity metadata even with `validate_row_count=False` and are explicitly

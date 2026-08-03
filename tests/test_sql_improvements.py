@@ -955,7 +955,9 @@ def test_load_df_upsert_dry_run_uses_backend_specific_sql() -> None:
         upsert_partition_column="id",
         dry_run=True,
     )
-    assert any("__upsert" in sql for sql in trino_plan.sqls)
+    assert any(
+        statement.phase == "create_final_upsert_stage" for statement in trino_plan.statements
+    )
     assert any("SELECT target_dst." in sql for sql in trino_plan.sqls)
     assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
     assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
@@ -989,7 +991,9 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
         table_schema={"id": "BIGINT", "score": "INTEGER"},
         dry_run=True,
     )
-    assert any("__upsert" in sql for sql in trino_plan.sqls)
+    assert any(
+        statement.phase == "create_final_upsert_stage" for statement in trino_plan.statements
+    )
     assert any("DROP PARTITION" in sql for sql in trino_plan.sqls)
     assert not any(sql.startswith("MERGE INTO") for sql in trino_plan.sqls)
 
@@ -1026,11 +1030,11 @@ def test_transfer_upsert_dry_run_infers_source_columns_without_table_schema() ->
     )
 
     final_insert_sql = next(
-        sql
-        for sql in trino_plan.sqls
-        if sql.startswith("INSERT INTO ")
-        and "__upsert" in sql
-        and 'SELECT "id", "score" FROM' in sql
+        statement.sql
+        for statement in trino_plan.statements
+        if statement.phase == "upsert_target"
+        and statement.sql.startswith("INSERT INTO ")
+        and 'SELECT "id", "score" FROM' in statement.sql
     )
     assert 'SELECT CAST("id" AS BIGINT)' not in final_insert_sql
     assert 'SELECT "id", "score" FROM' in final_insert_sql

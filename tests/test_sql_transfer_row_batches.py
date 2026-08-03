@@ -24,6 +24,9 @@ attempt_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flo
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
 finalize_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.finalize")
 transfer_stage_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.stage")
+stage_identity_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.stage_identity"
+)
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
@@ -1590,10 +1593,21 @@ def test_transfer_creates_missing_target_before_stage_batches(
         target_table="sandbox.target",
         gp_distributed_by_key=["id"],
     )
+    source_columns = ["id", "__analytics_toolkit_transfer_id"]
+    internal_columns = stage_identity_module.resolve_internal_columns(source_columns, "gp")
     stage_state = models_module.TransferStageState(
         target_exists=False,
         target_existed_at_start=False,
-        stage_column_types={"id": "INTEGER"},
+        source_columns=source_columns,
+        stage_column_types={
+            "id": "INTEGER",
+            "__analytics_toolkit_transfer_id": "VARCHAR",
+            internal_columns.transfer_id: "TEXT",
+            internal_columns.destination_table: "TEXT",
+            internal_columns.slice_id: "BIGINT",
+            internal_columns.row_ordinal: "BIGINT",
+        },
+        internal_columns=internal_columns,
     )
 
     def fake_ensure_stage_target_table(**kwargs: Any) -> bool:
@@ -1612,14 +1626,17 @@ def test_transfer_creates_missing_target_before_stage_batches(
             target={"connection": FakeTransferConnection("target")}
         ),
         stage_state,
-        ["id"],
+        source_columns,
     )
 
     assert stage_state.target_exists is True
     assert stage_state.target_created_by_operation is True
     assert calls[0]["target_table"] == "sandbox.target"
-    assert calls[0]["target_column_types"] == {"id": "INTEGER"}
-    assert list(calls[0]["sample_batch"].columns) == ["id"]
+    assert calls[0]["target_column_types"] == {
+        "id": "INTEGER",
+        "__analytics_toolkit_transfer_id": "VARCHAR",
+    }
+    assert list(calls[0]["sample_batch"].columns) == source_columns
 
 
 def test_run_transfer_attempt_stops_when_early_target_create_fails(
@@ -2435,6 +2452,7 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
             or [
+                "bbf9072adfdac666__target" + "a" * 32,
                 "target__analytics_toolkit_target_user__stage__match",
                 "other__analytics_toolkit_target_user__stage__ignore",
             ]
@@ -2453,8 +2471,14 @@ def test_cleanup_stale_stage_tables_discovers_matching_gp_stage_tables(
         read_retry_cnt=3,
     )
 
-    assert discovered == ["transfer_schema.target__analytics_toolkit_target_user__stage__match"]
-    assert query_calls == [("transfer_schema", "target__analytics_toolkit_target_user__stage__%")]
+    assert discovered == [
+        "transfer_schema.bbf9072adfdac666__target" + "a" * 32,
+        "transfer_schema.target__analytics_toolkit_target_user__stage__match",
+    ]
+    assert query_calls == [
+        ("transfer_schema", "bbf9072adfdac666__%"),
+        ("transfer_schema", "target__analytics_toolkit_target_user__stage__%"),
+    ]
 
 
 def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
@@ -2478,6 +2502,7 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
         lambda connection, *, connection_key, transfer_staging_schema, table_pattern: (
             query_calls.append((transfer_staging_schema, table_pattern))
             or [
+                "0123456789abcdef__target" + "a" * 32,
                 "target__analytics_toolkit_target_user__stage__match",
                 "other__analytics_toolkit_target_user__stage__match",
                 "target__analytics_toolkit_other_user__stage__ignore",
@@ -2500,10 +2525,11 @@ def test_cleanup_stale_stage_tables_clean_all_drops_user_gp_stage_tables(
     )
 
     assert discovered == [
+        'transfer_schema."0123456789abcdef__target' + "a" * 32 + '"',
         "transfer_schema.target__analytics_toolkit_target_user__stage__match",
         "transfer_schema.other__analytics_toolkit_target_user__stage__match",
     ]
-    assert query_calls == [("transfer_schema", "%__analytics_toolkit_target_user__stage__%")]
+    assert query_calls == [("transfer_schema", "%")]
 
 
 def test_cleanup_stale_stage_tables_quotes_discovered_gp_stage_names(
@@ -2622,7 +2648,7 @@ def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
     )
 
     assert discovered == ["hive.scratch.target__analytics_toolkit_target_user__stage__match"]
-    assert query_calls == [("hive.scratch", "%__analytics_toolkit_target_user__stage__%")]
+    assert query_calls == [("hive.scratch", "%")]
 
 
 def test_cleanup_stale_stage_tables_explicit_stage_tables_allow_missing_target_table(

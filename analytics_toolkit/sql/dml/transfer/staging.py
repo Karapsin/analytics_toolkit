@@ -12,10 +12,12 @@ from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function
 from ...execution.validation import validate_non_negative_number, validate_positive_int
 from ..load.stage import build_stage_table_prefix, cleanup_stage_table_with_retry
+from .flow.stage_identity import resolve_destination_identity
 from .runtime.retry import replace_connection, rollback_quietly, run_with_retry
 
 _DEFAULT_TIMEOUT_INCREMENT = 5
 _WARNING_KEY_PREFIX = "cleanup_stale_stage_tables_no_schema::"
+_HASHED_STAGE_PREFIX = re.compile(r"^[0-9a-f]{16}__")
 
 _warned_transfer_staging_schema_cleanup: set[str] = set()
 
@@ -160,7 +162,7 @@ def _find_all_user_transfer_stage_tables(
         backend=config.backend,
         connection=connection,
         transfer_staging_schema=transfer_staging_schema,
-        table_pattern=f"%{marker}%",
+        table_pattern="%",
     )
 
     return [
@@ -171,7 +173,7 @@ def _find_all_user_transfer_stage_tables(
             table_name=table_name,
         )
         for table_name in table_names
-        if marker in table_name
+        if marker in table_name or _HASHED_STAGE_PREFIX.match(table_name)
     ]
 
 
@@ -183,19 +185,38 @@ def _find_matching_transfer_stage_tables(
     transfer_staging_username: str,
 ) -> list[str]:
     config = get_connection_config(db_key)
-    prefix = build_stage_table_prefix(
-        config.backend,
-        target_table,
-        transfer_staging_username,
+    legacy_prefixes = list(
+        dict.fromkeys(
+            (
+                build_stage_table_prefix(
+                    config.backend,
+                    target_table,
+                    transfer_staging_username,
+                ),
+                build_stage_table_prefix(
+                    config.backend,
+                    target_table,
+                    transfer_staging_username,
+                    gp_style=False,
+                ),
+            )
+        )
     )
-    like_prefix = f"{prefix}%"
-    table_names = _query_transfer_stage_table_names(
-        db_key=db_key,
-        backend=config.backend,
-        connection=connection,
-        transfer_staging_schema=transfer_staging_schema,
-        table_pattern=like_prefix,
+    destination_prefix = (
+        f"{resolve_destination_identity(target_table, config.backend).hash_prefix}__"
     )
+    prefixes = [destination_prefix, *legacy_prefixes]
+    table_names: list[str] = []
+    for prefix in prefixes:
+        table_names.extend(
+            _query_transfer_stage_table_names(
+                db_key=db_key,
+                backend=config.backend,
+                connection=connection,
+                transfer_staging_schema=transfer_staging_schema,
+                table_pattern=f"{prefix}%",
+            )
+        )
 
     return [
         _qualify_staging_table_name(
@@ -204,8 +225,8 @@ def _find_matching_transfer_stage_tables(
             transfer_staging_schema=transfer_staging_schema,
             table_name=table_name,
         )
-        for table_name in table_names
-        if table_name.startswith(prefix)
+        for table_name in dict.fromkeys(table_names)
+        if any(table_name.startswith(prefix) for prefix in prefixes)
     ]
 
 

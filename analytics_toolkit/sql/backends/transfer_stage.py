@@ -2,11 +2,9 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, I001, TRY003
 
-from typing import Any, Callable
+from typing import Any
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
-
-TRINO_IDENTIFIER_MAX_CHARS = 128
 
 
 def execute_transfer_materialization(
@@ -34,11 +32,10 @@ def build_transfer_stage_tail(
     transfer_staging_username: str | None,
     stage_suffix: str,
 ) -> str:
-    if connection_type == "gp":
-        return stage_suffix
-    if connection_type in {"trino", "ch"}:
-        return _regular_tail(transfer_staging_username, stage_suffix)
-    raise KeyError(connection_type)
+    if connection_type not in {"gp", "trino", "ch"}:
+        raise KeyError(connection_type)
+    del transfer_staging_username
+    return stage_suffix
 
 
 def fit_hashed_stage_identifier(
@@ -47,12 +44,9 @@ def fit_hashed_stage_identifier(
     readable_base: str,
     tail: str,
 ) -> str:
-    fitter: Callable[[str, str, str], str] = {
-        "gp": _fit_gp_hashed_stage_identifier,
-        "trino": _fit_trino_hashed_stage_identifier,
-        "ch": _unlimited_hashed_stage_identifier,
-    }[connection_type]
-    return fitter(prefix, readable_base, tail)
+    if connection_type not in {"gp", "trino", "ch"}:
+        raise KeyError(connection_type)
+    return _fit_gp_hashed_stage_identifier(prefix, readable_base, tail)
 
 
 def collision_stage_suffix(
@@ -60,11 +54,9 @@ def collision_stage_suffix(
     preferred_suffix: str,
     random_hex: str,
 ) -> str:
-    if connection_type == "gp":
-        return f"{preferred_suffix}{random_hex[:5]}"
-    if connection_type in {"trino", "ch"}:
-        return f"{preferred_suffix}__c_{random_hex[:8]}"
-    raise KeyError(connection_type)
+    if connection_type not in {"gp", "trino", "ch"}:
+        raise KeyError(connection_type)
+    return f"{preferred_suffix}{random_hex[:5]}"
 
 
 def build_source_snapshot_sqls(
@@ -87,12 +79,6 @@ def build_source_snapshot_sqls(
     )
 
 
-def _regular_tail(username: str | None, suffix: str) -> str:
-    if username:
-        return f"__analytics_toolkit_{username}__stage__{suffix}"
-    return f"__stage__{suffix}"
-
-
 def _fit_gp_hashed_stage_identifier(
     prefix: str,
     readable_base: str,
@@ -104,27 +90,6 @@ def _fit_gp_hashed_stage_identifier(
             "Destination hash and stage identity components are too long for Greenplum identifiers."
         )
     return f"{prefix}{_fit_identifier_bytes(readable_base, available)}{tail}"
-
-
-def _unlimited_hashed_stage_identifier(
-    prefix: str,
-    readable_base: str,
-    tail: str,
-) -> str:
-    return f"{prefix}{readable_base}{tail}"
-
-
-def _fit_trino_hashed_stage_identifier(
-    prefix: str,
-    readable_base: str,
-    tail: str,
-) -> str:
-    available = TRINO_IDENTIFIER_MAX_CHARS - len(prefix) - len(tail)
-    if available < 0:
-        raise ValueError(
-            "Destination hash and stage identity components are too long for Trino identifiers."
-        )
-    return f"{prefix}{readable_base[:available]}{tail}"
 
 
 def _gp_source_snapshot_sqls(

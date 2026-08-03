@@ -118,6 +118,57 @@ def test_hashed_stage_name_keeps_prefix_and_gp_byte_limit() -> None:
     assert len(relation.encode()) <= 63
 
 
+@pytest.mark.parametrize(
+    ("target_table", "username", "stage_suffix"),
+    [
+        ("sales.orders", None, "abcd1234"),
+        ("sales.orders", "integration_user", "a" * 32 + "__w00000"),
+        ("sales." + "😀" * 40, "integration_user", "b" * 32 + "__source"),
+    ],
+)
+def test_stage_identifiers_use_exact_gp_style_on_every_backend(
+    target_table: str,
+    username: str | None,
+    stage_suffix: str,
+) -> None:
+    names = {
+        backend: load_stage.build_stage_table_name(
+            backend,
+            target_table,
+            transfer_staging_schema="staging",
+            transfer_staging_username=username,
+            random_suffix=stage_suffix,
+            destination_hash="0123456789abcdef",
+        )
+        for backend in ("gp", "trino", "ch")
+    }
+    identifiers = {backend: name.split(".")[-1].strip('"`') for backend, name in names.items()}
+
+    assert identifiers["trino"] == identifiers["gp"]
+    assert identifiers["ch"] == identifiers["gp"]
+    assert identifiers["gp"].startswith("0123456789abcdef__")
+    assert identifiers["gp"].endswith(stage_suffix)
+    assert len(identifiers["gp"].encode()) <= 63
+
+
+def test_legacy_stage_identifiers_use_gp_fitting_on_every_backend() -> None:
+    names = {
+        backend: load_stage.build_stage_table_name(
+            backend,
+            "sales." + "long_destination_name_" * 8,
+            transfer_staging_schema="staging",
+            transfer_staging_username="integration_user",
+            random_suffix="abcd1234",
+        )
+        for backend in ("gp", "trino", "ch")
+    }
+    identifiers = {backend: name.split(".")[-1].strip('"`') for backend, name in names.items()}
+
+    assert identifiers["trino"] == identifiers["gp"]
+    assert identifiers["ch"] == identifiers["gp"]
+    assert len(identifiers["gp"].encode()) <= 63
+
+
 def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) -> None:
     existence_checks = 0
     created: list[str] = []
@@ -143,7 +194,11 @@ def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) ->
     )
 
     assert actual == created[0]
-    assert actual.startswith('sales."0123456789abcdef__orders__stage__transferid__w00000__c_')
+    relation = actual.split(".")[-1].strip('"')
+    assert relation.startswith("0123456789abcdef__orders")
+    assert relation[:-5].endswith("transferid__w00000")
+    assert len(relation[-5:]) == 5
+    assert len(relation.encode()) <= 63
 
 
 def test_stage_creation_race_reallocates_and_hashed_prefix_is_stable(monkeypatch: Any) -> None:
@@ -166,13 +221,12 @@ def test_stage_creation_race_reallocates_and_hashed_prefix_is_stable(monkeypatch
         random_suffix="transferid__w00000",
         destination_hash="0123456789abcdef",
     )
-    assert "__c_" in actual
+    relation = actual.split(".")[-1].strip('"')
+    assert relation[:-5].endswith("transferid__w00000")
+    assert len(relation.encode()) <= 63
     assert load_stage.build_stage_table_prefix(
-        "trino",
-        "sales.orders",
-        None,
-        "0123456789abcdef",
-    ).startswith("0123456789abcdef__orders__stage__")
+        "trino", "sales.orders", None, "0123456789abcdef"
+    ) == load_stage.build_stage_table_prefix("gp", "sales.orders", None, "0123456789abcdef")
 
     monkeypatch.setattr(load_stage, "table_exists", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
@@ -354,10 +408,23 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
     )
     monkeypatch.setattr(staged_attempt, "ensure_transfer_target_table", lambda *_args: None)
     monkeypatch.setattr(staged_attempt, "_materialize_snapshot", lambda *_args: ("snap", {0: 2}))
+
+    refreshed_target = object()
+    refreshes: list[str] = []
+
+    def create_worker_stages(
+        _options: TransferOptions,
+        target_ref: dict[str, Any],
+        _state: TransferStageState,
+        **_kwargs: Any,
+    ) -> list[str]:
+        assert target_ref["connection"] is refreshed_target
+        return ["worker_stage"]
+
     monkeypatch.setattr(
         staged_attempt,
         "_create_worker_stages",
-        lambda *_args, **_kwargs: ["worker_stage"],
+        create_worker_stages,
     )
     monkeypatch.setattr(staged_attempt, "AdaptiveRangeScheduler", lambda _counts: Scheduler())
     monkeypatch.setattr(staged_attempt, "_run_range_workers", lambda *_args, **_kwargs: None)
@@ -372,10 +439,16 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
     monkeypatch.setattr(staged_attempt, "cleanup_stage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(staged_attempt, "cleanup_stage_table", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(staged_attempt, "close_connection_ref", lambda *_args: None)
+    monkeypatch.setattr(
+        staged_attempt,
+        "replace_connection",
+        lambda key, ref: (refreshes.append(key), ref.update(connection=refreshed_target)),
+    )
 
     assert staged_attempt.run_staged_source_transfer_attempt(options, insert_retry_cnt=1) == 2
     assert finalized == [(-1, []), (2, [])]
     assert state.slice_counts[0].expected_rows == 2
+    assert refreshes == ["target"]
 
     monkeypatch.setattr(
         staged_attempt,
@@ -446,7 +519,11 @@ def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None
         ]
 
     def create_targets(*_args: Any, **_kwargs: Any) -> list[str]:
-        assert events == ["read-complete", "source-stage row-count validation"]
+        assert events == [
+            "read-complete",
+            "source-stage row-count validation",
+            "target-refreshed",
+        ]
         events.append("targets-created")
         state.stage_table = "target_0"
         state.stage_tables = ["target_0", "target_1"]
@@ -464,7 +541,11 @@ def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None
         "_run_whole_key_writers",
         lambda *_args, **_kwargs: events.append("writers") or {0: 1, 1: 1},
     )
-    monkeypatch.setattr(staged_keyed_pipeline, "_validate_target_stages", lambda *_args: None)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "_validate_target_stages",
+        lambda *_args: events.append("target-validated"),
+    )
     monkeypatch.setattr(staged_attempt, "_consolidate_worker_stages", lambda *_args: None)
     monkeypatch.setattr(
         staged_keyed_pipeline,
@@ -475,6 +556,14 @@ def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None
     monkeypatch.setattr(staged_keyed_pipeline, "cleanup_stage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(staged_keyed_pipeline, "_cleanup_source_stages", lambda *_args: None)
     monkeypatch.setattr(staged_keyed_pipeline, "close_connection_ref", lambda *_args: None)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "replace_connection",
+        lambda _key, ref: (
+            events.append("target-refreshed"),
+            ref.update(connection=object()),
+        ),
+    )
 
     assert (
         staged_keyed_pipeline.run_keyed_staged_source_transfer_attempt(
@@ -483,11 +572,14 @@ def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None
         )
         == 2
     )
-    assert events[:4] == [
+    assert events[:7] == [
         "read-complete",
         "source-stage row-count validation",
+        "target-refreshed",
         "targets-created",
         "writers",
+        "target-refreshed",
+        "target-validated",
     ]
 
 
@@ -873,32 +965,34 @@ def test_transfer_stage_backend_helpers_cover_storage_and_identifier_edges() -> 
         transfer_stage.normalize_unquoted_identifier("x", "unknown")
 
     assert transfer_stage.build_transfer_stage_tail("gp", "user", "suffix") == "suffix"
-    assert "user" in transfer_stage.build_transfer_stage_tail("trino", "user", "suffix")
-    assert transfer_stage.build_transfer_stage_tail("ch", None, "suffix") == "__stage__suffix"
+    assert transfer_stage.build_transfer_stage_tail("trino", "user", "suffix") == "suffix"
+    assert transfer_stage.build_transfer_stage_tail("ch", None, "suffix") == "suffix"
     with pytest.raises(KeyError):
         transfer_stage.build_transfer_stage_tail("unknown", None, "suffix")
     assert transfer_stage.collision_stage_suffix("gp", "base", "12345678") == "base12345"
-    assert transfer_stage.collision_stage_suffix("ch", "base", "12345678") == ("base__c_12345678")
+    assert transfer_stage.collision_stage_suffix("ch", "base", "12345678") == "base12345"
     with pytest.raises(KeyError):
         transfer_stage.collision_stage_suffix("unknown", "base", "123")
 
-    assert transfer_stage.fit_hashed_stage_identifier("trino", "hash__", "name", "__tail") == (
-        "hash__name__tail"
+    expected_name = transfer_stage.fit_hashed_stage_identifier("gp", "hash__", "name", "__tail")
+    assert (
+        transfer_stage.fit_hashed_stage_identifier("trino", "hash__", "name", "__tail")
+        == expected_name
     )
-    trino_tail = "__analytics_toolkit_integration__stage__" + "a" * 32 + "__w00000"
+    stage_tail = "a" * 32 + "__w00000"
     trino_name = transfer_stage.fit_hashed_stage_identifier(
         "trino",
         "f" * 16 + "__",
         "destination_" * 20,
-        trino_tail,
+        stage_tail,
     )
-    assert len(trino_name) == transfer_stage.TRINO_IDENTIFIER_MAX_CHARS
+    assert len(trino_name.encode()) <= 63
     assert trino_name.startswith("f" * 16 + "__")
-    assert trino_name.endswith(trino_tail)
-    with pytest.raises(ValueError, match="too long for Trino"):
+    assert trino_name.endswith(stage_tail)
+    with pytest.raises(ValueError, match="too long for Greenplum"):
         transfer_stage.fit_hashed_stage_identifier(
             "trino",
-            "x" * transfer_stage.TRINO_IDENTIFIER_MAX_CHARS,
+            "x" * 64,
             "name",
             "tail",
         )
@@ -911,6 +1005,10 @@ def test_transfer_stage_backend_helpers_cover_storage_and_identifier_edges() -> 
     assert len(gp_name.encode()) <= 63
     with pytest.raises(ValueError, match="too long"):
         transfer_stage.fit_hashed_stage_identifier("gp", "x" * 64, "name", "tail")
+    with pytest.raises(KeyError):
+        transfer_stage.fit_hashed_stage_identifier("unknown", "hash__", "name", "tail")
+    with pytest.raises(KeyError):
+        load_stage._stage_base_identifier("unknown", "name", None, "suffix")
 
     gp_sql, gp_post = transfer_stage.build_source_snapshot_sqls(
         "gp", "snap", "SELECT 1", "slice", "ordinal"

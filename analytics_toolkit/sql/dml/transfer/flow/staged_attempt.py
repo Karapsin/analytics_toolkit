@@ -140,6 +140,7 @@ def run_staged_source_transfer_attempt(
             f"Transfer worker selection: requested={options.concurrency}, effective={worker_count}",
             phase="select_workers",
         )
+        replace_connection(options.to_db_key, target_ref)
         stage_tables = _create_worker_stages(
             options,
             target_ref,

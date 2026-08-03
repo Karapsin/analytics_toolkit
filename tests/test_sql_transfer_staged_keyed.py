@@ -186,6 +186,11 @@ def test_source_stage_worker_materializes_owned_keys(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(staged_keyed_pipeline, "close_connection_ref", lambda *_args: None)
     monkeypatch.setattr(staged_keyed_pipeline, "time_print", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "replace_connection",
+        lambda _key, ref: ref.update(connection=object()),
+    )
 
     result = staged_keyed_pipeline._source_stage_worker(
         options,
@@ -597,6 +602,11 @@ def test_keyed_staged_attempt_guards_and_cleanup_precedence(monkeypatch: Any) ->
     )
     monkeypatch.setattr(staged_keyed_pipeline, "close_connection_ref", lambda *_args: None)
     monkeypatch.setattr(staged_keyed_pipeline, "time_print", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "replace_connection",
+        lambda _key, ref: ref.update(connection=object()),
+    )
     with pytest.raises(ValueError, match="primary"):
         staged_keyed_pipeline.run_keyed_staged_source_transfer_attempt(
             _options(),

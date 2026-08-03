@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 from sqlglot import exp, parse_one
 
-from ...backends import get_backend_adapter
+from ...backends import SUPPORTED_BACKENDS, get_backend_adapter
 from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
 from ...ddl.api import _create_sql_table_with_connection
@@ -229,6 +229,8 @@ def build_stage_table_prefix(
     table_name: str,
     transfer_staging_username: str | None,
     destination_hash: str | None = None,
+    *,
+    gp_style: bool = True,
 ) -> str:
     dialect = sqlglot_dialect(connection_type)
     table = parse_one(table_name, read=dialect, into=exp.Table)
@@ -241,6 +243,7 @@ def build_stage_table_prefix(
             str(table.this.this),
             transfer_staging_username,
             stage_suffix="x" * STAGE_TABLE_RANDOM_SUFFIX_LENGTH,
+            gp_style=gp_style,
         )
         if transfer_staging_username:
             return f"{base_identifier}__analytics_toolkit_{transfer_staging_username}__stage__"
@@ -313,8 +316,13 @@ def _stage_base_identifier(
     base_identifier: str,
     transfer_staging_username: str | None,
     stage_suffix: str,
+    *,
+    gp_style: bool = True,
 ) -> str:
-    return get_backend_adapter(connection_type).stage_base_identifier(
+    if connection_type not in SUPPORTED_BACKENDS:
+        raise KeyError(connection_type)
+    adapter_backend = "gp" if gp_style else connection_type
+    return get_backend_adapter(adapter_backend).stage_base_identifier(
         base_identifier,
         transfer_staging_username,
         stage_suffix,
