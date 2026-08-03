@@ -17,6 +17,22 @@ from ....execution.operation_runner import _format_duration
 
 T = TypeVar("T")
 
+_NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
+    "ALREADY_EXISTS",
+    "BAD_ARGUMENTS",
+    "COLUMN_NOT_FOUND",
+    "FEATURE_NOT_SUPPORTED",
+    "FUNCTION_NOT_FOUND",
+    "ILLEGAL_TYPE_OF_ARGUMENT",
+    "INSUFFICIENT_PRIVILEGE",
+    "SCHEMA_NOT_FOUND",
+    "SYNTAX_ERROR",
+    "TABLE_NOT_FOUND",
+    "TYPE_MISMATCH",
+    "UNKNOWN_IDENTIFIER",
+    "UNKNOWN_TABLE",
+}
+
 
 def run_with_retry(
     operation_name: str,
@@ -120,25 +136,14 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         return True
 
     error_name = str(getattr(exc, "error_name", "") or getattr(exc, "name", "")).strip().upper()
-    if error_name in {
-        "SYNTAX_ERROR",
-        "TABLE_NOT_FOUND",
-        "UNKNOWN_TABLE",
-        "UNKNOWN_IDENTIFIER",
-        "COLUMN_NOT_FOUND",
-        "SCHEMA_NOT_FOUND",
-        "FUNCTION_NOT_FOUND",
-        "ALREADY_EXISTS",
-        "FEATURE_NOT_SUPPORTED",
-        "INSUFFICIENT_PRIVILEGE",
-        "ILLEGAL_TYPE_OF_ARGUMENT",
-        "TYPE_MISMATCH",
-    }:
+    if error_name in _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES:
         return True
 
     message = _exception_message(exc)
-    if _is_clickhouse_conversion_error(message) or any(
-        pattern in message for pattern in _NON_RETRYABLE_MESSAGE_PATTERNS
+    if (
+        _is_non_retryable_clickhouse_error_name(message)
+        or _is_clickhouse_conversion_error(message)
+        or any(pattern in message for pattern in _NON_RETRYABLE_MESSAGE_PATTERNS)
     ):
         return True
     missing_object = "does not exist" in message or "doesn't exist" in message
@@ -159,6 +164,16 @@ def _is_clickhouse_conversion_error(message: str) -> bool:
     )
     return is_server_error and (
         "cannot parse" in message or "cannot convert" in message
+    )
+
+
+def _is_non_retryable_clickhouse_error_name(message: str) -> bool:
+    is_server_error = (
+        "received clickhouse exception" in message or "db::exception" in message
+    )
+    return is_server_error and any(
+        f"({error_name.lower()})" in message
+        for error_name in _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES
     )
 
 

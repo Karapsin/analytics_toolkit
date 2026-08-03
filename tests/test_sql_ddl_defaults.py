@@ -171,7 +171,13 @@ def test_backend_invalid_scope_is_rejected() -> None:
         parse_ddl_defaults({"parquet_staging": {}}, "target", "gp")
 
 
-def test_clickhouse_policy_keeps_execution_clusters_independent() -> None:
+def test_clickhouse_policy_keeps_execution_clusters_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "analytics_toolkit.sql.backends.ch.ddl.uuid.uuid4",
+        lambda: "fixed-uuid",
+    )
     defaults = parse_ddl_defaults(
         {
             "regular": {
@@ -210,6 +216,9 @@ def test_clickhouse_policy_keeps_execution_clusters_independent() -> None:
         ch_replace_table=False,
     )
     assert "ON CLUSTER CORE" in sqls[0]
+    assert "UUID" not in sqls[0]
+    assert "ON CLUSTER" not in sqls[1]
+    assert "UUID 'fixed-uuid'" in sqls[1]
     assert "ON CLUSTER '{cluster}'" in sqls[2]
     assert "'route_override'," in sqls[2]
     assert "'analytics'," in sqls[2]
@@ -360,7 +369,51 @@ def test_clickhouse_hardcoded_template_arguments_are_preserved_when_unset() -> N
     )
     assert len(sqls) == 2
     assert "'hardcoded'" in sqls[1]
-    assert "randCanonical()" in sqls[1]
+    assert "rand()" in sqls[1]
+    assert "randCanonical()" not in sqls[1]
+
+
+def test_clickhouse_policy_preserves_nested_sharding_expression() -> None:
+    defaults = parse_ddl_defaults(
+        {
+            "regular": {
+                "create_distributed_pair": True,
+                "shard": {"engine": "MergeTree", "on_cluster": None},
+                "distributed": {
+                    "engine_template": "Distributed('old', 'old_db', 'old_table', rand(), 'policy')",
+                    "cluster": "routing",
+                    "on_cluster": None,
+                    "sharding_key": "cityHash64(rand())",
+                },
+            }
+        },
+        "target",
+        "ch",
+    )
+    policy = resolve_clickhouse_creation_policy(
+        defaults.regular,
+        ch_engine=None,
+        ch_cluster=None,
+        ch_sharding_key=None,
+        ch_distributed_table=None,
+        ch_only_shard=False,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        ch_shard_on_cluster=None,
+        ch_distributed_on_cluster=None,
+    )
+    sqls = build_policy_create_sqls(
+        table_name="analytics.events",
+        joined_columns="id UInt64",
+        partition_by=None,
+        order_by=None,
+        policy=policy,
+        ch_only_shard=False,
+        ch_replace_table=False,
+    )
+    assert "cityHash64(rand())" in sqls[1]
+    assert "randCanonical()" not in sqls[1]
+    assert "'policy'" in sqls[1]
 
 
 def test_legacy_clickhouse_staging_scope_is_complete() -> None:

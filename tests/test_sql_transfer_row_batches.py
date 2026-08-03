@@ -938,8 +938,30 @@ def test_transfer_does_not_full_retry_missing_trino_catalog(
     assert attempts == [1]
 
 
-def test_transfer_does_not_full_retry_clickhouse_conversion_error(
+@pytest.mark.parametrize(
+    "message",
+    [
+        (
+            "Received ClickHouse exception, code: 32, server response: Code: 32. "
+            "DB::Exception: Attempt to read after eof: Cannot parse Int64 from String, "
+            "because value is too short: while executing 'FUNCTION CAST(customer_id, "
+            "Int64)'. (ATTEMPT_TO_READ_AFTER_EOF)"
+        ),
+        (
+            "Received ClickHouse exception, code: 36, server response: Code: 36. "
+            "DB::Exception: Macro 'uuid' in engine arguments requires an explicit UUID. "
+            "(BAD_ARGUMENTS)"
+        ),
+        (
+            "Received ClickHouse exception, code: 53, server response: Code: 53. "
+            "DB::Exception: Sharding expression has type Float64, but should be one of "
+            "integer type. (TYPE_MISMATCH)"
+        ),
+    ],
+)
+def test_transfer_does_not_full_retry_clickhouse_deterministic_error(
     monkeypatch: pytest.MonkeyPatch,
+    message: str,
 ) -> None:
     options = make_progress_options(
         from_db_key="ch_source",
@@ -953,12 +975,7 @@ def test_transfer_does_not_full_retry_clickhouse_conversion_error(
         full_retry_cnt=5,
         full_timeout_increment=0,
     )
-    error = DatabaseError(
-        "Received ClickHouse exception, code: 32, server response: Code: 32. "
-        "DB::Exception: Attempt to read after eof: Cannot parse Int64 from String, "
-        "because value is too short: while executing 'FUNCTION CAST(customer_id, "
-        "Int64)'. (ATTEMPT_TO_READ_AFTER_EOF)"
-    )
+    error = DatabaseError(message)
     attempts: list[int] = []
     monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
 
@@ -6864,6 +6881,18 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
     assert any("Remote Parquet" in message for message in messages)
     assert any("Target cleanup" in message for message in messages)
 
+    with pytest.raises(RuntimeError, match="stage"):
+        finalize_module.cleanup_stage(
+            options,
+            models_module.TransferConnectionRefs(),
+            models_module.TransferStageState(
+                target_exists=False,
+                stage_table="stage.only",
+                stage_table_created=True,
+            ),
+            1,
+        )
+
 
 def test_row_count_direct_failure_and_worker_paths() -> None:
     disabled = make_progress_options(validate_row_count=False)
@@ -8192,6 +8221,26 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
             1,
             drop_created_target=True,
         )
+
+    cleanup_state.stage_table = "stage.failed"
+    cleanup_state.stage_table_created = True
+    cleanup_state.stage_external_location = "s3://bucket/stage"
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_stage_table_with_retry",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("stage")),
+    )
+    messages.clear()
+    with pytest.raises(RuntimeError, match="stage"):
+        finalize_module.cleanup_stage(
+            options,
+            models_module.TransferConnectionRefs(),
+            cleanup_state,
+            1,
+            drop_created_target=True,
+        )
+    assert any("Remote Parquet" in message for message in messages)
+    assert any("Target cleanup" in message for message in messages)
 
 
 @pytest.mark.parametrize(

@@ -1638,6 +1638,100 @@ def test_sql_native_group_stats_keeps_single_cte_query_unwrapped() -> None:
     assert "__analytics_toolkit_union_" not in query
 
 
+def test_sql_native_greenplum_batches_union_queries_for_slice_limit() -> None:
+    parts = [f"SELECT {index} AS value" for index in range(7)]
+
+    batches = sql_native._batch_sql_native_union_queries(parts, backend="gp")
+
+    assert len(batches) == 3
+    assert [batch.count(" AS value") for batch in batches] == [3, 3, 1]
+    assert [batch.count("UNION ALL") for batch in batches] == [2, 2, 0]
+
+
+def test_sql_native_non_greenplum_keeps_union_query_together() -> None:
+    parts = [f"SELECT {index} AS value" for index in range(7)]
+
+    batches = sql_native._batch_sql_native_union_queries(parts, backend="trino")
+
+    assert len(batches) == 1
+    assert batches[0].count("UNION ALL") == 6
+
+
+def test_sql_native_batch_helpers_preserve_empty_and_single_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert sql_native._batch_sql_native_union_queries([], backend="gp") == []
+    empty = sql_native._read_sql_native_query_batches(
+        db_key="analytics",
+        queries=[],
+        print_queries=False,
+        retry_cnt=1,
+        timeout_increment=1,
+        query_label=None,
+    )
+    assert empty.empty
+
+    frame = pd.DataFrame({"value": [1]})
+    monkeypatch.setattr(sql_native, "_read_sql_native_query", lambda **_kwargs: frame)
+    single = sql_native._read_sql_native_query_batches(
+        db_key="analytics",
+        queries=["query_1"],
+        print_queries=False,
+        retry_cnt=1,
+        timeout_increment=1,
+        query_label=None,
+    )
+    assert single is frame
+
+
+def test_sql_native_cuped_query_builder_batches_rendered_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sql_native,
+        "_build_sql_native_cuped_query_parts",
+        lambda **_kwargs: ["SELECT 1", "SELECT 2"],
+    )
+
+    queries = sql_native._build_sql_native_cuped_queries(
+        backend="trino",
+        source_sql="source",
+        sql_where=None,
+        pre_source_sql="pre_source",
+        pre_sql_where=None,
+        group="group_name",
+        user_id="user_id",
+        comparisons=[("test", "control")],
+        metric_definitions=[],
+        outliers_quantile=0.99,
+        outliers_policy="truncate",
+    )
+
+    assert len(queries) == 1
+    assert "UNION ALL" in queries[0]
+
+
+def test_read_sql_native_query_batches_concatenates_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sql_native,
+        "_read_sql_native_query",
+        lambda **kwargs: pd.DataFrame({"query": [kwargs["query"]]}),
+    )
+
+    result = sql_native._read_sql_native_query_batches(
+        db_key="analytics",
+        queries=["query_1", "query_2", "query_3"],
+        print_queries=False,
+        retry_cnt=1,
+        timeout_increment=1,
+        query_label=None,
+    )
+
+    assert result["query"].tolist() == ["query_1", "query_2", "query_3"]
+
+
 def test_sql_native_observed_statistics_cover_aggregate_ratio_and_missing_groups() -> None:
     definition = {
         "kind": "ratio",

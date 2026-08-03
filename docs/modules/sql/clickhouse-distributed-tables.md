@@ -23,6 +23,13 @@ Cluster DDL is queued without making Python wait for the full asynchronous
 ClickHouse DDL operation. The helper still checks local and cluster visibility
 before inserting so lagging metadata does not silently break writes.
 
+The helper preserves configured `Distributed` sharding expressions exactly.
+In particular, `rand()` remains the integer-valued ClickHouse function rather
+than being normalized to the floating-point `randCanonical()` function. Local
+fallback creation for a replicated shard includes an explicit UUID when needed
+by a `{uuid}`-based default replica path; the corresponding `ON CLUSTER`
+statement remains unchanged.
+
 Use [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md) to replace a
 stored Distributed cluster, sharding key, MergeTree engine, partition key,
 sorting key, or table settings. The helper resolves cluster macros before

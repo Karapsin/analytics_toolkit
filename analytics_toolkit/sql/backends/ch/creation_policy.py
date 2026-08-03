@@ -15,9 +15,11 @@ from analytics_toolkit.sql.backends.ch.ddl import (
     _build_partition_by_sql,
     _format_ch_cluster_name,
     _sql_string_literal,
+    add_explicit_ch_uuid_to_local_replicated_create,
     build_ch_shard_table_name,
     split_ch_table_name_for_distributed_engine,
 )
+from analytics_toolkit.sql.backends.ch.metadata import extract_clickhouse_function_args
 from analytics_toolkit.sql.connection.ddl_defaults import (
     ClickHouseScopeDefaults,
     MISSING_DDL_VALUE,
@@ -227,7 +229,8 @@ def _physical_sql(
     cluster: str | None,
 ) -> str:
     cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
-    return f"{statement} {table}{cluster_sql}\n({columns})\nENGINE = {engine}\n{_build_partition_by_sql(partition_by)}{_build_order_by_sql(order_by)}"
+    sql = f"{statement} {table}{cluster_sql}\n({columns})\nENGINE = {engine}\n{_build_partition_by_sql(partition_by)}{_build_order_by_sql(order_by)}"
+    return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
 
 def _create_sql(statement: str, table: str, columns: str, engine: str, cluster: str | None) -> str:
@@ -244,18 +247,20 @@ def _render_distributed_engine(policy: ClickHouseCreationPolicy, shard_name: str
         shard_table=_sql_string_literal(relation),
         sharding_key=policy.sharding_key or "rand()",
     )
-    tree = sqlglot.parse_one(template, read="clickhouse")
-    args = list(tree.expressions)
+    sqlglot.parse_one(template, read="clickhouse")
+    args = extract_clickhouse_function_args(template, "Distributed")
+    if args is None or len(args) < 3:
+        raise SqlConfigError(
+            "ClickHouse distributed.engine_template must be a Distributed(...) engine with at least three arguments."
+        )
     if policy.distributed_cluster is not None:
-        args[0] = exp.Literal.string(policy.distributed_cluster)
-    args[1] = sqlglot.parse_one(database, read="clickhouse")
-    args[2] = exp.Literal.string(relation)
+        args[0] = _sql_string_literal(policy.distributed_cluster)
+    args[1] = database
+    args[2] = _sql_string_literal(relation)
     if policy.sharding_key is not None:
-        shard_expr = sqlglot.parse_one(policy.sharding_key, read="clickhouse")
         if len(args) >= 4:
-            args[3] = shard_expr
+            args[3] = policy.sharding_key
         else:
-            args.append(shard_expr)
-    tree.set("expressions", args)
-    rendered_args = ",\n".join(f"    {argument.sql(dialect='clickhouse')}" for argument in args)
+            args.append(policy.sharding_key)
+    rendered_args = ",\n".join(f"    {argument}" for argument in args)
     return f"Distributed(\n{rendered_args}\n)"

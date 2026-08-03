@@ -102,6 +102,18 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
         cwd=install_root,
     )
     _run([python, "-m", "pip", "check"], cwd=install_root)
+    _run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--no-cache-dir",
+            f"{artifact}[clickhouse-native]",
+        ],
+        cwd=install_root,
+    )
+    _run([python, "-c", "import clickhouse_driver"], cwd=install_root)
 
     module_literals = ", ".join(repr(module) for module in PUBLIC_MODULES)
     import_script = f"""

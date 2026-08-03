@@ -159,6 +159,12 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     }
     connections["ch_source"] = {**connections["ch"]}
     connections["ch_target"] = {**connections["ch"]}
+    connections["ch_native"] = {
+        **connections["ch"],
+        "driver": "native",
+        "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_NATIVE_PORT", "19000")),
+        "compression": False,
+    }
     if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
         connections["trino_pressure"] = {
             **connections["trino_values"],

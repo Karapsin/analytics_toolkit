@@ -70,6 +70,7 @@ for an Airflow-source file. The helper never overwrites an existing
   },
   "ch": {
     "type": "ch",
+    "driver": "http",
     "host": "ch.example",
     "port": 8123,
     "user": "user",
@@ -163,7 +164,15 @@ not an execution cluster. Templates accept `{cluster}`, `{database}`,
 shard relation always replace template positions. Explicit
 `ch_distributed_cluster` and `ch_sharding_key` replace hardcoded template
 arguments, including appending a fourth sharding argument to a three-argument
-template. Optional trailing arguments are preserved.
+template. Sharding expressions are preserved verbatim, so integer-valued
+ClickHouse expressions such as `rand()` are not rewritten into functions with
+different return types. Optional trailing arguments are preserved.
+
+When a replicated shard is created both with `ON CLUSTER` and as a local
+visibility fallback, the local statement receives an explicit table UUID. This
+keeps zero-argument `ReplicatedMergeTree` compatible with server defaults whose
+replica path contains `{uuid}`; clustered DDL continues to coordinate its UUID
+inside ClickHouse.
 
 The dedicated ClickHouse overrides are `ch_distributed_engine_template`,
 `ch_distributed_cluster`, `ch_shard_on_cluster`, and
@@ -231,7 +240,21 @@ dataframe inserts.
 
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
-`interface`, `query_limit`, `query_retries`, and `client_name` fields.
+`client_name`, and `compression` fields. The optional `driver` selector is
+`"http"` by default and keeps the existing `clickhouse-connect` behavior and
+default port `8123`. Set `"driver": "native"` to use the native ClickHouse
+protocol through the optional `clickhouse-driver` package; its default port is
+`9000`. Install it with `pip install 'analytics-toolkit[clickhouse-native]'`.
+The native extra does not install Airflow; DAG environments that need both use
+`analytics-toolkit[airflow,clickhouse-native]`.
+
+Both transports map `secure`, `verify`, CA certificate settings, connection and
+send/receive timeouts, query `settings`, `client_name`, staging schema, and DDL
+defaults. Native `compression` defaults to `false` and also accepts `"lz4"` or
+`"zstd"`. The fields `interface`, `query_limit`, and `query_retries` are HTTP
+only and are rejected for native connections rather than ignored. In
+particular, changing only `"interface": "https"` cannot make the HTTP client
+connect to a native-protocol port.
 `ca_certs_variable` resolves an Airflow Variable lazily when the connection is
 opened, which keeps the certificate path in Airflow instead of the file.
 
@@ -308,6 +331,31 @@ different Airflow extra. Plain values still force a file-level override.
 resolver, for example
 `"ddl_defaults": {"from": "extra", "key": "ddl_defaults"}`; a literal
 mapping with additional scope keys is never mistaken for a resolver.
+
+The Airflow Connection's explicit port overrides the driver default. For
+example, this migration keeps host, port `9003`, login, password, and database
+in Airflow while selecting the native transport in the routing file:
+
+```json
+{
+  "source": "airflow",
+  "connections": {
+    "clickhouse_pa_core": {
+      "type": "ch",
+      "driver": "native",
+      "ca_certs_variable": "ca_certificate",
+      "send_receive_timeout": 6000,
+      "settings": {
+        "connect_timeout": "500"
+      }
+    }
+  }
+}
+```
+
+This selects the native transport while credentials and the explicit port still
+come from Airflow. `driver` and `compression` may also use Airflow-extra
+resolver objects.
 
 Airflow task working directories can differ from the DAG project root. If the
 default search from the current working directory upward cannot find the

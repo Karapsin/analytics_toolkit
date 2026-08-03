@@ -145,6 +145,7 @@ services:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     ports:
       - "${SQL_INTEGRATION_CLICKHOUSE_PORT:-18123}:8123"
+      - "${SQL_INTEGRATION_CLICKHOUSE_NATIVE_PORT:-19000}:9000"
     volumes:
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
       - clickhouse-data:/var/lib/clickhouse

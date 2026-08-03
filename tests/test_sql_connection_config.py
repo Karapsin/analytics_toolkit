@@ -49,7 +49,7 @@ def test_sql_facade_import_is_airflow_parse_safe(tmp_path: Path) -> None:
 import builtins
 import importlib
 
-blocked_roots = {"airflow", "clickhouse_connect", "psycopg2", "trino"}
+blocked_roots = {"airflow", "clickhouse_connect", "clickhouse_driver", "psycopg2", "trino"}
 real_import = builtins.__import__
 
 
@@ -1060,6 +1060,279 @@ def test_airflow_clickhouse_connection_uses_dag_compatible_defaults(
     assert isinstance(config, config_module.ChConfig)
     assert config.send_receive_timeout == 6000
     assert config.settings == {"connect_timeout": "500"}
+
+
+def test_clickhouse_driver_defaults_select_transport_ports(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "http": {
+                "type": "ch",
+                "host": "http.example",
+                "user": "user",
+                "password": "password",
+            },
+            "native": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+            },
+        }
+    )
+
+    http = config_module.get_connection_config("http")
+    native = config_module.get_connection_config("native")
+
+    assert isinstance(http, config_module.ChConfig)
+    assert http.driver == "http"
+    assert http.port == 8123
+    assert http.compression is False
+    assert isinstance(native, config_module.ChConfig)
+    assert native.driver == "native"
+    assert native.port == 9000
+    assert native.compression is False
+
+
+def test_airflow_source_native_clickhouse_keeps_explicit_port_and_options(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "clickhouse_pa_core": {
+                    "type": "ch",
+                    "driver": "native",
+                    "compression": {"from": "extra", "fallback": False},
+                    "ca_certs_variable": "ca_certificate",
+                    "send_receive_timeout": 6000,
+                    "settings": {"connect_timeout": "500"},
+                }
+            },
+        }
+    )
+    install_fake_airflow(
+        monkeypatch,
+        {
+            "clickhouse_pa_core": FakeAirflowConnection(
+                conn_type="clickhouse",
+                host="native.example",
+                port=9003,
+                login="native-user",
+                password="native-password",
+                schema="analytics",
+                extra_dejson={"compression": "lz4"},
+            )
+        },
+    )
+
+    config = config_module.get_connection_config("clickhouse_pa_core")
+
+    assert isinstance(config, config_module.ChConfig)
+    assert config.driver == "native"
+    assert config.port == 9003
+    assert config.compression == "lz4"
+    assert config.settings == {"connect_timeout": "500"}
+
+
+@pytest.mark.parametrize("field", ["interface", "query_limit", "query_retries"])
+def test_native_clickhouse_rejects_http_only_fields(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+    field: str,
+) -> None:
+    write_sql_connections(
+        {
+            "native_bad": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+                field: 1,
+            }
+        }
+    )
+
+    with pytest.raises(SqlConfigError, match=r"native_bad.*HTTP-only"):
+        config_module.get_connection_config("native_bad")
+
+
+def test_invalid_clickhouse_driver_is_connection_specific(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "bad_driver": {
+                "type": "ch",
+                "driver": "tcp",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+            }
+        }
+    )
+
+    with pytest.raises(SqlConfigError, match=r"bad_driver.*driver.*http.*native"):
+        config_module.get_connection_config("bad_driver")
+
+
+@pytest.mark.parametrize("compression", [1, "gzip"])
+def test_invalid_clickhouse_compression_is_connection_specific(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+    compression: object,
+) -> None:
+    write_sql_connections(
+        {
+            "bad_compression": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+                "compression": compression,
+            }
+        }
+    )
+
+    with pytest.raises(SqlConfigError, match=r"bad_compression.*compression"):
+        config_module.get_connection_config("bad_compression")
+
+
+def test_native_clickhouse_constructor_and_lazy_airflow_ca(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    ca_path = _write_cert(".certs/native-ca.pem")
+    write_sql_connections(
+        {
+            "native": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "port": 9003,
+                "user": "native-user",
+                "password": "native-password",
+                "database": "analytics",
+                "secure": True,
+                "verify": False,
+                "ca_certs_variable": "ca_certificate",
+                "connect_timeout": 11,
+                "send_receive_timeout": 6000,
+                "settings": {"connect_timeout": "500"},
+                "compression": "zstd",
+                "client_name": "analytics-toolkit",
+            }
+        }
+    )
+    install_fake_airflow(monkeypatch, {}, variables={"ca_certificate": "native-ca.pem"})
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    fake_module = types.ModuleType("clickhouse_driver")
+    fake_module.Client = FakeClient
+    monkeypatch.setitem(sys.modules, "clickhouse_driver", fake_module)
+
+    config = config_module.get_connection_config("native")
+    assert isinstance(config, config_module.ChConfig)
+    assert calls == []
+    result = connection_module.get_sql_connection("native")
+
+    assert result.__class__.__name__ == "NativeClickHouseClient"
+    assert calls == [
+        {
+            "host": "native.example",
+            "port": 9003,
+            "user": "native-user",
+            "password": "native-password",
+            "database": "analytics",
+            "secure": True,
+            "verify": False,
+            "ca_certs": str(ca_path.resolve()),
+            "connect_timeout": 11,
+            "send_receive_timeout": 6000,
+            "settings": {"connect_timeout": "500"},
+            "compression": "zstd",
+            "client_name": "analytics-toolkit",
+        }
+    ]
+
+
+def test_native_clickhouse_constructor_omits_unconfigured_options(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "native": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+            }
+        }
+    )
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    fake_module = types.ModuleType("clickhouse_driver")
+    fake_module.Client = FakeClient
+    monkeypatch.setitem(sys.modules, "clickhouse_driver", fake_module)
+
+    connection_module.get_sql_connection("native")
+
+    assert calls == [
+        {
+            "host": "native.example",
+            "port": 9000,
+            "user": "user",
+            "password": "password",
+            "database": "",
+            "secure": False,
+            "compression": False,
+        }
+    ]
+
+
+def test_missing_native_clickhouse_dependency_has_installation_hint(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    write_sql_connections(
+        {
+            "native": {
+                "type": "ch",
+                "driver": "native",
+                "host": "native.example",
+                "user": "user",
+                "password": "password",
+            }
+        }
+    )
+    real_import = builtins.__import__
+
+    def blocked_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "clickhouse_driver" or name.startswith("clickhouse_driver."):
+            message = "blocked"
+            raise ImportError(message)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+    monkeypatch.delitem(sys.modules, "clickhouse_driver", raising=False)
+
+    with pytest.raises(ImportError, match="Native ClickHouse") as caught:
+        connection_module.get_sql_connection("native")
+    assert "Install analytics-toolkit[clickhouse-native]." in str(caught.value)
 
 
 def test_airflow_clickhouse_file_overrides_airflow_extras(

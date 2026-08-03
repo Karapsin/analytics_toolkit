@@ -274,6 +274,14 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert "`users` Int64" in cluster_distributed_creates[0]
     assert "    '{cluster}'," in cluster_distributed_creates[0]
     assert f"    '{TARGET_SHARD_TABLE}'," in cluster_distributed_creates[0]
+    local_shard_creates = [
+        command
+        for command in map(_strip_query_label, target.commands)
+        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}\n")
+        and "ON CLUSTER" not in command
+    ]
+    assert len(local_shard_creates) == 1
+    assert "UUID '" in local_shard_creates[0]
     assert any(
         "INSERT INTO test_transfer_target (`month_date`, `users`) SELECT CAST(`month_date` AS Date)"
         in command

@@ -95,6 +95,7 @@ directory first, then walks upward through parent directories:
     },
     "airflow_clickhouse": {
       "type": "ch",
+      "driver": "http",
       "secure": true,
       "ca_certs_variable": "clickhouse_ca_cert",
       "send_receive_timeout": 6000,
@@ -289,6 +290,43 @@ df = sql.read(
 ```
 
 ## ClickHouse
+
+ClickHouse remains HTTP by default through `clickhouse-connect`, using port
+`8123` when Airflow does not provide one. Native-protocol connections require
+`pip install 'analytics-toolkit[airflow,clickhouse-native]'`, set
+`"driver": "native"`, and default to port `9000`; an explicit Airflow
+Connection port always wins. Native mode maps the Airflow host, port, login,
+password, and schema/database together with `secure`, `verify`,
+`ca_certs_variable`, timeouts, `settings`, `client_name`, and `compression`.
+Compression defaults to `false` and accepts `"lz4"` or `"zstd"`.
+
+`interface`, `query_limit`, and `query_retries` remain HTTP-only and are
+rejected in native mode. Setting only `"interface": "https"` does not allow an
+HTTP client to use a native-protocol port.
+
+Use this migration for the legacy native helper while leaving credentials and
+port `9003` in the Airflow Connection:
+
+```json
+{
+  "source": "airflow",
+  "connections": {
+    "clickhouse_pa_core": {
+      "type": "ch",
+      "driver": "native",
+      "ca_certs_variable": "ca_certificate",
+      "send_receive_timeout": 6000,
+      "settings": {
+        "connect_timeout": "500"
+      }
+    }
+  }
+}
+```
+
+Host, port, login, password, and database still come from Airflow. CA Variable
+resolution happens only when the connection opens, and resolver objects can
+source `driver` or `compression` from Airflow extras.
 
 Old wrapper style:
 

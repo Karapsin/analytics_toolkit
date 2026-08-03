@@ -153,6 +153,9 @@
     "ch_limited": {
       "purpose": "Limited-query ClickHouse source"
     },
+    "ch_native": {
+      "purpose": "Native-protocol ClickHouse source and target"
+    },
     "gp_tls": {
       "purpose": "Greenplum TLS"
     },
@@ -5710,6 +5713,13 @@
     }
   },
   "scenarios": {
+    "clickhouse.native.transport": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_clickhouse_native.py::test_native_clickhouse_public_operations_and_transfers",
+      "backends": [
+        "ch"
+      ]
+    },
     "format.rewrite_equivalence.gp.report_ctes": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_format.py::test_gp_rewrite_preserves_report_query_results",

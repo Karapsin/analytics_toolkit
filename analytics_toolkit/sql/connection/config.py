@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, Union, cast
 
 from analytics_toolkit.general.connections import get_connections_path_override
 
@@ -124,6 +124,8 @@ class ChConfig:
     client_name: str | None
     transfer_staging_schema: str | None
     ddl_defaults: DdlDefaults | None = None
+    driver: Literal["http", "native"] = "http"
+    compression: bool | Literal["lz4", "zstd"] = False
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]

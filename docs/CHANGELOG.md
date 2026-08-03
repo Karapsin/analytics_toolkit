@@ -6,6 +6,11 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Batch Greenplum AB metric queries within the slice limit.
+- Added optional native ClickHouse protocol support.
+
+## 1.3.11.4 - 2026-07-31
+
 - Added segmented SQL AB metrics report helper with optional Excel output.
 - Added concurrent list execution to sql.execute with soft and hard concurrency caps.
 - Resolved here paths from active Positron editor execution metadata.
@@ -13,9 +18,9 @@ Generated from package version bumps and recent commit history.
 - Required explicit Greenplum connection keys for gp_vacuum.
 - Made create_sql_table replace existing targets for every schema source.
 - Renamed the AB metrics report helper, made segmentation optional, and fixed
-  multi-metric SQL composition.
 - Replaced ambiguous AB control/test output columns with group-position names.
 - Stop retries for duplicate SQL result columns.
+- Fixed ClickHouse replicated DDL, sharding expressions, and deterministic retries.
 
 ## 1.3.11.3 - 2026-07-30
 

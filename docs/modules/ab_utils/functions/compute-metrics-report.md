@@ -73,6 +73,11 @@ have the same behavior as
 report defaults `test_vs_test` to `False` so its summary focuses on comparisons
 against the control group.
 
+On Greenplum, aggregate and CUPED calculations for wide metric sets are split
+into bounded SQL batches and combined into the same result dataframe. This keeps
+generated reports within Greenplum's per-query slice limit without changing the
+report schema or metric ordering.
+
 ## Usage
 
 ```python

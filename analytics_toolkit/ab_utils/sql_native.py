@@ -68,6 +68,7 @@ from .validation import (
 _SOURCE_TYPES = frozenset({"table", "sql"})
 _DEFAULT_BOOTSTRAP_LARGE_SOURCE_ROW_THRESHOLD = 100_000
 _DEFAULT_BOOTSTRAP_LARGE_SOURCE_RESAMPLES_PER_QUERY = 10
+_GREENPLUM_UNION_QUERY_BATCH_SIZE = 3
 _SQL_NATIVE_TASK_FIELDS = frozenset(
     {
         "source",
@@ -315,9 +316,9 @@ def _compute_test_metrics_sql_native_single(
     )
     comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
 
-    base_stats = _read_sql_native_query(
+    base_stats = _read_sql_native_query_batches(
         db_key=db_key,
-        query=_build_sql_native_group_stats_query(
+        queries=_build_sql_native_group_stats_queries(
             backend=source_ref.backend,
             source_sql=source_ref.source_sql,
             sql_where=source_ref.sql_where,
@@ -333,9 +334,9 @@ def _compute_test_metrics_sql_native_single(
         query_label=query_label,
     )
     cuped_stats = (
-        _read_sql_native_query(
+        _read_sql_native_query_batches(
             db_key=db_key,
-            query=_build_sql_native_cuped_query(
+            queries=_build_sql_native_cuped_queries(
                 backend=source_ref.backend,
                 source_sql=source_ref.source_sql,
                 sql_where=source_ref.sql_where,
@@ -556,6 +557,33 @@ def _read_sql_native_query(
     )
 
 
+def _read_sql_native_query_batches(  # noqa: PLR0913 - mirrors the single-query reader.
+    *,
+    db_key: str,
+    queries: Sequence[str],
+    print_queries: bool,
+    retry_cnt: int,
+    timeout_increment: float,
+    query_label: str | None,
+) -> pd.DataFrame:
+    frames = [
+        _read_sql_native_query(
+            db_key=db_key,
+            query=query,
+            print_queries=print_queries,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+        )
+        for query in queries
+    ]
+    if not frames:
+        return pd.DataFrame()
+    if len(frames) == 1:
+        return frames[0]
+    return pd.concat(frames, ignore_index=True)
+
+
 def _build_sql_native_validation_query(
     *,
     backend: str,
@@ -663,7 +691,56 @@ def _build_sql_native_group_stats_query(
     outliers_quantile: float,
     outliers_policy: str,
 ) -> str:
-    parts = [
+    return _union_sql_queries(
+        _build_sql_native_group_stats_query_parts(
+            backend=backend,
+            source_sql=source_sql,
+            sql_where=sql_where,
+            group=group,
+            user_id=user_id,
+            metric_definitions=metric_definitions,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+    )
+
+
+def _build_sql_native_group_stats_queries(  # noqa: PLR0913 - SQL builder options.
+    *,
+    backend: str,
+    source_sql: str,
+    sql_where: str | None,
+    group: str,
+    user_id: str,
+    metric_definitions: Sequence[dict[str, object]],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    parts = _build_sql_native_group_stats_query_parts(
+        backend=backend,
+        source_sql=source_sql,
+        sql_where=sql_where,
+        group=group,
+        user_id=user_id,
+        metric_definitions=metric_definitions,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+    return _batch_sql_native_union_queries(parts, backend=backend)
+
+
+def _build_sql_native_group_stats_query_parts(  # noqa: PLR0913 - SQL builder options.
+    *,
+    backend: str,
+    source_sql: str,
+    sql_where: str | None,
+    group: str,
+    user_id: str,
+    metric_definitions: Sequence[dict[str, object]],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    return [
         _build_sql_native_metric_group_stats_query(
             backend=backend,
             source_sql=source_sql,
@@ -676,7 +753,6 @@ def _build_sql_native_group_stats_query(
         )
         for metric_definition in metric_definitions
     ]
-    return _union_sql_queries(parts)
 
 
 def _union_sql_queries(parts: Sequence[str]) -> str:
@@ -686,6 +762,17 @@ def _union_sql_queries(parts: Sequence[str]) -> str:
         f"SELECT * FROM (\n{part}\n) AS __analytics_toolkit_union_{index:04d}"  # noqa: S608 - complete internally built queries.
         for index, part in enumerate(parts)
     )
+
+
+def _batch_sql_native_union_queries(parts: Sequence[str], *, backend: str) -> list[str]:
+    if not parts:
+        return []
+    if backend.strip().lower() not in {"gp", "greenplum"}:
+        return [_union_sql_queries(parts)]
+    return [
+        _union_sql_queries(parts[start : start + _GREENPLUM_UNION_QUERY_BATCH_SIZE])
+        for start in range(0, len(parts), _GREENPLUM_UNION_QUERY_BATCH_SIZE)
+    ]
 
 
 def _build_sql_native_metric_group_stats_query(
@@ -994,7 +1081,68 @@ def _build_sql_native_cuped_query(
     outliers_quantile: float,
     outliers_policy: str,
 ) -> str:
-    parts = [
+    return _union_sql_queries(
+        _build_sql_native_cuped_query_parts(
+            backend=backend,
+            source_sql=source_sql,
+            sql_where=sql_where,
+            pre_source_sql=pre_source_sql,
+            pre_sql_where=pre_sql_where,
+            group=group,
+            user_id=user_id,
+            comparisons=comparisons,
+            metric_definitions=metric_definitions,
+            outliers_quantile=outliers_quantile,
+            outliers_policy=outliers_policy,
+        )
+    )
+
+
+def _build_sql_native_cuped_queries(  # noqa: PLR0913 - SQL builder options.
+    *,
+    backend: str,
+    source_sql: str,
+    sql_where: str | None,
+    pre_source_sql: str,
+    pre_sql_where: str | None,
+    group: str,
+    user_id: str,
+    comparisons: Sequence[tuple[str, str]],
+    metric_definitions: Sequence[dict[str, object]],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    parts = _build_sql_native_cuped_query_parts(
+        backend=backend,
+        source_sql=source_sql,
+        sql_where=sql_where,
+        pre_source_sql=pre_source_sql,
+        pre_sql_where=pre_sql_where,
+        group=group,
+        user_id=user_id,
+        comparisons=comparisons,
+        metric_definitions=metric_definitions,
+        outliers_quantile=outliers_quantile,
+        outliers_policy=outliers_policy,
+    )
+    return _batch_sql_native_union_queries(parts, backend=backend)
+
+
+def _build_sql_native_cuped_query_parts(  # noqa: PLR0913 - SQL builder options.
+    *,
+    backend: str,
+    source_sql: str,
+    sql_where: str | None,
+    pre_source_sql: str,
+    pre_sql_where: str | None,
+    group: str,
+    user_id: str,
+    comparisons: Sequence[tuple[str, str]],
+    metric_definitions: Sequence[dict[str, object]],
+    outliers_quantile: float,
+    outliers_policy: str,
+) -> list[str]:
+    return [
         _build_sql_native_metric_cuped_query(
             backend=backend,
             source_sql=source_sql,
@@ -1012,7 +1160,6 @@ def _build_sql_native_cuped_query(
         for test_group, baseline_group in comparisons
         for metric_definition in metric_definitions
     ]
-    return _union_sql_queries(parts)
 
 
 def _build_sql_native_metric_cuped_query(
