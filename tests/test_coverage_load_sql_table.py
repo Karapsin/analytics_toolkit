@@ -158,6 +158,42 @@ def test_insert_rows_batch_classifies_insert_failures(
     assert (len(logs) == 2) is ambiguous
 
 
+def test_insert_rows_batch_can_suppress_ambiguous_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = LoadAdapter(ambiguous=True)
+    logs: list[str] = []
+    secret = "password=hunter2 row=('customer-secret', 42)"
+    monkeypatch.setattr(load_table, "resolve_connection_backend", lambda value: value)
+    monkeypatch.setattr(load_table, "get_backend_adapter", lambda _backend: adapter)
+    monkeypatch.setattr(load_table, "time_print", lambda text, **_kwargs: logs.append(text))
+
+    def fail_insert(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(load_table, "_insert_rows_backend", fail_insert)
+
+    with pytest.raises(load_table.AmbiguousTableLoadError):
+        load_table.insert_rows_batch(
+            "gp",
+            {"connection": object()},
+            "schema.stage",
+            ["id"],
+            [(1,)],
+            _run_once,
+            retry_cnt=1,
+            timeout_increment=0,
+            safe_exception_logging=True,
+            log_prefix="[slice=1/1] ",
+        )
+
+    output = "\n".join(logs)
+    assert all(message.startswith("[slice=1/1] ") for message in logs)
+    assert "RuntimeError (details suppressed)" in output
+    assert secret not in output
+    assert "customer-secret" not in output
+
+
 @pytest.mark.parametrize(
     ("refresh", "attempt", "retry_cnt", "key", "has_replace", "expected"),
     [

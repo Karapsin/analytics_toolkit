@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Batch Greenplum AB metric queries within the slice limit.
 - Added optional native ClickHouse protocol support.
 - Hardened staged transfers and standardized stage names across SQL backends.
+- Added pipelined keyed SQL staging with bounded concurrency, validation, and ETA logging.
 
 ## 1.3.11.4 - 2026-07-31
 

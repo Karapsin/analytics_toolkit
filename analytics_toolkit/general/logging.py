@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import logging
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
-import logging
-import sys
 from typing import TextIO
-
 
 _TIME_PRINT_LEVELS = {
     "debug": 10,
@@ -30,6 +29,7 @@ class _TimePrintContext:
     backend: str | None = None
     phase: str | None = None
     task_id: str | None = None
+    message_prefix: str | None = None
 
 
 _time_print_context: ContextVar[_TimePrintContext] = ContextVar(
@@ -67,7 +67,10 @@ def time_print(
         backend=_normalize_context_part(backend) or context.backend,
         phase=_normalize_context_part(phase) or context.phase,
         task_id=_normalize_context_part(task_id) or context.task_id,
+        message_prefix=context.message_prefix,
     )
+    if resolved_context.message_prefix and not message.startswith(resolved_context.message_prefix):
+        message = f"{resolved_context.message_prefix}{message}"
     formatted_message = _format_time_print_message(
         formatted_time,
         resolved_context,
@@ -140,6 +143,27 @@ def time_print_context(
             backend=_normalize_context_part(backend) or current.backend,
             phase=_normalize_context_part(phase) or current.phase,
             task_id=_normalize_context_part(task_id) or current.task_id,
+            message_prefix=current.message_prefix,
+        )
+    )
+    try:
+        yield
+    finally:
+        _time_print_context.reset(token)
+
+
+@contextmanager
+def _time_print_message_prefix(message_prefix: str) -> Iterator[None]:
+    """Temporarily prefix messages without expanding the public context API."""
+    current = _time_print_context.get()
+    token = _time_print_context.set(
+        _TimePrintContext(
+            operation=current.operation,
+            connection=current.connection,
+            backend=current.backend,
+            phase=current.phase,
+            task_id=current.task_id,
+            message_prefix=(_normalize_message_prefix(message_prefix) or current.message_prefix),
         )
     )
     try:
@@ -179,6 +203,13 @@ def _normalize_context_part(value: str | None) -> str | None:
     return normalized or None
 
 
+def _normalize_message_prefix(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return f"{normalized} " if normalized else None
+
+
 def _format_time_print_message(
     current_time: str,
     context: _TimePrintContext,
@@ -213,9 +244,7 @@ def _resolve_stream(stream: str | TextIO | None) -> TextIO:
     if stream == "stderr":
         return sys.stderr
     if isinstance(stream, str):
-        raise ValueError(
-            "stream must be 'stdout', 'stderr', a file-like object, or None."
-        )
+        raise ValueError("stream must be 'stdout', 'stderr', a file-like object, or None.")
     if not hasattr(stream, "write"):
         raise TypeError("stream must expose a write method.")
     return stream

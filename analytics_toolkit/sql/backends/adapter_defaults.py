@@ -541,8 +541,7 @@ def normalize_gp_partitions_option(
         )
 
         message = (
-            f"gp_partitions can only be used when {option_owner} has type 'gp', "
-            f"not {backend!r}."
+            f"gp_partitions can only be used when {option_owner} has type 'gp', not {backend!r}."
         )
         raise InvalidSqlInputError(message)
     return None
@@ -790,6 +789,50 @@ def estimate_source_rows(
 ) -> int | None:
     del adapter, connection, source_sql, query_label
     return None
+
+
+def build_creation_policy_cleanup_sqls(
+    adapter: Any,
+    table_name: str,
+    creation_policy: Any,
+    *,
+    query_label: str | None = None,
+    if_exists: bool = True,
+) -> list[str]:
+    del adapter, table_name, creation_policy, query_label, if_exists
+    return []
+
+
+def drop_table(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    **options: Any,
+) -> None:
+    adapter.execute_command(
+        connection,
+        adapter.drop_table_sql(table_name, **options),
+    )
+
+
+def preclear_distributed_replace_target(
+    adapter: Any,
+    *_args: Any,
+    **_options: Any,
+) -> bool:
+    del adapter
+    return False
+
+
+def open_transfer_host_connection(adapter: Any, connection_key: str, host: str) -> Any:
+    del adapter, connection_key, host
+    message = "This backend does not provide per-host transfer connections."
+    raise RuntimeError(message)
+
+
+def needs_bounded_replace_preclear(adapter: Any, only_shard: object) -> bool:
+    del adapter, only_shard
+    return False
 
 
 def after_create_table(

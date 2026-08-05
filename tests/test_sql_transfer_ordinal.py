@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, I001, PT011, PT018, TRY003
 
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -48,7 +49,6 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferSlice,
     TransferStageState,
 )
-from collections import deque
 from analytics_toolkit.sql.dml.transfer import schema as transfer_schema
 
 
@@ -292,7 +292,7 @@ def test_snapshot_sql_uses_identity_range_and_backend_storage() -> None:
     assert snapshot.post_create_sqls[0].startswith("CREATE INDEX")
     assert "__analytics_toolkit_transfer_id" in range_sql
     assert ">= 10" in range_sql and "< 20" in range_sql
-    assert range_sql.endswith('ORDER BY "__analytics_toolkit_row_ordinal"')
+    assert range_sql.endswith('ORDER BY "__analytics_toolkit_row_ordinal" LIMIT 10')
 
 
 def test_public_transfer_reuses_one_runtime_id_and_returns_it(monkeypatch: Any) -> None:
@@ -327,6 +327,123 @@ def test_public_transfer_reuses_one_runtime_id_and_returns_it(monkeypatch: Any) 
     assert second.metadata.transfer_id == seen[1]
     assert len(first.metadata.transfer_id or "") == 32
     assert first.metadata.transfer_id != second.metadata.transfer_id
+
+
+def test_transfer_metadata_uses_range_reduced_unkeyed_concurrency(monkeypatch: Any) -> None:
+    template = _staged_options(
+        transfer_concurrency=TransferConcurrency(
+            legacy_value=None,
+            requested_read=8,
+            requested_write=4,
+            effective_read=2,
+            effective_write=2,
+            split_requested=True,
+            soft_concurrency_cap=2,
+            hard_concurrency_cap=5,
+            soft_limited_read=2,
+            soft_limited_write=2,
+        )
+    )
+    monkeypatch.setattr(api, "build_transfer_options", lambda **_kwargs: template)
+
+    def transfer_attempt(options: TransferOptions, **_kwargs: Any) -> int:
+        concurrency = options.transfer_concurrency
+        object.__setattr__(
+            options,
+            "transfer_concurrency",
+            TransferConcurrency(
+                legacy_value=concurrency.legacy_value,
+                requested_read=concurrency.requested_read,
+                requested_write=concurrency.requested_write,
+                effective_read=1,
+                effective_write=1,
+                split_requested=concurrency.split_requested,
+                soft_concurrency_cap=concurrency.soft_concurrency_cap,
+                hard_concurrency_cap=concurrency.hard_concurrency_cap,
+                soft_limited_read=concurrency.soft_limited_read,
+                soft_limited_write=concurrency.soft_limited_write,
+            ),
+        )
+        return 1
+
+    monkeypatch.setattr(api, "run_transfer_attempt", transfer_attempt)
+    monkeypatch.setattr(api, "best_effort_transfer_target_count", lambda *_args, **_kwargs: 1)
+
+    result = api.transfer_table("source", "target", return_metadata=True)
+
+    assert result.metadata.requested_read_concurrency == 8
+    assert result.metadata.requested_write_concurrency == 4
+    assert result.metadata.soft_limited_read_concurrency == 2
+    assert result.metadata.soft_limited_write_concurrency == 2
+    assert result.metadata.effective_read_concurrency == 1
+    assert result.metadata.effective_write_concurrency == 1
+
+
+def test_lazy_keyed_metadata_reuses_bounded_final_target_count(monkeypatch: Any) -> None:
+    build_calls: list[bool] = []
+    transfer_slice = TransferSlice(
+        index=0,
+        values=(1,),
+        predicate_sql="id = 1",
+        source_sql="SELECT 1 AS id",
+        label="id:1",
+    )
+
+    def build_options(**kwargs: Any) -> TransferOptions:
+        collect_count = bool(kwargs["collect_final_target_count"])
+        build_calls.append(collect_count)
+        return _staged_options(
+            transfer_keys=["id"],
+            transfer_slices=[transfer_slice],
+            collect_final_target_count=collect_count,
+        )
+
+    def transfer_attempt(options: TransferOptions, **_kwargs: Any) -> int:
+        assert options.collect_final_target_count is True
+        object.__setattr__(options, "final_target_rows", 17)
+        return 1
+
+    monkeypatch.setattr(api, "build_transfer_options", build_options)
+    monkeypatch.setattr(api, "run_transfer_attempt", transfer_attempt)
+    monkeypatch.setattr(
+        api,
+        "best_effort_transfer_target_count",
+        lambda *_args, **_kwargs: pytest.fail("opened an unbudgeted metadata-count connection"),
+    )
+
+    result = api.transfer_table("source", "target", return_metadata=True)
+
+    assert build_calls == [True]
+    assert result.metadata.final_target_rows == 17
+
+
+def test_transfer_does_not_full_retry_nonretryable_post_finalization_close(
+    monkeypatch: Any,
+) -> None:
+    class FinalizedCloseError(RuntimeError):
+        analytics_toolkit_sql_retry_safe = False
+
+    options = _staged_options(
+        transfer_slices=[TransferSlice(0, (1,), "", "SELECT 1 AS id", "key=1")],
+        transfer_keys=["key"],
+        full_retry_cnt=5,
+        full_timeout_increment=0,
+    )
+    attempts: list[int] = []
+    error = FinalizedCloseError("target connection remains live")
+    monkeypatch.setattr(api, "build_transfer_options", lambda **_kwargs: options)
+
+    def fail_attempt(**_kwargs: Any) -> int:
+        attempts.append(1)
+        raise error
+
+    monkeypatch.setattr(api, "run_transfer_attempt", fail_attempt)
+
+    with pytest.raises(FinalizedCloseError) as exc_info:
+        api.transfer_table("source", "target")
+
+    assert exc_info.value is error
+    assert attempts == [1]
 
 
 def test_superseded_cleanup_requires_exact_destination(monkeypatch: Any) -> None:
@@ -383,9 +500,24 @@ def test_superseded_cleanup_requires_exact_destination(monkeypatch: Any) -> None
 def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
     monkeypatch: Any,
 ) -> None:
-    options = _staged_options(concurrency=3)
+    options = _staged_options(
+        concurrency=8,
+        transfer_concurrency=TransferConcurrency(
+            legacy_value=8,
+            requested_read=8,
+            requested_write=8,
+            effective_read=2,
+            effective_write=2,
+            split_requested=False,
+            soft_concurrency_cap=2,
+            hard_concurrency_cap=5,
+            soft_limited_read=2,
+            soft_limited_write=2,
+        ),
+    )
     state = TransferStageState(target_exists=True)
     finalized: list[tuple[int, list[str]]] = []
+    worker_counts: list[int] = []
 
     class Scheduler:
         def validate_complete(self) -> None:
@@ -407,7 +539,7 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         lambda *_args, **_kwargs: {"id": "BIGINT"},
     )
     monkeypatch.setattr(staged_attempt, "ensure_transfer_target_table", lambda *_args: None)
-    monkeypatch.setattr(staged_attempt, "_materialize_snapshot", lambda *_args: ("snap", {0: 2}))
+    monkeypatch.setattr(staged_attempt, "_materialize_snapshot", lambda *_args: ("snap", {0: 6}))
 
     refreshed_target = object()
     refreshes: list[str] = []
@@ -419,6 +551,7 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         **_kwargs: Any,
     ) -> list[str]:
         assert target_ref["connection"] is refreshed_target
+        worker_counts.append(_kwargs["worker_count"])
         return ["worker_stage"]
 
     monkeypatch.setattr(
@@ -427,7 +560,20 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         create_worker_stages,
     )
     monkeypatch.setattr(staged_attempt, "AdaptiveRangeScheduler", lambda _counts: Scheduler())
-    monkeypatch.setattr(staged_attempt, "_run_range_workers", lambda *_args, **_kwargs: None)
+
+    def run_range_workers(*_args: Any, **kwargs: Any) -> None:
+        progress = kwargs["transfer_progress"]
+        completed_at = progress.now()
+        progress.commit_batch(
+            logical_batch_id=(0, 1, 7),
+            worker_id=0,
+            batch=RowBatch(["id"], [(value,) for value in range(6)]),
+            read_started_at=completed_at,
+            read_completed_at=completed_at,
+            insert_completed_at=completed_at,
+        )
+
+    monkeypatch.setattr(staged_attempt, "_run_range_workers", run_range_workers)
     monkeypatch.setattr(staged_attempt, "_consolidate_worker_stages", lambda *_args: None)
     monkeypatch.setattr(
         staged_attempt,
@@ -445,9 +591,10 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         lambda key, ref: (refreshes.append(key), ref.update(connection=refreshed_target)),
     )
 
-    assert staged_attempt.run_staged_source_transfer_attempt(options, insert_retry_cnt=1) == 2
-    assert finalized == [(-1, []), (2, [])]
-    assert state.slice_counts[0].expected_rows == 2
+    assert staged_attempt.run_staged_source_transfer_attempt(options, insert_retry_cnt=1) == 6
+    assert finalized == [(-1, []), (6, [])]
+    assert state.slice_counts[0].expected_rows == 6
+    assert worker_counts == [2]
     assert refreshes == ["target"]
 
     monkeypatch.setattr(
@@ -463,8 +610,12 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         "finalize_loaded_stage",
         lambda *_args: (_ for _ in ()).throw(ValueError("finalization failed")),
     )
-    with pytest.raises(ValueError, match="finalization failed"):
+    with pytest.raises(ValueError, match="finalization failed") as caught:
         staged_attempt.run_staged_source_transfer_attempt(options, insert_retry_cnt=1)
+    summary = caught.value.analytics_toolkit_transfer_attempt_summary
+    assert summary["phase"] == "destination finalization"
+    assert summary["committed_rows"] == 6
+    assert summary["elapsed_seconds"] >= 0
 
 
 def test_staged_attempt_rejects_missing_identity_and_empty_schema(monkeypatch: Any) -> None:
@@ -488,7 +639,106 @@ def test_staged_attempt_rejects_missing_identity_and_empty_schema(monkeypatch: A
         staged_attempt.run_staged_source_transfer_attempt(_staged_options(), insert_retry_cnt=1)
 
 
-def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None:
+def test_unkeyed_target_open_failure_closes_partial_source_lease(monkeypatch: Any) -> None:
+    active = {"source": 0, "target": 0}
+    high_water = {"source": 0, "target": 0}
+    closed: list[str] = []
+
+    class Connection:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def close(self) -> None:
+            active[self.key] -= 1
+            closed.append(self.key)
+
+    def open_connection(key: str) -> Connection:
+        if key == "target":
+            raise OSError("target open failed")
+        active[key] += 1
+        high_water[key] = max(high_water[key], active[key])
+        return Connection(key)
+
+    monkeypatch.setattr(staged_attempt, "get_sql_connection", open_connection)
+    monkeypatch.setattr(
+        staged_attempt,
+        "create_stage_state",
+        lambda *_args: pytest.fail("state creation must not run after target open failure"),
+    )
+
+    with pytest.raises(OSError, match="target open failed"):
+        staged_attempt.run_staged_source_transfer_attempt(
+            _staged_options(),
+            insert_retry_cnt=1,
+        )
+
+    assert active == {"source": 0, "target": 0}
+    assert high_water == {"source": 1, "target": 0}
+    assert closed == ["source"]
+
+    with pytest.raises(OSError, match="target open failed"):
+        staged_attempt._range_worker(
+            _staged_options(),
+            "source.snapshot",
+            ["id"],
+            TransferStageState(target_exists=True),
+            "target.stage",
+            SimpleNamespace(),
+            0,
+            1,
+        )
+    assert active == {"source": 0, "target": 0}
+    assert high_water == {"source": 1, "target": 0}
+    assert closed == ["source", "source"]
+
+
+def test_unkeyed_base_exception_cleanup_does_not_mask_original(monkeypatch: Any) -> None:
+    connections: list[Any] = []
+    cleanup_calls: list[bool] = []
+
+    class Connection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    def open_connection(_key: str) -> Connection:
+        connection = Connection()
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(staged_attempt, "get_sql_connection", open_connection)
+    monkeypatch.setattr(
+        staged_attempt,
+        "create_stage_state",
+        lambda *_args: TransferStageState(target_exists=True),
+    )
+    monkeypatch.setattr(
+        staged_attempt,
+        "inspect_source_query_schema",
+        lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt("cancelled")),
+    )
+
+    def fail_cleanup(*_args: Any, **kwargs: Any) -> None:
+        cleanup_calls.append(kwargs["drop_created_target"])
+        raise RuntimeError("cleanup must not mask cancellation")
+
+    monkeypatch.setattr(staged_attempt, "cleanup_stage", fail_cleanup)
+
+    with pytest.raises(KeyboardInterrupt, match="cancelled"):
+        staged_attempt.run_staged_source_transfer_attempt(
+            _staged_options(),
+            insert_retry_cnt=1,
+        )
+
+    assert cleanup_calls == [True]
+    assert all(connection.closed for connection in connections)
+
+
+def test_keyed_source_staging_pipelines_ready_key_before_later_ctas_finishes(
+    monkeypatch: Any,
+) -> None:
     slices = [
         TransferSlice(0, (1,), "", "SELECT 1 AS id", "key=1"),
         TransferSlice(1, (2,), "", "SELECT 2 AS id", "key=2"),
@@ -496,94 +746,136 @@ def test_keyed_source_staging_has_strict_phase_barrier(monkeypatch: Any) -> None
     options = _staged_options(
         transfer_slices=slices,
         transfer_keys=["key"],
-        transfer_concurrency=TransferConcurrency(None, 2, 2, 2, 2, True),
+        transfer_concurrency=TransferConcurrency(None, 2, 1, 2, 1, True),
     )
-    state = TransferStageState(target_exists=True, source_columns=["id"])
+    internal_columns = resolve_internal_columns(["id"], "gp")
+    metadata = staged_keyed_pipeline.freeze_attempt_metadata(
+        source_columns=["id"],
+        source_column_types={"id": "bigint"},
+        stage_column_types={"id": "BIGINT"},
+        internal_columns=internal_columns,
+    )
+    state = TransferStageState(
+        target_exists=True,
+        source_columns=["id"],
+        internal_columns=internal_columns,
+    )
+    runtime = staged_keyed_pipeline.LazyKeyedRuntime(
+        slices,
+        read_workers=2,
+        write_workers=1,
+    )
+    progress = staged_keyed_pipeline.TransferProgressTracker(
+        total_key_count=2,
+        active_writers=1,
+    )
+    source_connections = staged_keyed_pipeline.BoundedConnectionManager(
+        "source",
+        2,
+        role="test source pool",
+        open_connection=lambda _key: object(),
+    )
+    target_connections = staged_keyed_pipeline.BoundedConnectionManager(
+        "target",
+        1,
+        role="test target pool",
+        open_connection=lambda _key: object(),
+    )
     events: list[str] = []
+    later_ctas_started = threading.Event()
+    release_later_ctas = threading.Event()
+    later_ctas_finished = threading.Event()
 
-    monkeypatch.setattr(staged_keyed_pipeline, "get_sql_connection", lambda _key: object())
-    monkeypatch.setattr(staged_keyed_pipeline, "create_stage_state", lambda *_args: state)
-    monkeypatch.setattr(staged_keyed_pipeline, "_prepare_attempt", lambda *_args: None)
     monkeypatch.setattr(staged_keyed_pipeline, "time_print", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(staged_keyed_pipeline, "log_batch_progress", lambda *_args: None)
+    monkeypatch.setattr(staged_keyed_pipeline, "log_key_verification", lambda *_args: None)
     monkeypatch.setattr(
         staged_keyed_pipeline,
-        "_allocate_source_stage_name",
-        lambda _options, _ref, worker: f"source_{worker}",
+        "allocate_source_stage_name",
+        lambda _options, _ref, slice_index: f"source_{slice_index}",
     )
 
-    def read_phase(*_args: Any) -> list[staged_keyed_pipeline.SourceStageResult]:
-        events.append("read-complete")
-        return [
-            staged_keyed_pipeline.SourceStageResult(0, "source_0", {0: 1}),
-            staged_keyed_pipeline.SourceStageResult(1, "source_1", {1: 1}),
-        ]
+    def materialize(_options: Any, _ref: Any, _metadata: Any, item: Any, _stage: str) -> int:
+        events.append(f"ctas-start:{item.index}")
+        if item.index == 1:
+            later_ctas_started.set()
+            assert release_later_ctas.wait(timeout=5)
+            later_ctas_finished.set()
+        events.append(f"ctas-complete:{item.index}")
+        return 1
 
-    def create_targets(*_args: Any, **_kwargs: Any) -> list[str]:
-        assert events == [
-            "read-complete",
-            "source-stage row-count validation",
-            "target-refreshed",
-        ]
-        events.append("targets-created")
-        state.stage_table = "target_0"
-        state.stage_tables = ["target_0", "target_1"]
-        return list(state.stage_tables)
-
-    monkeypatch.setattr(staged_keyed_pipeline, "_run_source_stage_workers", read_phase)
     monkeypatch.setattr(
         staged_keyed_pipeline,
-        "_validate_source_stage_counts",
-        lambda *_args: events.append("source-stage row-count validation"),
-    )
-    monkeypatch.setattr(staged_keyed_pipeline, "_create_target_worker_stages", create_targets)
-    monkeypatch.setattr(
-        staged_keyed_pipeline,
-        "_run_whole_key_writers",
-        lambda *_args, **_kwargs: events.append("writers") or {0: 1, 1: 1},
+        "materialize_source_key",
+        materialize,
     )
     monkeypatch.setattr(
         staged_keyed_pipeline,
-        "_validate_target_stages",
-        lambda *_args: events.append("target-validated"),
+        "create_target_writer_stage",
+        lambda *_args, **_kwargs: events.append("target-stage-created") or "target_0",
     )
-    monkeypatch.setattr(staged_attempt, "_consolidate_worker_stages", lambda *_args: None)
     monkeypatch.setattr(
         staged_keyed_pipeline,
-        "validate_loaded_stage_row_count",
-        lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(staged_keyed_pipeline, "finalize_loaded_stage", lambda *_args: None)
-    monkeypatch.setattr(staged_keyed_pipeline, "cleanup_stage", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(staged_keyed_pipeline, "_cleanup_source_stages", lambda *_args: None)
-    monkeypatch.setattr(staged_keyed_pipeline, "close_connection_ref", lambda *_args: None)
-    monkeypatch.setattr(
-        staged_keyed_pipeline,
-        "replace_connection",
-        lambda _key, ref: (
-            events.append("target-refreshed"),
-            ref.update(connection=object()),
+        "read_key_batch",
+        lambda _options, _ref, task, _metadata, start, stop, **_kwargs: RowBatch(
+            ["id"],
+            [(task.transfer_slice.index,) for _ in range(start, stop)],
         ),
     )
 
-    assert (
-        staged_keyed_pipeline.run_keyed_staged_source_transfer_attempt(
-            options,
-            insert_retry_cnt=1,
-        )
-        == 2
+    def insert(
+        _options: Any,
+        _ref: Any,
+        _stage: str,
+        batch: Any,
+        _metadata: Any,
+        **_kwargs: Any,
+    ) -> int:
+        if batch.task.transfer_slice.index == 0:
+            assert later_ctas_started.wait(timeout=5)
+            assert not later_ctas_finished.is_set()
+            events.append("insert:0")
+            release_later_ctas.set()
+        else:
+            events.append("insert:1")
+        return batch.batch.row_count
+
+    monkeypatch.setattr(staged_keyed_pipeline, "insert_target_batch", insert)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "validate_target_key",
+        lambda _options, _ref, _metadata, task, _stage, _rows: events.append(
+            f"validate:{task.transfer_slice.index}"
+        ),
     )
-    assert events[:7] == [
-        "read-complete",
-        "source-stage row-count validation",
-        "target-refreshed",
-        "targets-created",
-        "writers",
-        "target-refreshed",
-        "target-validated",
-    ]
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "drop_source_stage",
+        lambda _options, _ref, task: events.append(f"drop:{task.transfer_slice.index}"),
+    )
+
+    staged_keyed_pipeline._run_lazy_workers(
+        options,
+        metadata,
+        state,
+        runtime,
+        source_connections,
+        target_connections,
+        progress,
+        insert_retry_cnt=1,
+    )
+
+    assert events.index("insert:0") < events.index("ctas-complete:1")
+    assert events.count("target-stage-created") == 1
+    assert events.index("validate:0") < events.index("drop:0")
+    assert events.index("validate:1") < events.index("drop:1")
+    assert runtime.source_stage_tables == []
+    assert set(runtime.verified) == {0, 1}
 
 
-def test_source_staged_writers_keep_each_key_on_one_target_stage(monkeypatch: Any) -> None:
+def test_lazy_source_staged_writers_keep_each_key_on_one_target_stage(
+    monkeypatch: Any,
+) -> None:
     slices = [
         TransferSlice(index, (index,), "", f"SELECT {index}", f"key={index}") for index in range(4)
     ]
@@ -591,43 +883,134 @@ def test_source_staged_writers_keep_each_key_on_one_target_stage(monkeypatch: An
         transfer_slices=slices,
         transfer_keys=["key"],
         batch_size=2,
-        transfer_concurrency=TransferConcurrency(None, 2, 2, 2, 2, True),
+        transfer_concurrency=TransferConcurrency(None, 2, 3, 2, 3, True),
     )
-    state = TransferStageState(target_exists=True, stage_column_types={"id": "BIGINT"})
-    tasks = deque(
-        staged_keyed_pipeline.WholeKeyTask(item, f"source_{item.index % 2}", 3) for item in slices
+    internal_columns = resolve_internal_columns(["id"], "gp")
+    metadata = staged_keyed_pipeline.freeze_attempt_metadata(
+        source_columns=["id"],
+        source_column_types={"id": "bigint"},
+        stage_column_types={"id": "BIGINT"},
+        internal_columns=internal_columns,
     )
+    state = TransferStageState(
+        target_exists=True,
+        source_columns=["id"],
+        internal_columns=internal_columns,
+    )
+    runtime = staged_keyed_pipeline.LazyKeyedRuntime(
+        slices,
+        read_workers=2,
+        write_workers=3,
+    )
+    progress = staged_keyed_pipeline.TransferProgressTracker(
+        total_key_count=4,
+        active_writers=3,
+    )
+    source_connections = staged_keyed_pipeline.BoundedConnectionManager(
+        "source",
+        2,
+        role="test source pool",
+        open_connection=lambda _key: object(),
+    )
+    target_connections = staged_keyed_pipeline.BoundedConnectionManager(
+        "target",
+        3,
+        role="test target pool",
+        open_connection=lambda _key: object(),
+    )
+    expected_rows = {0: 3, 1: 0, 2: 3, 3: 0}
     stages_by_key: dict[int, set[str]] = {}
+    keys_by_writer: dict[int, list[int]] = {}
+    created_stages: dict[int, str] = {}
 
-    monkeypatch.setattr(staged_keyed_pipeline, "get_sql_connection", lambda _key: object())
-    monkeypatch.setattr(staged_keyed_pipeline, "close_connection_ref", lambda *_args: None)
     monkeypatch.setattr(staged_keyed_pipeline, "time_print", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(staged_keyed_pipeline, "log_batch_progress", lambda *_args: None)
+    monkeypatch.setattr(staged_keyed_pipeline, "log_key_verification", lambda *_args: None)
     monkeypatch.setattr(
         staged_keyed_pipeline,
-        "_read_key_batch",
-        lambda _options, _ref, task, _state, start, stop: RowBatch(
+        "allocate_source_stage_name",
+        lambda _options, _ref, slice_index: f"source_{slice_index}",
+    )
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "materialize_source_key",
+        lambda _options, _ref, _metadata, item, _stage: expected_rows[item.index],
+    )
+
+    def create_stage(
+        _options: Any,
+        _ref: Any,
+        _metadata: Any,
+        writer_index: int,
+        **_kwargs: Any,
+    ) -> str:
+        stage = f"target_{writer_index}"
+        assert writer_index not in created_stages
+        created_stages[writer_index] = stage
+        return stage
+
+    monkeypatch.setattr(staged_keyed_pipeline, "create_target_writer_stage", create_stage)
+    monkeypatch.setattr(
+        staged_keyed_pipeline,
+        "read_key_batch",
+        lambda _options, _ref, task, _metadata, start, stop, **_kwargs: RowBatch(
             ["id"],
             [(task.transfer_slice.index,) for _ in range(start, stop)],
         ),
     )
 
-    def insert(*args: Any, **_kwargs: Any) -> None:
-        stage_table = args[2]
-        rows = args[4]
-        key = int(rows[0][0])
+    def insert(
+        _options: Any,
+        _ref: Any,
+        stage_table: str,
+        batch: Any,
+        _metadata: Any,
+        **_kwargs: Any,
+    ) -> int:
+        key = batch.task.transfer_slice.index
         stages_by_key.setdefault(key, set()).add(stage_table)
+        return batch.batch.row_count
 
-    monkeypatch.setattr(staged_keyed_pipeline, "insert_rows_batch", insert)
-    counts = staged_keyed_pipeline._run_whole_key_writers(
+    def validate(
+        _options: Any,
+        _ref: Any,
+        _metadata: Any,
+        task: Any,
+        stage_table: str | None,
+        streamed_rows: int,
+    ) -> None:
+        key = task.transfer_slice.index
+        writer = task.writer_index
+        assert writer is not None
+        assert streamed_rows == expected_rows[key]
+        keys_by_writer.setdefault(writer, []).append(key)
+        if expected_rows[key]:
+            assert stage_table == f"target_{writer}"
+
+    monkeypatch.setattr(staged_keyed_pipeline, "insert_target_batch", insert)
+    monkeypatch.setattr(staged_keyed_pipeline, "validate_target_key", validate)
+    monkeypatch.setattr(staged_keyed_pipeline, "drop_source_stage", lambda *_args: None)
+
+    staged_keyed_pipeline._run_lazy_workers(
         options,
+        metadata,
         state,
-        ["target_0", "target_1"],
-        tasks,
+        runtime,
+        source_connections,
+        target_connections,
+        progress,
         insert_retry_cnt=1,
     )
 
-    assert counts == {0: 3, 1: 3, 2: 3, 3: 3}
+    assert set(runtime.verified) == set(expected_rows)
+    assert set(stages_by_key) == {0, 2}
     assert all(len(stage_names) == 1 for stage_names in stages_by_key.values())
+    assert created_stages == {
+        writer: f"target_{writer}"
+        for writer, keys in keys_by_writer.items()
+        if any(expected_rows[key] for key in keys)
+    }
+    assert runtime.target_stages == created_stages
 
 
 def test_materialize_snapshot_builds_all_slices_and_drops_partial_on_failure(
@@ -679,6 +1062,27 @@ def test_materialize_snapshot_builds_all_slices_and_drops_partial_on_failure(
 
     monkeypatch.setattr(staged_attempt, "execute_transfer_materialization", fail_second)
     with pytest.raises(OSError, match="slice insert failed"):
+        staged_attempt._materialize_snapshot(options, {"connection": object()}, state)
+    assert dropped == ["snap"]
+
+    monkeypatch.setattr(
+        staged_attempt,
+        "execute_transfer_materialization",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        staged_attempt,
+        "_snapshot_slice_counts",
+        lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt("count cancelled")),
+    )
+
+    def fail_drop(_connection: Any, table: str, **_kwargs: Any) -> None:
+        dropped.append(table)
+        raise RuntimeError("snapshot cleanup failed")
+
+    adapter.drop_table = fail_drop
+    dropped.clear()
+    with pytest.raises(KeyboardInterrupt, match="count cancelled"):
         staged_attempt._materialize_snapshot(options, {"connection": object()}, state)
     assert dropped == ["snap"]
 
@@ -744,6 +1148,89 @@ def test_snapshot_name_counts_and_worker_stage_allocation(monkeypatch: Any) -> N
     )
     assert len(tables) == 2
     assert state.stage_table == tables[0]
+
+
+@pytest.mark.parametrize(
+    ("ambiguous_candidate", "expected_registered"),
+    [
+        (None, ["stage.worker_0"]),
+        ("stage.ambiguous_worker_1", ["stage.worker_0", "stage.ambiguous_worker_1"]),
+    ],
+)
+def test_worker_stage_creation_registers_partial_and_ambiguous_candidates(
+    monkeypatch: Any,
+    ambiguous_candidate: str | None,
+    expected_registered: list[str],
+) -> None:
+    options = _staged_options()
+    state = TransferStageState(
+        target_exists=True,
+        source_columns=["id"],
+        stage_column_types={"id": "BIGINT"},
+        internal_columns=resolve_internal_columns(["id"], "gp"),
+    )
+    call_count = 0
+
+    def create(*_args: Any, **kwargs: Any) -> str:
+        nonlocal call_count
+        callback = kwargs["on_stage_candidate"]
+        if call_count == 0:
+            call_count += 1
+            callback("stage.worker_0")
+            return "stage.worker_0"
+        if ambiguous_candidate is not None:
+            callback(ambiguous_candidate)
+        raise OSError("worker stage create failed")
+
+    monkeypatch.setattr(staged_attempt, "create_stage_table", create)
+
+    with pytest.raises(OSError, match="worker stage create failed"):
+        staged_attempt._create_worker_stages(
+            options,
+            {"connection": object()},
+            state,
+            worker_count=2,
+        )
+
+    assert state.stage_table == "stage.worker_0"
+    assert state.stage_tables == expected_registered
+    assert state.stage_table_created is True
+
+
+def test_worker_stage_creation_drops_ambiguous_candidate_after_success(
+    monkeypatch: Any,
+) -> None:
+    options = _staged_options()
+    state = TransferStageState(
+        target_exists=True,
+        source_columns=["id"],
+        stage_column_types={"id": "BIGINT"},
+        internal_columns=resolve_internal_columns(["id"], "gp"),
+    )
+    dropped: list[str] = []
+
+    def create(*_args: Any, **kwargs: Any) -> str:
+        callback = kwargs["on_stage_candidate"]
+        callback("stage.ambiguous")
+        callback("stage.worker_0")
+        return "stage.worker_0"
+
+    monkeypatch.setattr(staged_attempt, "create_stage_table", create)
+    monkeypatch.setattr(
+        staged_attempt,
+        "cleanup_stage_table",
+        lambda _backend, _connection, table, **_kwargs: dropped.append(table),
+    )
+
+    assert staged_attempt._create_worker_stages(
+        options,
+        {"connection": object()},
+        state,
+        worker_count=1,
+    ) == ["stage.worker_0"]
+    assert dropped == ["stage.ambiguous"]
+    assert state.stage_table == "stage.worker_0"
+    assert state.stage_tables == ["stage.worker_0"]
 
 
 @pytest.mark.parametrize(
@@ -1145,7 +1632,12 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
         ([(0, 2, 2, 1, 1)], {0: 1}, "ordinal integrity"),
         ([(1, 1, 1, 1, 1)], {0: 0}, "unexpected slice"),
     ]:
-        calls = iter([[], ordinal_rows])
+        calls = iter(
+            [
+                [(options.transfer_id, options.canonical_destination_identity)],
+                ordinal_rows,
+            ]
+        )
         monkeypatch.setattr(
             stage_validation,
             "_rows",
@@ -1160,6 +1652,16 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
                 expected_slice_counts=expected,
             )
 
+    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: [])
+    with pytest.raises(RuntimeError, match="created stage is empty"):
+        stage_validation.validate_transfer_stage_identity(
+            options=options,
+            connection=object(),
+            stage_tables=["empty_stage"],
+            internal_columns=internal,
+            expected_slice_counts={},
+        )
+
     monkeypatch.setattr(
         stage_validation,
         "_read_backend",
@@ -1173,6 +1675,136 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
         action_name="stage-identity validation",
         phase="validate_stage_identity",
     ) == [(1, 3), (2, 4)]
+
+
+def test_zero_slice_without_a_writer_stage_still_queries_target_database(
+    monkeypatch: Any,
+) -> None:
+    options = _staged_options()
+    internal = resolve_internal_columns(["id"], "gp")
+    queries: list[str] = []
+
+    def rows(_backend: str, _connection: Any, sql: str, **_kwargs: Any) -> list[Any]:
+        queries.append(sql)
+        return [(0,)]
+
+    monkeypatch.setattr(stage_validation, "_rows", rows)
+    stage_validation.validate_transfer_stage_slice(
+        options=options,
+        connection=object(),
+        stage_table=[],
+        internal_columns=internal,
+        slice_id=3,
+        expected_count=0,
+        streamed_count=0,
+    )
+    assert queries == ["SELECT 0"]
+
+
+def test_nonempty_stage_slice_validation_accepts_exact_identity_and_ordinals(
+    monkeypatch: Any,
+) -> None:
+    options = _staged_options()
+    internal = resolve_internal_columns(["id"], "gp")
+    results = iter(
+        [
+            [(options.transfer_id, options.canonical_destination_identity, 2)],
+            [(1, 2, 2, 2)],
+        ]
+    )
+    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
+
+    stage_validation.validate_transfer_stage_slice(
+        options=options,
+        connection=object(),
+        stage_table="target_stage.writer_0",
+        internal_columns=internal,
+        slice_id=3,
+        expected_count=2,
+        streamed_count=2,
+    )
+
+
+@pytest.mark.parametrize(
+    "identity_rows",
+    [
+        [("wrong-transfer", "public.target", 2)],
+        [("a" * 32, "public.other", 2)],
+        [("a" * 32, "public.target", 1)],
+        [("a" * 32, "public.target", 2), ("other", "public.target", 1)],
+    ],
+)
+def test_stage_slice_validation_rejects_identity_destination_or_stored_count(
+    monkeypatch: Any,
+    identity_rows: list[tuple[Any, ...]],
+) -> None:
+    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: identity_rows)
+    with pytest.raises(RuntimeError, match="identity/count failure"):
+        stage_validation.validate_transfer_stage_slice(
+            options=_staged_options(),
+            connection=object(),
+            stage_table="target_stage.writer_0",
+            internal_columns=resolve_internal_columns(["id"], "gp"),
+            slice_id=3,
+            expected_count=2,
+            streamed_count=2,
+        )
+
+
+@pytest.mark.parametrize(
+    "ordinal_rows",
+    [
+        [(2, 2, 2, 2)],
+        [(1, 3, 2, 2)],
+        [(1, 2, 1, 1)],
+        [(1, 2, 2, 1)],
+        [],
+    ],
+)
+def test_stage_slice_validation_rejects_incomplete_or_duplicate_ordinals(
+    monkeypatch: Any,
+    ordinal_rows: list[tuple[Any, ...]],
+) -> None:
+    options = _staged_options()
+    results = iter(
+        [
+            [(options.transfer_id, options.canonical_destination_identity, 2)],
+            ordinal_rows,
+        ]
+    )
+    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
+    with pytest.raises(RuntimeError, match="ordinal"):
+        stage_validation.validate_transfer_stage_slice(
+            options=options,
+            connection=object(),
+            stage_table="target_stage.writer_0",
+            internal_columns=resolve_internal_columns(["id"], "gp"),
+            slice_id=3,
+            expected_count=2,
+            streamed_count=2,
+        )
+
+
+def test_zero_stage_slice_checks_every_existing_writer_stage(monkeypatch: Any) -> None:
+    queries: list[str] = []
+
+    def rows(_backend: str, _connection: Any, sql: str, **_kwargs: Any) -> list[Any]:
+        queries.append(sql)
+        return []
+
+    monkeypatch.setattr(stage_validation, "_rows", rows)
+    stage_validation.validate_transfer_stage_slice(
+        options=_staged_options(),
+        connection=object(),
+        stage_table=["target_stage.writer_0", "target_stage.writer_1"],
+        internal_columns=resolve_internal_columns(["id"], "gp"),
+        slice_id=3,
+        expected_count=0,
+        streamed_count=0,
+    )
+
+    assert len(queries) == 2
+    assert all("WHERE" in query and "= 3" in query for query in queries)
 
 
 def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatch: Any) -> None:
@@ -1242,6 +1874,40 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
         == []
     )
 
+    current_empty = f"{options.destination_hash}__target__stage__{options.transfer_id}__s00000"
+    adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [current_empty]
+    monkeypatch.setattr(superseded, "_read_stage_identities", lambda *_args: [])
+    dropped: list[str] = []
+    monkeypatch.setattr(
+        superseded,
+        "cleanup_stage_table",
+        lambda _backend, _connection, table, **_kwargs: dropped.append(table),
+    )
+    assert cleanup_superseded_transfer_stages(
+        options=options,
+        connection=object(),
+        backend="gp",
+        connection_key="source",
+        staging_schema="stage",
+        internal_columns=internal,
+        include_current_transfer_id=True,
+    ) == [f"stage.{current_empty}"]
+    assert dropped == [f"stage.{current_empty}"]
+
+    stale_empty = f"{options.destination_hash}__target__stage__{'b' * 32}__s00000"
+    adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [stale_empty]
+    dropped.clear()
+    assert cleanup_superseded_transfer_stages(
+        options=options,
+        connection=object(),
+        backend="gp",
+        connection_key="target",
+        staging_schema="stage",
+        internal_columns=internal,
+    ) == [f"stage.{stale_empty}"]
+    assert dropped == [f"stage.{stale_empty}"]
+
+    adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [current_empty]
     monkeypatch.setattr(
         "analytics_toolkit.sql.dml.transfer.flow.superseded._read_stage_identities",
         lambda *_args: [],

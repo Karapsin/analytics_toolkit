@@ -16,6 +16,7 @@ from ....connection.get_sql_connection import get_sql_connection
 from ....execution.operation_runner import _format_duration
 
 T = TypeVar("T")
+_MAX_SAFE_EXCEPTION_TYPE_CHARS = 80
 
 _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
     "ALREADY_EXISTS",
@@ -34,13 +35,17 @@ _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
 }
 
 
-def run_with_retry(
+def run_with_retry(  # noqa: PLR0913
     operation_name: str,
     retry_cnt: int,
     timeout_increment: float,
     operation: Callable[[int], Any],
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
     non_retryable_predicate: Callable[[Exception], bool] | None = None,
+    *,
+    log_prefix: str = "",
+    safe_exception_logging: bool = False,
+    retry_status: Callable[[int, int], str] | None = None,
 ) -> Any:
     last_error: Exception | None = None
     should_not_retry = non_retryable_predicate or is_non_retryable_sql_error
@@ -54,7 +59,8 @@ def run_with_retry(
                 raise
             if should_not_retry(exc):
                 time_print(
-                    f"Failed with a non-retryable error: {exc!r}",
+                    f"{log_prefix}Failed with a non-retryable error: "
+                    f"{_logged_exception(exc, safe=safe_exception_logging)}",
                     level="warning",
                     operation=operation_name,
                     phase="retry",
@@ -63,7 +69,8 @@ def run_with_retry(
             last_error = exc
             if attempt >= retry_cnt:
                 time_print(
-                    f"Failed after {attempt} attempt(s): {exc!r}",
+                    f"{log_prefix}Failed after {attempt} attempt(s): "
+                    f"{_logged_exception(exc, safe=safe_exception_logging)}",
                     level="warning",
                     operation=operation_name,
                     phase="retry",
@@ -72,13 +79,19 @@ def run_with_retry(
 
             sleep_seconds = attempt * timeout_increment
             time_print(
-                f"Failed on attempt {attempt}/{retry_cnt}: {exc!r}",
+                f"{log_prefix}Failed on attempt {attempt}/{retry_cnt}: "
+                f"{_logged_exception(exc, safe=safe_exception_logging)}",
                 level="warning",
                 operation=operation_name,
                 phase="retry",
             )
+            retry_message = (
+                retry_status(attempt + 1, retry_cnt)
+                if retry_status is not None
+                else f"Retrying in {_format_duration(sleep_seconds)}"
+            )
             time_print(
-                f"Retrying in {_format_duration(sleep_seconds)}",
+                f"{log_prefix}{retry_message}",
                 operation=operation_name,
                 phase="retry",
             )
@@ -93,11 +106,19 @@ def run_with_retry(
     raise last_error.with_traceback(last_error.__traceback__)
 
 
+def _logged_exception(exc: Exception, *, safe: bool) -> str:
+    if not safe:
+        return repr(exc)
+    exception_type = type(exc).__name__
+    if len(exception_type) > _MAX_SAFE_EXCEPTION_TYPE_CHARS:
+        return exception_type[: _MAX_SAFE_EXCEPTION_TYPE_CHARS - 3] + "..."
+    return exception_type
+
+
 def is_non_retryable_sql_error(exc: Exception) -> bool:
     """Return True for deterministic SQL errors that another attempt won't fix."""
-    if (
-        getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
-        or isinstance(exc, SqlConfigError)
+    if getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False or isinstance(
+        exc, SqlConfigError
     ):
         return True
     class_names = _exception_class_names(exc)
@@ -159,21 +180,14 @@ def _exception_message(exc: BaseException) -> str:
 
 
 def _is_clickhouse_conversion_error(message: str) -> bool:
-    is_server_error = (
-        "received clickhouse exception" in message or "db::exception" in message
-    )
-    return is_server_error and (
-        "cannot parse" in message or "cannot convert" in message
-    )
+    is_server_error = "received clickhouse exception" in message or "db::exception" in message
+    return is_server_error and ("cannot parse" in message or "cannot convert" in message)
 
 
 def _is_non_retryable_clickhouse_error_name(message: str) -> bool:
-    is_server_error = (
-        "received clickhouse exception" in message or "db::exception" in message
-    )
+    is_server_error = "received clickhouse exception" in message or "db::exception" in message
     return is_server_error and any(
-        f"({error_name.lower()})" in message
-        for error_name in _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES
+        f"({error_name.lower()})" in message for error_name in _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES
     )
 
 
@@ -254,3 +268,28 @@ def close_connection_ref(
             connection=connection_type,
             phase=f"close_{role}",
         )
+
+
+def close_connection_refs_preserving(
+    error: BaseException | None,
+    *connections: tuple[dict[str, Any], str, str],
+) -> None:
+    """Attempt every close while preserving and de-retrying an earlier failure."""
+    failures: list[BaseException] = []
+    for connection_ref, connection_type, role in connections:
+        try:
+            close_connection_ref(connection_ref, connection_type, role)
+        except BaseException as exc:  # noqa: BLE001 -- cleanup must preserve interrupts too
+            failures.append(exc)
+            time_print("Failed", level="warning", connection=connection_type, phase=f"close_{role}")
+    if not failures:
+        return
+    if error is None:
+        raise failures[0].with_traceback(failures[0].__traceback__)
+    try:
+        error.__dict__["analytics_toolkit_sql_retry_safe"] = False
+        add_note = getattr(error, "add_note", None)
+        if callable(add_note):
+            add_note(f"Connection cleanup also failed: {type(failures[0]).__name__}")
+    except (AttributeError, TypeError):
+        raise failures[0] from error

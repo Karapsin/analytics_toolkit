@@ -127,10 +127,7 @@ def test_backend_support_matrix_includes_write_modes() -> None:
 def test_capability_directory_lists_lazy_exports() -> None:
     assert "BackendCapability" in capabilities_module.__dir__()
     assert "WriteMode" in dir(capabilities_module)
-    assert (
-        capabilities_module.BackendCapability
-        is backend_registry_module.BackendCapability
-    )
+    assert capabilities_module.BackendCapability is backend_registry_module.BackendCapability
 
 
 def test_table_identifier_preserves_qualified_parts_and_quotes() -> None:
@@ -1637,6 +1634,42 @@ def test_transfer_table_logs_source_sql_preview(monkeypatch, capsys) -> None:
     assert result == 3
     assert "[transfer_table] [trino/trino] [transfer] Finished SQL in " in output
     assert "Finished SQL statement:\nselect id from source_table" in output
+
+
+def test_keyed_source_staged_transfer_suppresses_source_sql_preview(
+    monkeypatch,
+    capsys,
+) -> None:
+    secret = "credential-secret"
+    error = RuntimeError("keyed transfer failed")
+
+    def fail_attempt(**_kwargs: Any) -> int:
+        raise error
+
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", fail_attempt)
+
+    with pytest.raises(RuntimeError) as caught:
+        transfer_api_module.transfer_table(
+            from_db="ch",
+            to_db="trino",
+            from_sql=(
+                f"SELECT id FROM source_table WHERE {{partition_id}} AND api_token = '{secret}'"
+            ),
+            to_table="sandbox.target",
+            transfer_keys="partition_id",
+            transfer_key_values=[1],
+            retry_cnt=1,
+            timeout_increment=0,
+            full_retry_cnt=1,
+            full_timeout_increment=0,
+            progress=False,
+        )
+
+    assert caught.value is error
+    assert caught.value.sql_context.sql_preview is None
+    output = capsys.readouterr().out
+    assert "Finished SQL statement" not in output
+    assert secret not in output
 
 
 def test_transfer_return_metadata_includes_row_count_validation(monkeypatch) -> None:

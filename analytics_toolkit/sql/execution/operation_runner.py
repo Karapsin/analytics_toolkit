@@ -6,12 +6,12 @@ from functools import wraps
 from typing import Any, Callable, Dict, TypeVar, cast
 
 from analytics_toolkit.general import time_print, time_print_context
+from analytics_toolkit.sql._log_context import current_sql_log_context
 
-from .cancellation import raise_if_cancelled
 from ..connection.errors import SqlOperationContext, annotate_sql_exception
+from .cancellation import raise_if_cancelled
 from .plans import SqlOperationMetadata
 from .validation import validate_non_negative_number, validate_positive_int
-
 
 T = TypeVar("T")
 ConnectionRef = Dict[str, Any]
@@ -90,7 +90,8 @@ def tracked_sql_operation(
             backend=backend,
             phase=phase,
         )
-        preview_line = _first_non_empty_sql_line(preview_sql)
+        _log_prefix, suppress_sql = current_sql_log_context()
+        preview_line = None if suppress_sql else _first_non_empty_sql_line(preview_sql)
         if preview_line is not None:
             time_print(
                 f"Finished SQL statement:\n{preview_line}",
@@ -220,6 +221,7 @@ def run_retrying_operation(
     operation: Callable[[int], T],
     context_factory: Callable[[int], SqlOperationContext],
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
+    safe_exception_logging: bool = False,
 ) -> T:
     def annotated_operation(attempt: int) -> T:
         try:
@@ -234,6 +236,7 @@ def run_retrying_operation(
         timeout_increment=timeout_increment,
         operation=annotated_operation,
         retryable_exceptions=retryable_exceptions,
+        safe_exception_logging=safe_exception_logging,
     )
 
 

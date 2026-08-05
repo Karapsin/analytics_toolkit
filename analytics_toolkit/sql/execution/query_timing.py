@@ -5,10 +5,10 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql._log_context import prefix_sql_log_message
 
 from .cancellation import raise_if_cancelled
 from .operation_runner import _format_duration
-
 
 T = TypeVar("T")
 
@@ -36,7 +36,7 @@ def run_timed_query(
             f"Failed {action_name}" if status == "failed" else f"Finished {action_name}"
         )
         time_print(
-            f"{message_prefix} in {_format_duration(elapsed_seconds)}",
+            prefix_sql_log_message(f"{message_prefix} in {_format_duration(elapsed_seconds)}"),
             level="info",
             backend=backend,
             phase=phase,

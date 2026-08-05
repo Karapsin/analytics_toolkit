@@ -84,6 +84,29 @@ class RollbackFailureConnection(FakeConnection):
         raise RuntimeError(message)
 
 
+def test_close_connection_refs_preserves_first_error_and_attempts_every_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = RuntimeError("worker failed")
+    closed: list[str] = []
+
+    def close(_ref: object, _connection_type: str, role: str) -> None:
+        closed.append(role)
+        if role == "source worker":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(retry_module, "close_connection_ref", close)
+
+    retry_module.close_connection_refs_preserving(
+        original,
+        ({"connection": object()}, "source", "source worker"),
+        ({"connection": object()}, "target", "target worker"),
+    )
+
+    assert closed == ["source worker", "target worker"]
+    assert original.analytics_toolkit_sql_retry_safe is False
+
+
 def test_read_sql_retries_whole_flow_with_fresh_gp_connection(monkeypatch) -> None:
     first_connection = FakeConnection("first")
     second_connection = FakeConnection("second")
@@ -358,6 +381,72 @@ def test_run_with_retry_keeps_unrelated_value_error_retryable() -> None:
 
     assert result == "ok"
     assert attempts == [1, 2]
+
+
+def test_run_with_retry_can_log_only_bounded_exception_type(capsys) -> None:
+    secret = "password=hunter2 row=('customer-secret', 42)"
+    error = RuntimeError(secret)
+
+    def operation(_attempt: int) -> None:
+        raise error
+
+    with pytest.raises(RuntimeError) as caught:
+        retry_module.run_with_retry(
+            operation_name="safe keyed retry",
+            retry_cnt=1,
+            timeout_increment=0,
+            operation=operation,
+            safe_exception_logging=True,
+        )
+
+    assert caught.value is error
+    output = capsys.readouterr().out
+    assert "Failed after 1 attempt(s): RuntimeError" in output
+    assert secret not in output
+    assert "customer-secret" not in output
+
+
+def test_run_with_retry_preserves_detailed_logging_by_default(capsys) -> None:
+    detail = "legacy retry detail"
+
+    with pytest.raises(RuntimeError, match=detail):
+        retry_module.run_with_retry(
+            operation_name="legacy retry",
+            retry_cnt=1,
+            timeout_increment=0,
+            operation=lambda _attempt: (_ for _ in ()).throw(RuntimeError(detail)),
+        )
+
+    assert detail in capsys.readouterr().out
+
+
+def test_run_with_retry_supports_a_safe_attempt_status_message(capsys) -> None:
+    attempts: list[int] = []
+
+    def operation(attempt: int) -> str:
+        attempts.append(attempt)
+        if attempt == 1:
+            raise OSError("row secret")
+        return "ok"
+
+    result = retry_module.run_with_retry(
+        operation_name="keyed retry status",
+        retry_cnt=2,
+        timeout_increment=0,
+        operation=operation,
+        log_prefix="[slice=1/1] ",
+        safe_exception_logging=True,
+        retry_status=lambda attempt, total: (
+            f"Retrying target-stage batch 1 insert: attempt {attempt}/{total}; "
+            "committed total remains 0 rows; ETA unchanged"
+        ),
+    )
+
+    assert result == "ok"
+    assert attempts == [1, 2]
+    output = capsys.readouterr().out
+    assert "[slice=1/1] Retrying target-stage batch 1 insert: attempt 2/2" in output
+    assert "row secret" not in output
 
 
 def test_run_with_retry_does_not_retry_duplicate_query_columns(
@@ -1104,7 +1193,8 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
         events.append(("insert", connection.name))
         call_count["insert"] += 1
         if call_count["insert"] == 1:
-            raise RuntimeError("temporary failure")
+            message = "temporary failure"
+            raise RuntimeError(message)
         return len(df)
 
     def fake_analyze_table(

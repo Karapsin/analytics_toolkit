@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from ....backends import get_backend_adapter
@@ -172,6 +174,8 @@ def initialize_stage_for_first_batch(
             f"{options.transfer_id}__w00000" if options.transfer_id is not None else None
         ),
         destination_hash=options.destination_hash,
+        ddl_properties=options.staging_ddl_properties,
+        ch_creation_policy=options.staging_ch_policy,
     )
     stage_state.stage_table_created = True
     stage_state.stage_column_types = get_backend_adapter(
@@ -204,3 +208,9 @@ def _with_internal_column_types(
         internal.slice_id: integer_type,
         internal.row_ordinal: integer_type,
     }
+
+
+def _commit_if_supported(connection: Any) -> None:
+    commit = getattr(connection, "commit", None)
+    if callable(commit):
+        commit()

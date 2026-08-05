@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # ruff: noqa: EM101, TRY003
-
 import warnings
 from typing import Any
 
@@ -13,7 +12,7 @@ from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
 from ....backends import get_backend_adapter
 from ....connection.get_sql_connection import get_sql_connection
 from ...load.stage import cleanup_stage_table_with_retry, create_stage_table
-from ...table.maintenance import analyze_table, drop_table_with_retry
+from ...table.maintenance import analyze_table
 from ...table.table_validation import (
     validate_stage_target_key_overlap,
     validate_stage_uniqueness,
@@ -22,6 +21,7 @@ from ...table.write_modes import (
     finalize_stage_table,
 )
 from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
+from ..runtime.connection_pool import BoundedConnectionManager
 from ..runtime.retry import (
     replace_connection,
     rollback_quietly,
@@ -33,11 +33,14 @@ from .parquet_stage import cleanup_parquet_stage_location
 from .stage_validation import validate_transfer_stage_identity
 
 
-def finalize_loaded_stage(
+def finalize_loaded_stage(  # noqa: PLR0913
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     total_rows: int,
+    *,
+    target_connection_runner: Any | None = None,
+    target_host_connection_runner: Any | None = None,
 ) -> None:
     if total_rows == 0:
         finalize_empty_transfer(options, connection_refs, stage_state)
@@ -61,7 +64,7 @@ def finalize_loaded_stage(
             if stage_state.slice_counts
             else {0: total_rows}
         )
-        _run_with_fresh_target_connection(
+        _run_target_operation(
             options,
             "validate_stage_identity",
             lambda target_ref: validate_transfer_stage_identity(
@@ -71,9 +74,10 @@ def finalize_loaded_stage(
                 internal_columns=stage_state.internal_columns,
                 expected_slice_counts=expected_slice_counts,
             ),
+            target_connection_runner=target_connection_runner,
         )
 
-    _run_with_fresh_target_connection(
+    _run_target_operation(
         options,
         "validate_stage",
         lambda target_ref: validate_stage_uniqueness(
@@ -83,9 +87,10 @@ def finalize_loaded_stage(
             key_columns=options.key_columns,
             stage_tables=(stage_state.stage_tables if options.write_mode == "upsert" else None),
         ),
+        target_connection_runner=target_connection_runner,
     )
     if options.write_mode != "upsert":
-        _run_with_fresh_target_connection(
+        _run_target_operation(
             options,
             "validate_stage",
             lambda target_ref: validate_stage_target_key_overlap(
@@ -97,6 +102,7 @@ def finalize_loaded_stage(
                 target_exists=stage_state.target_exists,
                 replace_target_table=options.replace_target_table,
             ),
+            target_connection_runner=target_connection_runner,
         )
     source_stage_column_types = (
         stage_state.stage_column_types
@@ -114,10 +120,12 @@ def finalize_loaded_stage(
     if source_stage_column_types is None:
         stage_state.insert_column_types = None
         target_column_types = None
+    elif stage_state.insert_column_types is not None:
+        target_column_types = None
     elif stage_state.target_exists and (
         not options.replace_target_table or options.write_mode == "upsert"
     ):
-        stage_state.insert_column_types = _run_with_fresh_target_connection(
+        stage_state.insert_column_types = _run_target_operation(
             options,
             "target_metadata",
             lambda target_ref: get_existing_target_insert_types(
@@ -127,15 +135,26 @@ def finalize_loaded_stage(
                 source_stage_column_types,
                 connection_key=options.to_db_key,
             ),
+            target_connection_runner=target_connection_runner,
         )
         target_column_types = None
     else:
         stage_state.insert_column_types = source_stage_column_types
         target_column_types = source_stage_column_types
 
-    _ensure_final_upsert_stage_table(options, stage_state)
+    _ensure_final_upsert_stage_table(
+        options,
+        stage_state,
+        target_connection_runner=target_connection_runner,
+    )
+    target_precleared = _preclear_clickhouse_replace_target(
+        options,
+        stage_state,
+        target_connection_runner=target_connection_runner,
+        target_host_connection_runner=target_host_connection_runner,
+    )
 
-    _run_with_fresh_target_connection(
+    _run_target_operation(
         options,
         "finalize_target",
         lambda target_ref: finalize_stage_table(
@@ -143,8 +162,8 @@ def finalize_loaded_stage(
             target_ref["connection"],
             stage_table=stage_state.stage_table,
             target_table=options.target_table,
-            replace_target_table=options.replace_target_table,
-            target_exists=stage_state.target_exists,
+            replace_target_table=options.replace_target_table and not target_precleared,
+            target_exists=stage_state.target_exists and not target_precleared,
             sample_batch=stage_state.first_non_empty_batch,
             target_column_types=target_column_types,
             insert_column_types=stage_state.insert_column_types,
@@ -171,8 +190,9 @@ def finalize_loaded_stage(
             ),
             ch_creation_policy=options.regular_ch_policy,
         ),
+        target_connection_runner=target_connection_runner,
     )
-    _run_with_fresh_target_connection(
+    _run_target_operation(
         options,
         "analyze_target",
         lambda target_ref: analyze_table(
@@ -181,7 +201,68 @@ def finalize_loaded_stage(
             table_name=options.target_table,
             query_label=options.query_label,
         ),
+        target_connection_runner=target_connection_runner,
     )
+
+
+def _preclear_clickhouse_replace_target(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+    *,
+    target_connection_runner: Any | None,
+    target_host_connection_runner: Any | None,
+) -> bool:
+    adapter = get_backend_adapter(options.to_db_backend)
+    if not (
+        options.write_mode == "replace"
+        and options.replace_target_table
+        and stage_state.target_exists
+        and adapter.needs_bounded_replace_preclear(options.ch_only_shard)
+    ):
+        return False
+    owned_manager: BoundedConnectionManager | None = None
+    if target_connection_runner is None and target_host_connection_runner is None:
+        manager = BoundedConnectionManager(
+            options.to_db_key,
+            options.transfer_concurrency.effective_write,
+            role="target finalization pool",
+            open_connection=get_sql_connection,
+        )
+        owned_manager = manager
+        target_connection_runner = manager.run
+
+        def run_on_target_host(host: str, operation: Any) -> Any:
+            return manager.run_with_connection(
+                "per-host target finalization",
+                lambda: adapter.open_transfer_host_connection(options.to_db_key, host),
+                operation,
+            )
+
+        target_host_connection_runner = run_on_target_host
+    if target_connection_runner is None or target_host_connection_runner is None:
+        raise RuntimeError("Target finalization runners must be supplied together.")
+    error: BaseException | None = None
+    try:
+        return bool(
+            adapter.preclear_distributed_replace_target(
+                options.target_table,
+                options.ch_cluster,
+                query_label=options.query_label,
+                retry_per_host_drops=options.ch_retry_per_host_drops,
+                only_shard=options.ch_only_shard,
+                connection_runner=lambda role, operation: target_connection_runner(
+                    role,
+                    lambda target_ref: operation(target_ref["connection"]),
+                ),
+                host_connection_runner=target_host_connection_runner,
+            )
+        )
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        if owned_manager is not None:
+            owned_manager.close_preserving(error)
 
 
 def cleanup_transfer_attempt_stages(  # noqa: PLR0913
@@ -224,6 +305,8 @@ def finalize_empty_transfer(
 def _ensure_final_upsert_stage_table(
     options: TransferOptions,
     stage_state: TransferStageState,
+    *,
+    target_connection_runner: Any | None = None,
 ) -> None:
     if options.write_mode != "upsert":
         return
@@ -239,7 +322,13 @@ def _ensure_final_upsert_stage_table(
         raise RuntimeError("Expected a sample batch for final upsert stage creation.")
 
     create_schema = stage_state.insert_column_types or stage_state.stage_column_types
-    stage_state.final_upsert_stage_table = _run_with_fresh_target_connection(
+
+    def register_candidate(table_name: str) -> None:
+        if table_name not in stage_state.stage_table_candidates:
+            stage_state.stage_table_candidates.append(table_name)
+        stage_state.final_upsert_stage_table = table_name
+
+    stage_state.final_upsert_stage_table = _run_target_operation(
         options,
         "create_final_upsert_stage",
         lambda target_ref: create_stage_table(
@@ -257,7 +346,11 @@ def _ensure_final_upsert_stage_table(
                 f"{options.transfer_id}__upsert" if options.transfer_id is not None else None
             ),
             destination_hash=options.destination_hash,
+            ddl_properties=options.staging_ddl_properties,
+            ch_creation_policy=options.staging_ch_policy,
+            on_stage_candidate=register_candidate,
         ),
+        target_connection_runner=target_connection_runner,
     )
 
 
@@ -275,22 +368,24 @@ def _warn_empty_transfer_missing_target(options: TransferOptions) -> None:
     )
 
 
-def cleanup_stage(
+def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     read_retry_cnt: int,
     *,
     drop_created_target: bool = False,
+    target_connection_runner: Any | None = None,
+    safe_exception_logging: bool = False,
 ) -> None:
     stage_cleanup_error: Exception | None = None
     remote_cleanup_error: Exception | None = None
     target_cleanup_error: Exception | None = None
 
     if stage_state.stage_table_created:
-        try:
-            for stage_table in _stage_tables_to_cleanup(stage_state):
-                _run_with_fresh_target_connection(
+        for stage_table in _stage_tables_to_cleanup(stage_state):
+            try:
+                _run_target_operation(
                     options,
                     "cleanup_stage",
                     lambda target_ref, stage_table=stage_table: cleanup_stage_table_with_retry(
@@ -298,16 +393,24 @@ def cleanup_stage(
                         options.to_db_key,
                         target_ref,
                         stage_table,
-                        retry_fn=run_with_retry,
+                        retry_fn=lambda **kwargs: run_with_retry(
+                            **kwargs,
+                            safe_exception_logging=safe_exception_logging,
+                        ),
                         retry_cnt=read_retry_cnt,
                         timeout_increment=options.timeout_increment,
                         rollback_fn=rollback_quietly,
-                        replace_connection_fn=replace_connection,
+                        replace_connection_fn=target_ref.get(
+                            "bounded_replace_connection",
+                            replace_connection,
+                        ),
                         query_label=options.query_label,
+                        ch_creation_policy=options.staging_ch_policy,
                     ),
+                    target_connection_runner=target_connection_runner,
                 )
-        except Exception as exc:
-            stage_cleanup_error = exc
+            except Exception as exc:  # noqa: PERF203
+                stage_cleanup_error = stage_cleanup_error or exc
 
     if stage_state.stage_external_location is not None:
         try:
@@ -317,22 +420,30 @@ def cleanup_stage(
 
     if drop_created_target and _should_drop_created_target(stage_state):
         try:
-            _run_with_fresh_target_connection(
+            _run_target_operation(
                 options,
                 "cleanup_target",
-                lambda target_ref: drop_table_with_retry(
+                lambda target_ref: cleanup_stage_table_with_retry(
                     options.to_db_backend,
                     options.to_db_key,
                     target_ref,
                     options.target_table,
-                    retry_fn=run_with_retry,
+                    retry_fn=lambda **kwargs: run_with_retry(
+                        **kwargs,
+                        safe_exception_logging=safe_exception_logging,
+                    ),
                     retry_cnt=read_retry_cnt,
                     timeout_increment=options.timeout_increment,
                     rollback_fn=rollback_quietly,
-                    replace_connection_fn=replace_connection,
+                    replace_connection_fn=target_ref.get(
+                        "bounded_replace_connection",
+                        replace_connection,
+                    ),
                     query_label=options.query_label,
+                    ch_creation_policy=options.regular_ch_policy,
                     operation_label="created target table",
                 ),
+                target_connection_runner=target_connection_runner,
             )
         except Exception as exc:
             target_cleanup_error = exc
@@ -343,14 +454,15 @@ def cleanup_stage(
 
             time_print(
                 "Remote Parquet stage cleanup failed while handling stage table "
-                f"cleanup error: {remote_cleanup_error!r}"
+                "cleanup error: "
+                f"{_cleanup_error_label(remote_cleanup_error, safe=safe_exception_logging)}"
             )
         if target_cleanup_error is not None:
             from analytics_toolkit.general import time_print
 
             time_print(
                 "Target cleanup failed while handling stage table cleanup error: "
-                f"{target_cleanup_error!r}"
+                f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
         raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
     if remote_cleanup_error is not None:
@@ -359,7 +471,7 @@ def cleanup_stage(
 
             time_print(
                 "Target cleanup failed while handling remote Parquet cleanup error: "
-                f"{target_cleanup_error!r}"
+                f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
         raise remote_cleanup_error.with_traceback(remote_cleanup_error.__traceback__)
     if target_cleanup_error is not None:
@@ -372,6 +484,7 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
         stage_tables.extend(stage_state.stage_tables)
     elif stage_state.stage_table is not None:
         stage_tables.append(stage_state.stage_table)
+    stage_tables.extend(stage_state.stage_table_candidates)
     if stage_state.final_upsert_stage_table is not None:
         stage_tables.append(stage_state.final_upsert_stage_table)
     return list(dict.fromkeys(stage_tables))
@@ -379,6 +492,10 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
 
 def _should_drop_created_target(stage_state: TransferStageState) -> bool:
     return stage_state.target_created_by_operation and stage_state.target_existed_at_start is False
+
+
+def _cleanup_error_label(error: Exception, *, safe: bool) -> str:
+    return type(error).__name__ if safe else repr(error)
 
 
 def _run_with_fresh_target_connection(
@@ -392,3 +509,15 @@ def _run_with_fresh_target_connection(
         operation,
         open_connection=get_sql_connection,
     )
+
+
+def _run_target_operation(
+    options: TransferOptions,
+    role: str,
+    operation: Any,
+    *,
+    target_connection_runner: Any | None,
+) -> Any:
+    if target_connection_runner is not None:
+        return target_connection_runner(role, operation)
+    return _run_with_fresh_target_connection(options, role, operation)

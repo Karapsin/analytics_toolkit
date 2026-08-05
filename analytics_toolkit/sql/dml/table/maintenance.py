@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.refs import ensure_connection_ref
+
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config, resolve_connection_backend
-from ...connection.get_sql_connection import get_sql_connection
 from ...connection.errors import UnsupportedConnectionTypeError
+from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function
 from ...execution.plans import SqlOperationMetadata, SqlPlan
-from analytics_toolkit.general import time_print
 from ._basic_ops import (
     build_drop_table_sql,
 )
@@ -116,6 +118,7 @@ def gp_vacuum(
         )
         conn.close()
 
+
 def drop_table_with_retry(
     connection_backend: str,
     connection_key: str,
@@ -134,7 +137,7 @@ def drop_table_with_retry(
     adapter = get_backend_adapter(backend)
 
     def operation(attempt: int) -> None:
-        connection = connection_ref["connection"]
+        connection = ensure_connection_ref(connection_key, connection_ref)
         try:
             drop_table(
                 backend,
@@ -155,6 +158,7 @@ def drop_table_with_retry(
         timeout_increment=timeout_increment,
         operation=operation,
     )
+
 
 def drop_table(
     connection_type: str,
@@ -209,6 +213,7 @@ def drop_table(
         )
     return None
 
+
 def drop_ch_distributed_table_pair(
     connection: Any,
     table_name: str,
@@ -233,10 +238,9 @@ def drop_ch_distributed_table_pair(
         ch_wait_for_absence=wait_for_absence,
         ch_wait_timeout_seconds=wait_timeout_seconds,
         ch_wait_poll_interval_seconds=wait_poll_interval_seconds,
-        ch_retry_per_host_drops=(
-            ch_retry_per_host_drops and connection_key is not None
-        ),
+        ch_retry_per_host_drops=(ch_retry_per_host_drops and connection_key is not None),
     )
+
 
 def clear_ch_distributed_table_data(
     connection: Any,

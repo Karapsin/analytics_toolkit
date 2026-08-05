@@ -343,6 +343,16 @@ class TransferConcurrency:
     effective_read: int
     effective_write: int
     split_requested: bool
+    soft_concurrency_cap: int | None = None
+    hard_concurrency_cap: int = 5
+    soft_limited_read: int | None = None
+    soft_limited_write: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.soft_limited_read is None:
+            object.__setattr__(self, "soft_limited_read", self.requested_read)
+        if self.soft_limited_write is None:
+            object.__setattr__(self, "soft_limited_write", self.requested_write)
 
 
 @dataclass(frozen=True)
@@ -448,6 +458,9 @@ class TransferOptions:
     parquet_ddl_properties: Mapping[str, Any] | None = None
     regular_ch_policy: Any = None
     staging_ch_policy: Any = None
+    attempt_number: int = 1
+    collect_final_target_count: bool = False
+    final_target_rows: int | None = None
 
     def __post_init__(self) -> None:
         default = TransferConcurrency(
@@ -485,6 +498,7 @@ class TransferStageState:
     insert_column_types: dict[str, str] | None = None
     stage_table: str | None = None
     stage_tables: list[str] | None = None
+    stage_table_candidates: list[str] = field(default_factory=list)
     final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     expected_source_rows: int | None = None

@@ -76,6 +76,7 @@ from .row_counts import (
     validate_streamed_row_count,
 )
 from .stage import (
+    _commit_if_supported,
     _with_internal_column_types,
     create_stage_state,
     ensure_transfer_target_table,
@@ -272,6 +273,8 @@ def run_keyed_transfer_attempt(
         stage_state.transfer_slices = options.transfer_slices
         worker_stage_states = build_keyed_worker_stage_states(stage_state=stage_state)
         stage_state.worker_stage_states = worker_stage_states
+        close_connection_ref(connection_refs.source, options.from_db_key, "source coordinator")
+        connection_refs.source.pop("connection", None)
         total_rows = load_keyed_stage_slices(
             options=options,
             stage_state=stage_state,
@@ -426,6 +429,8 @@ def initialize_shared_stage_for_keyed_slices(
         query_label=options.query_label,
         transfer_staging_schema=options.transfer_staging_schema,
         transfer_staging_username=options.transfer_staging_username,
+        ddl_properties=options.staging_ddl_properties,
+        ch_creation_policy=options.staging_ch_policy,
     )
     stage_state.stage_table_created = True
 
@@ -501,18 +506,14 @@ def _create_keyed_worker_stage_tables(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{run_token}__w{worker_index:05d}",
             destination_hash=options.destination_hash,
+            ddl_properties=options.staging_ddl_properties,
+            ch_creation_policy=options.staging_ch_policy,
         )
         stage_tables.append(stage_table)
         stage_state.stage_table = stage_tables[0]
         stage_state.stage_tables = list(stage_tables)
         stage_state.stage_table_created = True
     return stage_tables
-
-
-def _commit_if_supported(connection: Any) -> None:
-    commit = getattr(connection, "commit", None)
-    if callable(commit):
-        commit()
 
 
 def load_keyed_stage_slices(

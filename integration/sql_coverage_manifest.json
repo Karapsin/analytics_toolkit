@@ -5571,6 +5571,79 @@
             }
           ]
         },
+        "soft_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_public_signature_exposes_concurrency_caps"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_dry_run_reports_concurrency_caps"
+              ],
+              "scenarios": [
+                "transfer.lazy_keyed.gp",
+                "transfer.lazy_keyed.trino",
+                "transfer.lazy_keyed.ch"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_invalid_concurrency_caps"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_public_signature_exposes_concurrency_caps"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_dry_run_reports_concurrency_caps"
+              ],
+              "scenarios": [
+                "transfer.lazy_keyed.gp",
+                "transfer.lazy_keyed.trino",
+                "transfer.lazy_keyed.ch"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_invalid_concurrency_caps"
+              ]
+            },
+            {
+              "state": "ceiling-exceeded",
+              "status": "covered",
+              "tests": [
+                "tests/test_sql_transfer_row_batches.py::test_transfer_rejects_concurrency_above_hard_cap"
+              ]
+            }
+          ]
+        },
         "ignore_source_staging": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "False",
@@ -6208,6 +6281,27 @@
         "ch"
       ]
     },
+    "transfer.lazy_keyed.gp": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_source_staging_serial_and_capped_concurrent[transfer.lazy_keyed.gp]",
+      "backends": [
+        "gp"
+      ]
+    },
+    "transfer.lazy_keyed.trino": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_source_staging_serial_and_capped_concurrent[transfer.lazy_keyed.trino]",
+      "backends": [
+        "trino"
+      ]
+    },
+    "transfer.lazy_keyed.ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_source_staging_serial_and_capped_concurrent[transfer.lazy_keyed.ch]",
+      "backends": [
+        "ch"
+      ]
+    },
     "maintenance.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_matrix.py::test_greenplum_partition_and_vacuum",
@@ -6405,7 +6499,7 @@
     },
     "types.transfer.retry.trino.ch": {
       "profile": "core",
-      "node_id": "tests/integration/test_sql_types.py::test_staged_source_retry_preserves_completed_ranges",
+      "node_id": "tests/integration/test_sql_types.py::test_staged_source_full_retry_rematerializes_completed_ranges",
       "backends": ["trino", "ch"]
     },
     "types.transfer.staged_small.ch.gp": {
@@ -6643,6 +6737,21 @@
       "node_id": "tests/integration/test_sql_fault_recovery.py::test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambiguous[fault.batch.ch]",
       "backends": ["ch"]
     },
+    "fault.lazy_keyed.drop.gp": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_full_retry_after_acknowledged_source_drop[fault.lazy_keyed.drop.gp]",
+      "backends": ["gp"]
+    },
+    "fault.lazy_keyed.drop.trino": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_full_retry_after_acknowledged_source_drop[fault.lazy_keyed.drop.trino]",
+      "backends": ["trino"]
+    },
+    "fault.lazy_keyed.drop.ch": {
+      "profile": "fault",
+      "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_full_retry_after_acknowledged_source_drop[fault.lazy_keyed.drop.ch]",
+      "backends": ["ch"]
+    },
     "fault.finalize.trino": {
       "profile": "fault",
       "node_id": "tests/integration/test_sql_fault_recovery.py::test_service_failure_during_upsert_finalization_retries_from_fresh_connections[fault.finalize.trino]",
@@ -6862,6 +6971,21 @@
       "profile": "stress",
       "node_id": "tests/integration/test_sql_stress.py::test_million_row_transfer_has_bounded_batches_and_memory[stress.stream.parquet]",
       "backends": ["trino"]
+    },
+    "stress.transfer.lazy_keyed_ddl.gp": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_lazy_keyed_source_staging_handles_64_key_ddl_churn[stress.transfer.lazy_keyed_ddl.gp]",
+      "backends": ["gp"]
+    },
+    "stress.transfer.lazy_keyed_ddl.trino": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_lazy_keyed_source_staging_handles_64_key_ddl_churn[stress.transfer.lazy_keyed_ddl.trino]",
+      "backends": ["trino"]
+    },
+    "stress.transfer.lazy_keyed_ddl.ch": {
+      "profile": "stress",
+      "node_id": "tests/integration/test_sql_stress.py::test_lazy_keyed_source_staging_handles_64_key_ddl_churn[stress.transfer.lazy_keyed_ddl.ch]",
+      "backends": ["ch"]
     },
     "stress.connection.pressure": {
       "profile": "stress",

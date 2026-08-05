@@ -3,10 +3,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from .adapter import ch_cluster_clause
+from ...execution.labels import apply_query_label
 from ..registry import get_backend_adapter
+from .adapter import ch_cluster_clause
+from .ddl import (
+    build_ch_distributed_create_table_sqls,
+    build_ch_shard_table_name,
+)
 from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
@@ -17,12 +22,6 @@ from .wait import (
     _wait_for_ch_table_absence,
     _wait_for_ch_table_absence_on_cluster,
 )
-from .ddl import (
-    build_ch_distributed_create_table_sqls,
-    build_ch_shard_table_name,
-)
-from ...execution.labels import apply_query_label
-
 
 _DEFAULT_CH_PER_HOST_DROP_WORKERS = 5
 
@@ -82,6 +81,60 @@ def build_drop_ch_distributed_table_pair_sqls(
             ]
         )
     return sqls
+
+
+def build_drop_ch_creation_policy_table_sqls(
+    table_name: str,
+    creation_policy: Any,
+    *,
+    query_label: str | None = None,
+    if_exists: bool = True,
+) -> list[str]:
+    """Build exact local/cluster cleanup for a policy-created table resource."""
+    resources = [(table_name, creation_policy.shard_on_cluster)]
+    if creation_policy.create_distributed_pair:
+        resources = [
+            (table_name, creation_policy.distributed_on_cluster),
+            (build_ch_shard_table_name(table_name), creation_policy.shard_on_cluster),
+        ]
+    sqls: list[str] = []
+    for resource, cluster in resources:
+        sqls.append(
+            _build_drop_ch_table_sql(
+                resource,
+                query_label=query_label,
+                if_exists=if_exists,
+            )
+        )
+        if cluster is not None:
+            sqls.append(
+                _build_drop_ch_table_sql(
+                    resource,
+                    ch_cluster=cluster,
+                    query_label=query_label,
+                    if_exists=if_exists,
+                )
+            )
+    return sqls
+
+
+def drop_ch_creation_policy_tables(
+    connection: Any,
+    table_name: str,
+    creation_policy: Any,
+    *,
+    query_label: str | None = None,
+    if_exists: bool = True,
+) -> None:
+    _execute_ch_sqls(
+        connection,
+        build_drop_ch_creation_policy_table_sqls(
+            table_name,
+            creation_policy,
+            query_label=query_label,
+            if_exists=if_exists,
+        ),
+    )
 
 
 def build_drop_ch_table_sqls(
@@ -150,8 +203,7 @@ def drop_ch_distributed_table_pair(
                 raise
             if ch_cluster is None:
                 raise TimeoutError(
-                    f"{exc} ch_retry_per_host_drops=True requires a non-null "
-                    "ch_cluster."
+                    f"{exc} ch_retry_per_host_drops=True requires a non-null ch_cluster."
                 ) from exc
             if per_host_connection_factory is None:
                 raise TimeoutError(
@@ -174,6 +226,139 @@ def drop_ch_distributed_table_pair(
             timeout_seconds=wait_timeout_seconds,
             poll_interval_seconds=wait_poll_interval_seconds,
         )
+
+
+def drop_ch_distributed_table_pair_bounded(
+    table_name: str,
+    ch_cluster: str | None,
+    **options: Any,
+) -> None:
+    """Drop a pair without opening coordinator or host connections outside a runner."""
+    pair = ch_distributed_table_pair(table_name)
+    query_label = options["query_label"]
+    retry_per_host_drops = bool(options["ch_retry_per_host_drops"])
+    connection_runner = options["connection_runner"]
+    host_connection_runner = options["host_connection_runner"]
+    per_host_drop_workers = int(
+        options.get("per_host_drop_workers", _DEFAULT_CH_PER_HOST_DROP_WORKERS)
+    )
+
+    def initial_drop(connection: Any) -> None:
+        _execute_ch_sqls(
+            connection,
+            build_drop_ch_distributed_table_pair_sqls(
+                pair.distributed_table,
+                ch_cluster=ch_cluster,
+                shard_table=pair.shard_table,
+                query_label=query_label,
+            ),
+        )
+        _wait_for_ch_distributed_table_pair_absence(
+            connection,
+            pair.distributed_table,
+            ch_cluster=ch_cluster,
+        )
+
+    try:
+        connection_runner("drop_target_pair", initial_drop)
+    except TimeoutError as exc:
+        if not retry_per_host_drops:
+            raise
+        if ch_cluster is None:
+            message = f"{exc} ch_retry_per_host_drops=True requires a non-null ch_cluster."
+            raise TimeoutError(message) from exc
+    else:
+        return
+
+    hosts = _resolve_bounded_drop_hosts(connection_runner, pair, ch_cluster)
+    _drop_pair_on_bounded_hosts(
+        hosts,
+        pair,
+        query_label,
+        host_connection_runner,
+        per_host_drop_workers,
+    )
+
+    connection_runner(
+        "validate_target_pair_drop",
+        lambda connection: _wait_for_ch_distributed_table_pair_absence(
+            connection,
+            pair.distributed_table,
+            ch_cluster=ch_cluster,
+        ),
+    )
+
+
+def _resolve_bounded_drop_hosts(
+    connection_runner: Callable[[str, Callable[[Any], Any]], Any],
+    pair: ChDistributedTablePair,
+    ch_cluster: str,
+) -> list[str]:
+    def resolve_hosts(connection: Any) -> list[str]:
+        configured_hosts = _query_ch_configured_cluster_hosts(connection, ch_cluster)
+        return _select_ch_hosts_for_local_drop(
+            connection,
+            pair,
+            ch_cluster=ch_cluster,
+            configured_hosts=configured_hosts,
+        )
+
+    hosts = cast(
+        "list[str]",
+        connection_runner("resolve_target_drop_hosts", resolve_hosts),
+    )
+    if hosts:
+        return hosts
+    message = (
+        "ch_retry_per_host_drops=True could not find any configured "
+        f"ClickHouse hosts for cluster {ch_cluster!r}."
+    )
+    raise TimeoutError(message)
+
+
+def _drop_pair_on_bounded_hosts(
+    hosts: list[str],
+    pair: ChDistributedTablePair,
+    query_label: str | None,
+    host_connection_runner: Callable[[str, Callable[[Any], Any]], Any],
+    per_host_drop_workers: int,
+) -> None:
+    def drop_on_host(host: str) -> None:
+        host_connection_runner(
+            host,
+            lambda connection: _execute_ch_sqls(
+                connection,
+                [
+                    _build_drop_ch_table_sql(
+                        pair.distributed_table,
+                        query_label=query_label,
+                    ),
+                    _build_drop_ch_table_sql(
+                        pair.shard_table,
+                        query_label=query_label,
+                    ),
+                ],
+            ),
+        )
+
+    error_by_host: dict[str, str] = {}
+    with ThreadPoolExecutor(
+        max_workers=min(per_host_drop_workers, len(hosts)),
+    ) as executor:
+        future_to_host = {executor.submit(drop_on_host, host): host for host in hosts}
+        for future in as_completed(future_to_host):
+            host = future_to_host[future]
+            error = future.exception()
+            if error is not None:
+                error_by_host[host] = f"{host}: {error!r}"
+    if error_by_host:
+        errors = [error_by_host[host] for host in hosts if host in error_by_host]
+        message = (
+            "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
+            f"table pair {pair.distributed_table} / {pair.shard_table} on "
+            "some host(s): " + "; ".join(errors)
+        )
+        raise TimeoutError(message)
 
 
 def drop_ch_table(
@@ -483,11 +668,7 @@ def _select_ch_hosts_for_local_drop(
     except Exception:
         return list(configured_hosts)
 
-    leftover_hosts = {
-        str(row[0]).strip()
-        for row in leftover_rows
-        if row and str(row[0]).strip()
-    }
+    leftover_hosts = {str(row[0]).strip() for row in leftover_rows if row and str(row[0]).strip()}
     if not leftover_hosts:
         return list(configured_hosts)
 

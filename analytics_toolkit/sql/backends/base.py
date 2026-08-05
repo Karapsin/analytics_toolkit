@@ -159,24 +159,16 @@ class BackendAdapter:
         prefix = "DROP TABLE IF EXISTS" if if_exists else "DROP TABLE"
         return _apply_query_label(f"{prefix} {table_name}", query_label)
 
-    def drop_table(
-        self,
-        connection: Any,
-        table_name: str,
-        *,
-        if_exists: bool = True,
-        ch_cluster: str | None = None,
-        query_label: str | None = None,
-    ) -> None:
-        self.execute_command(
-            connection,
-            self.drop_table_sql(
-                table_name,
-                if_exists=if_exists,
-                ch_cluster=ch_cluster,
-                query_label=query_label,
-            ),
-        )
+    drop_table = _adapter_defaults.drop_table
+
+    build_creation_policy_cleanup_sqls = (
+        _adapter_defaults.build_creation_policy_cleanup_sqls
+    )
+    preclear_distributed_replace_target = (
+        _adapter_defaults.preclear_distributed_replace_target
+    )
+    open_transfer_host_connection = _adapter_defaults.open_transfer_host_connection
+    needs_bounded_replace_preclear = _adapter_defaults.needs_bounded_replace_preclear
 
     def analyze_table_sql(
         self,

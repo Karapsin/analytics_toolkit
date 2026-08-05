@@ -19,7 +19,7 @@ from ....execution.validation import (
     validate_positive_number,
 )
 from ..runtime.models import TrinoTransferMode
-from .concurrency import CONCURRENCY_CONFLICT_ERROR, validate_concurrency_value
+from .concurrency import validate_transfer_concurrency_ceilings
 
 if TYPE_CHECKING:
     from ..runtime.models import TransferOptions
@@ -131,6 +131,8 @@ def validate_transfer_runtime_options(
     concurrency: Any,
     read_concurrency: Any,
     write_concurrency: Any,
+    soft_concurrency_cap: Any,
+    hard_concurrency_cap: Any,
 ) -> None:
     validate_positive_int(batch_size, "batch_size")
     validate_positive_int(min_batch_size, "min_batch_size")
@@ -174,11 +176,13 @@ def validate_transfer_runtime_options(
         trino_insert_chunk_size,
         "trino_insert_chunk_size",
     )
-    validate_concurrency_value(concurrency, "concurrency")
-    validate_concurrency_value(read_concurrency, "read_concurrency")
-    validate_concurrency_value(write_concurrency, "write_concurrency")
-    if concurrency is not None and (read_concurrency is not None or write_concurrency is not None):
-        raise ValueError(CONCURRENCY_CONFLICT_ERROR)
+    validate_transfer_concurrency_ceilings(
+        concurrency=concurrency,
+        read_concurrency=read_concurrency,
+        write_concurrency=write_concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+    )
 
 
 def resolve_trino_mode(

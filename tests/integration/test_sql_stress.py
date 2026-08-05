@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: BLE001, I001, TC002
 
 import importlib
+import datetime as dt
 import json
 import os
 import threading
@@ -19,6 +20,7 @@ from tests.integration.manifest import scenario_param
 from tests.integration.support.backends import (
     BACKENDS,
     backend_alias,
+    backend_enabled,
     integration_table,
     table_options,
 )
@@ -28,6 +30,127 @@ from tests.integration.support.resources import ResourceRegistry
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_stress]
 ARTIFACT_DIR = Path(os.environ.get("SQL_INTEGRATION_ARTIFACT_DIR", ".integration-artifacts/stress"))
+LAZY_DDL_CHURN_KEY_COUNT = 64
+LAZY_DDL_CHURN_READERS = 4
+LAZY_DDL_CHURN_WRITERS = 3
+
+
+def _lazy_attempt_stage_tables(alias: str, backend: str, transfer_id: str) -> pd.DataFrame:
+    schema = {
+        "gp": "public",
+        "trino": "integration_stage",
+        "ch": "integration",
+    }[backend]
+    options: dict[str, Any] = {
+        "schema": schema,
+        "conditions": f"table_name LIKE '%{transfer_id}%'",
+    }
+    if backend == "trino":
+        options["trino_catalog"] = "iceberg"
+    return sql.show_tables(alias, **options)
+
+
+def _lazy_ddl_transfer_options(backend: str) -> dict[str, Any]:
+    options = table_options(backend)
+    if backend == "ch":
+        options["table_schema"] = {
+            "row_id": "Int64",
+            "slice_key": "Int64",
+            "event_date": "Date",
+            "value": "String",
+        }
+    return options
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [scenario_param(f"stress.transfer.lazy_keyed_ddl.{backend}", backend) for backend in BACKENDS],
+)
+def test_lazy_keyed_source_staging_handles_64_key_ddl_churn(
+    backend: str,
+    resource_registry: ResourceRegistry,
+) -> None:
+    """Exercise 64 per-key CTAS/DROP cycles with a seven-stage live bound."""
+    if not backend_enabled(backend):
+        pytest.skip("Greenplum stress coverage requires x86_64")
+
+    source_alias = backend_alias(backend)
+    target_alias = backend_alias(backend, target=True)
+    cluster = "integration_cluster" if backend == "ch" else None
+    source_table = resource_registry.table(
+        source_alias,
+        integration_table(backend, "lazy_ddl_churn_source"),
+        ch_cluster=cluster,
+    )
+    target_table = resource_registry.table(
+        target_alias,
+        integration_table(backend, "lazy_ddl_churn_target"),
+        ch_cluster=cluster,
+    )
+    expected = pd.DataFrame(
+        {
+            "row_id": list(range(1, LAZY_DDL_CHURN_KEY_COUNT + 1)),
+            "slice_key": list(range(LAZY_DDL_CHURN_KEY_COUNT)),
+            "event_date": [
+                dt.date(2026, 8, 1) + dt.timedelta(days=index % 7)
+                for index in range(LAZY_DDL_CHURN_KEY_COUNT)
+            ],
+            "value": [f"key-{index:02d}" for index in range(LAZY_DDL_CHURN_KEY_COUNT)],
+        }
+    )
+    sql.load_df(
+        source_alias,
+        source_table,
+        expected,
+        write_mode="replace",
+        **table_options(backend),
+    )
+
+    result = sql.transfer(
+        source_alias,
+        target_alias,
+        from_table=source_table,
+        to_table=target_table,
+        transfer_keys="slice_key",
+        transfer_key_values=list(range(LAZY_DDL_CHURN_KEY_COUNT)),
+        read_concurrency=LAZY_DDL_CHURN_READERS,
+        write_concurrency=LAZY_DDL_CHURN_WRITERS,
+        hard_concurrency_cap=5,
+        batch_size=1,
+        adaptive_batch_size=False,
+        target_rows_per_second=False,
+        write_mode="replace",
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+        return_metadata=True,
+        **_lazy_ddl_transfer_options(backend),
+    )
+
+    assert isinstance(result, sql.SqlOperationResult)
+    assert result.rows == LAZY_DDL_CHURN_KEY_COUNT
+    assert result.metadata.effective_read_concurrency == LAZY_DDL_CHURN_READERS
+    assert result.metadata.effective_write_concurrency == LAZY_DDL_CHURN_WRITERS
+    assert result.metadata.source_stage_count == LAZY_DDL_CHURN_KEY_COUNT
+    assert result.metadata.live_source_stage_limit == (
+        LAZY_DDL_CHURN_READERS + LAZY_DDL_CHURN_WRITERS
+    )
+    slice_counts = result.metadata.transfer_slice_counts or []
+    assert len(slice_counts) == LAZY_DDL_CHURN_KEY_COUNT
+    assert all((item["expected_rows"], item["streamed_rows"]) == (1, 1) for item in slice_counts)
+    actual = sql.read(
+        target_alias,
+        (f"SELECT row_id, slice_key, event_date, value FROM {target_table} ORDER BY row_id"),
+    )
+    assert_exact_frame(actual, expected, date_columns=("event_date",))
+
+    transfer_id = result.metadata.transfer_id
+    assert transfer_id
+    source_stages = _lazy_attempt_stage_tables(source_alias, backend, transfer_id)
+    target_stages = _lazy_attempt_stage_tables(target_alias, backend, transfer_id)
+    assert source_stages.empty, source_stages["table_name"].tolist()
+    assert target_stages.empty, target_stages["table_name"].tolist()
 
 
 @pytest.mark.parametrize(

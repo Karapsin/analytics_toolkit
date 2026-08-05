@@ -20,6 +20,7 @@ from . import reconfigure_proxy as _reconfigure
 from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
+from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
 from .config import AIRFLOW_EXTRA_FIELDS
 
@@ -254,6 +255,11 @@ class ClickHouseAdapter(BackendAdapter):
             f"{prefix} {table_name}{ch_cluster_clause(ch_cluster)}",
             query_label,
         )
+
+    build_creation_policy_cleanup_sqls = _cleanup.build_creation_policy_cleanup_sqls
+    preclear_distributed_replace_target = _cleanup.preclear_distributed_replace_target
+    open_transfer_host_connection = _cleanup.open_transfer_host_connection
+    needs_bounded_replace_preclear = _cleanup.needs_bounded_replace_preclear
 
     def analyze_table_sql(
         self,

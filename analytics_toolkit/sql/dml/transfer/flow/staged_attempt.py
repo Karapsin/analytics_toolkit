@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-# ruff: noqa: EM101, EM102, I001, PLR0913, PLR0915, PLR2004, S608, TC006, TID252, TRY003, TRY300, TRY301
+# ruff: noqa: BLE001, EM101, EM102, I001, PLR0913, PLR0915, PLR2004, S608, TC006, TID252, TRY003, TRY300, TRY301
 
 import contextvars
 import math
+import time
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from dataclasses import replace
 from typing import Any, cast
 
 import pandas as pd
+from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
 
+from ...._log_context import sql_log_context
 from ....backends import get_backend_adapter
 from ....backends.transfer_stage import (
     collision_stage_suffix,
@@ -33,12 +37,14 @@ from ..runtime.models import (
 )
 from ..runtime.retry import (
     close_connection_ref,
+    close_connection_refs_preserving,
     replace_connection,
     rollback_quietly,
     run_with_retry,
 )
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from .finalize import cleanup_stage, finalize_loaded_stage
+from .progress import make_transfer_progress_bar
 from .range_scheduler import AdaptiveRangeScheduler, OrdinalRange
 from .source_snapshot import (
     build_append_snapshot_slice_sql,
@@ -49,6 +55,7 @@ from .source_snapshot import (
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
 from .staged_keyed_pipeline import run_keyed_staged_source_transfer_attempt
+from .staged_unkeyed_progress import UnkeyedStagedProgress
 from .superseded import cleanup_superseded_transfer_stages
 
 
@@ -64,13 +71,22 @@ def run_staged_source_transfer_attempt(
             options,
             insert_retry_cnt=insert_retry_cnt,
         )
-    source_ref = {"connection": get_sql_connection(options.from_db_key)}
-    target_ref = {"connection": get_sql_connection(options.to_db_key)}
+    attempt_started_at = time.monotonic()
+    source_ref: dict[str, Any] = {}
+    target_ref: dict[str, Any] = {}
     refs = TransferConnectionRefs(source=source_ref, target=target_ref)
-    stage_state = create_stage_state(options, refs)
+    stage_state: TransferStageState | None = None
     snapshot_table: str | None = None
-    error: Exception | None = None
+    stage_tables: list[str] = []
+    transfer_progress: UnkeyedStagedProgress | None = None
+    transfer_completed = False
+    cleanup_succeeded = False
+    error: BaseException | None = None
+    attempt_phase = "metadata inspection"
     try:
+        source_ref["connection"] = get_sql_connection(options.from_db_key)
+        target_ref["connection"] = get_sql_connection(options.to_db_key)
+        stage_state = create_stage_state(options, refs)
         representative_sql = (
             options.transfer_slices[0].source_sql if options.transfer_slices else options.source_sql
         )
@@ -124,6 +140,7 @@ def run_staged_source_transfer_attempt(
             stage_state,
         )
         ensure_transfer_target_table(options, refs, stage_state, source_columns)
+        attempt_phase = "source-stage loading"
         snapshot_table, slice_counts = _materialize_snapshot(
             options,
             source_ref,
@@ -132,13 +149,39 @@ def run_staged_source_transfer_attempt(
         stage_state.source_stage_tables = [snapshot_table]
         total_rows = sum(slice_counts.values())
         worker_count = _effective_transfer_worker_count(
-            options.concurrency,
+            min(
+                options.transfer_concurrency.effective_read,
+                options.transfer_concurrency.effective_write,
+            ),
             total_rows,
             options.batch_size,
         )
+        object.__setattr__(
+            options,
+            "transfer_concurrency",
+            replace(
+                options.transfer_concurrency,
+                effective_read=worker_count,
+                effective_write=worker_count,
+            ),
+        )
         time_print(
-            f"Transfer worker selection: requested={options.concurrency}, effective={worker_count}",
+            "Transfer worker selection: "
+            f"requested={options.transfer_concurrency.requested_read}, "
+            f"soft_limited={options.transfer_concurrency.soft_limited_read}, "
+            f"effective={worker_count}",
             phase="select_workers",
+        )
+        transfer_progress = UnkeyedStagedProgress(
+            options,
+            total_rows=total_rows,
+            worker_count=worker_count,
+            attempt_started_at=attempt_started_at,
+            progress_bar=make_transfer_progress_bar(
+                options,
+                total=total_rows,
+                base_tqdm=tqdm,
+            ),
         )
         replace_connection(options.to_db_key, target_ref)
         stage_tables = _create_worker_stages(
@@ -147,6 +190,10 @@ def run_staged_source_transfer_attempt(
             stage_state,
             worker_count=worker_count,
         )
+        close_connection_ref(source_ref, options.from_db_key, "source coordinator")
+        source_ref.pop("connection", None)
+        close_connection_ref(target_ref, options.to_db_key, "target coordinator")
+        target_ref.pop("connection", None)
         scheduler = AdaptiveRangeScheduler(slice_counts)
         _run_range_workers(
             options,
@@ -156,8 +203,11 @@ def run_staged_source_transfer_attempt(
             stage_tables,
             scheduler,
             insert_retry_cnt=insert_retry_cnt,
+            transfer_progress=transfer_progress,
         )
+        attempt_phase = "aggregate stage validation"
         scheduler.validate_complete()
+        transfer_progress.mark_loading_complete()
         stage_state.slice_counts = [
             TransferSliceRowCount(
                 index=slice_id,
@@ -167,13 +217,93 @@ def run_staged_source_transfer_attempt(
             )
             for slice_id, count in sorted(slice_counts.items())
         ]
+        attempt_phase = "target-stage consolidation"
+        consolidation_started_at = transfer_progress.now()
         _consolidate_worker_stages(options, target_ref, stage_state, stage_tables)
+        transfer_progress.mark_consolidation_complete(
+            stage_count=len(stage_tables),
+            copied_rows=transfer_progress.expected_consolidation_rows,
+            elapsed_seconds=transfer_progress.now() - consolidation_started_at,
+        )
+        close_connection_ref(target_ref, options.to_db_key, "target consolidation")
+        target_ref.pop("connection", None)
+        attempt_phase = "destination finalization"
+        transfer_progress.mark_finalization_started()
         finalize_loaded_stage(options, refs, stage_state, total_rows)
+        transfer_progress.mark_finalization_complete()
+        transfer_completed = True
         return total_rows
-    except Exception as exc:
+    except BaseException as exc:
         error = exc
+        _attach_unkeyed_attempt_failure(
+            exc,
+            transfer_progress,
+            phase=attempt_phase,
+            attempt_started_at=attempt_started_at,
+        )
         raise
     finally:
+        cleanup_error: BaseException | None = None
+        try:
+            cleanup_succeeded = _cleanup_unkeyed_attempt(
+                options,
+                refs,
+                stage_state,
+                source_ref,
+                target_ref,
+                snapshot_table=snapshot_table,
+                error=error,
+            )
+        except BaseException as exc:
+            cleanup_error = exc
+        progress_error: BaseException | None = None
+        try:
+            _finish_unkeyed_progress(
+                transfer_progress,
+                transfer_completed=transfer_completed,
+                cleanup_succeeded=cleanup_succeeded,
+                snapshot_table=snapshot_table,
+                stage_tables=stage_tables,
+            )
+        except BaseException as exc:
+            progress_error = exc
+        if error is None:
+            if cleanup_error is not None:
+                _attach_unkeyed_attempt_failure(
+                    cleanup_error,
+                    transfer_progress,
+                    phase=attempt_phase,
+                    attempt_started_at=attempt_started_at,
+                )
+                raise cleanup_error.with_traceback(cleanup_error.__traceback__)
+            if progress_error is not None:
+                _attach_unkeyed_attempt_failure(
+                    progress_error,
+                    transfer_progress,
+                    phase=attempt_phase,
+                    attempt_started_at=attempt_started_at,
+                )
+                raise progress_error.with_traceback(progress_error.__traceback__)
+
+
+def _cleanup_unkeyed_attempt(  # noqa: C901
+    options: TransferOptions,
+    refs: TransferConnectionRefs,
+    stage_state: TransferStageState | None,
+    source_ref: dict[str, Any],
+    target_ref: dict[str, Any],
+    *,
+    snapshot_table: str | None,
+    error: BaseException | None,
+) -> bool:
+    cleanup_error: BaseException | None = None
+    try:
+        close_connection_ref(target_ref, options.to_db_key, "target coordinator")
+    except BaseException as exc:
+        cleanup_error = exc
+    else:
+        target_ref.pop("connection", None)
+    if stage_state is not None:
         try:
             cleanup_stage(
                 options,
@@ -182,20 +312,71 @@ def run_staged_source_transfer_attempt(
                 options.retry_cnt,
                 drop_created_target=error is not None,
             )
-        finally:
-            if snapshot_table is not None:
-                try:
-                    cleanup_stage_table(
-                        options.from_db_backend,
-                        source_ref["connection"],
-                        snapshot_table,
-                        query_label=options.query_label,
-                    )
-                except Exception:
-                    if error is None:
-                        raise
-            close_connection_ref(source_ref, options.from_db_key, "source")
-            close_connection_ref(target_ref, options.to_db_key, "target")
+        except BaseException as exc:
+            cleanup_error = cleanup_error or exc
+    if snapshot_table is not None:
+        try:
+            if source_ref.get("connection") is None:
+                source_ref["connection"] = get_sql_connection(options.from_db_key)
+            cleanup_stage_table(
+                options.from_db_backend,
+                source_ref["connection"],
+                snapshot_table,
+                query_label=options.query_label,
+            )
+        except BaseException as exc:
+            cleanup_error = cleanup_error or exc
+    try:
+        close_connection_ref(source_ref, options.from_db_key, "source")
+    except BaseException as exc:
+        cleanup_error = cleanup_error or exc
+    try:
+        close_connection_ref(target_ref, options.to_db_key, "target")
+    except BaseException as exc:
+        cleanup_error = cleanup_error or exc
+    if cleanup_error is not None:
+        raise cleanup_error.with_traceback(cleanup_error.__traceback__)
+    return True
+
+
+def _finish_unkeyed_progress(
+    transfer_progress: UnkeyedStagedProgress | None,
+    *,
+    transfer_completed: bool,
+    cleanup_succeeded: bool,
+    snapshot_table: str | None,
+    stage_tables: list[str],
+) -> None:
+    if transfer_progress is None:
+        return
+    try:
+        if transfer_completed and cleanup_succeeded:
+            transfer_progress.log_transfer_complete(
+                source_stages_dropped=int(snapshot_table is not None),
+                target_stages_cleaned=len(stage_tables),
+            )
+    finally:
+        transfer_progress.close()
+
+
+def _attach_unkeyed_attempt_failure(
+    error: BaseException,
+    transfer_progress: UnkeyedStagedProgress | None,
+    *,
+    phase: str,
+    attempt_started_at: float,
+) -> None:
+    if transfer_progress is not None:
+        transfer_progress.attach_attempt_summary(error, phase)
+        return
+    try:
+        error.__dict__["analytics_toolkit_transfer_attempt_summary"] = {
+            "phase": phase,
+            "committed_rows": 0,
+            "elapsed_seconds": max(time.monotonic() - attempt_started_at, 0.0),
+        }
+    except Exception:
+        return
 
 
 def _materialize_snapshot(
@@ -266,14 +447,21 @@ def _materialize_snapshot(
             snapshot_table,
             internal.slice_id,
         )
-    except Exception:
+    except BaseException:
         if created:
-            adapter.drop_table(
-                source_ref["connection"],
-                snapshot_table,
-                if_exists=True,
-                query_label=options.query_label,
-            )
+            try:
+                adapter.drop_table(
+                    source_ref["connection"],
+                    snapshot_table,
+                    if_exists=True,
+                    query_label=options.query_label,
+                )
+            except BaseException:
+                time_print(
+                    "[slice=1/1] Failed to drop an incomplete source snapshot; "
+                    "startup cleanup will retry it",
+                    level="warning",
+                )
         raise
 
 
@@ -359,8 +547,19 @@ def _create_worker_stages(
         ]
     )
     stage_state.first_non_empty_batch = pd.DataFrame(columns=stage_state.source_columns)
-    tables = [
-        create_stage_table(
+    worker_tables: list[str] = []
+    registered_candidates: list[str] = []
+
+    def register_candidate(stage_table: str) -> None:
+        if stage_table in registered_candidates:
+            return
+        registered_candidates.append(stage_table)
+        stage_state.stage_table = registered_candidates[0]
+        stage_state.stage_tables = list(registered_candidates)
+        stage_state.stage_table_created = True
+
+    for worker_id in range(worker_count):
+        stage_table = create_stage_table(
             options.to_db_backend,
             target_ref["connection"],
             options.target_table,
@@ -372,13 +571,27 @@ def _create_worker_stages(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{options.transfer_id}__w{worker_id:05d}",
             destination_hash=options.destination_hash,
+            on_stage_candidate=register_candidate,
+            ddl_properties=options.staging_ddl_properties,
+            ch_creation_policy=options.staging_ch_policy,
         )
-        for worker_id in range(worker_count)
-    ]
-    stage_state.stage_table = tables[0]
-    stage_state.stage_tables = tables
+        register_candidate(stage_table)
+        worker_tables.append(stage_table)
+
+    for candidate in registered_candidates:
+        if candidate in worker_tables:
+            continue
+        cleanup_stage_table(
+            options.to_db_backend,
+            target_ref["connection"],
+            candidate,
+            query_label=options.query_label,
+            ch_creation_policy=options.staging_ch_policy,
+        )
+    stage_state.stage_table = worker_tables[0]
+    stage_state.stage_tables = list(worker_tables)
     stage_state.stage_table_created = True
-    return tables
+    return worker_tables
 
 
 def _run_range_workers(
@@ -390,12 +603,16 @@ def _run_range_workers(
     scheduler: AdaptiveRangeScheduler,
     *,
     insert_retry_cnt: int,
+    transfer_progress: UnkeyedStagedProgress | None = None,
 ) -> None:
     with ThreadPoolExecutor(max_workers=len(stage_tables)) as executor:
+        worker_function = (
+            _range_worker if transfer_progress is None else _range_worker_with_progress
+        )
         pending = {
             executor.submit(
                 contextvars.copy_context().run,
-                _range_worker,
+                worker_function,
                 options,
                 snapshot_table,
                 source_columns,
@@ -404,6 +621,7 @@ def _run_range_workers(
                 scheduler,
                 worker_id,
                 insert_retry_cnt,
+                *(() if transfer_progress is None else (transfer_progress,)),
             )
             for worker_id, stage_table in enumerate(stage_tables)
         }
@@ -425,9 +643,11 @@ def _range_worker(
     scheduler: AdaptiveRangeScheduler,
     worker_id: int,
     insert_retry_cnt: int,
+    *,
+    transfer_progress: UnkeyedStagedProgress | None = None,
 ) -> None:
-    source_ref = {"connection": get_sql_connection(options.from_db_key)}
-    target_ref = {"connection": get_sql_connection(options.to_db_key)}
+    source_ref: dict[str, Any] = {}
+    target_ref: dict[str, Any] = {}
     sizer = AdaptiveBatchSizer(
         enabled=options.adaptive_batch_size,
         current_size=options.batch_size,
@@ -436,11 +656,15 @@ def _range_worker(
         target_seconds=options.target_batch_seconds,
     )
     source_failures: dict[tuple[int, int, int], int] = {}
+    worker_error: BaseException | None = None
     try:
+        source_ref["connection"] = get_sql_connection(options.from_db_key)
+        target_ref["connection"] = get_sql_connection(options.to_db_key)
         while True:
             claimed = scheduler.claim(worker_id, sizer.current_size)
             if claimed is None:
                 return
+            read_started_at = transfer_progress.now() if transfer_progress is not None else 0.0
             try:
                 batch = _read_snapshot_range(
                     options,
@@ -453,7 +677,7 @@ def _range_worker(
             except Exception:
                 key = (claimed.slice_id, claimed.start_ordinal, claimed.stop_ordinal)
                 source_failures[key] = source_failures.get(key, 0) + 1
-                if source_failures[key] >= options.full_retry_cnt:
+                if source_failures[key] >= options.retry_cnt:
                     raise
                 reduced = max(options.min_batch_size, claimed.row_count // 2)
                 scheduler.requeue_failed(
@@ -463,30 +687,123 @@ def _range_worker(
                 )
                 rollback_quietly(source_ref["connection"])
                 replace_connection(options.from_db_key, source_ref)
+                committed_rows = (
+                    transfer_progress.committed_rows if transfer_progress is not None else 0
+                )
+                time_print(
+                    "[slice=1/1] Retrying source-stage range "
+                    f"{claimed.slice_id}:{claimed.start_ordinal}-{claimed.stop_ordinal} read: "
+                    f"attempt {source_failures[key] + 1}/{options.retry_cnt}; committed total "
+                    f"remains {committed_rows:,} rows; ETA unchanged"
+                )
                 continue
+            read_completed_at = transfer_progress.now() if transfer_progress is not None else 0.0
             if batch.row_count != claimed.row_count:
                 raise RuntimeError(
                     f"Source snapshot range {claimed} returned {batch.row_count} row(s)."
                 )
-            insert_rows_batch(
-                options.to_db_backend,
-                target_ref,
-                stage_table,
-                batch.columns,
-                batch.rows,
-                retry_fn=run_with_retry,
-                retry_cnt=insert_retry_cnt,
-                timeout_increment=options.timeout_increment,
-                target_column_types=stage_state.stage_column_types,
-                query_label=options.query_label,
-                connection_key=options.to_db_key,
-                rollback_fn=rollback_quietly,
-                replace_connection_fn=replace_connection,
+            logical_batch_id = (
+                claimed.slice_id,
+                claimed.start_ordinal,
+                claimed.stop_ordinal,
             )
+            _insert_unkeyed_range_batch(
+                options,
+                target_ref,
+                stage_state,
+                stage_table,
+                batch,
+                logical_batch_id,
+                insert_retry_cnt=insert_retry_cnt,
+                transfer_progress=transfer_progress,
+            )
+            if transfer_progress is not None:
+                transfer_progress.commit_batch(
+                    logical_batch_id=logical_batch_id,
+                    worker_id=worker_id,
+                    batch=batch,
+                    read_started_at=read_started_at,
+                    read_completed_at=read_completed_at,
+                    insert_completed_at=transfer_progress.now(),
+                )
             scheduler.complete(worker_id, claimed)
+    except BaseException as exc:
+        worker_error = exc
+        raise
     finally:
-        close_connection_ref(source_ref, options.from_db_key, f"source worker {worker_id}")
-        close_connection_ref(target_ref, options.to_db_key, f"target worker {worker_id}")
+        close_connection_refs_preserving(
+            worker_error,
+            (source_ref, options.from_db_key, f"source worker {worker_id}"),
+            (target_ref, options.to_db_key, f"target worker {worker_id}"),
+        )
+
+
+def _insert_unkeyed_range_batch(
+    options: TransferOptions,
+    target_ref: dict[str, Any],
+    stage_state: TransferStageState,
+    stage_table: str,
+    batch: RowBatch,
+    logical_batch_id: tuple[int, int, int],
+    *,
+    insert_retry_cnt: int,
+    transfer_progress: UnkeyedStagedProgress | None,
+) -> None:
+    def retry_insert(**kwargs: Any) -> Any:
+        if transfer_progress is None:
+            return run_with_retry(**kwargs)
+        return run_with_retry(
+            **kwargs,
+            log_prefix=transfer_progress.log_prefix,
+            safe_exception_logging=True,
+            retry_status=lambda attempt, total: transfer_progress.target_insert_retry_status(
+                logical_batch_id,
+                attempt,
+                total,
+            ),
+        )
+
+    insert_rows_batch(
+        options.to_db_backend,
+        target_ref,
+        stage_table,
+        batch.columns,
+        batch.rows,
+        retry_fn=retry_insert,
+        retry_cnt=insert_retry_cnt,
+        timeout_increment=options.timeout_increment,
+        target_column_types=stage_state.stage_column_types,
+        query_label=options.query_label,
+        connection_key=options.to_db_key,
+        rollback_fn=rollback_quietly,
+        replace_connection_fn=replace_connection,
+        safe_exception_logging=transfer_progress is not None,
+        log_prefix=transfer_progress.log_prefix if transfer_progress is not None else "",
+    )
+
+
+def _range_worker_with_progress(
+    options: TransferOptions,
+    snapshot_table: str,
+    source_columns: list[str],
+    stage_state: TransferStageState,
+    stage_table: str,
+    scheduler: AdaptiveRangeScheduler,
+    worker_id: int,
+    insert_retry_cnt: int,
+    transfer_progress: UnkeyedStagedProgress,
+) -> None:
+    _range_worker(
+        options,
+        snapshot_table,
+        source_columns,
+        stage_state,
+        stage_table,
+        scheduler,
+        worker_id,
+        insert_retry_cnt,
+        transfer_progress=transfer_progress,
+    )
 
 
 def _read_snapshot_range(
@@ -509,20 +826,29 @@ def _read_snapshot_range(
         canonical_destination=options.canonical_destination_identity or "",
         ordinal_range=claimed,
     )
-    result = _read_backend(
-        options.from_db_backend,
-        connection,
-        sql,
-        print_queries=False,
-        output_type="dict",
-        action_name="source-batch reading",
-        phase="read_source_batch",
-    )
+    with sql_log_context("[slice=1/1] ", suppress_sql=True):
+        result = _read_backend(
+            options.from_db_backend,
+            connection,
+            sql,
+            print_queries=False,
+            output_type="dict",
+            action_name="source-batch reading",
+            phase="read_source_batch",
+        )
+    result_row_count = len(result.columns[0]) if result.columns else 0
+    if any(len(column) != result_row_count for column in result.columns):
+        raise RuntimeError("[slice=1/1] Source batch columns have unequal lengths.")
+    if result_row_count > claimed.row_count:
+        raise RuntimeError(
+            f"[slice=1/1] Source batch returned {result_row_count} row(s); "
+            f"scheduled limit is {claimed.row_count}."
+        )
     batch = RowBatch(
         columns=list(result.column_names),
         rows=list(zip(*result.columns)),
     )
-    return cast(
+    normalized = cast(
         RowBatch,
         get_backend_adapter(
             options.from_db_backend,
@@ -531,6 +857,12 @@ def _read_snapshot_range(
             stage_state.source_column_types or {},
         ),
     )
+    if normalized.row_count > claimed.row_count:
+        raise RuntimeError(
+            f"[slice=1/1] Normalized source batch returned {normalized.row_count} row(s); "
+            f"scheduled limit is {claimed.row_count}."
+        )
+    return normalized
 
 
 def _consolidate_worker_stages(
@@ -541,7 +873,11 @@ def _consolidate_worker_stages(
 ) -> None:
     if options.write_mode == "upsert" or len(stage_tables) < 2:
         return
-    replace_connection(options.to_db_key, target_ref)
+    replace_connection_fn = target_ref.get(
+        "bounded_replace_connection",
+        replace_connection,
+    )
+    replace_connection_fn(options.to_db_key, target_ref)
     for stage_table in stage_tables[1:]:
         insert_from_table(
             options.to_db_backend,

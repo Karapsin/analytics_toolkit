@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'append', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, ignore_source_staging: 'bool' = False, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'append', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, ignore_source_staging: 'bool' = False, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -29,7 +29,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `target_batch_seconds` - target insert duration used by time-based adaptive batching
 - `min_batch_seconds` - minimum allowed value for time-based adaptive targets when enabled
 - `max_batch_seconds` - maximum allowed value for time-based adaptive targets when enabled
-- `target_batch_memory_mb` - approximate in-process memory target used for adaptive transfer batches
+- `target_batch_memory_mb` - approximate in-process RowBatch memory target used for adaptive transfer batches; lazy keyed staging treats it as an aggregate target across active and prefetched batches
 - `min_batch_memory_mb` - minimum allowed value for memory-based adaptive targets when enabled
 - `max_batch_memory_mb` - maximum allowed value for memory-based adaptive targets when enabled
 - `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
@@ -52,6 +52,8 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `concurrency` - legacy combined reader/writer count; omission resolves to one reader and one writer, it cannot be combined with either split setting, and unkeyed source-staged transfers cap workers at `ceil(total_rows / batch_size)`
 - `read_concurrency` - source-reader count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
 - `write_concurrency` - target-stage writer count for keyed transfers; defaults to `1` when omitted and is capped by the slice count
+- `soft_concurrency_cap` - optional shared ceiling applied independently to requested reader and writer counts before slice limits; a larger request is throttled rather than rejected
+- `hard_concurrency_cap` - safety ceiling for each soft-limited reader and writer count; defaults to `5` and rejects either side above the cap before connection lookup
 - `ignore_source_staging` - when `True`, ignore the source connection's `transfer_staging_schema` for this call and use direct streaming; target-side staging is unchanged
 - `partition_by` - partitioning columns or expression for created tables, interpreted according to the target backend
 - `order_by` - ordering or sorting columns or expression for created tables, interpreted according to the target backend
@@ -137,15 +139,57 @@ rows = sql.transfer(
     transfer_key_values=["2026-05-18", "2026-05-19", "2026-05-20"],
     read_concurrency=6,
     write_concurrency=2,
+    soft_concurrency_cap=3,
+    hard_concurrency_cap=5,
 )
 ```
 
+Here the requested `6/2` reader/writer pair becomes a soft-limited `3/2`
+ceiling. Available keys can reduce either side further. `dry_run=True` exposes
+the requested, soft-limited, hard-cap, and final effective values in both plan
+options and metadata, together with the effective source and target connection
+limits.
+
 When the source connection defines `transfer_staging_schema`, keyed transfers
-use a strict two-phase flow. Reader workers first materialize their assigned
-keys into one private source-side stage each. After every reader finishes,
-target writers dynamically claim whole keys, stream them through RAM batches,
-and write private target-side stages. A key is never split between writers.
-Independent readers may observe slightly different source moments.
+use a lazy pipeline with no global materialization barrier. A reader claims one
+key, creates and counts one immutable source table with CTAS, releases its
+source connection, and publishes that exact table to a ready-key queue. A
+writer claims the whole key and creates its private target stage only when its
+first non-empty key arrives. The reader and writer then overlap through that
+writer's capacity-one RAM batch queue; another reader can materialize a later
+key while an earlier key is being inserted or validated.
+
+The source and target pools are bounded by effective read and write concurrency.
+At most `effective readers + effective writers` keyed source tables are live at
+once. After all batches for a key commit, target-side validation checks its
+count, transfer ID, exact destination, slice ID, and complete unique ordinal
+range. Only then is the key acknowledged; a reader drops the exact acknowledged
+source table and releases its live-stage credit. A key is never split between
+writers, and a writer that handles only empty keys creates no target stage.
+Independent per-key CTAS operations may observe slightly different source
+moments.
+
+Nightly/manual stress coverage runs exactly 64 one-row keyed slices per backend
+with four readers, three writers, and `batch_size=1`, then checks exact target
+rows and absence of attempt-owned source and target stages. That fixed range is
+a regression signal rather than a universal production limit. The live-stage
+ceiling remains seven for the scenario, but total per-key CTAS, DROP, and catalog
+churn remains linear in the number of keys.
+
+`batch_size` is a per-logical-batch row bound. Each source range is scheduled
+with a captured size; its ordinal predicate and SQL `LIMIT` both enforce that
+bound, and its exact row count is checked before the RowBatch is queued.
+Adaptive changes apply only to later ranges, so a batch already prefetched may
+be larger than a newly reduced size while still respecting the size with which
+it was scheduled. A writer may hold the batch it is inserting plus one
+prefetched batch; across `W` effective writers, at most `2 × W` RowBatch
+payloads are resident in this pipeline.
+
+For lazy keyed staging, `target_batch_memory_mb` is divided across those
+`2 × W` resident slots. It is an aggregate approximate payload target, not a
+hard process-memory ceiling: adaptation reacts to measured RowBatch size,
+initial or unexpectedly wide batches can overshoot transiently, and driver,
+normalization, dataframe, and database-client copies are not included.
 
 Set `ignore_source_staging=True` to bypass the configured source schema for one
 call and use the direct bounded-queue pipeline instead.
@@ -215,16 +259,36 @@ rows = sql.transfer(
 - Split concurrency is limited to keyed transfers. Legacy `concurrency=N`
   retains combined `N/N` behavior; unkeyed source-staged transfers retain their
   existing single-snapshot implementation.
+- The same soft/hard cap pair is applied independently to readers and writers.
+  Without a soft cap, requested counts are the ceilings checked against
+  `hard_concurrency_cap`. All cap and concurrency values must be built-in
+  positive integers; booleans are rejected.
 - A configured source `transfer_staging_schema` creates one immutable source
-  stage per effective reader for keyed transfers. Each key belongs to exactly
-  one source reader and one target writer, and target writing begins only after
-  all source stages finish. Unkeyed transfers continue to use slice zero in one
-  source snapshot with bounded ordinal ranges.
+  stage per key with CTAS and drops it only after that key is committed and
+  validated in the target database. There is no all-keys phase barrier. Target
+  stages are private per writer and are created lazily on that writer's first
+  non-empty key. Only stages actually created are validated and consolidated.
+  Unkeyed transfers continue to use slice zero in one source snapshot with
+  bounded ordinal ranges.
+- Keyed source staging inspects one representative source query and any required
+  target metadata once per full attempt. The ordered source schema, native and
+  mapped types, `table_schema` overrides, internal identity columns, insert
+  order, and stage-DDL inputs are reused for every key. Connection retries do
+  not refresh this contract; a full-attempt retry inspects it once again.
 - Unkeyed source-staged transfers keep at least one worker and use no more than
   `min(concurrency, ceil(total_rows / batch_size))` workers. Logs report both
-  requested and effective counts. Source-staged transfers refresh coordinator
-  target connections before creating worker stages and after long worker-loading
-  phases so idle expiry cannot break stage creation, validation, or consolidation.
+  requested and effective counts.
+- The keyed ready queue is bounded, each writer has one capacity-one prefetch
+  queue, and the live source-stage limit is effective readers plus effective
+  writers. Queue waits hold no database connection. Source and target pools
+  also cover metadata, retries, drops, validation, consolidation, finalization,
+  and cleanup; helpers do not open connections outside those limits.
+- Every logical source range contains at most the `batch_size` captured when it
+  was scheduled. Adaptive changes affect subsequent ranges only. Lazy keyed
+  staging can retain one active and one prefetched RowBatch per writer. When
+  `target_batch_memory_mb` is set, its approximate payload target is shared
+  evenly across those `2 × effective writers` resident slots rather than being
+  applied independently to every slot.
 - Internal snapshot, source-batch, stage-identity, ordinal, and superseded-stage
   queries use distinct info-level action and phase labels in transfer logs.
 - Transfer SQL stage names use one identifier policy on every backend: at most
@@ -239,8 +303,16 @@ rows = sql.transfer(
   integrity metadata even with `validate_row_count=False` and are explicitly
   excluded from final-target DDL and inserts.
 - No manifest, lease, owner marker, heartbeat, bookkeeping, or other persistent
-  coordination table is created. In-process checkpoints exist only for the
-  current call.
+  coordination table, view, work queue, or sequence is created. Scheduling,
+  acknowledgements, verified-key checkpoints, progress, and ETA state exist only
+  in memory for the current attempt and cannot resume after process restart.
+- A CTAS/count failure never publishes its key. A source-read, target-write, or
+  validation failure retains that key's source stage and prevents final target
+  mutation. Once target validation succeeds, cleanup retries never retransmit
+  the verified key; a persistent acknowledged-source drop failure still aborts
+  before finalization. A fatal key error restarts the complete attempt when a
+  full retry is available, refreshes metadata once, and rematerializes every
+  key. It may therefore observe newer source data.
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
 - Deterministic input and configuration errors stop immediately without an
@@ -282,14 +354,36 @@ rows = sql.transfer(
 - Values are always explicit; the helper does not query distinct key values
   automatically.
 - Keyed transfers render each source slice by replacing placeholders inline.
-  With source staging, every slice is materialized incrementally into one
-  snapshot before range workers start. On the compatibility path without source
-  staging, workers stream assigned slices into private target stages as before.
-  Worker stages are consolidated before one final target write.
+  With source staging, each rendered slice is materialized by its own lazy CTAS,
+  counted, streamed to one writer, validated, acknowledged, and dropped while
+  other slices can occupy different phases. On the compatibility path without
+  source staging, workers stream assigned slices into private target stages as
+  before. Created worker stages are consolidated before one final target write.
   Trino Parquet staging keeps one external stage table and uses unique staged
   files instead of concurrent SQL inserts into a shared stage table.
-- When `transfer_keys` is used, per-batch transfer logs include the active
-  transfer key values so long keyed transfers can be traced by slice.
+- Every key-specific message starts with one stable, bounded tag such as
+  `[slice=2/12 key=event_date:'2026-08-02']`; composite keys remain in the same
+  tag, and unkeyed work uses `[slice=1/1]`. Values use safe literal formatting
+  and logs never include raw SQL, row contents, or credentials. The same tag
+  follows materialization, batches, validation, retries, acknowledgement
+  cleanup, and errors.
+- Every successful non-empty logical batch emits one completion line. Batch
+  time spans source-read start through successful target insert, including queue
+  wait. Logs report batch and rolling global rows/second plus approximate RAM
+  memory/second in IEC units; this is in-process RAM throughput, not network or
+  compressed database bandwidth. Committed totals advance only after
+  target-stage commit, remain monotonic under concurrency, and do not
+  double-count retries.
+- Load ETA is distinct from total transfer ETA. While keyed counts are still
+  unknown, total rows are estimated from known counts and the mean materialized
+  key size, and load values are prefixed with `~`. Unkeyed source staging uses
+  its exact snapshot count minus committed target-stage rows. ETA uses the lower
+  positive value of rolling global and attempt-average rows/second and stays
+  unavailable until two successful non-empty batches. Total transfer ETA is
+  always marked approximate because it also models remaining consolidation and
+  finalization as row-equivalent work. Completed phases are removed from that
+  estimate, and a full-attempt retry resets all rate, memory, progress, and ETA
+  samples.
 - `transfer_keys` expressions should be deterministic and disjoint. The library
   rejects duplicate generated key tuples, but it cannot prove that arbitrary SQL
   expressions produce non-overlapping slices.
@@ -309,11 +403,12 @@ rows = sql.transfer(
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 - `target_rows_per_second`, `target_batch_seconds`, and `target_batch_memory_mb`
   are mutually exclusive adaptation controls: set at most one per call.
-- By default, transfer validates row counts before finalizing the target. It
-  counts the source query first, compares that count with streamed rows and the
-  actual stage-table `COUNT(*)`, and fails before target writes when they differ.
-  For keyed transfers, every rendered slice is counted and validated before the
-  aggregate stage table is finalized.
+- By default, transfer validates row counts before finalizing the target.
+  Unkeyed flow counts its source snapshot. Lazy keyed flow captures the exact
+  count immediately after each CTAS, then compares that count with streamed rows
+  and database-level target-stage identity and ordinal coverage before
+  acknowledging the key. Aggregate stage validation still runs before the
+  final destination mutation.
 - When the source connection defines `transfer_staging_schema`, snapshot
   materialization is the extraction mechanism regardless of public row-count
   validation. `validate_row_count=False` disables only the public
@@ -321,9 +416,12 @@ rows = sql.transfer(
   ordinal coverage checks remain mandatory.
 - A new call removes discoverable non-empty stages on its current source and
   target connections only when their stored exact destination matches and their
-  transfer ID differs. Empty, malformed, unverifiable, legacy, and `load_df`
-  stages are preserved. Historical source stages on another connection alias
-  may require explicit `cleanup_stale_stage_tables(stage_tables=[...])` cleanup.
+  transfer ID differs. It also removes empty stages whose collision-safe name
+  has the exact destination hash and a different full transfer ID; this covers
+  crashes after zero-row CTAS or partial ClickHouse creation. Current-attempt,
+  malformed, unverifiable, legacy, and `load_df` stages remain protected.
+  Historical source stages on another connection alias may require explicit
+  `cleanup_stale_stage_tables(stage_tables=[...])` cleanup.
 - For ClickHouse sources with no explicit `LIMIT`, row-count validation streams
   with `LIMIT <counted_source_rows>` and temporarily disables the client
   `query_limit` while opening the stream, so connection-level query caps do not
@@ -339,7 +437,10 @@ rows = sql.transfer(
   controls each probe as a fraction of the current accepted size.
 - If you set `target_batch_seconds`, `target_rows_per_second` is disabled.
 - If you set `target_batch_memory_mb`, memory-based adaptation is used and
-  takes precedence.
+  takes precedence. It is feedback from approximate RowBatch payload size, not
+  a hard Python-process memory ceiling. Lazy keyed source staging divides the
+  configured aggregate target across one active and one prefetched slot per
+  effective writer.
 - `transfer_staging_schema` configured on the target connection keeps staging
   tables inside that schema. When configured, stale and overlapping staging tables
   for the target user are cleaned before and after each transfer.

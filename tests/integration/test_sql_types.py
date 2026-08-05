@@ -319,7 +319,7 @@ def test_rich_type_parquet_transfer(
 
 
 @pytest.mark.sql_scenario("types.transfer.retry.trino.ch")
-def test_staged_source_retry_preserves_completed_ranges(  # noqa: PLR0915
+def test_staged_source_full_retry_rematerializes_completed_ranges(  # noqa: PLR0915
     resource_registry: ResourceRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -334,10 +334,10 @@ def test_staged_source_retry_preserves_completed_ranges(  # noqa: PLR0915
     real_complete = scheduler_module.AdaptiveRangeScheduler.complete
     real_attempt = attempt_module.run_staged_source_transfer_attempt
     parent = (0, 3, 5)
-    children = {(0, 3, 4), (0, 4, 5)}
     lock = threading.Lock()
     completion_gate = threading.Event()
     read_counts: Counter[tuple[int, int, int]] = Counter()
+    reads_by_attempt: dict[int, list[tuple[int, int, int]]] = {}
     completed: list[tuple[int, int, int]] = []
     completed_before_failure: list[tuple[int, int, int]] = []
     fault_count = 0
@@ -352,6 +352,7 @@ def test_staged_source_retry_preserves_completed_ranges(  # noqa: PLR0915
         interval = key(claimed)
         with lock:
             read_counts[interval] += 1
+            reads_by_attempt.setdefault(attempt_count, []).append(interval)
             should_fail = interval == parent and fault_count == 0
         if should_fail:
             assert completion_gate.wait(30), "no ordinal range completed before injected failure"
@@ -418,20 +419,27 @@ def test_staged_source_retry_preserves_completed_ranges(  # noqa: PLR0915
         adaptive_batch_size=False,
         target_rows_per_second=False,
         full_retry_cnt=2,
+        full_timeout_increment=0,
         table_schema=canonical_schema("ch"),
         retry_cnt=1,
         **table_options("ch", only_shard=True),
     )
     assert transferred == len(frame)
-    assert fault_count == 1 and read_counts[parent] == 1
-    assert parent not in completed
-    assert children <= set(completed)
-    assert len(completed) == len(set(completed))
+    assert fault_count == 1 and read_counts[parent] == 2
+    assert completed.count(parent) == 1
     assert len(completed_before_failure) == 1
     completed_first = completed_before_failure[0]
-    assert read_counts[completed_first] == 1
-    assert completed.count(completed_first) == 1
-    assert attempt_count == 1
+    assert read_counts[completed_first] == 2
+    assert completed.count(completed_first) == 2
+    assert attempt_count == 2
+    expected_ranges = {
+        (0, start, min(len(frame) + 1, start + 2)) for start in range(1, len(frame) + 1, 2)
+    }
+    assert set(reads_by_attempt) == {1, 2}
+    assert set(reads_by_attempt[1]) <= expected_ranges
+    assert set(reads_by_attempt[2]) == expected_ranges
+    assert completed_first in reads_by_attempt[1]
+    assert completed_first in reads_by_attempt[2]
     _assert_canonical_table(target_alias, target_table, "ch", frame)
 
 

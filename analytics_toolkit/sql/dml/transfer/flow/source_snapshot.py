@@ -90,6 +90,7 @@ def build_snapshot_range_sql(
     ordinal_range: OrdinalRange,
 ) -> str:
     adapter = get_backend_adapter(backend)
+    row_limit = ordinal_range.stop_ordinal - ordinal_range.start_ordinal
     columns = [*source_columns, *internal_columns.names()]
     projected = ", ".join(adapter.quote_identifier(column) for column in columns)
     transfer_column, destination_column, slice_column, ordinal_column = (
@@ -102,5 +103,5 @@ def build_snapshot_range_sql(
         f"{slice_column} = {ordinal_range.slice_id} AND "
         f"{ordinal_column} >= {ordinal_range.start_ordinal} AND "
         f"{ordinal_column} < {ordinal_range.stop_ordinal} "
-        f"ORDER BY {ordinal_column}"
+        f"ORDER BY {ordinal_column} LIMIT {row_limit}"
     )

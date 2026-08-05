@@ -1,25 +1,28 @@
 from __future__ import annotations
 
 # ruff: noqa: PLR0913, TID252
-
 import uuid
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from sqlglot import exp, parse_one
 
-from ...backends import SUPPORTED_BACKENDS, get_backend_adapter
-from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from analytics_toolkit.general import time_print
-from ...ddl.api import _create_sql_table_with_connection
-from ..table.maintenance import drop_table, drop_table_with_retry
-from ..table._basic_ops import table_exists
+
+from ...backends import SUPPORTED_BACKENDS, get_backend_adapter
 from ...backends.transfer_stage import (
     build_transfer_stage_tail,
     collision_stage_suffix,
     fit_hashed_stage_identifier,
 )
+from ...connection.refs import ensure_connection_ref
+from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
+from ...ddl.api import _create_sql_table_with_connection
+from ..table._basic_ops import table_exists
+from ..table.maintenance import drop_table, drop_table_with_retry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 STAGE_TABLE_NAME_MAX_ATTEMPTS = 10
@@ -40,6 +43,10 @@ def create_stage_table(
     transfer_staging_username: str | None = None,
     random_suffix: str | None = None,
     destination_hash: str | None = None,
+    on_stage_candidate: Callable[[str], None] | None = None,
+    log_prefix: str = "",
+    ddl_properties: Mapping[str, Any] | None = None,
+    ch_creation_policy: Any = None,
 ) -> str:
     preferred_suffix = random_suffix or uuid.uuid4().hex[:8]
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
@@ -67,7 +74,7 @@ def create_stage_table(
             connection_key=connection_key or connection_type,
         ):
             time_print(
-                f"Stage table name collision detected for {stage_table}; "
+                f"{log_prefix}Stage table name collision detected for {stage_table}; "
                 f"retrying with a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
             )
             continue
@@ -78,6 +85,15 @@ def create_stage_table(
         create_schema = table_schema or column_types
         if create_schema is not None:
             create_kwargs["table_schema"] = create_schema
+        if ddl_properties is not None:
+            create_kwargs["ddl_properties"] = ddl_properties
+        if ch_creation_policy is not None:
+            create_kwargs["ch_creation_policy"] = ch_creation_policy
+        if on_stage_candidate is not None:
+            # ClickHouse can create a shard companion before its logical
+            # distributed table fails. Register the collision-free name before
+            # executing DDL so policy-aware cleanup can remove either partial.
+            on_stage_candidate(stage_table)
         try:
             _create_sql_table_with_connection(
                 connection_type,
@@ -98,7 +114,7 @@ def create_stage_table(
             ):
                 raise
             time_print(
-                f"Stage table creation raced for {stage_table}; retrying with "
+                f"{log_prefix}Stage table creation raced for {stage_table}; retrying with "
                 f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
             )
             continue
@@ -133,7 +149,20 @@ def cleanup_stage_table(
     *,
     query_label: str | None = None,
     if_exists: bool = True,
+    ch_creation_policy: Any = None,
 ) -> None:
+    if connection_type == "ch" and ch_creation_policy is not None:
+        adapter = get_backend_adapter(connection_type)
+        adapter.execute_commands(
+            connection,
+            adapter.build_creation_policy_cleanup_sqls(
+                stage_table,
+                ch_creation_policy,
+                query_label=query_label,
+                if_exists=if_exists,
+            ),
+        )
+        return
     drop_table(
         connection_type,
         connection,
@@ -156,7 +185,37 @@ def cleanup_stage_table_with_retry(
     replace_connection_fn: Any,
     query_label: str | None = None,
     if_exists: bool = True,
+    ch_creation_policy: Any = None,
+    operation_label: str = "stage table",
 ) -> None:
+    if connection_type == "ch" and ch_creation_policy is not None:
+
+        def operation(_attempt: int) -> None:
+            connection = ensure_connection_ref(connection_key, connection_ref)
+            try:
+                cleanup_stage_table(
+                    connection_type,
+                    connection,
+                    stage_table,
+                    query_label=query_label,
+                    if_exists=if_exists,
+                    ch_creation_policy=ch_creation_policy,
+                )
+            except Exception:
+                rollback_fn(connection)
+                replace_connection_fn(connection_key, connection_ref)
+                raise
+
+        retry_fn(
+            operation_name=(f"dropping {operation_label} {stage_table} on {connection_key}"),
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            operation=operation,
+        )
+        return
+    operation_kwargs = (
+        {"operation_label": operation_label} if operation_label != "stage table" else {}
+    )
     drop_table_with_retry(
         connection_type,
         connection_key,
@@ -169,6 +228,7 @@ def cleanup_stage_table_with_retry(
         replace_connection_fn=replace_connection_fn,
         query_label=query_label,
         if_exists=if_exists,
+        **operation_kwargs,
     )
 
 

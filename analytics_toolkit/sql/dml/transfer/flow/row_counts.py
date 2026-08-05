@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # ruff: noqa: BLE001, S110, SIM105
-
 import uuid
 from dataclasses import replace
 from typing import Any
@@ -40,10 +39,9 @@ def best_effort_transfer_target_count(
     *,
     open_connection: Any = get_sql_connection,
     count_rows: Any = count_table_rows,
+    target_connection_runner: Any | None = None,
 ) -> int | None:
-    connection = None
-    try:
-        connection = open_connection(options.to_db_key)
+    def count(connection: Any) -> int:
         return int(
             count_rows(
                 options.to_db_backend,
@@ -52,6 +50,21 @@ def best_effort_transfer_target_count(
                 query_label=options.query_label,
             )
         )
+
+    if target_connection_runner is not None:
+        try:
+            return int(
+                target_connection_runner(
+                    "final_target_count",
+                    lambda target_ref: count(target_ref["connection"]),
+                )
+            )
+        except Exception:
+            return None
+    connection = None
+    try:
+        connection = open_connection(options.to_db_key)
+        return count(connection)
     except Exception:
         return None
     finally:
@@ -249,13 +262,14 @@ def validate_streamed_row_count(
         )
 
 
-def validate_loaded_stage_row_count(
+def validate_loaded_stage_row_count(  # noqa: PLR0913
     *,
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     total_rows: int,
     open_connection: Any,
+    target_connection_runner: Any | None = None,
 ) -> None:
     del connection_refs
     if not options.validate_row_count:
@@ -282,6 +296,7 @@ def validate_loaded_stage_row_count(
         stage_state,
         total_rows,
         open_connection=open_connection,
+        target_connection_runner=target_connection_runner,
     )
     stage_state.stage_rows = stage_rows
     if stage_rows != expected_rows:
@@ -315,6 +330,7 @@ def _count_loaded_stage_rows(
     total_rows: int,
     *,
     open_connection: Any,
+    target_connection_runner: Any | None = None,
 ) -> int:
     if total_rows == 0:
         return 0
@@ -327,10 +343,9 @@ def _count_loaded_stage_rows(
         if options.write_mode == "upsert" and stage_state.stage_tables is not None
         else [stage_table]
     )
-    return run_with_fresh_connection(
-        options.to_db_key,
-        "validate_stage_row_count",
-        lambda target_ref: sum(
+
+    def operation(target_ref: dict[str, Any]) -> int:
+        return sum(
             count_table_rows(
                 options.to_db_backend,
                 target_ref["connection"],
@@ -338,7 +353,14 @@ def _count_loaded_stage_rows(
                 query_label=options.query_label,
             )
             for current_stage_table in stage_tables
-        ),
+        )
+
+    if target_connection_runner is not None:
+        return int(target_connection_runner("validate_stage_row_count", operation))
+    return run_with_fresh_connection(
+        options.to_db_key,
+        "validate_stage_row_count",
+        operation,
         open_connection=open_connection,
     )
 

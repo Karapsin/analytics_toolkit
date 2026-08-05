@@ -47,6 +47,11 @@ class SqlOperationMetadata:
     ignore_source_staging: bool | None = None
     source_staging_mode: str | None = None
     source_stage_count: int | None = None
+    soft_limited_read_concurrency: int | None = None
+    soft_limited_write_concurrency: int | None = None
+    soft_concurrency_cap: int | None = None
+    hard_concurrency_cap: int | None = None
+    live_source_stage_limit: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -74,11 +79,16 @@ class SqlOperationMetadata:
             "aggregate_stage_table": self.aggregate_stage_table,
             "requested_read_concurrency": self.requested_read_concurrency,
             "requested_write_concurrency": self.requested_write_concurrency,
+            "soft_limited_read_concurrency": self.soft_limited_read_concurrency,
+            "soft_limited_write_concurrency": self.soft_limited_write_concurrency,
+            "soft_concurrency_cap": self.soft_concurrency_cap,
+            "hard_concurrency_cap": self.hard_concurrency_cap,
             "effective_read_concurrency": self.effective_read_concurrency,
             "effective_write_concurrency": self.effective_write_concurrency,
             "ignore_source_staging": self.ignore_source_staging,
             "source_staging_mode": self.source_staging_mode,
             "source_stage_count": self.source_stage_count,
+            "live_source_stage_limit": self.live_source_stage_limit,
         }
 
 

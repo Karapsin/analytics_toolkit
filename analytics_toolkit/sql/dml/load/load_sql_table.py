@@ -7,6 +7,7 @@ from typing import Any, Callable, Iterator, Sequence
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.refs import ensure_connection_ref
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
 
 from ...backends import get_backend_adapter
@@ -15,6 +16,9 @@ from ...connection.config import resolve_connection_backend
 
 class AmbiguousTableLoadError(Exception):
     pass
+
+
+_MAX_SAFE_EXCEPTION_TYPE_CHARS = 80
 
 
 def execute_values(
@@ -44,13 +48,15 @@ def insert_table_batch(
     connection_key: str | None = None,
     rollback_fn: Callable[[Any], None] | None = None,
     replace_connection_fn: Callable[[str, dict[str, Any]], None] | None = None,
+    *,
+    safe_exception_logging: bool = False,
 ) -> int:
     backend = resolve_connection_backend(connection_type)
     adapter = get_backend_adapter(backend)
     normalized_batch = adapter.normalize_insert_batch(batch)
 
     def operation(attempt: int) -> int:
-        connection = connection_ref["connection"]
+        connection = ensure_connection_ref(connection_key, connection_ref)
         try:
             _insert_batch_backend(
                 backend,
@@ -76,7 +82,7 @@ def insert_table_batch(
                 )
                 time_print(
                     f"Original insert error for {table_name}: "
-                    f"{type(exc).__name__}: {exc!r}",
+                    f"{_logged_insert_exception(exc, safe=safe_exception_logging)}",
                     connection=connection_type,
                     backend=backend,
                 )
@@ -123,6 +129,9 @@ def insert_rows_batch(
     connection_key: str | None = None,
     rollback_fn: Callable[[Any], None] | None = None,
     replace_connection_fn: Callable[[str, dict[str, Any]], None] | None = None,
+    *,
+    safe_exception_logging: bool = False,
+    log_prefix: str = "",
 ) -> int:
     backend = resolve_connection_backend(connection_type)
     adapter = get_backend_adapter(backend)
@@ -132,7 +141,7 @@ def insert_rows_batch(
     normalized_rows = adapter.normalize_insert_rows(row_tuples)
 
     def operation(attempt: int) -> int:
-        connection = connection_ref["connection"]
+        connection = ensure_connection_ref(connection_key, connection_ref)
         try:
             started_at = time.perf_counter()
             _insert_rows_backend(
@@ -154,15 +163,15 @@ def insert_rows_batch(
         except Exception as exc:
             if adapter.should_wrap_insert_error_as_ambiguous(connection, exc):
                 time_print(
-                    f"Stage insert failed for {table_name}; "
+                    f"{log_prefix}Stage insert failed for {table_name}; "
                     "the current stage table will be discarded and reloaded "
                     "from scratch.",
                     connection=connection_type,
                     backend=backend,
                 )
                 time_print(
-                    f"Original insert error for {table_name}: "
-                    f"{type(exc).__name__}: {exc!r}",
+                    f"{log_prefix}Original insert error for {table_name}: "
+                    f"{_logged_insert_exception(exc, safe=safe_exception_logging)}",
                     connection=connection_type,
                     backend=backend,
                 )
@@ -191,6 +200,15 @@ def insert_rows_batch(
         timeout_increment=timeout_increment,
         operation=operation,
     )
+
+
+def _logged_insert_exception(exc: Exception, *, safe: bool) -> str:
+    if not safe:
+        return f"{type(exc).__name__}: {exc!r}"
+    exception_type = type(exc).__name__
+    if len(exception_type) > _MAX_SAFE_EXCEPTION_TYPE_CHARS:
+        exception_type = exception_type[: _MAX_SAFE_EXCEPTION_TYPE_CHARS - 3] + "..."
+    return f"{exception_type} (details suppressed)"
 
 
 def _replace_connection_before_next_insert_retry(

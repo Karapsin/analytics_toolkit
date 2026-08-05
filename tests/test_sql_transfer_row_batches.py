@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import inspect
 import io
+import sys
 import threading
 import warnings
-import sys
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
 from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -1719,7 +1720,7 @@ def test_transfer_failure_cleanup_drops_only_target_absent_at_start(
     )
     monkeypatch.setattr(
         finalize_module,
-        "drop_table_with_retry",
+        "cleanup_stage_table_with_retry",
         lambda _backend, _key, _ref, table_name, **_kwargs: dropped.append(table_name),
     )
 
@@ -1858,6 +1859,7 @@ def test_run_keyed_transfer_attempt_uses_one_stage_finalize_and_cleanup(
         "create_stage_state",
         "inspect_source_query_schema",
         "initialize_shared_stage",
+        "close:source coordinator",
         "load_keyed_stage_slices",
         "finalize_loaded_stage",
         "cleanup_stage",
@@ -3401,6 +3403,39 @@ def test_transfer_dry_run_shows_from_table_source_plan(
     assert read_source_sqls == ["SELECT * FROM sandbox.source_table"]
 
 
+def test_transfer_dry_run_reports_unkeyed_source_snapshot_barrier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source", transfer_staging_schema="source_stage"),
+        "target": make_gp_config("target", transfer_staging_schema="target_stage"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_table="sandbox.source_table",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        dry_run=True,
+    )
+
+    assert plan.options["source_staging_mode"] == "source_staged"
+    assert plan.options["source_stage_count"] == 1
+    assert plan.options["source_stage_phase_barrier"] is True
+    assert plan.options["source_stage_creation"] == "single_snapshot"
+    assert plan.options["source_stage_lifecycle"] == "snapshot_then_stream_and_drop"
+    assert plan.options["live_source_stage_limit"] is None
+    assert plan.options["batch_queue_capacity_per_writer"] is None
+    assert plan.metadata.source_staging_mode == "source_staged"
+    assert plan.metadata.source_stage_count == 1
+
+
 def test_transfer_dry_run_shows_keyed_slice_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3470,6 +3505,7 @@ def test_transfer_dry_run_reports_split_concurrency_pipeline(
         transfer_key_values=[1, 2, 3, 4],
         read_concurrency=6,
         write_concurrency=2,
+        hard_concurrency_cap=6,
         dry_run=True,
     )
 
@@ -3479,6 +3515,9 @@ def test_transfer_dry_run_reports_split_concurrency_pipeline(
     assert plan.options["effective_read_concurrency"] == 4
     assert plan.options["effective_write_concurrency"] == 2
     assert plan.options["queue_capacity"] == 2
+    assert plan.options["source_stage_phase_barrier"] is None
+    assert plan.options["batch_queue_capacity_per_writer"] is None
+    assert plan.options["reader_scheduling"] == "static_round_robin"
     assert plan.options["reader_slice_assignments"] == {
         0: [0],
         1: [1],
@@ -3488,6 +3527,46 @@ def test_transfer_dry_run_reports_split_concurrency_pipeline(
     assert plan.options["target_stage_count"] == 2
     assert plan.metadata.requested_read_concurrency == 6
     assert plan.metadata.effective_write_concurrency == 2
+
+
+def test_transfer_dry_run_reports_concurrency_caps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {"source": make_gp_config("source"), "target": make_gp_config("target")}
+    monkeypatch.setattr(
+        transfer_api_module, "get_connection_config", lambda db_key: configs[db_key]
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id from source_table where {event_date}",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        transfer_keys="event_date",
+        transfer_key_values=[1, 2, 3, 4],
+        read_concurrency=8,
+        write_concurrency=3,
+        soft_concurrency_cap=2,
+        hard_concurrency_cap=5,
+        dry_run=True,
+    )
+
+    assert plan.options["requested_read_concurrency"] == 8
+    assert plan.options["requested_write_concurrency"] == 3
+    assert plan.options["soft_concurrency_cap"] == 2
+    assert plan.options["hard_concurrency_cap"] == 5
+    assert plan.options["soft_limited_read_concurrency"] == 2
+    assert plan.options["soft_limited_write_concurrency"] == 2
+    assert plan.options["effective_read_concurrency"] == 2
+    assert plan.options["effective_write_concurrency"] == 2
+    assert plan.options["source_connection_limit"] == 2
+    assert plan.options["target_connection_limit"] == 2
+    assert plan.metadata.requested_read_concurrency == 8
+    assert plan.metadata.soft_limited_read_concurrency == 2
+    assert plan.metadata.soft_limited_write_concurrency == 2
+    assert plan.metadata.soft_concurrency_cap == 2
+    assert plan.metadata.hard_concurrency_cap == 5
 
 
 def test_transfer_rejects_legacy_and_split_concurrency_conflict() -> None:
@@ -3538,10 +3617,78 @@ def test_transfer_resolves_concurrency_modes(
         concurrency=legacy,
         read_concurrency=read,
         write_concurrency=write,
+        hard_concurrency_cap=6,
         slice_count=10,
         direct_keyed=True,
     )
     assert (resolved.effective_read, resolved.effective_write) == expected
+
+
+def test_transfer_resolves_soft_and_hard_concurrency_caps() -> None:
+    resolved = transfer_concurrency_module.resolve_transfer_concurrency(
+        concurrency=None,
+        read_concurrency=8,
+        write_concurrency=3,
+        soft_concurrency_cap=2,
+        hard_concurrency_cap=5,
+        slice_count=10,
+        direct_keyed=True,
+    )
+
+    assert (resolved.requested_read, resolved.requested_write) == (8, 3)
+    assert (resolved.soft_limited_read, resolved.soft_limited_write) == (2, 2)
+    assert (resolved.effective_read, resolved.effective_write) == (2, 2)
+    assert resolved.soft_concurrency_cap == 2
+    assert resolved.hard_concurrency_cap == 5
+
+    slice_limited = transfer_concurrency_module.resolve_transfer_concurrency(
+        concurrency=None,
+        read_concurrency=5,
+        write_concurrency=4,
+        soft_concurrency_cap=None,
+        hard_concurrency_cap=5,
+        slice_count=2,
+        direct_keyed=True,
+    )
+    assert (slice_limited.soft_limited_read, slice_limited.soft_limited_write) == (5, 4)
+    assert (slice_limited.effective_read, slice_limited.effective_write) == (2, 2)
+
+
+def test_transfer_rejects_concurrency_above_hard_cap() -> None:
+    with pytest.raises(
+        ValueError,
+        match="effective transfer concurrency exceeds hard_concurrency_cap",
+    ):
+        transfer_concurrency_module.resolve_transfer_concurrency(
+            concurrency=None,
+            read_concurrency=8,
+            write_concurrency=3,
+            soft_concurrency_cap=None,
+            hard_concurrency_cap=5,
+            slice_count=2,
+            direct_keyed=True,
+        )
+
+
+def test_transfer_rejects_hard_cap_before_connection_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda _db_key: pytest.fail("connection config lookup must not run"),
+    )
+
+    with pytest.raises(ValueError, match="exceeds hard_concurrency_cap"):
+        transfer_api_module.transfer_table(
+            from_db="source",
+            to_db="target",
+            from_table="sandbox.source",
+            to_table="sandbox.target",
+            concurrency=6,
+            hard_concurrency_cap=5,
+            dry_run=True,
+        )
 
 
 def test_transfer_rejects_split_concurrency_outside_keyed_scope() -> None:
@@ -3578,19 +3725,102 @@ def test_transfer_split_concurrency_supports_keyed_source_staging(
         transfer_key_values=[1, 2, 3],
         read_concurrency=6,
         write_concurrency=2,
+        target_batch_memory_mb=4,
+        hard_concurrency_cap=6,
         dry_run=True,
     )
 
     assert plan.options["source_staging_mode"] == "source_staged"
     assert plan.options["source_stage_count"] == 3
-    assert plan.options["source_stage_phase_barrier"] is True
+    assert plan.options["live_source_stage_limit"] == 5
+    assert plan.options["source_stage_phase_barrier"] is False
+    assert plan.options["source_stage_creation"] == "lazy_per_key"
     assert plan.options["writer_scheduling"] == "whole_key"
-    assert plan.options["queue_capacity"] is None
-    assert plan.options["reader_slice_assignments"] == {0: [0], 1: [1], 2: [2]}
-    assert [step.phase for step in plan.statements].count("materialize_source_stage") == 3
+    assert plan.options["queue_capacity"] == 2
+    assert plan.options["batch_queue_capacity_per_writer"] == 1
+    assert plan.options["resident_batch_slots"] == 4
+    assert plan.options["target_batch_memory_scope"] == "aggregate_resident_batches"
+    assert plan.options["target_memory_bytes_per_resident_batch"] == 1024 * 1024
+    assert plan.options["reader_scheduling"] == "dynamic_pending_key_claims"
+    assert plan.options["target_stage_count_is_maximum"] is True
+    assert plan.options["target_stage_creation"] == "lazy_first_non_empty_key"
+    assert plan.options["target_stage_maximum"] == 2
+    assert plan.options["reader_slice_assignments"] is None
+    assert plan.options["source_stage_lifecycle"] == (
+        "per_key_ctas_count_stream_validate_acknowledge_drop"
+    )
+    phases = [step.phase for step in plan.statements]
+    assert phases.count("create_stage_if_needed") == 2
+    assert phases.count("create_stage") == 0
+    assert phases.count("materialize_source_stage") == 3
+    assert phases.count("count_source_stage") == 3
+    assert phases.count("load_stage") == 3
+    assert phases.count("validate_key_stage") == 3
+    assert phases.count("drop_source_stage") == 3
+    assert phases.count("drop_stage_if_created") == 2
+    lifecycle_phases = [
+        phase
+        for phase in phases
+        if phase
+        in {
+            "materialize_source_stage",
+            "count_source_stage",
+            "load_stage",
+            "validate_key_stage",
+            "drop_source_stage",
+        }
+    ]
+    assert lifecycle_phases == [
+        phase
+        for _slice in range(3)
+        for phase in (
+            "materialize_source_stage",
+            "count_source_stage",
+            "load_stage",
+            "validate_key_stage",
+            "drop_source_stage",
+        )
+    ]
+    assert not any("worker 0 streamed keyed source slice batches" in sql for sql in plan.sqls)
+    assert any("dynamically scheduled ready whole-key batches" in sql for sql in plan.sqls)
     assert plan.metadata.ignore_source_staging is False
     assert plan.metadata.source_staging_mode == "source_staged"
     assert plan.metadata.source_stage_count == 3
+    assert plan.metadata.live_source_stage_limit == 5
+
+
+def test_lazy_keyed_upsert_dry_run_has_no_consolidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source", transfer_staging_schema="source_stage"),
+        "target": make_gp_config("target", transfer_staging_schema="target_stage"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    plan = transfer_api_module.transfer_table(
+        from_db="source",
+        to_db="target",
+        from_sql="select id from source_table where {event_date}",
+        to_table="sandbox.target",
+        table_schema={"id": "INTEGER"},
+        transfer_keys="event_date",
+        transfer_key_values=[1, 2, 3],
+        key_columns="id",
+        write_mode="upsert",
+        read_concurrency=3,
+        write_concurrency=2,
+        dry_run=True,
+    )
+
+    phases = [step.phase for step in plan.statements]
+    assert "consolidate_stage" not in phases
+    assert "consolidate_stage_if_created" not in phases
+    assert phases.count("upsert_target") >= 1
 
 
 def test_transfer_ignore_source_staging_uses_direct_keyed_pipeline(
@@ -4166,6 +4396,43 @@ def test_transfer_rejects_invalid_concurrency_values(name: str, value: Any) -> N
             slice_count=2,
             direct_keyed=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("soft_concurrency_cap", 0),
+        ("soft_concurrency_cap", True),
+        ("soft_concurrency_cap", 1.5),
+        ("hard_concurrency_cap", 0),
+        ("hard_concurrency_cap", True),
+        ("hard_concurrency_cap", None),
+    ],
+)
+def test_transfer_rejects_invalid_concurrency_caps(name: str, value: Any) -> None:
+    values = {"soft_concurrency_cap": None, "hard_concurrency_cap": 5}
+    values[name] = value
+    with pytest.raises(ValueError, match=rf"{name} must be a positive integer"):
+        transfer_concurrency_module.resolve_transfer_concurrency(
+            concurrency=1,
+            read_concurrency=None,
+            write_concurrency=None,
+            **values,
+            slice_count=None,
+            direct_keyed=False,
+        )
+
+
+def test_transfer_public_signature_exposes_concurrency_caps() -> None:
+    sql_module = importlib.import_module("analytics_toolkit.sql")
+    signature = inspect.signature(sql_module.transfer)
+
+    assert signature.parameters["soft_concurrency_cap"].default is None
+    assert signature.parameters["hard_concurrency_cap"].default == 5
+    assert list(signature.parameters)[-2:] == [
+        "soft_concurrency_cap",
+        "hard_concurrency_cap",
+    ]
 
 
 def test_transfer_dry_run_shows_keyed_from_table_slice_plan(
@@ -6833,16 +7100,58 @@ def test_ensure_final_upsert_stage_table_creates_partition_stage(
         "_run_with_fresh_target_connection",
         lambda _options, _role, operation: operation({"connection": object()}),
     )
-    monkeypatch.setattr(
-        finalize_module,
-        "create_stage_table",
-        lambda **kwargs: created.append(kwargs) or "stage.final",
-    )
+
+    def create_stage(**kwargs: Any) -> str:
+        created.append(kwargs)
+        kwargs["on_stage_candidate"]("stage.final")
+        return "stage.final"
+
+    monkeypatch.setattr(finalize_module, "create_stage_table", create_stage)
 
     finalize_module._ensure_final_upsert_stage_table(options, state)
 
     assert state.final_upsert_stage_table == "stage.final"
+    assert state.stage_table_candidates == ["stage.final"]
     assert created[0]["column_types"] == {"id": "INTEGER"}
+
+
+def test_final_upsert_partial_stage_candidate_remains_visible_to_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(write_mode="upsert")
+    state = models_module.TransferStageState(
+        target_exists=True,
+        stage_table_created=True,
+        stage_table="stage.primary",
+        first_non_empty_batch=pd.DataFrame({"id": [1]}),
+        stage_column_types={"id": "BIGINT"},
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(uses_partition_replacement_upsert=lambda: True),
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "_run_with_fresh_target_connection",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+
+    def partial_create(**kwargs: Any) -> str:
+        kwargs["on_stage_candidate"]("stage.partial_upsert")
+        message = "distributed create failed after shard creation"
+        raise OSError(message)
+
+    monkeypatch.setattr(finalize_module, "create_stage_table", partial_create)
+
+    with pytest.raises(OSError, match="distributed create failed"):
+        finalize_module._ensure_final_upsert_stage_table(options, state)
+
+    assert state.final_upsert_stage_table == "stage.partial_upsert"
+    assert finalize_module._stage_tables_to_cleanup(state) == [
+        "stage.primary",
+        "stage.partial_upsert",
+    ]
 
 
 def test_ensure_final_upsert_stage_table_requires_sample(
@@ -6887,7 +7196,7 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
     )
     monkeypatch.setattr(
         finalize_module,
-        "drop_table_with_retry",
+        "cleanup_stage_table_with_retry",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("target cleanup")),
     )
     monkeypatch.setattr(
@@ -7680,6 +7989,30 @@ def test_transfer_restarts_ambiguous_stage_load_and_uses_policy_retry_counts(
     assert calls == [(2, 0), (2, 0)]
 
 
+def test_unkeyed_source_staged_full_retry_uses_safe_exception_logging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = make_progress_options(
+        source_transfer_staging_schema="source_stage",
+        replace_target_table=True,
+        retry_cnt=1,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+    )
+    retry_options: list[dict[str, Any]] = []
+    monkeypatch.setattr(transfer_api_module, "build_transfer_options", lambda **_k: options)
+    monkeypatch.setattr(transfer_api_module, "run_transfer_attempt", lambda **_k: 3)
+
+    def retry(**kwargs: Any) -> int:
+        retry_options.append(kwargs)
+        return kwargs["operation"](1)
+
+    monkeypatch.setattr(transfer_api_module, "run_retrying_operation", retry)
+
+    assert transfer_api_module.transfer_table("source", "target") == 3
+    assert retry_options[0]["safe_exception_logging"] is True
+
+
 def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -8220,7 +8553,7 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
     )
     monkeypatch.setattr(
         finalize_module,
-        "drop_table_with_retry",
+        "cleanup_stage_table_with_retry",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("target")),
     )
     monkeypatch.setattr(

@@ -1,34 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
-import pandas as pd
-
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ....backends import get_backend_adapter
 from ....connection.config import get_connection_config
-from ....connection.errors import SqlOperationContext, sql_preview
 from ....connection.get_sql_connection import get_sql_connection
-from ....ddl.api import _build_create_table_sqls
 from ....ddl.schema import normalize_table_schema
 from ....execution.operation_runner import (
     run_annotated_once,
     run_retrying_operation,
     timed_public_sql_function,
     tracked_sql_operation,
-)
-from ....execution.plan_steps import (
-    add_analyze_step,
-    add_cleanup_stage_step,
-    add_clear_target_steps,
-    add_count_step,
-    add_create_table_placeholder_step,
-    add_create_table_steps,
-    add_insert_from_stage_step,
-    add_load_stage_step,
 )
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...ddl_options import resolve_operation_ddl
@@ -42,17 +28,9 @@ from ..staging import _sanitize_transfer_staging_username
 from . import options as transfer_options
 from .attempt import run_transfer_attempt
 from .concurrency import resolve_transfer_concurrency
-from .dry_run import (
-    add_insert_target_dry_run_steps,
-    add_upsert_target_dry_run_steps,
-    dry_run_final_upsert_stage_table_name,
-    dry_run_stage_external_location,
-    dry_run_stage_table_names,
-    dry_run_transfer_options,
-    source_batches_label,
-)
+from .dry_run import build_transfer_table_plan as build_dry_run_transfer_table_plan
 from .keys import normalize_transfer_slices
-from .parquet_stage import build_create_parquet_stage_table_sql
+from .logging import TransferAttemptLogState, build_transfer_operation_context
 from .row_counts import best_effort_transfer_target_count
 from .runtime_identity import prepare_transfer_runtime
 from .source import normalize_transfer_source
@@ -120,6 +98,8 @@ def transfer_table(
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -173,10 +153,13 @@ def transfer_table(
         concurrency=concurrency,
         read_concurrency=read_concurrency,
         write_concurrency=write_concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
         ignore_source_staging=ignore_source_staging,
         trino_mode=trino_mode,
         validate_row_count=validate_row_count,
         ch_count_limit_read=ch_count_limit_read,
+        collect_final_target_count=return_metadata,
     )
 
     if dry_run or return_sql:
@@ -184,6 +167,10 @@ def transfer_table(
 
     options = prepare_transfer_runtime(options, dry_run=False)
     transfer_id = options.transfer_id or ""
+    source_staged_transfer = options.source_transfer_staging_schema is not None
+    lazy_keyed_source_staging = (
+        options.transfer_slices is not None and options.source_transfer_staging_schema is not None
+    )
 
     time_print(
         f"Starting table transfer from {options.from_db_key} "
@@ -195,6 +182,10 @@ def transfer_table(
         transfer_id=transfer_id,
         requested_read_concurrency=options.transfer_concurrency.requested_read,
         requested_write_concurrency=options.transfer_concurrency.requested_write,
+        soft_limited_read_concurrency=options.transfer_concurrency.soft_limited_read,
+        soft_limited_write_concurrency=options.transfer_concurrency.soft_limited_write,
+        soft_concurrency_cap=options.transfer_concurrency.soft_concurrency_cap,
+        hard_concurrency_cap=options.transfer_concurrency.hard_concurrency_cap,
         effective_read_concurrency=options.transfer_concurrency.effective_read,
         effective_write_concurrency=options.transfer_concurrency.effective_write,
         ignore_source_staging=options.ignore_source_staging,
@@ -202,15 +193,29 @@ def transfer_table(
             "source_staged" if options.source_transfer_staging_schema else "direct"
         ),
         source_stage_count=(
-            options.transfer_concurrency.effective_read
+            len(options.transfer_slices)
             if options.transfer_slices and options.source_transfer_staging_schema
             else int(options.source_transfer_staging_schema is not None)
         ),
+        live_source_stage_limit=(
+            options.transfer_concurrency.effective_read
+            + options.transfer_concurrency.effective_write
+            if options.transfer_slices and options.source_transfer_staging_schema
+            else None
+        ),
     )
     stream_retry_state = TransferStreamRetryState(options)
+    completed_attempt_options = options
+    attempt_log_state = TransferAttemptLogState()
 
     def transfer_operation(attempt: int) -> int:
-        attempt_options = stream_retry_state.options_for_attempt()
+        nonlocal completed_attempt_options
+        attempt_options = replace(
+            stream_retry_state.options_for_attempt(),
+            attempt_number=attempt,
+        )
+        if attempt > 1:
+            time_print(attempt_log_state.retry_message(attempt, options.full_retry_cnt))
         attempt_policy = get_backend_adapter(
             attempt_options.to_db_backend,
         ).transfer_attempt_policy(attempt_options.retry_cnt)
@@ -222,29 +227,36 @@ def transfer_table(
             phase="transfer",
             retry_attempt=attempt,
             query_label=attempt_options.query_label,
-            preview_sql=attempt_options.source_sql,
+            preview_sql=None if source_staged_transfer else attempt_options.source_sql,
         ):
             try:
-                if not attempt_policy.retry_ambiguous_stage_load:
-                    return run_transfer_attempt(
-                        options=attempt_options,
-                        read_retry_cnt=attempt_options.retry_cnt,
-                        insert_retry_cnt=attempt_policy.insert_retry_cnt,
-                    )
-
-                def stage_restart_operation(inner_attempt: int) -> int:
-                    del inner_attempt
-                    try:
-                        return run_transfer_attempt(
+                if lazy_keyed_source_staging or not attempt_policy.retry_ambiguous_stage_load:
+                    result = attempt_log_state.run(
+                        lambda: run_transfer_attempt(
                             options=attempt_options,
                             read_retry_cnt=attempt_options.retry_cnt,
                             insert_retry_cnt=attempt_policy.insert_retry_cnt,
                         )
+                    )
+                    completed_attempt_options = attempt_options
+                    return result
+
+                def stage_restart_operation(inner_attempt: int) -> int:
+                    del inner_attempt
+                    try:
+                        return attempt_log_state.run(
+                            lambda: run_transfer_attempt(
+                                options=attempt_options,
+                                read_retry_cnt=attempt_options.retry_cnt,
+                                insert_retry_cnt=attempt_policy.insert_retry_cnt,
+                            )
+                        )
                     except AmbiguousTableLoadError as exc:
-                        time_print(f"Discarding staged load and restarting from scratch: {exc!r}")
+                        detail = type(exc).__name__ if source_staged_transfer else repr(exc)
+                        time_print(f"Discarding staged load and restarting from scratch: {detail}")
                         raise
 
-                return run_with_retry(
+                result = run_with_retry(
                     operation_name=(
                         f"restarting staged transfer from {attempt_options.from_db_key} "
                         f"to {attempt_options.to_db_key}: "
@@ -254,7 +266,10 @@ def transfer_table(
                     timeout_increment=attempt_options.timeout_increment,
                     operation=stage_restart_operation,
                     retryable_exceptions=(AmbiguousTableLoadError,),
+                    safe_exception_logging=source_staged_transfer,
                 )
+                completed_attempt_options = attempt_options
+                return int(result)
             except TransferSourceStreamReadError as exc:
                 stream_retry_state.handle_failure(
                     exc,
@@ -263,16 +278,8 @@ def transfer_table(
                 )
                 raise
 
-    def transfer_context(attempt: int) -> SqlOperationContext:
-        return SqlOperationContext(
-            operation="transfer_table",
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="transfer",
-            target_table=options.target_table,
-            retry_attempt=attempt,
-            sql_preview=sql_preview(options.source_sql),
-        )
+    def transfer_context(attempt: int) -> Any:
+        return build_transfer_operation_context(options, attempt)
 
     if options.replace_target_table:
         total_rows = run_retrying_operation(
@@ -284,6 +291,7 @@ def transfer_table(
             timeout_increment=options.full_timeout_increment,
             operation=transfer_operation,
             context_factory=transfer_context,
+            safe_exception_logging=source_staged_transfer,
         )
     else:
         total_rows = run_annotated_once(
@@ -297,27 +305,50 @@ def transfer_table(
         f"(transfer_id={transfer_id})"
     )
     if return_metadata:
-        metadata = operation_metadata
-        metadata.source_rows = total_rows
-        if options.row_count_result is not None:
-            metadata.expected_source_rows = options.row_count_result.expected_source_rows
-            metadata.streamed_rows = options.row_count_result.streamed_rows
-            metadata.stage_rows = options.row_count_result.stage_rows
-            metadata.row_count_validated = options.row_count_result.row_count_validated
-            metadata.transfer_slice_counts = options.row_count_result.slice_counts_as_dicts()
-        metadata.staged_rows = total_rows
-        metadata.inserted_rows = total_rows
-        metadata.affected_rows = total_rows
-        metadata.final_target_rows = best_effort_transfer_target_count(
+        return _build_transfer_metadata_result(
+            total_rows=total_rows,
+            options=options,
+            completed_attempt_options=completed_attempt_options,
+            metadata=operation_metadata,
+        )
+    return total_rows
+
+
+def _build_transfer_metadata_result(
+    *,
+    total_rows: int,
+    options: TransferOptions,
+    completed_attempt_options: TransferOptions,
+    metadata: SqlOperationMetadata,
+) -> SqlOperationResult:
+    runtime_concurrency = completed_attempt_options.transfer_concurrency
+    metadata.effective_read_concurrency = runtime_concurrency.effective_read
+    metadata.effective_write_concurrency = runtime_concurrency.effective_write
+    metadata.source_rows = total_rows
+    row_count_result = completed_attempt_options.row_count_result
+    if row_count_result is not None:
+        metadata.expected_source_rows = row_count_result.expected_source_rows
+        metadata.streamed_rows = row_count_result.streamed_rows
+        metadata.stage_rows = row_count_result.stage_rows
+        metadata.row_count_validated = row_count_result.row_count_validated
+        metadata.transfer_slice_counts = row_count_result.slice_counts_as_dicts()
+    metadata.staged_rows = total_rows
+    metadata.inserted_rows = total_rows
+    metadata.affected_rows = total_rows
+    lazy_keyed_source_staging = (
+        completed_attempt_options.transfer_slices is not None
+        and completed_attempt_options.source_transfer_staging_schema is not None
+    )
+    metadata.final_target_rows = (
+        completed_attempt_options.final_target_rows
+        if lazy_keyed_source_staging
+        else best_effort_transfer_target_count(
             options,
             open_connection=get_sql_connection,
             count_rows=count_table_rows,
         )
-        return SqlOperationResult(
-            rows=total_rows,
-            metadata=metadata,
-        )
-    return total_rows
+    )
+    return SqlOperationResult(rows=total_rows, metadata=metadata)
 
 
 def build_transfer_options(
@@ -376,6 +407,10 @@ def build_transfer_options(
     trino_mode: TrinoTransferMode | None = None,
     validate_row_count: bool = True,
     ch_count_limit_read: bool = True,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
+    *,
+    collect_final_target_count: bool = False,
 ) -> TransferOptions:
     transfer_options.validate_ignore_source_staging(ignore_source_staging)
     transfer_options.validate_transfer_runtime_options(
@@ -400,6 +435,8 @@ def build_transfer_options(
         concurrency=concurrency,
         read_concurrency=read_concurrency,
         write_concurrency=write_concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
     )
     source_sql, source_table = normalize_transfer_source(
         from_sql=from_sql,
@@ -483,6 +520,8 @@ def build_transfer_options(
         concurrency=concurrency,
         read_concurrency=read_concurrency,
         write_concurrency=write_concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
         slice_count=len(transfer_slices) if transfer_slices is not None else None,
         direct_keyed=transfer_slices is not None,
     )
@@ -609,6 +648,7 @@ def build_transfer_options(
         estimate_total_rows=estimate_total_rows,
         validate_row_count=validate_row_count,
         ch_count_limit_read=ch_count_limit_read,
+        collect_final_target_count=collect_final_target_count,
         regular_ddl_properties=ddl.regular_properties,
         staging_ddl_properties=ddl.staging_properties,
         parquet_ddl_properties=ddl.parquet_properties,
@@ -621,227 +661,4 @@ def build_transfer_options(
 
 
 def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
-    target_adapter = get_backend_adapter(options.to_db_backend)
-    uses_partition_replacement_upsert = target_adapter.uses_partition_replacement_upsert()
-    stage_tables = dry_run_stage_table_names(options)
-    stage_table = stage_tables[0]
-    insert_page_sizing = target_adapter.transfer_insert_page_sizing(
-        gp_insert_chunk_size=options.gp_insert_chunk_size
-    )
-    stage_external_location = (
-        dry_run_stage_external_location(options) if options.trino_mode == "parquet" else None
-    )
-    plan = SqlPlan(
-        operation="transfer_table",
-        source_alias=options.from_db_key,
-        target_alias=options.to_db_key,
-        source_backend=options.from_db_backend,
-        target_backend=options.to_db_backend,
-        target_table=options.target_table,
-        options=dry_run_transfer_options(
-            options,
-            stage_tables,
-            insert_page_sizing,
-            gp_partitions=_gp_partition_plan_option(options.gp_partitions),
-        ),
-        metadata=SqlOperationMetadata(
-            transfer_id=options.transfer_id,
-            stage_table=stage_table,
-            stage_external_location=stage_external_location,
-            worker_stage_count=len(stage_tables),
-            stage_tables=stage_tables,
-            aggregate_stage_table=stage_table,
-            requested_read_concurrency=options.transfer_concurrency.requested_read,
-            requested_write_concurrency=options.transfer_concurrency.requested_write,
-            effective_read_concurrency=options.transfer_concurrency.effective_read,
-            effective_write_concurrency=options.transfer_concurrency.effective_write,
-            ignore_source_staging=options.ignore_source_staging,
-            source_staging_mode=(
-                "source_staged" if options.source_transfer_staging_schema else "direct"
-            ),
-            source_stage_count=(
-                options.transfer_concurrency.effective_read
-                if options.transfer_slices and options.source_transfer_staging_schema
-                else int(options.source_transfer_staging_schema is not None)
-            ),
-        ),
-    )
-    if options.transfer_slices is None:
-        plan.add(
-            options.source_sql,
-            alias=options.from_db_key,
-            backend=options.from_db_backend,
-            phase="read_source",
-            query_label=options.query_label,
-        )
-    else:
-        for transfer_slice in options.transfer_slices:
-            plan.add(
-                transfer_slice.source_sql,
-                alias=options.from_db_key,
-                backend=options.from_db_backend,
-                phase=(
-                    "materialize_source_stage"
-                    if options.source_transfer_staging_schema
-                    else "read_source"
-                ),
-                query_label=options.query_label,
-            )
-    if options.trino_mode == "parquet":
-        plan.add(
-            build_create_parquet_stage_table_sql(
-                stage_table,
-                options.table_schema,
-                stage_external_location or "<stage external location>",
-                query_label=options.query_label,
-                ddl_properties={
-                    **(options.staging_ddl_properties or {}),
-                    **(options.parquet_ddl_properties or {}),
-                },
-            ),
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="create_stage",
-            target_table=stage_table,
-        )
-    elif options.table_schema is None:
-        for worker_stage_table in stage_tables:
-            add_create_table_placeholder_step(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                phase="create_stage",
-                table_name=worker_stage_table,
-                query_label=options.query_label,
-            )
-    else:
-        for worker_stage_table in stage_tables:
-            add_create_table_steps(
-                plan,
-                _build_create_table_sqls(
-                    options.to_db_backend,
-                    worker_stage_table,
-                    pd.DataFrame(columns=list(options.table_schema)),
-                    table_schema=options.table_schema,
-                    gp_distributed_by_key=options.gp_distributed_by_key,
-                    query_label=options.query_label,
-                    ddl_properties=options.staging_ddl_properties,
-                    ch_creation_policy=options.staging_ch_policy,
-                ),
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                phase="create_stage",
-                table_name=worker_stage_table,
-            )
-    if options.trino_mode == "parquet":
-        add_load_stage_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            stage_table=stage_table,
-            sql=(
-                "WRITE PARQUET FILES TO "
-                f"{stage_external_location or '<stage external location>'} "
-                f"FROM <{source_batches_label(options)}>"
-            ),
-            query_label=options.query_label,
-        )
-    else:
-        for worker_index, worker_stage_table in enumerate(stage_tables):
-            add_load_stage_step(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                stage_table=worker_stage_table,
-                sql=(
-                    f"INSERT INTO {worker_stage_table} SELECT * "
-                    f"FROM (<{source_batches_label(options, worker_index)}>)"
-                ),
-                query_label=options.query_label,
-            )
-        for worker_stage_table in stage_tables[1:]:
-            add_insert_from_stage_step(
-                plan,
-                alias=options.to_db_key,
-                backend=options.to_db_backend,
-                target_table=stage_table,
-                stage_table=worker_stage_table,
-                phase="consolidate_stage",
-                query_label=options.query_label,
-            )
-    if options.write_mode == "replace":
-        adapter = get_backend_adapter(options.to_db_backend)
-        plan.extend(
-            adapter.build_transfer_replace_target_sqls(
-                options.target_table,
-                query_label=options.query_label,
-                ch_cluster=options.ch_cluster,
-                ch_only_shard=options.ch_only_shard,
-            ),
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase=adapter.transfer_replace_target_phase(),
-            target_table=options.target_table,
-        )
-    elif options.write_mode == "truncate_insert":
-        add_clear_target_steps(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            table_name=options.target_table,
-            query_label=options.query_label,
-            ch_cluster=options.ch_cluster,
-            ch_only_shard=options.ch_only_shard,
-        )
-    if options.write_mode == "upsert":
-        add_upsert_target_dry_run_steps(
-            plan,
-            options,
-            stage_table=stage_table,
-            stage_tables=stage_tables,
-        )
-    else:
-        add_insert_target_dry_run_steps(
-            plan,
-            stage_table=stage_table,
-            options=options,
-        )
-    add_analyze_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        table_name=options.target_table,
-        query_label=options.query_label,
-    )
-    add_count_step(
-        plan,
-        alias=options.to_db_key,
-        backend=options.to_db_backend,
-        table_name=options.target_table,
-        query_label=options.query_label,
-    )
-    for worker_stage_table in stage_tables:
-        add_cleanup_stage_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            stage_table=worker_stage_table,
-            query_label=options.query_label,
-        )
-    if options.write_mode == "upsert" and uses_partition_replacement_upsert:
-        add_cleanup_stage_step(
-            plan,
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            stage_table=dry_run_final_upsert_stage_table_name(options),
-            query_label=options.query_label,
-        )
-    if options.trino_mode == "parquet":
-        plan.add(
-            f"DELETE STAGE FILES {stage_external_location or '<stage external location>'}",
-            alias=options.to_db_key,
-            backend=options.to_db_backend,
-            phase="cleanup_stage",
-            target_table=stage_table,
-        )
-    return plan
+    return build_dry_run_transfer_table_plan(options)

@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from analytics_toolkit.sql._log_context import prefix_sql_log_message
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
 
@@ -65,7 +66,7 @@ def insert_rows(
                 query_label=query_label,
             )
             time_print(
-                f"Writing {len(row_chunk)} row(s) to table {table_name}",
+                prefix_sql_log_message(f"Writing {len(row_chunk)} row(s) to table {table_name}"),
                 backend=adapter.backend,
             )
             cursor.execute(sql, params)
