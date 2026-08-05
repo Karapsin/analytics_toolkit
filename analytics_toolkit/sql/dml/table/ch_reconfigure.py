@@ -35,14 +35,18 @@ def ch_reconfigure_table(
     table: str,
     *,
     ch_engine: str | None = None,
-    ch_partition_by: Sequence[str] | str | None = None,
-    ch_order_by: Sequence[str] | str | None = None,
-    ch_cluster: str | None = None,
-    ch_source_cluster: str | None = None,
+    partition_by: Sequence[str] | str | None = None,
+    order_by: Sequence[str] | str | None = None,
     ch_sharding_key: str | None = None,
+    ch_distributed_table: bool | None = None,
+    ch_distributed_engine_template: str | None = None,
+    ch_distributed_cluster: str | None = None,
+    ch_shard_on_cluster: str | None = None,
+    ch_distributed_on_cluster: str | None = None,
     ch_settings: Mapping[str, str | int | float | bool | None] | None = None,
-    ch_reset_partition_by: bool = False,
-    ch_reset_order_by: bool = False,
+    reset_partition_by: bool = False,
+    reset_order_by: bool = False,
+    to_defaults: bool = False,
     validate_row_count: bool = True,
     retry_cnt: int = 5,
     timeout_increment: float = 5,
@@ -58,14 +62,19 @@ def ch_reconfigure_table(
         connection_key=config.connection_key,
         table=table,
         ch_engine=ch_engine,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
-        ch_cluster=ch_cluster,
-        ch_source_cluster=ch_source_cluster,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
         ch_settings=ch_settings,
-        ch_reset_partition_by=ch_reset_partition_by,
-        ch_reset_order_by=ch_reset_order_by,
+        reset_partition_by=reset_partition_by,
+        reset_order_by=reset_order_by,
+        to_defaults=to_defaults,
+        regular_defaults=getattr(getattr(config, "ddl_defaults", None), "regular", None),
         validate_row_count=validate_row_count,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -143,41 +152,54 @@ def _build_options(
     connection_key: str,
     table: str,
     ch_engine: str | None,
-    ch_partition_by: Sequence[str] | str | None,
-    ch_order_by: Sequence[str] | str | None,
-    ch_cluster: str | None,
-    ch_source_cluster: str | None,
+    partition_by: Sequence[str] | str | None,
+    order_by: Sequence[str] | str | None,
     ch_sharding_key: str | None,
+    ch_distributed_table: bool | None,
+    ch_distributed_engine_template: str | None,
+    ch_distributed_cluster: str | None,
+    ch_shard_on_cluster: str | None,
+    ch_distributed_on_cluster: str | None,
     ch_settings: Mapping[str, str | int | float | bool | None] | None,
-    ch_reset_partition_by: bool,
-    ch_reset_order_by: bool,
+    reset_partition_by: bool,
+    reset_order_by: bool,
+    to_defaults: bool,
+    regular_defaults: object | None,
     validate_row_count: bool,
     retry_cnt: int,
     timeout_increment: float,
     query_label: str | None,
 ) -> ChReconfigureOptions:
     validate_retry_options(retry_cnt, timeout_increment)
-    _validate_bool(ch_reset_partition_by, "ch_reset_partition_by")
-    _validate_bool(ch_reset_order_by, "ch_reset_order_by")
+    _validate_bool(reset_partition_by, "reset_partition_by")
+    _validate_bool(reset_order_by, "reset_order_by")
+    _validate_bool(to_defaults, "to_defaults")
     _validate_bool(validate_row_count, "validate_row_count")
-    if ch_reset_partition_by and ch_partition_by is not None:
-        raise InvalidSqlInputError("ch_reset_partition_by cannot be combined with ch_partition_by.")
-    if ch_reset_order_by and ch_order_by is not None:
-        raise InvalidSqlInputError("ch_reset_order_by cannot be combined with ch_order_by.")
+    if ch_distributed_table is not None:
+        _validate_bool(ch_distributed_table, "ch_distributed_table")
+    if reset_partition_by and partition_by is not None:
+        raise InvalidSqlInputError("reset_partition_by cannot be combined with partition_by.")
+    if reset_order_by and order_by is not None:
+        raise InvalidSqlInputError("reset_order_by cannot be combined with order_by.")
     if ch_settings is not None and not isinstance(ch_settings, Mapping):
         raise InvalidSqlInputError("ch_settings must be a mapping when provided.")
     return ChReconfigureOptions(
         connection_key=connection_key,
         table=str(table).strip(),
         ch_engine=ch_engine,
-        ch_partition_by=ch_partition_by,
-        ch_order_by=ch_order_by,
-        ch_cluster=ch_cluster,
-        ch_source_cluster=ch_source_cluster,
+        partition_by=partition_by,
+        order_by=order_by,
         ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=ch_distributed_table,
+        ch_distributed_engine_template=ch_distributed_engine_template,
+        ch_distributed_cluster=ch_distributed_cluster,
+        ch_shard_on_cluster=ch_shard_on_cluster,
+        ch_distributed_on_cluster=ch_distributed_on_cluster,
         ch_settings=dict(ch_settings) if ch_settings is not None else None,
-        ch_reset_partition_by=ch_reset_partition_by,
-        ch_reset_order_by=ch_reset_order_by,
+        reset_partition_by=reset_partition_by,
+        reset_order_by=reset_order_by,
+        to_defaults=to_defaults,
+        regular_defaults=cast("Any", regular_defaults),
         validate_row_count=validate_row_count,
         query_label=query_label,
     )

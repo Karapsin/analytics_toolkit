@@ -15,8 +15,12 @@ from analytics_toolkit.sql.ddl.identifiers import (
     quote_identifier,
 )
 
+from .creation_policy import validate_distributed_template
 from .ddl import _sql_string_literal
-from .metadata import extract_clickhouse_distributed_shard_table
+from .metadata import (
+    extract_clickhouse_distributed_shard_table,
+    extract_clickhouse_function_args,
+)
 
 _SETTING_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -66,27 +70,41 @@ def transform_distributed_create(
     target_cluster: str,
     shard_table: str,
     ch_sharding_key: str | None,
+    ch_distributed_engine_template: str | None = None,
 ) -> exp.Create:
     transformed = retarget_create(create, table_name, execution_cluster)
     database, relation = distributed_table_parts(shard_table)
-    existing = extract_clickhouse_distributed_shard_table(
-        engine_sql(create),
-        database,
+    current_engine = engine_sql(create)
+    existing = extract_clickhouse_distributed_shard_table(current_engine, database)
+    args = _distributed_args_from_template(
+        ch_distributed_engine_template,
+        target_cluster=target_cluster,
+        database=database,
+        shard_table=relation,
+        sharding_key=ch_sharding_key,
     )
-    sharding_key = ch_sharding_key or _distributed_sharding_key(create) or "rand()"
-    if existing is not None and ch_sharding_key is None:
-        sharding_key = _distributed_sharding_key(create) or "rand()"
-    distributed_engine = (
-        "Distributed("
-        f"{_sql_string_literal(target_cluster)}, "
-        f"{_sql_string_literal(database)}, "
-        f"{_sql_string_literal(relation)}, "
-        f"{sharding_key})"
-    )
+    if args is None:
+        args = extract_clickhouse_function_args(current_engine, "Distributed")
+    if args is None or len(args) < 3:
+        raise InvalidSqlInputError(
+            "A Distributed engine template is required when the source table is not Distributed."
+        )
+    args[0] = _sql_string_literal(target_cluster)
+    args[1] = _sql_string_literal(database)
+    args[2] = _sql_string_literal(relation)
+    if ch_sharding_key is not None:
+        if len(args) >= 4:
+            args[3] = ch_sharding_key
+        else:
+            args.append(ch_sharding_key)
+    elif existing is None and len(args) < 4:
+        args.append("rand()")
+    distributed_engine = f"Distributed({', '.join(args)})"
     engine_property = _engine_property(distributed_engine)
     engine = engine_property.this
     if (
-        sharding_key.strip().lower() == "rand()"
+        len(args) >= 4
+        and args[3].strip().lower() == "rand()"
         and isinstance(engine, exp.Anonymous)
         and len(engine.expressions) >= 4
         and isinstance(engine.expressions[3], exp.Rand)
@@ -98,6 +116,32 @@ def transform_distributed_create(
         engine_property,
     )
     return transformed
+
+
+def _distributed_args_from_template(
+    template: str | None,
+    *,
+    target_cluster: str,
+    database: str,
+    shard_table: str,
+    sharding_key: str | None,
+) -> list[str] | None:
+    if template is None:
+        return None
+    validate_distributed_template(template)
+    rendered = template.format(
+        cluster=_sql_string_literal(target_cluster),
+        database=_sql_string_literal(database),
+        shard_table=_sql_string_literal(shard_table),
+        sharding_key=sharding_key or "rand()",
+    )
+    args = extract_clickhouse_function_args(rendered, "Distributed")
+    if args is None or len(args) < 3:
+        raise InvalidSqlInputError(
+            "ch_distributed_engine_template must render a Distributed engine "
+            "with at least three arguments."
+        )
+    return args
 
 
 def retarget_create(

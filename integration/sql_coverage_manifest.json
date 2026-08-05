@@ -672,45 +672,65 @@
           "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
         },
-        "ch_partition_by": {
+        "partition_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
         },
-        "ch_order_by": {
+        "order_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
-        },
-        "ch_cluster": {
-          "kind": "KEYWORD_ONLY",
-          "signature_default": "None",
-          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
-        },
-        "ch_source_cluster": {
-          "kind": "KEYWORD_ONLY",
-          "signature_default": "None",
-          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
         },
         "ch_sharding_key": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "None",
-          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_wrapper_only_change_uses_wrapper_recreate_strategy"]}]
+        },
+        "ch_distributed_table": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_local_to_pair_conversion_uses_regular_defaults", "tests/test_sql_ch_reconfigure.py::test_pair_to_local_conversion_requires_and_uses_facade_scope"]}]
+        },
+        "ch_distributed_engine_template": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_to_defaults_converges_policy_then_applies_explicit_overrides"]}]
+        },
+        "ch_distributed_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_shard_on_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "scenarios": ["ddl.reconfigure.ch"]}]
+        },
+        "ch_distributed_on_cluster": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_pair_to_local_conversion_requires_and_uses_facade_scope"]}]
         },
         "ch_settings": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
         },
-        "ch_reset_partition_by": {
+        "reset_partition_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "False",
           "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_reset_flags_remove_partition_and_restore_tuple_order"]}]
         },
-        "ch_reset_order_by": {
+        "reset_order_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "False",
           "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_reset_flags_remove_partition_and_restore_tuple_order"]}]
+        },
+        "to_defaults": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "False",
+          "states": [{"state": "default-and-true", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_to_defaults_converges_policy_then_applies_explicit_overrides"]}]
         },
         "validate_row_count": {
           "kind": "KEYWORD_ONLY",

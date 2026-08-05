@@ -36,6 +36,14 @@ sorting key, or table settings. The helper resolves cluster macros before
 deciding whether a change stays on the current cluster or requires a
 cross-cluster data migration.
 
+Reconfiguration uses the same dedicated topology inputs as table creation:
+`ch_shard_on_cluster` controls physical DDL, `ch_distributed_on_cluster`
+controls facade DDL, and `ch_distributed_cluster` controls routing. This allows
+a facade deployed on one cluster scope to route to shards on another. When a
+shard is remote from the connected host, its DDL is inspected through the live
+Distributed routing cluster. Use `to_defaults=True` to converge the managed
+topology to the connection's regular `ddl_defaults` policy.
+
 Structural changes create and validate a replacement before cutover. Writers
 must be paused during that window. Atomic and Shared databases use an atomic
 name exchange; other database engines use a reversible rename sequence.

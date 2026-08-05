@@ -89,7 +89,9 @@ for an Airflow-source file. The helper never overwrites an existing
 
 Each connection may define `ddl_defaults`. `regular` applies to persistent
 targets created by `create_sql_table`, create-from-SQL, `load_df`, and
-`transfer`; `staging` applies to toolkit-owned stage, worker, upsert, and
+`transfer`, and is the convergence baseline for
+`ch_reconfigure_table(..., to_defaults=True)`; `staging` applies to
+toolkit-owned stage, worker, upsert, and
 materialized-source tables. Trino alone also accepts `parquet_staging`, which
 is layered after `staging` for external Parquet stages.
 

@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Added optional native ClickHouse protocol support.
 - Hardened staged transfers and standardized stage names across SQL backends.
 - Added pipelined keyed SQL staging with bounded concurrency, validation, and ETA logging.
+- Redesigned ClickHouse reconfiguration topology and defaults inputs.
 
 ## 1.3.11.4 - 2026-07-31
 

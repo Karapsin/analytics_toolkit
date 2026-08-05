@@ -333,9 +333,9 @@ def test_clickhouse_reconfigure_managed_pair(resource_registry: ResourceRegistry
     plan = sql.ch_reconfigure_table(
         "ch_target",
         table,
-        ch_partition_by="toYYYYMM(event_date)",
-        ch_order_by=["event_date", "row_id"],
-        ch_cluster="integration_cluster",
+        partition_by="toYYYYMM(event_date)",
+        order_by=["event_date", "row_id"],
+        ch_shard_on_cluster="integration_cluster",
         retry_cnt=1,
         dry_run=True,
     )
@@ -346,9 +346,9 @@ def test_clickhouse_reconfigure_managed_pair(resource_registry: ResourceRegistry
     result = sql.ch_reconfigure_table(
         "ch_target",
         table,
-        ch_partition_by="toYYYYMM(event_date)",
-        ch_order_by=["event_date", "row_id"],
-        ch_cluster="integration_cluster",
+        partition_by="toYYYYMM(event_date)",
+        order_by=["event_date", "row_id"],
+        ch_shard_on_cluster="integration_cluster",
         retry_cnt=1,
         return_metadata=True,
     )

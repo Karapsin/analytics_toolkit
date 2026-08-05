@@ -10,8 +10,14 @@ from analytics_toolkit.sql.backends.ch.reconfigure import (
     ChReconfigureOptions,
     plan_ch_table_reconfiguration,
 )
+from analytics_toolkit.sql.connection.ddl_defaults import (
+    ClickHouseDistributedDefaults,
+    ClickHouseObjectDefaults,
+    ClickHouseScopeDefaults,
+)
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
+    SqlConfigError,
     UnsupportedConnectionTypeError,
 )
 from analytics_toolkit.sql.execution.plans import SqlOperationResult, SqlPlan
@@ -23,6 +29,10 @@ reconfigure_backend = importlib.import_module("analytics_toolkit.sql.backends.ch
 reconfigure_ddl = importlib.import_module("analytics_toolkit.sql.backends.ch.reconfigure_ddl")
 reconfigure_execution = importlib.import_module(
     "analytics_toolkit.sql.backends.ch.reconfigure_execution"
+)
+reconfigure_policy = importlib.import_module("analytics_toolkit.sql.backends.ch.reconfigure_policy")
+reconfigure_support = importlib.import_module(
+    "analytics_toolkit.sql.backends.ch.reconfigure_support"
 )
 
 
@@ -132,19 +142,37 @@ def _options(**overrides: object) -> ChReconfigureOptions:
         "connection_key": "ch",
         "table": "analytics.events",
         "ch_engine": None,
-        "ch_partition_by": None,
-        "ch_order_by": None,
-        "ch_cluster": None,
-        "ch_source_cluster": None,
+        "partition_by": None,
+        "order_by": None,
         "ch_sharding_key": None,
+        "ch_distributed_table": None,
+        "ch_distributed_engine_template": None,
+        "ch_distributed_cluster": None,
+        "ch_shard_on_cluster": None,
+        "ch_distributed_on_cluster": None,
         "ch_settings": None,
-        "ch_reset_partition_by": False,
-        "ch_reset_order_by": False,
+        "reset_partition_by": False,
+        "reset_order_by": False,
+        "to_defaults": False,
+        "regular_defaults": None,
         "validate_row_count": True,
         "query_label": None,
     }
     values.update(overrides)
     return ChReconfigureOptions(**values)  # type: ignore[arg-type]
+
+
+def _regular_defaults() -> ClickHouseScopeDefaults:
+    return ClickHouseScopeDefaults(
+        create_distributed_pair=True,
+        shard=ClickHouseObjectDefaults("MergeTree", "core"),
+        distributed=ClickHouseDistributedDefaults(
+            "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
+            "core",
+            "{cluster}",
+            "cityHash64(id)",
+        ),
+    )
 
 
 def test_settings_change_uses_direct_alter_and_preserves_ddl() -> None:
@@ -174,8 +202,8 @@ def test_structural_change_builds_atomic_managed_pair_plan() -> None:
         client,
         _options(
             ch_engine="MergeTree",
-            ch_partition_by="toMonday(dt)",
-            ch_order_by=["id", "dt"],
+            partition_by="toMonday(dt)",
+            order_by=["id", "dt"],
         ),
     )
 
@@ -190,7 +218,7 @@ def test_structural_change_builds_atomic_managed_pair_plan() -> None:
         )
     )
     assert 'ORDER BY ("id", "dt")' in rendered
-    assert "INSERT INTO analytics.events__reconfigure_" in rendered
+    assert "INSERT INTO analytics.events__copy_" in rendered
     assert "EXCHANGE TABLES analytics.events_shard AND" in rendered
     assert "INDEX idx_id" in rendered
 
@@ -199,7 +227,7 @@ def test_reset_flags_remove_partition_and_restore_tuple_order() -> None:
     reconfiguration = plan_ch_table_reconfiguration(
         get_backend_adapter("ch"),
         ReconfigureClient(),
-        _options(ch_reset_partition_by=True, ch_reset_order_by=True),
+        _options(reset_partition_by=True, reset_order_by=True),
     )
 
     desired = reconfiguration.after_ddl["shard"]
@@ -224,13 +252,20 @@ def test_cross_cluster_plan_routes_wrapper_and_drops_source_shard() -> None:
     reconfiguration = plan_ch_table_reconfiguration(
         get_backend_adapter("ch"),
         ReconfigureClient(),
-        _options(ch_cluster="archive", ch_engine="MergeTree"),
+        _options(
+            ch_shard_on_cluster="archive",
+            ch_distributed_cluster="archive",
+            ch_distributed_on_cluster="{cluster}",
+            ch_engine="MergeTree",
+        ),
     )
 
     assert reconfiguration.strategy == "cross_cluster_rebuild"
     rendered = "\n".join(reconfiguration.plan.sqls)
     assert "ON CLUSTER 'archive'" in rendered
-    assert "Distributed('archive', 'analytics', 'events_shard', rand())" in rendered
+    assert "Distributed(" in rendered
+    assert "'archive'" in rendered
+    assert "'events_shard'" in rendered
     assert "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER '{cluster}'" in rendered
 
 
@@ -245,7 +280,12 @@ def test_partially_overlapping_clusters_are_rejected() -> None:
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
             client,
-            _options(ch_cluster="archive", ch_engine="MergeTree"),
+            _options(
+                ch_shard_on_cluster="archive",
+                ch_distributed_cluster="archive",
+                ch_distributed_on_cluster="{cluster}",
+                ch_engine="MergeTree",
+            ),
         )
 
 
@@ -286,8 +326,8 @@ def test_public_dry_run_and_settings_execution(monkeypatch: pytest.MonkeyPatch) 
     return_sql_plan = sql.ch_reconfigure_table(
         "ch",
         "analytics.events",
-        ch_cluster="core",
-        ch_source_cluster="{cluster}",
+        ch_distributed_cluster="core",
+        ch_distributed_on_cluster="{cluster}",
         ch_sharding_key="cityHash64(id)",
         validate_row_count=False,
         retry_cnt=1,
@@ -333,8 +373,8 @@ def test_public_option_conflicts_fail_before_connecting(
         sql.ch_reconfigure_table(
             "ch",
             "analytics.events",
-            ch_partition_by="dt",
-            ch_reset_partition_by=True,
+            partition_by="dt",
+            reset_partition_by=True,
         )
 
 
@@ -426,7 +466,7 @@ def test_standalone_table_builds_local_rebuild_plan() -> None:
     reconfiguration = plan_ch_table_reconfiguration(
         get_backend_adapter("ch"),
         LocalReconfigureClient(),
-        _options(table="analytics.local_events", ch_order_by="id"),
+        _options(table="analytics.local_events", order_by="id"),
     )
 
     assert reconfiguration.strategy == "local_rebuild"
@@ -469,13 +509,13 @@ def test_managed_pair_shape_is_validated(
         )
 
 
-def test_source_cluster_must_match_distributed_engine() -> None:
-    with pytest.raises(InvalidSqlInputError, match="does not match"):
+def test_existing_facade_change_requires_explicit_management_scope() -> None:
+    with pytest.raises(InvalidSqlInputError, match="ch_distributed_on_cluster is required"):
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
             ReconfigureClient(),
             _options(
-                ch_source_cluster="archive",
+                ch_distributed_cluster="archive",
                 ch_settings={"index_granularity": 4096},
             ),
         )
@@ -488,8 +528,7 @@ def test_cross_cluster_requires_managed_pair() -> None:
             LocalReconfigureClient(),
             _options(
                 table="analytics.local_events",
-                ch_source_cluster="core",
-                ch_cluster="archive",
+                ch_shard_on_cluster="archive",
                 ch_engine="MergeTree",
             ),
         )
@@ -516,7 +555,12 @@ def test_cross_cluster_refuses_existing_destination_shard() -> None:
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
             ExistingDestinationClient(),
-            _options(ch_cluster="archive", ch_engine="MergeTree"),
+            _options(
+                ch_shard_on_cluster="archive",
+                ch_distributed_cluster="archive",
+                ch_distributed_on_cluster="{cluster}",
+                ch_engine="MergeTree",
+            ),
         )
 
 
@@ -524,11 +568,219 @@ def test_wrapper_only_change_uses_wrapper_recreate_strategy() -> None:
     reconfiguration = plan_ch_table_reconfiguration(
         get_backend_adapter("ch"),
         ReconfigureClient(),
-        _options(ch_sharding_key="cityHash64(id)"),
+        _options(
+            ch_sharding_key="cityHash64(id)",
+            ch_distributed_on_cluster="{cluster}",
+        ),
     )
 
     assert reconfiguration.strategy == "wrapper_recreate"
     assert reconfiguration.replacement_table is not None
+
+
+def test_remote_shard_metadata_supports_separate_facade_and_shard_clusters() -> None:
+    class RemoteShardClient(ReconfigureClient):
+        def query(self, query: str) -> FakeClickHouseResult:
+            if query == "SHOW CREATE TABLE analytics.events_shard":
+                message = "shard is not local"
+                raise RuntimeError(message)
+            if "SELECT create_table_query FROM clusterAllReplicas" in query:
+                self.queries.append(query)
+                return FakeClickHouseResult([(SHARD_DDL,), (SHARD_DDL,)])
+            return super().query(query)
+
+    client = RemoteShardClient()
+    reconfiguration = plan_ch_table_reconfiguration(
+        get_backend_adapter("ch"),
+        client,
+        _options(ch_settings={"index_granularity": 4096}),
+    )
+
+    assert reconfiguration.strategy == "settings"
+    assert any("create_table_query FROM clusterAllReplicas" in query for query in client.queries)
+    assert "ON CLUSTER '{cluster}'" in reconfiguration.plan.sqls[0]
+
+
+def test_remote_shard_metadata_rejects_missing_and_inconsistent_ddl() -> None:
+    empty = SimpleNamespace(query=lambda _sql: FakeClickHouseResult([]))
+    with pytest.raises(InvalidSqlInputError, match="does not exist on cluster"):
+        reconfigure_support.show_create_table_on_cluster(
+            empty,
+            "analytics.events_shard",
+            "core",
+        )
+
+    inconsistent = SimpleNamespace(
+        query=lambda _sql: FakeClickHouseResult(
+            [(SHARD_DDL,), (SHARD_DDL.replace("ORDER BY (dt, id)", "ORDER BY id"),)]
+        )
+    )
+    with pytest.raises(InvalidSqlInputError, match="inconsistent DDL"):
+        reconfigure_support.show_create_table_on_cluster(
+            inconsistent,
+            "analytics.events_shard",
+            "core",
+        )
+
+
+def test_remote_shard_metadata_reraises_when_cluster_cannot_be_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnavailableShardClient(ReconfigureClient):
+        def query(self, query: str) -> FakeClickHouseResult:
+            if query == "SHOW CREATE TABLE analytics.events_shard":
+                message = "shard is not local"
+                raise RuntimeError(message)
+            return super().query(query)
+
+    monkeypatch.setattr(reconfigure_backend, "_resolve_optional_cluster", lambda *_args: None)
+    with pytest.raises(RuntimeError, match="shard is not local"):
+        plan_ch_table_reconfiguration(
+            get_backend_adapter("ch"),
+            UnavailableShardClient(),
+            _options(ch_settings={"index_granularity": 4096}),
+        )
+
+
+def test_cluster_count_and_missing_routing_helpers() -> None:
+    populated = SimpleNamespace(query=lambda _sql: FakeClickHouseResult([(7,)]))
+    empty = SimpleNamespace(query=lambda _sql: FakeClickHouseResult([]))
+    assert reconfigure_support.count_final_rows(populated, "analytics.events", "core") == 7
+    assert reconfigure_support.count_rows_on_cluster(empty, "analytics.events", "core") == 0
+
+    with pytest.raises(InvalidSqlInputError, match="requires ch_distributed_cluster"):
+        reconfigure_policy.resolve_desired_reconfigure_policy(
+            _options(),
+            source_pair=True,
+            source_shard_engine="MergeTree",
+            source_shard_cluster=None,
+            source_distributed_cluster=None,
+        )
+
+
+def test_to_defaults_converges_policy_then_applies_explicit_overrides() -> None:
+    reconfiguration = plan_ch_table_reconfiguration(
+        get_backend_adapter("ch"),
+        ReconfigureClient(),
+        _options(
+            to_defaults=True,
+            regular_defaults=_regular_defaults(),
+            ch_sharding_key="cityHash64(dt)",
+        ),
+    )
+
+    rendered = "\n".join(reconfiguration.plan.sqls)
+    assert reconfiguration.strategy == "managed_pair_rebuild"
+    assert "ENGINE=MergeTree" in rendered
+    assert "cityHash64(dt)" in rendered
+    assert reconfiguration.distributed_on_cluster == "{cluster}"
+    assert reconfiguration.distributed_cluster == "core"
+
+
+def test_to_defaults_requires_regular_clickhouse_defaults() -> None:
+    with pytest.raises(SqlConfigError, match="regular ddl_defaults"):
+        plan_ch_table_reconfiguration(
+            get_backend_adapter("ch"),
+            ReconfigureClient(),
+            _options(to_defaults=True),
+        )
+
+
+def test_local_to_pair_conversion_uses_regular_defaults() -> None:
+    reconfiguration = plan_ch_table_reconfiguration(
+        get_backend_adapter("ch"),
+        LocalReconfigureClient(),
+        _options(
+            table="analytics.local_events",
+            ch_distributed_table=True,
+            regular_defaults=_regular_defaults(),
+        ),
+    )
+
+    rendered = "\n".join(reconfiguration.plan.sqls)
+    assert reconfiguration.strategy == "local_to_pair"
+    assert "analytics.local_events_shard" in rendered
+    assert "Distributed(" in rendered
+    assert reconfiguration.source_pair is False
+    assert reconfiguration.target_pair is True
+
+
+def test_pair_to_local_conversion_requires_and_uses_facade_scope() -> None:
+    reconfiguration = plan_ch_table_reconfiguration(
+        get_backend_adapter("ch"),
+        ReconfigureClient(),
+        _options(
+            ch_distributed_table=False,
+            ch_shard_on_cluster="{cluster}",
+            ch_distributed_on_cluster="{cluster}",
+        ),
+    )
+
+    assert reconfiguration.strategy == "pair_to_local"
+    assert reconfiguration.source_pair is True
+    assert reconfiguration.target_pair is False
+    assert any("RENAME TABLE analytics.events TO" in sql for sql in reconfiguration.cutover_sqls)
+
+
+@pytest.mark.parametrize(
+    ("client", "options", "expected_backup"),
+    [
+        (
+            ReconfigureClient(database_engine="Ordinary"),
+            _options(ch_engine="MergeTree"),
+            "analytics.events_shard__backup_",
+        ),
+        (
+            LocalReconfigureClient(database_engine="Ordinary"),
+            _options(table="analytics.local_events", ch_engine="AggregatingMergeTree"),
+            "analytics.local_events__backup_",
+        ),
+        (
+            ReconfigureClient(database_engine="Ordinary"),
+            _options(
+                ch_engine="MergeTree",
+                ch_sharding_key="cityHash64(id)",
+                ch_distributed_on_cluster="{cluster}",
+            ),
+            "analytics.events__backup_",
+        ),
+        (
+            ReconfigureClient(database_engine="Ordinary"),
+            _options(
+                ch_engine="MergeTree",
+                ch_shard_on_cluster="archive",
+                ch_distributed_cluster="archive",
+                ch_distributed_on_cluster="{cluster}",
+            ),
+            "analytics.events__backup_",
+        ),
+    ],
+)
+def test_non_atomic_rebuilds_track_rename_backups(
+    client: ReconfigureClient,
+    options: ChReconfigureOptions,
+    expected_backup: str,
+) -> None:
+    reconfiguration = plan_ch_table_reconfiguration(
+        get_backend_adapter("ch"),
+        client,
+        options,
+    )
+
+    assert any(name.startswith(expected_backup) for name in reconfiguration.backup_tables)
+
+
+def test_conversion_and_cluster_relocation_are_rejected() -> None:
+    with pytest.raises(InvalidSqlInputError, match="separate"):
+        plan_ch_table_reconfiguration(
+            get_backend_adapter("ch"),
+            ReconfigureClient(),
+            _options(
+                ch_distributed_table=False,
+                ch_shard_on_cluster="archive",
+                ch_distributed_on_cluster="{cluster}",
+            ),
+        )
 
 
 def test_noop_execution_finishes_without_commands() -> None:
@@ -671,6 +923,11 @@ def test_wait_and_best_effort_cleanup_helpers(monkeypatch: pytest.MonkeyPatch) -
     reconfigure_backend._wait_for_created_replacement(None, reconfiguration)
     reconfiguration.replacement_table = None
     reconfigure_backend._wait_for_created_replacement(None, reconfiguration)
+    reconfiguration.temporary_table_scopes = [
+        ("analytics.explicit_local", None),
+        ("analytics.explicit_cluster", "archive"),
+    ]
+    reconfigure_backend._wait_for_created_replacement(None, reconfiguration)
 
     class CleanupAdapter:
         def __init__(self) -> None:
@@ -784,7 +1041,9 @@ def test_reconfigure_ddl_validation_and_value_rendering() -> None:
         reconfigure_ddl._non_empty_string("", "value")
 
 
-def test_reconfigure_ddl_replicated_path_and_property_edges() -> None:
+def test_reconfigure_ddl_replicated_path_and_property_edges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     create = reconfigure_ddl.parse_create_table(
         "CREATE TABLE x (id UInt8) ENGINE=MergeTree ORDER BY id",
         "x",
@@ -816,7 +1075,63 @@ def test_reconfigure_ddl_replicated_path_and_property_edges() -> None:
         "x",
     )
     assert reconfigure_ddl._distributed_sharding_key(city_hash) == "cityHash64(id)"
+    rand_key = reconfigure_ddl.parse_create_table(
+        "CREATE TABLE x (id UInt8) ENGINE=Distributed('core', 'db', 'shard', rand())",
+        "x",
+    )
+    assert reconfigure_ddl._distributed_sharding_key(rand_key) == "rand()"
     assert reconfigure_ddl.distributed_table_parts("events") == ("default", "events")
+
+    with pytest.raises(InvalidSqlInputError, match="template is required"):
+        reconfigure_ddl.transform_distributed_create(
+            create,
+            table_name="facade",
+            execution_cluster=None,
+            target_cluster="core",
+            shard_table="analytics.events_shard",
+            ch_sharding_key=None,
+        )
+    three_argument_distributed = reconfigure_ddl.transform_distributed_create(
+        distributed,
+        table_name="facade",
+        execution_cluster=None,
+        target_cluster="core",
+        shard_table="analytics.events_shard",
+        ch_sharding_key="cityHash64(id)",
+    )
+    assert "cityHash64(id)" in three_argument_distributed.sql(dialect="clickhouse")
+    templated = reconfigure_ddl.transform_distributed_create(
+        create,
+        table_name="facade",
+        execution_cluster="core",
+        target_cluster="core",
+        shard_table="analytics.events_shard",
+        ch_sharding_key=None,
+        ch_distributed_engine_template=(
+            "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
+        ),
+    )
+    assert "rand()" in templated.sql(dialect="clickhouse").lower()
+    templated_without_key = reconfigure_ddl.transform_distributed_create(
+        create,
+        table_name="facade",
+        execution_cluster=None,
+        target_cluster="core",
+        shard_table="analytics.events_shard",
+        ch_sharding_key=None,
+        ch_distributed_engine_template="Distributed({cluster}, {database}, {shard_table})",
+    )
+    assert "rand()" in templated_without_key.sql(dialect="clickhouse").lower()
+
+    monkeypatch.setattr(reconfigure_ddl, "validate_distributed_template", lambda _template: None)
+    with pytest.raises(InvalidSqlInputError, match="at least three arguments"):
+        reconfigure_ddl._distributed_args_from_template(
+            "Distributed('core')",
+            target_cluster="core",
+            database="analytics",
+            shard_table="events_shard",
+            sharding_key=None,
+        )
 
     settings_free = reconfigure_ddl.parse_create_table(
         "CREATE TABLE x (id UInt8) ENGINE=MergeTree ORDER BY id",
@@ -880,8 +1195,9 @@ def test_synchronous_execution_falls_back_for_simple_clients() -> None:
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"ch_order_by": "id", "ch_reset_order_by": True},
+        {"order_by": "id", "reset_order_by": True},
         {"ch_settings": ["not", "a", "mapping"]},
+        {"ch_distributed_table": "yes"},
         {"validate_row_count": "yes"},
     ],
 )
