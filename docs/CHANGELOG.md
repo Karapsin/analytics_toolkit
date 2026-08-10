@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.5 - 2026-08-10
 
 - Batch Greenplum AB metric queries within the slice limit.
 - Added optional native ClickHouse protocol support.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Based transfer throughput and ETA on active batch loading time.
 - Retried fresh ClickHouse transfer finalization before source reloads.
 - Added strict Trino S3 staging schemas, credential aliases, and custom endpoints.
+- Made mandatory pre-commit checks staged, resumable, cached, and parallel.
 
 ## 1.3.11.4 - 2026-07-31
 

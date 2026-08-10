@@ -207,7 +207,7 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
-- Managed pre-commit validation runs a quick metadata, test, lint, and typing gate before the heavier coverage, artifact, and Python-version matrix. A quick-gate failure stops the heavy gate; the final successful run must still pass both gates.
+- Managed pre-commit validation runs ordered static, coverage, artifact, and Python-version matrix stages. Coverage is the canonical Python 3.11 test run; a stage failure stops downstream work, and only exact-tree, exact-toolchain successful-stage receipts may be reused. The final successful run must pass every stage.
 - SQL integration `all` is the exhaustive local profile and includes the
   destructive database, staging, and authentication fault groups. Push CI runs
   core and auth with zero skipped manifest scenarios on x86_64; fault groups run

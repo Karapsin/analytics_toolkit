@@ -98,7 +98,7 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
     _run([sys.executable, "-m", "venv", str(venv_dir)], cwd=install_root)
     python = _venv_executable(venv_dir, "python")
     _run(
-        [python, "-m", "pip", "install", "--no-cache-dir", str(artifact)],
+        [python, "-m", "pip", "install", str(artifact)],
         cwd=install_root,
     )
     _run([python, "-m", "pip", "check"], cwd=install_root)
@@ -108,7 +108,6 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
             "-m",
             "pip",
             "install",
-            "--no-cache-dir",
             f"{artifact}[clickhouse-native]",
         ],
         cwd=install_root,

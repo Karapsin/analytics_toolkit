@@ -901,7 +901,7 @@ def test_command_blocker_ignores_stage_only_stderr_for_actionable_excerpt() -> N
     assert blocker["excerpt"].startswith("FAILED tests/test_example.py::test_case")
 
 
-def test_precommit_checks_stop_before_full_gate_when_quick_gate_fails(
+def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -914,15 +914,116 @@ def test_precommit_checks_stop_before_full_gate_when_quick_gate_fails(
         return _command_result(display, "lint failed", ok=False)
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+    monkeypatch.setattr(mcp_server, "_working_tree_fingerprint", lambda root_path: "tree")
+    monkeypatch.setattr(
+        mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools"
+    )
 
     result = mcp_server.run_checks(level="precommit", root=str(root))
 
-    assert commands == ["release_routines/pre_commit_checks.sh --quick"]
+    assert commands == ["release_routines/pre_commit_checks.sh --static"]
     assert result["result"]["level"] == "precommit"
-    assert result["result"]["command_count"] == 2
+    assert result["result"]["command_count"] == 4
     assert result["result"]["failed_command_index"] == 0
+    assert result["result"]["stages"][0]["status"] == "failed"
     assert result["result"]["failure_changed"] is True
     assert result["result"]["failure_signature"]
+
+
+def test_precommit_resumes_successful_stages_for_identical_tree_and_toolchain(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    commands: list[str] = []
+    fail_artifacts = True
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        nonlocal fail_artifacts
+        display = str(command["display"])
+        commands.append(display)
+        if display.endswith("--artifacts") and fail_artifacts:
+            fail_artifacts = False
+            return _command_result(display, "artifact failure", ok=False)
+        return _command_result(display, "passed")
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+    monkeypatch.setattr(mcp_server, "_working_tree_fingerprint", lambda root_path: "tree")
+    monkeypatch.setattr(
+        mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools"
+    )
+
+    first = mcp_server.run_checks(level="precommit", root=str(root))
+    first_commands = list(commands)
+    commands.clear()
+    second = mcp_server.run_checks(level="precommit", root=str(root))
+
+    assert first["ok"] is False
+    assert first_commands == [
+        "release_routines/pre_commit_checks.sh --static",
+        "release_routines/pre_commit_checks.sh --coverage",
+        "release_routines/pre_commit_checks.sh --artifacts",
+    ]
+    assert commands == [
+        "release_routines/pre_commit_checks.sh --artifacts",
+        "release_routines/pre_commit_checks.sh --matrix",
+    ]
+    assert second["ok"] is True
+    assert second["result"]["reused_stage_count"] == 2
+    assert second["result"]["executed_stage_count"] == 2
+    assert [stage["status"] for stage in second["result"]["stages"]] == [
+        "reused",
+        "reused",
+        "executed",
+        "executed",
+    ]
+
+
+def test_precommit_stage_receipt_requires_current_tree_toolchain_command_and_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = mcp_server.PRECOMMIT_CHECK_COMMANDS[0]
+    now = 1_000_000.0
+    monkeypatch.setattr(mcp_server.time, "time", lambda: now)
+    receipt = {
+        "fingerprint": "tree",
+        "toolchain_fingerprint": "tools",
+        "command_fingerprint": mcp_server._precommit_command_fingerprint(command),
+        "completed_at": now - 60,
+    }
+
+    assert mcp_server._precommit_stage_receipt_is_current(
+        receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="tools",
+        command=command,
+    )
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        receipt,
+        fingerprint="changed-tree",
+        toolchain_fingerprint="tools",
+        command=command,
+    )
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="changed-tools",
+        command=command,
+    )
+    changed_command = {**command, "args": [*command["args"], "--changed"]}
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="tools",
+        command=changed_command,
+    )
+    receipt["completed_at"] = now - mcp_server.PRECOMMIT_STAGE_TTL_SECONDS - 1
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="tools",
+        command=command,
+    )
 
 
 def test_run_checks_reports_stage_nodes_and_coverage_ratchet(
@@ -2894,12 +2995,19 @@ def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
     assert "::agent-check-stage::%s::start::running" in script
     assert "::agent-check-stage::%s::end::failed" in script
     assert "export VIRTUALENV_PIP=25.0.1" in script
+    assert 'export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${repo_root}/.tox/pip-cache}"' in script
     assert 'mode="${1:---all}"' in script
-    assert "run_stage tox-quick tox -e lint,type" in script
-    assert "run_stage tox-full tox -e coverage,artifacts" in script
+    assert "run_stage tox-static tox -e lint,type" in script
+    assert "run_stage tox-coverage tox -e coverage" in script
+    assert "run_stage tox-artifacts tox -e artifacts" in script
+    assert 'local parallelism="${PRECOMMIT_PARALLELISM:-3}"' in script
+    assert "tox run-parallel" in script
+    assert "py311-latest" not in next(
+        line for line in script.splitlines() if "run_stage tox-matrix" in line
+    )
 
 
-def test_precommit_check_plan_separates_quick_and_full_gates() -> None:
+def test_precommit_check_plan_separates_ordered_stages() -> None:
     commands = mcp_server._check_commands(
         area="agent_tools",
         change_type="implementation",
@@ -2907,8 +3015,10 @@ def test_precommit_check_plan_separates_quick_and_full_gates() -> None:
     )
 
     assert [command["display"] for command in commands] == [
-        "release_routines/pre_commit_checks.sh --quick",
-        "release_routines/pre_commit_checks.sh --full",
+        "release_routines/pre_commit_checks.sh --static",
+        "release_routines/pre_commit_checks.sh --coverage",
+        "release_routines/pre_commit_checks.sh --artifacts",
+        "release_routines/pre_commit_checks.sh --matrix",
     ]
 
 

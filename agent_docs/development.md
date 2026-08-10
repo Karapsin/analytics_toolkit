@@ -10,21 +10,31 @@ status calls report changes without repeating routing and command details. Use
 `run_checks(area=..., level="focused")` for focused validation and
 `run_checks(level="precommit")` before every commit.
 
-The pre-commit check uses a temporary bytecode cache and an aggregated quick gate
-for metadata, minimum constraints, documentation, compileall, pytest, Ruff, and
-mypy. Independent failures are reported together; pytest is skipped only when
-compilation fails. Only after that passes does the full gate run 90% branch coverage,
-isolated wheel/sdist smoke tests, and the tox matrix for Python 3.8 through 3.14
-plus the Python 3.8 minimum-dependency environment. The minimum environment
-must also pass `pip check`. Do not commit unless both gates pass; if an
-interpreter or dependency is missing, install it or explicitly report the
-blocker instead of skipping that gate.
+The managed pre-commit check runs four ordered stages. A fast static gate checks
+metadata, minimum constraints, documentation, compileall, Ruff, and mypy. The
+coverage stage is the canonical Python 3.11 test run and enforces 90% branch
+coverage. Artifact smoke tests run next, followed by the Python 3.8 through 3.14
+compatibility matrix and the Python 3.8 minimum-dependency environment. Python
+3.11 is omitted from that matrix because coverage already exercises it. The
+matrix defaults to three parallel tox workers; set `PRECOMMIT_PARALLELISM` to a
+positive integer to tune local resource use. The minimum environment must also
+pass `pip check`.
+
+Each successful managed stage writes a private receipt below `.rag_index/`.
+Interrupted or failed runs may reuse a stage for 24 hours only when the working
+tree, stage command, toolchain versions, and parallelism are identical. Reports
+distinguish executed, reused, and failed stages. Any tracked-tree or toolchain
+change invalidates the affected receipt. Do not commit unless every stage
+passes or has a current exact-match receipt; if an interpreter or dependency is
+missing, install it or explicitly report the blocker instead of skipping that
+stage.
 
 The artifact gate copies the project into a temporary source tree outside the
 checkout, builds one wheel and one sdist, validates their metadata and wheel
 contents, and installs each artifact into its own temporary environment. It
 imports every public module and exercises CLI help and the SQL support matrix
-from the installed package.
+from the installed package. Fresh environments share the repository-local
+`.tox/pip-cache` download cache to avoid unnecessary network work.
 
 Strict Ruff, Ruff format, and mypy checks run over their complete configured
 targets. Existing findings are tracked in a committed per-file and per-rule

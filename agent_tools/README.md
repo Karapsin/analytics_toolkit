@@ -78,14 +78,21 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
-Pre-commit checks run as a quick gate followed by a full gate. The quick gate
-covers metadata, documentation, compilation, pytest, Ruff, and mypy; the full
-gate covers coverage, artifacts, and every supported Python environment. A
-quick failure prevents the expensive full gate, while a successful managed run
-always records both. Independent quick stages are aggregated. Managed coverage
-target increases are reported and accepted in the same full run, while the
-manual coverage command keeps its review-and-rerun behavior. Check failures
-include every failed stage, failing pytest
+Managed pre-commit checks run as separate static, coverage, artifact, and Python
+matrix commands, stopping before downstream work when a stage fails. Coverage
+is the canonical Python 3.11 test run; the remaining Python 3.8 through 3.14
+matrix omits that duplicate and defaults to three parallel tox workers. Set
+`PRECOMMIT_PARALLELISM` to a positive integer to tune it. Artifact installs use
+fresh virtual environments with a shared `.tox/pip-cache` download cache.
+
+Successful stages receive private 24-hour receipts keyed by the exact working
+tree, command definition, toolchain versions, and parallelism. An interrupted
+or corrected run reuses only exact matches and reports each stage as executed,
+reused, or failed. Managed coverage target increases are reported and accepted
+in the same coverage run, while the manual coverage command keeps its
+review-and-rerun behavior. The compatibility `--quick` script mode retains its
+plain pytest run, but managed pre-commit validation does not duplicate it.
+Check failures include every failed stage, failing pytest
 node IDs, quality-debt increases, architecture overages, and tox environments
 when available. Repeated identical failures return a compact unchanged receipt
 pointing to persisted evidence.

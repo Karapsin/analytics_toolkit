@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 
@@ -191,8 +192,39 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
     artifact_smoke._verify_installed_artifact(tmp_path / "package.whl", tmp_path)
 
     command_text = "\n".join(" ".join(command) for command in commands)
-    assert "-m pip install --no-cache-dir" in command_text
+    assert "-m pip install" in command_text
+    assert "--no-cache-dir" not in command_text
     assert "-m pip check" in command_text
     assert "analytics_toolkit.ab_utils" in command_text
     assert "analytics-toolkit --help" in command_text
     assert "analytics-toolkit sql support-matrix" in command_text
+
+
+def test_precommit_matrix_rejects_invalid_parallelism_before_tool_setup(
+    tmp_path: pathlib.Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_tox = bin_dir / "tox"
+    fake_tox.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_tox.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "PRECOMMIT_PARALLELISM": "0",
+    }
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "release_routines" / "pre_commit_checks.sh"),
+            "--matrix",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "PRECOMMIT_PARALLELISM must be a positive integer" in result.stderr

@@ -7,8 +7,11 @@ repo_root="$(CDPATH='' cd -- "${script_dir}/.." && pwd)"
 cd "${repo_root}"
 
 mode="${1:---all}"
-if [ "${mode}" != "--quick" ] && [ "${mode}" != "--full" ] && [ "${mode}" != "--all" ]; then
-  printf 'Usage: %s [--quick|--full|--all]\n' "$0" >&2
+if [ "${mode}" != "--static" ] && [ "${mode}" != "--coverage" ] && \
+  [ "${mode}" != "--artifacts" ] && [ "${mode}" != "--matrix" ] && \
+  [ "${mode}" != "--quick" ] && [ "${mode}" != "--full" ] && \
+  [ "${mode}" != "--all" ]; then
+  printf 'Usage: %s [--static|--coverage|--artifacts|--matrix|--quick|--full|--all]\n' "$0" >&2
   exit 2
 fi
 
@@ -60,32 +63,27 @@ pyenv_python() {
 export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
 # pip 25.0.1 is the final virtualenv seed line that supports Python 3.8.
 export VIRTUALENV_PIP=25.0.1
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${repo_root}/.tox/pip-cache}"
 
-run_quick_gate() {
+run_static_gate() {
   local compile_status=0
-  local quick_status=0
+  local static_status=0
 
   require_command python
   require_command tox
-  run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh" || quick_status=1
-  run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh" || quick_status=1
-  run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints || quick_status=1
-  run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh" || quick_status=1
-  run_stage docs-links "${script_dir}/scripts/check_docs_links.sh" || quick_status=1
+  run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh" || static_status=1
+  run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh" || static_status=1
+  run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints || static_status=1
+  run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh" || static_status=1
+  run_stage docs-links "${script_dir}/scripts/check_docs_links.sh" || static_status=1
   run_stage compileall python -m compileall analytics_toolkit tests || compile_status=1
-  if [ "${compile_status}" -eq 0 ]; then
-    run_stage pytest pytest -q || quick_status=1
-  else
-    quick_status=1
-    printf '::agent-check-stage::pytest::skip::compileall-failed\n'
-  fi
-  run_stage tox-quick tox -e lint,type || quick_status=1
-  return "${quick_status}"
+  [ "${compile_status}" -eq 0 ] || static_status=1
+  run_stage tox-static tox -e lint,type || static_status=1
+  return "${static_status}"
 }
 
-run_full_gate() {
+configure_python_matrix() {
   require_command pyenv
-  require_command tox
   export PYTHON38
   export PYTHON39
   export PYTHON310
@@ -101,13 +99,65 @@ run_full_gate() {
   PYTHON312="$(pyenv_python 3.12.13)"
   PYTHON313="$(pyenv_python 3.13.13)"
   PYTHON314="$(pyenv_python 3.14.5)"
-
-  run_stage tox-full tox -e coverage,artifacts,py38-latest,py38-min,py39-latest,py310-latest,py311-latest,py312-latest,py313-latest,py314-latest
 }
 
-if [ "${mode}" = "--quick" ] || [ "${mode}" = "--all" ]; then
+configure_python311() {
+  require_command pyenv
+  export PYTHON311
+  PYTHON311="$(pyenv_python 3.11.15)"
+}
+
+run_coverage_gate() {
+  require_command tox
+  configure_python311
+  run_stage tox-coverage tox -e coverage
+}
+
+run_artifact_gate() {
+  require_command tox
+  configure_python311
+  run_stage tox-artifacts tox -e artifacts
+}
+
+run_matrix_gate() {
+  local parallelism="${PRECOMMIT_PARALLELISM:-3}"
+
+  require_command tox
+  if ! [[ "${parallelism}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'PRECOMMIT_PARALLELISM must be a positive integer; got: %s\n' "${parallelism}" >&2
+    return 2
+  fi
+  configure_python_matrix
+  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py38-latest,py38-min,py39-latest,py310-latest,py312-latest,py313-latest,py314-latest
+}
+
+run_quick_gate() {
+  local quick_status=0
+
+  run_static_gate || quick_status=1
+  run_stage pytest pytest -q || quick_status=1
+  return "${quick_status}"
+}
+
+run_full_gate() {
+  run_coverage_gate
+  run_artifact_gate
+  run_matrix_gate
+}
+
+if [ "${mode}" = "--static" ]; then
+  run_static_gate
+elif [ "${mode}" = "--coverage" ]; then
+  run_coverage_gate
+elif [ "${mode}" = "--artifacts" ]; then
+  run_artifact_gate
+elif [ "${mode}" = "--matrix" ]; then
+  run_matrix_gate
+elif [ "${mode}" = "--quick" ]; then
   run_quick_gate
-fi
-if [ "${mode}" = "--full" ] || [ "${mode}" = "--all" ]; then
+elif [ "${mode}" = "--full" ]; then
+  run_full_gate
+else
+  run_static_gate
   run_full_gate
 fi
