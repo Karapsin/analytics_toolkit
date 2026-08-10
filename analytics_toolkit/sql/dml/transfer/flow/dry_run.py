@@ -305,10 +305,7 @@ def _add_target_stage_templates(
                 options.table_schema,
                 stage_external_location or "<stage external location>",
                 query_label=options.query_label,
-                ddl_properties={
-                    **(options.staging_ddl_properties or {}),
-                    **(options.parquet_ddl_properties or {}),
-                },
+                ddl_properties=options.parquet_ddl_properties,
             ),
             alias=options.to_db_key,
             backend=options.to_db_backend,

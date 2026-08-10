@@ -96,12 +96,12 @@ targets created by `create_sql_table`, create-from-SQL, `load_df`, and
 `ch_reconfigure_table(..., to_defaults=True)`; `staging` applies to
 toolkit-owned stage, worker, upsert, and
 materialized-source tables. Trino alone also accepts `parquet_staging`, which
-is layered after `staging` for external Parquet stages.
+independently configures external Parquet stages.
 
 Precedence is path-specific toolkit defaults, the selected connection scope,
-Trino `parquet_staging` when applicable, explicit helper arguments, and finally
-workflow-required properties. Missing scopes and keys retain Greenplum and
-Trino behavior. JSON `null` removes an inherited configurable property.
+explicit helper arguments, and finally workflow-required properties. Missing
+scopes and keys retain Greenplum and Trino behavior. JSON `null` removes an
+inherited configurable property within a scope.
 
 ```json
 {
@@ -174,9 +174,11 @@ valid. JSON arrays render as SQL `ARRAY[...]`, with string elements quoted and
 escaped. Empty strings, nested objects, non-finite numbers, invalid keys, and
 case-insensitive duplicate keys are rejected.
 
-External Trino Parquet stages apply `staging` and then `parquet_staging`, but
-always restore `format = 'PARQUET'` and the generated `external_location`.
-Those protected values describe the files produced by the workflow.
+External Trino Parquet stages apply only `parquet_staging`; they do not inherit
+properties from `staging`. They always restore `format = 'PARQUET'` and the
+generated `external_location`, because those protected values describe the
+files produced by the workflow. Declare a property in both scopes when normal
+and external stages both need it.
 
 For ClickHouse, `shard.on_cluster` controls physical-table execution while
 `distributed.on_cluster` independently controls facade execution.

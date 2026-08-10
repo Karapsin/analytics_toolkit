@@ -38,6 +38,7 @@ def _write_trino_connections(
     *,
     s3_transfer_staging_location: str | None,
     s3_transfer_staging_schema: str | None = "hive.pa_core_stage",
+    ddl_defaults: dict[str, object] | None = None,
 ) -> None:
     config: dict[str, object] = {
         "type": "trino",
@@ -56,6 +57,8 @@ def _write_trino_connections(
         config["s3_transfer_staging_location"] = s3_transfer_staging_location
     if s3_transfer_staging_location is not None and s3_transfer_staging_schema is not None:
         config["s3_transfer_staging_schema"] = s3_transfer_staging_schema
+    if ddl_defaults is not None:
+        config["ddl_defaults"] = ddl_defaults
     write_sql_connections({"trino_stage": config})
 
 
@@ -2134,6 +2137,77 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
         for sql in plan.sqls
     )
     assert any(sql.startswith("DELETE STAGE FILES s3://bucket/tmp/") for sql in plan.sqls)
+
+
+def test_load_df_parquet_stage_does_not_inherit_sql_staging_properties(
+    write_sql_connections: Any,
+) -> None:
+    _write_trino_connections(
+        write_sql_connections,
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        ddl_defaults={
+            "regular": {},
+            "staging": {"compression_codec": "'ZSTD'"},
+            "parquet_staging": {"parquet_marker": 7},
+        },
+    )
+
+    plan = load_df_module.load_df(
+        "trino_stage",
+        "iceberg.sandbox.target",
+        pd.DataFrame({"id": [1]}),
+        table_schema={"id": "BIGINT"},
+        dry_run=True,
+    )
+
+    create_stage_sql = next(
+        statement.sql for statement in plan.statements if statement.phase == "create_stage"
+    )
+    assert "compression_codec" not in create_stage_sql
+    assert "parquet_marker = 7" in create_stage_sql
+
+
+def test_load_df_parquet_runtime_passes_only_parquet_properties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    options = load_df_module.LoadOptions(
+        connection_key="trino",
+        connection_backend="trino",
+        destination_table="iceberg.sandbox.target",
+        table_schema={"id": "BIGINT"},
+        s3_transfer_staging_schema="hive.stage",
+        s3_transfer_staging_location="s3://bucket/stage",
+        staging_ddl_properties={"compression_codec": "'ZSTD'"},
+        parquet_ddl_properties={"parquet_marker": 7},
+    )
+    state = load_df_module.LoadState(target_exists=True, original_target_exists=True)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        load_df_module,
+        "build_stage_table_name",
+        lambda *_args, **_kwargs: "hive.stage.shared",
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "build_stage_external_location",
+        lambda *_args, **_kwargs: "s3://bucket/stage/shared/",
+    )
+
+    def build_sql(*_args: object, **kwargs: object) -> str:
+        captured.update(kwargs)
+        return "CREATE TABLE hive.stage.shared"
+
+    monkeypatch.setattr(load_df_module, "build_create_parquet_stage_table_sql", build_sql)
+    monkeypatch.setattr(
+        load_df_module,
+        "get_backend_adapter",
+        lambda _backend: SimpleNamespace(execute_command=lambda *_args: None),
+    )
+
+    load_df_module._create_load_parquet_stage_table(options, state, object())
+
+    assert captured["ddl_properties"] == {"parquet_marker": 7}
 
 
 def test_write_dataframe_to_parquet_stage_uses_one_spooled_file(

@@ -4,6 +4,11 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Fixed source-staged Trino transfers to honor Parquet mode precedence.
+- Made Trino Parquet staging DDL defaults independent from SQL staging defaults.
+
 ## 1.3.11.5 - 2026-08-10
 
 - Batch Greenplum AB metric queries within the slice limit.

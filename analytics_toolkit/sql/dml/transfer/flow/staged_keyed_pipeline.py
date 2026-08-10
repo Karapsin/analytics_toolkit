@@ -62,8 +62,10 @@ from .staged_keyed_io import (
     insert_target_batch,
     make_target_host_connection_runner,
     materialize_source_key,
+    prepare_keyed_target_stage,
     read_key_batch,
     validate_target_key,
+    write_keyed_target_batch,
 )
 from .staged_keyed_logging import (
     attach_attempt_summary,
@@ -136,6 +138,7 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: C901, PLR0912 -- attempt 
             stage_state = create_stage_state(options, refs)
             with sql_log_context(suppress_sql=True):
                 metadata = _prepare_attempt(options, refs, stage_state)
+                prepare_keyed_target_stage(options, refs, stage_state, runtime, progress)
         log_pipeline_start(options, runtime)
         time_print(
             f"Inspected transfer metadata for attempt {options.attempt_number}: "
@@ -587,7 +590,7 @@ def _writer_worker(
     writer_index: int,
     insert_retry_cnt: int,
 ) -> None:
-    stage_table: str | None = None
+    stage_table = stage_state.stage_table if options.trino_mode == "parquet" else None
     sizer = _make_batch_sizer(options)
     try:
         while not runtime.cancellation.is_set():
@@ -681,16 +684,19 @@ def _consume_key(  # noqa: C901, PLR0912 -- validates a full ordered key stream
             message = f"{task.tag} A non-empty batch has no target writer stage."
             raise RuntimeError(message)
         insert_started = time.monotonic()
-        with target_connections.lease(cancellation=runtime.cancellation) as target_ref:
-            inserted_rows = insert_target_batch(
-                options,
-                target_ref,
-                stage_table,
-                item,
-                metadata,
-                insert_retry_cnt=insert_retry_cnt,
-                committed_rows_getter=lambda: progress.snapshot().committed_rows,
-            )
+        inserted_rows = write_keyed_target_batch(
+            options,
+            target_connections,
+            stage_state,
+            stage_table,
+            item,
+            metadata,
+            writer_index=writer_index,
+            insert_retry_cnt=insert_retry_cnt,
+            cancellation=runtime.cancellation,
+            insert_fn=insert_target_batch,
+            committed_rows_getter=lambda: progress.snapshot().committed_rows,
+        )
         insert_completed = time.monotonic()
         if inserted_rows != item.batch.row_count:
             message = (

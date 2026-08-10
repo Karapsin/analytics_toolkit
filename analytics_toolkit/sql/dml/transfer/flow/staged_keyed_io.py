@@ -26,6 +26,7 @@ from .source_snapshot import (
 )
 from .stage_validation import validate_transfer_stage_slice
 from .staged_keyed_logging import slice_tag
+from .staged_target import prepare_shared_parquet_stage, write_source_staged_batch
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -41,6 +42,67 @@ if TYPE_CHECKING:
 
 
 _MINIMUM_CONSOLIDATION_STAGE_COUNT = 2
+
+
+def prepare_keyed_target_stage(
+    options: TransferOptions,
+    refs: Any,
+    stage_state: TransferStageState,
+    runtime: LazyKeyedRuntime,
+    progress: Any,
+) -> None:
+    if not prepare_shared_parquet_stage(options, refs, stage_state):
+        return
+    stage_table = stage_state.stage_table
+    if stage_table is None:
+        raise RuntimeError("Expected a shared Parquet target stage.")
+    runtime.register_target_stage_candidate(stage_table)
+    runtime.register_target_stage(0, stage_table)
+    progress.set_primary_writer(0)
+
+
+def write_keyed_target_batch(
+    options: TransferOptions,
+    target_connections: BoundedConnectionManager,
+    stage_state: TransferStageState,
+    stage_table: str,
+    batch: QueuedKeyBatch,
+    metadata: AttemptMetadata,
+    *,
+    writer_index: int,
+    insert_retry_cnt: int,
+    cancellation: Any,
+    insert_fn: Any,
+    committed_rows_getter: Callable[[], int],
+) -> int:
+    if options.trino_mode == "parquet":
+        return write_source_staged_batch(
+            options,
+            {},
+            stage_state,
+            stage_table,
+            batch.batch,
+            worker_id=writer_index,
+            slice_index=batch.task.transfer_slice.index,
+            file_index=batch.batch_index,
+            start_ordinal=batch.start_ordinal,
+            stop_ordinal=batch.stop_ordinal,
+            insert_retry_cnt=insert_retry_cnt,
+            safe_exception_logging=True,
+            log_prefix=f"{batch.task.tag} ",
+        )
+    with target_connections.lease(cancellation=cancellation) as target_ref:
+        return int(
+            insert_fn(
+                options,
+                target_ref,
+                stage_table,
+                batch,
+                metadata,
+                insert_retry_cnt=insert_retry_cnt,
+                committed_rows_getter=committed_rows_getter,
+            )
+        )
 
 
 def allocate_source_stage_name(

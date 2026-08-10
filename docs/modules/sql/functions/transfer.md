@@ -64,7 +64,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `gp_partitions` - initial Greenplum range or list child definitions used when the final target is created
 - `gp_insert_chunk_size` - initial Greenplum transfer stage insert page size; omitted values start at `10_000`
 - `trino_insert_chunk_size` - number of rows per Trino parameterized multi-row insert statement
-- `trino_mode` - Trino target staging mode: `None` keeps automatic selection, `"parquet"` forces object-storage Parquet staging, and `"values"` forces generated multi-row `INSERT ... VALUES`
+- `trino_mode` - Trino target staging mode: `"parquet"` forces object-storage Parquet staging, `"values"` forces generated multi-row `INSERT ... VALUES`, and `None` prefers Parquet whenever the target connection has the complete `s3_transfer_staging_schema`/`s3_transfer_staging_location` pair; ordinary `transfer_staging_schema` does not override that preference
 - `ch_engine` - nullable override for the configured ClickHouse shard engine
 - `ch_cluster` - deprecated compatibility shortcut that fills both execution clusters and the routing cluster; use the dedicated fields below
 - `ch_sharding_key` - nullable override for the configured Distributed sharding expression
@@ -270,9 +270,11 @@ rows = sql.transfer(
   stage per key with CTAS and drops it only after that key is committed and
   validated in the target database. There is no all-keys phase barrier. Target
   stages are private per writer and are created lazily on that writer's first
-  non-empty key. Only stages actually created are validated and consolidated.
-  Unkeyed transfers continue to use slice zero in one source snapshot with
-  bounded ordinal ranges.
+  non-empty key for SQL/VALUES staging. Parquet mode instead shares one external
+  target stage across writers while preserving those source stages and their
+  validation guarantees. Only stages actually created are validated and
+  consolidated. Unkeyed transfers continue to use slice zero in one source
+  snapshot with bounded ordinal ranges.
 - Keyed source staging inspects one representative source query and any required
   target metadata once per full attempt. The ordered source schema, native and
   mapped types, `table_schema` overrides, internal identity columns, insert

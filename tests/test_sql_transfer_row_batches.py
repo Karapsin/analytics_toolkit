@@ -6036,6 +6036,8 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
         s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
         trino_mode="parquet",
+        staging_ddl_properties={"compression_codec": "'ZSTD'"},
+        parquet_ddl_properties={"parquet_marker": 7},
     )
     stage_state = models_module.TransferStageState(
         target_exists=False,
@@ -6068,12 +6070,15 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
         "__analytics_toolkit_target_user__stage__abcd1234/"
     )
+    assert "compression_codec" not in executed_sqls[0]
+    assert "parquet_marker = 7" in executed_sqls[0]
     assert executed_sqls == [
         "CREATE TABLE "
         "hive.sandbox.target__analytics_toolkit_target_user__stage__abcd1234 "
-        "(\"id\" BIGINT) WITH (format = 'PARQUET', "
-        "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
-        "__analytics_toolkit_target_user__stage__abcd1234/')"
+        "(\"id\" BIGINT) WITH (format = 'PARQUET',"
+        "\n        external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
+        "__analytics_toolkit_target_user__stage__abcd1234/',"
+        "\n        parquet_marker = 7)"
     ]
 
 

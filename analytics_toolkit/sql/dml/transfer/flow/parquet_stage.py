@@ -87,10 +87,7 @@ def create_parquet_stage_table(
             stage_state.stage_column_types,
             stage_external_location,
             query_label=options.query_label,
-            ddl_properties={
-                **(options.staging_ddl_properties or {}),
-                **(options.parquet_ddl_properties or {}),
-            },
+            ddl_properties=options.parquet_ddl_properties,
         )
         adapter.execute_command(
             connection_refs.target["connection"],

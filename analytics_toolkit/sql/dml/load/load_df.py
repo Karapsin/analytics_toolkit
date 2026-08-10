@@ -1063,6 +1063,7 @@ def _add_parquet_load_plan_steps(
                 options.table_schema,
                 stage_external_location,
                 query_label=options.query_label,
+                ddl_properties=options.parquet_ddl_properties,
             )
         ],
         alias=options.connection_key,
@@ -1440,6 +1441,7 @@ def _create_load_parquet_stage_table(
             stage_column_types,
             stage_external_location,
             query_label=options.query_label,
+            ddl_properties=options.parquet_ddl_properties,
         )
         get_backend_adapter(options.connection_backend).execute_command(
             connection,

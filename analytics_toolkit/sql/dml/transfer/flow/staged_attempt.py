@@ -10,7 +10,6 @@ from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import replace
 from typing import Any, cast
 
-import pandas as pd
 from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
@@ -55,6 +54,12 @@ from .source_snapshot import (
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
 from .staged_keyed_pipeline import run_keyed_staged_source_transfer_attempt
+from .staged_target import (
+    create_sql_worker_stages,
+    prepare_shared_parquet_stage,
+    select_unkeyed_worker_stages,
+    write_source_staged_batch,
+)
 from .staged_unkeyed_progress import UnkeyedStagedProgress
 from .superseded import cleanup_superseded_transfer_stages
 
@@ -140,6 +145,7 @@ def run_staged_source_transfer_attempt(
             stage_state,
         )
         ensure_transfer_target_table(options, refs, stage_state, source_columns)
+        parquet_target = prepare_shared_parquet_stage(options, refs, stage_state)
         attempt_phase = "source-stage loading"
         snapshot_table, slice_counts = _materialize_snapshot(
             options,
@@ -183,12 +189,14 @@ def run_staged_source_transfer_attempt(
                 base_tqdm=tqdm,
             ),
         )
-        replace_connection(options.to_db_key, target_ref)
-        stage_tables = _create_worker_stages(
+        worker_stage_tables, stage_tables = select_unkeyed_worker_stages(
             options,
             target_ref,
             stage_state,
             worker_count=worker_count,
+            parquet_target=parquet_target,
+            sql_stage_fn=_create_worker_stages,
+            replace_target_fn=replace_connection,
         )
         close_connection_ref(source_ref, options.from_db_key, "source coordinator")
         source_ref.pop("connection", None)
@@ -200,7 +208,7 @@ def run_staged_source_transfer_attempt(
             snapshot_table,
             source_columns,
             stage_state,
-            stage_tables,
+            worker_stage_tables,
             scheduler,
             insert_retry_cnt=insert_retry_cnt,
             transfer_progress=transfer_progress,
@@ -540,58 +548,14 @@ def _create_worker_stages(
     *,
     worker_count: int,
 ) -> list[str]:
-    sample = pd.DataFrame(
-        columns=[
-            *stage_state.source_columns,
-            *(stage_state.internal_columns.names() if stage_state.internal_columns else ()),
-        ]
+    return create_sql_worker_stages(
+        options,
+        target_ref,
+        stage_state,
+        worker_count=worker_count,
+        create_fn=create_stage_table,
+        cleanup_fn=cleanup_stage_table,
     )
-    stage_state.first_non_empty_batch = pd.DataFrame(columns=stage_state.source_columns)
-    worker_tables: list[str] = []
-    registered_candidates: list[str] = []
-
-    def register_candidate(stage_table: str) -> None:
-        if stage_table in registered_candidates:
-            return
-        registered_candidates.append(stage_table)
-        stage_state.stage_table = registered_candidates[0]
-        stage_state.stage_tables = list(registered_candidates)
-        stage_state.stage_table_created = True
-
-    for worker_id in range(worker_count):
-        stage_table = create_stage_table(
-            options.to_db_backend,
-            target_ref["connection"],
-            options.target_table,
-            sample,
-            column_types=stage_state.stage_column_types,
-            connection_key=options.to_db_key,
-            query_label=options.query_label,
-            transfer_staging_schema=options.transfer_staging_schema,
-            transfer_staging_username=options.transfer_staging_username,
-            random_suffix=f"{options.transfer_id}__w{worker_id:05d}",
-            destination_hash=options.destination_hash,
-            on_stage_candidate=register_candidate,
-            ddl_properties=options.staging_ddl_properties,
-            ch_creation_policy=options.staging_ch_policy,
-        )
-        register_candidate(stage_table)
-        worker_tables.append(stage_table)
-
-    for candidate in registered_candidates:
-        if candidate in worker_tables:
-            continue
-        cleanup_stage_table(
-            options.to_db_backend,
-            target_ref["connection"],
-            candidate,
-            query_label=options.query_label,
-            ch_creation_policy=options.staging_ch_policy,
-        )
-    stage_state.stage_table = worker_tables[0]
-    stage_state.stage_tables = list(worker_tables)
-    stage_state.stage_table_created = True
-    return worker_tables
 
 
 def _run_range_workers(
@@ -659,7 +623,8 @@ def _range_worker(
     worker_error: BaseException | None = None
     try:
         source_ref["connection"] = get_sql_connection(options.from_db_key)
-        target_ref["connection"] = get_sql_connection(options.to_db_key)
+        if options.trino_mode != "parquet":
+            target_ref["connection"] = get_sql_connection(options.to_db_key)
         while True:
             claimed = scheduler.claim(worker_id, sizer.current_size)
             if claimed is None:
@@ -714,6 +679,7 @@ def _range_worker(
                 stage_table,
                 batch,
                 logical_batch_id,
+                worker_id=worker_id,
                 insert_retry_cnt=insert_retry_cnt,
                 transfer_progress=transfer_progress,
             )
@@ -748,6 +714,7 @@ def _insert_unkeyed_range_batch(
     *,
     insert_retry_cnt: int,
     transfer_progress: UnkeyedStagedProgress | None,
+    worker_id: int = 0,
 ) -> None:
     def retry_insert(**kwargs: Any) -> Any:
         if transfer_progress is None:
@@ -763,20 +730,20 @@ def _insert_unkeyed_range_batch(
             ),
         )
 
-    insert_rows_batch(
-        options.to_db_backend,
+    write_source_staged_batch(
+        options,
         target_ref,
+        stage_state,
         stage_table,
-        batch.columns,
-        batch.rows,
+        batch,
+        worker_id=worker_id,
+        slice_index=logical_batch_id[0],
+        file_index=logical_batch_id[1],
+        start_ordinal=logical_batch_id[1],
+        stop_ordinal=logical_batch_id[2],
         retry_fn=retry_insert,
-        retry_cnt=insert_retry_cnt,
-        timeout_increment=options.timeout_increment,
-        target_column_types=stage_state.stage_column_types,
-        query_label=options.query_label,
-        connection_key=options.to_db_key,
-        rollback_fn=rollback_quietly,
-        replace_connection_fn=replace_connection,
+        insert_fn=insert_rows_batch,
+        insert_retry_cnt=insert_retry_cnt,
         safe_exception_logging=transfer_progress is not None,
         log_prefix=transfer_progress.log_prefix if transfer_progress is not None else "",
     )
