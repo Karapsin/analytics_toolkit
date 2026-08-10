@@ -36,8 +36,8 @@ table_ops_module = importlib.import_module("analytics_toolkit.sql.dml.table.writ
 def _write_trino_connections(
     write_sql_connections: Any,
     *,
-    transfer_staging_location: str | None,
-    transfer_parquet_staging_schema: str | None = None,
+    s3_transfer_staging_location: str | None,
+    s3_transfer_staging_schema: str | None = "hive.pa_core_stage",
 ) -> None:
     config: dict[str, object] = {
         "type": "trino",
@@ -52,10 +52,10 @@ def _write_trino_connections(
             "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
     }
-    if transfer_staging_location is not None:
-        config["transfer_staging_location"] = transfer_staging_location
-    if transfer_parquet_staging_schema is not None:
-        config["transfer_parquet_staging_schema"] = transfer_parquet_staging_schema
+    if s3_transfer_staging_location is not None:
+        config["s3_transfer_staging_location"] = s3_transfer_staging_location
+    if s3_transfer_staging_location is not None and s3_transfer_staging_schema is not None:
+        config["s3_transfer_staging_schema"] = s3_transfer_staging_schema
     write_sql_connections({"trino_stage": config})
 
 
@@ -1167,6 +1167,189 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
     assert "AND table = 'events_shard'" in cluster_column_queries[2]
 
 
+def test_clickhouse_post_create_wait_uses_independent_policy_clusters() -> None:
+    class SplitClusterClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def query(self, sql: str) -> object:
+            self.queries.append(sql)
+            if sql.startswith("SELECT getMacro("):
+                rows = [("routing",)]
+            elif sql.startswith("EXISTS TABLE "):
+                rows = [(1,)]
+            elif "FROM system.clusters" in sql:
+                cluster = sql.split("cluster = '", 1)[1].split("'", 1)[0]
+                rows = [(22 if cluster == "routing" else 2,)]
+            elif "system, one" in sql or "system, tables" in sql or "system, columns" in sql:
+                rows = [(22 if "'routing'" in sql else 2,)]
+            else:
+                message = f"Unexpected query: {sql}"
+                raise AssertionError(message)
+            return SimpleNamespace(result_rows=rows)
+
+    client = SplitClusterClient()
+    policy = SimpleNamespace(
+        shard_on_cluster="core",
+        distributed_on_cluster="{cluster}",
+        distributed_cluster="core",
+        ddl_ready_timeout_seconds=17.0,
+    )
+
+    ch_wait_module.after_create_table(
+        object(),
+        client,
+        "analytics.events",
+        ch_distributed_table=True,
+        expected_column_types={"event_id": "Int64"},
+        ch_creation_policy=policy,
+    )
+
+    cluster_table_queries = [query for query in client.queries if "system, tables" in query]
+    cluster_schema_queries = [query for query in client.queries if "system, columns" in query]
+    assert any(
+        "clusterAllReplicas('routing'" in query and "events'" in query
+        for query in cluster_table_queries
+    )
+    assert any(
+        "clusterAllReplicas('core'" in query and "events_shard'" in query
+        for query in cluster_table_queries
+    )
+    assert not any(
+        "clusterAllReplicas('routing'" in query and "events_shard'" in query
+        for query in cluster_table_queries
+    )
+    assert any(
+        "clusterAllReplicas('routing'" in query and "events'" in query
+        for query in cluster_schema_queries
+    )
+    assert any(
+        "clusterAllReplicas('core'" in query and "events_shard'" in query
+        for query in cluster_schema_queries
+    )
+
+
+def test_clickhouse_post_create_wait_shares_one_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monotonic_values = iter([100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0])
+    observed_timeouts: list[float] = []
+    monkeypatch.setattr(ch_wait_module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        ch_wait_module,
+        "_wait_for_ch_table",
+        lambda *_args, timeout_seconds, **_kwargs: observed_timeouts.append(timeout_seconds),
+    )
+    monkeypatch.setattr(
+        ch_wait_module,
+        "_wait_for_ch_table_on_cluster",
+        lambda *_args, timeout_seconds, **_kwargs: observed_timeouts.append(timeout_seconds),
+    )
+    monkeypatch.setattr(
+        ch_wait_module,
+        "_wait_for_ch_table_schema_on_cluster",
+        lambda *_args, timeout_seconds, **_kwargs: observed_timeouts.append(timeout_seconds),
+    )
+
+    ch_wait_module._wait_for_ch_distributed_table_pair(
+        object(),
+        "analytics.events",
+        timeout_seconds=10,
+        expected_column_types={"event_id": "Int64"},
+        shard_on_cluster="core",
+        distributed_on_cluster="routing",
+        routing_cluster=None,
+    )
+
+    assert observed_timeouts == [9.0, 8.0, 7.0, 6.0, 5.0, 4.0]
+
+
+def test_clickhouse_post_create_rejects_uncovered_routing_cluster() -> None:
+    class MismatchedRoutingClient:
+        def query(self, sql: str) -> object:
+            if sql.startswith("SELECT getMacro("):
+                rows = [("routing",)]
+            elif sql.startswith("EXISTS TABLE "):
+                rows = [(1,)]
+            elif "SELECT DISTINCT host_name" in sql:
+                rows = [(f"host-{index:02d}",) for index in range(22)]
+            elif "FROM system.clusters" in sql or "system, one" in sql:
+                rows = [(22 if "'routing'" in sql else 2,)]
+            elif "system, tables" in sql and sql.startswith("SELECT hostName()"):
+                rows = [
+                    ("host-00", "analytics", "events_shard", "ReplicatedMergeTree"),
+                    ("host-01", "analytics", "events_shard", "ReplicatedMergeTree"),
+                ]
+            elif "system, tables" in sql:
+                is_shard = "events_shard" in sql
+                count = 2 if is_shard and "'routing'" in sql else 22
+                if is_shard and "'core'" in sql:
+                    count = 2
+                rows = [(count,)]
+            elif "system, columns" in sql:
+                rows = [(2,)]
+            else:
+                message = f"Unexpected query: {sql}"
+                raise AssertionError(message)
+            return SimpleNamespace(result_rows=rows)
+
+    policy = SimpleNamespace(
+        shard_on_cluster="core",
+        distributed_on_cluster="{cluster}",
+        distributed_cluster="{cluster}",
+        ddl_ready_timeout_seconds=17.0,
+    )
+
+    with pytest.raises(
+        ch_wait_module.SqlConfigError,
+        match=r"routing cluster 'routing'.*2/22.*shard DDL uses cluster 'core'",
+    ) as exc_info:
+        ch_wait_module.after_create_table(
+            object(),
+            MismatchedRoutingClient(),
+            "analytics.events",
+            ch_distributed_table=True,
+            expected_column_types={"event_id": "Int64"},
+            ch_creation_policy=policy,
+        )
+
+    assert "host-02" in str(exc_info.value)
+    assert "ch_distributed_cluster" in str(exc_info.value)
+
+
+def test_clickhouse_post_create_rejects_routing_schema_mismatch() -> None:
+    class RoutingSchemaClient:
+        def query(self, sql: str) -> object:
+            if (
+                "system, one" in sql
+                or "FROM system.clusters" in sql
+                or "system, tables" in sql
+            ):
+                rows = [(2,)]
+            elif "GROUP BY name, type" in sql:
+                rows = [("event_id", "UInt8", 2)]
+            elif "system, columns" in sql:
+                rows = [(0,)]
+            else:
+                message = f"Unexpected query: {sql}"
+                raise AssertionError(message)
+            return SimpleNamespace(result_rows=rows)
+
+    with pytest.raises(
+        ch_wait_module.SqlConfigError,
+        match=r"schema is not ready.*observed 0/2",
+    ) as exc_info:
+        ch_wait_module._validate_ch_shard_routing_cluster(
+            RoutingSchemaClient(),
+            "analytics.events_shard",
+            ch_cluster="core",
+            shard_on_cluster="core",
+            expected_column_types={"event_id": "Int64"},
+        )
+
+    assert "observed UInt8 on 2 host" in str(exc_info.value)
+
+
 def test_wait_for_clickhouse_distributed_pair_absence_polls_cluster_tables() -> None:
     class ClusterDropClient:
         def __init__(self) -> None:
@@ -1677,8 +1860,8 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
 ) -> None:
     _write_trino_connections(
         write_sql_connections,
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
-        transfer_parquet_staging_schema="hive.pa_core_stage",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_schema="hive.pa_core_stage",
     )
     connection = FakeDbapiConnection()
     writes: list[dict[str, object]] = []
@@ -1785,7 +1968,7 @@ def test_load_df_trino_without_staging_location_keeps_insert_path(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Any,
 ) -> None:
-    _write_trino_connections(write_sql_connections, transfer_staging_location=None)
+    _write_trino_connections(write_sql_connections, s3_transfer_staging_location=None)
     connection = FakeDbapiConnection()
     inserted_tables: list[str] = []
 
@@ -1829,7 +2012,7 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
 ) -> None:
     _write_trino_connections(
         write_sql_connections,
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
     )
     connection = FakeDbapiConnection()
     uniqueness_checks: list[tuple[str, list[str]]] = []
@@ -1910,7 +2093,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
 ) -> None:
     _write_trino_connections(
         write_sql_connections,
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
     )
 
     plan = load_df_module.load_df(
@@ -1923,7 +2106,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
 
     assert plan.options["use_parquet_staging"] is True
     assert plan.metadata.stage_table == (
-        "object_storage.pa_core_stage.daf6958bfec1c9f7__targetdryrun"
+        "hive.pa_core_stage.daf6958bfec1c9f7__targetdryrun"
     )
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -1941,7 +2124,7 @@ def test_load_df_trino_parquet_dry_run_includes_stage_location(
         "count_target",
     ]
     assert any(
-        "CREATE TABLE object_storage.pa_core_stage.daf6958bfec1c9f7__targetdryrun "
+            "CREATE TABLE hive.pa_core_stage.daf6958bfec1c9f7__targetdryrun "
         in sql
         and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls
@@ -2170,19 +2353,19 @@ def test_dataframe_key_uniqueness_rejects_null_keys() -> None:
     ("options", "target_types", "message"),
     [
         (
-            {"transfer_staging_schema": None, "transfer_staging_location": "s3://x"},
+            {"s3_transfer_staging_schema": None, "s3_transfer_staging_location": "s3://x"},
             {"id": "BIGINT"},
-            "transfer_staging_schema",
+            "s3_transfer_staging_schema",
         ),
         (
-            {"transfer_staging_schema": "stage", "transfer_staging_location": None},
+            {"s3_transfer_staging_schema": "stage", "s3_transfer_staging_location": None},
             {"id": "BIGINT"},
-            "transfer_staging_location",
+            "s3_transfer_staging_location",
         ),
         (
             {
-                "transfer_staging_schema": "stage",
-                "transfer_staging_location": "s3://x",
+                "s3_transfer_staging_schema": "stage",
+                "s3_transfer_staging_location": "s3://x",
             },
             None,
             "Could not resolve target schema",
@@ -2200,8 +2383,8 @@ def test_create_load_parquet_stage_requires_complete_configuration(
                 connection_key="trino",
                 connection_backend="trino",
                 destination_table="sandbox.target",
-                transfer_staging_schema=options["transfer_staging_schema"],
-                transfer_staging_location=options["transfer_staging_location"],
+                s3_transfer_staging_schema=options["s3_transfer_staging_schema"],
+                s3_transfer_staging_location=options["s3_transfer_staging_location"],
             ),
             load_df_module.LoadState(
                 target_exists=True,
@@ -2352,7 +2535,7 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
         append=True,
         key_columns=["id"],
         transfer_staging_schema="scratch",
-        transfer_staging_location="s3://bucket/stage",
+        s3_transfer_staging_location="s3://bucket/stage",
     )
     state = load_df_module.LoadState(True, True)
     stage_kwargs: list[dict[str, object]] = []
@@ -2421,9 +2604,10 @@ def test_load_parquet_collision_exhaustion_and_final_stage_noops(
         connection_key="trino",
         connection_backend="trino",
         destination_table="iceberg.sandbox.target",
-        table_schema={"id": "BIGINT"},
-        transfer_staging_schema="scratch",
-        transfer_staging_location="s3://bucket/stage",
+            table_schema={"id": "BIGINT"},
+            transfer_staging_schema="scratch",
+            s3_transfer_staging_schema="scratch_s3",
+            s3_transfer_staging_location="s3://bucket/stage",
     )
     state = load_df_module.LoadState(False, False)
     messages: list[str] = []
@@ -2502,7 +2686,7 @@ def test_load_option_requirements_and_remaining_upsert_plan_branches(
         key_columns=["id"],
         use_parquet_staging=True,
         transfer_staging_schema="scratch",
-        transfer_staging_location="s3://stage",
+        s3_transfer_staging_location="s3://stage",
     )
     monkeypatch.setattr(load_df_module, "add_create_table_steps", lambda *_a, **_k: None)
     monkeypatch.setattr(load_df_module, "add_load_stage_step", lambda *_a, **_k: None)

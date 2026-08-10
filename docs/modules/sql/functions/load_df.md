@@ -5,7 +5,7 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_ddl_ready_timeout_seconds: 'float | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -44,6 +44,8 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `ch_distributed_cluster` - routing cluster inside the Distributed engine
 - `ch_shard_on_cluster` - execution cluster for shard DDL
 - `ch_distributed_on_cluster` - execution cluster for Distributed facade DDL
+- `ch_ddl_ready_timeout_seconds` - overall ClickHouse post-create readiness deadline; explicit values override the connection default
+- `ch_ddl_wait_policy` - `wait_all`, `wait_shard`, `wait_distr`, or `wait_none`; explicit values override the ClickHouse connection policy
 - `ch_only_shard` - for ClickHouse, create or mutate only the local table instead of a distributed/shard pair
 - `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts
 
@@ -93,14 +95,14 @@ rows
 - Trino partition upsert also requires `upsert_partition_drop_sql_template` in
   the target connection config so connector-specific partition drop SQL is
   explicit.
-- For Trino connections with both `transfer_staging_schema` and
-  `transfer_staging_location` configured, `load_df` writes temporary Parquet
-  files to the object-storage prefix, creates an external stage table in
-  `transfer_parquet_staging_schema` when configured (otherwise
-  `transfer_staging_schema`), and finalizes into the target table from that
-  stage. Python and Trino must both be able to access and clean up that prefix.
-- If `transfer_staging_location` is not configured, Trino `load_df` keeps using
-  direct dataframe inserts controlled by `trino_insert_chunk_size`.
+- For Trino connections with the complete `s3_transfer_staging_schema` and
+  `s3_transfer_staging_location` pair, `load_df` writes temporary Parquet files
+  to the object-storage prefix, creates the external stage table in the S3
+  staging schema, and finalizes into the target from that table. Python and
+  Trino must both be able to access and clean up the prefix.
+- If the S3 pair is not configured, Trino `load_df` is not Parquet-based and
+  uses direct dataframe inserts controlled by `trino_insert_chunk_size`.
+  `transfer_staging_schema` remains available for ordinary SQL staging.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
 - SQL stage identifiers use one maximum-63-byte naming policy on Greenplum,
   Trino, and ClickHouse. Backend-specific catalog/schema qualification and

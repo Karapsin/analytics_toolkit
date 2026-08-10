@@ -30,6 +30,7 @@ class ChReconfigureOptions:
     regular_defaults: ClickHouseScopeDefaults | None = None
     validate_row_count: bool = True
     query_label: str | None = None
+    ch_ddl_wait_policy: str = "wait_all"
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ChReconfiguration:
     after_ddl: dict[str, str]
     temporary_tables: list[str] = field(default_factory=list)
     temporary_table_scopes: list[tuple[str, str | None]] = field(default_factory=list)
+    temporary_table_roles: list[tuple[str, str | None, str]] = field(default_factory=list)
     backup_tables: list[str] = field(default_factory=list)
     cleanup_tables: list[tuple[str, str | None]] = field(default_factory=list)
     rollback_sqls: list[str] = field(default_factory=list)

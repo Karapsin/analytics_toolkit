@@ -262,9 +262,10 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
         "order_by": ["row_id"],
         "ch_engine": "MergeTree",
         "ch_shard_on_cluster": "integration_cluster",
-        "ch_distributed_on_cluster": "integration_cluster",
+        "ch_distributed_on_cluster": "integration_facade_cluster",
         "ch_distributed_cluster": "integration_cluster",
         "ch_distributed_table": True,
+        "ch_ddl_ready_timeout_seconds": 30,
         "ch_sharding_key": "row_id",
         "retry_cnt": 1,
     }
@@ -274,7 +275,9 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
         only_generate_sql=True,
         **create_options,
     )
-    assert isinstance(generated, str) and "ON CLUSTER integration_cluster" in generated
+    assert isinstance(generated, str)
+    assert "ON CLUSTER integration_cluster" in generated
+    assert "ON CLUSTER integration_facade_cluster" in generated
     sql.create_sql_table(
         "ch_target",
         table,
@@ -297,6 +300,24 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
     )
     info = sql.table_info("ch_target", table)
     assert info.shard_table == f"{table}_shard"
+    sql.transfer(
+        from_db="trino_target_values",
+        to_db="ch_target",
+        from_sql=(
+            "SELECT CAST(1 AS BIGINT) AS row_id, DATE '2026-01-01' AS event_date, "
+            "CAST('split-scope' AS VARCHAR) AS value, DECIMAL '1.0000' AS amount"
+        ),
+        to_table=table,
+        write_mode="append",
+        **{
+            key: value
+            for key, value in create_options.items()
+            if key not in {"table_schema", "partition_by", "order_by", "retry_cnt"}
+        },
+        retry_cnt=1,
+        progress=False,
+    )
+    assert int(sql.read("ch_target", f"SELECT count() AS n FROM {table}").iloc[0, 0]) == 1
 
 
 @pytest.mark.sql_scenario("ddl.reconfigure.ch")

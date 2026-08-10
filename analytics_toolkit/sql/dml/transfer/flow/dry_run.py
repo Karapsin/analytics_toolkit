@@ -71,7 +71,7 @@ def dry_run_transfer_options(
             insert_page_sizing.initial_size if insert_page_sizing else None
         ),
         "trino_insert_chunk_size": options.trino_insert_chunk_size,
-        "transfer_staging_location": options.transfer_staging_location,
+        "s3_transfer_staging_location": options.s3_transfer_staging_location,
         "trino_mode": options.trino_mode,
         "from_table": options.source_table,
         "source_table": options.source_table,
@@ -167,6 +167,12 @@ def dry_run_transfer_options(
         "ch_engine": options.ch_engine,
         "ch_cluster": options.ch_cluster,
         "ch_sharding_key": options.ch_sharding_key,
+        "ch_ddl_ready_timeout_extension_cnt": options.ch_ddl_ready_timeout_extension_cnt,
+        "ch_ddl_wait_policy": (
+            options.regular_ch_policy.ddl_wait_policy
+            if options.regular_ch_policy is not None
+            else None
+        ),
         "ch_only_shard": options.ch_only_shard,
         "estimate_total_rows": options.estimate_total_rows,
         "validate_row_count": options.validate_row_count,
@@ -634,7 +640,7 @@ def dry_run_stage_table_name(
             options.to_db_backend,
             options.target_table,
             transfer_staging_schema=(
-                options.transfer_parquet_staging_schema or options.transfer_staging_schema
+                options.s3_transfer_staging_schema
             ),
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=suffix,
@@ -685,7 +691,7 @@ def _uses_lazy_keyed_source_staging(options: TransferOptions) -> bool:
 
 
 def dry_run_stage_external_location(options: TransferOptions) -> str | None:
-    if not options.transfer_staging_location:
+    if not options.s3_transfer_staging_location:
         return None
     try:
         return build_stage_external_location(
@@ -693,7 +699,7 @@ def dry_run_stage_external_location(options: TransferOptions) -> str | None:
             stage_suffix=options.transfer_id or "<runtime-transfer-id>",
         )
     except Exception:
-        return options.transfer_staging_location.rstrip("/") + "/__stage__dryrun/"
+        return options.s3_transfer_staging_location.rstrip("/") + "/__stage__dryrun/"
 
 
 def resolve_dry_run_upsert_columns(options: TransferOptions) -> list[str] | None:

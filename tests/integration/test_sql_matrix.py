@@ -6,6 +6,7 @@ import uuid
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.dml.transfer.flow import finalize as transfer_finalize
 from tests.integration.manifest import scenario_param
 from tests.integration.support.identity import resource_name
 from tests.integration.support.normalization import assert_exact_frame
@@ -54,6 +55,7 @@ def _shape_options(
         "ch_shard_on_cluster": "integration_cluster",
         "ch_distributed_on_cluster": "integration_cluster",
         "ch_distributed_cluster": "integration_cluster",
+        "ch_ddl_ready_timeout_seconds": 30,
         "ch_only_shard": ch_only_shard,
     }
 
@@ -201,6 +203,7 @@ def test_transfer_pair_and_write_mode_matrix(
                 "dt": "Date",
                 "value": "String",
             }
+            options["ch_ddl_ready_timeout_extension_cnt"] = 2
         transferred = sql.transfer(
             source_alias,
             target_alias,
@@ -234,6 +237,76 @@ def test_transfer_pair_and_write_mode_matrix(
             target_table,
             if_exists=True,
             ch_cluster="integration_cluster" if target == "ch" else None,
+        )
+
+
+@pytest.mark.sql_scenario("transfer.trino.ch.fresh_target_retry")
+def test_clickhouse_fresh_target_finalization_retries_count_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_table = _table("trino", "fresh_retry_source")
+    target_table = _table("ch", "fresh_retry_target")
+    real_count = transfer_finalize.count_table_rows
+    target_count_calls = 0
+
+    def mismatched_first_target_count(
+        connection_type: str,
+        connection: object,
+        table_name: str,
+        **kwargs: object,
+    ) -> int:
+        nonlocal target_count_calls
+        rows = int(real_count(connection_type, connection, table_name, **kwargs))
+        if table_name == target_table:
+            target_count_calls += 1
+            if target_count_calls == 1:
+                return rows + 1
+        return rows
+
+    try:
+        sql.load_df(
+            "trino_source_parquet",
+            source_table,
+            _frame(),
+            write_mode="replace",
+            **_shape_options("trino"),
+        )
+        monkeypatch.setattr(
+            transfer_finalize,
+            "count_table_rows",
+            mismatched_first_target_count,
+        )
+        transferred = sql.transfer(
+            "trino_source_parquet",
+            "ch_target",
+            from_table=source_table,
+            to_table=target_table,
+            write_mode="append",
+            batch_size=1,
+            adaptive_batch_size=False,
+            target_rows_per_second=False,
+            retry_cnt=2,
+            timeout_increment=0,
+            full_retry_cnt=1,
+            full_timeout_increment=0,
+            table_schema={"id": "Int64", "dt": "Date", "value": "String"},
+            ch_ddl_ready_timeout_extension_cnt=2,
+            **_shape_options("ch"),
+        )
+        assert transferred == 2
+        assert target_count_calls == 2
+        actual = sql.read(
+            "ch_target",
+            f"SELECT id, dt, value FROM {target_table} ORDER BY id",
+        )
+        assert_exact_frame(actual, _frame(), date_columns=("dt",))
+    finally:
+        sql.drop_tables("trino_source_parquet", source_table, if_exists=True)
+        sql.drop_tables(
+            "ch_target",
+            target_table,
+            if_exists=True,
+            ch_cluster="integration_cluster",
         )
 
 

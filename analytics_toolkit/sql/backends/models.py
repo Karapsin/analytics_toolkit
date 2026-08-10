@@ -39,7 +39,7 @@ class TransferInsertPageSizing:
 @dataclass(frozen=True)
 class TargetConnectionDefaults:
     insert_chunk_size: int | None = None
-    transfer_staging_location: str | None = None
+    s3_transfer_staging_location: str | None = None
     upsert_partition_drop_sql_template: str | None = None
 
 

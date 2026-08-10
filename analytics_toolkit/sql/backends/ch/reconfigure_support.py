@@ -286,6 +286,7 @@ def new_plan(options: ChReconfigureOptions, table: str, strategy: str) -> SqlPla
             "reset_order_by": options.reset_order_by,
             "to_defaults": options.to_defaults,
             "validate_row_count": options.validate_row_count,
+            "ch_ddl_wait_policy": options.ch_ddl_wait_policy,
         },
         metadata=SqlOperationMetadata(query_label=options.query_label),
     )

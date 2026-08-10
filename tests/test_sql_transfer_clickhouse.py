@@ -197,6 +197,12 @@ class FakeClickHouseClient:
                 total += len(insert["data"])
             elif "df" in insert:
                 total += len(insert["df"])
+        if total == 0:
+            for command in reversed(self.commands):
+                body = _strip_query_label(command)
+                if body.startswith(f"INSERT INTO {table_name} ") and " FROM " in body:
+                    source_table = body.rsplit(" FROM ", 1)[1].split()[0]
+                    return self._inserted_rows(source_table)
         return total
 
 
@@ -366,7 +372,7 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     assert "ENGINE = ReplicatedMergeTree" in target_creates[0]
     assert "PARTITION BY `month_date`" in target_creates[0]
     assert "ORDER BY `month_date`" in target_creates[0]
-    assert not any("clusterAllReplicas" in query for query in target.queries)
+    assert any("clusterAllReplicas" in query for query in target.queries)
     assert any(
         command.startswith(f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) ")
         for command in map(_strip_query_label, target.commands)

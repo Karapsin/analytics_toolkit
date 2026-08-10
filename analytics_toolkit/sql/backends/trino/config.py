@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from .storage_config import resolve_storage_config
+
 EXAMPLE_UPSERT_PARTITION_DROP_SQL_TEMPLATE = (
     "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
 )
@@ -26,12 +28,16 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
         _reject_removed_fields,
         _require_string,
     )
-
     _reject_removed_fields(
         raw_config,
         connection_key,
-        ["use_keychain_certs", "keychain_cert_names", "ca_cert"],
+        [
+            "use_keychain_certs",
+            "keychain_cert_names",
+            "ca_cert",
+        ],
     )
+    storage = resolve_storage_config(raw_config, connection_key, _optional_string)
     return TrinoConfig(
         connection_key=connection_key,
         backend="trino",
@@ -66,16 +72,8 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             connection_key,
             "transfer_staging_schema",
         ),
-        transfer_staging_location=_optional_string(
-            raw_config,
-            connection_key,
-            "transfer_staging_location",
-        ),
-        transfer_parquet_staging_schema=_optional_string(
-            raw_config,
-            connection_key,
-            "transfer_parquet_staging_schema",
-        ),
+        s3_transfer_staging_schema=storage.staging_schema,
+        s3_transfer_staging_location=storage.staging_location,
         upsert_partition_drop_sql_template=_optional_string(
             raw_config,
             connection_key,
@@ -98,6 +96,9 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
         ),
         source=_optional_string(raw_config, connection_key, "source"),
         ddl_defaults=parse_ddl_defaults(raw_config.get("ddl_defaults"), connection_key, "trino"),
+        access_key_id=storage.access_key_id,
+        secret_access_key=storage.secret_access_key,
+        endpoint_url=storage.endpoint_url,
     )
 
 

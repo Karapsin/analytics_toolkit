@@ -27,6 +27,14 @@ if TYPE_CHECKING:
 _DEFAULT_TARGET_BATCH_SECONDS = 10.0
 
 
+def validate_optional_non_negative_int(value: Any, option_name: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        message = f"{option_name} must be an integer of at least 0."
+        raise ValueError(message)
+
+
 def validate_built_transfer_options(options: TransferOptions, target_adapter: Any) -> None:
     if options.from_db_key == options.to_db_key:
         raise ValueError("from_db and to_db must be different.")
@@ -126,6 +134,7 @@ def validate_transfer_runtime_options(
     timeout_increment: Any,
     full_retry_cnt: Any,
     full_timeout_increment: Any,
+    ch_ddl_ready_timeout_extension_cnt: Any,
     gp_insert_chunk_size: Any,
     trino_insert_chunk_size: Any,
     concurrency: Any,
@@ -168,6 +177,10 @@ def validate_transfer_runtime_options(
         full_timeout_increment,
         "full_timeout_increment",
     )
+    validate_optional_non_negative_int(
+        ch_ddl_ready_timeout_extension_cnt,
+        "ch_ddl_ready_timeout_extension_cnt",
+    )
     validate_optional_positive_int(
         gp_insert_chunk_size,
         "gp_insert_chunk_size",
@@ -189,15 +202,15 @@ def resolve_trino_mode(
     trino_mode: TrinoTransferMode | str | None,
     *,
     target_backend: str,
-    transfer_staging_schema: str | None,
-    transfer_staging_location: str | None,
+    s3_transfer_staging_schema: str | None,
+    s3_transfer_staging_location: str | None,
 ) -> TrinoTransferMode | None:
     return cast(
         "TrinoTransferMode | None",
         get_backend_adapter(target_backend).resolve_transfer_staging_mode(
             trino_mode,
-            transfer_staging_schema=transfer_staging_schema,
-            transfer_staging_location=transfer_staging_location,
+            s3_transfer_staging_schema=s3_transfer_staging_schema,
+            s3_transfer_staging_location=s3_transfer_staging_location,
         ),
     )
 

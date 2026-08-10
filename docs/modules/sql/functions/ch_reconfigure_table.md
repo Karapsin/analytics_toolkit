@@ -7,13 +7,14 @@ pair while preserving its data. Physical shard DDL, Distributed facade DDL, and
 Distributed routing are controlled independently.
 
 ```python
-ch_reconfigure_table(db_key: 'str', table: 'str', *, ch_engine: 'str | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_settings: 'Mapping[str, str | int | float | bool | None] | None' = None, reset_partition_by: 'bool' = False, reset_order_by: 'bool' = False, to_defaults: 'bool' = False, validate_row_count: 'bool' = True, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+ch_reconfigure_table(db_key: 'str', table: 'str', *, ch_engine: 'str | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_settings: 'Mapping[str, str | int | float | bool | None] | None' = None, ch_ddl_wait_policy: 'str | None' = None, reset_partition_by: 'bool' = False, reset_order_by: 'bool' = False, to_defaults: 'bool' = False, validate_row_count: 'bool' = True, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
 
 - `db_key` - configured ClickHouse connection key or alias
 - `table` - MergeTree table or managed Distributed table to reconfigure
+- `ch_ddl_wait_policy` - select shard/distributed replacement readiness checks; explicit values override the ClickHouse connection policy
 - `ch_engine` - replacement MergeTree-family engine expression
 - `partition_by` - replacement partition expression or partition columns
 - `order_by` - replacement sorting expression or sorting columns

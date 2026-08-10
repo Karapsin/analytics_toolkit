@@ -99,6 +99,9 @@ directory first, then walks upward through parent directories:
       "secure": true,
       "ca_certs_variable": "clickhouse_ca_cert",
       "send_receive_timeout": 6000,
+      "ddl_ready_timeout_seconds": 600,
+      "ddl_ready_timeout_extension_cnt": 1,
+      "ch_ddl_wait_policy": "wait_all",
       "settings": {"connect_timeout": "500"}
     }
   }
@@ -299,6 +302,25 @@ Connection port always wins. Native mode maps the Airflow host, port, login,
 password, and schema/database together with `secure`, `verify`,
 `ca_certs_variable`, timeouts, `settings`, `client_name`, and `compression`.
 Compression defaults to `false` and accepts `"lz4"` or `"zstd"`.
+`ddl_ready_timeout_seconds` controls the shared post-create readiness deadline
+and defaults to 300 seconds.
+`ddl_ready_timeout_extension_cnt` defaults to `1` and controls how many
+additional transfer `timeout_increment` intervals a fresh-target finalization
+may wait after that deadline before consuming a local `retry_cnt` attempt.
+For managed pairs, `distributed.cluster` must route to hosts containing the
+physical shard table; `distributed.on_cluster` may independently deploy the
+facade on a wider cluster. Invalid routing coverage fails before data insertion
+with host-count diagnostics.
+`ch_ddl_wait_policy` accepts exactly `wait_all`, `wait_shard`, `wait_distr`, or
+`wait_none`; explicit function arguments take precedence over the Airflow extra
+or resolver override, and the default is `wait_all`.
+
+Direct Trino Parquet credential families (`aws_access_key_id` plus
+`aws_secret_access_key`, or `access_key_id` plus `secret_access_key`) are not
+accepted in Airflow-source `.connections` files or Airflow extras. Use the
+worker's standard AWS credential-provider configuration for Airflow-managed
+connections. Non-secret `aws_endpoint_url` or `endpoint_url` may be resolved
+from Airflow extras; specify at most one.
 
 `interface`, `query_limit`, and `query_retries` remain HTTP-only and are
 rejected in native mode. Setting only `"interface": "https"` does not allow an
@@ -316,6 +338,9 @@ port `9003` in the Airflow Connection:
       "driver": "native",
       "ca_certs_variable": "ca_certificate",
       "send_receive_timeout": 6000,
+      "ddl_ready_timeout_seconds": 600,
+      "ddl_ready_timeout_extension_cnt": 1,
+      "ch_ddl_wait_policy": "wait_all",
       "settings": {
         "connect_timeout": "500"
       }

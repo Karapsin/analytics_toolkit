@@ -426,6 +426,75 @@ def test_legacy_clickhouse_staging_scope_is_complete() -> None:
     assert regular.distributed.cluster == "{cluster}"
 
 
+def test_clickhouse_ready_timeout_precedence_and_validation() -> None:
+    scope = legacy_clickhouse_scope()
+    configured = resolve_clickhouse_creation_policy(
+        scope,
+        ch_engine=None,
+        ch_cluster=None,
+        ch_sharding_key=None,
+        ch_distributed_table=None,
+        ch_only_shard=False,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        ch_shard_on_cluster=None,
+        ch_distributed_on_cluster=None,
+        connection_ddl_ready_timeout_seconds=600,
+        connection_ddl_ready_timeout_extension_cnt=3,
+    )
+    explicit = resolve_clickhouse_creation_policy(
+        scope,
+        ch_engine=None,
+        ch_cluster=None,
+        ch_sharding_key=None,
+        ch_distributed_table=None,
+        ch_only_shard=False,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        ch_shard_on_cluster=None,
+        ch_distributed_on_cluster=None,
+        ch_ddl_ready_timeout_seconds=900,
+        connection_ddl_ready_timeout_seconds=600,
+        ch_ddl_ready_timeout_extension_cnt=2,
+        connection_ddl_ready_timeout_extension_cnt=3,
+    )
+
+    assert configured.ddl_ready_timeout_seconds == 600
+    assert configured.ddl_ready_timeout_extension_cnt == 3
+    assert explicit.ddl_ready_timeout_seconds == 900
+    assert explicit.ddl_ready_timeout_extension_cnt == 2
+
+    with pytest.raises(ValueError, match="ch_ddl_ready_timeout_seconds"):
+        resolve_clickhouse_creation_policy(
+            scope,
+            ch_engine=None,
+            ch_cluster=None,
+            ch_sharding_key=None,
+            ch_distributed_table=None,
+            ch_only_shard=False,
+            ch_distributed_engine_template=None,
+            ch_distributed_cluster=None,
+            ch_shard_on_cluster=None,
+            ch_distributed_on_cluster=None,
+            ch_ddl_ready_timeout_seconds=0,
+        )
+
+    with pytest.raises(ValueError, match="ch_ddl_ready_timeout_extension_cnt"):
+        resolve_clickhouse_creation_policy(
+            scope,
+            ch_engine=None,
+            ch_cluster=None,
+            ch_sharding_key=None,
+            ch_distributed_table=None,
+            ch_only_shard=False,
+            ch_distributed_engine_template=None,
+            ch_distributed_cluster=None,
+            ch_shard_on_cluster=None,
+            ch_distributed_on_cluster=None,
+            ch_ddl_ready_timeout_extension_cnt=-1,
+        )
+
+
 def test_clickhouse_only_shard_does_not_require_distributed_pair_default() -> None:
     defaults = parse_ddl_defaults({}, "target", "ch")
     policy = resolve_clickhouse_creation_policy(

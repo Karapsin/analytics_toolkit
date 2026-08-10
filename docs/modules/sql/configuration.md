@@ -62,8 +62,11 @@ for an Airflow-source file. The helper never overwrites an existing
     "catalog": "iceberg",
     "schema": "sandbox",
     "transfer_staging_schema": "iceberg.transfer_schema",
-    "transfer_parquet_staging_schema": "hive.transfer_schema",
-    "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+    "s3_transfer_staging_schema": "hive.transfer_schema",
+    "s3_transfer_staging_location": "s3://m-plus-sandbox/my-prefix/analytics_toolkit",
+    "aws_access_key_id": "object-storage-access-key",
+    "aws_secret_access_key": "object-storage-secret-key",
+    "aws_endpoint_url": "https://storage.yandexcloud.net",
     "http_scheme": "https",
     "ca_certs": "trino-ca.pem",
     "insert_chunk_size": 1000
@@ -126,13 +129,16 @@ Trino behavior. JSON `null` removes an inherited configurable property.
   "ch": {
     "type": "ch", "host": "ch.example", "user": "user",
     "password": "password", "database": "default",
+    "ddl_ready_timeout_seconds": 300,
+    "ddl_ready_timeout_extension_cnt": 1,
+    "ch_ddl_wait_policy": "wait_all",
     "ddl_defaults": {
       "regular": {
         "create_distributed_pair": true,
         "shard": {"engine": "ReplicatedMergeTree", "on_cluster": "CORE"},
         "distributed": {
           "engine_template": "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
-          "cluster": "{cluster}", "on_cluster": "{cluster}",
+          "cluster": "CORE", "on_cluster": "{cluster}",
           "sharding_key": "rand()"
         }
       },
@@ -144,6 +150,20 @@ Trino behavior. JSON `null` removes an inherited configurable property.
   }
 }
 ```
+
+Direct Trino entries may use either `aws_access_key_id` plus
+`aws_secret_access_key`, or `access_key_id` plus `secret_access_key`, for
+S3-compatible Parquet staging. Supply one complete family only; incomplete,
+mixed, or dual families are rejected. The values are passed only to
+`fsspec`/`s3fs` as `key` and `secret` for upload and recursive cleanup, not to
+Trino authentication. Omitting credentials preserves the normal AWS provider
+chain. Session-token fields are unsupported, and Airflow-source `.connections`
+files reject direct object-store credentials.
+
+Use either `aws_endpoint_url` or `endpoint_url` for a custom S3-compatible
+endpoint. The resolved URL is passed as
+`client_kwargs={"endpoint_url": ...}`. Supplying both endpoint names is an
+error.
 
 Greenplum and Trino property names are unquoted SQL identifiers and are
 normalized to lowercase. Native `true` and the raw string `"true"` both render
@@ -161,7 +181,24 @@ Those protected values describe the files produced by the workflow.
 For ClickHouse, `shard.on_cluster` controls physical-table execution while
 `distributed.on_cluster` independently controls facade execution.
 `distributed.cluster` is the routing cluster inside `Distributed(...)`; it is
-not an execution cluster. Templates accept `{cluster}`, `{database}`,
+not an execution cluster. Every routing host must contain the physical shard
+table with the expected schema; a permanent scope mismatch fails immediately
+with routing-host diagnostics instead of waiting out the DDL deadline.
+Post-create validation also checks each table on its own execution cluster and
+shares one readiness deadline across all polling checks. The
+optional connection field `ddl_ready_timeout_seconds` defaults to 300 seconds;
+the helpers' `ch_ddl_ready_timeout_seconds` argument takes precedence. For fresh
+transfer targets, `ddl_ready_timeout_extension_cnt` defaults to `1` and controls
+how many additional `timeout_increment` readiness intervals each finalization
+attempt receives. The transfer argument
+`ch_ddl_ready_timeout_extension_cnt` takes precedence over the connection.
+The optional `ch_ddl_wait_policy` selects which created relations must pass
+readiness checks: `wait_all` (default) waits for shard and Distributed tables,
+`wait_shard` waits only for physical/shard tables, `wait_distr` waits only for
+Distributed facades, and `wait_none` skips post-create waiting. An explicit
+function argument takes precedence over the connection value. For a single
+physical table, only `wait_all` and `wait_shard` wait.
+Templates accept `{cluster}`, `{database}`,
 `{shard_table}`, and `{sharding_key}`. The actual target database and generated
 shard relation always replace template positions. Explicit
 `ch_distributed_cluster` and `ch_sharding_key` replace hardcoded template
@@ -217,8 +254,9 @@ connection timeout with TCP keepalives enabled. When `ca_certs` is set and
 
 Trino supports optional `auth_mode`, `http_scheme`, `verify`, `ca_certs`,
 `insert_chunk_size`, `request_timeout`, `source`,
-`transfer_staging_schema`, `transfer_parquet_staging_schema`, and
-`transfer_staging_location` fields.
+`transfer_staging_schema`, `s3_transfer_staging_schema`, and
+`s3_transfer_staging_location` fields. Direct entries also accept the credential
+and endpoint families described above.
 
 When `transfer_staging_schema` is set, transfer staging tables owned by that
 connection are created under that schema and transfer cleanup scans only
@@ -228,21 +266,25 @@ row-count validation materializes the source query once in that schema, then
 counts and streams the materialized result instead of executing the original
 query separately for counting and streaming.
 
-When a Trino connection defines both `transfer_staging_schema` and
-`transfer_staging_location`, `load_df` and transfers from a different
-connection key stage source rows as Parquet files under the object-storage
-location and create a temporary Trino table in
-`transfer_parquet_staging_schema` over that prefix when the latter is set,
-falling back to `transfer_staging_schema`. This allows Iceberg finalization
-stages and Hive external Parquet stages to use different catalogs. Python and
-Trino must both be able to write/read/delete the same object-storage prefix. If
-`transfer_staging_location` is omitted, Trino
-transfers keep using row-batch `INSERT` staging and `load_df` keeps using direct
-dataframe inserts.
+`s3_transfer_staging_schema` and `s3_transfer_staging_location` are an atomic
+pair. When both are present, `load_df` and transfers from another connection key
+use Parquet files under the object-storage location and create external Trino
+stage tables only in the S3 staging schema. `transfer_staging_schema` remains
+independent and is used for ordinary SQL staging, including source snapshots and
+non-Parquet transfers. Python and Trino must both be able to
+write/read/delete the same object-storage prefix.
+
+If the S3 pair is absent, transfers and loads are not Parquet-based:
+`transfer_staging_schema` handles SQL staging, Trino transfers use row-batch
+`INSERT` staging, and `load_df` uses direct dataframe inserts. The removed
+`transfer_staging_location` and `transfer_parquet_staging_schema` names are
+rejected; use the `s3_transfer_*` pair.
 
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
-`client_name`, and `compression` fields. The optional `driver` selector is
+`ddl_ready_timeout_seconds`, `ddl_ready_timeout_extension_cnt`,
+`ch_ddl_wait_policy`, `client_name`, and `compression` fields. The optional
+`driver` selector is
 `"http"` by default and keeps the existing `clickhouse-connect` behavior and
 default port `8123`. Set `"driver": "native"` to use the native ClickHouse
 protocol through the optional `clickhouse-driver` package; its default port is
@@ -347,6 +389,8 @@ in Airflow while selecting the native transport in the routing file:
       "driver": "native",
       "ca_certs_variable": "ca_certificate",
       "send_receive_timeout": 6000,
+      "ddl_ready_timeout_seconds": 600,
+      "ddl_ready_timeout_extension_cnt": 1,
       "settings": {
         "connect_timeout": "500"
       }

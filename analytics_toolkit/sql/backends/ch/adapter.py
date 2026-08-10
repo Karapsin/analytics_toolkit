@@ -229,6 +229,7 @@ class ClickHouseAdapter(BackendAdapter):
         ch_distributed_table: bool = False,
         ch_only_shard: bool = False,
         expected_column_types: dict[str, str] | None = None,
+        ch_creation_policy: Any = None,
     ) -> None:
         from .wait import after_create_table
 
@@ -240,6 +241,7 @@ class ClickHouseAdapter(BackendAdapter):
             ch_distributed_table=ch_distributed_table,
             ch_only_shard=ch_only_shard,
             expected_column_types=expected_column_types,
+            ch_creation_policy=ch_creation_policy,
         )
 
     def drop_table_sql(

@@ -37,11 +37,11 @@ def create_parquet_stage_table(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
 ) -> None:
-    parquet_schema = options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    parquet_schema = options.s3_transfer_staging_schema
     if not parquet_schema:
-        raise ValueError("transfer_staging_schema is required for Parquet staging.")
-    if not options.transfer_staging_location:
-        raise ValueError("transfer_staging_location is required for Parquet staging.")
+        raise ValueError("s3_transfer_staging_schema is required for Parquet staging.")
+    if not options.s3_transfer_staging_location:
+        raise ValueError("s3_transfer_staging_location is required for Parquet staging.")
     if stage_state.stage_column_types is None:
         raise ValueError(
             "Could not resolve source schema before creating a Parquet stage table. "
@@ -129,9 +129,9 @@ def build_stage_external_location(
     *,
     stage_suffix: str | None = None,
 ) -> str:
-    if not options.transfer_staging_location:
-        raise ValueError("transfer_staging_location is required.")
-    base_location = options.transfer_staging_location.rstrip("/")
+    if not options.s3_transfer_staging_location:
+        raise ValueError("s3_transfer_staging_location is required.")
+    base_location = options.s3_transfer_staging_location.rstrip("/")
     target_base = get_backend_adapter("trino").parquet_stage_target_table_base(
         _stage_target_table_name(options)
     )
@@ -170,6 +170,7 @@ def write_batch_to_parquet_stage(
     worker_id: int = 0,
     start_ordinal: int | None = None,
     stop_ordinal: int | None = None,
+    storage_options: Mapping[str, Any] | None = None,
 ) -> int:
     row_count = len(batch.rows)
     if row_count == 0:
@@ -206,7 +207,15 @@ def write_batch_to_parquet_stage(
                 f"slice-{slice_token:05d}{range_token}-part-{file_index:05d}.parquet"
             )
         remote_uri = f"{stage_external_location.rstrip('/')}/{file_name}"
-        upload_spooled_file(fsspec_module, spooled_file, remote_uri)
+        if storage_options is None:
+            upload_spooled_file(fsspec_module, spooled_file, remote_uri)
+        else:
+            upload_spooled_file(
+                fsspec_module,
+                spooled_file,
+                remote_uri,
+                storage_options=storage_options,
+            )
         if _spooled_file_rolled_to_disk(spooled_file):
             gc.collect()
         return row_count
@@ -223,6 +232,7 @@ def write_dataframe_to_parquet_stage(
     fsspec_module: Any,
     row_group_size: int,
     on_progress: Any | None = None,
+    storage_options: Mapping[str, Any] | None = None,
 ) -> int:
     if len(df) == 0:
         return 0
@@ -246,7 +256,15 @@ def write_dataframe_to_parquet_stage(
             del arrow_table
             spooled_file.seek(0)
             remote_uri = f"{stage_external_location.rstrip('/')}/part-{file_index:05d}.parquet"
-            upload_spooled_file(fsspec_module, spooled_file, remote_uri)
+            if storage_options is None:
+                upload_spooled_file(fsspec_module, spooled_file, remote_uri)
+            else:
+                upload_spooled_file(
+                    fsspec_module,
+                    spooled_file,
+                    remote_uri,
+                    storage_options=storage_options,
+                )
             written_count = len(chunk)
             written_rows += written_count
             if on_progress is not None:
@@ -288,8 +306,14 @@ def upload_spooled_file(
     fsspec_module: Any,
     spooled_file: Any,
     remote_uri: str,
+    *,
+    storage_options: Mapping[str, Any] | None = None,
 ) -> None:
-    with fsspec_module.open(remote_uri, "wb") as remote_file:
+    with fsspec_module.open(
+        remote_uri,
+        "wb",
+        **dict(storage_options or {}),
+    ) as remote_file:
         shutil.copyfileobj(spooled_file, remote_file)
 
 
@@ -297,10 +321,14 @@ def cleanup_parquet_stage_location(
     stage_external_location: str,
     *,
     fsspec_module: Any | None = None,
+    storage_options: Mapping[str, Any] | None = None,
 ) -> None:
     if fsspec_module is None:
         _pa, _pq, fsspec_module = ensure_parquet_staging_dependencies()
-    fs, path = fsspec_module.core.url_to_fs(stage_external_location)
+    fs, path = fsspec_module.core.url_to_fs(
+        stage_external_location,
+        **dict(storage_options or {}),
+    )
     fs.rm(path, recursive=True)
 
 

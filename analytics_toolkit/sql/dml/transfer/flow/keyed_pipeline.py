@@ -457,6 +457,7 @@ def _stage_batch(
             pa=pa,
             pq=pq,
             fsspec_module=fsspec_module,
+            storage_options=options.parquet_storage_options,
             row_group_size=parquet_row_group_size(options),
             transfer_id=options.transfer_id,
             worker_id=worker_index,

@@ -22,6 +22,9 @@ class OperationDdlDefaults:
 def resolve_operation_ddl(config: Any, **clickhouse_overrides: Any) -> OperationDdlDefaults:
     defaults = getattr(config, "ddl_defaults", None)
     if not get_backend(config.backend).supports_distributed_table_targets():
+        if clickhouse_overrides.get("ch_ddl_wait_policy") is not None:
+            message = "ch_ddl_wait_policy requires a ClickHouse target."
+            raise ValueError(message)
         return OperationDdlDefaults(
             getattr(defaults, "regular", None),
             getattr(defaults, "staging", None),
@@ -31,11 +34,24 @@ def resolve_operation_ddl(config: Any, **clickhouse_overrides: Any) -> Operation
         )
     regular = defaults.regular if defaults is not None else legacy_clickhouse_scope()
     staging = defaults.staging if defaults is not None else legacy_clickhouse_scope(staging=True)
+    connection_ready_timeout = getattr(config, "ddl_ready_timeout_seconds", None)
+    connection_ready_extension_cnt = getattr(
+        config,
+        "ddl_ready_timeout_extension_cnt",
+        None,
+    )
+    connection_wait_policy = getattr(config, "ch_ddl_wait_policy", None)
     return OperationDdlDefaults(
         None,
         None,
         None,
-        resolve_clickhouse_creation_policy(regular, **clickhouse_overrides),
+        resolve_clickhouse_creation_policy(
+            regular,
+            connection_ddl_ready_timeout_seconds=connection_ready_timeout,
+            connection_ddl_ready_timeout_extension_cnt=connection_ready_extension_cnt,
+            connection_ddl_wait_policy=connection_wait_policy,
+            **clickhouse_overrides,
+        ),
         resolve_clickhouse_creation_policy(
             staging,
             ch_engine=None,
@@ -47,5 +63,8 @@ def resolve_operation_ddl(config: Any, **clickhouse_overrides: Any) -> Operation
             ch_distributed_cluster=None,
             ch_shard_on_cluster=None,
             ch_distributed_on_cluster=None,
+            connection_ddl_ready_timeout_seconds=connection_ready_timeout,
+            connection_ddl_ready_timeout_extension_cnt=connection_ready_extension_cnt,
+            connection_ddl_wait_policy=connection_wait_policy,
         ),
     )

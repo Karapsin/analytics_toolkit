@@ -26,7 +26,7 @@ def target_connection_defaults(adapter: Any, config: Any) -> TargetConnectionDef
     del adapter
     return TargetConnectionDefaults(
         insert_chunk_size=config.insert_chunk_size,
-        transfer_staging_location=config.transfer_staging_location,
+        s3_transfer_staging_location=config.s3_transfer_staging_location,
         upsert_partition_drop_sql_template=config.upsert_partition_drop_sql_template,
     )
 
@@ -35,20 +35,20 @@ def resolve_transfer_staging_mode(
     adapter: Any,
     requested_mode: Any,
     *,
-    transfer_staging_schema: str | None,
-    transfer_staging_location: str | None,
+    s3_transfer_staging_schema: str | None,
+    s3_transfer_staging_location: str | None,
 ) -> Any:
     del adapter
     if requested_mode is None:
-        if transfer_staging_schema is not None and transfer_staging_location is not None:
+        if s3_transfer_staging_schema is not None:
             return "parquet"
         return "values"
     if requested_mode not in {"parquet", "values"}:
         raise ValueError("trino_mode must be one of: 'parquet', 'values'.")
-    if requested_mode == "parquet" and transfer_staging_schema is None:
-        raise ValueError("trino_mode='parquet' requires transfer_staging_schema on to_db.")
-    if requested_mode == "parquet" and transfer_staging_location is None:
-        raise ValueError("trino_mode='parquet' requires transfer_staging_location on to_db.")
+    if requested_mode == "parquet" and s3_transfer_staging_schema is None:
+        raise ValueError("trino_mode='parquet' requires s3_transfer_staging_schema on to_db.")
+    if requested_mode == "parquet" and s3_transfer_staging_location is None:
+        raise ValueError("trino_mode='parquet' requires s3_transfer_staging_location on to_db.")
     return requested_mode
 
 

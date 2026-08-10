@@ -407,7 +407,7 @@ def test_change_impact_reports_sql_contract_and_architecture_headroom() -> None:
     budgets = {
         item["path"]: item for item in result["result"]["architecture"]["modules"]
     }
-    assert budgets["analytics_toolkit/sql/backends/base.py"]["remaining_lines"] == 8
+    assert budgets["analytics_toolkit/sql/backends/base.py"]["remaining_lines"] == 5
     assert "docs/modules/sql/functions/read.md" in result["result"]["documentation_paths"]
     assert result["telemetry"]["response_bytes"] < 8_000
 

@@ -111,11 +111,11 @@ def test_unkeyed_exact_progress_rates_eta_and_phase_transitions(  # noqa: PLR091
         insert_completed_at=4,
     )
     assert second.snapshot.committed_rows == 200
-    assert second.snapshot.average_rows_per_second == 50
-    assert second.snapshot.rolling_rows_per_second == 50
+    assert second.snapshot.average_rows_per_second == pytest.approx(200 / 3)
+    assert second.snapshot.rolling_rows_per_second == pytest.approx(200 / 3)
     assert second.snapshot.remaining_load_rows == 100
-    assert second.snapshot.load_eta_seconds == 2
-    assert second.snapshot.total_transfer_eta_seconds == 11
+    assert second.snapshot.load_eta_seconds == 1.5
+    assert second.snapshot.total_transfer_eta_seconds == 8.25
 
     progress.commit_batch(
         logical_batch_id=(0, 201, 301),
@@ -131,7 +131,7 @@ def test_unkeyed_exact_progress_rates_eta_and_phase_transitions(  # noqa: PLR091
     assert loading.remaining_load_rows == 0
     assert loading.remaining_consolidation_rows == 200
     assert loading.remaining_finalization_rows == 300
-    assert loading.total_transfer_eta_seconds == 10
+    assert loading.total_transfer_eta_seconds == pytest.approx(25 / 3)
     assert progress.expected_consolidation_rows == 200
 
     clock.set(8)
@@ -142,7 +142,7 @@ def test_unkeyed_exact_progress_rates_eta_and_phase_transitions(  # noqa: PLR091
     )
     assert consolidated.consolidation_complete is True
     assert consolidated.remaining_consolidation_rows == 0
-    assert consolidated.total_transfer_eta_seconds == 8
+    assert consolidated.total_transfer_eta_seconds == 5
 
     finalizing = progress.mark_finalization_started()
     assert finalizing.finalization_started is True
@@ -164,11 +164,11 @@ def test_unkeyed_exact_progress_rates_eta_and_phase_transitions(  # noqa: PLR091
     assert "rolling rate unavailable" in batch_logs[0]
     assert "load ETA unavailable" in batch_logs[0]
     assert "total transfer ETA unavailable" in batch_logs[0]
-    assert "rolling rate 50 rows/s" in batch_logs[1]
+    assert "rolling rate 67 rows/s" in batch_logs[1]
     assert "rolling approximate RAM rate" in batch_logs[1]
-    assert "load ETA 2 seconds" in batch_logs[1]
-    assert "total transfer ETA ~11 seconds" in batch_logs[1]
-    assert any("remaining total transfer ETA ~10 seconds" in message for message in logs)
+    assert "load ETA 1.5 seconds" in batch_logs[1]
+    assert "total transfer ETA ~8.2 seconds" in batch_logs[1]
+    assert any("remaining total transfer ETA ~8.3 seconds" in message for message in logs)
     assert any("200 copied rows in 2 seconds" in message for message in logs)
     assert any("Completed destination finalization" in message for message in logs)
     assert any("source stages dropped 1/1" in message for message in logs)

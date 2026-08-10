@@ -393,6 +393,7 @@ class TransferOptions:
     timeout_increment: int | float = 5
     full_retry_cnt: int = 5
     full_timeout_increment: int | float = 60 * 10
+    ch_ddl_ready_timeout_extension_cnt: int = 1
     key_columns: list[str] | None = None
     upsert_partition_column: str | None = None
     trino_upsert_partition_drop_sql_template: str | None = None
@@ -432,8 +433,9 @@ class TransferOptions:
     source_transfer_staging_schema: str | None = None
     source_transfer_staging_username: str | None = None
     ignore_source_staging: bool = False
-    transfer_parquet_staging_schema: str | None = None
-    transfer_staging_location: str | None = None
+    s3_transfer_staging_schema: str | None = None
+    s3_transfer_staging_location: str | None = None
+    parquet_storage_options: Mapping[str, Any] | None = field(default=None, repr=False)
     transfer_staging_username: str | None = None
     trino_mode: TrinoTransferMode | None = None
     transfer_keys: list[str] | None = None

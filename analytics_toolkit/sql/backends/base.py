@@ -41,6 +41,7 @@ class BackendAdapter:
     requires_upsert_partition_column: bool = False
     requires_upsert_partition_drop_template: bool = False
     supports_show_tables_catalog_filter: bool = False
+    forbidden_airflow_file_override_fields: frozenset[str] = frozenset()
 
     @property
     def name(self) -> BackendName:
@@ -81,6 +82,8 @@ class BackendAdapter:
         set_if_not_none: Callable[[dict[str, Any], str, Any], None],
     ) -> None:
         raise NotImplementedError
+
+    validate_airflow_file_overrides = _adapter_defaults.validate_airflow_file_overrides
 
     def open_connection(
         self,

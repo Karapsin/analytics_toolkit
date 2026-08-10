@@ -11,6 +11,10 @@ Generated from package version bumps and recent commit history.
 - Hardened staged transfers and standardized stage names across SQL backends.
 - Added pipelined keyed SQL staging with bounded concurrency, validation, and ETA logging.
 - Redesigned ClickHouse reconfiguration topology and defaults inputs.
+- Validated ClickHouse Distributed routing coverage and configurable DDL readiness deadlines.
+- Based transfer throughput and ETA on active batch loading time.
+- Retried fresh ClickHouse transfer finalization before source reloads.
+- Added strict Trino S3 staging schemas, credential aliases, and custom endpoints.
 
 ## 1.3.11.4 - 2026-07-31
 

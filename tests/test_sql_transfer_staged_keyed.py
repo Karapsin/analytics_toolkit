@@ -1457,7 +1457,7 @@ def test_keyed_progress_log_messages_are_tag_first_and_phase_complete(
     assert "rolling rate unavailable" in messages[1]
     assert "load ETA unavailable; total transfer ETA unavailable" in messages[1]
     assert messages[2].startswith(f"{task.tag} Staged batch 2: 10 rows")
-    assert "rolling rate 5 rows/s" in messages[2]
+    assert "rolling rate 7 rows/s" in messages[2]
     assert "approximate RAM rate" in messages[2]
     assert messages[3].startswith(f"{task.tag} Verified 20 rows")
     assert messages[4].startswith("Completed source-stage loading: 20 rows")

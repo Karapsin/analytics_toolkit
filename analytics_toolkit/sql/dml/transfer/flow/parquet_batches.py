@@ -131,6 +131,7 @@ def load_parquet_stage_batches(
                 fsspec_module=fsspec_module,
                 row_group_size=row_group_size,
                 transfer_id=options.transfer_id,
+                storage_options=options.parquet_storage_options,
             )
             file_index += 1
             progress_tracker.update(inserted_rows)

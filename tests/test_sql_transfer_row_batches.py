@@ -262,7 +262,8 @@ def make_trino_config(
     connection_key: str,
     *,
     transfer_staging_schema: str | None = "object_storage.sandbox",
-    transfer_staging_location: str | None = "s3://bucket/tmp/analytics_toolkit_transfer",
+    s3_transfer_staging_schema: str | None = "hive.sandbox",
+    s3_transfer_staging_location: str | None = "s3://bucket/tmp/analytics_toolkit_transfer",
 ) -> Any:
     return config_module.TrinoConfig(
         connection_key=connection_key,
@@ -281,7 +282,8 @@ def make_trino_config(
         request_timeout=None,
         source=None,
         transfer_staging_schema=transfer_staging_schema,
-        transfer_staging_location=transfer_staging_location,
+        s3_transfer_staging_schema=s3_transfer_staging_schema,
+        s3_transfer_staging_location=s3_transfer_staging_location,
         upsert_partition_drop_sql_template=(
             "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
         ),
@@ -2995,7 +2997,7 @@ def test_transfer_options_enable_parquet_staging_for_trino_target_with_location(
 
     assert options.trino_mode == "parquet"
     assert options.transfer_staging_schema == "object_storage.sandbox"
-    assert options.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
+    assert options.s3_transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_transfer_options_default_and_none_write_modes_append(
@@ -3031,7 +3033,11 @@ def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
 ) -> None:
     configs = {
         "gp": make_gp_config("gp"),
-        "trino": make_trino_config("trino", transfer_staging_location=None),
+        "trino": make_trino_config(
+            "trino",
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
+        ),
     }
     monkeypatch.setattr(
         transfer_api_module,
@@ -3048,7 +3054,7 @@ def test_transfer_options_keep_row_batch_staging_when_trino_location_absent(
 
     assert options.trino_mode == "values"
     assert options.transfer_staging_schema == "object_storage.sandbox"
-    assert options.transfer_staging_location is None
+    assert options.s3_transfer_staging_location is None
 
 
 def test_transfer_options_use_source_connection_staging_schema_for_validation(
@@ -3059,7 +3065,11 @@ def test_transfer_options_use_source_connection_staging_schema_for_validation(
             "gp_source",
             transfer_staging_schema="source_scratch",
         ),
-        "trino": make_trino_config("trino", transfer_staging_location=None),
+        "trino": make_trino_config(
+            "trino",
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
+        ),
     }
     monkeypatch.setattr(
         transfer_api_module,
@@ -3101,7 +3111,7 @@ def test_transfer_options_explicit_values_mode_disables_parquet_staging(
 
     assert options.trino_mode == "values"
     assert options.transfer_staging_schema == "object_storage.sandbox"
-    assert options.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
+    assert options.s3_transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_transfer_options_reject_explicit_parquet_without_location(
@@ -3109,7 +3119,11 @@ def test_transfer_options_reject_explicit_parquet_without_location(
 ) -> None:
     configs = {
         "gp": make_gp_config("gp"),
-        "trino": make_trino_config("trino", transfer_staging_location=None),
+        "trino": make_trino_config(
+            "trino",
+            s3_transfer_staging_schema="hive.sandbox",
+            s3_transfer_staging_location=None,
+        ),
     }
     monkeypatch.setattr(
         transfer_api_module,
@@ -3117,7 +3131,7 @@ def test_transfer_options_reject_explicit_parquet_without_location(
         lambda db_key: configs[db_key],
     )
 
-    with pytest.raises(ValueError, match="transfer_staging_location"):
+    with pytest.raises(ValueError, match="s3_transfer_staging_location"):
         transfer_api_module.build_transfer_options(
             from_db="gp",
             to_db="trino",
@@ -3316,14 +3330,14 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     assert plan.options["worker_stage_count"] == 1
     assert plan.metadata.worker_stage_count == 1
     assert plan.metadata.stage_tables == [plan.metadata.stage_table]
-    assert plan.metadata.stage_table.startswith('object_storage.sandbox."39539a1e20d7e1c9__')
+    assert plan.metadata.stage_table.startswith('hive.sandbox."39539a1e20d7e1c9__')
     assert "<runtime-transfer-id>__w00000" in plan.metadata.stage_table
     assert plan.metadata.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
         "__analytics_toolkit_target_user__stage__<runtime-transfer-id>/"
     )
     assert any(
-        sql.startswith('CREATE TABLE object_storage.sandbox."39539a1e20d7e1c9__')
+        sql.startswith('CREATE TABLE hive.sandbox."39539a1e20d7e1c9__')
         and "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/" in sql
         for sql in plan.sqls
     )
@@ -3335,7 +3349,7 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
     assert "DROP TABLE IF EXISTS sandbox.target" in plan.sqls
     assert "DELETE FROM sandbox.target" not in plan.sqls
     assert any(sql.startswith("INSERT INTO sandbox.target") for sql in plan.sqls)
-    assert any(sql.startswith("DROP TABLE IF EXISTS object_storage.sandbox") for sql in plan.sqls)
+    assert any(sql.startswith("DROP TABLE IF EXISTS hive.sandbox") for sql in plan.sqls)
     assert any(sql.startswith("DELETE STAGE FILES s3://bucket/tmp") for sql in plan.sqls)
 
 
@@ -4545,7 +4559,7 @@ def test_transfer_dry_run_upsert_uses_parquet_stage_table_in_partition_replaceme
     assert any(
         sql.startswith("INSERT INTO ")
         and "__upsert" in sql
-        and 'object_storage.sandbox."39539a1e20d7e1c9__' in sql
+        and 'hive.sandbox."39539a1e20d7e1c9__' in sql
         for sql in plan.sqls
     )
     assert any("DROP PARTITION" in sql for sql in plan.sqls)
@@ -5797,7 +5811,8 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
         batch_size=2,
         adaptive_batch_size=False,
         transfer_staging_schema="object_storage.sandbox",
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_schema="hive.sandbox",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
         trino_mode="parquet",
     )
@@ -5942,7 +5957,8 @@ def test_load_parquet_stage_infers_schema_from_first_row_group(
         target_table="sandbox.target",
         batch_size=1,
         transfer_staging_schema="object_storage.sandbox",
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_schema="hive.sandbox",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
         trino_mode="parquet",
     )
@@ -6016,7 +6032,8 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
         source_sql="select id from source_table",
         target_table="sandbox.target",
         transfer_staging_schema="object_storage.sandbox",
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_schema="hive.sandbox",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         transfer_staging_username="target_user",
         trino_mode="parquet",
     )
@@ -6045,7 +6062,7 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
     )
 
     assert stage_state.stage_table == (
-        "object_storage.sandbox.target__analytics_toolkit_target_user__stage__abcd1234"
+        "hive.sandbox.target__analytics_toolkit_target_user__stage__abcd1234"
     )
     assert stage_state.stage_external_location == (
         "s3://bucket/tmp/analytics_toolkit_transfer/target/"
@@ -6053,7 +6070,7 @@ def test_create_parquet_stage_table_uses_staging_schema_and_location(
     )
     assert executed_sqls == [
         "CREATE TABLE "
-        "object_storage.sandbox.target__analytics_toolkit_target_user__stage__abcd1234 "
+        "hive.sandbox.target__analytics_toolkit_target_user__stage__abcd1234 "
         "(\"id\" BIGINT) WITH (format = 'PARQUET', "
         "external_location = 's3://bucket/tmp/analytics_toolkit_transfer/target/"
         "__analytics_toolkit_target_user__stage__abcd1234/')"
@@ -6075,7 +6092,7 @@ def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
         to_db_key="trino",
         to_db_backend="trino",
         transfer_staging_schema="object_storage.sandbox",
-        transfer_staging_location="s3://bucket/tmp",
+        s3_transfer_staging_location="s3://bucket/tmp",
         trino_mode="parquet",
     )
 
@@ -6117,7 +6134,7 @@ def test_parquet_staging_missing_dependencies_raise_clear_error(
         to_db_key="trino",
         to_db_backend="trino",
         transfer_staging_schema="object_storage.sandbox",
-        transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
         trino_mode="parquet",
     )
 
@@ -7433,7 +7450,11 @@ def test_resolve_trino_mode_delegates_to_target_adapter(
         lambda _backend: SimpleNamespace(
             resolve_transfer_staging_mode=lambda mode, **kwargs: (
                 calls.append(
-                    (mode, kwargs["transfer_staging_schema"], kwargs["transfer_staging_location"])
+                    (
+                        mode,
+                        kwargs["s3_transfer_staging_schema"],
+                        kwargs["s3_transfer_staging_location"],
+                    )
                 )
                 or "parquet"
             )
@@ -7443,12 +7464,12 @@ def test_resolve_trino_mode_delegates_to_target_adapter(
         transfer_options_module.resolve_trino_mode(
             "auto",
             target_backend="trino",
-            transfer_staging_schema="scratch",
-            transfer_staging_location="s3://bucket",
+            s3_transfer_staging_schema="hive.scratch",
+            s3_transfer_staging_location="s3://bucket",
         )
         == "parquet"
     )
-    assert calls == [("auto", "scratch", "s3://bucket")]
+    assert calls == [("auto", "hive.scratch", "s3://bucket")]
 
 
 @pytest.mark.parametrize(
@@ -7485,8 +7506,8 @@ def test_resolve_adaptive_batch_bounds_rejects_invalid_combinations(
 @pytest.mark.parametrize(
     ("options_override", "stage_types", "message"),
     [
-        ({"transfer_staging_schema": None}, {"id": "BIGINT"}, "schema"),
-        ({"transfer_staging_location": None}, {"id": "BIGINT"}, "location"),
+        ({"s3_transfer_staging_schema": None}, {"id": "BIGINT"}, "schema"),
+        ({"s3_transfer_staging_location": None}, {"id": "BIGINT"}, "location"),
         ({}, None, "source schema"),
     ],
 )
@@ -7498,8 +7519,8 @@ def test_create_parquet_stage_table_validates_required_inputs(
     values: dict[str, Any] = {
         "to_db_key": "trino",
         "to_db_backend": "trino",
-        "transfer_staging_schema": "scratch",
-        "transfer_staging_location": "s3://bucket/stage",
+        "s3_transfer_staging_schema": "hive.scratch",
+        "s3_transfer_staging_location": "s3://bucket/stage",
     }
     values.update(options_override)
     options = make_progress_options(**values)
@@ -7521,7 +7542,8 @@ def test_create_parquet_stage_table_reports_collision_exhaustion(
         to_db_key="trino",
         to_db_backend="trino",
         transfer_staging_schema="scratch",
-        transfer_staging_location="s3://bucket/stage",
+        s3_transfer_staging_schema="hive.scratch",
+        s3_transfer_staging_location="s3://bucket/stage",
     )
     messages: list[str] = []
     monkeypatch.setattr(parquet_stage_module, "STAGE_TABLE_NAME_MAX_ATTEMPTS", 2)
@@ -7556,7 +7578,7 @@ def test_parquet_location_row_group_and_target_name_helpers(
         ),
     )
     options = SimpleNamespace(
-        transfer_staging_location="s3://bucket/base/",
+        s3_transfer_staging_location="s3://bucket/base/",
         transfer_staging_username=None,
         destination_table="schema.target",
     )
@@ -7571,7 +7593,7 @@ def test_parquet_location_row_group_and_target_name_helpers(
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=60_000)) == 50_000
     with pytest.raises(ValueError, match="staging_location"):
         parquet_stage_module.build_stage_external_location(
-            SimpleNamespace(transfer_staging_location=None)
+            SimpleNamespace(s3_transfer_staging_location=None)
         )
     with pytest.raises(ValueError, match="target table"):
         parquet_stage_module._stage_target_table_name(SimpleNamespace())
@@ -7771,7 +7793,7 @@ def test_initialize_shared_keyed_stage_dispatches_parquet(
         trino_mode="parquet",
         to_db_backend="trino",
         transfer_staging_schema="scratch",
-        transfer_staging_location="s3://bucket/stage",
+        s3_transfer_staging_location="s3://bucket/stage",
     )
     state = models_module.TransferStageState(target_exists=False)
     calls: list[str] = []
@@ -7870,6 +7892,7 @@ def test_load_parquet_stage_batches_empty_estimate_and_missing_location(
     options = make_progress_options(
         to_db_backend="trino",
         trino_mode="parquet",
+        s3_transfer_staging_schema="hive.scratch",
         progress=True,
         estimate_total_rows=True,
     )
@@ -8114,7 +8137,7 @@ def test_dry_run_fallback_names_locations_labels_and_source_parse(
         target_table="schema.target",
         transfer_slices=slices,
         concurrency=2,
-        transfer_staging_location="s3://bucket/base/",
+        s3_transfer_staging_location="s3://bucket/base/",
     )
     monkeypatch.setattr(
         dry_run_module,
@@ -8465,7 +8488,7 @@ def test_remaining_key_dry_run_logging_and_row_count_guards(
     with pytest.raises(ValueError, match="float values must be finite"):
         keys_module.render_transfer_literal(float("inf"))
 
-    no_location = make_progress_options(transfer_staging_location=None)
+    no_location = make_progress_options(s3_transfer_staging_location=None)
     assert dry_run_module.dry_run_stage_external_location(no_location) is None
     empty_values = models_module.TransferSlice(0, (), "", "select 1", "slice-0")
     assert (
@@ -8843,7 +8866,7 @@ def test_transfer_upsert_precondition_matrix(
         adapter,
         "target_connection_defaults",
         lambda _config: SimpleNamespace(
-            transfer_staging_location=defaults.transfer_staging_location,
+            s3_transfer_staging_location=defaults.s3_transfer_staging_location,
             upsert_partition_drop_sql_template=None,
             insert_chunk_size=defaults.insert_chunk_size,
         ),

@@ -13,6 +13,36 @@ from analytics_toolkit.sql.ddl.properties import merge_ddl_properties, overlay_w
 
 from ..base import _apply_query_label
 
+FORBIDDEN_CREDENTIAL_FIELDS = frozenset(
+    {
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+    }
+)
+
+AIRFLOW_EXTRA_FIELDS = (
+    "catalog",
+    "schema",
+    "transfer_staging_schema",
+    "s3_transfer_staging_schema",
+    "s3_transfer_staging_location",
+    "aws_endpoint_url",
+    "endpoint_url",
+    "upsert_partition_drop_sql_template",
+    "auth_mode",
+    "http_scheme",
+    "verify",
+    "ca_certs",
+    "insert_chunk_size",
+    "request_timeout",
+    "source",
+    "ddl_defaults",
+)
+
 
 def build_parquet_stage_table_sql(
     adapter: Any,

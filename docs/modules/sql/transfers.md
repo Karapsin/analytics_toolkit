@@ -29,12 +29,13 @@ RAM batching, another in target insertion, and another in validation. Unkeyed
 source staging retains one immutable slice-zero snapshot with bounded ordinal
 ranges.
 
-For Trino targets, a target connection with both `transfer_staging_schema` and
-`transfer_staging_location` stages transfers from different connection keys
-through Parquet files in object storage. The staging schema is the Trino table
-namespace, while the staging location is the physical prefix that Python writes
-and Trino reads. Without `transfer_staging_location`, Trino transfers keep the
-row-batch `INSERT` staging behavior.
+For Trino targets, a target connection with both `s3_transfer_staging_schema`
+and `s3_transfer_staging_location` stages transfers from different connection
+keys through Parquet files in object storage. The S3 staging schema is the
+external-table namespace, while the location is the physical prefix that Python
+writes and Trino reads. Without the complete pair, Trino transfers keep the
+row-batch `INSERT` staging behavior. `transfer_staging_schema` remains the
+separate namespace for non-Parquet SQL staging and source snapshots.
 
 Use `write_mode` to choose finalization behavior:
 
@@ -197,6 +198,15 @@ approximate in-process RAM throughput in IEC units, not network or compressed
 database bandwidth. These transfer messages are emitted independently of the
 optional progress bar.
 
+Attempt-average and rolling throughput begin at the earliest successful
+batch's source-read start, including idle gaps between batches but excluding
+metadata inspection, source counting, DDL, and other pre-loading work. The
+reported total time still covers the full attempt. Concurrent batches that
+commit out of read-start order rebase both rate anchors to the earliest
+observed read start. Once the final batch commits, loading throughput is frozen
+so consolidation and destination finalization reduce only their remaining work
+components rather than progressively lowering the loading rate.
+
 While some keyed CTAS counts are unknown, estimated total rows equal exact known
 rows plus the average materialized-key size for each unknown key; affected load
 totals and load ETA are marked `~`. ETA uses the lower positive value of rolling
@@ -246,6 +256,18 @@ attempt-owned stages on the current aliases, but no manifest or coordination
 table is available for resume. Finalization never treats retained staging as
 proof that the destination mutation succeeded, and append is not retried after
 an ambiguous final append.
+
+ClickHouse finalization retries are narrower when the operation creates its
+target from scratch: replace, or append/upsert when the target was absent. Each
+`retry_cnt` attempt creates a clean target, waits for the normal DDL-readiness
+deadline, and may then wait for `ch_ddl_ready_timeout_extension_cnt` additional
+`timeout_increment` intervals. After insertion, exact target and stage counts
+must match even when `validate_row_count=False`. Readiness failure, insertion
+failure, or a count mismatch drops only the incomplete target and repeats
+finalization from the preserved stage. Source data is rematerialized through
+`full_retry_cnt` only after these local attempts are exhausted. Existing-target
+append and upsert retain their prior behavior because their total row counts
+cannot equal the incoming stage count.
 
 ## Types
 

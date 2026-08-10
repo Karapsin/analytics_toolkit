@@ -35,6 +35,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     requires_upsert_partition_column = True
     requires_upsert_partition_drop_template = True
     supports_show_tables_catalog_filter = True
+    forbidden_airflow_file_override_fields = _parquet_stage.FORBIDDEN_CREDENTIAL_FIELDS
 
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)
@@ -82,21 +83,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         copy_extra_fields(
             raw_config,
             extras,
-            [
-                "catalog",
-                "schema",
-                "transfer_staging_schema",
-                "transfer_staging_location",
-                "upsert_partition_drop_sql_template",
-                "auth_mode",
-                "http_scheme",
-                "verify",
-                "ca_certs",
-                "insert_chunk_size",
-                "request_timeout",
-                "source",
-                "ddl_defaults",
-            ],
+            _parquet_stage.AIRFLOW_EXTRA_FIELDS,
         )
         if isinstance(raw_config.get("verify"), bool):
             raw_config["verify"] = str(raw_config["verify"]).lower()

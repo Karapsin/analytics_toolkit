@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.errors import SqlConfigError
 
 from ...ddl.schema import normalize_table_schema
 from .ddl import (
@@ -12,6 +14,14 @@ from .ddl import (
     build_ch_shard_table_name,
     split_ch_table_name_for_distributed_engine,
 )
+from .wait_policy import waits_for_distributed, waits_for_shard
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
+_MISSING_CLUSTER_SCOPE = object()
+DEFAULT_DDL_READY_TIMEOUT_SECONDS = 300.0
+_MAX_DIAGNOSTIC_HOSTS = 10
 
 
 def after_create_table(
@@ -23,22 +33,101 @@ def after_create_table(
     ch_distributed_table: bool = False,
     ch_only_shard: bool = False,
     expected_column_types: Mapping[str, str] | None = None,
+    ch_creation_policy: Any = None,
 ) -> None:
     del adapter
-    if not ch_distributed_table or ch_only_shard:
-        return
-    _wait_for_ch_distributed_table_pair(
-        connection,
-        table_name,
-        ch_cluster=ch_cluster,
-        expected_column_types=expected_column_types,
+    wait_policy = (
+        getattr(ch_creation_policy, "ddl_wait_policy", "wait_all")
+        if ch_creation_policy is not None
+        else "wait_all"
     )
+    if wait_policy == "wait_none":
+        return
+    shard_on_cluster = (
+        ch_creation_policy.shard_on_cluster
+        if ch_creation_policy is not None
+        else ch_cluster
+    )
+    distributed_on_cluster = (
+        ch_creation_policy.distributed_on_cluster
+        if ch_creation_policy is not None
+        else ch_cluster
+    )
+    routing_cluster = (
+        ch_creation_policy.distributed_cluster
+        if ch_creation_policy is not None
+        else ch_cluster
+    )
+    timeout_seconds = (
+        ch_creation_policy.ddl_ready_timeout_seconds
+        if ch_creation_policy is not None
+        else DEFAULT_DDL_READY_TIMEOUT_SECONDS
+    )
+    extension_cnt = (
+        getattr(ch_creation_policy, "ddl_ready_timeout_extension_cnt", 0)
+        if ch_creation_policy is not None
+        else 0
+    )
+    timeout_increment = (
+        getattr(ch_creation_policy, "ddl_ready_timeout_increment_seconds", 0.0)
+        if ch_creation_policy is not None
+        else 0.0
+    )
+    if not ch_distributed_table or ch_only_shard:
+        if not waits_for_shard(wait_policy):
+            return
+        _wait_for_ch_physical_table(
+            connection,
+            table_name,
+            shard_on_cluster=shard_on_cluster,
+            timeout_seconds=timeout_seconds,
+            expected_column_types=expected_column_types,
+        )
+        return
+    last_error: TimeoutError | None = None
+    for readiness_attempt in range(extension_cnt + 1):
+        current_timeout = timeout_seconds if readiness_attempt == 0 else timeout_increment
+        if readiness_attempt > 0:
+            time_print(
+                "ClickHouse target is still converging; extending distributed-pair "
+                f"readiness wait by {timeout_increment:g} second(s) "
+                f"({readiness_attempt}/{extension_cnt})",
+                backend="ch",
+                phase="validate_target",
+            )
+        try:
+            _wait_for_ch_distributed_table_pair(
+                connection,
+                table_name,
+                ch_cluster=ch_cluster,
+                shard_on_cluster=shard_on_cluster,
+                distributed_on_cluster=distributed_on_cluster,
+                routing_cluster=routing_cluster,
+                timeout_seconds=current_timeout,
+                expected_column_types=expected_column_types,
+                wait_policy=wait_policy,
+            )
+        except TimeoutError as exc:
+            last_error = exc
+            if readiness_attempt >= extension_cnt or timeout_increment <= 0:
+                break
+        else:
+            return
+    if last_error is None:
+        message = "ClickHouse readiness failed without capturing an exception."
+        raise RuntimeError(message)
+    total_timeout = timeout_seconds + extension_cnt * timeout_increment
+    message = (
+        f"ClickHouse distributed-pair readiness did not finish within {total_timeout:g} "
+        f"second(s), including {extension_cnt} timeout extension(s): {last_error}"
+    )
+    raise TimeoutError(message) from last_error
 
 
 def _wait_for_ch_table(
     connection: Any,
     table_name: str,
-    timeout_seconds: int = 60,
+    timeout_seconds: float = 60,
     poll_interval_seconds: float = 1,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
@@ -53,39 +142,157 @@ def _wait_for_ch_table(
         time.sleep(poll_interval_seconds)
 
 
-def _wait_for_ch_distributed_table_pair(
+def _wait_for_ch_distributed_table_pair(  # noqa: C901 - phases share one deadline.
     connection: Any,
     table_name: str,
     ch_cluster: str = "{cluster}",
-    timeout_seconds: int = 300,
+    timeout_seconds: float = DEFAULT_DDL_READY_TIMEOUT_SECONDS,
     poll_interval_seconds: float = 1,
     expected_column_types: Mapping[str, str] | None = None,
+    shard_on_cluster: str | None | object = _MISSING_CLUSTER_SCOPE,
+    distributed_on_cluster: str | None | object = _MISSING_CLUSTER_SCOPE,
+    routing_cluster: str | None = None,
+    wait_policy: str = "wait_all",
 ) -> None:
     shard_table = build_ch_shard_table_name(table_name)
+    shard_scope = ch_cluster if shard_on_cluster is _MISSING_CLUSTER_SCOPE else shard_on_cluster
+    distributed_scope = (
+        ch_cluster
+        if distributed_on_cluster is _MISSING_CLUSTER_SCOPE
+        else distributed_on_cluster
+    )
+    routing_scope = routing_cluster
+    deadline = time.monotonic() + timeout_seconds
+    checks: list[tuple[str, Callable[[float], None]]] = []
+    if waits_for_distributed(wait_policy):
+        checks.append(
+            (
+                f"local distributed table {table_name}",
+                lambda remaining: _wait_for_ch_table(
+                    connection,
+                    table_name,
+                    timeout_seconds=remaining,
+                    poll_interval_seconds=poll_interval_seconds,
+                ),
+            )
+        )
+    if waits_for_shard(wait_policy):
+        checks.append(
+            (
+                f"local shard table {shard_table}",
+                lambda remaining: _wait_for_ch_table(
+                    connection,
+                    shard_table,
+                    timeout_seconds=remaining,
+                    poll_interval_seconds=poll_interval_seconds,
+                ),
+            )
+        )
+    if waits_for_distributed(wait_policy) and distributed_scope is not None:
+        checks.append(
+            (
+                f"distributed table {table_name} on cluster {distributed_scope!r}",
+                lambda remaining: _wait_for_ch_table_on_cluster(
+                    connection,
+                    table_name,
+                    ch_cluster=str(distributed_scope),
+                    timeout_seconds=remaining,
+                    poll_interval_seconds=poll_interval_seconds,
+                ),
+            )
+        )
+    if waits_for_shard(wait_policy) and shard_scope is not None:
+        checks.append(
+            (
+                f"shard table {shard_table} on cluster {shard_scope!r}",
+                lambda remaining: _wait_for_ch_table_on_cluster(
+                    connection,
+                    shard_table,
+                    ch_cluster=str(shard_scope),
+                    timeout_seconds=remaining,
+                    poll_interval_seconds=poll_interval_seconds,
+                ),
+            )
+        )
+    if waits_for_shard(wait_policy) and routing_scope is not None:
+        checks.append(
+            (
+                f"shard routing coverage on cluster {routing_scope!r}",
+                lambda _remaining: _validate_ch_shard_routing_cluster(
+                    connection,
+                    shard_table,
+                    ch_cluster=str(routing_scope),
+                    shard_on_cluster=None if shard_scope is None else str(shard_scope),
+                    expected_column_types=expected_column_types,
+                ),
+            )
+        )
+    if expected_column_types is not None:
+        if waits_for_distributed(wait_policy) and distributed_scope is not None:
+            checks.append(
+                (
+                    f"distributed table schema on cluster {distributed_scope!r}",
+                    lambda remaining: _wait_for_ch_table_schema_on_cluster(
+                        connection,
+                        table_name,
+                        expected_column_types=expected_column_types,
+                        ch_cluster=str(distributed_scope),
+                        timeout_seconds=remaining,
+                        poll_interval_seconds=poll_interval_seconds,
+                    ),
+                )
+            )
+        if waits_for_shard(wait_policy) and shard_scope is not None:
+            checks.append(
+                (
+                    f"shard table schema on cluster {shard_scope!r}",
+                    lambda remaining: _wait_for_ch_table_schema_on_cluster(
+                        connection,
+                        shard_table,
+                        expected_column_types=expected_column_types,
+                        ch_cluster=str(shard_scope),
+                        timeout_seconds=remaining,
+                        poll_interval_seconds=poll_interval_seconds,
+                    ),
+                )
+            )
+
+    for phase, check in checks:
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            check(remaining)
+        except TimeoutError as exc:
+            message = (
+                f"ClickHouse distributed-pair readiness failed during {phase} "
+                f"within the {timeout_seconds:g}-second deadline: {exc}"
+            )
+            time_print(message, level="warning", backend="ch", phase="validate_target")
+            raise TimeoutError(message) from exc
+
+
+def _wait_for_ch_physical_table(
+    connection: Any,
+    table_name: str,
+    *,
+    shard_on_cluster: str | None,
+    timeout_seconds: float,
+    expected_column_types: Mapping[str, str] | None,
+) -> None:
+    poll_interval_seconds = 1.0
+    deadline = time.monotonic() + timeout_seconds
     _wait_for_ch_table(
         connection,
         table_name,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=max(0.0, deadline - time.monotonic()),
         poll_interval_seconds=poll_interval_seconds,
     )
-    _wait_for_ch_table(
-        connection,
-        shard_table,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-    )
+    if shard_on_cluster is None:
+        return
     _wait_for_ch_table_on_cluster(
         connection,
         table_name,
-        ch_cluster=ch_cluster,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-    )
-    _wait_for_ch_table_on_cluster(
-        connection,
-        shard_table,
-        ch_cluster=ch_cluster,
-        timeout_seconds=timeout_seconds,
+        ch_cluster=shard_on_cluster,
+        timeout_seconds=max(0.0, deadline - time.monotonic()),
         poll_interval_seconds=poll_interval_seconds,
     )
     if expected_column_types is not None:
@@ -93,18 +300,88 @@ def _wait_for_ch_distributed_table_pair(
             connection,
             table_name,
             expected_column_types=expected_column_types,
-            ch_cluster=ch_cluster,
-            timeout_seconds=timeout_seconds,
+            ch_cluster=shard_on_cluster,
+            timeout_seconds=max(0.0, deadline - time.monotonic()),
             poll_interval_seconds=poll_interval_seconds,
         )
-        _wait_for_ch_table_schema_on_cluster(
+
+
+def _validate_ch_shard_routing_cluster(
+    connection: Any,
+    table_name: str,
+    *,
+    ch_cluster: str,
+    shard_on_cluster: str | None,
+    expected_column_types: Mapping[str, str] | None,
+) -> None:
+    cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
+    cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
+    database_expr, relation_name = split_ch_table_name_for_distributed_engine(table_name)
+    cluster_literal = _sql_string_literal(cluster_name)
+    expected_hosts_sql = f"SELECT count()\nFROM clusterAllReplicas({cluster_literal}, system, one)"
+    visible_tables_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND name = {_sql_string_literal(relation_name)}"
+    )
+    expected_hosts = _query_ch_expected_cluster_hosts(
+        connection,
+        cluster_name=cluster_name,
+        remote_hosts_sql=expected_hosts_sql,
+    )
+    visible_tables = _query_ch_count(connection, visible_tables_sql)
+    if expected_hosts <= 0 or visible_tables < expected_hosts:
+        details = _describe_ch_missing_routing_hosts(
             connection,
-            shard_table,
-            expected_column_types=expected_column_types,
-            ch_cluster=ch_cluster,
-            timeout_seconds=timeout_seconds,
-            poll_interval_seconds=poll_interval_seconds,
+            table_name,
+            ch_cluster=cluster_name,
         )
+        message = (
+            f"ClickHouse Distributed routing cluster {cluster_name!r} cannot use "
+            f"shard table {table_name}: it is visible on {visible_tables}/{expected_hosts} "
+            f"expected host(s), while shard DDL uses cluster {shard_on_cluster!r}. "
+            "Set ddl_defaults.regular.distributed.cluster (or "
+            "ch_distributed_cluster) to the cluster that contains the shard table."
+        )
+        if details:
+            message = f"{message} {details}"
+        raise SqlConfigError(message)
+
+    if expected_column_types is None:
+        return
+    normalized_schema = normalize_table_schema(
+        expected_column_types,
+        option_name="expected_column_types",
+    )
+    if not normalized_schema:
+        return
+    matching_columns_sql = (
+        "SELECT count()\n"
+        f"FROM clusterAllReplicas({cluster_literal}, system, columns)\n"
+        f"WHERE database = {database_expr}\n"
+        f"  AND table = {_sql_string_literal(relation_name)}\n"
+        f"  AND ({_build_ch_expected_schema_condition(normalized_schema)})"
+    )
+    matching_columns = _query_ch_count(connection, matching_columns_sql)
+    expected_columns = expected_hosts * len(normalized_schema)
+    if matching_columns >= expected_columns:
+        return
+    mismatch = _describe_ch_cluster_schema_mismatch(
+        connection,
+        table_name,
+        expected_column_types=normalized_schema,
+        ch_cluster=cluster_name,
+        expected_hosts=expected_hosts,
+    )
+    message = (
+        f"ClickHouse shard table {table_name} schema is not ready on Distributed "
+        f"routing cluster {cluster_name!r}: observed {matching_columns}/{expected_columns} "
+        "expected column row(s)."
+    )
+    if mismatch:
+        message = f"{message} {mismatch}"
+    raise SqlConfigError(message)
 
 
 def _wait_for_ch_distributed_table_pair_absence(
@@ -239,7 +516,7 @@ def _wait_for_ch_table_on_cluster(
     connection: Any,
     table_name: str,
     ch_cluster: str,
-    timeout_seconds: int = 300,
+    timeout_seconds: float = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
@@ -255,6 +532,8 @@ def _wait_for_ch_table_on_cluster(
     )
 
     deadline = time.monotonic() + timeout_seconds
+    expected_hosts = 0
+    visible_tables = 0
     last_error: Exception | None = None
     while True:
         try:
@@ -273,7 +552,8 @@ def _wait_for_ch_table_on_cluster(
             message = (
                 f"ClickHouse table {table_name} was not visible on every "
                 f"host in cluster {cluster_name!r} after {timeout_seconds} "
-                "second(s)."
+                f"second(s). Last observed {visible_tables}/{expected_hosts} "
+                "expected host table(s)."
             )
             if last_error is not None:
                 raise TimeoutError(message) from last_error
@@ -287,15 +567,16 @@ def _wait_for_ch_table_schema_on_cluster(
     *,
     expected_column_types: Mapping[str, str],
     ch_cluster: str,
-    timeout_seconds: int = 300,
+    timeout_seconds: float = 300,
     poll_interval_seconds: float = 1,
 ) -> None:
-    expected_column_types = normalize_table_schema(
+    normalized_column_types = normalize_table_schema(
         expected_column_types,
         option_name="expected_column_types",
     )
-    if not expected_column_types:
+    if not normalized_column_types:
         return
+    expected_column_types = normalized_column_types
 
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
@@ -522,6 +803,37 @@ def _format_ch_cluster_table_rows(rows: Sequence[Sequence[Any]]) -> str:
     if len(formatted) > 10:
         formatted = formatted[:10] + ["..."]
     return "; ".join(formatted)
+
+
+def _describe_ch_missing_routing_hosts(
+    connection: Any,
+    table_name: str,
+    *,
+    ch_cluster: str,
+) -> str:
+    configured_hosts_sql = (
+        "SELECT DISTINCT host_name\n"
+        "FROM system.clusters\n"
+        f"WHERE cluster = {_sql_string_literal(ch_cluster)}\n"
+        "ORDER BY host_name"
+    )
+    configured_hosts = {
+        str(row[0])
+        for row in _query_ch_rows(connection, configured_hosts_sql)
+        if row and row[0] is not None
+    }
+    visible_rows = _query_ch_cluster_table_rows(
+        connection,
+        table_names=[table_name],
+        ch_cluster=ch_cluster,
+    )
+    visible_hosts = {str(row[0]) for row in visible_rows if row and row[0] is not None}
+    missing_hosts = sorted(configured_hosts - visible_hosts)
+    if not missing_hosts:
+        return ""
+    suffix = ", ..." if len(missing_hosts) > _MAX_DIAGNOSTIC_HOSTS else ""
+    visible_names = ", ".join(missing_hosts[:_MAX_DIAGNOSTIC_HOSTS])
+    return f"Missing routing host(s): {visible_names}{suffix}."
 
 
 def _query_ch_expected_cluster_hosts(

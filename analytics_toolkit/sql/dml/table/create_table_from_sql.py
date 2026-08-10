@@ -85,6 +85,8 @@ def create_table_from_sql(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     trino_insert_chunk_size: int | None = None,
@@ -127,6 +129,8 @@ def create_table_from_sql(
         ch_distributed_cluster=ch_distributed_cluster,
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
     )
     ch_policy = ddl.regular_ch_policy
     ch_engine_name = ch_policy.shard_engine if ch_policy else ch_engine or "ReplicatedMergeTree"
@@ -688,6 +692,9 @@ def _build_create_table_from_sql_plan(
             "partition_by": partition_by,
             "order_by": order_by,
             "ch_only_shard": ch_only_shard,
+            "ch_ddl_wait_policy": (
+                ch_creation_policy.ddl_wait_policy if ch_creation_policy is not None else None
+            ),
         },
     )
     add_inspect_schema_step(

@@ -242,14 +242,14 @@ def test_lazy_key_estimate_and_two_batch_eta_threshold_use_committed_rows_only()
     snapshot = second.snapshot
     assert snapshot.committed_rows == 100
     assert snapshot.approximate_committed_memory_bytes == 4096
-    assert snapshot.average_rows_per_second == 25
-    assert snapshot.rolling_rows_per_second == 25
-    assert snapshot.average_memory_bytes_per_second == 1024
-    assert snapshot.rolling_memory_bytes_per_second == 1024
-    assert snapshot.eta_rows_per_second == 25
+    assert snapshot.average_rows_per_second == pytest.approx(100 / 3)
+    assert snapshot.rolling_rows_per_second == pytest.approx(100 / 3)
+    assert snapshot.average_memory_bytes_per_second == pytest.approx(4096 / 3)
+    assert snapshot.rolling_memory_bytes_per_second == pytest.approx(4096 / 3)
+    assert snapshot.eta_rows_per_second == pytest.approx(100 / 3)
     assert snapshot.remaining_load_rows == 700
-    assert snapshot.load_eta_seconds == 28
-    assert snapshot.total_transfer_eta_seconds == 84
+    assert snapshot.load_eta_seconds == 21
+    assert snapshot.total_transfer_eta_seconds == pytest.approx(63)
 
 
 def test_consolidation_eta_uses_actual_primary_and_is_disabled_for_upsert() -> None:
@@ -306,6 +306,108 @@ def test_eta_uses_lower_positive_global_rate_and_ages_rolling_samples() -> None:
     assert aged.rolling_rows_per_second == 0
     assert aged.average_rows_per_second == 10
     assert aged.eta_rows_per_second == 10
+
+
+def test_rates_exclude_preloading_and_rebase_to_earliest_batch_read() -> None:
+    tracker = TransferProgressTracker(total_key_count=1, clock=FakeClock())
+    tracker.materialize_key("only", 400)
+    tracker.assign_key("only", 0)
+    first = tracker.commit_batch(
+        logical_batch_id=1,
+        key_id="only",
+        batch_index=1,
+        rows=100,
+        timing=make_timing(100, 110, memory_bytes=1000),
+    )
+    assert first is not None
+    assert first.snapshot.attempt_elapsed_seconds == 110
+    assert first.snapshot.average_rows_per_second == 10
+
+    second = tracker.commit_batch(
+        logical_batch_id=2,
+        key_id="only",
+        batch_index=2,
+        rows=100,
+        timing=make_timing(120, 130, memory_bytes=1000),
+    )
+    assert second is not None
+    assert second.snapshot.attempt_elapsed_seconds == 130
+    assert second.snapshot.average_rows_per_second == pytest.approx(200 / 30)
+    assert second.snapshot.rolling_rows_per_second == pytest.approx(200 / 30)
+    assert second.snapshot.average_memory_bytes_per_second == pytest.approx(2000 / 30)
+    assert second.snapshot.load_eta_seconds == 30
+
+    concurrent = TransferProgressTracker(total_key_count=1, clock=FakeClock())
+    concurrent.materialize_key("only", 200)
+    concurrent.commit_batch(
+        logical_batch_id="later-read-first-commit",
+        key_id="only",
+        batch_index=1,
+        rows=100,
+        timing=make_timing(50, 60),
+    )
+    rebased = concurrent.commit_batch(
+        logical_batch_id="earlier-read-later-commit",
+        key_id="only",
+        batch_index=2,
+        rows=100,
+        timing=make_timing(10, 70),
+    )
+    assert rebased is not None
+    assert rebased.snapshot.average_rows_per_second == pytest.approx(200 / 60)
+    assert rebased.snapshot.rolling_rows_per_second == pytest.approx(200 / 60)
+
+
+def test_loading_rates_freeze_after_final_batch_and_reset_clears_anchor() -> None:
+    clock = FakeClock()
+    tracker = TransferProgressTracker(
+        total_key_count=1,
+        active_writers=2,
+        clock=clock,
+    )
+    tracker.materialize_key("only", 200)
+    tracker.assign_key("only", 1)
+    tracker.commit_batch(
+        logical_batch_id=1,
+        key_id="only",
+        batch_index=1,
+        rows=100,
+        timing=make_timing(100, 110),
+        writer_id=1,
+    )
+    final_batch = tracker.commit_batch(
+        logical_batch_id=2,
+        key_id="only",
+        batch_index=2,
+        rows=100,
+        timing=make_timing(110, 120),
+        writer_id=1,
+    )
+    assert final_batch is not None
+    clock.set(500)
+    pre_completion = tracker.snapshot()
+    assert pre_completion.attempt_elapsed_seconds == 500
+    assert pre_completion.average_rows_per_second == 10
+    assert pre_completion.rolling_rows_per_second == 10
+    loading = tracker.mark_loading_complete()
+    assert loading.average_rows_per_second == 10
+    assert loading.rolling_rows_per_second == 10
+    assert loading.total_transfer_eta_seconds == 40
+
+    tracker.record_consolidated_rows(logical_operation_id="copy", rows=200)
+    consolidated = tracker.mark_consolidation_complete()
+    assert consolidated.attempt_elapsed_seconds == 500
+    assert consolidated.average_rows_per_second == 10
+    assert consolidated.rolling_rows_per_second == 10
+    assert consolidated.total_transfer_eta_seconds == 20
+    finalizing = tracker.mark_finalization_started()
+    assert finalizing.average_rows_per_second == 10
+
+    tracker.reset(started_at=600)
+    reset = tracker.snapshot(at=650)
+    assert reset.average_rows_per_second is None
+    assert reset.rolling_rows_per_second is None
+    assert reset.eta_rows_per_second is None
 
 
 def test_overlapping_batches_use_global_cumulative_wall_time() -> None:

@@ -717,6 +717,10 @@
           "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ch_reconfigure.py::test_public_dry_run_and_settings_execution"]}]
         },
+        "ch_ddl_wait_policy": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_storage_and_ch_wait_policy.py::test_clickhouse_wait_policy_precedence"]}]
+        },
         "reset_partition_by": {
           "kind": "KEYWORD_ONLY",
           "signature_default": "False",
@@ -1247,6 +1251,17 @@
         "ch_distributed_on_cluster": {
           "kind": "KEYWORD_ONLY", "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
+        },
+        "ch_ddl_ready_timeout_seconds": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [
+            {"state": "default", "value": "None", "status": "covered", "scenarios": ["lifecycle.trino"]},
+            {"state": "supported-non-default", "status": "covered", "scenarios": ["ddl.native.ch"]}
+          ]
+        },
+        "ch_ddl_wait_policy": {
+          "kind": "KEYWORD_ONLY", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_storage_and_ch_wait_policy.py::test_clickhouse_wait_policy_precedence"]}]
         },
         "ch_only_shard": {
           "kind": "KEYWORD_ONLY",
@@ -3479,6 +3494,17 @@
           "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
         },
+        "ch_ddl_ready_timeout_seconds": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [
+            {"state": "default", "value": "None", "status": "covered", "scenarios": ["load.trino.append"]},
+            {"state": "supported-non-default", "status": "covered", "scenarios": ["load.ch.append"]}
+          ]
+        },
+        "ch_ddl_wait_policy": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_storage_and_ch_wait_policy.py::test_clickhouse_wait_policy_precedence"]}]
+        },
         "ch_only_shard": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "False",
@@ -5262,6 +5288,24 @@
           "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
           "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_ddl_defaults.py::test_clickhouse_policy_keeps_execution_clusters_independent"]}]
         },
+        "ch_ddl_ready_timeout_seconds": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [
+            {"state": "default", "value": "None", "status": "covered", "scenarios": ["transfer.trino.ch.append"]},
+            {"state": "supported-non-default", "status": "covered", "scenarios": ["transfer.trino.ch.append"]}
+          ]
+        },
+        "ch_ddl_ready_timeout_extension_cnt": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [
+            {"state": "default", "value": "None", "status": "covered", "tests": ["tests/test_sql_transfer_finalization_retry.py::test_fresh_target_count_mismatch_rebuilds_from_preserved_stage"]},
+            {"state": "supported-non-default", "status": "covered", "scenarios": ["transfer.trino.ch.fresh_target_retry"]}
+          ]
+        },
+        "ch_ddl_wait_policy": {
+          "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
+          "states": [{"state": "default-and-supported-non-default", "status": "covered", "tests": ["tests/test_sql_storage_and_ch_wait_policy.py::test_clickhouse_wait_policy_precedence"]}]
+        },
         "ch_only_shard": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "signature_default": "False",
@@ -6158,6 +6202,14 @@
     "transfer.trino.ch.append": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.ch.append]",
+      "backends": [
+        "trino",
+        "ch"
+      ]
+    },
+    "transfer.trino.ch.fresh_target_retry": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_matrix.py::test_clickhouse_fresh_target_finalization_retries_count_mismatch",
       "backends": [
         "trino",
         "ch"

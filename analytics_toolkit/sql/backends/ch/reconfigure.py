@@ -107,12 +107,25 @@ from .reconfigure_support import (
 from .reconfigure_support import (
     unquoted_table_name as _unquoted_table_name,
 )
+from .reconfigure_wait import wait_for_created_replacements
 from .wait import (
     _wait_for_ch_table,
     _wait_for_ch_table_absence,
     _wait_for_ch_table_absence_on_cluster,
     _wait_for_ch_table_on_cluster,
 )
+
+
+def _wait_for_created_replacement(
+    connection: Any,
+    reconfiguration: ChReconfiguration,
+) -> None:
+    wait_for_created_replacements(
+        connection,
+        reconfiguration,
+        wait_local=_wait_for_ch_table,
+        wait_cluster=_wait_for_ch_table_on_cluster,
+    )
 
 
 def plan_ch_table_reconfiguration(
@@ -832,28 +845,6 @@ def _execute_phase(adapter: Any, connection: Any, plan: SqlPlan, phase: str) -> 
         connection,
         [statement.sql for statement in plan.statements if statement.phase == phase],
     )
-
-
-def _wait_for_created_replacement(
-    connection: Any,
-    reconfiguration: ChReconfiguration,
-) -> None:
-    scopes = getattr(reconfiguration, "temporary_table_scopes", None)
-    if scopes is None:
-        scopes = [(reconfiguration.replacement_table, None)]
-        if reconfiguration.strategy == "cross_cluster_rebuild":
-            scopes.append((reconfiguration.temporary_tables[-1], reconfiguration.target_cluster))
-    for table_name, cluster in scopes:
-        if table_name is None:
-            continue
-        if cluster is None:
-            _wait_for_ch_table(connection, table_name)
-        else:
-            _wait_for_ch_table_on_cluster(
-                connection,
-                table_name,
-                ch_cluster=cluster,
-            )
 
 
 def _wait_for_cleanup(connection: Any, reconfiguration: ChReconfiguration) -> None:

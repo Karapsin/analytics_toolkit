@@ -784,7 +784,11 @@ def test_generate_dummy_connections_writes_direct_file(
             "http_scheme": "https",
             "ca_certs": "trino-ca.pem",
             "transfer_staging_schema": "object_storage.sandbox",
-            "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "s3_transfer_staging_schema": "object_storage.sandbox_s3",
+            "s3_transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "aws_access_key_id": "object-storage-access-key",
+            "aws_secret_access_key": "object-storage-secret-key",
+            "aws_endpoint_url": "https://storage.example",
             "upsert_partition_drop_sql_template": (
                 "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
             ),
@@ -846,7 +850,9 @@ def test_generate_dummy_connections_writes_airflow_file(
                 "type": "trino",
                 "ca_certs": "trino-ca.pem",
                 "transfer_staging_schema": "object_storage.sandbox",
-                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "s3_transfer_staging_schema": "object_storage.sandbox_s3",
+                "s3_transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "endpoint_url": "https://storage.example",
                 "upsert_partition_drop_sql_template": (
                     "ALTER TABLE {table} DROP PARTITION ({partition_column} = {partition_value})"
                 ),
@@ -868,6 +874,8 @@ def test_generate_dummy_connections_writes_airflow_file(
     assert "Greenplum" in output
     assert "Trino" in output
     assert "ClickHouse" in output
+    dummy_distributed = config_module._dummy_ch_ddl_defaults()["regular"]["distributed"]
+    assert dummy_distributed["cluster"] == "CORE"
 
 
 def test_generate_dummy_connections_rejects_existing_file(tmp_path: Path) -> None:
@@ -1405,6 +1413,8 @@ def test_clickhouse_connection_passes_optional_connector_settings(
                 "interface": "https",
                 "query_limit": "100",
                 "query_retries": "4",
+                "ddl_ready_timeout_seconds": "900",
+                "ddl_ready_timeout_extension_cnt": "4",
                 "client_name": "analytics-toolkit",
             }
         }
@@ -1430,6 +1440,10 @@ def test_clickhouse_connection_passes_optional_connector_settings(
     result = connection_module.get_sql_connection("ch_custom")
 
     assert result is client
+    assert config_module.get_connection_config("ch_custom").ddl_ready_timeout_seconds == 900
+    assert (
+        config_module.get_connection_config("ch_custom").ddl_ready_timeout_extension_cnt == 4
+    )
     assert client_calls == [
         {
             "host": "ch.example",
@@ -3214,7 +3228,7 @@ def test_direct_connections_file_supports_transfer_staging_schema(
     assert config.transfer_staging_schema == f"transfer_{backend}"
 
 
-def test_direct_trino_connections_file_supports_transfer_staging_location(
+def test_direct_trino_connections_file_supports_s3_transfer_staging_location(
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:
     write_sql_connections(
@@ -3227,16 +3241,16 @@ def test_direct_trino_connections_file_supports_transfer_staging_location(
                 "catalog": "iceberg",
                 "schema": "sandbox",
                 "transfer_staging_schema": "object_storage.sandbox",
-                "transfer_parquet_staging_schema": "hive.sandbox",
-                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "s3_transfer_staging_schema": "hive.sandbox",
+                "s3_transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
             },
         }
     )
 
     config = config_module.get_connection_config("trino_with_location")
     assert config.transfer_staging_schema == "object_storage.sandbox"
-    assert config.transfer_parquet_staging_schema == "hive.sandbox"
-    assert config.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
+    assert config.s3_transfer_staging_schema == "hive.sandbox"
+    assert config.s3_transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def _direct_trino_config(**overrides: object) -> types.SimpleNamespace:
@@ -3431,7 +3445,7 @@ def test_airflow_connections_file_supports_transfer_staging_schema(
     )
 
 
-def test_airflow_trino_connections_file_supports_transfer_staging_location(
+def test_airflow_trino_connections_file_supports_s3_transfer_staging_location(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, object]], Path],
 ) -> None:
@@ -3440,9 +3454,10 @@ def test_airflow_trino_connections_file_supports_transfer_staging_location(
             "source": "airflow",
             "connections": {
                 "airflow_trino": {
-                    "type": "trino",
-                    "transfer_staging_schema": "object_storage.sandbox",
-                    "transfer_staging_location": {
+                        "type": "trino",
+                        "transfer_staging_schema": "object_storage.sandbox",
+                        "s3_transfer_staging_schema": "hive.sandbox",
+                    "s3_transfer_staging_location": {
                         "from": "extra",
                         "key": "parquet_transfer_location",
                     },
@@ -3467,7 +3482,8 @@ def test_airflow_trino_connections_file_supports_transfer_staging_location(
 
     config = config_module.get_connection_config("airflow_trino")
     assert config.transfer_staging_schema == "object_storage.sandbox"
-    assert config.transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
+    assert config.s3_transfer_staging_schema == "hive.sandbox"
+    assert config.s3_transfer_staging_location == "s3://bucket/tmp/analytics_toolkit_transfer"
 
 
 def test_direct_clickhouse_connection_reports_blocked_connector(

@@ -22,6 +22,17 @@ cluster-wide distributed behavior is not wanted.
 Cluster DDL is queued without making Python wait for the full asynchronous
 ClickHouse DDL operation. The helper still checks local and cluster visibility
 before inserting so lagging metadata does not silently break writes.
+After the shard DDL scope is ready, the helper also verifies that the shard
+table and expected schema exist on every host used by the effective
+`Distributed(...)` routing cluster. A routing/scope mismatch fails immediately
+with host-count diagnostics and guidance to correct `distributed.cluster`.
+
+Every ClickHouse table-creation API accepts `ch_ddl_wait_policy`. Use
+`wait_all` (default) for both physical and Distributed relations,
+`wait_shard` for physical relations only, `wait_distr` for Distributed facades
+only, or `wait_none` to skip post-create readiness polling. The explicit
+argument overrides `.connections`; skipped checks do not alter DDL execution,
+cutover, rollback, or cleanup behavior.
 
 The helper preserves configured `Distributed` sharding expressions exactly.
 In particular, `rand()` remains the integer-valued ClickHouse function rather

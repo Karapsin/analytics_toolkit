@@ -90,7 +90,7 @@ def _make_trino_config(connection_key: str) -> Any:
         request_timeout=None,
         source=None,
         transfer_staging_schema=None,
-        transfer_staging_location=None,
+        s3_transfer_staging_location=None,
     )
 
 

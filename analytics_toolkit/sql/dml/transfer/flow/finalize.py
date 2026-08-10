@@ -2,10 +2,13 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, TRY003
 import warnings
+from dataclasses import replace as replace_dataclass
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
+    _count_loaded_stage_rows,
     cleanup_materialized_sources,
 )
 
@@ -20,8 +23,8 @@ from ...table.table_validation import (
 from ...table.write_modes import (
     finalize_stage_table,
 )
-from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.connection_pool import BoundedConnectionManager
+from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.retry import (
     replace_connection,
     rollback_quietly,
@@ -31,6 +34,10 @@ from ..runtime.retry import (
 from ..schema import get_existing_target_insert_types
 from .parquet_stage import cleanup_parquet_stage_location
 from .stage_validation import validate_transfer_stage_identity
+
+
+class FreshTargetFinalizationRowCountMismatchError(ValueError):
+    pass
 
 
 def finalize_loaded_stage(  # noqa: PLR0913
@@ -50,6 +57,7 @@ def finalize_loaded_stage(  # noqa: PLR0913
         raise RuntimeError("Expected a non-empty batch when rows were transferred.")
     if stage_state.stage_table is None:
         raise RuntimeError("Expected stage table to be initialized.")
+    stage_table = stage_state.stage_table
 
     if options.transfer_id is not None:
         if stage_state.internal_columns is None:
@@ -147,20 +155,94 @@ def finalize_loaded_stage(  # noqa: PLR0913
         stage_state,
         target_connection_runner=target_connection_runner,
     )
-    target_precleared = _preclear_clickhouse_replace_target(
-        options,
-        stage_state,
-        target_connection_runner=target_connection_runner,
-        target_host_connection_runner=target_host_connection_runner,
+    fresh_clickhouse_target = _creates_fresh_clickhouse_target(options, stage_state)
+
+    def finalize_operation(attempt: int) -> None:
+        target_precleared = attempt > 1 and fresh_clickhouse_target
+        if not target_precleared:
+            target_precleared = _preclear_clickhouse_replace_target(
+                options,
+                stage_state,
+                target_connection_runner=target_connection_runner,
+                target_host_connection_runner=target_host_connection_runner,
+            )
+        try:
+            _finalize_target_once(
+                options,
+                stage_state,
+                stage_table,
+                target_column_types,
+                target_precleared=target_precleared,
+                fresh_clickhouse_target=fresh_clickhouse_target,
+                target_connection_runner=target_connection_runner,
+            )
+            if fresh_clickhouse_target:
+                _validate_fresh_target_row_count(
+                    options,
+                    stage_state,
+                    total_rows,
+                    target_connection_runner=target_connection_runner,
+                )
+            _analyze_final_target(options, target_connection_runner=target_connection_runner)
+        except Exception:
+            if fresh_clickhouse_target:
+                _drop_incomplete_fresh_target(
+                    options,
+                    target_connection_runner=target_connection_runner,
+                )
+            raise
+
+    if fresh_clickhouse_target:
+        run_with_retry(
+            operation_name=f"finalizing fresh ClickHouse target {options.target_table}",
+            retry_cnt=options.retry_cnt,
+            timeout_increment=options.timeout_increment,
+            operation=finalize_operation,
+        )
+    else:
+        finalize_operation(1)
+
+
+def _creates_fresh_clickhouse_target(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+) -> bool:
+    adapter = get_backend_adapter(options.to_db_backend)
+    supports_distributed_targets = getattr(
+        adapter,
+        "supports_distributed_table_targets",
+        lambda: False,
+    )
+    return supports_distributed_targets() and (
+        options.write_mode == "replace" or not stage_state.target_exists
     )
 
+
+def _finalize_target_once(  # noqa: PLR0913
+    options: TransferOptions,
+    stage_state: TransferStageState,
+    stage_table: str,
+    target_column_types: dict[str, str] | None,
+    *,
+    target_precleared: bool,
+    fresh_clickhouse_target: bool,
+    target_connection_runner: Any | None,
+) -> None:
+    creation_policy = options.regular_ch_policy
+    if fresh_clickhouse_target and creation_policy is not None:
+        creation_policy = replace_dataclass(
+            creation_policy,
+            ddl_ready_timeout_increment_seconds=float(options.timeout_increment),
+        )
+    if fresh_clickhouse_target and stage_state.target_existed_at_start is False:
+        stage_state.target_created_by_operation = True
     _run_target_operation(
         options,
         "finalize_target",
         lambda target_ref: finalize_stage_table(
             options.to_db_backend,
             target_ref["connection"],
-            stage_table=stage_state.stage_table,
+            stage_table=stage_table,
             target_table=options.target_table,
             replace_target_table=options.replace_target_table and not target_precleared,
             target_exists=stage_state.target_exists and not target_precleared,
@@ -188,10 +270,58 @@ def finalize_loaded_stage(  # noqa: PLR0913
             trino_upsert_partition_drop_sql_template=(
                 options.trino_upsert_partition_drop_sql_template
             ),
-            ch_creation_policy=options.regular_ch_policy,
+            ch_creation_policy=creation_policy,
         ),
         target_connection_runner=target_connection_runner,
     )
+
+
+def _validate_fresh_target_row_count(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+    total_rows: int,
+    *,
+    target_connection_runner: Any | None,
+) -> None:
+    stage_rows = _count_loaded_stage_rows(
+        options,
+        stage_state,
+        total_rows,
+        open_connection=get_sql_connection,
+        target_connection_runner=target_connection_runner,
+    )
+    target_rows = int(
+        _run_target_operation(
+            options,
+            "validate_final_target_row_count",
+            lambda target_ref: count_table_rows(
+                options.to_db_backend,
+                target_ref["connection"],
+                options.target_table,
+                query_label=options.query_label,
+            ),
+            target_connection_runner=target_connection_runner,
+        )
+    )
+    time_print(
+        f"Validated fresh target row count: stage {stage_rows:,}; target {target_rows:,}",
+        connection=options.to_db_key,
+        backend=options.to_db_backend,
+        phase="validate_target_row_count",
+    )
+    if target_rows != stage_rows:
+        message = (
+            f"Fresh target/stage row-count mismatch for {options.target_table}: "
+            f"target has {target_rows:,} row(s), stage has {stage_rows:,} row(s)."
+        )
+        raise FreshTargetFinalizationRowCountMismatchError(message)
+
+
+def _analyze_final_target(
+    options: TransferOptions,
+    *,
+    target_connection_runner: Any | None,
+) -> None:
     _run_target_operation(
         options,
         "analyze_target",
@@ -200,6 +330,35 @@ def finalize_loaded_stage(  # noqa: PLR0913
             connection=target_ref["connection"],
             table_name=options.target_table,
             query_label=options.query_label,
+        ),
+        target_connection_runner=target_connection_runner,
+    )
+
+
+def _drop_incomplete_fresh_target(
+    options: TransferOptions,
+    *,
+    target_connection_runner: Any | None,
+) -> None:
+    _run_target_operation(
+        options,
+        "cleanup_incomplete_target",
+        lambda target_ref: cleanup_stage_table_with_retry(
+            options.to_db_backend,
+            options.to_db_key,
+            target_ref,
+            options.target_table,
+            retry_fn=run_with_retry,
+            retry_cnt=1,
+            timeout_increment=0,
+            rollback_fn=rollback_quietly,
+            replace_connection_fn=target_ref.get(
+                "bounded_replace_connection",
+                replace_connection,
+            ),
+            query_label=options.query_label,
+            ch_creation_policy=options.regular_ch_policy,
+            operation_label="incomplete fresh target table",
         ),
         target_connection_runner=target_connection_runner,
     )
@@ -414,7 +573,13 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
 
     if stage_state.stage_external_location is not None:
         try:
-            cleanup_parquet_stage_location(stage_state.stage_external_location)
+            if options.parquet_storage_options is None:
+                cleanup_parquet_stage_location(stage_state.stage_external_location)
+            else:
+                cleanup_parquet_stage_location(
+                    stage_state.stage_external_location,
+                    storage_options=options.parquet_storage_options,
+                )
         except Exception as exc:
             remote_cleanup_error = exc
 

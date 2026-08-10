@@ -1227,37 +1227,37 @@ def test_clickhouse_operations_small_helpers(monkeypatch: pytest.MonkeyPatch) ->
 def test_trino_operation_modes_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     config = SimpleNamespace(
         insert_chunk_size=5,
-        transfer_staging_location="s3://bucket/stage",
+        s3_transfer_staging_location="s3://bucket/stage",
         upsert_partition_drop_sql_template="DELETE {partition}",
         catalog=None,
         connection_key="trino",
     )
     defaults = trino_operations.target_connection_defaults(object(), config)
     assert defaults.insert_chunk_size == 5
-    assert defaults.transfer_staging_location == "s3://bucket/stage"
+    assert defaults.s3_transfer_staging_location == "s3://bucket/stage"
 
     assert (
         trino_operations.resolve_transfer_staging_mode(
             object(),
             None,
-            transfer_staging_schema="stage",
-            transfer_staging_location="s3://bucket/stage",
+            s3_transfer_staging_schema="stage",
+            s3_transfer_staging_location="s3://bucket/stage",
         )
         == "parquet"
     )
-    with pytest.raises(ValueError, match="requires transfer_staging_schema"):
+    with pytest.raises(ValueError, match="requires s3_transfer_staging_schema"):
         trino_operations.resolve_transfer_staging_mode(
             object(),
             "parquet",
-            transfer_staging_schema=None,
-            transfer_staging_location="s3://bucket/stage",
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location="s3://bucket/stage",
         )
-    with pytest.raises(ValueError, match="requires transfer_staging_location"):
+    with pytest.raises(ValueError, match="requires s3_transfer_staging_location"):
         trino_operations.resolve_transfer_staging_mode(
             object(),
             "parquet",
-            transfer_staging_schema="stage",
-            transfer_staging_location=None,
+            s3_transfer_staging_schema="stage",
+            s3_transfer_staging_location=None,
         )
     with pytest.raises(ValueError, match=r"requires.*catalog"):
         trino_operations.build_show_tables_query(object(), config, None, None, None)

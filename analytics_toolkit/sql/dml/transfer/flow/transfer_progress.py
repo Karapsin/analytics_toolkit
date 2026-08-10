@@ -132,6 +132,7 @@ class TransferProgressTracker:
     """Thread-safe, attempt-scoped transfer throughput and ETA state."""
 
     _attempt_started_at: float
+    _loading_started_at: float | None
     _last_commit_at: float
     _committed_rows: int
     _committed_memory_bytes: int
@@ -351,6 +352,7 @@ class TransferProgressTracker:
             self._key_committed_rows[key_id] = key_rows
             self._committed_rows += rows
             self._committed_memory_bytes += timing.approximate_memory_bytes
+            self._record_loading_start_locked(timing.read_started_at)
             if resolved_writer is not None:
                 self._writer_stage_rows[resolved_writer] = (
                     self._writer_stage_rows.get(resolved_writer, 0) + rows
@@ -487,6 +489,7 @@ class TransferProgressTracker:
 
     def _reset_locked(self, started_at: float) -> None:
         self._attempt_started_at = started_at
+        self._loading_started_at = None
         self._last_commit_at = started_at
         self._committed_rows = 0
         self._committed_memory_bytes = 0
@@ -501,7 +504,7 @@ class TransferProgressTracker:
         self._successful_batches = {}
         self._writer_assignments = {}
         self._writer_stage_rows = {}
-        self._rate_samples = deque([_RateSample(started_at, 0, 0)])
+        self._rate_samples = deque()
         self._consolidation_operations = {}
         self._consolidated_rows = 0
         self._loading_complete = False
@@ -540,11 +543,34 @@ class TransferProgressTracker:
             raise ValueError(msg)
         return max(value, self._last_commit_at)
 
+    def _record_loading_start_locked(self, read_started_at: float) -> None:
+        started_at = max(read_started_at, self._attempt_started_at)
+        if self._loading_started_at is not None and started_at >= self._loading_started_at:
+            return
+        self._loading_started_at = started_at
+        anchor = _RateSample(started_at, 0, 0)
+        if self._rate_samples and self._rate_samples[0].rows == 0:
+            self._rate_samples[0] = anchor
+        else:
+            self._rate_samples.appendleft(anchor)
+
     def _snapshot_locked(self, at: float) -> TransferProgressSnapshot:
         elapsed = max(at - self._attempt_started_at, 0.0)
-        average_rows_rate = _rate(self._committed_rows, elapsed)
-        average_memory_rate = _rate(self._committed_memory_bytes, elapsed)
-        rolling_rows_rate, rolling_memory_rate = self._rolling_rates_locked(at)
+        all_loading_rows_committed = (
+            len(self._key_expected_rows) == self._total_key_count
+            and self._committed_rows == self._exact_known_rows
+        )
+        rate_at = (
+            self._last_commit_at if self._loading_complete or all_loading_rows_committed else at
+        )
+        loading_elapsed = (
+            max(rate_at - self._loading_started_at, 0.0)
+            if self._loading_started_at is not None
+            else 0.0
+        )
+        average_rows_rate = _rate(self._committed_rows, loading_elapsed)
+        average_memory_rate = _rate(self._committed_memory_bytes, loading_elapsed)
+        rolling_rows_rate, rolling_memory_rate = self._rolling_rates_locked(rate_at)
         estimated_rows, approximate = self._estimated_total_rows_locked()
         remaining_load = self._remaining_load_rows_locked(estimated_rows)
         remaining_consolidation = self._remaining_consolidation_rows_locked(estimated_rows)

@@ -14,6 +14,17 @@
                 </replica>
             </shard>
         </integration_cluster>
+        <integration_facade_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse</host>
+                    <port>9000</port>
+                    <user>integration</user>
+                    <password>integration</password>
+                </replica>
+            </shard>
+        </integration_facade_cluster>
     </remote_servers>
     <zookeeper>
         <node>

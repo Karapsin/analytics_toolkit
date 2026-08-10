@@ -101,8 +101,8 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "verify": False,
             "insert_chunk_size": 100,
             "transfer_staging_schema": "iceberg.integration_stage",
-            "transfer_parquet_staging_schema": "hive.integration_stage",
-            "transfer_staging_location": "s3a://warehouse/staging",
+            "s3_transfer_staging_schema": "hive.integration_stage",
+            "s3_transfer_staging_location": "s3a://warehouse/staging",
             "upsert_partition_drop_sql_template": (
                 "DELETE FROM {table} WHERE {partition_column} = "
                 "CAST(from_iso8601_timestamp({partition_value}) AS TIMESTAMP)"
@@ -142,10 +142,18 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     }
     connections["trino_values"] = {
         **connections["trino"],
-        "transfer_staging_location": None,
+        "s3_transfer_staging_schema": None,
+        "s3_transfer_staging_location": None,
         "insert_chunk_size": 2,
     }
-    connections["trino_parquet"] = {**connections["trino"]}
+    connections["trino_parquet"] = {
+        **connections["trino"],
+        "aws_access_key_id": "integration",
+        "aws_secret_access_key": "integration-secret",
+        "aws_endpoint_url": (
+            "http://127.0.0.1:" + os.environ.get("SQL_INTEGRATION_MINIO_PORT", "19001")
+        ),
+    }
     connections["trino_source_values"] = {**connections["trino_values"]}
     connections["trino_target_values"] = {**connections["trino_values"]}
     connections["trino_source_parquet"] = {**connections["trino_parquet"]}

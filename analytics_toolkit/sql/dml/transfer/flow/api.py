@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.trino.storage import parquet_storage_options
 
 from ....backends import get_backend_adapter
 from ....connection.config import get_connection_config
@@ -80,6 +81,9 @@ def transfer_table(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_ready_timeout_extension_cnt: int | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     dry_run: bool = False,
@@ -142,6 +146,9 @@ def transfer_table(
         ch_distributed_cluster=ch_distributed_cluster,
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_ready_timeout_extension_cnt=ch_ddl_ready_timeout_extension_cnt,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         query_label=query_label,
@@ -392,6 +399,9 @@ def build_transfer_options(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_ready_timeout_extension_cnt: int | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     query_label: str | None = None,
@@ -430,6 +440,7 @@ def build_transfer_options(
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
+        ch_ddl_ready_timeout_extension_cnt=ch_ddl_ready_timeout_extension_cnt,
         gp_insert_chunk_size=gp_insert_chunk_size,
         trino_insert_chunk_size=trino_insert_chunk_size,
         concurrency=concurrency,
@@ -449,8 +460,10 @@ def build_transfer_options(
     target_defaults = target_adapter.target_connection_defaults(to_config)
     resolved_trino_mode = target_adapter.resolve_transfer_staging_mode(
         trino_mode,
-        transfer_staging_schema=to_config.transfer_staging_schema,
-        transfer_staging_location=target_defaults.transfer_staging_location,
+        s3_transfer_staging_schema=getattr(
+            to_config, "s3_transfer_staging_schema", None
+        ),
+        s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
     )
     resolved_write_mode = transfer_options.resolve_transfer_write_mode(
         to_config.backend, write_mode
@@ -549,6 +562,9 @@ def build_transfer_options(
         ch_distributed_cluster=ch_distributed_cluster,
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_ready_timeout_extension_cnt=ch_ddl_ready_timeout_extension_cnt,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
     )
     options = TransferOptions(
         from_db_key=from_config.connection_key,
@@ -585,6 +601,11 @@ def build_transfer_options(
         timeout_increment=timeout_increment,
         full_retry_cnt=full_retry_cnt,
         full_timeout_increment=full_timeout_increment,
+        ch_ddl_ready_timeout_extension_cnt=(
+            ddl.regular_ch_policy.ddl_ready_timeout_extension_cnt
+            if ddl.regular_ch_policy is not None
+            else 1
+        ),
         key_columns=normalize_key_columns(key_columns),
         upsert_partition_column=normalize_upsert_partition_column(upsert_partition_column),
         trino_upsert_partition_drop_sql_template=(
@@ -629,12 +650,13 @@ def build_transfer_options(
         source_transfer_staging_schema=source_staging_schema,
         source_transfer_staging_username=_sanitize_transfer_staging_username(from_config.user),
         ignore_source_staging=ignore_source_staging,
-        transfer_parquet_staging_schema=getattr(
+        s3_transfer_staging_schema=getattr(
             to_config,
-            "transfer_parquet_staging_schema",
+            "s3_transfer_staging_schema",
             None,
         ),
-        transfer_staging_location=target_defaults.transfer_staging_location,
+        s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
+        parquet_storage_options=parquet_storage_options(to_config),
         transfer_staging_username=_sanitize_transfer_staging_username(to_config.user),
         trino_mode=resolved_trino_mode,
         transfer_keys=normalized_transfer_keys,

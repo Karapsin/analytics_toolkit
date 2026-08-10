@@ -363,12 +363,12 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     trino_defaults = trino_adapter.target_connection_defaults(
         SimpleNamespace(
             insert_chunk_size=123,
-            transfer_staging_location="s3://bucket/stage",
+            s3_transfer_staging_location="s3://bucket/stage",
             upsert_partition_drop_sql_template="DELETE FROM {table}",
         )
     )
     assert trino_defaults.insert_chunk_size == 123
-    assert trino_defaults.transfer_staging_location == "s3://bucket/stage"
+    assert trino_defaults.s3_transfer_staging_location == "s3://bucket/stage"
     assert trino_defaults.upsert_partition_drop_sql_template == "DELETE FROM {table}"
 
     gp_policy = gp_adapter.transfer_attempt_policy(retry_cnt=5)
@@ -571,30 +571,30 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     assert (
         trino_adapter.resolve_transfer_staging_mode(
             None,
-            transfer_staging_schema="tmp",
-            transfer_staging_location="s3://bucket/prefix",
+            s3_transfer_staging_schema="tmp",
+            s3_transfer_staging_location="s3://bucket/prefix",
         )
         == "parquet"
     )
     assert (
         trino_adapter.resolve_transfer_staging_mode(
             None,
-            transfer_staging_schema=None,
-            transfer_staging_location=None,
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
         )
         == "values"
     )
-    with pytest.raises(ValueError, match="requires transfer_staging_location"):
+    with pytest.raises(ValueError, match="requires s3_transfer_staging_location"):
         trino_adapter.resolve_transfer_staging_mode(
             "parquet",
-            transfer_staging_schema="tmp",
-            transfer_staging_location=None,
+            s3_transfer_staging_schema="tmp",
+            s3_transfer_staging_location=None,
         )
     with pytest.raises(ValueError, match="can only be used"):
         ch_adapter.resolve_transfer_staging_mode(
             "values",
-            transfer_staging_schema=None,
-            transfer_staging_location=None,
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
         )
 
     assert (
@@ -1882,8 +1882,8 @@ def test_adapter_default_transfer_and_insert_policies() -> None:
         adapter_defaults_module.resolve_transfer_staging_mode(
             adapter,
             None,
-            transfer_staging_schema=None,
-            transfer_staging_location=None,
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
         )
         is None
     )
@@ -1891,8 +1891,8 @@ def test_adapter_default_transfer_and_insert_policies() -> None:
         adapter_defaults_module.resolve_transfer_staging_mode(
             adapter,
             "csv",
-            transfer_staging_schema=None,
-            transfer_staging_location=None,
+            s3_transfer_staging_schema=None,
+            s3_transfer_staging_location=None,
         )
     assert adapter_defaults_module.normalize_insert_batch(adapter, batch) is batch
     assert adapter_defaults_module.normalize_insert_rows(adapter, [[1, "a"]]) == [(1, "a")]

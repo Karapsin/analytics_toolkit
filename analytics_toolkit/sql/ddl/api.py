@@ -9,12 +9,8 @@ from analytics_toolkit.general import time_print
 
 from ..backends import get_backend_adapter
 from analytics_toolkit.sql.backends import get_backend
-from analytics_toolkit.sql.backends.ch.creation_policy import (
-    build_policy_create_sqls,
-    resolve_clickhouse_creation_policy,
-)
+from analytics_toolkit.sql.backends.ch.creation_policy import build_policy_create_sqls
 from ..connection.config import get_connection_config, resolve_connection_backend
-from analytics_toolkit.sql.connection.ddl_defaults import legacy_clickhouse_scope
 from ..connection.errors import InvalidSqlInputError, SqlOperationContext, sql_preview
 from ..connection.get_sql_connection import get_sql_connection
 from ..execution.operation_runner import (
@@ -29,6 +25,7 @@ from .builders import (
     _build_backend_create_table_sqls,
     _validate_only_shard,
 )
+from .ch_policy import regular_ddl_properties, resolve_create_ch_policy
 from .models import CreateSqlTableOptions
 from .properties import overlay_with_properties
 from .schema import (
@@ -60,6 +57,8 @@ def create_sql_table(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_replace_table: bool = False,
     retry_cnt: int = 5,
@@ -92,6 +91,8 @@ def create_sql_table(
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
+            ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+            ch_ddl_wait_policy=ch_ddl_wait_policy,
             ch_only_shard=ch_only_shard,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
@@ -124,8 +125,8 @@ def create_sql_table(
         return_sql=return_sql,
         query_label=query_label,
         return_metadata=return_metadata,
-        ddl_properties=_regular_ddl_properties(config),
-        ch_creation_policy=_resolve_create_ch_policy(
+        ddl_properties=regular_ddl_properties(config),
+        ch_creation_policy=resolve_create_ch_policy(
             config,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
@@ -136,6 +137,8 @@ def create_sql_table(
             ch_distributed_cluster=ch_distributed_cluster,
             ch_shard_on_cluster=ch_shard_on_cluster,
             ch_distributed_on_cluster=ch_distributed_on_cluster,
+            ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+            ch_ddl_wait_policy=ch_ddl_wait_policy,
         ),
         option_owner="db_key",
     )
@@ -228,6 +231,8 @@ def _create_sql_table_from_sql_source(
     ch_engine: str | None,
     ch_cluster: str | None,
     ch_sharding_key: str | None,
+    ch_ddl_ready_timeout_seconds: float | None,
+    ch_ddl_wait_policy: str | None,
     ch_only_shard: bool,
     retry_cnt: int,
     timeout_increment: float,
@@ -239,11 +244,14 @@ def _create_sql_table_from_sql_source(
 ) -> str | int | SqlPlan | SqlOperationResult | None:
     target_config = get_connection_config(db_key)
     if not get_backend(target_config.backend).supports_distributed_table_targets():
+        if ch_ddl_wait_policy is not None:
+            message = "ch_ddl_wait_policy requires a ClickHouse target."
+            raise ValueError(message)
         ch_engine = ch_engine or "ReplicatedMergeTree"
         ch_cluster = ch_cluster or "{cluster}"
         ch_sharding_key = ch_sharding_key or "rand()"
     else:
-        policy = _resolve_create_ch_policy(
+        policy = resolve_create_ch_policy(
             target_config,
             ch_engine=ch_engine,
             ch_cluster=ch_cluster,
@@ -254,6 +262,8 @@ def _create_sql_table_from_sql_source(
             ch_distributed_cluster=None,
             ch_shard_on_cluster=None,
             ch_distributed_on_cluster=None,
+            ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+            ch_ddl_wait_policy=ch_ddl_wait_policy,
         )
         ch_engine = policy.shard_engine
         ch_cluster = policy.distributed_cluster or policy.shard_on_cluster or "{cluster}"
@@ -294,6 +304,8 @@ def _create_sql_table_from_sql_source(
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
         ch_only_shard=ch_only_shard,
         dry_run=dry_run,
         return_sql=return_sql,
@@ -449,7 +461,7 @@ def _generate_create_sql_table_from_query_sql(
         table_schema=target_column_types,
         query_label=query_label,
         option_owner="db_key",
-        ddl_properties=_regular_ddl_properties(target_config),
+        ddl_properties=regular_ddl_properties(target_config),
         **create_kwargs,
     )
     drop_sqls = (
@@ -506,13 +518,9 @@ def _create_sql_table_with_connection(
         if ddl_properties is None and defaults is not None and not is_clickhouse:
             ddl_properties = getattr(defaults, ddl_scope)
         if is_clickhouse and ch_creation_policy is None:
-            scope = (
-                getattr(defaults, ddl_scope)
-                if defaults is not None
-                else legacy_clickhouse_scope(staging=ddl_scope == "staging")
-            )
-            ch_creation_policy = resolve_clickhouse_creation_policy(
-                scope,
+            ch_creation_policy = resolve_create_ch_policy(
+                config,
+                ddl_scope=ddl_scope,
                 ch_engine=ch_engine,
                 ch_cluster=ch_cluster,
                 ch_sharding_key=ch_sharding_key,
@@ -717,6 +725,11 @@ def _build_create_table_plan(
         options={
             "drop_target_if_exists": options.drop_target_if_exists,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
+            "ch_ddl_wait_policy": (
+                options.ch_creation_policy.ddl_wait_policy
+                if options.ch_creation_policy is not None
+                else None
+            ),
         },
         metadata=metadata,
     )
@@ -775,6 +788,7 @@ def _execute_create_sql_table(
             ch_distributed_table=options.ch_distributed_table,
             ch_only_shard=options.ch_only_shard,
             expected_column_types=expected_column_types,
+            ch_creation_policy=options.ch_creation_policy,
         )
 
 
@@ -861,19 +875,6 @@ def _build_create_table_sqls(
     if explicit_properties:
         sqls = [overlay_with_properties(sql, explicit_properties) for sql in sqls]
     return _apply_query_label_to_sqls(sqls, query_label)
-
-
-def _resolve_create_ch_policy(config: Any, **overrides: Any) -> Any:
-    if not get_backend_adapter(config.backend).supports_distributed_table_targets():
-        return None
-    defaults = getattr(config, "ddl_defaults", None)
-    scope = defaults.regular if defaults is not None else legacy_clickhouse_scope()
-    return resolve_clickhouse_creation_policy(scope, **overrides)
-
-
-def _regular_ddl_properties(config: Any) -> Mapping[str, Any] | None:
-    defaults = getattr(config, "ddl_defaults", None)
-    return None if defaults is None else defaults.regular
 
 
 def _gp_partition_plan_option(value: Any) -> dict[str, Any] | None:

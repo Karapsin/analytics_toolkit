@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+from analytics_toolkit.sql.backends.trino.storage import parquet_storage_options
 from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
@@ -124,6 +126,8 @@ def load_df(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     dry_run: bool = False,
@@ -167,6 +171,8 @@ def load_df(
         ch_distributed_cluster=ch_distributed_cluster,
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
         ch_only_shard=ch_only_shard,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
         query_label=query_label,
@@ -317,6 +323,8 @@ def _build_load_options(
     ch_distributed_cluster: str | None = None,
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
     ch_retry_per_host_drops: bool = True,
     query_label: str | None = None,
@@ -354,6 +362,8 @@ def _build_load_options(
         ch_distributed_cluster=ch_distributed_cluster,
         ch_shard_on_cluster=ch_shard_on_cluster,
         ch_distributed_on_cluster=ch_distributed_on_cluster,
+        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
     )
     resolved_destination_table = destination_table.strip()
     if not resolved_destination_table:
@@ -411,18 +421,21 @@ def _build_load_options(
         query_label=query_label,
         gp_insert_chunk_size=gp_insert_chunk_size,
         transfer_staging_schema=config.transfer_staging_schema,
-        transfer_parquet_staging_schema=getattr(
+        s3_transfer_staging_schema=getattr(
             config,
-            "transfer_parquet_staging_schema",
+            "s3_transfer_staging_schema",
             None,
         ),
-        transfer_staging_location=target_defaults.transfer_staging_location,
+        s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
+        parquet_storage_options=parquet_storage_options(config),
         transfer_staging_username=_sanitize_transfer_staging_username(config.user),
         use_parquet_staging=(
             adapter.resolve_transfer_staging_mode(
                 None,
-                transfer_staging_schema=config.transfer_staging_schema,
-                transfer_staging_location=target_defaults.transfer_staging_location,
+                s3_transfer_staging_schema=getattr(
+                    config, "s3_transfer_staging_schema", None
+                ),
+                s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
             )
             == "parquet"
         ),
@@ -757,9 +770,14 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
             "ch_only_shard": options.ch_only_shard,
+            "ch_ddl_wait_policy": (
+                options.regular_ch_policy.ddl_wait_policy
+                if options.regular_ch_policy is not None
+                else None
+            ),
             "transfer_staging_schema": options.transfer_staging_schema,
-            "transfer_parquet_staging_schema": (options.transfer_parquet_staging_schema),
-            "transfer_staging_location": options.transfer_staging_location,
+            "s3_transfer_staging_schema": (options.s3_transfer_staging_schema),
+            "s3_transfer_staging_location": options.s3_transfer_staging_location,
             "use_parquet_staging": options.use_parquet_staging,
         },
         metadata=metadata,
@@ -1021,7 +1039,7 @@ def _add_parquet_load_plan_steps(
 ) -> None:
     adapter = get_backend_adapter(options.connection_backend)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
-    parquet_schema = options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    parquet_schema = options.s3_transfer_staging_schema
     stage_table = build_stage_table_name(
         options.connection_backend,
         options.destination_table,
@@ -1147,7 +1165,7 @@ def _dry_run_load_stage_name(options: LoadOptions, suffix: str) -> str:
         options.connection_backend,
         options.destination_table,
         transfer_staging_schema=(
-            options.transfer_parquet_staging_schema or options.transfer_staging_schema
+            options.s3_transfer_staging_schema
         ),
         transfer_staging_username=options.transfer_staging_username,
         random_suffix=suffix,
@@ -1360,6 +1378,7 @@ def _load_dataframe_via_parquet_stage(
         pa=pa,
         pq=pq,
         fsspec_module=fsspec_module,
+        storage_options=options.parquet_storage_options,
         row_group_size=PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
         on_progress=on_progress,
     )
@@ -1381,11 +1400,11 @@ def _create_load_parquet_stage_table(
     state: LoadState,
     connection: Any,
 ) -> None:
-    parquet_schema = options.transfer_parquet_staging_schema or options.transfer_staging_schema
+    parquet_schema = options.s3_transfer_staging_schema
     if not parquet_schema:
-        raise ValueError("transfer_staging_schema is required for Parquet staging.")
-    if not options.transfer_staging_location:
-        raise ValueError("transfer_staging_location is required for Parquet staging.")
+        raise ValueError("s3_transfer_staging_schema is required for Parquet staging.")
+    if not options.s3_transfer_staging_location:
+        raise ValueError("s3_transfer_staging_location is required for Parquet staging.")
     stage_column_types = options.table_schema or state.target_column_types
     if stage_column_types is None:
         raise ValueError(
@@ -1631,7 +1650,13 @@ def _cleanup_load(
             )
     if state is not None and state.stage_external_location is not None:
         try:
-            cleanup_parquet_stage_location(state.stage_external_location)
+            if options.parquet_storage_options is None:
+                cleanup_parquet_stage_location(state.stage_external_location)
+            else:
+                cleanup_parquet_stage_location(
+                    state.stage_external_location,
+                    storage_options=options.parquet_storage_options,
+                )
         except Exception:
             time_print(
                 "Failed to delete temporary load_df Parquet stage files "

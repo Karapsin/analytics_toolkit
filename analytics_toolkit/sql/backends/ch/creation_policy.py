@@ -25,6 +25,11 @@ from analytics_toolkit.sql.connection.ddl_defaults import (
     MISSING_DDL_VALUE,
 )
 from analytics_toolkit.sql.connection.errors import SqlConfigError
+from analytics_toolkit.sql.execution.validation import validate_positive_number
+
+from .wait_policy import ChDdlWaitPolicy, resolve_ch_ddl_wait_policy
+
+DEFAULT_DDL_READY_TIMEOUT_SECONDS = 300.0
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,10 @@ class ClickHouseCreationPolicy:
     distributed_cluster: str | None
     distributed_on_cluster: str | None
     sharding_key: str | None
+    ddl_ready_timeout_seconds: float
+    ddl_ready_timeout_extension_cnt: int = 1
+    ddl_ready_timeout_increment_seconds: float = 0.0
+    ddl_wait_policy: ChDdlWaitPolicy = "wait_all"
 
 
 def resolve_clickhouse_creation_policy(
@@ -51,6 +60,12 @@ def resolve_clickhouse_creation_policy(
     ch_shard_on_cluster: str | None | object = MISSING_DDL_VALUE,
     ch_distributed_on_cluster: str | None | object = MISSING_DDL_VALUE,
     warn_ch_cluster: bool = True,
+    ch_ddl_ready_timeout_seconds: float | None = None,
+    connection_ddl_ready_timeout_seconds: float | None = None,
+    ch_ddl_ready_timeout_extension_cnt: int | None = None,
+    connection_ddl_ready_timeout_extension_cnt: int | None = None,
+    ch_ddl_wait_policy: str | None = None,
+    connection_ddl_wait_policy: str | None = None,
 ) -> ClickHouseCreationPolicy:
     if ch_cluster is not None and warn_ch_cluster:
         warnings.warn(
@@ -97,6 +112,26 @@ def resolve_clickhouse_creation_policy(
             _missing("distributed.on_cluster", "ch_distributed_on_cluster")
         validate_distributed_template(str(template))
     resolved_shard_cluster = None if shard_cluster is None else str(shard_cluster)
+    ready_timeout = validate_positive_number(
+        ch_ddl_ready_timeout_seconds
+        if ch_ddl_ready_timeout_seconds is not None
+        else (
+            connection_ddl_ready_timeout_seconds
+            if connection_ddl_ready_timeout_seconds is not None
+            else DEFAULT_DDL_READY_TIMEOUT_SECONDS
+        ),
+        "ch_ddl_ready_timeout_seconds",
+    )
+    ready_timeout_extension_cnt = _validate_non_negative_int(
+        ch_ddl_ready_timeout_extension_cnt
+        if ch_ddl_ready_timeout_extension_cnt is not None
+        else (
+            connection_ddl_ready_timeout_extension_cnt
+            if connection_ddl_ready_timeout_extension_cnt is not None
+            else 1
+        ),
+        "ch_ddl_ready_timeout_extension_cnt",
+    )
     return ClickHouseCreationPolicy(
         bool(pair),
         str(engine),
@@ -107,7 +142,17 @@ def resolve_clickhouse_creation_policy(
         if distributed_cluster is None
         else (None if distributed_cluster is MISSING_DDL_VALUE else str(distributed_cluster)),
         None if sharding is MISSING_DDL_VALUE else str(sharding),
+        ready_timeout,
+        ready_timeout_extension_cnt,
+        0.0,
+        resolve_ch_ddl_wait_policy(ch_ddl_wait_policy, connection_ddl_wait_policy),
     )
+
+
+def _validate_non_negative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be an integer of at least 0.")
+    return int(value)
 
 
 def _resolve_cluster_override(

@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.ch.reconfigure_models import (
     ChReconfiguration,
     ChReconfigureOptions,
 )
+from analytics_toolkit.sql.backends.ch.wait_policy import resolve_ch_ddl_wait_policy
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
@@ -44,6 +45,7 @@ def ch_reconfigure_table(
     ch_shard_on_cluster: str | None = None,
     ch_distributed_on_cluster: str | None = None,
     ch_settings: Mapping[str, str | int | float | bool | None] | None = None,
+    ch_ddl_wait_policy: str | None = None,
     reset_partition_by: bool = False,
     reset_order_by: bool = False,
     to_defaults: bool = False,
@@ -75,6 +77,10 @@ def ch_reconfigure_table(
         reset_order_by=reset_order_by,
         to_defaults=to_defaults,
         regular_defaults=getattr(getattr(config, "ddl_defaults", None), "regular", None),
+        ch_ddl_wait_policy=resolve_ch_ddl_wait_policy(
+            ch_ddl_wait_policy,
+            getattr(config, "ch_ddl_wait_policy", None),
+        ),
         validate_row_count=validate_row_count,
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
@@ -165,6 +171,7 @@ def _build_options(
     reset_order_by: bool,
     to_defaults: bool,
     regular_defaults: object | None,
+    ch_ddl_wait_policy: str,
     validate_row_count: bool,
     retry_cnt: int,
     timeout_increment: float,
@@ -200,6 +207,7 @@ def _build_options(
         reset_order_by=reset_order_by,
         to_defaults=to_defaults,
         regular_defaults=cast("Any", regular_defaults),
+        ch_ddl_wait_policy=ch_ddl_wait_policy,
         validate_row_count=validate_row_count,
         query_label=query_label,
     )

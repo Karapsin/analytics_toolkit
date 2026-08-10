@@ -16,6 +16,24 @@ _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
 
 
+def validate_airflow_file_overrides(
+    adapter: Any,
+    raw_config: dict[str, Any],
+    connection_key: str,
+) -> None:
+    forbidden = adapter.forbidden_airflow_file_override_fields.intersection(raw_config)
+    if forbidden:
+        # Import lazily because connection.config imports the backend registry.
+        from analytics_toolkit.sql.connection.errors import SqlConfigError  # noqa: PLC0415
+
+        fields = ", ".join(sorted(forbidden))
+        message = (
+            f"Direct {adapter.display_name} object-storage credentials are not allowed "
+            f"in Airflow-source .connections entry '{connection_key}': {fields}."
+        )
+        raise SqlConfigError(message)
+
+
 def map_same_backend_source_type_to_target(adapter: Any, column: Any) -> str:
     return str(adapter.map_source_type_to_target(column))
 
@@ -575,10 +593,10 @@ def resolve_transfer_staging_mode(
     adapter: Any,
     requested_mode: Any,
     *,
-    transfer_staging_schema: str | None,
-    transfer_staging_location: str | None,
+    s3_transfer_staging_schema: str | None,
+    s3_transfer_staging_location: str | None,
 ) -> Any:
-    del adapter, transfer_staging_schema, transfer_staging_location
+    del adapter, s3_transfer_staging_schema, s3_transfer_staging_location
     if requested_mode is None:
         return None
     if requested_mode not in {"parquet", "values"}:
@@ -844,6 +862,7 @@ def after_create_table(
     ch_distributed_table: bool = False,
     ch_only_shard: bool = False,
     expected_column_types: dict[str, str] | None = None,
+    ch_creation_policy: Any = None,
 ) -> None:
     del (
         adapter,
@@ -853,6 +872,7 @@ def after_create_table(
         ch_distributed_table,
         ch_only_shard,
         expected_column_types,
+        ch_creation_policy,
     )
 
 

@@ -5,7 +5,7 @@ import json
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union, cast
 
@@ -74,10 +74,13 @@ class TrinoConfig:
     request_timeout: int | None
     source: str | None
     transfer_staging_schema: str | None
-    transfer_staging_location: str | None
+    s3_transfer_staging_schema: str | None = None
+    s3_transfer_staging_location: str | None = None
     upsert_partition_drop_sql_template: str | None = None
-    transfer_parquet_staging_schema: str | None = None
     ddl_defaults: DdlDefaults | None = None
+    access_key_id: str | None = field(default=None, repr=False)
+    secret_access_key: str | None = field(default=None, repr=False)
+    endpoint_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,9 @@ class ChConfig:
     ddl_defaults: DdlDefaults | None = None
     driver: Literal["http", "native"] = "http"
     compression: bool | Literal["lz4", "zstd"] = False
+    ddl_ready_timeout_seconds: int | None = None
+    ddl_ready_timeout_extension_cnt: int | None = None
+    ch_ddl_wait_policy: str | None = None
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]
@@ -269,7 +275,11 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
             "http_scheme": "https",
             "ca_certs": "trino-ca.pem",
             "transfer_staging_schema": "object_storage.sandbox",
-            "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "s3_transfer_staging_schema": "object_storage.sandbox_s3",
+            "s3_transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+            "aws_access_key_id": "object-storage-access-key",
+            "aws_secret_access_key": "object-storage-secret-key",
+            "aws_endpoint_url": "https://storage.example",
             "upsert_partition_drop_sql_template": (example_upsert_partition_drop_sql_template()),
             "ddl_defaults": {
                 "regular": {"format": "'PARQUET'", "object_store_layout_enabled": True},
@@ -315,7 +325,9 @@ def _build_dummy_airflow_connections() -> dict[str, Any]:
                 "type": "trino",
                 "ca_certs": "trino-ca.pem",
                 "transfer_staging_schema": "object_storage.sandbox",
-                "transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "s3_transfer_staging_schema": "object_storage.sandbox_s3",
+                "s3_transfer_staging_location": "s3://bucket/tmp/analytics_toolkit_transfer",
+                "endpoint_url": "https://storage.example",
                 "upsert_partition_drop_sql_template": (
                     example_upsert_partition_drop_sql_template()
                 ),
@@ -341,7 +353,7 @@ def _dummy_ch_ddl_defaults() -> dict[str, Any]:
             "shard": {"engine": "ReplicatedMergeTree", "on_cluster": "CORE"},
             "distributed": {
                 "engine_template": "Distributed({cluster}, {database}, {shard_table}, {sharding_key})",
-                "cluster": "{cluster}",
+                "cluster": "CORE",
                 "on_cluster": "{cluster}",
                 "sharding_key": "rand()",
             },
@@ -542,6 +554,7 @@ def _parse_airflow_connections_file(
             )
 
         backend = _normalize_backend_name(_require_string(raw_config, raw_key, "type"))
+        get_backend(backend).validate_airflow_file_overrides(raw_config, raw_key)
         connection_id = cast(
             "str",
             _optional_string(

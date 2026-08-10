@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
@@ -29,8 +29,9 @@ class LoadOptions:
     ch_retry_per_host_drops: bool = True
     query_label: str | None = None
     transfer_staging_schema: str | None = None
-    transfer_parquet_staging_schema: str | None = None
-    transfer_staging_location: str | None = None
+    s3_transfer_staging_schema: str | None = None
+    s3_transfer_staging_location: str | None = None
+    parquet_storage_options: Mapping[str, Any] | None = field(default=None, repr=False)
     transfer_staging_username: str | None = None
     use_parquet_staging: bool = False
     retry_cnt: int = 5

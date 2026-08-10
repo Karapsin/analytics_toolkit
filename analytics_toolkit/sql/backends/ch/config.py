@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
+from .wait_policy import parse_connection_ch_ddl_wait_policy
+
 AIRFLOW_EXTRA_FIELDS = (
     "driver",
     "secure",
@@ -15,6 +17,9 @@ AIRFLOW_EXTRA_FIELDS = (
     "interface",
     "query_limit",
     "query_retries",
+    "ddl_ready_timeout_seconds",
+    "ddl_ready_timeout_extension_cnt",
+    "ch_ddl_wait_policy",
     "client_name",
     "compression",
     "ddl_defaults",
@@ -113,6 +118,21 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             raw_config,
             connection_key,
             "query_retries",
+        ),
+        ddl_ready_timeout_seconds=_optional_positive_int(
+            raw_config,
+            connection_key,
+            "ddl_ready_timeout_seconds",
+        ),
+        ddl_ready_timeout_extension_cnt=_optional_non_negative_int(
+            raw_config,
+            connection_key,
+            "ddl_ready_timeout_extension_cnt",
+        ),
+        ch_ddl_wait_policy=(
+            parse_connection_ch_ddl_wait_policy(raw_config["ch_ddl_wait_policy"])
+            if "ch_ddl_wait_policy" in raw_config
+            else None
         ),
         client_name=_optional_string(raw_config, connection_key, "client_name"),
         compression=_parse_compression(raw_config, connection_key, SqlConfigError),
