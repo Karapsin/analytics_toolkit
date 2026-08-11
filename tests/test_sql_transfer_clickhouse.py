@@ -260,17 +260,9 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert stage_identifier.endswith("__w00000")
     assert len(stage_identifier.encode()) <= 63
     staged_row = target.inserts[0]["data"][0]
-    assert staged_row[:2] == (date(2024, 2, 1), 10)
-    assert len(staged_row[2]) == 32
-    assert staged_row[3:] == (TARGET_TABLE, 0, 1)
-    assert target.inserts[0]["column_names"][:2] == ["month_date", "users"]
-    assert target.inserts[0]["column_names"][2:] == [
-        "__analytics_toolkit_transfer_id",
-        "__analytics_toolkit_destination_table",
-        "__analytics_toolkit_slice_id",
-        "__analytics_toolkit_row_ordinal",
-    ]
-    assert target.inserts[0]["column_type_names"][:2] == ["Date", "Int64"]
+    assert staged_row == (date(2024, 2, 1), 10)
+    assert target.inserts[0]["column_names"] == ["month_date", "users"]
+    assert target.inserts[0]["column_type_names"] == ["Date", "Int64"]
     assert "df" not in target.inserts[0]
 
     cluster_distributed_creates = [

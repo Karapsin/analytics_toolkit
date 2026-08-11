@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Fixed source-staged Trino transfers to honor Parquet mode precedence.
 - Made Trino Parquet staging DDL defaults independent from SQL staging defaults.
+- Stopped sql.transfer from sending internal metadata in every row.
 
 ## 1.3.11.5 - 2026-08-10
 

@@ -657,6 +657,7 @@ def test_run_transfer_attempt_cleans_only_current_stage_table(
         fake_ensure_transfer_target_table,
     )
     monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_kwargs: None)
     monkeypatch.setattr(
         attempt_module,
         "finalize_loaded_stage",
@@ -756,11 +757,13 @@ def test_run_transfer_attempt_skips_stale_cleanup_when_staging_schema_is_missing
         fake_ensure_transfer_target_table,
     )
     monkeypatch.setattr(attempt_module, "load_stage_batches", fake_load_stage_batches)
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_kwargs: None)
     monkeypatch.setattr(
         attempt_module,
         "finalize_loaded_stage",
         fake_finalize_loaded_stage,
     )
+    monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_kwargs: None)
     monkeypatch.setattr(attempt_module, "cleanup_stage", fake_cleanup_stage)
     monkeypatch.setattr(
         attempt_module,
@@ -1841,6 +1844,11 @@ def test_run_keyed_transfer_attempt_uses_one_stage_finalize_and_cleanup(
         attempt_module,
         "load_keyed_stage_slices",
         fake_load_keyed_stage_slices,
+    )
+    monkeypatch.setattr(
+        attempt_module,
+        "validate_loaded_stage_row_count",
+        lambda **_kwargs: None,
     )
     monkeypatch.setattr(
         attempt_module,
@@ -3327,6 +3335,8 @@ def test_transfer_dry_run_shows_parquet_stage_plan(
 
     assert plan.options["trino_mode"] == "parquet"
     assert "use_parquet_staging" not in plan.options
+    assert plan.options["transferred_internal_columns"] == []
+    assert "source-local" in plan.options["internal_columns"]
     assert plan.options["worker_stage_count"] == 1
     assert plan.metadata.worker_stage_count == 1
     assert plan.metadata.stage_tables == [plan.metadata.stage_table]
@@ -8295,6 +8305,8 @@ def test_row_count_disabled_mismatch_missing_workers_retry_and_labels(
 ) -> None:
     disabled = make_progress_options(validate_row_count=False)
     state = models_module.TransferStageState(target_exists=False)
+    state.stage_table = "stage"
+    monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 2)
     row_counts_module.validate_slice_row_count(
         options=disabled,
         stage_state=state,
@@ -8314,6 +8326,15 @@ def test_row_count_disabled_mismatch_missing_workers_retry_and_labels(
         total_rows=2,
         open_connection=lambda _key: object(),
     )
+    monkeypatch.setattr(row_counts_module, "count_table_rows", lambda *_args, **_kwargs: 1)
+    with pytest.raises(row_counts_module.TransferRowCountMismatchError):
+        row_counts_module.validate_loaded_stage_row_count(
+            options=disabled,
+            connection_refs=models_module.TransferConnectionRefs(),
+            stage_state=state,
+            total_rows=2,
+            open_connection=lambda _key: object(),
+        )
 
     enabled = make_progress_options(validate_row_count=True, retry_cnt=2, timeout_increment=0)
     with pytest.raises(RuntimeError, match="worker stage states"):
@@ -8807,7 +8828,6 @@ def test_keyed_attempt_cleanup_only_error(
     )
     monkeypatch.setattr(attempt_module, "build_keyed_worker_stage_states", lambda **_k: [worker])
     monkeypatch.setattr(attempt_module, "load_keyed_stage_slices", lambda **_k: 0)
-    monkeypatch.setattr(attempt_module, "validate_streamed_row_count", lambda **_k: None)
     monkeypatch.setattr(attempt_module, "consolidate_keyed_worker_stages", lambda **_k: None)
     monkeypatch.setattr(attempt_module, "validate_loaded_stage_row_count", lambda **_k: None)
     monkeypatch.setattr(attempt_module, "finalize_loaded_stage", lambda **_k: None)

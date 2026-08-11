@@ -33,7 +33,6 @@ from ..runtime.retry import (
 )
 from ..schema import get_existing_target_insert_types
 from .parquet_stage import cleanup_parquet_stage_location
-from .stage_validation import validate_transfer_stage_identity
 
 
 class FreshTargetFinalizationRowCountMismatchError(ValueError):
@@ -58,32 +57,6 @@ def finalize_loaded_stage(  # noqa: PLR0913
     if stage_state.stage_table is None:
         raise RuntimeError("Expected stage table to be initialized.")
     stage_table = stage_state.stage_table
-
-    if options.transfer_id is not None:
-        if stage_state.internal_columns is None:
-            raise RuntimeError("Transfer internal columns were not resolved.")
-        stage_tables = (
-            stage_state.stage_tables
-            if options.write_mode == "upsert" and stage_state.stage_tables
-            else [stage_state.stage_table]
-        )
-        expected_slice_counts = (
-            {item.index: item.streamed_rows for item in stage_state.slice_counts}
-            if stage_state.slice_counts
-            else {0: total_rows}
-        )
-        _run_target_operation(
-            options,
-            "validate_stage_identity",
-            lambda target_ref: validate_transfer_stage_identity(
-                options=options,
-                connection=target_ref["connection"],
-                stage_tables=stage_tables,
-                internal_columns=stage_state.internal_columns,
-                expected_slice_counts=expected_slice_counts,
-            ),
-            target_connection_runner=target_connection_runner,
-        )
 
     _run_target_operation(
         options,
@@ -112,19 +85,7 @@ def finalize_loaded_stage(  # noqa: PLR0913
             ),
             target_connection_runner=target_connection_runner,
         )
-    source_stage_column_types = (
-        stage_state.stage_column_types
-        if options.transfer_id is None
-        else (
-            {
-                column: stage_state.stage_column_types[column]
-                for column in stage_state.source_columns
-                if column in stage_state.stage_column_types
-            }
-            if stage_state.stage_column_types is not None
-            else None
-        )
-    )
+    source_stage_column_types = stage_state.stage_column_types
     if source_stage_column_types is None:
         stage_state.insert_column_types = None
         target_column_types = None

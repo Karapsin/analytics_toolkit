@@ -42,12 +42,7 @@ def create_sql_worker_stages(
     create_fn: Any = create_stage_table,
     cleanup_fn: Any = cleanup_stage_table,
 ) -> list[str]:
-    sample = pd.DataFrame(
-        columns=[
-            *stage_state.source_columns,
-            *(stage_state.internal_columns.names() if stage_state.internal_columns else ()),
-        ]
-    )
+    sample = pd.DataFrame(columns=stage_state.source_columns)
     stage_state.first_non_empty_batch = pd.DataFrame(columns=stage_state.source_columns)
     worker_tables: list[str] = []
     registered_candidates: list[str] = []

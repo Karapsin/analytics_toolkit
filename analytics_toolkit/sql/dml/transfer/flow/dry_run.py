@@ -181,8 +181,9 @@ def dry_run_transfer_options(
             "preferred stage names are shown; runtime collisions allocate a different retained name"
         ),
         "internal_columns": (
-            "<resolved after source schema inspection; generated names avoid collisions>"
+            "<source-local slice/ordinal paging columns only; resolved after schema inspection>"
         ),
+        "transferred_internal_columns": [],
     }
 
 

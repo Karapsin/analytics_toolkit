@@ -784,7 +784,7 @@ def test_target_stage_candidate_precedes_partial_clickhouse_create(
     assert candidates == ["partial"]
 
 
-def test_target_stage_validation_checks_counts_identity_and_internal_columns(
+def test_target_stage_validation_checks_payload_counts_without_internal_columns(
     monkeypatch: Any,
 ) -> None:
     options = _options()
@@ -833,15 +833,15 @@ def test_target_stage_validation_checks_counts_identity_and_internal_columns(
         {0: 0},
     )
     state.internal_columns = None
-    with pytest.raises(RuntimeError, match="internal columns"):
-        staged_keyed_pipeline._validate_target_stages(
-            options,
-            {"connection": object()},
-            state,
-            ["target"],
-            {0: 1},
-            {0: 1},
-        )
+    staged_keyed_pipeline._validate_target_stages(
+        options,
+        {"connection": object()},
+        state,
+        ["target"],
+        {0: 1},
+        {0: 1},
+    )
+    assert validated == [{0: 1}, {0: 1}]
 
 
 def test_writer_creates_target_stage_on_first_nonempty_key_and_reuses_it(
@@ -2130,7 +2130,6 @@ def test_row_count_and_finalization_accept_bounded_target_runner(monkeypatch: An
         target_connection_runner=run,
     )
 
-    monkeypatch.setattr(finalize, "validate_transfer_stage_identity", lambda **_kwargs: None)
     monkeypatch.setattr(finalize, "validate_stage_uniqueness", lambda **_kwargs: None)
     monkeypatch.setattr(finalize, "validate_stage_target_key_overlap", lambda **_kwargs: None)
     monkeypatch.setattr(finalize, "finalize_stage_table", lambda *_args, **_kwargs: None)
@@ -2150,7 +2149,6 @@ def test_row_count_and_finalization_accept_bounded_target_runner(monkeypatch: An
 
     assert roles == [
         "validate_stage_row_count",
-        "validate_stage_identity",
         "validate_stage",
         "validate_stage",
         "finalize_target",

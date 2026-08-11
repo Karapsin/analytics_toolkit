@@ -65,7 +65,6 @@ def load_parquet_stage_batches(
         base_tqdm=tqdm,
     )
     progress_tracker = ProgressTracker(progress_bar)
-    next_ordinal = 1
     try:
         for source_batch in source_batches(  # type: ignore[operator]
             options.from_db_key,
@@ -95,14 +94,6 @@ def load_parquet_stage_batches(
                     options.from_db_backend,
                     table_schema_names=(options.table_schema or {}).keys(),
                 )
-            batch = append_transfer_identity_columns(
-                batch,
-                options=options,
-                stage_state=stage_state,
-                slice_id=0 if slice_index is None else slice_index,
-                start_ordinal=next_ordinal,
-            )
-            next_ordinal += batch.row_count
             if stage_state.first_non_empty_batch is None:
                 run_with_fresh_connection(
                     options.to_db_key,
@@ -159,24 +150,9 @@ def append_transfer_identity_columns(
     slice_id: int,
     start_ordinal: int,
 ) -> RowBatch:
-    if options.transfer_id is None:
-        return batch
-    internal = stage_state.internal_columns
-    if internal is None or options.canonical_destination_identity is None:
-        raise RuntimeError("Transfer runtime identity was not initialized.")
-    return RowBatch(
-        columns=[*batch.columns, *internal.names()],
-        rows=[
-            (
-                *row,
-                options.transfer_id,
-                options.canonical_destination_identity,
-                slice_id,
-                start_ordinal + offset,
-            )
-            for offset, row in enumerate(batch.rows)
-        ],
-    )
+    """Return the user payload unchanged; retained for internal compatibility."""
+    del options, stage_state, slice_id, start_ordinal
+    return batch
 
 
 def initialize_parquet_stage_for_first_batch(

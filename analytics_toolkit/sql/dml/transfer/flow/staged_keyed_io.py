@@ -303,7 +303,7 @@ def create_target_writer_stage(
     on_stage_candidate: Callable[[str], None] | None = None,
     log_prefix: str = "",
 ) -> str:
-    columns = [*metadata.source_columns, *metadata.internal_columns.names()]
+    columns = list(metadata.source_columns)
     with sql_log_context(log_prefix, suppress_sql=True):
         return create_stage_table(
             options.to_db_backend,

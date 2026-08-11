@@ -45,6 +45,7 @@ from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .progress import make_transfer_progress_bar
 from .range_scheduler import AdaptiveRangeScheduler, OrdinalRange
+from .row_counts import validate_loaded_stage_row_count
 from .source_snapshot import (
     build_append_snapshot_slice_sql,
     build_snapshot_range_sql,
@@ -154,6 +155,7 @@ def run_staged_source_transfer_attempt(
         )
         stage_state.source_stage_tables = [snapshot_table]
         total_rows = sum(slice_counts.values())
+        stage_state.expected_source_rows = total_rows
         worker_count = _effective_transfer_worker_count(
             min(
                 options.transfer_concurrency.effective_read,
@@ -235,6 +237,13 @@ def run_staged_source_transfer_attempt(
         )
         close_connection_ref(target_ref, options.to_db_key, "target consolidation")
         target_ref.pop("connection", None)
+        validate_loaded_stage_row_count(
+            options=options,
+            connection_refs=refs,
+            stage_state=stage_state,
+            total_rows=total_rows,
+            open_connection=get_sql_connection,
+        )
         attempt_phase = "destination finalization"
         transfer_progress.mark_finalization_started()
         finalize_loaded_stage(options, refs, stage_state, total_rows)

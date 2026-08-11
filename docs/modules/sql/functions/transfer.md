@@ -164,13 +164,13 @@ key while an earlier key is being inserted or validated.
 
 The source and target pools are bounded by effective read and write concurrency.
 At most `effective readers + effective writers` keyed source tables are live at
-once. After all batches for a key commit, target-side validation checks its
-count, transfer ID, exact destination, slice ID, and complete unique ordinal
-range. Only then is the key acknowledged; a reader drops the exact acknowledged
-source table and releases its live-stage credit. A key is never split between
-writers, and a writer that handles only empty keys creates no target stage.
-Independent per-key CTAS operations may observe slightly different source
-moments.
+once. After all batches for a key commit, in-memory range and batch
+acknowledgements verify its exact streamed count. Only then is the key
+acknowledged; a reader drops the exact acknowledged source table and releases
+its live-stage credit. Aggregate database stage counts are checked before any
+final target mutation. A key is never split between writers, and a writer that
+handles only empty keys creates no target stage. Independent per-key CTAS
+operations may observe slightly different source moments.
 
 Nightly/manual stress coverage runs exactly 64 one-row keyed slices per backend
 with four readers, three writers, and `batch_size=1`, then checks exact target
@@ -245,7 +245,7 @@ rows = sql.transfer(
 ## Notes
 
 - Every real call generates one immutable UUID4 transfer ID. The same full ID
-  appears in source snapshots, worker stages, Parquet resources, query labels,
+  appears in source/target stage names, Parquet resources, query labels,
   progress/log messages, errors, and `SqlOperationResult.metadata.transfer_id`.
   Dry-run plans use `<runtime-transfer-id>` and create no resources.
 - Workers created by one call are supported and share that transfer ID. Two
@@ -256,9 +256,9 @@ rows = sql.transfer(
 - On direct keyed transfers, readers and target writers use independent
   connections. The queue holds at most one prefetched batch per effective
   writer, and each SQL writer owns one private stage table. Successful batches
-  may move between slices and writers while immutable slice IDs and row
-  ordinals preserve validation. Stage rows remain until the single final target
-  operation succeeds or attempt cleanup runs.
+  may move between slices and writers while immutable logical batch identifiers
+  and row counts preserve in-memory validation. Stage rows remain until the
+  single final target operation succeeds or attempt cleanup runs.
 - Split concurrency is limited to keyed transfers. Legacy `concurrency=N`
   retains combined `N/N` behavior; unkeyed source-staged transfers retain their
   existing single-snapshot implementation.
@@ -277,7 +277,7 @@ rows = sql.transfer(
   snapshot with bounded ordinal ranges.
 - Keyed source staging inspects one representative source query and any required
   target metadata once per full attempt. The ordered source schema, native and
-  mapped types, `table_schema` overrides, internal identity columns, insert
+  mapped types, `table_schema` overrides, source-local paging columns, insert
   order, and stage-DDL inputs are reused for every key. Connection retries do
   not refresh this contract; a full-attempt retry inspects it once again.
 - Unkeyed source-staged transfers keep at least one worker and use no more than
@@ -294,19 +294,22 @@ rows = sql.transfer(
   `target_batch_memory_mb` is set, its approximate payload target is shared
   evenly across those `2 × effective writers` resident slots rather than being
   applied independently to every slot.
-- Internal snapshot, source-batch, stage-identity, ordinal, and superseded-stage
+- Internal snapshot, source-batch, stage-count, ordinal, and superseded-stage
   queries use distinct info-level action and phase labels in transfer logs.
 - Transfer SQL stage names use one identifier policy on every backend: at most
   63 UTF-8 bytes, beginning with a stable 16-hex destination hash and carrying
   the full transfer ID and worker/role identity.
-  Catalog/schema qualification and quoting remain backend-specific. The hash is
-  a naming prefix, not deletion authority. Exact canonical destination values
-  stored in stage rows control validation and automatic cleanup; collisions use
-  the same compact suffix policy without reusing, overwriting, or dropping a table.
-- Four collision-resolved generated columns carry transfer ID, exact canonical
-  destination, slice ID, and row ordinal through staging. They are mandatory
-  integrity metadata even with `validate_row_count=False` and are explicitly
-  excluded from final-target DDL and inserts.
+  Catalog/schema qualification and quoting remain backend-specific. Within the
+  configured staging schema, the destination hash, full transfer ID, reserved
+  worker/role suffix, and collision suffix form the automatic-cleanup authority.
+  Malformed, current-attempt, legacy, `load_df`, and other-destination names are
+  protected. The configured staging schema should therefore be reserved for
+  toolkit-managed resources.
+- Target-bound SQL/VALUES batches, Parquet files, and target stages contain only
+  user columns. Transfer ID, destination, slice ID, and row ordinal are never
+  repeated in transported rows. Source snapshots retain only collision-resolved
+  slice and ordinal columns for local bounded paging; range queries filter and
+  order by them but project only user columns across the network.
 - No manifest, lease, owner marker, heartbeat, bookkeeping, or other persistent
   coordination table, view, work queue, or sequence is created. Scheduling,
   acknowledgements, verified-key checkpoints, progress, and ETA state exist only
@@ -410,21 +413,21 @@ rows = sql.transfer(
   are mutually exclusive adaptation controls: set at most one per call.
 - By default, transfer validates row counts before finalizing the target.
   Unkeyed flow counts its source snapshot. Lazy keyed flow captures the exact
-  count immediately after each CTAS, then compares that count with streamed rows
-  and database-level target-stage identity and ordinal coverage before
-  acknowledging the key. Aggregate stage validation still runs before the
-  final destination mutation.
+  count immediately after each CTAS and compares it with acknowledged streamed
+  rows. Mandatory aggregate database stage counts still run before the final
+  destination mutation.
 - When the source connection defines `transfer_staging_schema`, snapshot
   materialization is the extraction mechanism regardless of public row-count
   validation. `validate_row_count=False` disables only the public
-  source-to-target count comparison; transfer ID, destination, uniqueness, and
-  ordinal coverage checks remain mandatory.
-- A new call removes discoverable non-empty stages on its current source and
-  target connections only when their stored exact destination matches and their
-  transfer ID differs. It also removes empty stages whose collision-safe name
-  has the exact destination hash and a different full transfer ID; this covers
-  crashes after zero-row CTAS or partial ClickHouse creation. Current-attempt,
-  malformed, unverifiable, legacy, and `load_df` stages remain protected.
+  source-to-target count comparison; streamed-to-stage payload counts,
+  uniqueness, target-key overlap, and in-memory range coverage remain mandatory.
+- A new call removes discoverable empty or non-empty stages on its current
+  source and target connections when their reserved collision-safe name has the
+  exact destination hash and a different full transfer ID. This covers crashes
+  after partial loading without persistent per-row ownership metadata.
+  Current-attempt, malformed, legacy, `load_df`, and other-destination names
+  remain protected. Because simultaneous calls for one destination are
+  unsupported, a newer call may remove an older still-running call's stage.
   Historical source stages on another connection alias may require explicit
   `cleanup_stale_stage_tables(stage_tables=[...])` cleanup.
 - For ClickHouse sources with no explicit `LIMIT`, row-count validation streams

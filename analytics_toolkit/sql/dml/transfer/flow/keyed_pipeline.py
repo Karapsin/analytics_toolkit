@@ -37,7 +37,6 @@ from .logging import (
     reader_slice_message,
     writer_batch_message,
 )
-from .parquet_batches import append_transfer_identity_columns
 from .parquet_stage import (
     ensure_parquet_staging_dependencies,
     parquet_row_group_size,
@@ -267,13 +266,6 @@ def _reader(
                     options.from_db_backend
                 ).normalize_transfer_source_batch(
                     source_batch, shared_stage_state.source_column_types
-                )
-                batch = append_transfer_identity_columns(
-                    batch,
-                    options=options,
-                    stage_state=shared_stage_state,
-                    slice_id=transfer_slice.index,
-                    start_ordinal=next_ordinal,
                 )
                 batch_count += 1
                 item = QueuedTransferBatch(

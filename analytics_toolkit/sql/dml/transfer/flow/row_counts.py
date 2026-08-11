@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: BLE001, S110, SIM105
 import uuid
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
@@ -272,24 +272,21 @@ def validate_loaded_stage_row_count(  # noqa: PLR0913
     target_connection_runner: Any | None = None,
 ) -> None:
     del connection_refs
-    if not options.validate_row_count:
-        return
-
     expected_rows = stage_state.expected_source_rows
-    if expected_rows is None:
-        raise RuntimeError("Expected source row count to be initialized.")
-
     stage_state.streamed_rows = total_rows
-    if expected_rows != total_rows:
-        raise TransferRowCountMismatchError(
-            _format_row_count_mismatch(
-                options=options,
-                expected_rows=expected_rows,
-                streamed_rows=total_rows,
-                stage_rows=None,
-                stage_table=stage_state.stage_table,
+    if options.validate_row_count:
+        if expected_rows is None:
+            raise RuntimeError("Expected source row count to be initialized.")
+        if expected_rows != total_rows:
+            raise TransferRowCountMismatchError(
+                _format_row_count_mismatch(
+                    options=options,
+                    expected_rows=expected_rows,
+                    streamed_rows=total_rows,
+                    stage_rows=None,
+                    stage_table=stage_state.stage_table,
+                )
             )
-        )
 
     stage_rows = _count_loaded_stage_rows(
         options,
@@ -299,23 +296,26 @@ def validate_loaded_stage_row_count(  # noqa: PLR0913
         target_connection_runner=target_connection_runner,
     )
     stage_state.stage_rows = stage_rows
-    if stage_rows != expected_rows:
+    if stage_rows != total_rows:
         raise TransferRowCountMismatchError(
             _format_row_count_mismatch(
                 options=options,
-                expected_rows=expected_rows,
+                expected_rows=total_rows,
                 streamed_rows=total_rows,
                 stage_rows=stage_rows,
                 stage_table=stage_state.stage_table,
             )
         )
 
+    if not options.validate_row_count:
+        return
+
     stage_state.row_count_validated = True
     object.__setattr__(
         options,
         "row_count_result",
         TransferRowCountResult(
-            expected_source_rows=expected_rows,
+            expected_source_rows=cast("int", expected_rows),
             streamed_rows=total_rows,
             stage_rows=stage_rows,
             row_count_validated=True,

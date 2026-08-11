@@ -840,8 +840,6 @@ def _validate_target_stages(
         if any(source_counts.values()):
             raise RuntimeError("Non-empty transfer has no target stage.")
         return
-    if stage_state.internal_columns is None:
-        raise RuntimeError("Transfer internal columns were not resolved.")
     validate_transfer_stage_identity(
         options=options,
         connection=target_ref["connection"],

@@ -38,6 +38,10 @@ class TransferInternalColumns:
             self.row_ordinal,
         )
 
+    def paging_names(self) -> tuple[str, str]:
+        """Return source-local columns used to page an immutable snapshot."""
+        return (self.slice_id, self.row_ordinal)
+
     def quoted(self, backend: str) -> tuple[str, str, str, str]:
         return tuple(quote_identifier_part(name, backend) for name in self.names())  # type: ignore[return-value]
 

@@ -61,7 +61,6 @@ from .parquet_stage import (
     write_batch_to_parquet_stage,
 )
 from .parquet_batches import (
-    append_transfer_identity_columns as _append_transfer_identity_columns,
     initialize_parquet_stage_for_first_batch as _initialize_parquet_stage_for_first_batch_impl,
     load_parquet_stage_batches as _load_parquet_stage_batches_impl,
 )
@@ -73,7 +72,6 @@ from .row_counts import (
     prepare_row_count_validated_options,
     validate_loaded_stage_row_count,
     validate_slice_row_count,
-    validate_streamed_row_count,
 )
 from .stage import (
     _commit_if_supported,
@@ -390,11 +388,7 @@ def initialize_shared_stage_for_keyed_slices(
         options,
         stage_state,
     )
-    stage_columns = [
-        *source_columns,
-        *(stage_state.internal_columns.names() if stage_state.internal_columns else ()),
-    ]
-    sample_batch = pd.DataFrame(columns=stage_columns)
+    sample_batch = pd.DataFrame(columns=source_columns)
     stage_state.first_non_empty_batch = pd.DataFrame(columns=source_columns)
     if options.trino_mode == "parquet":
         create_parquet_stage_table(
@@ -714,7 +708,6 @@ def load_stage_batches(
             adaptive_batch_size_step=options.adaptive_batch_size_step,
         )
     )
-    next_ordinal = 1
     try:
         for source_batch in iter_source_batches(
             options.from_db_key,
@@ -744,15 +737,6 @@ def load_stage_batches(
                     options.from_db_backend,
                     table_schema_names=(options.table_schema or {}).keys(),
                 )
-            batch = _append_transfer_identity_columns(
-                batch,
-                options=options,
-                stage_state=stage_state,
-                slice_id=0 if slice_index is None else slice_index,
-                start_ordinal=next_ordinal,
-            )
-            next_ordinal += batch.row_count
-
             if stage_state.first_non_empty_batch is None:
                 _run_with_fresh_target_connection(
                     options,

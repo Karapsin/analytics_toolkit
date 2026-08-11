@@ -17,7 +17,6 @@ from analytics_toolkit.sql.dml.transfer.flow import (
     api,
     attempt,
     dry_run,
-    finalize,
     parquet_batches,
     parquet_stage,
     staged_attempt,
@@ -260,7 +259,7 @@ def test_adaptive_ranges_cover_slices_once_after_split_retry() -> None:
     assert sum(item.row_count for item in scheduler.completed_ranges()) == 7
 
 
-def test_snapshot_sql_uses_identity_range_and_backend_storage() -> None:
+def test_snapshot_sql_keeps_paging_metadata_source_local() -> None:
     columns = resolve_internal_columns(["id"], "gp")
     select_sql = build_snapshot_select_sql(
         backend="gp",
@@ -290,7 +289,11 @@ def test_snapshot_sql_uses_identity_range_and_backend_storage() -> None:
     assert "row_number() OVER (PARTITION BY 4)" in select_sql
     assert "DISTRIBUTED RANDOMLY" in snapshot.create_sql
     assert snapshot.post_create_sqls[0].startswith("CREATE INDEX")
-    assert "__analytics_toolkit_transfer_id" in range_sql
+    assert "__analytics_toolkit_transfer_id" not in select_sql
+    assert "__analytics_toolkit_destination_table" not in select_sql
+    assert "__analytics_toolkit_transfer_id" not in range_sql
+    assert "__analytics_toolkit_destination_table" not in range_sql
+    assert range_sql.startswith('SELECT "id" FROM staging.snapshot')
     assert ">= 10" in range_sql and "< 20" in range_sql
     assert range_sql.endswith('ORDER BY "__analytics_toolkit_row_ordinal" LIMIT 10')
 
@@ -446,28 +449,19 @@ def test_transfer_does_not_full_retry_nonretryable_post_finalization_close(
     assert attempts == [1]
 
 
-def test_superseded_cleanup_requires_exact_destination(monkeypatch: Any) -> None:
+def test_superseded_cleanup_uses_reserved_stage_names(monkeypatch: Any) -> None:
     dropped: list[str] = []
     adapter = SimpleNamespace(
         query_transfer_stage_table_names=lambda *_args, **_kwargs: [
-            "0123456789abcdef__orders__stage__" + "a" * 32,
-            "0123456789abcdef__orders__stage__" + "b" * 32,
+            "0123456789abcdef__orders" + "a" * 32 + "__w00000",
+            "0123456789abcdef__orders" + "b" * 32 + "__source",
+            "0123456789abcdef__orders" + "d" * 32 + "__other",
         ],
         qualify_transfer_stage_table_name=lambda _key, schema, table: f"{schema}.{table}",
     )
     monkeypatch.setattr(
         "analytics_toolkit.sql.dml.transfer.flow.superseded.get_backend_adapter",
         lambda _backend: adapter,
-    )
-    identities = iter(
-        [
-            [("a" * 32, "sales.orders")],
-            [("b" * 32, "sales.other")],
-        ]
-    )
-    monkeypatch.setattr(
-        "analytics_toolkit.sql.dml.transfer.flow.superseded._read_stage_identities",
-        lambda *_args: next(identities),
     )
     monkeypatch.setattr(
         "analytics_toolkit.sql.dml.transfer.flow.superseded.cleanup_stage_table",
@@ -494,7 +488,10 @@ def test_superseded_cleanup_requires_exact_destination(monkeypatch: Any) -> None
         internal_columns=resolve_internal_columns(["id"], "gp"),
     )
 
-    assert dropped == ["staging.0123456789abcdef__orders__stage__" + "a" * 32]
+    assert dropped == [
+        "staging.0123456789abcdef__orders" + "a" * 32 + "__w00000",
+        "staging.0123456789abcdef__orders" + "b" * 32 + "__source",
+    ]
 
 
 def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
@@ -575,6 +572,7 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
 
     monkeypatch.setattr(staged_attempt, "_run_range_workers", run_range_workers)
     monkeypatch.setattr(staged_attempt, "_consolidate_worker_stages", lambda *_args: None)
+    monkeypatch.setattr(staged_attempt, "validate_loaded_stage_row_count", lambda **_kwargs: None)
     monkeypatch.setattr(
         staged_attempt,
         "finalize_loaded_stage",
@@ -1579,24 +1577,10 @@ def test_internal_identity_quotes_and_rejects_mixed_runtime_values() -> None:
         )
 
 
-def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch: Any) -> None:
+def test_stage_validation_checks_user_payload_count(monkeypatch: Any) -> None:
     options = _staged_options()
     internal = resolve_internal_columns(["id"], "gp")
-    read_rows = stage_validation._rows
-    adapter = SimpleNamespace(quote_identifier=lambda value: f'"{value}"')
-    monkeypatch.setattr(stage_validation, "get_backend_adapter", lambda _backend: adapter)
-    assert "GROUP BY" in stage_validation.build_stage_identity_sql("gp", "stage", internal)
-    assert "COUNT(DISTINCT" in stage_validation.build_stage_ordinal_validation_sql(
-        "gp", "SELECT * FROM stage", internal
-    )
-
-    results = iter(
-        [
-            [(options.transfer_id, options.canonical_destination_identity)],
-            [(0, 1, 2, 2, 2)],
-        ]
-    )
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(stage_validation, "count_table_rows", lambda *_args, **_kwargs: 2)
     stage_validation.validate_transfer_stage_identity(
         options=options,
         connection=object(),
@@ -1604,142 +1588,43 @@ def test_stage_validation_checks_identity_ordinals_and_empty_slices(monkeypatch:
         internal_columns=internal,
         expected_slice_counts={0: 2, 1: 0},
     )
-
-    with pytest.raises(RuntimeError, match="not initialized"):
-        stage_validation.validate_transfer_stage_identity(
-            options=_staged_options(transfer_id=None),
-            connection=object(),
-            stage_tables=[],
-            internal_columns=internal,
-            expected_slice_counts={},
-        )
-    monkeypatch.setattr(
-        stage_validation,
-        "_rows",
-        lambda *_args, **_kwargs: [("wrong", "target")],
-    )
-    with pytest.raises(RuntimeError, match="mixed or unexpected"):
+    monkeypatch.setattr(stage_validation, "count_table_rows", lambda *_args, **_kwargs: 1)
+    with pytest.raises(RuntimeError, match="payload count"):
         stage_validation.validate_transfer_stage_identity(
             options=options,
             connection=object(),
             stage_tables=["stage"],
             internal_columns=internal,
-            expected_slice_counts={},
+            expected_slice_counts={0: 2},
         )
 
-    for ordinal_rows, expected, message in [
-        ([(0, 1, 1, 1, 1)], {0: 0}, "empty slice"),
-        ([(0, 2, 2, 1, 1)], {0: 1}, "ordinal integrity"),
-        ([(1, 1, 1, 1, 1)], {0: 0}, "unexpected slice"),
-    ]:
-        calls = iter(
-            [
-                [(options.transfer_id, options.canonical_destination_identity)],
-                ordinal_rows,
-            ]
-        )
-        monkeypatch.setattr(
-            stage_validation,
-            "_rows",
-            lambda *_args, calls=calls, **_kwargs: next(calls),
-        )
-        with pytest.raises(RuntimeError, match=message):
-            stage_validation.validate_transfer_stage_identity(
-                options=options,
-                connection=object(),
-                stage_tables=["stage"],
-                internal_columns=internal,
-                expected_slice_counts=expected,
-            )
 
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: [])
-    with pytest.raises(RuntimeError, match="created stage is empty"):
-        stage_validation.validate_transfer_stage_identity(
-            options=options,
-            connection=object(),
-            stage_tables=["empty_stage"],
-            internal_columns=internal,
-            expected_slice_counts={},
-        )
-
-    monkeypatch.setattr(
-        stage_validation,
-        "_read_backend",
-        lambda *_args, **_kwargs: SimpleNamespace(columns=([1, 2], [3, 4])),
-    )
-    monkeypatch.setattr(stage_validation, "_rows", read_rows)
-    assert stage_validation._rows(
-        "gp",
-        object(),
-        "SELECT",
-        action_name="stage-identity validation",
-        phase="validate_stage_identity",
-    ) == [(1, 3), (2, 4)]
-
-
-def test_zero_slice_without_a_writer_stage_still_queries_target_database(
-    monkeypatch: Any,
-) -> None:
-    options = _staged_options()
-    internal = resolve_internal_columns(["id"], "gp")
-    queries: list[str] = []
-
-    def rows(_backend: str, _connection: Any, sql: str, **_kwargs: Any) -> list[Any]:
-        queries.append(sql)
-        return [(0,)]
-
-    monkeypatch.setattr(stage_validation, "_rows", rows)
+def test_empty_slice_requires_no_target_stage_query() -> None:
     stage_validation.validate_transfer_stage_slice(
-        options=options,
+        options=_staged_options(),
         connection=object(),
         stage_table=[],
-        internal_columns=internal,
+        internal_columns=resolve_internal_columns(["id"], "gp"),
         slice_id=3,
         expected_count=0,
         streamed_count=0,
     )
-    assert queries == ["SELECT 0"]
 
 
-def test_nonempty_stage_slice_validation_accepts_exact_identity_and_ordinals(
-    monkeypatch: Any,
-) -> None:
-    options = _staged_options()
-    internal = resolve_internal_columns(["id"], "gp")
-    results = iter(
-        [
-            [(options.transfer_id, options.canonical_destination_identity, 2)],
-            [(1, 2, 2, 2)],
-        ]
-    )
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
-
+def test_nonempty_stage_slice_accepts_exact_in_memory_count() -> None:
     stage_validation.validate_transfer_stage_slice(
-        options=options,
+        options=_staged_options(),
         connection=object(),
         stage_table="target_stage.writer_0",
-        internal_columns=internal,
+        internal_columns=resolve_internal_columns(["id"], "gp"),
         slice_id=3,
         expected_count=2,
         streamed_count=2,
     )
 
 
-@pytest.mark.parametrize(
-    "identity_rows",
-    [
-        [("wrong-transfer", "public.target", 2)],
-        [("a" * 32, "public.other", 2)],
-        [("a" * 32, "public.target", 1)],
-        [("a" * 32, "public.target", 2), ("other", "public.target", 1)],
-    ],
-)
-def test_stage_slice_validation_rejects_identity_destination_or_stored_count(
-    monkeypatch: Any,
-    identity_rows: list[tuple[Any, ...]],
-) -> None:
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: identity_rows)
-    with pytest.raises(RuntimeError, match="identity/count failure"):
+def test_stage_slice_validation_rejects_in_memory_count_mismatch() -> None:
+    with pytest.raises(RuntimeError, match="streamed"):
         stage_validation.validate_transfer_stage_slice(
             options=_staged_options(),
             connection=object(),
@@ -1747,70 +1632,13 @@ def test_stage_slice_validation_rejects_identity_destination_or_stored_count(
             internal_columns=resolve_internal_columns(["id"], "gp"),
             slice_id=3,
             expected_count=2,
-            streamed_count=2,
+            streamed_count=1,
         )
-
-
-@pytest.mark.parametrize(
-    "ordinal_rows",
-    [
-        [(2, 2, 2, 2)],
-        [(1, 3, 2, 2)],
-        [(1, 2, 1, 1)],
-        [(1, 2, 2, 1)],
-        [],
-    ],
-)
-def test_stage_slice_validation_rejects_incomplete_or_duplicate_ordinals(
-    monkeypatch: Any,
-    ordinal_rows: list[tuple[Any, ...]],
-) -> None:
-    options = _staged_options()
-    results = iter(
-        [
-            [(options.transfer_id, options.canonical_destination_identity, 2)],
-            ordinal_rows,
-        ]
-    )
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: next(results))
-    with pytest.raises(RuntimeError, match="ordinal"):
-        stage_validation.validate_transfer_stage_slice(
-            options=options,
-            connection=object(),
-            stage_table="target_stage.writer_0",
-            internal_columns=resolve_internal_columns(["id"], "gp"),
-            slice_id=3,
-            expected_count=2,
-            streamed_count=2,
-        )
-
-
-def test_zero_stage_slice_checks_every_existing_writer_stage(monkeypatch: Any) -> None:
-    queries: list[str] = []
-
-    def rows(_backend: str, _connection: Any, sql: str, **_kwargs: Any) -> list[Any]:
-        queries.append(sql)
-        return []
-
-    monkeypatch.setattr(stage_validation, "_rows", rows)
-    stage_validation.validate_transfer_stage_slice(
-        options=_staged_options(),
-        connection=object(),
-        stage_table=["target_stage.writer_0", "target_stage.writer_1"],
-        internal_columns=resolve_internal_columns(["id"], "gp"),
-        slice_id=3,
-        expected_count=0,
-        streamed_count=0,
-    )
-
-    assert len(queries) == 2
-    assert all("WHERE" in query and "= 3" in query for query in queries)
 
 
 def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatch: Any) -> None:
     internal = resolve_internal_columns(["id"], "gp")
     options = _staged_options()
-    read_identities = superseded._read_stage_identities
     assert (
         cleanup_superseded_transfer_stages(
             options=options,
@@ -1858,10 +1686,6 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
         "analytics_toolkit.sql.dml.transfer.flow.superseded.get_backend_adapter",
         lambda _backend: adapter,
     )
-    monkeypatch.setattr(
-        "analytics_toolkit.sql.dml.transfer.flow.superseded._read_stage_identities",
-        lambda *_args: [(options.transfer_id, options.canonical_destination_identity)],
-    )
     assert (
         cleanup_superseded_transfer_stages(
             options=options,
@@ -1876,7 +1700,6 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
 
     current_empty = f"{options.destination_hash}__target__stage__{options.transfer_id}__s00000"
     adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [current_empty]
-    monkeypatch.setattr(superseded, "_read_stage_identities", lambda *_args: [])
     dropped: list[str] = []
     monkeypatch.setattr(
         superseded,
@@ -1908,10 +1731,6 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
     assert dropped == [f"stage.{stale_empty}"]
 
     adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [current_empty]
-    monkeypatch.setattr(
-        "analytics_toolkit.sql.dml.transfer.flow.superseded._read_stage_identities",
-        lambda *_args: [],
-    )
     assert (
         cleanup_superseded_transfer_stages(
             options=options,
@@ -1923,34 +1742,6 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
         )
         == []
     )
-
-    monkeypatch.setattr(
-        "analytics_toolkit.sql.dml.transfer.flow.superseded._read_stage_identities",
-        lambda *_args: (_ for _ in ()).throw(OSError("unreadable")),
-    )
-    assert (
-        cleanup_superseded_transfer_stages(
-            options=options,
-            connection=object(),
-            backend="gp",
-            connection_key="target",
-            staging_schema="stage",
-            internal_columns=internal,
-        )
-        == []
-    )
-
-    monkeypatch.setattr(
-        "analytics_toolkit.sql.dml.transfer.flow.superseded._read_backend",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            columns=(["b" * 32], [options.canonical_destination_identity]),
-            row_count=1,
-        ),
-    )
-    monkeypatch.setattr(superseded, "_read_stage_identities", read_identities)
-    assert superseded._read_stage_identities("gp", object(), "stage", internal) == [
-        ("b" * 32, options.canonical_destination_identity)
-    ]
 
 
 def test_new_transfer_dispatch_and_identity_guard_branches(monkeypatch: Any) -> None:
@@ -1971,25 +1762,17 @@ def test_new_transfer_dispatch_and_identity_guard_branches(monkeypatch: Any) -> 
         slice_id=0,
         start_ordinal=1,
     ).rows == [(1,)]
-    with pytest.raises(RuntimeError, match="identity was not initialized"):
-        parquet_batches.append_transfer_identity_columns(
-            RowBatch(["id"], [(1,)]),
-            options=options,
-            stage_state=state,
-            slice_id=0,
-            start_ordinal=1,
-        )
+    unchanged = parquet_batches.append_transfer_identity_columns(
+        RowBatch(["id"], [(1,)]),
+        options=options,
+        stage_state=state,
+        slice_id=0,
+        start_ordinal=1,
+    )
+    assert unchanged.columns == ["id"]
+    assert unchanged.rows == [(1,)]
 
     attempt._cleanup_target_superseded_stages(options, state)
-    state.first_non_empty_batch = pd.DataFrame({"id": [1]})
-    state.stage_table = "stage"
-    with pytest.raises(RuntimeError, match="internal columns"):
-        finalize.finalize_loaded_stage(
-            options,
-            SimpleNamespace(source={}, target={}),
-            state,
-            1,
-        )
 
 
 def test_transfer_parquet_filename_contains_runtime_range(monkeypatch: Any) -> None:

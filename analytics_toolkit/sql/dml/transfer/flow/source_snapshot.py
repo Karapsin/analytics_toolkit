@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from ....backends import get_backend_adapter
-from ....backends.utils import sql_literal
 from ....backends.transfer_stage import build_source_snapshot_sqls
 from .range_scheduler import OrdinalRange
 from .stage_identity import TransferInternalColumns
@@ -28,15 +27,14 @@ def build_snapshot_select_sql(
     slice_id: int,
     internal_columns: TransferInternalColumns,
 ) -> str:
+    del transfer_id, canonical_destination
     adapter = get_backend_adapter(backend)
     projected = [f"source_rows.{adapter.quote_identifier(column)}" for column in source_columns]
-    transfer_column, destination_column, slice_column, ordinal_column = (
-        adapter.quote_identifier(column) for column in internal_columns.names()
+    slice_column, ordinal_column = (
+        adapter.quote_identifier(column) for column in internal_columns.paging_names()
     )
     projected.extend(
         [
-            f"{sql_literal(transfer_id)} AS {transfer_column}",
-            f"{sql_literal(canonical_destination)} AS {destination_column}",
             f"{slice_id} AS {slice_column}",
             (f"row_number() OVER (PARTITION BY {slice_id}) AS {ordinal_column}"),
         ]
@@ -74,7 +72,7 @@ def build_append_snapshot_slice_sql(
     snapshot_select_sql: str,
 ) -> str:
     adapter = get_backend_adapter(backend)
-    columns = [*source_columns, *internal_columns.names()]
+    columns = [*source_columns, *internal_columns.paging_names()]
     column_sql = ", ".join(adapter.quote_identifier(column) for column in columns)
     return f"INSERT INTO {snapshot_table} ({column_sql}) {snapshot_select_sql}"
 
@@ -89,17 +87,16 @@ def build_snapshot_range_sql(
     canonical_destination: str,
     ordinal_range: OrdinalRange,
 ) -> str:
+    del transfer_id, canonical_destination
     adapter = get_backend_adapter(backend)
     row_limit = ordinal_range.stop_ordinal - ordinal_range.start_ordinal
-    columns = [*source_columns, *internal_columns.names()]
+    columns = list(source_columns)
     projected = ", ".join(adapter.quote_identifier(column) for column in columns)
-    transfer_column, destination_column, slice_column, ordinal_column = (
-        adapter.quote_identifier(column) for column in internal_columns.names()
+    slice_column, ordinal_column = (
+        adapter.quote_identifier(column) for column in internal_columns.paging_names()
     )
     return (
         f"SELECT {projected} FROM {snapshot_table} WHERE "
-        f"{transfer_column} = {sql_literal(transfer_id)} AND "
-        f"{destination_column} = {sql_literal(canonical_destination)} AND "
         f"{slice_column} = {ordinal_range.slice_id} AND "
         f"{ordinal_column} >= {ordinal_range.start_ordinal} AND "
         f"{ordinal_column} < {ordinal_range.stop_ordinal} "

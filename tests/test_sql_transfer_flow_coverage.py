@@ -231,9 +231,7 @@ def test_best_effort_target_count_runner_failure_is_none() -> None:
     )
 
 
-def test_stage_slice_validation_rejects_prequery_contract_errors(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_stage_slice_validation_rejects_prequery_contract_errors() -> None:
     internal = resolve_internal_columns(["id"], "gp")
     options = SimpleNamespace(
         transfer_id="transfer",
@@ -260,50 +258,22 @@ def test_stage_slice_validation_rejects_prequery_contract_errors(
             expected_count=1,
             streamed_count=1,
         )
-    with pytest.raises(RuntimeError, match="identity was not initialized"):
-        stage_validation.validate_transfer_stage_slice(
-            options=SimpleNamespace(
-                transfer_id=None,
-                canonical_destination_identity="target",
-            ),
-            connection=object(),
-            stage_table="target.stage",
-            internal_columns=internal,
-            slice_id=0,
-            expected_count=0,
-            streamed_count=0,
-        )
-
-    monkeypatch.setattr(stage_validation, "_rows", lambda *_args, **_kwargs: [(1,)])
-    with pytest.raises(RuntimeError, match="empty validation failed"):
-        stage_validation.validate_transfer_stage_slice(
-            options=options,
-            connection=object(),
-            stage_table=None,
-            internal_columns=internal,
-            slice_id=0,
-            expected_count=0,
-            streamed_count=0,
-        )
+    stage_validation.validate_transfer_stage_slice(
+        options=SimpleNamespace(transfer_id=None),
+        connection=object(),
+        stage_table=None,
+        internal_columns=internal,
+        slice_id=0,
+        expected_count=0,
+        streamed_count=0,
+    )
 
 
-def test_superseded_identity_empty_and_ambiguous_contracts() -> None:
-    options = SimpleNamespace(
-        transfer_id="current",
-        canonical_destination_identity="target",
-    )
-    assert superseded._is_superseded_stage_identity(
-        [],
-        "current",
-        options,
-        include_current_transfer_id=True,
-    )
-    assert not superseded._is_superseded_stage_identity(
-        [("one", "target"), ("two", "target")],
-        "old",
-        options,
-        include_current_transfer_id=False,
-    )
+def test_superseded_cleanup_requires_reserved_transfer_stage_suffix() -> None:
+    valid = "0123456789abcdef__orders" + "a" * 32 + "__w00000"
+    malformed = "0123456789abcdef__orders" + "a" * 32 + "__unknown"
+    assert superseded._TRANSFER_STAGE_SUFFIX_PATTERN.search(valid)
+    assert superseded._TRANSFER_STAGE_SUFFIX_PATTERN.search(malformed) is None
 
 
 def test_retry_safe_logging_and_close_failure_edges(monkeypatch: pytest.MonkeyPatch) -> None:

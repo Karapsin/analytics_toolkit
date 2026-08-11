@@ -53,14 +53,7 @@ def ensure_transfer_target_table(
     ).can_create_transfer_target_before_batches():
         return
 
-    internal_columns = set(
-        stage_state.internal_columns.names() if stage_state.internal_columns is not None else ()
-    )
-    create_columns = source_columns or [
-        column
-        for column in (stage_state.stage_column_types or {})
-        if column not in internal_columns
-    ]
+    create_columns = source_columns or list(stage_state.stage_column_types or {})
     target_column_types = (
         {
             column: stage_state.stage_column_types[column]
@@ -193,21 +186,8 @@ def _with_internal_column_types(
     options: TransferOptions,
     stage_state: TransferStageState,
 ) -> dict[str, str] | None:
-    internal = stage_state.internal_columns
-    if source_types is None or internal is None or options.transfer_id is None:
-        return source_types
-    string_type, integer_type = {
-        "gp": ("TEXT", "BIGINT"),
-        "trino": ("VARCHAR", "BIGINT"),
-        "ch": ("String", "Int64"),
-    }[options.to_db_backend]
-    return {
-        **source_types,
-        internal.transfer_id: string_type,
-        internal.destination_table: string_type,
-        internal.slice_id: integer_type,
-        internal.row_ordinal: integer_type,
-    }
+    del options, stage_state
+    return source_types
 
 
 def _commit_if_supported(connection: Any) -> None:
