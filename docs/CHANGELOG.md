@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Use authentication-neutral TCP readiness probes for auth-configured Trino services.
+
 ## 1.3.11.7 - 2026-08-12
 
 - Validated every ClickHouse integration profile across HTTP and native transports.

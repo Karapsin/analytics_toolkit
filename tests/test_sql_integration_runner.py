@@ -148,6 +148,14 @@ def test_greenplum_auth_uses_native_tls_behind_tcp_passthrough() -> None:
     assert "bind *:19432 ssl" not in haproxy
 
 
+def test_auth_trino_healthchecks_do_not_require_authentication() -> None:
+    compose = sql_integration.AUTH_COMPOSE_FILE.read_text(encoding="utf-8")
+
+    assert "&auth-trino-healthcheck" in compose
+    assert compose.count("*auth-trino-healthcheck") == 2
+    assert "</dev/tcp/127.0.0.1/8080" in compose
+
+
 def test_auth_certificates_are_streamed_as_root_instead_of_compose_cp() -> None:
     runner = sql_integration.__file__
     assert runner is not None

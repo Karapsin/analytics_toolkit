@@ -72,6 +72,11 @@ services:
       - ./trino-auth/config.properties:/etc/trino/config.properties:ro
       - ./trino-auth/password-authenticator.properties:/etc/trino/password-authenticator.properties:ro
       - ./trino-auth/password.db:/etc/trino/password.db:ro
+    healthcheck: &auth-trino-healthcheck
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
 
   trino-oauth:
     profiles: ["auth"]
@@ -89,6 +94,7 @@ services:
       - ./trino/catalog:/etc/trino/catalog:ro
       - ./trino-oauth/config.properties:/etc/trino/config.properties:ro
       - auth-certificates:/certs:ro
+    healthcheck: *auth-trino-healthcheck
 
   trino-oauth-invalid:
     profiles: ["auth"]
@@ -106,6 +112,7 @@ services:
       - ./trino/catalog:/etc/trino/catalog:ro
       - ./trino-oauth/config.properties:/etc/trino/config.properties:ro
       - auth-certificates:/certs:ro
+    healthcheck: *auth-trino-healthcheck
 
   auth-proxy:
     profiles: ["auth"]
