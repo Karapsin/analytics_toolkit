@@ -19,23 +19,23 @@
           "allowed_conclusions": ["success"],
           "required_jobs": [
             {
-              "name": "core SQL integration",
+              "name": "core SQL integration (HTTP + native)",
               "allowed_conclusions": ["success"]
             },
             {
-              "name": "authentication SQL integration",
+              "name": "authentication SQL integration (HTTP + native)",
               "allowed_conclusions": ["success"]
             }
           ],
           "conditional_jobs": [
             {
-              "name": "destructive fault injection",
+              "name": "destructive fault injection (HTTP + native)",
               "events": ["schedule", "workflow_dispatch"],
               "allowed_conclusions": ["success", "skipped"],
               "reason": "Destructive fault groups run nightly or by explicit manual dispatch, never on dev pushes."
             },
             {
-              "name": "SQL integration stress",
+              "name": "SQL integration stress (HTTP + native)",
               "events": ["schedule", "workflow_dispatch"],
               "allowed_conclusions": ["success", "skipped"],
               "reason": "Resource-pressure scenarios run nightly or by explicit manual dispatch, never on dev pushes."
@@ -45,13 +45,13 @@
       ],
       "conditional_checks": [
         {
-          "name": "destructive fault injection",
+          "name": "destructive fault injection (HTTP + native)",
           "kind": "job",
           "allowed_conclusions": ["neutral", "skipped"],
           "reason": "The fault job is intentionally conditional on scheduled and manual events."
         },
         {
-          "name": "SQL integration stress",
+          "name": "SQL integration stress (HTTP + native)",
           "kind": "job",
           "allowed_conclusions": ["neutral", "skipped"],
           "reason": "The stress job is intentionally conditional on scheduled and manual events."

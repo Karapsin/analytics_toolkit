@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import platform
@@ -20,18 +21,20 @@ PROJECT_NAME = "analytics-toolkit-integration"
 X86_ARCHITECTURES = {"amd64", "x86_64"}
 PROFILES = ("core", "auth", "all", "fault", "stress")
 FAULT_GROUPS = ("database", "staging", "authentication")
+CLICKHOUSE_DRIVERS = ("http", "native", "both")
 
 
 def _compose_command(
     *args: str,
     include_greenplum: bool,
     profile: str,
+    clickhouse_driver: str,
 ) -> list[str]:
     command = [
         "docker",
         "compose",
         "--project-name",
-        f"{PROJECT_NAME}-{profile}",
+        f"{PROJECT_NAME}-{profile}-{clickhouse_driver}",
         "--file",
         str(CORE_COMPOSE_FILE),
     ]
@@ -78,9 +81,9 @@ def _capture(
 
 
 def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifacts.
-    *, include_greenplum: bool, profile: str
+    *, include_greenplum: bool, profile: str, clickhouse_driver: str
 ) -> None:
-    profile_dir = ARTIFACTS_DIR / profile
+    profile_dir = ARTIFACTS_DIR / profile / clickhouse_driver
     _capture(
         profile_dir / "compose.log",
         _compose_command(
@@ -88,6 +91,7 @@ def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifact
             "--no-color",
             include_greenplum=include_greenplum,
             profile=profile,
+            clickhouse_driver=clickhouse_driver,
         ),
     )
     health = subprocess.run(
@@ -98,6 +102,7 @@ def _write_diagnostics(  # noqa: C901 - gathers independent best-effort artifact
             "json",
             include_greenplum=include_greenplum,
             profile=profile,
+            clickhouse_driver=clickhouse_driver,
         ),
         cwd=REPO_ROOT,
         check=False,
@@ -149,6 +154,7 @@ def _test_environment(
     profile: str,
     run_id: str,
     fault_group: str | None,
+    clickhouse_driver: str,
 ) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
@@ -156,10 +162,11 @@ def _test_environment(
             "ANALYTICS_TOOLKIT_RUN_INTEGRATION": "1",
             "SQL_INTEGRATION_PROFILE": profile,
             "SQL_INTEGRATION_RUN_ID": run_id,
-            "SQL_INTEGRATION_ARTIFACT_DIR": str(ARTIFACTS_DIR / profile),
-            "SQL_INTEGRATION_COMPOSE_PROJECT": f"{PROJECT_NAME}-{profile}",
+            "SQL_INTEGRATION_ARTIFACT_DIR": str(ARTIFACTS_DIR / profile / clickhouse_driver),
+            "SQL_INTEGRATION_COMPOSE_PROJECT": (f"{PROJECT_NAME}-{profile}-{clickhouse_driver}"),
+            "SQL_INTEGRATION_CLICKHOUSE_DRIVER": clickhouse_driver,
             "SQL_INTEGRATION_GP": "1" if include_greenplum else "0",
-            "SQL_INTEGRATION_CERTS": str(ARTIFACTS_DIR / profile / "certs"),
+            "SQL_INTEGRATION_CERTS": str(ARTIFACTS_DIR / profile / clickhouse_driver / "certs"),
             "AWS_ACCESS_KEY_ID": "integration",
             "AWS_SECRET_ACCESS_KEY": "integration-secret",
             "AWS_DEFAULT_REGION": "us-east-1",
@@ -182,10 +189,12 @@ def _pytest_marker(profile: str) -> str:
     return "integration and integration_fault"
 
 
-def _assert_no_manifest_skips(*, profile: str, include_greenplum: bool) -> int:
+def _assert_no_manifest_skips(
+    *, profile: str, include_greenplum: bool, clickhouse_driver: str
+) -> int:
     if not include_greenplum or profile not in {"core", "auth"}:
         return 0
-    report = ARTIFACTS_DIR / profile / "pytest.xml"
+    report = ARTIFACTS_DIR / profile / clickhouse_driver / "pytest.xml"
     try:
         root = ET.parse(report).getroot()  # noqa: S314 - parses our local pytest report.
     except (OSError, ET.ParseError):
@@ -194,14 +203,15 @@ def _assert_no_manifest_skips(*, profile: str, include_greenplum: bool) -> int:
     return 1 if skipped else 0
 
 
-def _assert_teardown_clean(*, profile: str) -> int:
+def _assert_teardown_clean(*, profile: str, clickhouse_driver: str) -> int:
+    project_name = f"{PROJECT_NAME}-{profile}-{clickhouse_driver}"
     containers = subprocess.run(
         [
             "docker",
             "ps",
             "-aq",
             "--filter",
-            f"label=com.docker.compose.project={PROJECT_NAME}-{profile}",
+            f"label=com.docker.compose.project={project_name}",
         ],
         cwd=REPO_ROOT,
         check=False,
@@ -215,7 +225,7 @@ def _assert_teardown_clean(*, profile: str) -> int:
             "ls",
             "-q",
             "--filter",
-            f"label=com.docker.compose.project={PROJECT_NAME}-{profile}",
+            f"label=com.docker.compose.project={project_name}",
         ],
         cwd=REPO_ROOT,
         check=False,
@@ -229,7 +239,7 @@ def _assert_teardown_clean(*, profile: str) -> int:
             "ls",
             "-q",
             "--filter",
-            f"label=com.docker.compose.project={PROJECT_NAME}-{profile}",
+            f"label=com.docker.compose.project={project_name}",
         ],
         cwd=REPO_ROOT,
         check=False,
@@ -241,9 +251,31 @@ def _assert_teardown_clean(*, profile: str) -> int:
         "volumes": volumes.stdout.split(),
         "networks": networks.stdout.split(),
     }
-    artifact = ARTIFACTS_DIR / profile / "runner-leaks.json"
+    artifact = ARTIFACTS_DIR / profile / clickhouse_driver / "runner-leaks.json"
     artifact.write_text(json.dumps(leaked, indent=2), encoding="utf-8")
     return 1 if any(leaked.values()) else 0
+
+
+def _assert_transport_scenario_parity(*, profile: str) -> int:
+    manifests: dict[str, list[object]] = {}
+    for driver in ("http", "native"):
+        path = ARTIFACTS_DIR / profile / driver / "collected-scenarios.json"
+        try:
+            manifests[driver] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            manifests[driver] = []
+    matches = bool(manifests["http"]) and manifests["http"] == manifests["native"]
+    report = {
+        "profile": profile,
+        "matches": matches,
+        "http_scenarios": len(manifests["http"]),
+        "native_scenarios": len(manifests["native"]),
+    }
+    (ARTIFACTS_DIR / profile / "transport-parity.json").write_text(
+        json.dumps(report, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return 0 if matches else 1
 
 
 def run_profile(
@@ -251,8 +283,16 @@ def run_profile(
     profile: str,
     include_greenplum: bool,
     fault_group: str | None = None,
+    clickhouse_driver: str,
 ) -> int:
-    profile_dir = ARTIFACTS_DIR / profile
+    if clickhouse_driver == "native" and importlib.util.find_spec("clickhouse_driver") is None:
+        print(
+            "Native ClickHouse integration requires the clickhouse-native extra: "
+            "pip install -e '.[clickhouse-native]'",
+            file=sys.stderr,
+        )
+        return 2
+    profile_dir = ARTIFACTS_DIR / profile / clickhouse_driver
     profile_dir.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex[:12]
     up_command = _compose_command(
@@ -263,13 +303,18 @@ def run_profile(
         "420",
         include_greenplum=include_greenplum,
         profile=profile,
+        clickhouse_driver=clickhouse_driver,
     )
     result = 1
     started = False
     try:
         result = _run(up_command)
         started = result == 0
-        _write_diagnostics(include_greenplum=include_greenplum, profile=profile)
+        _write_diagnostics(
+            include_greenplum=include_greenplum,
+            profile=profile,
+            clickhouse_driver=clickhouse_driver,
+        )
         if not started:
             return result
         if profile in {"auth", "fault"}:
@@ -292,6 +337,7 @@ def run_profile(
                         str(cert_dir / filename),
                         include_greenplum=include_greenplum,
                         profile=profile,
+                        clickhouse_driver=clickhouse_driver,
                     )
                 )
                 if copy_result != 0:
@@ -318,14 +364,20 @@ def run_profile(
                 profile=profile,
                 run_id=run_id,
                 fault_group=fault_group,
+                clickhouse_driver=clickhouse_driver,
             ),
         )
         if result == 0:
             result = _assert_no_manifest_skips(
                 profile=profile,
                 include_greenplum=include_greenplum,
+                clickhouse_driver=clickhouse_driver,
             )
-        _write_diagnostics(include_greenplum=include_greenplum, profile=profile)
+        _write_diagnostics(
+            include_greenplum=include_greenplum,
+            profile=profile,
+            clickhouse_driver=clickhouse_driver,
+        )
         return result
     finally:
         down_result = _run(
@@ -335,9 +387,13 @@ def run_profile(
                 "--remove-orphans",
                 include_greenplum=include_greenplum,
                 profile=profile,
+                clickhouse_driver=clickhouse_driver,
             )
         )
-        leak_result = _assert_teardown_clean(profile=profile)
+        leak_result = _assert_teardown_clean(
+            profile=profile,
+            clickhouse_driver=clickhouse_driver,
+        )
         if started and result == 0 and (down_result != 0 or leak_result != 0):
             raise SystemExit(down_result or leak_result)
 
@@ -347,16 +403,24 @@ def run(
     profile: str,
     include_greenplum: bool,
     fault_group: str | None = None,
+    clickhouse_driver: str = "both",
 ) -> int:
     selected = ("core", "auth", "fault", "stress") if profile == "all" else (profile,)
+    drivers = ("http", "native") if clickhouse_driver == "both" else (clickhouse_driver,)
     for selected_profile in selected:
-        result = run_profile(
-            profile=selected_profile,
-            include_greenplum=include_greenplum,
-            fault_group=fault_group,
-        )
-        if result != 0:
-            return result
+        for selected_driver in drivers:
+            result = run_profile(
+                profile=selected_profile,
+                include_greenplum=include_greenplum,
+                fault_group=fault_group,
+                clickhouse_driver=selected_driver,
+            )
+            if result != 0:
+                return result
+        if clickhouse_driver == "both":
+            parity_result = _assert_transport_scenario_parity(profile=selected_profile)
+            if parity_result != 0:
+                return parity_result
     return 0
 
 
@@ -364,6 +428,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run disposable SQL integration tests.")
     parser.add_argument("--profile", choices=PROFILES, default="all")
     parser.add_argument("--fault-group", choices=FAULT_GROUPS)
+    parser.add_argument(
+        "--clickhouse-driver",
+        choices=CLICKHOUSE_DRIVERS,
+        default="both",
+        help="ClickHouse transport to validate; 'both' runs identical suites twice",
+    )
     parser.add_argument(
         "--with-greenplum",
         action="store_true",
@@ -377,6 +447,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         profile=args.profile,
         include_greenplum=architecture in X86_ARCHITECTURES,
         fault_group=args.fault_group,
+        clickhouse_driver=args.clickhouse_driver,
     )
 
 

@@ -24,6 +24,7 @@ class FakeNativeClient:
         ]
         self.disconnects = 0
         self.insert_dataframe_calls: list[tuple[str, pd.DataFrame, dict[str, Any]]] = []
+        self.last_query: Any = None
 
     def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
         self.execute_calls.append((sql, args, kwargs))
@@ -70,6 +71,19 @@ def test_command_and_query_compatibility() -> None:
     assert configured.column_types == ("Int64", "String")
     assert raw.execute_calls[1][2] == {"settings": {"timeout": 0}}
     assert raw.execute_calls[-1][2]["settings"] == {"max_threads": 2}
+
+
+def test_command_exposes_native_insert_select_written_rows() -> None:
+    raw = FakeNativeClient()
+    raw.last_query = type(
+        "LastQuery",
+        (),
+        {"progress": type("Progress", (), {"written_rows": 7})()},
+    )()
+
+    result = NativeClickHouseClient(raw).command("insert into target select * from source")
+
+    assert result == {"written_rows": 7}
 
 
 def test_empty_query_result_preserves_metadata() -> None:

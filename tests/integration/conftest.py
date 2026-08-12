@@ -29,6 +29,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "filterwarnings",
         "ignore:The 'u' type code is deprecated.*:DeprecationWarning",
     )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:datetime.datetime.utcnow\(\) is deprecated.*:DeprecationWarning:botocore.auth",
+    )
 
 
 @pytest.fixture
@@ -89,6 +93,49 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]):
 
 
 def _integration_connections() -> dict[str, dict[str, object]]:
+    clickhouse_driver = os.environ.get("SQL_INTEGRATION_CLICKHOUSE_DRIVER", "http")
+    if clickhouse_driver not in {"http", "native"}:
+        message = "SQL_INTEGRATION_CLICKHOUSE_DRIVER must be either 'http' or 'native'"
+        raise RuntimeError(message)
+    clickhouse_http: dict[str, object] = {
+        "type": "ch",
+        "driver": "http",
+        "host": "127.0.0.1",
+        "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_PORT", "18123")),
+        "user": "integration",
+        "password": "integration",
+        "database": "integration",
+        "secure": False,
+        "transfer_staging_schema": "integration",
+        "ddl_defaults": {
+            "regular": {
+                "create_distributed_pair": True,
+                "shard": {
+                    "engine": "MergeTree",
+                    "on_cluster": "integration_cluster",
+                },
+                "distributed": {
+                    "engine_template": (
+                        "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
+                    ),
+                    "cluster": "integration_cluster",
+                    "on_cluster": "integration_cluster",
+                    "sharding_key": "cityHash64(randCanonical())",
+                },
+            },
+            "staging": {
+                "create_distributed_pair": False,
+                "shard": {"engine": "MergeTree", "on_cluster": None},
+            },
+        },
+    }
+    clickhouse_native = {
+        **clickhouse_http,
+        "driver": "native",
+        "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_NATIVE_PORT", "19000")),
+        "compression": False,
+    }
+    selected_clickhouse = clickhouse_native if clickhouse_driver == "native" else clickhouse_http
     connections: dict[str, dict[str, object]] = {
         "trino": {
             "type": "trino",
@@ -108,37 +155,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
                 "CAST(from_iso8601_timestamp({partition_value}) AS TIMESTAMP)"
             ),
         },
-        "ch": {
-            "type": "ch",
-            "host": "127.0.0.1",
-            "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_PORT", "18123")),
-            "user": "integration",
-            "password": "integration",
-            "database": "integration",
-            "secure": False,
-            "transfer_staging_schema": "integration",
-            "ddl_defaults": {
-                "regular": {
-                    "create_distributed_pair": True,
-                    "shard": {
-                        "engine": "MergeTree",
-                        "on_cluster": "integration_cluster",
-                    },
-                    "distributed": {
-                        "engine_template": (
-                            "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
-                        ),
-                        "cluster": "integration_cluster",
-                        "on_cluster": "integration_cluster",
-                        "sharding_key": "cityHash64(randCanonical())",
-                    },
-                },
-                "staging": {
-                    "create_distributed_pair": False,
-                    "shard": {"engine": "MergeTree", "on_cluster": None},
-                },
-            },
-        },
+        "ch": {**selected_clickhouse},
     }
     connections["trino_values"] = {
         **connections["trino"],
@@ -159,7 +176,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     connections["trino_source_parquet"] = {**connections["trino_parquet"]}
     connections["trino_target_parquet"] = {**connections["trino_parquet"]}
     connections["ch_limited"] = {
-        **connections["ch"],
+        **clickhouse_http,
         "query_limit": 2,
         "query_retries": 1,
         "client_name": "analytics-toolkit-integration",
@@ -168,10 +185,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     connections["ch_source"] = {**connections["ch"]}
     connections["ch_target"] = {**connections["ch"]}
     connections["ch_native"] = {
-        **connections["ch"],
-        "driver": "native",
-        "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_NATIVE_PORT", "19000")),
-        "compression": False,
+        **clickhouse_native,
     }
     if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
         connections["trino_pressure"] = {
@@ -221,7 +235,14 @@ def _integration_connections() -> dict[str, dict[str, object]]:
         }
         connections["ch_tls"] = {
             **connections["ch"],
-            "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_TLS_PORT", "18444")),
+            "port": int(
+                os.environ.get(
+                    "SQL_INTEGRATION_CLICKHOUSE_NATIVE_TLS_PORT"
+                    if clickhouse_driver == "native"
+                    else "SQL_INTEGRATION_CLICKHOUSE_TLS_PORT",
+                    "19440" if clickhouse_driver == "native" else "18444",
+                )
+            ),
             "secure": True,
             "verify": True,
             "ca_certs": [f"{certs}/ca.crt"],
@@ -236,7 +257,14 @@ def _integration_connections() -> dict[str, dict[str, object]]:
         }
         connections["ch_hostname_tls"] = {
             **connections["ch_tls"],
-            "port": int(os.environ.get("SQL_INTEGRATION_CLICKHOUSE_HOSTNAME_TLS_PORT", "18448")),
+            "port": int(
+                os.environ.get(
+                    "SQL_INTEGRATION_CLICKHOUSE_NATIVE_HOSTNAME_TLS_PORT"
+                    if clickhouse_driver == "native"
+                    else "SQL_INTEGRATION_CLICKHOUSE_HOSTNAME_TLS_PORT",
+                    "19448" if clickhouse_driver == "native" else "18448",
+                )
+            ),
         }
         if "gp" in connections:
             connections["gp_tls"] = {

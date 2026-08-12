@@ -30,7 +30,9 @@ agent_tools/mcp_tool.sh run-checks --area sql --level integration
 
 The default `all` profile is the exhaustive local entrypoint and runs `core`,
 `auth`, all destructive `fault` groups, and the resource-intensive `stress`
-profile. Select one profile explicitly:
+profile. Every profile runs the identical collected suite once with ClickHouse
+HTTP and once with the native protocol. The native extra is required; a missing
+`clickhouse-driver` fails before Compose starts. Select one profile explicitly:
 
 ```bash
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
@@ -38,6 +40,12 @@ agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile fault
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile stress
 ```
+
+For transport-specific diagnosis, add
+`--integration-clickhouse-driver http` or
+`--integration-clickhouse-driver native`. The managed default is `both`, and
+the runner fails if the two collections differ. This does not change the
+package's public ClickHouse default, which remains HTTP.
 
 Core covers deterministic database behavior. Auth adds per-run certificates,
 HAProxy TLS endpoints, separate Trino Basic and OAuth coordinators, a real
@@ -77,7 +85,8 @@ removes MinIO objects, and restores paused services before it scans for leaks.
 The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `collected-scenarios.json`, `leaks.json`, `minio-objects.json`,
 `active-queries.json`, and `failed-query-details.json` below
-`.integration-artifacts/<profile>/`. Fault runs also write
+`.integration-artifacts/<profile>/<http|native>/`. A profile-level
+`transport-parity.json` records the collection comparison. Fault runs also write
 `fault-timeline.json`; auth runs preserve browser and authentication logs.
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
@@ -98,13 +107,16 @@ shared, external, or production database.
 ## CI
 
 The `sql-integration` workflow runs required core and auth x86_64 jobs in
-parallel on every push to `dev`, each with a 60-minute limit. The destructive
+parallel on every push to `dev`, each validating HTTP and native ClickHouse
+with transport-specific artifacts and a 60-minute limit. The destructive
 fault groups (`database`, `staging`, and `authentication`) run nightly and by
 manual dispatch with matrix fail-fast disabled. The stress profile also runs
 nightly or by manual dispatch and is excluded from normal pushes.
 Core and auth require zero skipped manifest scenarios on x86_64; ARM runs are
 diagnostic and may report Greenplum as architecture-unavailable. All artifacts
-are uploaded even on failure. Completion requires no toolkit tables, labelled
+are uploaded even on failure. The native auth pass uses separate HAProxy TLS
+frontends for the native wire protocol, including hostname-verification
+failures. Completion requires no toolkit tables, labelled
 queries, MinIO stage objects, project containers, networks, or volumes.
 
 The machine-readable coverage declaration is

@@ -73,6 +73,7 @@ UNRELEASED_CHANGELOG_THRESHOLD = 10
 WORK_BRANCH = "dev"
 RELEASE_BRANCH = "main"
 INTEGRATION_PROFILES = ("core", "auth", "all", "fault", "stress")
+INTEGRATION_CLICKHOUSE_DRIVERS = ("http", "native", "both")
 REQUIRED_WORKFLOWS_PATH = Path(".github/required-workflows.json")
 GITHUB_CHECK_TIMEOUT_SECONDS = 60 * 60
 GITHUB_CHECK_POLL_SECONDS = 15
@@ -884,9 +885,7 @@ def _architecture_impact(
     paths: list[str],
 ) -> dict[str, Any]:
     normalized = {
-        path
-        for path in paths
-        if path.startswith("analytics_toolkit/sql/") and path.endswith(".py")
+        path for path in paths if path.startswith("analytics_toolkit/sql/") and path.endswith(".py")
     }
     if _normalize_area(module or "") == "sql":
         for path in (root / "analytics_toolkit" / "sql").rglob("*.py"):
@@ -1147,6 +1146,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
     level: str = "focused",
     dry_run: bool = False,
     integration_profile: str = "all",
+    integration_clickhouse_driver: str = "both",
     root: str = ".",
     detail: str = "summary",
 ) -> dict[str, Any]:
@@ -1158,6 +1158,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         "level": level,
         "dry_run": dry_run,
         "integration_profile": integration_profile,
+        "integration_clickhouse_driver": integration_clickhouse_driver,
         "root": str(root_path),
         "detail": detail,
     }
@@ -1175,6 +1176,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
             change_type=change_type,
             level=level,
             integration_profile=integration_profile,
+            integration_clickhouse_driver=integration_clickhouse_driver,
             root=root_path,
         )
     except ValueError as exc:
@@ -1209,9 +1211,7 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
             result={"stages": stage_reports},
             command_results=command_results,
             blockers=[fingerprint_error.to_dict()],
-            next_actions=[
-                "Fix the git fingerprinting failure, then rerun pre-commit checks."
-            ],
+            next_actions=["Fix the git fingerprinting failure, then rerun pre-commit checks."],
         )
     failed_result = execution.get("failed_result")
     if failed_result:
@@ -1311,9 +1311,7 @@ def _execute_check_commands(
         stage_elapsed = round(time.monotonic() - stage_started, 3)
         command_results.append(result)
         status = "executed" if result["ok"] else "failed"
-        stage_reports.append(
-            {"stage": stage, "status": status, "elapsed_seconds": stage_elapsed}
-        )
+        stage_reports.append({"stage": stage, "status": status, "elapsed_seconds": stage_elapsed})
         if not result["ok"]:
             return {
                 "command_results": command_results,
@@ -1624,9 +1622,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         },
         command_results=command_results,
         next_actions=(
-            [f"Resume with git_workflow(action='checks', sha='{push['sha']}')."]
-            if pending
-            else []
+            [f"Resume with git_workflow(action='checks', sha='{push['sha']}')."] if pending else []
         ),
     )
 
@@ -1978,7 +1974,7 @@ def _handle_cli_call(argv: list[str]) -> int:
         )
         return 1
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 0 if result.get("ok") is True else 1
 
 
 def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirrors MCP inputs.
@@ -2100,6 +2096,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
         choices=INTEGRATION_PROFILES,
         default="all",
     )
+    checks_parser.add_argument(
+        "--integration-clickhouse-driver",
+        choices=INTEGRATION_CLICKHOUSE_DRIVERS,
+        default="both",
+    )
     checks_parser.add_argument("--root", default=".")
     checks_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
     checks_parser.set_defaults(
@@ -2109,6 +2110,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             level=args.level,
             dry_run=args.dry_run,
             integration_profile=args.integration_profile,
+            integration_clickhouse_driver=args.integration_clickhouse_driver,
             root=args.root,
             detail=args.detail,
         )
@@ -2185,9 +2187,7 @@ def _prepare_sync_commands(_root: Path) -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
-def _environment_commands(
-    root: Path, ensure_project_env: bool
-) -> list[tuple[str, dict[str, Any]]]:
+def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[str, dict[str, Any]]]:
     venv_python = root / ".venv" / "bin" / "python"
     commands: list[tuple[str, dict[str, Any]]] = []
     if not venv_python.exists():
@@ -2470,16 +2470,21 @@ def _workflow_context(
     return {"id": context_id, "reused": reused, "changes": changes}
 
 
-def _check_commands(
+def _check_commands(  # noqa: PLR0913 - mirrors the public check workflow inputs.
     area: str | None,
     change_type: str,
     level: str,
     integration_profile: str = "all",
+    integration_clickhouse_driver: str = "both",
     root: Path | None = None,
 ) -> list[dict[str, Any]]:
     if integration_profile not in INTEGRATION_PROFILES:
         expected = ", ".join(INTEGRATION_PROFILES)
         message = f"integration_profile must be one of: {expected}"
+        raise ValueError(message)
+    if integration_clickhouse_driver not in INTEGRATION_CLICKHOUSE_DRIVERS:
+        expected = ", ".join(INTEGRATION_CLICKHOUSE_DRIVERS)
+        message = f"integration_clickhouse_driver must be one of: {expected}"
         raise ValueError(message)
     if level != "integration" and integration_profile != "all":
         message = "integration_profile is only valid for level='integration'"
@@ -2505,7 +2510,9 @@ def _check_commands(
         return [
             {
                 "display": (
-                    f"python -m release_routines.sql_integration --profile {integration_profile}"
+                    "python -m release_routines.sql_integration "
+                    f"--profile {integration_profile} "
+                    f"--clickhouse-driver {integration_clickhouse_driver}"
                 ),
                 "args": [
                     sys.executable,
@@ -2513,6 +2520,8 @@ def _check_commands(
                     "release_routines.sql_integration",
                     "--profile",
                     integration_profile,
+                    "--clickhouse-driver",
+                    integration_clickhouse_driver,
                 ],
                 "env": {},
             }
@@ -2527,15 +2536,12 @@ def _check_commands(
 
 def _sql_focused_command(root: Path) -> dict[str, Any]:
     tests = sorted(
-        path.relative_to(root).as_posix()
-        for path in (root / "tests").glob("test_sql_*.py")
+        path.relative_to(root).as_posix() for path in (root / "tests").glob("test_sql_*.py")
     )
     if not tests:
         tests = ["tests/test_sql_integration_manifest.py"]
     return {
-        "display": (
-            "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q " + " ".join(tests)
-        ),
+        "display": ("PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q " + " ".join(tests)),
         "args": ["pytest", "-q", *tests],
         "env": {"PYTHONPYCACHEPREFIX": PYTHON_CACHE_DIR},
     }
@@ -2680,13 +2686,9 @@ def _check_failure_blocker(result: dict[str, Any]) -> dict[str, Any]:
         part for part in (str(result.get("stdout", "")), str(result.get("stderr", ""))) if part
     )
     phase = "run_checks"
-    marker_matches = re.findall(
-        r"::agent-check-stage::([^:]+)::(?:start|end)::([^\s]+)", output
-    )
+    marker_matches = re.findall(r"::agent-check-stage::([^:]+)::(?:start|end)::([^\s]+)", output)
     stage = marker_matches[-1][0] if marker_matches else None
-    failed_stages = _unique(
-        re.findall(r"::agent-check-stage::([^:]+)::end::failed", output)
-    )
+    failed_stages = _unique(re.findall(r"::agent-check-stage::([^:]+)::end::failed", output))
     if "Coverage targets raised; review and rerun:" in output:
         phase = "coverage_ratchet_confirmation"
         stage = stage or "coverage"
@@ -2695,9 +2697,7 @@ def _check_failure_blocker(result: dict[str, Any]) -> dict[str, Any]:
         blocker["stage"] = stage
     if failed_stages:
         blocker["failed_stages"] = failed_stages
-    node_ids = sorted(
-        set(re.findall(r"(?:FAILED|ERROR)\s+(tests/[^\s]+::[^\s]+)", output))
-    )
+    node_ids = sorted(set(re.findall(r"(?:FAILED|ERROR)\s+(tests/[^\s]+::[^\s]+)", output)))
     if node_ids:
         blocker["test_node_ids"] = node_ids[:25]
     architecture = sorted(
@@ -2734,11 +2734,7 @@ def _annotate_check_failure(
     root: Path,
     blocker: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    stable = {
-        key: value
-        for key, value in blocker.items()
-        if key not in {"excerpt", "log_ref"}
-    }
+    stable = {key: value for key, value in blocker.items() if key not in {"excerpt", "log_ref"}}
     signature = hashlib.sha256(
         json.dumps(stable, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()[:16]
@@ -2768,9 +2764,7 @@ def _annotate_check_failure(
 def _managed_coverage_changes(results: list[dict[str, Any]]) -> list[str]:
     marker = "Coverage targets raised; managed update accepted:"
     for result in results:
-        output = "\n".join(
-            str(result.get(key, "")) for key in ("stdout", "stderr")
-        )
+        output = "\n".join(str(result.get(key, "")) for key in ("stdout", "stderr"))
         if marker not in output:
             continue
         tail = output.split(marker, 1)[1]
@@ -2785,8 +2779,7 @@ def _managed_coverage_changes(results: list[dict[str, Any]]) -> list[str]:
 def _check_next_action(blocker: dict[str, Any], level: str) -> str:
     if blocker.get("phase") == "coverage_ratchet_confirmation":
         return (
-            "Review the monotonic coverage target changes, then rerun "
-            f"run_checks(level={level!r})."
+            f"Review the monotonic coverage target changes, then rerun run_checks(level={level!r})."
         )
     stage = blocker.get("stage")
     if stage:
@@ -2926,20 +2919,14 @@ def _compact_payload_to_budget(payload: dict[str, Any], budget: int) -> None:
         "truncated": True,
         "available_via": "Use diagnostic detail or the returned log_ref for bounded evidence.",
     }
-    payload["blockers"] = _bounded_structure(
-        payload["blockers"], max_items=2, max_string=100
-    )
+    payload["blockers"] = _bounded_structure(payload["blockers"], max_items=2, max_string=100)
     payload["next_actions"] = _bounded_structure(
         payload["next_actions"], max_items=1, max_string=100
     )
     payload["command_results"] = []
     if _serialized_bytes(payload) > budget:
         payload["blockers"] = [
-            {
-                key: item[key]
-                for key in ("phase", "message", "log_ref")
-                if key in item
-            }
+            {key: item[key] for key in ("phase", "message", "log_ref") if key in item}
             for item in payload["blockers"][:1]
             if isinstance(item, dict)
         ]
@@ -2964,6 +2951,7 @@ def _compact_input_summary(input_summary: dict[str, Any], *, detail: str) -> dic
         "force_release": False,
         "index_dir": DEFAULT_INDEX_DIR,
         "integration_profile": "all",
+        "integration_clickhouse_driver": "both",
         "mode": "search",
         "top_k": 3,
         "wait_seconds": GITHUB_CHECK_WAIT_SECONDS,
@@ -3630,8 +3618,7 @@ def _precommit_stage_receipt_is_current(
     return (
         receipt.get("fingerprint") == fingerprint
         and receipt.get("toolchain_fingerprint") == toolchain_fingerprint
-        and receipt.get("command_fingerprint")
-        == _precommit_command_fingerprint(command)
+        and receipt.get("command_fingerprint") == _precommit_command_fingerprint(command)
     )
 
 
@@ -3725,9 +3712,7 @@ def _push_readiness(root: Path) -> dict[str, Any]:
 
 def _push_dev_result(root: Path) -> dict[str, Any]:
     readiness = _push_readiness(root)
-    public_readiness = {
-        key: value for key, value in readiness.items() if key != "command_results"
-    }
+    public_readiness = {key: value for key, value in readiness.items() if key != "command_results"}
     if readiness["blockers"]:
         return {
             "readiness": public_readiness,
@@ -3811,8 +3796,7 @@ def _push_dev_workflow(
         summary=(
             "Push completed; exact-SHA GitHub verification is pending."
             if pending
-            else
-            "Push and exact-SHA GitHub verification completed."
+            else "Push and exact-SHA GitHub verification completed."
             if not checks["blockers"]
             else "Push completed, but exact-SHA GitHub verification failed."
         ),
@@ -3856,8 +3840,7 @@ def _github_checks_workflow(
         summary=(
             "Exact-SHA GitHub verification is pending."
             if pending
-            else
-            "Exact-SHA GitHub verification completed."
+            else "Exact-SHA GitHub verification completed."
             if not checks["blockers"]
             else "Exact-SHA GitHub verification failed."
         ),
@@ -3976,9 +3959,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
     remaining_discovery = max(0.0, discovery_seconds - elapsed_before)
     discovery_deadline = started + min(remaining_discovery, remaining_timeout)
     deadline = started + remaining_timeout
-    call_deadline = (
-        deadline if wait_seconds is None else min(deadline, started + wait_seconds)
-    )
+    call_deadline = deadline if wait_seconds is None else min(deadline, started + wait_seconds)
     last_snapshot: dict[str, Any] = {"sha": sha, "repository": repository}
 
     while True:
@@ -4020,9 +4001,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
                 {
                     "command": item.get("command"),
                     "ok": item.get("ok"),
-                    "excerpt": _bounded_text(
-                        item.get("stdout") or item.get("stderr") or ""
-                    ),
+                    "excerpt": _bounded_text(item.get("stdout") or item.get("stderr") or ""),
                 }
                 for item in failed_logs
             ]
@@ -4305,9 +4284,13 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
         current = runs_by_name.get(name)
         rank = (int(run.get("run_attempt") or 1), int(run.get("id") or 0))
         current_rank = (
-            int(current.get("run_attempt") or 1),
-            int(current.get("id") or 0),
-        ) if current else (-1, -1)
+            (
+                int(current.get("run_attempt") or 1),
+                int(current.get("id") or 0),
+            )
+            if current
+            else (-1, -1)
+        )
         if rank > current_rank:
             runs_by_name[name] = run
     jobs = snapshot.get("jobs", [])
@@ -4422,9 +4405,7 @@ def _failed_run_logs(
     command_runner: Any = None,
 ) -> list[dict[str, Any]]:
     command_runner = command_runner or _run_command
-    run_ids = sorted(
-        {item.get("run_id") for item in failures if item.get("run_id")}
-    )
+    run_ids = sorted({item.get("run_id") for item in failures if item.get("run_id")})
     return [
         command_runner(
             root,

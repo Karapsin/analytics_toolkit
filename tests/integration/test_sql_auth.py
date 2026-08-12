@@ -61,7 +61,11 @@ def test_real_airflow_connection_source_routes_all_backends(
     )
     monkeypatch.setenv(
         "AIRFLOW_CONN_AIRFLOW_CH",
-        "http://integration:integration@127.0.0.1:18123/integration",
+        (
+            "http://integration:integration@127.0.0.1:19000/integration?driver=native"
+            if os.environ.get("SQL_INTEGRATION_CLICKHOUSE_DRIVER") == "native"
+            else "http://integration:integration@127.0.0.1:18123/integration"
+        ),
     )
     if os.environ.get("SQL_INTEGRATION_GP") == "1":
         aliases["airflow_gp"] = {"type": "gp"}

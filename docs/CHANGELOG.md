@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Validated every ClickHouse integration profile across HTTP and native transports.
+
 ## 1.3.11.6 - 2026-08-12
 
 - Fixed source-staged Trino transfers to honor Parquet mode precedence.

@@ -539,13 +539,22 @@ def _execute_generic_create_table_from_sql_attempt(
             "partition_by": options.partition_by,
             "order_by": options.order_by,
             "ch_engine": options.ch_engine,
-            "ch_cluster": options.ch_cluster,
             "ch_sharding_key": options.ch_sharding_key,
             "retry_cnt": 1,
             "timeout_increment": 0,
             "full_retry_cnt": 1,
             "full_timeout_increment": 0,
         }
+        if options.ch_creation_policy is not None:
+            transfer_kwargs.update(
+                {
+                    "ch_shard_on_cluster": options.ch_creation_policy.shard_on_cluster,
+                    "ch_distributed_on_cluster": (
+                        options.ch_creation_policy.distributed_on_cluster
+                    ),
+                    "ch_distributed_cluster": (options.ch_creation_policy.distributed_cluster),
+                }
+            )
         if options.ch_only_shard:
             transfer_kwargs["ch_only_shard"] = True
         if options.query_label is not None:

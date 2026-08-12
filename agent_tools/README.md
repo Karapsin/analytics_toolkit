@@ -98,12 +98,14 @@ when available. Repeated identical failures return a compact unchanged receipt
 pointing to persisted evidence.
 
 The integration entrypoint accepts `--integration-profile core`, `auth`, `all`,
-or `fault`; `all` is the exhaustive local default and includes every fault
-group. Core and auth are required on each `dev` push. Fault is destructive and
-runs nightly or by manual dispatch in database, staging, and authentication
-groups. Each profile writes Compose logs, service health, JUnit output,
+`fault`, or `stress`; `all` is the exhaustive local default. Each selected
+profile runs the same collection with ClickHouse HTTP and native transports.
+Use `--integration-clickhouse-driver http` or `native` only for focused
+diagnosis; `both` is the managed default and enforces collection parity. Core
+and auth are required on each `dev` push. Fault and stress run nightly or by
+manual dispatch. Each profile writes Compose logs, service health, JUnit output,
 collection output, query/object diagnostics, and leak reports below
-`.integration-artifacts/<profile>/` and always tears down its project
+`.integration-artifacts/<profile>/<transport>/` and always tears down its project
 containers, networks, and volumes. Greenplum completeness and the no-skips gate
 require x86_64; ARM runs are useful but not the complete deterministic matrix.
 

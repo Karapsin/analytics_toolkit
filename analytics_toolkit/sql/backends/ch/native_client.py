@@ -119,9 +119,20 @@ class NativeClickHouseClient:
         sql: str,
         settings: Mapping[str, Any] | None = None,
     ) -> Any:
-        if settings is None:
-            return self._client.execute(sql)
-        return self._client.execute(sql, settings=dict(settings))
+        result = (
+            self._client.execute(sql)
+            if settings is None
+            else self._client.execute(sql, settings=dict(settings))
+        )
+        progress = getattr(getattr(self._client, "last_query", None), "progress", None)
+        written_rows = getattr(progress, "written_rows", 0)
+        if (
+            isinstance(written_rows, int)
+            and not isinstance(written_rows, bool)
+            and written_rows > 0
+        ):
+            return {"written_rows": written_rows}
+        return result
 
     def query(
         self,

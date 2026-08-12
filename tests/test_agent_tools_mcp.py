@@ -333,9 +333,7 @@ def test_docs_default_index_dir_is_resolved_from_repo_root(
     assert result["ok"] is True
     assert "index_dir" not in result["input"]
     assert "resolved_index_dir" not in result["input"]
-    assert result["result"]["results"][0]["citation"].startswith(
-        "agent_tools/README.md:L"
-    )
+    assert result["result"]["results"][0]["citation"].startswith("agent_tools/README.md:L")
 
 
 def test_workflow_status_combines_routing_health_metadata_and_checks(
@@ -399,14 +397,10 @@ def test_change_impact_reports_sql_contract_and_architecture_headroom() -> None:
     assert result["ok"] is True
     assert "agent_docs/development.md" in result["result"]["required_instruction_files"]
     contract = result["result"]["public_contracts"][0]
-    output_type = next(
-        item for item in contract["parameters"] if item["name"] == "output_type"
-    )
+    output_type = next(item for item in contract["parameters"] if item["name"] == "output_type")
     assert output_type["pointer"] == "/exports/read/parameters/output_type"
     assert output_type["manifest_status"] == "aligned"
-    budgets = {
-        item["path"]: item for item in result["result"]["architecture"]["modules"]
-    }
+    budgets = {item["path"]: item for item in result["result"]["architecture"]["modules"]}
     assert budgets["analytics_toolkit/sql/backends/base.py"]["remaining_lines"] == 5
     assert "docs/modules/sql/functions/read.md" in result["result"]["documentation_paths"]
     assert result["telemetry"]["response_bytes"] < 8_000
@@ -584,9 +578,10 @@ def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assert mcp_server._count_unreleased_changelog_bullets(
-        changelog_path.read_text(encoding="utf-8")
-    ) == 9
+    assert (
+        mcp_server._count_unreleased_changelog_bullets(changelog_path.read_text(encoding="utf-8"))
+        == 9
+    )
 
     dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
     applied = mcp_server.version_bump("Tenth change", root=str(root))
@@ -786,9 +781,7 @@ def test_tool_output_compacts_large_command_output_and_supports_full_detail() ->
     assert "stdout_excerpt" not in diagnostic["command_results"][0]
     assert "stderr_excerpt" not in diagnostic["command_results"][0]
     assert full["command_results"][0]["stdout"] == "x" * 50_000
-    assert compact["telemetry"]["response_bytes"] <= (
-        full["telemetry"]["response_bytes"] * 0.3
-    )
+    assert compact["telemetry"]["response_bytes"] <= (full["telemetry"]["response_bytes"] * 0.3)
 
 
 def test_summary_response_budget_is_enforced() -> None:
@@ -935,9 +928,7 @@ def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
     monkeypatch.setattr(mcp_server, "_working_tree_fingerprint", lambda root_path: "tree")
-    monkeypatch.setattr(
-        mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools"
-    )
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools")
 
     result = mcp_server.run_checks(level="precommit", root=str(root))
 
@@ -969,9 +960,7 @@ def test_precommit_resumes_successful_stages_for_identical_tree_and_toolchain(
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
     monkeypatch.setattr(mcp_server, "_working_tree_fingerprint", lambda root_path: "tree")
-    monkeypatch.setattr(
-        mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools"
-    )
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root_path: "tools")
 
     first = mcp_server.run_checks(level="precommit", root=str(root))
     first_commands = list(commands)
@@ -1063,9 +1052,7 @@ def test_run_checks_reports_stage_nodes_and_coverage_ratchet(
     monkeypatch.setattr(
         mcp_server,
         "_run_command",
-        lambda root_path, command: _command_result(
-            str(command["display"]), output, ok=False
-        ),
+        lambda root_path, command: _command_result(str(command["display"]), output, ok=False),
     )
 
     result = mcp_server.run_checks(area="agent_tools", root=str(root))
@@ -1153,7 +1140,7 @@ def test_run_checks_plans_sql_integration_and_rejects_other_areas(tmp_path: Path
     )
 
     assert planned["result"]["planned_commands"] == [
-        "python -m release_routines.sql_integration --profile all"
+        "python -m release_routines.sql_integration --profile all --clickhouse-driver both"
     ]
     assert rejected["ok"] is False
     assert rejected["blockers"][0]["message"] == (
@@ -1176,6 +1163,18 @@ def test_run_checks_cli_accepts_integration_level(monkeypatch: pytest.MonkeyPatc
     assert captured["area"] == "sql"
     assert captured["level"] == "integration"
     assert captured["integration_profile"] == "all"
+    assert captured["integration_clickhouse_driver"] == "both"
+
+
+def test_cli_call_returns_nonzero_for_structured_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = mcp_server._build_cli_parser()
+    args = parser.parse_args(["run-checks", "--area", "general", "--level", "integration"])
+    monkeypatch.setattr(mcp_server, "_build_cli_parser", lambda: parser)
+    monkeypatch.setattr(parser, "parse_args", lambda _argv: args)
+
+    assert mcp_server._handle_cli_call([]) == 1
 
 
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
@@ -2170,7 +2169,9 @@ def test_github_watcher_rejects_missing_required_workflow_after_grace(
 ) -> None:
     root = _write_watcher_manifest(tmp_path / "project")
     clock = _FakeClock()
-    runner = _FakeGithubRunner("b" * 40, [{"runs": [], "jobs": [], "check_runs": [], "statuses": []}])
+    runner = _FakeGithubRunner(
+        "b" * 40, [{"runs": [], "jobs": [], "check_runs": [], "statuses": []}]
+    )
 
     result = mcp_server._watch_github_checks(
         root,
@@ -2226,9 +2227,7 @@ def test_github_watcher_reports_failed_steps_and_failed_log_error(tmp_path: Path
     root = _write_watcher_manifest(tmp_path / "project")
     snapshot = _successful_github_snapshot()
     snapshot["jobs"][0]["conclusion"] = "failure"
-    snapshot["jobs"][0]["steps"] = [
-        {"name": "Run tests", "conclusion": "failure"}
-    ]
+    snapshot["jobs"][0]["steps"] = [{"name": "Run tests", "conclusion": "failure"}]
     runner = _FakeGithubRunner("d" * 40, [snapshot], fail_logs=True)
 
     result = mcp_server._watch_github_checks(
@@ -2310,9 +2309,7 @@ def test_push_result_does_not_duplicate_nested_command_output(
     monkeypatch.setattr(
         mcp_server,
         "_run_git",
-        lambda root_path, args: _command_result(
-            "git rev-parse HEAD", "a" * 40 + "\n"
-        ),
+        lambda root_path, args: _command_result("git rev-parse HEAD", "a" * 40 + "\n"),
     )
     monkeypatch.setattr(
         mcp_server,
@@ -3008,9 +3005,9 @@ def test_agent_docs_cleanup_removed_direct_docs_assistant_workflow() -> None:
 
 
 def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
-    script = (
-        mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh"
-    ).read_text(encoding="utf-8")
+    script = (mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert "::agent-check-stage::%s::start::running" in script
     assert "::agent-check-stage::%s::end::failed" in script

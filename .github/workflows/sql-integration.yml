@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   core:
-    name: core SQL integration
+    name: core SQL integration (HTTP + native)
     if: github.event_name == 'push' || github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'core'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -36,19 +36,26 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install package and agent tools
-        run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e . pytest
+        run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest
       - name: Run core SQL integration profile
         run: agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
-      - name: Upload core diagnostics
+      - name: Upload HTTP core diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-core
-          path: .integration-artifacts/core
+          name: sql-integration-core-http
+          path: .integration-artifacts/core/http
+          if-no-files-found: error
+      - name: Upload native core diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sql-integration-core-native
+          path: .integration-artifacts/core/native
           if-no-files-found: error
 
   auth:
-    name: authentication SQL integration
+    name: authentication SQL integration (HTTP + native)
     if: github.event_name == 'push' || github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'auth'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -62,21 +69,28 @@ jobs:
           cache: pip
       - name: Install package, agent tools, and pinned Airflow
         run: |
-          python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e . pytest
+          python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest
           python -m pip install -r integration/requirements-auth.txt
           playwright install --with-deps chromium
       - name: Run authentication SQL integration profile
         run: agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile auth
-      - name: Upload authentication diagnostics
+      - name: Upload HTTP authentication diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-auth
-          path: .integration-artifacts/auth
+          name: sql-integration-auth-http
+          path: .integration-artifacts/auth/http
+          if-no-files-found: error
+      - name: Upload native authentication diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sql-integration-auth-native
+          path: .integration-artifacts/auth/native
           if-no-files-found: error
 
   fault:
-    name: destructive fault injection
+    name: destructive fault injection (HTTP + native)
     if: github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'fault'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -94,7 +108,7 @@ jobs:
           cache: pip
       - name: Install package, agent tools, and auth fault dependencies
         run: |
-          python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e . pytest
+          python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest
           python -m pip install -r integration/requirements-auth.txt
           playwright install --with-deps chromium
       - name: Run destructive fault profile
@@ -103,16 +117,23 @@ jobs:
           --profile fault
           --with-greenplum
           --fault-group ${{ matrix.group }}
-      - name: Upload fault diagnostics
+      - name: Upload HTTP fault diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-fault-${{ matrix.group }}
-          path: .integration-artifacts/fault
+          name: sql-integration-fault-${{ matrix.group }}-http
+          path: .integration-artifacts/fault/http
+          if-no-files-found: error
+      - name: Upload native fault diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sql-integration-fault-${{ matrix.group }}-native
+          path: .integration-artifacts/fault/native
           if-no-files-found: error
 
   stress:
-    name: SQL integration stress
+    name: SQL integration stress (HTTP + native)
     if: github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'stress'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -125,16 +146,23 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install package and agent tools
-        run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e . pytest psutil
+        run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest psutil
       - name: Run SQL integration stress profile
         run: >-
           python -m release_routines.sql_integration
           --profile stress
           --with-greenplum
-      - name: Upload stress diagnostics
+      - name: Upload HTTP stress diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-stress
-          path: .integration-artifacts/stress
+          name: sql-integration-stress-http
+          path: .integration-artifacts/stress/http
+          if-no-files-found: error
+      - name: Upload native stress diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sql-integration-stress-native
+          path: .integration-artifacts/stress/native
           if-no-files-found: error
