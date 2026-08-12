@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Use authentication-neutral TCP readiness probes for auth-configured Trino services.
+- Resolve integration Airflow connections through its explicit environment secrets backend.
 
 ## 1.3.11.7 - 2026-08-12
 

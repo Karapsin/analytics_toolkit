@@ -51,6 +51,11 @@ def test_real_airflow_connection_source_routes_all_backends(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, object]], Path],
 ) -> None:
+    from airflow.hooks.base import BaseHook  # noqa: PLC0415 - auth-profile dependency.
+    from airflow.secrets.environment_variables import (  # noqa: PLC0415
+        EnvironmentVariablesBackend,
+    )
+
     aliases = {
         "airflow_trino": {"type": "trino"},
         "airflow_ch": {"type": "ch"},
@@ -73,6 +78,12 @@ def test_real_airflow_connection_source_routes_all_backends(
             "AIRFLOW_CONN_AIRFLOW_GP",
             "postgresql://gpadmin:integration@127.0.0.1:15432/analytics_toolkit",
         )
+    environment_backend = EnvironmentVariablesBackend()
+    monkeypatch.setattr(
+        BaseHook,
+        "get_connection",
+        staticmethod(environment_backend.get_connection),
+    )
     write_sql_connections({"source": "airflow", "connections": aliases})
 
     results = sql.validate_connections(list(aliases), connect=True)
