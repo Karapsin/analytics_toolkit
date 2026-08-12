@@ -286,6 +286,7 @@ def _wait_for_greenplum_tls(cert_dir: Path, *, timeout_seconds: float = 60.0) ->
     deadline = time.monotonic() + timeout_seconds
     consecutive_successes = 0
     last_error: Exception | None = None
+    attempts: list[dict[str, object]] = []
     while time.monotonic() < deadline:
         try:
             connection = psycopg2.connect(
@@ -302,12 +303,22 @@ def _wait_for_greenplum_tls(cert_dir: Path, *, timeout_seconds: float = 60.0) ->
             )
             connection.close()
             consecutive_successes += 1
+            attempts.append({"connected": True, "consecutive_successes": consecutive_successes})
             if consecutive_successes == GREENPLUM_TLS_STABLE_SUCCESSES:
+                (cert_dir.parent / "greenplum-tls-readiness.json").write_text(
+                    json.dumps({"ready": True, "attempts": attempts}, indent=2) + "\n",
+                    encoding="utf-8",
+                )
                 return 0
         except Exception as error:  # noqa: BLE001 - readiness retries transient drivers.
             last_error = error
             consecutive_successes = 0
+            attempts.append({"connected": False, "error": repr(error)})
         time.sleep(1)
+    (cert_dir.parent / "greenplum-tls-readiness.json").write_text(
+        json.dumps({"ready": False, "attempts": attempts}, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(
         f"Greenplum mTLS route did not become stable: {last_error!r}",
         file=sys.stderr,
@@ -345,7 +356,7 @@ def run_profile(
     result = 1
     started = False
     try:
-        result = _run(up_command)
+        result = _capture(profile_dir / "startup.log", up_command)
         started = result == 0
         _write_diagnostics(
             include_greenplum=include_greenplum,

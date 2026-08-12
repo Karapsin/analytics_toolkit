@@ -181,3 +181,6 @@ def test_greenplum_tls_readiness_requires_three_consecutive_connections(
 
     assert sql_integration._wait_for_greenplum_tls(tmp_path) == 0
     assert len(closed) == 3
+    report = json.loads((tmp_path.parent / "greenplum-tls-readiness.json").read_text())
+    assert report["ready"] is True
+    assert len(report["attempts"]) == 4

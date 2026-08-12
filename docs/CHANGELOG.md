@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.7 - 2026-08-12
 
 - Validated every ClickHouse integration profile across HTTP and native transports.
 - Fixed Greenplum integration health detection on clean CI runners.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Gate SQL auth tests on consecutive end-to-end Greenplum mTLS readiness checks.
 - Terminate Greenplum mTLS natively and proxy its PostgreSQL negotiation with TCP passthrough.
 - Allow the Greenplum init user to install the ephemeral TLS server key securely.
+- Persist SQL integration startup and Greenplum mTLS readiness diagnostics.
 
 ## 1.3.11.6 - 2026-08-12
 
