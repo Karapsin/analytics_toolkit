@@ -135,10 +135,12 @@ def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     assert "pg_postmaster_start_time()" in compose
 
 
-def test_auth_certificates_are_copied_from_the_root_owned_generator() -> None:
+def test_auth_certificates_are_streamed_as_root_instead_of_compose_cp() -> None:
     runner = sql_integration.__file__
     assert runner is not None
     source = Path(runner).read_text(encoding="utf-8")
 
-    assert 'f"auth-certificates:/certs/{filename}"' in source
+    assert '"--user",\n                        "root"' in source
+    assert 'f"/certs/{filename}"' in source
+    assert '"cp",\n                        f"auth-' not in source
     assert 'f"auth-proxy:/certs/{filename}"' not in source

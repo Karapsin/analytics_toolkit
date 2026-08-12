@@ -330,15 +330,20 @@ def run_profile(
                 "invalid-client.key",
                 "dns-server.crt",
             ):
-                copy_result = _run(
+                copy_result = _capture(
+                    cert_dir / filename,
                     _compose_command(
-                        "cp",
-                        f"auth-certificates:/certs/{filename}",
-                        str(cert_dir / filename),
+                        "exec",
+                        "--user",
+                        "root",
+                        "-T",
+                        "auth-proxy",
+                        "cat",
+                        f"/certs/{filename}",
                         include_greenplum=include_greenplum,
                         profile=profile,
                         clickhouse_driver=clickhouse_driver,
-                    )
+                    ),
                 )
                 if copy_result != 0:
                     return copy_result
