@@ -128,3 +128,9 @@ def test_transport_scenario_parity_rejects_different_collections(
     assert sql_integration._assert_transport_scenario_parity(profile="core") == 1
     report = json.loads((tmp_path / "core" / "transport-parity.json").read_text())
     assert report["matches"] is False
+
+
+def test_greenplum_healthcheck_uses_binary_outside_image_default_path() -> None:
+    compose = sql_integration.CORE_COMPOSE_FILE.read_text(encoding="utf-8")
+
+    assert "/usr/local/greenplum-db/bin/pg_isready" in compose
