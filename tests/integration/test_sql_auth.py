@@ -51,6 +51,7 @@ def test_real_airflow_connection_source_routes_all_backends(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, object]], Path],
 ) -> None:
+    import airflow.models  # noqa: F401, PLC0415 - initialize all ORM models.
     from airflow.hooks.base import BaseHook  # noqa: PLC0415 - auth-profile dependency.
     from airflow.secrets.environment_variables import (  # noqa: PLC0415
         EnvironmentVariablesBackend,

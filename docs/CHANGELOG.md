@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Use authentication-neutral TCP readiness probes for auth-configured Trino services.
 - Resolve integration Airflow connections through its explicit environment secrets backend.
+- Stabilized real Airflow connection routing in SQL integration coverage.
 
 ## 1.3.11.7 - 2026-08-12
 
