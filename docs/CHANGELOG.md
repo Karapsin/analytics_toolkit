@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Fixed Greenplum integration health detection on clean CI runners.
 - Waited for stable Greenplum readiness before integration tests.
 - Connected Greenplum readiness probes over authenticated TCP.
+- Copy integration auth certificates from their root-owned generator container.
 
 ## 1.3.11.6 - 2026-08-12
 

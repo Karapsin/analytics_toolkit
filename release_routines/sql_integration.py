@@ -333,7 +333,7 @@ def run_profile(
                 copy_result = _run(
                     _compose_command(
                         "cp",
-                        f"auth-proxy:/certs/{filename}",
+                        f"auth-certificates:/certs/{filename}",
                         str(cert_dir / filename),
                         include_greenplum=include_greenplum,
                         profile=profile,

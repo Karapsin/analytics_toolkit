@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from release_routines import sql_integration
 from tests.integration import conftest as integration_conftest
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.mark.parametrize(
@@ -136,3 +133,12 @@ def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     assert "/usr/local/greenplum-db/bin/psql" in compose
     assert "-h 127.0.0.1" in compose
     assert "pg_postmaster_start_time()" in compose
+
+
+def test_auth_certificates_are_copied_from_the_root_owned_generator() -> None:
+    runner = sql_integration.__file__
+    assert runner is not None
+    source = Path(runner).read_text(encoding="utf-8")
+
+    assert 'f"auth-certificates:/certs/{filename}"' in source
+    assert 'f"auth-proxy:/certs/{filename}"' not in source
