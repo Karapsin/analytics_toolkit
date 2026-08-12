@@ -7,10 +7,13 @@ import os
 import platform
 import subprocess
 import sys
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
+
+import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_DIR = REPO_ROOT / "integration"
@@ -22,6 +25,7 @@ X86_ARCHITECTURES = {"amd64", "x86_64"}
 PROFILES = ("core", "auth", "all", "fault", "stress")
 FAULT_GROUPS = ("database", "staging", "authentication")
 CLICKHOUSE_DRIVERS = ("http", "native", "both")
+GREENPLUM_TLS_STABLE_SUCCESSES = 3
 
 
 def _compose_command(
@@ -278,6 +282,39 @@ def _assert_transport_scenario_parity(*, profile: str) -> int:
     return 0 if matches else 1
 
 
+def _wait_for_greenplum_tls(cert_dir: Path, *, timeout_seconds: float = 60.0) -> int:
+    deadline = time.monotonic() + timeout_seconds
+    consecutive_successes = 0
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            connection = psycopg2.connect(
+                host="localhost",
+                port=int(os.environ.get("SQL_INTEGRATION_GP_TLS_PORT", "19432")),
+                dbname="analytics_toolkit",
+                user="gpadmin",
+                password=os.environ.get("SQL_INTEGRATION_GREENPLUM_PASSWORD", "integration"),
+                sslmode="verify-full",
+                sslrootcert=str(cert_dir / "ca.crt"),
+                sslcert=str(cert_dir / "client.crt"),
+                sslkey=str(cert_dir / "client.key"),
+                connect_timeout=3,
+            )
+            connection.close()
+            consecutive_successes += 1
+            if consecutive_successes == GREENPLUM_TLS_STABLE_SUCCESSES:
+                return 0
+        except Exception as error:  # noqa: BLE001 - readiness retries transient drivers.
+            last_error = error
+            consecutive_successes = 0
+        time.sleep(1)
+    print(
+        f"Greenplum mTLS route did not become stable: {last_error!r}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def run_profile(
     *,
     profile: str,
@@ -351,6 +388,8 @@ def run_profile(
             ca_text = (cert_dir / "ca.crt").read_text(encoding="utf-8")
             (cert_dir / "ca-copy.crt").write_text(ca_text, encoding="utf-8")
             (cert_dir / "ca-bundle.crt").write_text(ca_text + ca_text, encoding="utf-8")
+            if include_greenplum and _wait_for_greenplum_tls(cert_dir) != 0:
+                return 1
         result = _run(
             [
                 sys.executable,

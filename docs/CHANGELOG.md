@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Connected Greenplum readiness probes over authenticated TCP.
 - Copy integration auth certificates from their root-owned generator container.
 - Stream SQL integration certificates through a root container read for portable Docker behavior.
+- Gate SQL auth tests on consecutive end-to-end Greenplum mTLS readiness checks.
 
 ## 1.3.11.6 - 2026-08-12
 

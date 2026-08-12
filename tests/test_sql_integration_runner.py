@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import types
 from pathlib import Path
 
 import pytest
@@ -144,3 +145,27 @@ def test_auth_certificates_are_streamed_as_root_instead_of_compose_cp() -> None:
     assert 'f"/certs/{filename}"' in source
     assert '"cp",\n                        f"auth-' not in source
     assert 'f"auth-proxy:/certs/{filename}"' not in source
+
+
+def test_greenplum_tls_readiness_requires_three_consecutive_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    outcomes = iter([RuntimeError("recovering"), object(), object(), object()])
+    closed: list[object] = []
+
+    def connect(**_kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return types.SimpleNamespace(close=lambda: closed.append(outcome))
+
+    monkeypatch.setattr(
+        sql_integration,
+        "psycopg2",
+        types.SimpleNamespace(connect=connect),
+    )
+    monkeypatch.setattr(sql_integration.time, "sleep", lambda _seconds: None)
+
+    assert sql_integration._wait_for_greenplum_tls(tmp_path) == 0
+    assert len(closed) == 3
