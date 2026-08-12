@@ -143,6 +143,7 @@ def test_greenplum_auth_uses_native_tls_behind_tcp_passthrough() -> None:
 
     assert "configure-auth-tls.sh" in compose
     assert "SQL_INTEGRATION_REQUIRE_GP_TLS_READY" in compose
+    assert "chmod 0644 /certs/server.key" in compose
     assert "bind *:19432\n" in haproxy
     assert "bind *:19432 ssl" not in haproxy
 

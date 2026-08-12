@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Stream SQL integration certificates through a root container read for portable Docker behavior.
 - Gate SQL auth tests on consecutive end-to-end Greenplum mTLS readiness checks.
 - Terminate Greenplum mTLS natively and proxy its PostgreSQL negotiation with TCP passthrough.
+- Allow the Greenplum init user to install the ephemeral TLS server key securely.
 
 ## 1.3.11.6 - 2026-08-12
 

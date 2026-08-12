@@ -22,6 +22,7 @@ services:
         openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=integration-ca -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout /certs/ca.key -out /certs/ca.crt
         openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=wrong-integration-ca -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout /certs/wrong-ca.key -out /certs/wrong-ca.crt
         openssl req -newkey rsa:2048 -nodes -subj /CN=localhost -keyout /certs/server.key -out /certs/server.csr
+        chmod 0644 /certs/server.key
         printf 'subjectAltName=DNS:localhost,IP:127.0.0.1,DNS:auth-proxy,DNS:keycloak.localhost\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
         openssl x509 -req -days 2 -in /certs/server.csr -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial -extfile /certs/server.ext -out /certs/server.crt
         cat /certs/server.crt /certs/server.key >/certs/server.pem
