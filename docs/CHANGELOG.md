@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.6 - 2026-08-12
 
 - Fixed source-staged Trino transfers to honor Parquet mode precedence.
 - Made Trino Parquet staging DDL defaults independent from SQL staging defaults.
