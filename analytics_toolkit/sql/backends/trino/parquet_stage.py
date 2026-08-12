@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: PLR0913
+import re
 from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
@@ -55,7 +56,7 @@ def build_parquet_stage_table_sql(
 ) -> str:
     if column_types:
         columns_sql = ", ".join(
-            f"{adapter.quote_identifier(column_name)} {column_type}"
+            f"{adapter.quote_identifier(column_name)} {_hive_parquet_stage_type(column_type)}"
             for column_name, column_type in column_types.items()
         )
     else:
@@ -74,6 +75,18 @@ def build_parquet_stage_table_sql(
         }
         sql = overlay_with_properties(sql, merge_ddl_properties(ddl_properties, protected))
     return _apply_query_label(sql, query_label)
+
+
+def _hive_parquet_stage_type(column_type: str) -> str:
+    if column_type.strip().lower() == "uuid":
+        return "VARCHAR"
+    if re.fullmatch(
+        r"timestamp(?:\s*\(\s*\d+\s*\))?\s+with\s+time\s+zone",
+        column_type.strip(),
+        flags=re.IGNORECASE,
+    ):
+        return "VARCHAR"
+    return column_type
 
 
 def infer_parquet_stage_column_types_from_rows(

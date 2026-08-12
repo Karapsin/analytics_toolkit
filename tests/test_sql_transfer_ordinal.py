@@ -1777,7 +1777,11 @@ def test_new_transfer_dispatch_and_identity_guard_branches(monkeypatch: Any) -> 
 
 def test_transfer_parquet_filename_contains_runtime_range(monkeypatch: Any) -> None:
     uploaded: list[str] = []
-    monkeypatch.setattr(parquet_stage, "row_batch_to_arrow_table", lambda _pa, _batch: object())
+    monkeypatch.setattr(
+        parquet_stage,
+        "row_batch_to_arrow_table",
+        lambda _pa, _batch, **_kwargs: object(),
+    )
     monkeypatch.setattr(
         parquet_stage,
         "write_arrow_table_to_parquet",

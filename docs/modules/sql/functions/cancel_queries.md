@@ -7,7 +7,7 @@ cancellation first requests query cancellation and then terminates the backend
 PID.
 
 ```python
-cancel_queries(db_key: 'str', query_ids: 'int | str | Sequence[int | str] | None' = None, *, cancel_all: 'bool' = False, concurrency: 'int' = 1, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'pd.DataFrame'
+cancel_queries(db_key: 'str', query_ids: 'QueryIdInput | None' = None, *, cancel_all: 'bool' = False, concurrency: 'int' = 1, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'pd.DataFrame'
 ```
 
 ## Inputs

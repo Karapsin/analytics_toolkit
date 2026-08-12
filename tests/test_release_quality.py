@@ -5,11 +5,92 @@ import pathlib
 import subprocess
 
 import pytest
-from release_routines.lib import artifact_smoke
+from release_routines.lib import artifact_smoke, check_docs_links
 from release_routines.lib.check_minimum_constraints import validate_minimum_constraints
 from release_routines.lib.project_metadata import load_project
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _write_sql_function_doc(path: pathlib.Path, name: str, signature: str) -> None:
+    path.write_text(
+        f"[SQL functions index](index.md)\n\n# {name}\n\n```python\n{signature}\n```\n",
+        encoding="utf-8",
+    )
+
+
+def test_sql_function_signature_check_accepts_exact_multiline_signature(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    def sample_sql_api(value: str, *, enabled: bool = True) -> str | None:
+        return value if enabled else None
+
+    monkeypatch.setattr(check_docs_links, "SQL_FUNCTIONS_ROOT", tmp_path)
+    monkeypatch.setattr(
+        check_docs_links.sql,
+        "sample_sql_api",
+        sample_sql_api,
+        raising=False,
+    )
+    _write_sql_function_doc(
+        tmp_path / "sample.md",
+        "sample_sql_api",
+        "sample_sql_api(\n    value: 'str',\n    *,\n"
+        "    enabled: 'bool' = True,\n) -> 'str | None'",
+    )
+    failures: list[str] = []
+
+    check_docs_links.check_sql_function_signatures(failures)
+
+    assert failures == []
+
+
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "sample_sql_api(value: 'str') -> 'str | None'",
+        "sample_sql_api(*, enabled: 'bool' = True, value: 'str') -> 'str | None'",
+        "sample_sql_api(value: 'str', *, enabled: 'bool' = False) -> 'str | None'",
+        "sample_sql_api(value: 'str', *, enabled: 'bool' = True) -> 'str'",
+    ],
+)
+def test_sql_function_signature_check_reports_contract_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    signature: str,
+) -> None:
+    def sample_sql_api(value: str, *, enabled: bool = True) -> str | None:
+        return value if enabled else None
+
+    monkeypatch.setattr(check_docs_links, "SQL_FUNCTIONS_ROOT", tmp_path)
+    monkeypatch.setattr(check_docs_links.sql, "sample_sql_api", sample_sql_api, raising=False)
+    _write_sql_function_doc(tmp_path / "sample.md", "sample_sql_api", signature)
+    failures: list[str] = []
+
+    check_docs_links.check_sql_function_signatures(failures)
+
+    assert len(failures) == 1
+    assert "signature differs" in failures[0]
+
+
+def test_sql_function_signature_check_reports_missing_export_and_malformed_block(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    def sample_sql_api(value: str) -> str:
+        return value
+
+    monkeypatch.setattr(check_docs_links, "SQL_FUNCTIONS_ROOT", tmp_path)
+    monkeypatch.setattr(check_docs_links.sql, "sample_sql_api", sample_sql_api, raising=False)
+    _write_sql_function_doc(tmp_path / "missing.md", "missing_sql_api", "missing_sql_api()")
+    _write_sql_function_doc(tmp_path / "malformed.md", "sample_sql_api", "sample_sql_api(")
+    failures: list[str] = []
+
+    check_docs_links.check_sql_function_signatures(failures)
+
+    assert any("not exported" in failure for failure in failures)
+    assert any("invalid documented signature" in failure for failure in failures)
 
 
 def test_repository_minimum_constraints_match_runtime_dependencies() -> None:

@@ -677,7 +677,13 @@ def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
     adapter = get_backend_adapter("trino")
     create_sql = adapter.build_parquet_stage_table_sql(
         "hive.tmp.stage",
-        {"id": "BIGINT", "amount": "DECIMAL(3, 2)", "label": "VARCHAR"},
+        {
+            "id": "BIGINT",
+            "amount": "DECIMAL(3, 2)",
+            "event_ts": "TIMESTAMP(6) WITH TIME ZONE",
+            "row_uuid": "UUID",
+            "label": "VARCHAR",
+        },
         "s3://bucket/stage/target's/",
         query_label="load-parquet",
     )
@@ -685,7 +691,8 @@ def test_trino_parquet_stage_helpers_are_adapter_owned() -> None:
     assert create_sql == (
         "/* analytics_toolkit query_label=load-parquet */\n"
         'CREATE TABLE hive.tmp.stage ("id" BIGINT, "amount" DECIMAL(3, 2), '
-        "\"label\" VARCHAR) WITH (format = 'PARQUET', "
+        '"event_ts" VARCHAR, "row_uuid" VARCHAR, "label" VARCHAR) '
+        "WITH (format = 'PARQUET', "
         "external_location = 's3://bucket/stage/target''s/')"
     )
     assert adapter.parquet_stage_target_table_base("catalog.schema.target") == "target"

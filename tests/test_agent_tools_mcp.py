@@ -575,6 +575,18 @@ def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None
 def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
+    changelog_path = root / "docs" / "CHANGELOG.md"
+    changelog_path.write_text(
+        changelog_path.read_text(encoding="utf-8").replace(
+            "- Existing change 1.",
+            "- Existing change 1 with wrapped\n  continuation text.",
+        ),
+        encoding="utf-8",
+    )
+
+    assert mcp_server._count_unreleased_changelog_bullets(
+        changelog_path.read_text(encoding="utf-8")
+    ) == 9
 
     dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
     applied = mcp_server.version_bump("Tenth change", root=str(root))
@@ -586,7 +598,7 @@ def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
     changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## Unreleased" not in changelog
     assert "## 1.3.9.14 - " in changelog
-    assert "- Existing change 1." in changelog
+    assert "- Existing change 1 with wrapped\n  continuation text." in changelog
     assert "- Tenth change." in changelog
     assert applied["ok"] is True
 
@@ -594,6 +606,14 @@ def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
 def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, ["Existing change 1", "Existing change 2"])
+    changelog_path = root / "docs" / "CHANGELOG.md"
+    changelog_path.write_text(
+        changelog_path.read_text(encoding="utf-8").replace(
+            "- Existing change 1.",
+            "- Existing change 1 with wrapped\n  continuation text.",
+        ),
+        encoding="utf-8",
+    )
 
     dry_run = mcp_server.version_bump(
         change_type="release",
@@ -614,7 +634,7 @@ def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
     assert 'version = "1.3.9.14"' in (root / "pyproject.toml").read_text(encoding="utf-8")
     changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## Unreleased" not in changelog
-    assert "- Existing change 1." in changelog
+    assert "- Existing change 1 with wrapped\n  continuation text." in changelog
     assert "- Existing change 2." in changelog
 
 

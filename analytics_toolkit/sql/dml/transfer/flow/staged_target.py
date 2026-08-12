@@ -151,6 +151,7 @@ def write_source_staged_batch(
             start_ordinal=start_ordinal,
             stop_ordinal=stop_ordinal,
             storage_options=options.parquet_storage_options,
+            column_types=stage_state.stage_column_types,
         )
     result = insert_fn(
         options.to_db_backend,

@@ -5,7 +5,7 @@
 Drop stale transfer staging tables on the configured backend.
 
 ```python
-cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'None'
+cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, *, stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'None'
 ```
 
 ## Inputs

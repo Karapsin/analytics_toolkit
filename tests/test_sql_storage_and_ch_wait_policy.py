@@ -757,7 +757,7 @@ def test_batch_parquet_stage_forwards_storage_options(
     monkeypatch.setattr(
         parquet_stage_module,
         "row_batch_to_arrow_table",
-        lambda *_args: object(),
+        lambda *_args, **_kwargs: object(),
     )
     monkeypatch.setattr(
         parquet_stage_module,

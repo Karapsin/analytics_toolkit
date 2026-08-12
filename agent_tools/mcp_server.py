@@ -3161,11 +3161,13 @@ def _unreleased_changelog_bullets(text: str) -> list[str]:
     if bounds is None:
         return []
     _, body_start, section_end = bounds
-    return [
-        line.strip()
-        for line in text[body_start:section_end].splitlines()
-        if line.strip().startswith("- ")
-    ]
+    bullets: list[list[str]] = []
+    for line in text[body_start:section_end].splitlines():
+        if line.startswith("- "):
+            bullets.append([line.rstrip()])
+        elif bullets and (line.startswith("  ") or line.startswith("\t")):
+            bullets[-1].append(line.rstrip())
+    return ["\n".join(lines) for lines in bullets]
 
 
 def _count_unreleased_changelog_bullets(text: str) -> int:

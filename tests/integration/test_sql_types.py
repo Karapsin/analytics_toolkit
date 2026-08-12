@@ -312,6 +312,7 @@ def test_rich_type_parquet_transfer(
         target_rows_per_second=False,
         table_schema=canonical_schema("trino"),
         retry_cnt=1,
+        full_retry_cnt=1,
         **table_options("trino"),
     )
     assert transferred == len(frame)

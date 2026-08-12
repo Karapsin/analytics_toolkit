@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import inspect
+import io
 import pathlib
 import re
+import tokenize
+
+from analytics_toolkit import sql
 
 
 ROOT_README = pathlib.Path("README.md")
 DOCS_ROOT = pathlib.Path("docs")
 MODULES_ROOT = DOCS_ROOT / "modules"
+SQL_FUNCTIONS_ROOT = MODULES_ROOT / "sql" / "functions"
 
 
 def read(path: pathlib.Path) -> str:
@@ -181,6 +187,72 @@ def check_workflow_docs(module_dir: pathlib.Path, failures: list[str]) -> None:
             )
 
 
+def _python_tokens(value: str) -> list[tuple[int, str]]:
+    ignored = {
+        tokenize.ENCODING,
+        tokenize.ENDMARKER,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+        tokenize.NEWLINE,
+        tokenize.NL,
+    }
+    tokens = [
+        (token.type, token.string)
+        for token in tokenize.generate_tokens(io.StringIO(value).readline)
+        if token.type not in ignored
+    ]
+    return [
+        token
+        for index, token in enumerate(tokens)
+        if not (token[1] == "," and index + 1 < len(tokens) and tokens[index + 1][1] == ")")
+    ]
+
+
+def _documented_signature(path: pathlib.Path, function_name: str) -> str | None:
+    match = re.search(r"```python\s*\n(.*?)\n```", read(path), flags=re.DOTALL)
+    if match is None:
+        return None
+    block = match.group(1).strip()
+    if not block.startswith(f"{function_name}("):
+        return None
+    return block
+
+
+def check_sql_function_signatures(failures: list[str]) -> None:
+    for function_page in sorted(SQL_FUNCTIONS_ROOT.glob("*.md")):
+        if function_page.name == "index.md":
+            continue
+        heading = re.search(r"^# ([A-Za-z_][A-Za-z0-9_]*)$", read(function_page), re.MULTILINE)
+        if heading is None:
+            failures.append(f"{function_page} must declare a public function H1 heading")
+            continue
+        function_name = heading.group(1)
+        function = getattr(sql, function_name, None)
+        if not callable(function):
+            failures.append(
+                f"{function_page} documents {function_name}, which is not exported by "
+                "analytics_toolkit.sql"
+            )
+            continue
+        documented = _documented_signature(function_page, function_name)
+        if documented is None:
+            failures.append(
+                f"{function_page} must put the {function_name} signature in its first Python block"
+            )
+            continue
+        expected = f"{function_name}{inspect.signature(function)}"
+        try:
+            matches = _python_tokens(documented) == _python_tokens(expected)
+        except (IndentationError, tokenize.TokenError) as exc:
+            failures.append(f"{function_page} has an invalid documented signature: {exc}")
+            continue
+        if not matches:
+            failures.append(
+                f"{function_page} signature differs from analytics_toolkit.sql.{function_name}:\n"
+                f"documented: {documented}\nexpected: {expected}"
+            )
+
+
 def main() -> None:
     failures: list[str] = []
     module_dirs = sorted(
@@ -196,6 +268,8 @@ def main() -> None:
         check_module_index(module_dir, failures)
         check_function_docs(module_dir, failures)
         check_workflow_docs(module_dir, failures)
+
+    check_sql_function_signatures(failures)
 
     for doc_path in sorted(MODULES_ROOT.rglob("*.md")):
         for link in local_markdown_links(doc_path):

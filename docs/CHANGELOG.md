@@ -9,6 +9,8 @@ Generated from package version bumps and recent commit history.
 - Fixed source-staged Trino transfers to honor Parquet mode precedence.
 - Made Trino Parquet staging DDL defaults independent from SQL staging defaults.
 - Stopped sql.transfer from sending internal metadata in every row.
+- Validated SQL API documentation signatures and preserved wrapped changelog entries.
+- Preserved UUID and timezone-aware timestamp values in Trino Parquet staging.
 
 ## 1.3.11.5 - 2026-08-10
 
@@ -32,6 +34,7 @@ Generated from package version bumps and recent commit history.
 - Required explicit Greenplum connection keys for gp_vacuum.
 - Made create_sql_table replace existing targets for every schema source.
 - Renamed the AB metrics report helper, made segmentation optional, and fixed
+  multi-metric SQL composition.
 - Replaced ambiguous AB control/test output columns with group-position names.
 - Stop retries for duplicate SQL result columns.
 - Fixed ClickHouse replicated DDL, sharding expressions, and deterministic retries.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import re
 import shutil
 import tempfile
 import uuid
@@ -168,6 +169,7 @@ def write_batch_to_parquet_stage(
     start_ordinal: int | None = None,
     stop_ordinal: int | None = None,
     storage_options: Mapping[str, Any] | None = None,
+    column_types: Mapping[str, str] | None = None,
 ) -> int:
     row_count = len(batch.rows)
     if row_count == 0:
@@ -177,7 +179,7 @@ def write_batch_to_parquet_stage(
         max_size=PARQUET_STAGE_MAX_SPOOL_BYTES,
     )
     try:
-        arrow_table = row_batch_to_arrow_table(pa, batch)
+        arrow_table = row_batch_to_arrow_table(pa, batch, column_types=column_types)
         write_arrow_table_to_parquet(
             pq,
             arrow_table,
@@ -274,15 +276,75 @@ def write_dataframe_to_parquet_stage(
     return written_rows
 
 
-def row_batch_to_arrow_table(pa: Any, batch: RowBatch) -> Any:
+def row_batch_to_arrow_table(
+    pa: Any,
+    batch: RowBatch,
+    *,
+    column_types: Mapping[str, str] | None = None,
+) -> Any:
     column_values = {
-        column_name: [row[index] for row in batch.rows]
+        column_name: [
+            _parquet_scalar(
+                row[index],
+                None if column_types is None else column_types.get(column_name),
+            )
+            for row in batch.rows
+        ]
         for index, column_name in enumerate(batch.columns)
     }
     try:
+        for column_name, values in column_values.items():
+            if not values or any(value is not None for value in values):
+                continue
+            arrow_type = _arrow_type_for_trino_stage(
+                pa,
+                None if column_types is None else column_types.get(column_name),
+            )
+            if arrow_type is not None:
+                column_values[column_name] = pa.array(values, type=arrow_type)
         return pa.Table.from_pydict(column_values)
     finally:
         del column_values
+
+
+def _parquet_scalar(value: Any, column_type: str | None = None) -> Any:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if column_type is not None and "with time zone" in column_type.lower():
+        return value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+    return value
+
+
+def _arrow_type_for_trino_stage(pa: Any, column_type: str | None) -> Any | None:
+    if column_type is None:
+        return None
+    normalized = " ".join(column_type.lower().split())
+    if normalized.startswith("timestamp"):
+        return pa.string() if "with time zone" in normalized else pa.timestamp("us")
+    decimal_match = re.fullmatch(r"decimal\(\s*(\d+)\s*,\s*(\d+)\s*\)", normalized)
+    if decimal_match is not None:
+        return pa.decimal128(int(decimal_match.group(1)), int(decimal_match.group(2)))
+
+    arrow_factory_name = {
+        "varchar": "string",
+        "char": "string",
+        "uuid": "string",
+        "json": "string",
+        "varbinary": "binary",
+        "boolean": "bool_",
+        "tinyint": "int64",
+        "smallint": "int64",
+        "integer": "int64",
+        "bigint": "int64",
+        "real": "float64",
+        "double": "float64",
+        "date": "date32",
+    }.get(normalized)
+    if arrow_factory_name is not None:
+        return getattr(pa, arrow_factory_name)()
+    if normalized.startswith(("varchar(", "char(")):
+        return pa.string()
+    return None
 
 
 def write_arrow_table_to_parquet(

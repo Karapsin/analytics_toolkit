@@ -455,6 +455,7 @@ def _stage_batch(
             worker_id=worker_index,
             start_ordinal=item.start_ordinal,
             stop_ordinal=item.start_ordinal + item.batch.row_count - 1,
+            column_types=stage_state.stage_column_types,
         )
     stage_table = stage_state.stage_table
     if stage_table is None:

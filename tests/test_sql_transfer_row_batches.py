@@ -6,6 +6,7 @@ import inspect
 import io
 import sys
 import threading
+import uuid
 import warnings
 from dataclasses import replace
 from datetime import date, datetime
@@ -5945,6 +5946,109 @@ def test_keyed_parquet_writer_includes_slice_and_part_in_filename() -> None:
     assert opened_uris == ["s3://bucket/tmp/stage/slice-00003-part-00007.parquet"]
 
 
+def test_parquet_arrow_conversion_normalizes_uuid_values() -> None:
+    batch = models_module.RowBatch(
+        columns=["id"],
+        rows=[(uuid.UUID("00000000-0000-0000-0000-000000000001"),), (None,)],
+    )
+
+    class FakeTable:
+        @staticmethod
+        def from_pydict(values: dict[str, list[Any]]) -> dict[str, list[Any]]:
+            return values
+
+    table = parquet_stage_module.row_batch_to_arrow_table(
+        SimpleNamespace(Table=FakeTable),
+        batch,
+    )
+
+    assert table == {"id": ["00000000-0000-0000-0000-000000000001", None]}
+
+
+def test_parquet_arrow_conversion_types_all_null_columns() -> None:
+    batch = models_module.RowBatch(
+        columns=["event_ts", "custom_value"],
+        rows=[(None, None), (None, None)],
+    )
+
+    class FakeTable:
+        @staticmethod
+        def from_pydict(values: dict[str, Any]) -> dict[str, Any]:
+            return values
+
+    fake_pa = SimpleNamespace(
+        Table=FakeTable,
+        array=lambda values, **kwargs: (values, kwargs["type"]),
+        string=lambda: "string",
+    )
+
+    table = parquet_stage_module.row_batch_to_arrow_table(
+        fake_pa,
+        batch,
+        column_types={
+            "event_ts": "TIMESTAMP(6) WITH TIME ZONE",
+            "custom_value": "CUSTOM_TYPE",
+        },
+    )
+
+    assert table == {
+        "event_ts": ([None, None], "string"),
+        "custom_value": [None, None],
+    }
+
+
+def test_parquet_arrow_conversion_preserves_timezone_in_iso_text() -> None:
+    batch = models_module.RowBatch(
+        columns=["event_ts"],
+        rows=[(pd.Timestamp("2026-01-01 03:04:05.123456", tz="UTC"),)],
+    )
+
+    class FakeTable:
+        @staticmethod
+        def from_pydict(values: dict[str, Any]) -> dict[str, Any]:
+            return values
+
+    table = parquet_stage_module.row_batch_to_arrow_table(
+        SimpleNamespace(Table=FakeTable),
+        batch,
+        column_types={"event_ts": "TIMESTAMP(6) WITH TIME ZONE"},
+    )
+
+    assert table == {"event_ts": ["2026-01-01 03:04:05.123456+00:00"]}
+
+
+@pytest.mark.parametrize(
+    ("column_type", "expected"),
+    [
+        (None, None),
+        ("TIMESTAMP(6)", "timestamp:us"),
+        ("TIMESTAMP(6) WITH TIME ZONE", "string"),
+        ("DECIMAL(12, 3)", "decimal:12:3"),
+        ("BIGINT", "int64"),
+        ("VARCHAR(20)", "string"),
+        ("UNKNOWN", None),
+    ],
+)
+def test_parquet_arrow_type_matches_trino_stage_type(
+    column_type: str | None,
+    expected: str | None,
+) -> None:
+    fake_pa = SimpleNamespace(
+        binary=lambda: "binary",
+        bool_=lambda: "bool",
+        date32=lambda: "date32",
+        decimal128=lambda precision, scale: f"decimal:{precision}:{scale}",
+        float64=lambda: "float64",
+        int64=lambda: "int64",
+        string=lambda: "string",
+        timestamp=lambda precision: f"timestamp:{precision}",
+    )
+
+    result = parquet_stage_module._arrow_type_for_trino_stage(fake_pa, column_type)
+
+    assert result == expected
+
+
 def test_load_parquet_stage_infers_schema_from_first_row_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -6217,7 +6321,7 @@ def test_write_batch_to_parquet_stage_uses_one_spooled_file_without_getvalue(
     monkeypatch.setattr(
         parquet_stage_module,
         "row_batch_to_arrow_table",
-        lambda pa, batch: {"rows": list(batch.rows)},
+        lambda _pa, batch, **_kwargs: {"rows": list(batch.rows)},
     )
     monkeypatch.setattr(
         parquet_stage_module,

@@ -253,13 +253,15 @@ def test_transfer_row_count_mismatch_preserves_existing_target(
         **table_options("ch", only_shard=True),
     )
     sql.load_df("trino_target_values", target, original, write_mode="replace")
-    finalize_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.finalize")
+    staged_attempt_module = importlib.import_module(
+        "analytics_toolkit.sql.dml.transfer.flow.staged_attempt"
+    )
 
     def mismatch(*args, **kwargs):
         del args, kwargs
         raise RuntimeError("injected loaded-stage row-count mismatch")
 
-    monkeypatch.setattr(finalize_module, "validate_transfer_stage_identity", mismatch)
+    monkeypatch.setattr(staged_attempt_module, "validate_loaded_stage_row_count", mismatch)
     with pytest.raises(Exception, match="row-count mismatch"):
         sql.transfer(
             "ch_source",

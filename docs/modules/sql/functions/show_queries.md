@@ -5,7 +5,7 @@
 List backend queries visible to a configured connection.
 
 ```python
-show_queries(db_key: 'str', *, user: 'str | None' = None, state: 'str | Sequence[str]' = 'active', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'pd.DataFrame'
+show_queries(db_key: 'str', *, user: 'str | None' = None, state: 'str | SequenceABC[str]' = 'active', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'pd.DataFrame'
 ```
 
 ## Inputs
