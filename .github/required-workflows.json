@@ -18,8 +18,14 @@
           "event": "push",
           "allowed_conclusions": ["success"],
           "required_jobs": [
-            {
-              "name": "core SQL integration (HTTP + native)",
+        {
+          "name": "core SQL integration (HTTP)",
+          "allowed_conclusions": [
+            "success"
+          ]
+        },
+        {
+          "name": "core SQL integration (native)",
               "allowed_conclusions": ["success"]
             },
             {

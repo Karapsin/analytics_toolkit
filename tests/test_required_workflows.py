@@ -34,7 +34,8 @@ def test_required_dev_workflows_and_jobs_are_named() -> None:
 
     assert set(required) == {"tests", "sql-integration"}
     assert [job["name"] for job in required["sql-integration"]["required_jobs"]] == [
-        "core SQL integration (HTTP + native)",
+        "core SQL integration (HTTP)",
+        "core SQL integration (native)",
         "authentication SQL integration (HTTP + native)",
     ]
     assert all(entry["classification"] == "required_push" for entry in required.values())
