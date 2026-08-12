@@ -134,6 +134,17 @@ def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     assert "/usr/local/greenplum-db/bin/psql" in compose
     assert "-h 127.0.0.1" in compose
     assert "pg_postmaster_start_time()" in compose
+    assert "/data/.auth-tls-ready" in compose
+
+
+def test_greenplum_auth_uses_native_tls_behind_tcp_passthrough() -> None:
+    compose = sql_integration.AUTH_COMPOSE_FILE.read_text(encoding="utf-8")
+    haproxy = (sql_integration.INTEGRATION_DIR / "haproxy" / "auth.cfg").read_text(encoding="utf-8")
+
+    assert "configure-auth-tls.sh" in compose
+    assert "SQL_INTEGRATION_REQUIRE_GP_TLS_READY" in compose
+    assert "bind *:19432\n" in haproxy
+    assert "bind *:19432 ssl" not in haproxy
 
 
 def test_auth_certificates_are_streamed_as_root_instead_of_compose_cp() -> None:

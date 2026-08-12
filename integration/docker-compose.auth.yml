@@ -1,4 +1,14 @@
 services:
+  greenplum:
+    environment:
+      SQL_INTEGRATION_REQUIRE_GP_TLS_READY: "1"
+    depends_on:
+      auth-certificates:
+        condition: service_completed_successfully
+    volumes:
+      - auth-certificates:/certs:ro
+      - ./greenplum/configure-auth-tls.sh:/docker-entrypoint-initdb.d/configure-auth-tls.sh:ro
+
   auth-certificates:
     profiles: ["auth"]
     image: alpine:3.22.1
