@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Resolve integration Airflow connections through its explicit environment secrets backend.
 - Stabilized real Airflow connection routing in SQL integration coverage.
 - Initialized all Airflow ORM models before integration connection resolution.
+- Kept Airflow SQL integration dependencies compatible with current MCP tooling.
 
 ## 1.3.11.7 - 2026-08-12
 
