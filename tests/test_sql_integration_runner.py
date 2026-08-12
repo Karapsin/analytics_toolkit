@@ -130,7 +130,8 @@ def test_transport_scenario_parity_rejects_different_collections(
     assert report["matches"] is False
 
 
-def test_greenplum_healthcheck_uses_binary_outside_image_default_path() -> None:
+def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     compose = sql_integration.CORE_COMPOSE_FILE.read_text(encoding="utf-8")
 
-    assert "/usr/local/greenplum-db/bin/pg_isready" in compose
+    assert "/usr/local/greenplum-db/bin/psql" in compose
+    assert "pg_postmaster_start_time()" in compose

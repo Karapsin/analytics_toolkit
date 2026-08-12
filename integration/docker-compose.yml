@@ -170,7 +170,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U gpadmin -d analytics_toolkit",
+          "/usr/local/greenplum-db/bin/psql -U gpadmin -d analytics_toolkit -Atqc \"SELECT EXTRACT(EPOCH FROM clock_timestamp() - pg_postmaster_start_time()) >= 15\" | grep -qx t",
         ]
       interval: 5s
       timeout: 5s
