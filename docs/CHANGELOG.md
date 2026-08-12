@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Initialized all Airflow ORM models before integration connection resolution.
 - Kept Airflow SQL integration dependencies compatible with current MCP tooling.
 - Split HTTP and native core SQL integration into independent CI jobs.
+- Allowed split core SQL transport checks to finish on hosted CI runners.
 
 ## 1.3.11.7 - 2026-08-12
 

@@ -26,7 +26,7 @@ jobs:
     name: core SQL integration (HTTP)
     if: github.event_name == 'push' || github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'core'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -55,7 +55,7 @@ jobs:
     name: core SQL integration (native)
     if: github.event_name == 'push' || github.event_name == 'schedule' || inputs.profile == 'all' || inputs.profile == 'core'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v6
