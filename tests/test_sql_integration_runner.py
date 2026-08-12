@@ -134,4 +134,5 @@ def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     compose = sql_integration.CORE_COMPOSE_FILE.read_text(encoding="utf-8")
 
     assert "/usr/local/greenplum-db/bin/psql" in compose
+    assert "-h 127.0.0.1" in compose
     assert "pg_postmaster_start_time()" in compose

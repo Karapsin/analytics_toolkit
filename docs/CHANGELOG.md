@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Validated every ClickHouse integration profile across HTTP and native transports.
 - Fixed Greenplum integration health detection on clean CI runners.
 - Waited for stable Greenplum readiness before integration tests.
+- Connected Greenplum readiness probes over authenticated TCP.
 
 ## 1.3.11.6 - 2026-08-12
 
