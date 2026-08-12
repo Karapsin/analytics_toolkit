@@ -83,6 +83,10 @@ microsecond ISO-8601, UUIDs to lowercase, JSON with sorted keys, and backend
 null/scalar wrappers to Python values. Column and deterministic row order must
 still match exactly.
 
+Trino inserts truncate datetime parameters to the declared target timestamp
+precision, preventing lower-precision Iceberg columns from rejecting values
+read from microsecond-capable source backends.
+
 Dataframe columns containing only non-null Python `uuid.UUID` values infer as
 native `UUID` on every backend. ClickHouse inference adds `Nullable(...)` when
 the column contains nulls. Schema-inferred transfers likewise preserve native

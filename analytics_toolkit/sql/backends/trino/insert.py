@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator, Sequence
+from datetime import datetime
 from itertools import islice
 from typing import Any
 
@@ -9,6 +11,7 @@ import pandas as pd
 from analytics_toolkit.sql._log_context import prefix_sql_log_message
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
+DATETIME_MICROSECOND_PRECISION = 6
 
 
 def insert_dataframe_batch(
@@ -130,6 +133,13 @@ def normalize_value(value: Any, target_type: str | None) -> Any:
         return str(value)
     if normalized_target_type == "bigint":
         return int(value)
+    if isinstance(value, datetime) and normalized_target_type.startswith("timestamp"):
+        match = re.match(r"timestamp\s*\(\s*(\d+)\s*\)", normalized_target_type)
+        if match is not None:
+            precision = int(match.group(1))
+            if precision < DATETIME_MICROSECOND_PRECISION:
+                factor = 10 ** (DATETIME_MICROSECOND_PRECISION - precision)
+                return value.replace(microsecond=(value.microsecond // factor) * factor)
     return value
 
 

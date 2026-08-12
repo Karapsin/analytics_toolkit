@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Kept Airflow SQL integration dependencies compatible with current MCP tooling.
 - Split HTTP and native core SQL integration into independent CI jobs.
 - Allowed split core SQL transport checks to finish on hosted CI runners.
+- Normalized Trino timestamp values to target column precision before inserts.
 
 ## 1.3.11.7 - 2026-08-12
 

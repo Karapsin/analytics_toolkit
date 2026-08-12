@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
-from datetime import date
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -268,6 +268,26 @@ def test_iter_dataframe_and_row_values_normalize_by_target_type() -> None:
         (3, "varchar(10)", "3"),
         (3, "CHAR", "3"),
         ("4", "bigint", 4),
+        (
+            datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001
+            "timestamp(3)",
+            datetime(2026, 1, 2, 3, 4, 5, 123000),  # noqa: DTZ001
+        ),
+        (
+            datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone.utc),
+            "timestamp(0) with time zone",
+            datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001
+            "timestamp(6)",
+            datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001
+        ),
+        (
+            datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001
+            "timestamp",
+            datetime(2026, 1, 2, 3, 4, 5, 123456),  # noqa: DTZ001
+        ),
         (3.5, None, 3.5),
         ([1, 2], None, [1, 2]),
     ],
