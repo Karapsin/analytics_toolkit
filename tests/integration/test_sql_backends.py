@@ -147,6 +147,8 @@ def test_representative_cross_backend_transfers() -> None:
             batch_size=2,
             adaptive_batch_size=False,
             target_rows_per_second=False,
+            retry_cnt=0,
+            full_retry_cnt=0,
             partition_by=["dt"],
         ) == len(source)
         assert sql.transfer(
@@ -158,6 +160,8 @@ def test_representative_cross_backend_transfers() -> None:
             batch_size=2,
             adaptive_batch_size=False,
             target_rows_per_second=False,
+            retry_cnt=0,
+            full_retry_cnt=0,
             partition_by=["dt"],
             order_by=["id"],
             ch_shard_on_cluster="integration_cluster",
@@ -173,6 +177,8 @@ def test_representative_cross_backend_transfers() -> None:
             batch_size=2,
             adaptive_batch_size=False,
             target_rows_per_second=False,
+            retry_cnt=0,
+            full_retry_cnt=0,
             gp_distributed_by_key="id",
         ) == len(source)
         roundtrip = sql.read("gp", f"SELECT id, value FROM {gp_roundtrip} ORDER BY id")

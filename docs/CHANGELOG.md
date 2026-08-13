@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.8 - 2026-08-13
 
 - Use authentication-neutral TCP readiness probes for auth-configured Trino services.
 - Resolve integration Airflow connections through its explicit environment secrets backend.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Allowed split core SQL transport checks to finish on hosted CI runners.
 - Normalized Trino timestamp values to target column precision before inserts.
 - Aligned Hive Parquet staging timestamps with Trino microsecond precision.
+- Made representative cross-backend SQL integration failures fail fast.
 
 ## 1.3.11.7 - 2026-08-12
 
