@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Serialize structured Greenplum JSON as canonical text for Trino VARCHAR stages.
 - Normalize native ClickHouse rows using validated target types.
 - Make AB parallel-load concurrency regression deterministic.
+- Preserved explicit ClickHouse schemas through direct dataframe inserts for HTTP and native transports.
 
 ## 1.3.11.9 - 2026-08-13
 

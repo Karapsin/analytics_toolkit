@@ -2607,6 +2607,36 @@ def test_load_lifecycle_remaining_validation_and_metadata_paths(
     assert result_metadata.inserted_rows == 2
 
 
+def test_load_dataframe_passes_explicit_schema_to_direct_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    column_types = {"id": "Int64", "value": "Nullable(String)"}
+    options = load_df_module.LoadOptions(
+        connection_key="ch",
+        connection_backend="ch",
+        destination_table="sandbox.target",
+        table_schema=column_types,
+    )
+    insert_kwargs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "_run_load_target_action",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "insert_table_batch",
+        lambda *_args, **kwargs: insert_kwargs.append(kwargs) or 1,
+    )
+
+    assert load_df_module._load_dataframe(
+        options,
+        load_df_module.LoadState(False, False),
+        pd.DataFrame({"id": [1], "value": ["one"]}),
+    ) == 1
+    assert insert_kwargs[0]["target_column_types"] == column_types
+
+
 def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

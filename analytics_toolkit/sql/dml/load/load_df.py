@@ -1341,7 +1341,7 @@ def _load_dataframe(
             retry_fn=run_with_retry,
             retry_cnt=1,
             timeout_increment=0,
-            target_column_types=state.target_column_types,
+            target_column_types=options.table_schema or state.target_column_types,
             trino_insert_chunk_size=options.trino_insert_chunk_size,
             gp_insert_chunk_size=options.gp_insert_chunk_size,
             query_label=options.query_label,
