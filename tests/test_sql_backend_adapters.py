@@ -2680,7 +2680,6 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
         "plain",
     )
     assert ch_insert_backend_module.normalize_rows(
-        SimpleNamespace(is_native_transport=True),
         ["value"],
         [[True]],
         {"value": "Bool"},

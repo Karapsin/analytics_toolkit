@@ -69,12 +69,11 @@ def normalize_typed_row(
 
 
 def normalize_rows(
-    connection: Any,
     columns: Sequence[str],
     rows: Sequence[Sequence[Any]],
     column_types: dict[str, str] | None,
 ) -> list[tuple[Any, ...]]:
-    if getattr(connection, "is_native_transport", False):
+    if column_types:
         return [normalize_typed_row(columns, row, column_types) for row in rows]
     return [normalize_row(row) for row in rows]
 

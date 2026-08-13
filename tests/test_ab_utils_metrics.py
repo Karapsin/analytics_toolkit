@@ -2431,6 +2431,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
     active_compute_tasks = 0
     max_active_compute_tasks = 0
     lock = threading.Lock()
+    load_barrier = threading.Barrier(2)
     parallel_kwargs: dict[str, object] = {}
     compute_calls: list[tuple[int, int]] = []
     real_compute_task = planning_module._compute_sql_mde_day_size_rows
@@ -2477,7 +2478,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
                 active_loads += 1
                 max_active_loads = max(max_active_loads, active_loads)
             try:
-                time.sleep(0.02)
+                load_barrier.wait(timeout=1)
                 if "CAST(\"dt\" AS DATE) < DATE '2024-01-02'" in query:
                     frame = pd.DataFrame({"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]})
                 elif "CAST(\"dt\" AS DATE) < DATE '2024-01-03'" in query:

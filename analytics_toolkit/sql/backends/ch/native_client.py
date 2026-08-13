@@ -182,6 +182,11 @@ class NativeClickHouseClient:
         if column_type_names is not None and len(column_type_names) != len(column_names):
             message = "column_type_names must match column_names."
             raise ValueError(message)
+        if column_type_names is not None:
+            from .insert import normalize_typed_row  # noqa: PLC0415
+
+            types = dict(zip(column_names, column_type_names))
+            data = [normalize_typed_row(column_names, row, types) for row in data]
         return self._client.execute(_insert_query(table, column_names), data)
 
     def close(self) -> None:

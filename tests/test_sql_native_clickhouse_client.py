@@ -180,14 +180,16 @@ def test_insert_quoting_and_idempotent_close() -> None:
 
     assert client.insert_df("db.target", frame, ["we`ird"]) == []
     client.insert("db.target", [(2,)], ["we`ird"], ["Int64"])
+    client.insert("db.target", [(3,)], ["we`ird"])
     client.close()
     client.close()
 
     query = "INSERT INTO `db`.`target` (`we``ird`) VALUES"
     assert raw.insert_dataframe_calls == []
-    assert raw.execute_calls[-2:] == [
+    assert raw.execute_calls[-3:] == [
         (query, ([(1,)],), {}),
         (query, ([(2,)],), {}),
+        (query, ([(3,)],), {}),
     ]
     assert raw.disconnects == 1
 

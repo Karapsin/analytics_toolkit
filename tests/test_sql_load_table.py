@@ -925,7 +925,7 @@ def test_insert_rows_batch_clickhouse_uses_rows_and_column_type_names() -> None:
     assert client.calls == [
         {
             "table": "schema.stage_table",
-            "data": [(1.2, "ok"), (None, None)],
+            "data": [(Decimal("1.2"), "ok"), (None, None)],
             "column_names": ["amount", "label"],
             "column_type_names": [
                 "Nullable(Decimal(10, 2))",
