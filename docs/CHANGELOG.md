@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.9 - 2026-08-13
 
 - Corrected fail-fast integration retry counts to one attempt.
 - Kept the cross-backend transport round-trip independent of ClickHouse layout semantics.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Adapted structured JSON values for Greenplum batch inserts.
 - Prevent Greenplum concurrent staging index collisions.
 - Preserve JSON array values in Greenplum transfer inserts.
+- Finalize every Greenplum worker stage during concurrent upserts.
 
 ## 1.3.11.8 - 2026-08-13
 

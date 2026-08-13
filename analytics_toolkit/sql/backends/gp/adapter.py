@@ -324,28 +324,20 @@ class GreenplumAdapter(DbApiBackendAdapter):
             ch_only_shard,
             upsert_partition_column,
             final_stage_table,
-            incoming_stage_tables,
             partition_values,
             trino_partition_drop_sql_template,
         )
 
-        return [
-            _apply_query_label(
-                self._build_delete_matching_stage_sql(
-                    target_table,
-                    stage_table,
-                    key_columns,
-                ),
-                query_label,
-            ),
-            self.build_insert_from_stage_sql(
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=column_types,
-                query_label=query_label,
-            ),
-        ]
+        return _operations.build_upsert_stage_sqls(
+            self,
+            target_table,
+            stage_table,
+            columns=columns,
+            key_columns=key_columns,
+            column_types=column_types,
+            query_label=query_label,
+            incoming_stage_tables=incoming_stage_tables,
+        )
 
     def build_upsert_stage_placeholder_sqls(
         self,

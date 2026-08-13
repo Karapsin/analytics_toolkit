@@ -2026,6 +2026,21 @@ def test_trino_adapter_schema_merge_and_upsert_guards(
     assert null_safe in placeholder
 
 
+def test_greenplum_upsert_finalizes_every_incoming_stage() -> None:
+    adapter = get_backend_adapter("gp")
+    sqls = adapter.build_upsert_stage_sqls(
+        "target",
+        "stage_a",
+        columns=["id", "value"],
+        key_columns=["id"],
+        incoming_stage_tables=["stage_a", "stage_b"],
+    )
+
+    assert len(sqls) == 4
+    assert all("stage_a" in sql for sql in sqls[:2])
+    assert all("stage_b" in sql for sql in sqls[2:])
+
+
 def test_trino_adapter_execute_and_read_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

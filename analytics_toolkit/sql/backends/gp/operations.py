@@ -3,7 +3,44 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.backends.base import _apply_query_label
+
 from ..utils import sql_string_literal
+
+
+def build_upsert_stage_sqls(  # noqa: PLR0913
+    adapter: Any,
+    target_table: str,
+    stage_table: str,
+    *,
+    columns: Sequence[str],
+    key_columns: Sequence[str],
+    column_types: dict[str, str] | None,
+    query_label: str | None,
+    incoming_stage_tables: Sequence[str] | None,
+) -> list[str]:
+    sqls: list[str] = []
+    for incoming_stage in incoming_stage_tables or [stage_table]:
+        sqls.extend(
+            [
+                _apply_query_label(
+                    adapter._build_delete_matching_stage_sql(  # noqa: SLF001
+                        target_table,
+                        incoming_stage,
+                        key_columns,
+                    ),
+                    query_label,
+                ),
+                adapter.build_insert_from_stage_sql(
+                    target_table,
+                    incoming_stage,
+                    columns=columns,
+                    column_types=column_types,
+                    query_label=query_label,
+                ),
+            ]
+        )
+    return sqls
 
 
 def build_show_tables_query(
