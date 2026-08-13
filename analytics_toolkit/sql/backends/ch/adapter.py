@@ -497,13 +497,14 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None,
         on_progress: Callable[[int], None] | None,
     ) -> None:
-        del target_column_types, trino_insert_chunk_size, gp_insert_chunk_size
+        del trino_insert_chunk_size, gp_insert_chunk_size
         del connection_type, query_label
 
         self._insert_dataframe_batch(
             connection,
             table_name,
             batch,
+            target_column_types=target_column_types,
             on_progress=on_progress,
         )
 
@@ -541,15 +542,16 @@ class ClickHouseAdapter(BackendAdapter):
         table_name: str,
         batch: Any,
         on_progress: Callable[[int], None] | None = None,
+        *,
+        target_column_types: dict[str, str] | None = None,
     ) -> None:
-        normalized_batch = _insert.normalize_batch(batch)
-        connection.insert_df(
-            table=table_name,
-            df=normalized_batch,
-            column_names=list(batch.columns),
+        _insert.insert_dataframe_batch(
+            connection,
+            table_name,
+            batch,
+            target_column_types,
+            on_progress=on_progress,
         )
-        if on_progress is not None:
-            on_progress(len(batch))
 
     def _insert_rows(
         self,
@@ -562,7 +564,7 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         connection.insert(
             table=table_name,
-            data=[_insert.normalize_row(row) for row in rows],
+            data=_insert.normalize_rows(connection, columns, rows, column_types),
             column_names=list(columns),
             column_type_names=_insert.column_type_names(columns, column_types),
         )

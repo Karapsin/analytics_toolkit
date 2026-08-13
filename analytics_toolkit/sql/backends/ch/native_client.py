@@ -110,6 +110,8 @@ class _NativeDataFrameStream(_NativeStreamContext):
 
 
 class NativeClickHouseClient:
+    is_native_transport = True
+
     def __init__(self, client: Any) -> None:
         self._client = client
         self._closed = False

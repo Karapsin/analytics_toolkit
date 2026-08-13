@@ -2671,6 +2671,32 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
     with pytest.raises(ValueError, match="Missing explicit SQL type for column 'b'"):
         ch_insert_backend_module.column_type_names(["a", "b"], {"a": "UInt8"})
     assert ch_insert_backend_module.normalize_row(([1, 2], None)) == ([1, 2], None)
+    assert ch_insert_backend_module.normalize_typed_row(
+        ["id", "amount", "payload"],
+        [1.0, 1.25, {"x": "я"}],
+        {"id": "Nullable(Int64)", "amount": "Decimal(10,2)", "payload": "String"},
+    ) == (1, Decimal("1.25"), '{"x":"я"}')
+    assert ch_insert_backend_module.normalize_typed_row(["value"], ["plain"], None) == (
+        "plain",
+    )
+    assert ch_insert_backend_module.normalize_rows(
+        SimpleNamespace(is_native_transport=True),
+        ["value"],
+        [[True]],
+        {"value": "Bool"},
+    ) == [(True,)]
+    inserted: list[dict[str, Any]] = []
+    native = SimpleNamespace(
+        is_native_transport=True,
+        insert=lambda **kwargs: inserted.append(kwargs),
+    )
+    ch_insert_backend_module.insert_dataframe_batch(
+        native,
+        "events",
+        pd.DataFrame({"id": [1.0, None]}),
+        {"id": "Nullable(Int64)"},
+    )
+    assert inserted[0]["data"] == [(1,), (None,)]
     assert ch_insert_backend_module._is_null_like(None) is True
     assert ch_insert_backend_module._is_null_like([1, 2]) is False
 
