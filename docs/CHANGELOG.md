@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Normalize native ClickHouse rows using validated target types.
 - Make AB parallel-load concurrency regression deterministic.
 - Preserved explicit ClickHouse schemas through direct dataframe inserts for HTTP and native transports.
+- Made staged-transfer coordinator fault injection one-shot across retries.
 
 ## 1.3.11.9 - 2026-08-13
 
