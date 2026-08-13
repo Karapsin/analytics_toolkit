@@ -511,6 +511,9 @@ def test_staged_ch_to_gp_consolidation_replaces_closed_coordinator(
         nonlocal coordinator_closed
         if not coordinator_closed:
             target_ref = args[1]
+            target_ref["connection"] = staged_module.get_sql_connection(
+                args[0].to_db_key,
+            )
             target_ref["connection"].close()
             coordinator_closed = True
         return real_consolidate(*args, **kwargs)

@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Make AB parallel-load concurrency regression deterministic.
 - Preserved explicit ClickHouse schemas through direct dataframe inserts for HTTP and native transports.
 - Made staged-transfer coordinator fault injection one-shot across retries.
+- Injected a closed staged-transfer coordinator before consolidation replacement checks.
 
 ## 1.3.11.9 - 2026-08-13
 
