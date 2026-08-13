@@ -881,8 +881,10 @@ def test_insert_rows_batch_trino_normalizes_values_and_splits_chunks() -> None:
 
     assert inserted_rows == 3
     assert connection.executed == [
-        'INSERT INTO schema.stage_table ("id", "label") VALUES (?, ?), (?, ?)',
-        'INSERT INTO schema.stage_table ("id", "label") VALUES (?, ?)',
+        'INSERT INTO schema.stage_table ("id", "label") VALUES '
+        '(CAST(? AS bigint), CAST(? AS varchar)), (CAST(? AS bigint), CAST(? AS varchar))',
+        'INSERT INTO schema.stage_table ("id", "label") VALUES '
+        '(CAST(? AS bigint), CAST(? AS varchar))',
     ]
     assert connection.executed_params == [
         [1, "a", 2, None],

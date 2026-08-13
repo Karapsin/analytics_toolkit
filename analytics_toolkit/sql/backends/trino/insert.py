@@ -68,6 +68,12 @@ def insert_rows(
                 row_count=len(row_chunk),
                 query_label=query_label,
             )
+            sql = cast_parameter_placeholders(
+                sql,
+                columns,
+                target_column_types,
+                row_count=len(row_chunk),
+            )
             time_print(
                 prefix_sql_log_message(f"Writing {len(row_chunk)} row(s) to table {table_name}"),
                 backend=adapter.backend,
@@ -98,6 +104,25 @@ def get_insert_chunk_size(
     if isinstance(config, TrinoConfig) and config.insert_chunk_size is not None:
         return config.insert_chunk_size
     return DEFAULT_TRINO_INSERT_CHUNK_SIZE
+
+
+def cast_parameter_placeholders(
+    sql: str,
+    columns: Sequence[str],
+    target_column_types: dict[str, str] | None,
+    *,
+    row_count: int,
+) -> str:
+    if not target_column_types:
+        return sql
+    casts = [
+        f"CAST(? AS {target_column_types[column]})"
+        if column in target_column_types
+        else "?"
+        for _ in range(row_count)
+        for column in columns
+    ]
+    return re.sub(r"\?", lambda _match: casts.pop(0), sql)
 
 
 def iter_dataframe_rows(
