@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Use native ClickHouse row encoding for nullable timezone-aware inserts.
 - Cast Trino VALUES parameters to validated stage types.
+- Serialize structured Greenplum JSON as canonical text for Trino VARCHAR stages.
 
 ## 1.3.11.9 - 2026-08-13
 

@@ -26,6 +26,7 @@ create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api
 ch_wait_module = importlib.import_module("analytics_toolkit.sql.backends.ch.wait")
 load_sql_table_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
 gp_insert_module = importlib.import_module("analytics_toolkit.sql.backends.gp.insert")
+trino_insert_module = importlib.import_module("analytics_toolkit.sql.backends.trino.insert")
 load_df_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_df")
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
@@ -891,6 +892,12 @@ def test_insert_rows_batch_trino_normalizes_values_and_splits_chunks() -> None:
         [3, "c"],
     ]
     assert progress_updates == [2, 1]
+    assert trino_insert_module.normalize_value({"x": "я", "n": None}, "varchar") == (
+        '{"x":"я","n":null}'
+    )
+    assert trino_insert_module.normalize_value([3, {"ok": True}], "varchar") == (
+        '[3,{"ok":true}]'
+    )
 
 
 def test_insert_rows_batch_clickhouse_uses_rows_and_column_type_names() -> None:

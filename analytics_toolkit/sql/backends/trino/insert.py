@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
@@ -155,6 +156,8 @@ def normalize_value(value: Any, target_type: str | None) -> Any:
 
     normalized_target_type = (target_type or "").lower()
     if normalized_target_type.startswith(("varchar", "char", "string")):
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         return str(value)
     if normalized_target_type == "bigint":
         return int(value)
