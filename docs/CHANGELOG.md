@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Use native ClickHouse row encoding for nullable timezone-aware inserts.
+
 ## 1.3.11.9 - 2026-08-13
 
 - Corrected fail-fast integration retry counts to one attempt.

@@ -167,7 +167,8 @@ class NativeClickHouseClient:
         column_names: Sequence[str],
     ) -> Any:
         query = _insert_query(table, column_names)
-        return self._client.insert_dataframe(query, df, settings={"use_numpy": True})
+        rows = list(df.itertuples(index=False, name=None))
+        return self._client.execute(query, rows)
 
     def insert(
         self,
