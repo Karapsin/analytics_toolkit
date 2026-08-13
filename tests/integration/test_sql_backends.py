@@ -162,8 +162,6 @@ def test_representative_cross_backend_transfers() -> None:
             target_rows_per_second=False,
             retry_cnt=1,
             full_retry_cnt=1,
-            partition_by=["dt"],
-            order_by=["id"],
             ch_shard_on_cluster="integration_cluster",
             ch_distributed_on_cluster="integration_cluster",
             ch_distributed_cluster="integration_cluster",
