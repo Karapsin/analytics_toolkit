@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Made Greenplum partition normalization idempotent for typed specs.
 - Reserved Greenplum stage identifier space for internal row types.
 - Adapted structured JSON values for Greenplum batch inserts.
+- Prevent Greenplum concurrent staging index collisions.
 
 ## 1.3.11.8 - 2026-08-13
 

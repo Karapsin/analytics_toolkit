@@ -1506,6 +1506,12 @@ def test_transfer_stage_backend_helpers_cover_storage_and_identifier_edges() -> 
         "trino", "snap", "SELECT 1", "slice", "ordinal"
     )
     assert "DISTRIBUTED RANDOMLY" in gp_sql and len(gp_post) == 2
+    other_gp_sql, other_gp_post = transfer_stage.build_source_snapshot_sqls(
+        "gp", "snap_other", "SELECT 1", "slice", "ordinal"
+    )
+    assert other_gp_sql != gp_sql
+    assert gp_post[0].split()[2] != other_gp_post[0].split()[2]
+    assert len(gp_post[0].split()[2].encode()) <= 63
     assert "MergeTree" in ch_sql and not ch_post
     assert trino_sql == "CREATE TABLE snap AS SELECT 1" and not trino_post
     assert source_count._apply_query_label("SELECT 1", None) == "SELECT 1"

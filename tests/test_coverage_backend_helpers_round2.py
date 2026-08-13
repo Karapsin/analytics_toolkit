@@ -209,6 +209,37 @@ def test_gp_insert_rows_chunks_callbacks_and_empty(
     assert untouched.cursor_instance.closed is False
 
 
+def test_gp_insert_rows_normalizes_json_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = SimpleNamespace(
+        build_dataframe_batch_insert_sql=lambda *_args, **_kwargs: "INSERT VALUES %s"
+    )
+    connection = RecordingConnection()
+    captured_rows: list[tuple[Any, ...]] = []
+
+    def fake_execute_values(
+        _cursor: Any,
+        _sql: str,
+        rows: list[tuple[Any, ...]],
+        *,
+        page_size: int,
+    ) -> None:
+        del page_size
+        captured_rows.extend(rows)
+
+    monkeypatch.setattr(gp_insert, "execute_values", fake_execute_values)
+    gp_insert.insert_rows(
+        adapter,
+        connection,
+        "target",
+        ["payload"],
+        [[{"nested": [1, 2]}]],
+    )
+
+    assert captured_rows[0][0].adapted == {"nested": [1, 2]}
+
+
 def test_gp_insert_rows_rolls_back_and_validates_chunk_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

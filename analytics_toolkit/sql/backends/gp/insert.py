@@ -82,7 +82,7 @@ def insert_rows(
     page_size_getter: Callable[[], int] | None = None,
     on_page_success: Callable[[float, int], None] | None = None,
 ) -> None:
-    row_tuples = [tuple(row) for row in rows]
+    row_tuples = normalize_insert_rows(adapter, rows)
     if not row_tuples:
         return
 

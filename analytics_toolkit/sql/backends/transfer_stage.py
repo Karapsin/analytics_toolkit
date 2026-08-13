@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, I001, TRY003
 
+import hashlib
 from typing import Any
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
@@ -105,10 +106,11 @@ def _gp_source_snapshot_sqls(
     slice_column: str,
     ordinal_column: str,
 ) -> tuple[str, tuple[str, ...]]:
+    index_name = f"analytics_toolkit_snapshot_{hashlib.sha256(table.encode()).hexdigest()[:16]}_idx"
     return (
         f"CREATE TABLE {table} AS {select_sql} DISTRIBUTED RANDOMLY",
         (
-            f"CREATE INDEX ON {table} ({slice_column}, {ordinal_column})",
+            f"CREATE INDEX {index_name} ON {table} ({slice_column}, {ordinal_column})",
             f"ANALYZE {table}",
         ),
     )
