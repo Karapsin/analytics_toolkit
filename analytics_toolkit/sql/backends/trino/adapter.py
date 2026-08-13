@@ -233,20 +233,11 @@ class TrinoAdapter(DbApiBackendAdapter):
         *,
         row_count: int,
         query_label: str | None = None,
-        parameter_expressions: Sequence[str] | None = None,
     ) -> str:
         if row_count <= 0:
             raise ValueError("row_count must be a positive integer.")
-        expressions = (
-            list(parameter_expressions)
-            if parameter_expressions is not None
-            else ["?" for _ in columns]
-        )
-        if len(expressions) != len(columns):
-            message = "Parameter expression and column counts must match."
-            raise ValueError(message)
 
-        row_placeholders = f"({', '.join(expressions)})"
+        row_placeholders = f"({', '.join('?' for _ in columns)})"
         values_sql = ", ".join(row_placeholders for _ in range(row_count))
         return _apply_query_label(
             f"INSERT INTO {table_name} ({self.column_list_sql(columns)}) VALUES {values_sql}",

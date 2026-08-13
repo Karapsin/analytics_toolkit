@@ -78,14 +78,21 @@ def build_parquet_stage_table_sql(
 
 
 def _hive_parquet_stage_type(column_type: str) -> str:
-    if column_type.strip().lower() == "uuid":
+    normalized_type = column_type.strip()
+    if normalized_type.lower() == "uuid":
         return "VARCHAR"
     if re.fullmatch(
         r"timestamp(?:\s*\(\s*\d+\s*\))?\s+with\s+time\s+zone",
-        column_type.strip(),
+        normalized_type,
         flags=re.IGNORECASE,
     ):
         return "VARCHAR"
+    if re.fullmatch(
+        r"timestamp(?:\s*\(\s*\d+\s*\))?",
+        normalized_type,
+        flags=re.IGNORECASE,
+    ):
+        return "TIMESTAMP(6)"
     return column_type
 
 

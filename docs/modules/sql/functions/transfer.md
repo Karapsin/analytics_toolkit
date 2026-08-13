@@ -460,7 +460,9 @@ rows = sql.transfer(
 - Hive Parquet stages represent UUID and timezone-aware timestamp columns as
   strings because those native Iceberg target types are unsupported by Hive
   external tables. UUID strings and offset-bearing timestamp strings are cast
-  back to the target's declared native types during finalization.
+  back to the target's declared native types during finalization. Timestamp
+  columns without time zones use microsecond precision in the Hive stage to
+  match Trino's configured Parquet timestamp precision.
 - Parquet transfer streams source rows into temporary Parquet files under
   `s3_transfer_staging_location`, creates a Trino external stage table in
   `s3_transfer_staging_schema`, and then applies the normal `append`, `replace`,

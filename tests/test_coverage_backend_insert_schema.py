@@ -47,12 +47,9 @@ class FakeTrinoAdapter:
         *,
         row_count: int,
         query_label: str | None,
-        parameter_expressions: Any = None,
     ) -> str:
         self.calls.append((table_name, tuple(columns), row_count, query_label))
-        expressions = parameter_expressions or ["?"] * len(columns)
-        row_sql = f"({', '.join(expressions)})"
-        return f"INSERT INTO {table_name} VALUES " + ", ".join([row_sql] * row_count)
+        return f"INSERT INTO {table_name} VALUES " + ", ".join(["(?, ?)"] * row_count)
 
 
 def test_shared_source_schema_description_and_type_normalization_edges() -> None:
@@ -199,28 +196,6 @@ def test_insert_rows_without_progress_callback() -> None:
     )
     assert len(cursor.calls) == 2
     assert cursor.closed is True
-
-
-def test_insert_rows_casts_timestamp_parameters_to_target_precision() -> None:
-    cursor = FakeCursor()
-    value = datetime(2026, 2, 1, 12, 30, 15, 123456, tzinfo=timezone.utc)
-
-    trino_insert.insert_rows(
-        FakeTrinoAdapter(),
-        SimpleNamespace(cursor=lambda: cursor),
-        "schema.target",
-        ["dt"],
-        [(value,)],
-        target_column_types={"dt": "timestamp(3)"},
-        trino_insert_chunk_size=1,
-    )
-
-    assert cursor.calls == [
-        (
-            "INSERT INTO schema.target VALUES (CAST(? AS timestamp(3)))",
-            [value.replace(microsecond=123000)],
-        )
-    ]
 
 
 @pytest.mark.parametrize("value", [0, -1])
