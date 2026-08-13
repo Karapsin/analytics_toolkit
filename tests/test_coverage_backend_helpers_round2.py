@@ -240,6 +240,36 @@ def test_gp_insert_rows_normalizes_json_values(
     assert captured_rows[0][0].adapted == {"nested": [1, 2]}
 
 
+def test_gp_insert_rows_normalizes_json_array_values_by_target_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = SimpleNamespace(
+        build_dataframe_batch_insert_sql=lambda *_args, **_kwargs: "INSERT VALUES %s"
+    )
+    connection = RecordingConnection()
+    captured_rows: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        gp_insert,
+        "execute_values",
+        lambda _cursor, _sql, rows, *, page_size: captured_rows.extend(rows),
+    )
+
+    gp_insert.insert_rows(
+        adapter,
+        connection,
+        "target",
+        ["payload", "array_value"],
+        [[[3, {"x": "я"}], [1, 2]]],
+        target_column_types={"payload": "JSONB", "array_value": "INTEGER[]"},
+    )
+
+    assert captured_rows[0][0].adapted == [3, {"x": "я"}]
+    assert captured_rows[0][1] == [1, 2]
+    assert gp_insert.normalize_json_columns(
+        ["array_value"], [[[1, 2]]], {"array_value": "INTEGER[]"}
+    ) == [([1, 2],)]
+
+
 def test_gp_insert_rows_rolls_back_and_validates_chunk_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

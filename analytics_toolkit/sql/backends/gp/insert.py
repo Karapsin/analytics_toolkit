@@ -81,8 +81,10 @@ def insert_rows(
     on_progress: Callable[[int], None] | None = None,
     page_size_getter: Callable[[], int] | None = None,
     on_page_success: Callable[[float, int], None] | None = None,
+    target_column_types: dict[str, str] | None = None,
 ) -> None:
     row_tuples = normalize_insert_rows(adapter, rows)
+    row_tuples = normalize_json_columns(columns, row_tuples, target_column_types)
     if not row_tuples:
         return
 
@@ -138,6 +140,31 @@ def _normalize_nullable_scalar(value: Any) -> Any:
 
         return Json(value)
     return _normalize_uuid_scalar(value)
+
+
+def normalize_json_columns(
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    target_column_types: dict[str, str] | None,
+) -> list[tuple[Any, ...]]:
+    if not target_column_types:
+        return [tuple(row) for row in rows]
+    json_indexes = {
+        index
+        for index, column in enumerate(columns)
+        if target_column_types.get(column, "").strip().lower() in {"json", "jsonb"}
+    }
+    if not json_indexes:
+        return [tuple(row) for row in rows]
+    from psycopg2.extras import Json  # noqa: PLC0415
+
+    return [
+        tuple(
+            Json(value) if index in json_indexes and isinstance(value, (dict, list)) else value
+            for index, value in enumerate(row)
+        )
+        for row in rows
+    ]
 
 
 def _normalize_uuid_scalar(value: Any) -> Any:

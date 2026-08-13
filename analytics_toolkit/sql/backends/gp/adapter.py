@@ -643,8 +643,9 @@ class GreenplumAdapter(DbApiBackendAdapter):
         gp_insert_page_size_getter: Callable[[], int] | None = None,
         on_gp_insert_page_success: Callable[[float, int], None] | None = None,
     ) -> None:
-        del target_column_types, trino_insert_chunk_size, connection_type
+        del trino_insert_chunk_size, connection_type
 
+        rows = _insert.normalize_json_columns(columns, rows, target_column_types)
         self._insert_rows(
             connection,
             table_name,
