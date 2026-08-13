@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence as SequenceABC
 from concurrent.futures import ThreadPoolExecutor
+from numbers import Integral
 from typing import Any, Sequence, Union
 
 import pandas as pd
@@ -129,17 +130,19 @@ def _normalize_query_ids(
         raise ValueError("Provide query_ids or cancel_all=True, not both.")
     if query_ids is None:
         return []
-    if isinstance(query_ids, (str, int)) and not isinstance(query_ids, bool):
+    if isinstance(query_ids, str):
         return [query_ids]
+    if isinstance(query_ids, Integral) and not isinstance(query_ids, bool):
+        return [int(query_ids)]
     if isinstance(query_ids, SequenceABC):
         ids = list(query_ids)
         if not ids:
             raise ValueError("query_ids must not be empty.")
         if any(isinstance(query_id, bool) for query_id in ids):
             raise ValueError("query_ids must contain strings or integers.")
-        if not all(isinstance(query_id, (str, int)) for query_id in ids):
+        if not all(isinstance(query_id, (str, Integral)) for query_id in ids):
             raise ValueError("query_ids must contain strings or integers.")
-        return ids
+        return [int(query_id) if isinstance(query_id, Integral) else query_id for query_id in ids]
     raise ValueError("query_ids must be a string, integer, or sequence of those values.")
 
 

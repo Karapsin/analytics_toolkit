@@ -49,6 +49,9 @@ def test_cancel_queries_rejects_invalid_query_id_modes(
 
 def test_cancel_query_id_scalar_and_mixed_sequence_validation() -> None:
     assert cancel_module._normalize_query_ids("query-1", cancel_all=False) == ["query-1"]
+    numpy_query_id = pd.Series([5943]).iloc[0]
+    assert cancel_module._normalize_query_ids(numpy_query_id, cancel_all=False) == [5943]
+    assert cancel_module._normalize_query_ids([numpy_query_id], cancel_all=False) == [5943]
     with pytest.raises(ValueError, match="strings or integers"):
         cancel_module._normalize_query_ids([1, object()], cancel_all=False)
 
