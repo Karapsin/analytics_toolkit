@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Kept integration query cleanup artifacts JSON-safe for NumPy IDs.
 - Made Greenplum partition normalization idempotent for typed specs.
 - Reserved Greenplum stage identifier space for internal row types.
+- Adapted structured JSON values for Greenplum batch inserts.
 
 ## 1.3.11.8 - 2026-08-13
 

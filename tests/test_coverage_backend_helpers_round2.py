@@ -138,6 +138,8 @@ def test_gp_insert_normalization_and_dataframe_delegation(
     assert gp_insert.normalize_insert_rows(object(), [[pd.NA, uuid_value]]) == [
         (None, str(uuid_value))
     ]
+    json_value = gp_insert.normalize_insert_rows(object(), [[{"nested": [1, 2]}]])[0][0]
+    assert json_value.adapted == {"nested": [1, 2]}
     assert gp_insert._is_null_like([1, 2]) is False
 
     captured: dict[str, Any] = {}

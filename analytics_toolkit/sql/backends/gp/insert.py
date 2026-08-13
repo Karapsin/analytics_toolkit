@@ -133,6 +133,10 @@ def get_insert_chunk_size(explicit_value: int | None) -> int:
 def _normalize_nullable_scalar(value: Any) -> Any:
     if _is_null_like(value):
         return None
+    if isinstance(value, dict):
+        from psycopg2.extras import Json  # noqa: PLC0415
+
+        return Json(value)
     return _normalize_uuid_scalar(value)
 
 
