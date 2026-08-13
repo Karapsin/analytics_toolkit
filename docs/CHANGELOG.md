@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Kept the cross-backend transport round-trip independent of ClickHouse layout semantics.
 - Accepted NumPy integer query IDs in SQL cancellation.
 - Kept integration query cleanup artifacts JSON-safe for NumPy IDs.
+- Made Greenplum partition normalization idempotent for typed specs.
 
 ## 1.3.11.8 - 2026-08-13
 

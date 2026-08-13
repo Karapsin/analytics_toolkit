@@ -360,6 +360,13 @@ def test_gp_partition_compatibility_renderer_and_create_kwargs() -> None:
         RANGE_PARTITIONS,
         partition_by="event_date",
     )
+    assert (
+        gp_partitions_module.normalize_gp_partitions(
+            spec,
+            partition_by="event_date",
+        )
+        is spec
+    )
     kwargs = get_backend_adapter("gp").build_create_from_sql_target_create_kwargs(
         gp_distributed_by_key=None,
         gp_partitions=spec,

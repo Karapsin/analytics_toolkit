@@ -34,7 +34,7 @@ GpPartitionSpec = Union[GpRangePartitionSpec, GpListPartitionSpec]
 
 
 def normalize_gp_partitions(
-    value: Mapping[str, Any] | None,
+    value: Mapping[str, Any] | GpPartitionSpec | None,
     *,
     partition_by: Sequence[str] | str | None,
 ) -> GpPartitionSpec | None:
@@ -45,6 +45,8 @@ def normalize_gp_partitions(
     if partition_by is None:
         raise _invalid_sql_input("gp_partitions requires partition_by.")
     normalize_gp_partition_column(partition_by)
+    if isinstance(value, (GpRangePartitionSpec, GpListPartitionSpec)):
+        return value
     if not isinstance(value, Mapping):
         raise _invalid_sql_input("gp_partitions must be a mapping.")
 
