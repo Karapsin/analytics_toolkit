@@ -114,7 +114,8 @@ def test_hashed_stage_name_keeps_prefix_and_gp_byte_limit() -> None:
 
     assert relation.startswith(f"{identity.hash_prefix}__")
     assert "a" * 32 in relation
-    assert len(relation.encode()) <= 63
+    assert len(relation.encode()) <= 62
+    assert len(f"_{relation}".encode()) <= 63
 
 
 @pytest.mark.parametrize(

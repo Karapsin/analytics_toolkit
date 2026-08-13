@@ -46,7 +46,12 @@ def fit_hashed_stage_identifier(
 ) -> str:
     if connection_type not in {"gp", "trino", "ch"}:
         raise KeyError(connection_type)
-    return _fit_gp_hashed_stage_identifier(prefix, readable_base, tail)
+    return _fit_gp_hashed_stage_identifier(
+        prefix,
+        readable_base,
+        tail,
+        max_bytes=GP_IDENTIFIER_MAX_BYTES - 1,
+    )
 
 
 def collision_stage_suffix(
@@ -83,8 +88,10 @@ def _fit_gp_hashed_stage_identifier(
     prefix: str,
     readable_base: str,
     tail: str,
+    *,
+    max_bytes: int = GP_IDENTIFIER_MAX_BYTES,
 ) -> str:
-    available = GP_IDENTIFIER_MAX_BYTES - len(prefix.encode()) - len(tail.encode())
+    available = max_bytes - len(prefix.encode()) - len(tail.encode())
     if available < 0:
         raise ValueError(
             "Destination hash and stage identity components are too long for Greenplum identifiers."
