@@ -255,6 +255,15 @@ def test_backend_adapter_registry_renders_existing_sql_shapes() -> None:
         ["id", "name"],
         row_count=2,
     ) == ('INSERT INTO schema.stage ("id", "name") VALUES (?, ?), (?, ?)')
+    assert get_backend_adapter("trino").build_dataframe_batch_insert_sql(
+        "schema.stage",
+        ["id", "created_at"],
+        row_count=2,
+        parameter_expressions=["?", "CAST(? AS timestamp(3))"],
+    ) == (
+        'INSERT INTO schema.stage ("id", "created_at") VALUES '
+        "(?, CAST(? AS timestamp(3))), (?, CAST(? AS timestamp(3)))"
+    )
     assert get_backend_adapter("gp").build_stage_duplicate_keys_sql(
         "schema.stage",
         ["id", "dt"],
@@ -2003,6 +2012,13 @@ def test_trino_adapter_schema_merge_and_upsert_guards(
     adapter = get_backend_adapter("trino")
     with pytest.raises(ValueError, match="positive integer"):
         adapter.build_dataframe_batch_insert_sql("target", ["id"], row_count=0)
+    with pytest.raises(ValueError, match="expression and column counts"):
+        adapter.build_dataframe_batch_insert_sql(
+            "target",
+            ["id"],
+            row_count=1,
+            parameter_expressions=[],
+        )
     expected = [SourceColumn("id", "bigint")]
     source_schema = importlib.import_module("analytics_toolkit.sql.backends.source_schema")
     monkeypatch.setattr(

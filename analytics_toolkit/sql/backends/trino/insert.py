@@ -67,6 +67,12 @@ def insert_rows(
                 columns,
                 row_count=len(row_chunk),
                 query_label=query_label,
+                parameter_expressions=[
+                    parameter_expression(
+                        target_column_types.get(column) if target_column_types else None
+                    )
+                    for column in columns
+                ],
             )
             time_print(
                 prefix_sql_log_message(f"Writing {len(row_chunk)} row(s) to table {table_name}"),
@@ -141,6 +147,13 @@ def normalize_value(value: Any, target_type: str | None) -> Any:
                 factor = 10 ** (DATETIME_MICROSECOND_PRECISION - precision)
                 return value.replace(microsecond=(value.microsecond // factor) * factor)
     return value
+
+
+def parameter_expression(target_type: str | None) -> str:
+    normalized_target_type = (target_type or "").strip().lower()
+    if normalized_target_type.startswith("timestamp"):
+        return f"CAST(? AS {target_type})"
+    return "?"
 
 
 def build_values_tuple(
