@@ -6,6 +6,7 @@ import json
 import subprocess
 import time
 from dataclasses import dataclass, field
+from numbers import Integral
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +30,9 @@ class ResourceRegistry:
         return table
 
     def query(self, db_key: str, query_id: int | str) -> int | str:
-        self.queries.append((db_key, query_id))
-        return query_id
+        normalized_id = int(query_id) if isinstance(query_id, Integral) else query_id
+        self.queries.append((db_key, normalized_id))
+        return normalized_id
 
     def worker(self, worker: Any) -> Any:
         self.workers.append(worker)
