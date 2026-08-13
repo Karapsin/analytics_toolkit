@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Corrected fail-fast integration retry counts to one attempt.
+
 ## 1.3.11.8 - 2026-08-13
 
 - Use authentication-neutral TCP readiness probes for auth-configured Trino services.
