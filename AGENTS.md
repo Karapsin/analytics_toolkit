@@ -81,14 +81,22 @@ checks pass, it stages the explicit paths, commits, and pushes `HEAD` to
 `origin/dev`. After pushing, the workflow must watch every required GitHub
 workflow and check for the exact pushed commit SHA until all are successful.
 This read-only watch is the required completion phase after the final repository
-mutation. A cancelled, superseded, missing, failed, or timed-out check is not
-success. Resume an interrupted watch with
+mutation. Advisory SQL integration workflows still run on every push, but their
+completion is not required for a normal commit and agents must not remain active
+solely to wait for them. A cancelled, superseded, missing, failed, or timed-out
+required check is not success. Resume an interrupted required-check watch with
 `git_workflow(action="checks", sha="<exact-sha>")`; never substitute the newest
 branch run for the pushed SHA. This applies to implementation, documentation,
 release, retry, and standalone pushes. Use `main` only for PyPI release preparation and publishing. When
 a PyPI release is requested, merge `dev` into `main` with
 `release_workflow(action="merge-dev")`, then run release readiness and
 publishing from `main`.
+
+When planning any repository task, include a corrective work item for every
+known non-green integration result rather than treating it as unrelated debt.
+Whenever an integration failure leads to a code, configuration, test-harness,
+or workflow fix, add or strengthen a non-integration regression test that can
+detect the same failure mode quickly without starting external services.
 
 Use `workflow_status(...)` before and after repository changes. Use
 `version_bump(...)`, `run_checks(...)`, `git_workflow(...)`, and
@@ -210,7 +218,9 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Managed pre-commit validation runs ordered static, coverage, artifact, and Python-version matrix stages. Coverage is the canonical Python 3.11 test run; a stage failure stops downstream work, and only exact-tree, exact-toolchain successful-stage receipts may be reused. The final successful run must pass every stage.
 - SQL integration `all` is the exhaustive local profile and includes the
   destructive database, staging, and authentication fault groups. Push CI runs
-  core and auth with zero skipped manifest scenarios on x86_64; fault groups run
-  only nightly or by manual dispatch. Integration cleanup must remove project
-  containers, networks, volumes, labelled queries, tables, and MinIO objects.
+  advisory core and auth jobs with zero skipped manifest scenarios on x86_64;
+  fault groups run only nightly or by manual dispatch. Integration completion is
+  mandatory only during release readiness, which must pass the exhaustive `all`
+  profile with both ClickHouse transports. Integration cleanup must remove
+  project containers, networks, volumes, labelled queries, tables, and MinIO objects.
 - Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.

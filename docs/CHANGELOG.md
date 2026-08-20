@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Made SQL integration advisory for dev commits and exhaustive for releases.
+
 ## 1.3.11.10 - 2026-08-20
 
 - Use native ClickHouse row encoding for nullable timezone-aware inserts.

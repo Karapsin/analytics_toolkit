@@ -28,7 +28,7 @@ def test_every_github_workflow_is_classified_for_dev() -> None:
         assert entry["allowed_conclusions"]
 
 
-def test_required_dev_workflows_and_jobs_are_named() -> None:
+def test_dev_workflows_classify_tests_as_required_and_integration_as_advisory() -> None:
     manifest = json.loads((ROOT / ".github/required-workflows.json").read_text(encoding="utf-8"))
     required = {entry["name"]: entry for entry in manifest["branches"]["dev"]["workflows"]}
 
@@ -38,7 +38,8 @@ def test_required_dev_workflows_and_jobs_are_named() -> None:
         "core SQL integration (native)",
         "authentication SQL integration (HTTP + native)",
     ]
-    assert all(entry["classification"] == "required_push" for entry in required.values())
+    assert required["tests"]["classification"] == "required_push"
+    assert required["sql-integration"]["classification"] == "advisory_push"
     for entry in required.values():
         workflow = (ROOT / entry["path"]).read_text(encoding="utf-8")
         assert re.search(r"(?m)^\s{2}push:", workflow)

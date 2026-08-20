@@ -265,6 +265,22 @@ RELEASE_CHECK_COMMANDS = [
         "args": ["release_routines/scripts/check_docs_coverage.sh"],
         "env": {},
     },
+    {
+        "display": (
+            "python -m release_routines.sql_integration "
+            "--profile all --clickhouse-driver both"
+        ),
+        "args": [
+            sys.executable,
+            "-m",
+            "release_routines.sql_integration",
+            "--profile",
+            "all",
+            "--clickhouse-driver",
+            "both",
+        ],
+        "env": {},
+    },
 ]
 
 
@@ -3904,13 +3920,19 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             msg = "required-workflows manifest schema_version must be 2"
             raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
         branch_manifest = manifest["branches"][WORK_BRANCH]
-        expected = branch_manifest["workflows"]
+        workflows = branch_manifest["workflows"]
         conditional_checks = branch_manifest.get("conditional_checks", [])
-        if not isinstance(expected, list) or not expected:
-            msg = "required push workflows must be a non-empty list"
+        if not isinstance(workflows, list) or not workflows:
+            msg = "push workflows must be a non-empty list"
             raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
-        if not all(entry.get("classification") == "required_push" for entry in expected):
-            msg = "every watched workflow must be classified as required_push"
+        allowed_classifications = {"required_push", "advisory_push"}
+        if not all(entry.get("classification") in allowed_classifications for entry in workflows):
+            msg = "every push workflow must be classified as required_push or advisory_push"
+            raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
+        expected = [entry for entry in workflows if entry["classification"] == "required_push"]
+        advisory = [entry for entry in workflows if entry["classification"] == "advisory_push"]
+        if not expected:
+            msg = "at least one required_push workflow must be configured"
             raise ValueError(msg)  # noqa: TRY301 - normalized by the surrounding parser guard.
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         return _github_check_failure(sha, "manifest", str(exc))
@@ -3982,7 +4004,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             "conditional_checks": conditional_checks,
             **snapshot,
         }
-        classified = _classify_github_snapshot(expected, last_snapshot)
+        classified = _classify_github_snapshot(expected, last_snapshot, advisory=advisory)
         now = monotonic()
         compact = _compact_github_result(
             last_snapshot,
@@ -4225,6 +4247,26 @@ def _attach_github_status_changes(
             }
             for job in workflow.get("jobs", [])
         )
+    for workflow in compact.get("advisory", []):
+        items.append(
+            {
+                "name": workflow["name"],
+                "kind": "advisory_workflow",
+                "status": workflow.get("status"),
+                "conclusion": workflow.get("conclusion"),
+                "url": workflow.get("url"),
+            }
+        )
+        items.extend(
+            {
+                "name": f"{workflow['name']}: {job['name']}",
+                "kind": "advisory_job",
+                "status": job.get("status"),
+                "conclusion": job.get("conclusion"),
+                "url": job.get("url"),
+            }
+            for job in workflow.get("jobs", [])
+        )
     items.extend(
         {
             "name": str(check.get("name")),
@@ -4275,7 +4317,10 @@ def _attach_github_status_changes(
 def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple GitHub state kinds.
     expected: list[dict[str, Any]],
     snapshot: dict[str, Any],
+    *,
+    advisory: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    advisory = advisory or []
     runs_by_name: dict[str, dict[str, Any]] = {}
     for run in snapshot.get("runs", []):
         name = run.get("name")
@@ -4295,6 +4340,7 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
             runs_by_name[name] = run
     jobs = snapshot.get("jobs", [])
     required: list[dict[str, Any]] = []
+    advisory_results: list[dict[str, Any]] = []
     missing: list[str] = []
     pending: list[str] = []
     failed: list[dict[str, Any]] = []
@@ -4354,6 +4400,46 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
             elif job.get("conclusion") not in job_allowed:
                 failed.append({**job_item, "workflow": name, "run_id": run.get("id")})
 
+    advisory_check_names: set[str] = set()
+    for entry in advisory:
+        name = entry["name"]
+        run = runs_by_name.get(name)
+        item = {
+            "name": name,
+            "run_id": run.get("id") if run else None,
+            "attempt": run.get("run_attempt", 1) if run else None,
+            "status": run.get("status") if run else "missing",
+            "conclusion": run.get("conclusion") if run else None,
+            "url": run.get("html_url") if run else None,
+            "jobs": [],
+        }
+        advisory_results.append(item)
+        advisory_check_names.add(name)
+        advisory_jobs = [
+            *entry.get("required_jobs", []),
+            *entry.get("conditional_jobs", []),
+        ]
+        advisory_check_names.update(
+            job_entry if isinstance(job_entry, str) else job_entry["name"]
+            for job_entry in advisory_jobs
+        )
+        if run is None:
+            continue
+        run_jobs = [job for job in jobs if job.get("workflow_run_id") == run.get("id")]
+        for job_entry in advisory_jobs:
+            job_name = job_entry if isinstance(job_entry, str) else job_entry["name"]
+            job = next(
+                (candidate for candidate in run_jobs if candidate.get("name") == job_name), None
+            )
+            item["jobs"].append(
+                {
+                    "name": job_name,
+                    "status": job.get("status") if job else "missing",
+                    "conclusion": job.get("conclusion") if job else None,
+                    "url": job.get("html_url") if job else None,
+                }
+            )
+
     conditional = {
         item["name"]: set(item.get("allowed_conclusions", ["neutral", "skipped"]))
         for item in snapshot.get("conditional_checks", [])
@@ -4361,6 +4447,8 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
     }
     accepted_conditional: list[dict[str, Any]] = []
     for check in snapshot.get("check_runs", []):
+        if check.get("name") in advisory_check_names:
+            continue
         conclusion = check.get("conclusion")
         if check.get("status") != "completed":
             pending.append(f"check-run: {check.get('name')}")
@@ -4391,6 +4479,7 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
             )
     return {
         "required": required,
+        "advisory": advisory_results,
         "missing": missing,
         "pending": pending,
         "failed": failed,
@@ -4432,6 +4521,7 @@ def _compact_github_result(
         "repository": snapshot["repository"],
         "push_target": f"origin/{WORK_BRANCH}",
         "required": classified["required"],
+        "advisory": classified["advisory"],
         "missing": classified["missing"],
         "pending": classified["pending"],
         "failures": classified["failed"],
@@ -4491,6 +4581,15 @@ def _github_result_receipt(result: dict[str, Any], *, detail: str) -> dict[str, 
                 "url": workflow.get("url"),
             }
             for workflow in result.get("required", [])
+        ]
+        receipt["advisory"] = [
+            {
+                "name": workflow.get("name"),
+                "status": workflow.get("status"),
+                "conclusion": workflow.get("conclusion"),
+                "url": workflow.get("url"),
+            }
+            for workflow in result.get("advisory", [])
         ]
         accepted = result.get("conditional_skips_accepted", [])
         if accepted:

@@ -106,9 +106,11 @@ shared, external, or production database.
 
 ## CI
 
-The `sql-integration` workflow runs required core and auth x86_64 jobs in
+The `sql-integration` workflow runs advisory core and auth x86_64 jobs in
 parallel on every push to `dev`, each validating HTTP and native ClickHouse
-with transport-specific artifacts and a 60-minute limit. The destructive
+with transport-specific artifacts. Individual tests have a five-minute timeout
+so blocked client operations fail with diagnostics instead of consuming the
+job-level limit. The destructive
 fault groups (`database`, `staging`, and `authentication`) run nightly and by
 manual dispatch with matrix fail-fast disabled. The stress profile also runs
 nightly or by manual dispatch and is excluded from normal pushes.
@@ -118,6 +120,12 @@ are uploaded even on failure. The native auth pass uses separate HAProxy TLS
 frontends for the native wire protocol, including hostname-verification
 failures. Completion requires no toolkit tables, labelled
 queries, MinIO stage objects, project containers, networks, or volumes.
+
+Normal commit completion waits only for required fast CI; advisory integration
+jobs continue independently. Release readiness reruns and requires the
+exhaustive `all` profile across both ClickHouse transports. Any integration
+failure that produces a fix must also produce a non-integration regression test
+for the same behavior.
 
 The machine-readable coverage declaration is
 `integration/sql_coverage_manifest.json`. Its guard tests compare public SQL

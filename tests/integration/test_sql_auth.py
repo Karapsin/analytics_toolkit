@@ -25,6 +25,24 @@ def _auth_aliases() -> list[str]:
     return aliases
 
 
+def _airflow_connection_uris(
+    *,
+    clickhouse_driver: str,
+    include_greenplum: bool,
+) -> dict[str, str]:
+    uris = {
+        "airflow_trino": "http://integration@127.0.0.1:18080/iceberg",
+        "airflow_ch": (
+            "http://integration:integration@127.0.0.1:19000/integration?driver=native"
+            if clickhouse_driver == "native"
+            else "http://integration:integration@127.0.0.1:18123/integration"
+        ),
+    }
+    if include_greenplum:
+        uris["airflow_gp"] = "postgresql://gpadmin:integration@127.0.0.1:15432/analytics_toolkit"
+    return uris
+
+
 @pytest.mark.parametrize(
     "alias",
     [
@@ -58,28 +76,14 @@ def test_real_airflow_connection_source_routes_all_backends(
     )
 
     airflow.models.import_all_models()
-    aliases = {
-        "airflow_trino": {"type": "trino"},
-        "airflow_ch": {"type": "ch"},
-    }
-    monkeypatch.setenv(
-        "AIRFLOW_CONN_AIRFLOW_TRINO",
-        "http://integration@127.0.0.1:18080/iceberg",
+    include_greenplum = os.environ.get("SQL_INTEGRATION_GP") == "1"
+    uris = _airflow_connection_uris(
+        clickhouse_driver=os.environ.get("SQL_INTEGRATION_CLICKHOUSE_DRIVER", "http"),
+        include_greenplum=include_greenplum,
     )
-    monkeypatch.setenv(
-        "AIRFLOW_CONN_AIRFLOW_CH",
-        (
-            "http://integration:integration@127.0.0.1:19000/integration?driver=native"
-            if os.environ.get("SQL_INTEGRATION_CLICKHOUSE_DRIVER") == "native"
-            else "http://integration:integration@127.0.0.1:18123/integration"
-        ),
-    )
-    if os.environ.get("SQL_INTEGRATION_GP") == "1":
-        aliases["airflow_gp"] = {"type": "gp"}
-        monkeypatch.setenv(
-            "AIRFLOW_CONN_AIRFLOW_GP",
-            "postgresql://gpadmin:integration@127.0.0.1:15432/analytics_toolkit",
-        )
+    aliases = {alias: {"type": alias.split("_", 1)[1]} for alias in uris}
+    for alias, uri in uris.items():
+        monkeypatch.setenv(f"AIRFLOW_CONN_{alias.upper()}", uri)
     environment_backend = EnvironmentVariablesBackend()
     monkeypatch.setattr(
         BaseHook,

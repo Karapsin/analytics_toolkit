@@ -21,6 +21,7 @@ CORE_COMPOSE_FILE = INTEGRATION_DIR / "docker-compose.yml"
 AUTH_COMPOSE_FILE = INTEGRATION_DIR / "docker-compose.auth.yml"
 ARTIFACTS_DIR = REPO_ROOT / ".integration-artifacts"
 PROJECT_NAME = "analytics-toolkit-integration"
+TEST_TIMEOUT_SECONDS = 300
 X86_ARCHITECTURES = {"amd64", "x86_64"}
 PROFILES = ("core", "auth", "all", "fault", "stress")
 FAULT_GROUPS = ("database", "staging", "authentication")
@@ -191,6 +192,23 @@ def _pytest_marker(profile: str) -> str:
     if profile == "stress":
         return "integration and integration_stress"
     return "integration and integration_fault"
+
+
+def _pytest_command(profile: str, profile_dir: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "--maxfail=1",
+        f"--timeout={TEST_TIMEOUT_SECONDS}",
+        "--timeout-method=signal",
+        "-m",
+        _pytest_marker(profile),
+        "--junitxml",
+        str(profile_dir / "pytest.xml"),
+        "tests/integration",
+    ]
 
 
 def _assert_no_manifest_skips(
@@ -402,18 +420,7 @@ def run_profile(
             if include_greenplum and _wait_for_greenplum_tls(cert_dir) != 0:
                 return 1
         result = _run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-q",
-                "--maxfail=1",
-                "-m",
-                _pytest_marker(profile),
-                "--junitxml",
-                str(profile_dir / "pytest.xml"),
-                "tests/integration",
-            ],
+            _pytest_command(profile, profile_dir),
             env=_test_environment(
                 include_greenplum=include_greenplum,
                 profile=profile,

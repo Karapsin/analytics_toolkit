@@ -4,10 +4,12 @@ import importlib.util
 import json
 import types
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from release_routines import sql_integration
 from tests.integration import conftest as integration_conftest
+from tests.integration import test_sql_auth as integration_auth
 
 
 @pytest.mark.parametrize(
@@ -80,6 +82,39 @@ def test_run_executes_every_profile_for_both_clickhouse_drivers(
         for profile in ("core", "auth", "fault", "stress")
         for driver in ("http", "native")
     ]
+
+
+def test_integration_pytest_command_bounds_each_test(tmp_path: Path) -> None:
+    command = sql_integration._pytest_command("core", tmp_path)
+
+    assert f"--timeout={sql_integration.TEST_TIMEOUT_SECONDS}" in command
+    assert "--timeout-method=signal" in command
+
+
+def test_airflow_plain_http_trino_route_never_uses_basic_auth_password() -> None:
+    uris = integration_auth._airflow_connection_uris(
+        clickhouse_driver="http",
+        include_greenplum=False,
+    )
+
+    parsed = urlsplit(uris["airflow_trino"])
+    assert parsed.scheme == "http"
+    assert parsed.username == "integration"
+    assert parsed.password is None
+
+
+def test_dedicated_https_trino_basic_route_retains_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SQL_INTEGRATION_PROFILE", "auth")
+    monkeypatch.setenv("SQL_INTEGRATION_CERTS", str(tmp_path))
+
+    connection = integration_conftest._integration_connections()["trino_basic_tls"]
+
+    assert connection["http_scheme"] == "https"
+    assert connection["auth_mode"] == "basic"
+    assert connection["password"] == "integration"
 
 
 def test_native_profile_fails_before_compose_when_driver_is_missing(

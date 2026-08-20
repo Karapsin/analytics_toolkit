@@ -9,6 +9,10 @@ When the user asks to update, publish, or release the package on PyPI, run the
 complete publishing workflow unless they explicitly ask for a narrower action:
 
 - Use `release_workflow(action="status")` to confirm release readiness before publishing.
+- Release readiness must pass the exhaustive disposable SQL integration `all`
+  profile with both ClickHouse transports. The successful exact-tree release
+  receipt is required by `release_workflow(action="publish")`; advisory results
+  from earlier `dev` pushes are not a substitute.
 - When an explicit release must roll a non-empty `## Unreleased` section before
   the normal ten-entry threshold, use
   `version_bump(change_type="release", force_release=True)` without a summary.

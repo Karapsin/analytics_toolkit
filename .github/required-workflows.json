@@ -14,7 +14,7 @@
         {
           "name": "sql-integration",
           "path": ".github/workflows/sql-integration.yml",
-          "classification": "required_push",
+          "classification": "advisory_push",
           "event": "push",
           "allowed_conclusions": ["success"],
           "required_jobs": [

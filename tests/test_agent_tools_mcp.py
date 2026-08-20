@@ -1955,6 +1955,58 @@ def test_classify_github_snapshot_requires_workflows_jobs_and_statuses() -> None
     assert result["required"][0]["run_id"] == 42
 
 
+def test_classify_github_snapshot_reports_advisory_integration_without_blocking() -> None:
+    expected = [{"name": "tests", "allowed_conclusions": ["success"]}]
+    advisory = [
+        {
+            "name": "sql-integration",
+            "required_jobs": [{"name": "core SQL integration (HTTP)"}],
+        }
+    ]
+    snapshot = {
+        "runs": [
+            {
+                "name": "tests",
+                "id": 1,
+                "status": "completed",
+                "conclusion": "success",
+            },
+            {
+                "name": "sql-integration",
+                "id": 2,
+                "status": "in_progress",
+                "conclusion": None,
+                "html_url": "https://example.test/integration",
+            },
+        ],
+        "jobs": [
+            {
+                "workflow_run_id": 2,
+                "name": "core SQL integration (HTTP)",
+                "status": "in_progress",
+                "conclusion": None,
+                "html_url": "https://example.test/integration/job",
+            }
+        ],
+        "check_runs": [
+            {
+                "name": "core SQL integration (HTTP)",
+                "status": "in_progress",
+                "conclusion": None,
+            }
+        ],
+        "statuses": [],
+    }
+
+    result = mcp_server._classify_github_snapshot(expected, snapshot, advisory=advisory)
+
+    assert result["missing"] == []
+    assert result["pending"] == []
+    assert result["failed"] == []
+    assert result["advisory"][0]["status"] == "in_progress"
+    assert result["advisory"][0]["jobs"][0]["status"] == "in_progress"
+
+
 def test_github_watcher_handles_delayed_discovery_and_exact_sha(
     tmp_path: Path,
 ) -> None:
@@ -2908,7 +2960,50 @@ def test_release_status_records_release_check_fingerprint(
         "release_routines/scripts/check_readme_dependencies.sh",
         "release_routines/scripts/check_docs_links.sh",
         "release_routines/scripts/check_docs_coverage.sh",
+        "python -m release_routines.sql_integration --profile all --clickhouse-driver both",
     ]
+
+
+def test_release_status_blocks_when_exhaustive_integration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(
+        mcp_server,
+        "_release_readiness",
+        lambda root_path, require_release_check=False: {
+            "blockers": [],
+            "repo_health": {"branch": "main"},
+            "command_results": [],
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_record_release_check_success",
+        lambda *_args, **_kwargs: pytest.fail("failed integration must not be recorded"),
+    )
+
+    def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
+        display = str(command["display"])
+        is_integration = display.startswith("python -m release_routines.sql_integration")
+        return {
+            "ok": not is_integration,
+            "command": display,
+            "returncode": 1 if is_integration else 0,
+            "stdout": "",
+            "stderr": "integration failed" if is_integration else "",
+            "summary": "integration failed" if is_integration else "ok",
+        }
+
+    monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
+
+    result = mcp_server.release_workflow("status", root=str(root))
+
+    assert result["ok"] is False
+    assert result["summary"] == "Release validation command failed."
+    assert result["blockers"][0]["phase"] == "release_checks"
+    assert "sql_integration" in result["blockers"][0]["command"]
 
 
 def test_release_publish_requires_current_release_check(

@@ -54,7 +54,9 @@ changes are not staged. The commit workflow runs the dev push automatically;
 use standalone `git-workflow push` only to retry a failed post-commit push. Use
 `release-workflow --action merge-dev` to fast-forward `main` from `origin/dev`
 before a PyPI release. Use `release-workflow --action publish` only when release
-readiness is clean.
+readiness is clean. Release status runs the exhaustive SQL integration `all`
+profile with HTTP and native ClickHouse and records its success in the
+exact-tree release receipt.
 
 Normal `version-bump` calls add the supplied summary under `## Unreleased` and
 roll the section into a new version when it reaches ten bullets. For an explicit
@@ -102,7 +104,7 @@ The integration entrypoint accepts `--integration-profile core`, `auth`, `all`,
 profile runs the same collection with ClickHouse HTTP and native transports.
 Use `--integration-clickhouse-driver http` or `native` only for focused
 diagnosis; `both` is the managed default and enforces collection parity. Core
-and auth are required on each `dev` push. Fault and stress run nightly or by
+and auth run as advisory checks on each `dev` push. Fault and stress run nightly or by
 manual dispatch. Each profile writes Compose logs, service health, JUnit output,
 collection output, query/object diagnostics, and leak reports below
 `.integration-artifacts/<profile>/<transport>/` and always tears down its project
@@ -110,11 +112,13 @@ containers, networks, and volumes. Greenplum completeness and the no-skips gate
 require x86_64; ARM runs are useful but not the complete deterministic matrix.
 
 Successful `git-workflow commit` and `push` operations automatically watch the
-immutable SHA captured immediately before the push. The watcher discovers every entry in
-`.github/required-workflows.json`, polls Actions jobs plus commit check-runs and
-statuses, and returns run/job URLs and conclusions. It fails on cancellation,
-supersession, missing workflows, terminal failures, API/authentication errors,
-or timeout. Only conditional skips declared in the manifest are accepted.
+immutable SHA captured immediately before the push. The watcher discovers every
+entry in `.github/required-workflows.json`, waits only for `required_push`
+workflows, and reports `advisory_push` workflow status without blocking. It polls
+Actions jobs plus commit check-runs and statuses and returns run/job URLs and
+conclusions. It fails when a required check is cancelled, superseded, missing,
+failed, or timed out, or when API/authentication fails. Only conditional skips
+declared in the manifest are accepted.
 When a run fails, it waits for terminal state and returns failed steps plus a
 bounded `gh run view --log-failed` excerpt. Rerun only for demonstrated
 infrastructure failure. When resuming after interruption, use
