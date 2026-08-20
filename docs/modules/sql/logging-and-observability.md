@@ -26,7 +26,8 @@ dataframe query uses `read`; the operation-level start and finish messages do
 not repeat the operation name as a phase.
 
 The timing sink can be routed through Python logging, which is usually a better
-fit for Airflow task logs than direct printing.
+fit for Airflow task logs than direct printing. Logging records omit the
+toolkit datetime prefix so logging handlers can render a single timestamp.
 
 ## Progress and Metadata
 

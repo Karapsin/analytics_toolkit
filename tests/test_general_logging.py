@@ -130,10 +130,7 @@ def test_time_print_can_emit_through_logging(
         (
             "analytics_toolkit",
             "INFO",
-            (
-                "[2026-06-03 18:00:00] [load_df] [airflow_ch/ch] "
-                "[insert] loaded rows"
-            ),
+            "[load_df] [airflow_ch/ch] [insert] loaded rows",
         )
     ]
     assert get_time_print_sink() == "logging"
@@ -152,7 +149,7 @@ def test_time_print_logging_sink_respects_levels(
         time_print("error message", level="error")
 
     assert [record.levelname for record in caplog.records] == ["WARNING", "ERROR"]
-    assert [record.getMessage().rsplit("] ", 1)[-1] for record in caplog.records] == [
+    assert [record.getMessage() for record in caplog.records] == [
         "warning message",
         "error message",
     ]
@@ -174,18 +171,19 @@ def test_time_print_enabled_flag_suppresses_output(
     assert capsys.readouterr().out == ""
 
 
-def test_time_print_routes_to_stdout_stderr_and_file_like(
+def test_time_print_explicit_streams_override_logging_sink_with_timestamps(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     buffer = StringIO()
+    set_time_print_sink("logging")
 
     time_print("stdout message", stream="stdout")
     time_print("stderr message", stream="stderr")
     time_print("buffer message", stream=buffer)
 
     captured = capsys.readouterr()
-    assert "stdout message" in captured.out
-    assert "stderr message" in captured.err
+    assert captured.out == "[2026-06-03 18:00:00] stdout message\n"
+    assert captured.err == "[2026-06-03 18:00:00] stderr message\n"
     assert buffer.getvalue() == "[2026-06-03 18:00:00] buffer message\n"
 
 

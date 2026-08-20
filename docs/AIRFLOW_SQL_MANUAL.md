@@ -24,7 +24,8 @@ The intended Airflow pattern is:
 
 By default, toolkit status messages keep using the historical `print` sink. In
 Airflow DAG projects, route them through Python logging so task logs preserve
-levels and logger names:
+levels and logger names. In this mode, toolkit messages omit their own datetime
+prefix because the logging handler supplies the timestamp:
 
 ```python
 from analytics_toolkit import sql

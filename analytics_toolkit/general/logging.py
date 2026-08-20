@@ -71,12 +71,13 @@ def time_print(
     )
     if resolved_context.message_prefix and not message.startswith(resolved_context.message_prefix):
         message = f"{resolved_context.message_prefix}{message}"
+    use_logging_sink = _time_print_sink == "logging" and stream is None
     formatted_message = _format_time_print_message(
-        formatted_time,
+        None if use_logging_sink else formatted_time,
         resolved_context,
         message,
     )
-    if _time_print_sink == "logging" and stream is None:
+    if use_logging_sink:
         logging.getLogger(_TIME_PRINT_LOGGER_NAME).log(
             _TIME_PRINT_LEVELS[normalized_level],
             formatted_message,
@@ -211,11 +212,15 @@ def _normalize_message_prefix(value: str | None) -> str | None:
 
 
 def _format_time_print_message(
-    current_time: str,
+    current_time: str | None,
     context: _TimePrintContext,
     message: str,
 ) -> str:
     prefix_parts = _format_context_parts(context)
+    if current_time is None:
+        if not prefix_parts:
+            return message
+        return f"{' '.join(prefix_parts)} {message}"
     if not prefix_parts:
         return f"[{current_time}] {message}"
     return f"[{current_time}] {' '.join(prefix_parts)} {message}"
