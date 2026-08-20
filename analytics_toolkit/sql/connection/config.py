@@ -9,8 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union, cast
 
-from analytics_toolkit.general.connections import get_connections_path_override
-
 from ..backends.registry import (
     BACKEND_REGISTRY,
     get_backend,
@@ -20,6 +18,7 @@ from ..backends.registry import (
     normalize_backend_name as _registry_normalize_backend_name,
 )
 from ..execution.operation_runner import timed_public_sql_function
+from .config_path import find_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 
 if TYPE_CHECKING:
@@ -583,26 +582,14 @@ def _parse_airflow_connections_file(
 
 
 def get_connections_file_path() -> Path:
-    connections_path = _find_connections_file_path()
+    connections_path = find_connections_file_path()
     if connections_path is None:
         raise SqlConfigError(
             f"Missing SQL connections file: {CONNECTIONS_FILE_NAME}. "
-            "Place it in the current working directory or one of its parents."
+            "Place it beside the calling script, in the current working "
+            "directory, or in one of their parents."
         )
     return connections_path
-
-
-def _find_connections_file_path() -> Path | None:
-    override_path = get_connections_path_override()
-    if override_path is not None:
-        return override_path
-
-    current_dir = Path.cwd().resolve()
-    for directory in (current_dir, *current_dir.parents):
-        connections_path = directory / CONNECTIONS_FILE_NAME
-        if connections_path.is_file():
-            return connections_path
-    return None
 
 
 def _get_raw_connection_config(connection_key: str) -> dict[str, Any]:

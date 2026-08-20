@@ -270,6 +270,21 @@ def test_resolve_base_dir_skips_pseudo_and_stdlib_frames(monkeypatch) -> None:
     assert _resolve_base_dir() == Path("/project/jobs")
 
 
+def test_resolve_base_dir_skips_other_analytics_toolkit_frames(monkeypatch) -> None:
+    package_dir = Path(READ_FILE_MODULE.__file__).resolve().parents[1]
+    monkeypatch.delattr(__main__, "__file__", raising=False)
+    _mock_stack(
+        monkeypatch,
+        [
+            FrameInfo(filename=str(package_dir / "general" / "read_file.py")),
+            FrameInfo(filename=str(package_dir / "sql" / "connection" / "config_path.py")),
+            FrameInfo(filename="/project/dags/report.py"),
+        ],
+    )
+
+    assert _resolve_base_dir() == Path("/project/dags")
+
+
 def test_here_uses_first_real_caller_after_ide_runtime_frames(
     monkeypatch,
     tmp_path: Path,

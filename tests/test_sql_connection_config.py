@@ -25,6 +25,13 @@ from analytics_toolkit.sql.execution.plans import SqlOperationMetadata
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
+config_path_module = importlib.import_module(
+    "analytics_toolkit.sql.connection.config_path"
+)
+_resolve_calling_base_dir = config_path_module._resolve_calling_base_dir
+connections_state_module = importlib.import_module(
+    "analytics_toolkit.general.connections"
+)
 connection_module = importlib.import_module("analytics_toolkit.sql.connection.get_sql_connection")
 api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
 create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
@@ -211,6 +218,195 @@ def test_connections_file_lookup_searches_from_cwd_to_parents(
     assert config.host == "parent-gp.example"
 
 
+def test_connections_file_lookup_prefers_calling_script_to_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script_root = tmp_path / "airflow_project"
+    script_dir = script_root / "dags" / "tasks"
+    script_dir.mkdir(parents=True)
+    script_connections = script_root / ".connections"
+    script_connections.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        config_path_module, "_resolve_calling_base_dir", lambda: script_dir
+    )
+
+    general_module.set_connections_path(None)
+
+    assert config_module.get_connections_file_path() == script_connections.resolve()
+
+
+def test_connections_path_caller_resolver_reuses_general_path_logic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_read_file_module = types.SimpleNamespace(_resolve_base_dir=lambda: tmp_path)
+    monkeypatch.setattr(
+        config_path_module,
+        "import_module",
+        lambda _name: fake_read_file_module,
+    )
+
+    assert _resolve_calling_base_dir() == tmp_path
+
+
+def test_connections_path_search_directories_are_deduplicated(tmp_path: Path) -> None:
+    nested_dir = tmp_path / "project" / "dags"
+    search_directories = list(
+        config_path_module._iter_search_directories(
+            [nested_dir, nested_dir.parent]
+        )
+    )
+
+    assert search_directories.count(nested_dir.parent.resolve()) == 1
+
+
+def test_connections_file_lookup_recovers_from_remembered_directory_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    old_runtime_dir = project_root / "z" / "T"
+    old_runtime_dir.mkdir(parents=True)
+    old_connections = old_runtime_dir / ".connections"
+    old_connections.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(config_path_module, "_resolve_calling_base_dir", lambda: None)
+    monkeypatch.chdir(old_runtime_dir)
+
+    general_module.set_connections_path(None)
+    assert config_module.get_connections_file_path() == old_connections.resolve()
+
+    old_connections.unlink()
+    recovered_connections = old_runtime_dir.parent / ".connections"
+    recovered_connections.write_text("{}", encoding="utf-8")
+    unrelated_runtime = tmp_path / "worker" / "runtime"
+    unrelated_runtime.mkdir(parents=True)
+    monkeypatch.chdir(unrelated_runtime)
+
+    assert config_module.get_connections_file_path() == recovered_connections.resolve()
+    assert (
+        connections_state_module.get_last_connections_path()
+        == recovered_connections.resolve()
+    )
+
+
+def test_missing_explicit_connections_path_recovers_and_promotes_caller_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".connections").unlink()
+    old_runtime_dir = tmp_path / "old_worker" / "T"
+    old_runtime_dir.mkdir(parents=True)
+    old_connections = old_runtime_dir / ".connections"
+    old_connections.write_text("{}", encoding="utf-8")
+    script_root = tmp_path / "airflow_project"
+    script_dir = script_root / "dags" / "tasks"
+    script_dir.mkdir(parents=True)
+    script_connections = script_root / ".connections"
+    script_connections.write_text("{}", encoding="utf-8")
+    cwd_root = tmp_path / "worker"
+    cwd_dir = cwd_root / "runtime"
+    cwd_dir.mkdir(parents=True)
+    (cwd_root / ".connections").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        config_path_module, "_resolve_calling_base_dir", lambda: script_dir
+    )
+    monkeypatch.chdir(cwd_dir)
+
+    general_module.set_connections_path(old_connections)
+    old_connections.unlink()
+
+    assert config_module.get_connections_file_path() == script_connections.resolve()
+    assert (
+        connections_state_module.get_connections_path_override()
+        == script_connections.resolve()
+    )
+
+
+def test_recovered_connections_path_anchors_relative_certificates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".connections").unlink()
+    project_root = tmp_path / "airflow_project"
+    old_runtime_dir = project_root / "rotated" / "T"
+    old_runtime_dir.mkdir(parents=True)
+    old_connections = old_runtime_dir / ".connections"
+    old_connections.write_text("{}", encoding="utf-8")
+    recovered_connections = project_root / ".connections"
+    recovered_connections.write_text(
+        json.dumps(
+            {
+                "gp_ssl": {
+                    "type": "gp",
+                    "host": "gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                    "ca_certs": "gp-ca.pem",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    certs_dir = project_root / ".certs"
+    certs_dir.mkdir()
+    ca_path = certs_dir / "gp-ca.pem"
+    ca_path.write_text("GP CA\n", encoding="utf-8")
+    connect_calls: list[dict[str, object]] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "psycopg2",
+        types.SimpleNamespace(
+            connect=lambda **kwargs: connect_calls.append(kwargs) or object()
+        ),
+    )
+    monkeypatch.setattr(config_path_module, "_resolve_calling_base_dir", lambda: None)
+
+    general_module.set_connections_path(old_connections)
+    old_connections.unlink()
+    connection_module.get_sql_connection("gp_ssl")
+
+    assert connect_calls[0]["sslrootcert"] == str(ca_path.resolve())
+    assert (
+        connections_state_module.get_connections_path_override()
+        == recovered_connections.resolve()
+    )
+
+
+def test_recovered_invalid_connections_file_does_not_fall_through(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".connections").unlink()
+    old_runtime_dir = tmp_path / "old_worker" / "T"
+    old_runtime_dir.mkdir(parents=True)
+    old_connections = old_runtime_dir / ".connections"
+    old_connections.write_text("{}", encoding="utf-8")
+    recovered_connections = old_runtime_dir.parent / ".connections"
+    recovered_connections.write_text("{not json", encoding="utf-8")
+    caller_dir = tmp_path / "airflow_project" / "dags"
+    caller_dir.mkdir(parents=True)
+    (caller_dir.parent / ".connections").write_text(
+        json.dumps({"gp": {"type": "gp"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        config_path_module, "_resolve_calling_base_dir", lambda: caller_dir
+    )
+
+    general_module.set_connections_path(old_connections)
+    old_connections.unlink()
+
+    with pytest.raises(SqlConfigError, match="must contain valid JSON"):
+        config_module.get_connection_config("gp")
+
+    assert (
+        connections_state_module.get_connections_path_override()
+        == recovered_connections.resolve()
+    )
+
+
 def test_set_connections_path_override_wins_over_cwd_connections(
     tmp_path: Path,
 ) -> None:
@@ -266,6 +462,8 @@ def test_set_connections_path_none_restores_default_lookup(tmp_path: Path) -> No
     reset_path = general_module.set_connections_path(None)
 
     assert reset_path is None
+    assert connections_state_module.get_connections_path_override() is None
+    assert connections_state_module.get_last_connections_path() is None
     assert config_module.get_connections_file_path() == tmp_path / ".connections"
     assert config_module.get_connection_config("gp").host == "gp.example"
 

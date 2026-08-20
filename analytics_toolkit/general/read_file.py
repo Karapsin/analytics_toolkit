@@ -108,13 +108,18 @@ def _resolve_base_dir() -> Path | None:
         return main_dir
 
     module_path = Path(__file__).expanduser().resolve()
+    package_path = module_path.parents[1]
     for frame_info in inspect.stack()[1:]:
         frame_name = frame_info.filename
         if frame_name.startswith("<"):
             continue
 
         frame_path = Path(frame_name).expanduser().resolve()
-        if _is_this_module_path(frame_path, module_path) or _is_runtime_path(frame_path):
+        if (
+            _is_this_module_path(frame_path, module_path)
+            or package_path in frame_path.parents
+            or _is_runtime_path(frame_path)
+        ):
             continue
         return frame_path.parent
 

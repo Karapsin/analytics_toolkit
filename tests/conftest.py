@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 # ruff: noqa: E501
+import importlib
 import json
 import sys
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import analytics_toolkit.general as general_module
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -86,6 +91,15 @@ def default_sql_connections(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
-) -> None:
+) -> Iterator[None]:
+    config_path_module = importlib.import_module(
+        "analytics_toolkit.sql.connection.config_path"
+    )
+    monkeypatch.setattr(
+        config_path_module, "_resolve_calling_base_dir", lambda: None
+    )
+    general_module.set_connections_path(None)
     monkeypatch.chdir(tmp_path)
     write_sql_connections(DEFAULT_SQL_CONNECTIONS)
+    yield
+    general_module.set_connections_path(None)

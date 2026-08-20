@@ -4,10 +4,18 @@
 
 ## General Setup
 
-Connection settings are read from `.connections`. The package searches from
-the current working directory upward through parent directories. Public SQL
+Connection settings are read from `.connections`. On the first lookup, the
+package searches beside the calling Python script and upward through its
+parents, then searches from the current working directory upward. Public SQL
 functions accept a key from that file; backend behavior is selected from the
 key's `type`.
+
+The successful path is remembered for later calls. If that file disappears,
+for example after an Airflow worker or DAG path rotation, recovery searches the
+remembered file's directory and parents first, then the calling-script and
+current-working-directory chains. Only a missing file triggers recovery; a
+found file with invalid JSON or invalid connection settings raises its normal
+configuration error.
 
 When runtime code cannot rely on the current working directory, set the file
 explicitly before calling SQL helpers:
@@ -20,8 +28,10 @@ df = sql.read("trino", "select 1")
 ```
 
 The path must point to an existing `.connections` file. Its directory is used
-for relative certificate paths. Call `general.set_connections_path(None)` to
-restore the default current-working-directory search.
+for relative certificate paths. If it later disappears, the first recovered
+file becomes the new explicit path. Call `general.set_connections_path(None)`
+to clear the explicit and remembered paths and restart default discovery from
+the calling script and current working directory.
 
 Call [sql.generate_dummy_connections](functions/generate_dummy_connections.md)()
 to write a starter direct `./.connections` file in the current working

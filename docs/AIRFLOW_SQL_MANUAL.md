@@ -70,9 +70,12 @@ clients until a runtime helper resolves a connection or opens a client.
 ## Airflow `.connections`
 
 Put an Airflow-source `.connections` file in a directory visible from the task
-working directory, usually the DAG project root. By default,
-`analytics_toolkit` searches for `.connections` in the current working
-directory first, then walks upward through parent directories:
+or DAG script, usually the DAG project root. On the first lookup,
+`analytics_toolkit` searches from the calling Python script through its parent
+directories, then searches from the current working directory through its
+parents. It remembers the successful path. If that file later disappears after
+a worker or DAG path rotation, it searches the old directory and its parents
+before retrying the script and working-directory chains:
 
 ```json
 {
@@ -164,12 +167,13 @@ df = sql.read("airflow_trino", query)
 ```
 
 The path must point to an existing `.connections` file. Its directory is also
-used for relative certificate paths such as `.certs/trino-ca.pem`. Call
-`set_connections_path(None)` to restore the default current working directory
-search. `from_here(".connections", 1)` is useful when DAG task code lives one
-directory below the DAG project root and `.connections` is stored in that
-parent directory; `levels_up=0` means the same base as `here()`, and
-`levels_up=1` means one parent directory.
+used for relative certificate paths such as `.certs/trino-ca.pem`. If it later
+disappears, the recovered file becomes the new explicit path. Call
+`set_connections_path(None)` to clear both the explicit and remembered paths
+and restart automatic script/CWD discovery. `from_here(".connections", 1)` is
+useful when DAG task code lives one directory below the DAG project root and
+`.connections` is stored in that parent directory; `levels_up=0` means the same
+base as `here()`, and `levels_up=1` means one parent directory.
 
 ## Greenplum
 
