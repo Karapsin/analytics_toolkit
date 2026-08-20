@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 # ruff: noqa: EM101, TRY003
+import time
 import warnings
 from dataclasses import replace as replace_dataclass
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.ch.creation_policy import (
+    DEFAULT_DDL_READY_TIMEOUT_SECONDS,
+)
+from analytics_toolkit.sql.backends.ch.readiness import run_ch_readiness_wait
 from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     _count_loaded_stage_rows,
@@ -251,18 +256,10 @@ def _validate_fresh_target_row_count(
         open_connection=get_sql_connection,
         target_connection_runner=target_connection_runner,
     )
-    target_rows = int(
-        _run_target_operation(
-            options,
-            "validate_final_target_row_count",
-            lambda target_ref: count_table_rows(
-                options.to_db_backend,
-                target_ref["connection"],
-                options.target_table,
-                query_label=options.query_label,
-            ),
-            target_connection_runner=target_connection_runner,
-        )
+    target_rows = _wait_for_fresh_target_row_count(
+        options,
+        stage_rows,
+        target_connection_runner=target_connection_runner,
     )
     time_print(
         f"Validated fresh target row count: stage {stage_rows:,}; target {target_rows:,}",
@@ -270,12 +267,78 @@ def _validate_fresh_target_row_count(
         backend=options.to_db_backend,
         phase="validate_target_row_count",
     )
-    if target_rows != stage_rows:
+
+
+def _wait_for_fresh_target_row_count(
+    options: TransferOptions,
+    expected_rows: int,
+    *,
+    target_connection_runner: Any | None,
+) -> int:
+    last_target_rows = 0
+    last_error: Exception | None = None
+
+    def wait_window(timeout_seconds: float) -> int:
+        nonlocal last_error, last_target_rows
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                last_target_rows = int(
+                    _run_target_operation(
+                        options,
+                        "validate_final_target_row_count",
+                        lambda target_ref: count_table_rows(
+                            options.to_db_backend,
+                            target_ref["connection"],
+                            options.target_table,
+                            query_label=options.query_label,
+                        ),
+                        target_connection_runner=target_connection_runner,
+                    )
+                )
+                last_error = None
+                if last_target_rows == expected_rows:
+                    return last_target_rows
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+            if time.monotonic() >= deadline:
+                message = (
+                    f"ClickHouse target {options.target_table} row count did not "
+                    f"converge to {expected_rows:,}; last observed "
+                    f"{last_target_rows:,} row(s)."
+                )
+                if last_error is not None:
+                    raise TimeoutError(message) from last_error
+                raise TimeoutError(message)
+            time.sleep(1)
+
+    policy = options.regular_ch_policy
+    try:
+        return run_ch_readiness_wait(
+            wait_window,
+            timeout_seconds=(
+                policy.ddl_ready_timeout_seconds
+                if policy is not None
+                else DEFAULT_DDL_READY_TIMEOUT_SECONDS
+            ),
+            extension_cnt=(
+                getattr(policy, "ddl_ready_timeout_extension_cnt", 0)
+                if policy is not None
+                else 0
+            ),
+            timeout_increment_seconds=(
+                getattr(policy, "ddl_ready_timeout_increment_seconds", 0.0)
+                if policy is not None
+                else 0.0
+            ),
+            wait_label="fresh-target row-count convergence",
+        )
+    except TimeoutError as exc:
         message = (
             f"Fresh target/stage row-count mismatch for {options.target_table}: "
-            f"target has {target_rows:,} row(s), stage has {stage_rows:,} row(s)."
+            f"target has {last_target_rows:,} row(s), stage has {expected_rows:,} row(s)."
         )
-        raise FreshTargetFinalizationRowCountMismatchError(message)
+        raise FreshTargetFinalizationRowCountMismatchError(message) from exc
 
 
 def _analyze_final_target(

@@ -415,7 +415,10 @@ rows = sql.transfer(
   Unkeyed flow counts its source snapshot. Lazy keyed flow captures the exact
   count immediately after each CTAS and compares it with acknowledged streamed
   rows. Mandatory aggregate database stage counts still run before the final
-  destination mutation.
+  destination mutation. A fresh ClickHouse Distributed target is then polled
+  over its bounded DDL-readiness windows until its visible count matches the
+  stage, preventing transient delivery or replica lag from causing an immediate
+  rebuild.
 - When the source connection defines `transfer_staging_schema`, snapshot
   materialization is the extraction mechanism regardless of public row-count
   validation. `validate_row_count=False` disables only the public

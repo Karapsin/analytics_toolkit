@@ -5298,7 +5298,7 @@
         "ch_ddl_ready_timeout_extension_cnt": {
           "kind": "POSITIONAL_OR_KEYWORD", "signature_default": "None",
           "states": [
-            {"state": "default", "value": "None", "status": "covered", "tests": ["tests/test_sql_transfer_finalization_retry.py::test_fresh_target_count_mismatch_rebuilds_from_preserved_stage"]},
+            {"state": "default", "value": "None", "status": "covered", "tests": ["tests/test_sql_transfer_finalization_retry.py::test_fresh_target_count_converges_without_rebuilding"]},
             {"state": "supported-non-default", "status": "covered", "scenarios": ["transfer.trino.ch.fresh_target_retry"]}
           ]
         },

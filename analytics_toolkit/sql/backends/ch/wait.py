@@ -14,6 +14,7 @@ from .ddl import (
     build_ch_shard_table_name,
     split_ch_table_name_for_distributed_engine,
 )
+from .readiness import run_ch_readiness_wait
 from .wait_policy import waits_for_distributed, waits_for_shard
 
 if TYPE_CHECKING:
@@ -84,18 +85,8 @@ def after_create_table(
             expected_column_types=expected_column_types,
         )
         return
-    last_error: TimeoutError | None = None
-    for readiness_attempt in range(extension_cnt + 1):
-        current_timeout = timeout_seconds if readiness_attempt == 0 else timeout_increment
-        if readiness_attempt > 0:
-            time_print(
-                "ClickHouse target is still converging; extending distributed-pair "
-                f"readiness wait by {timeout_increment:g} second(s) "
-                f"({readiness_attempt}/{extension_cnt})",
-                backend="ch",
-                phase="validate_target",
-            )
-        try:
+    run_ch_readiness_wait(
+        lambda current_timeout: (
             _wait_for_ch_distributed_table_pair(
                 connection,
                 table_name,
@@ -107,21 +98,12 @@ def after_create_table(
                 expected_column_types=expected_column_types,
                 wait_policy=wait_policy,
             )
-        except TimeoutError as exc:
-            last_error = exc
-            if readiness_attempt >= extension_cnt or timeout_increment <= 0:
-                break
-        else:
-            return
-    if last_error is None:
-        message = "ClickHouse readiness failed without capturing an exception."
-        raise RuntimeError(message)
-    total_timeout = timeout_seconds + extension_cnt * timeout_increment
-    message = (
-        f"ClickHouse distributed-pair readiness did not finish within {total_timeout:g} "
-        f"second(s), including {extension_cnt} timeout extension(s): {last_error}"
+        ),
+        timeout_seconds=timeout_seconds,
+        extension_cnt=extension_cnt,
+        timeout_increment_seconds=timeout_increment,
+        wait_label="distributed-pair readiness",
     )
-    raise TimeoutError(message) from last_error
 
 
 def _wait_for_ch_table(

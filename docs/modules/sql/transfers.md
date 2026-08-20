@@ -261,13 +261,16 @@ ClickHouse finalization retries are narrower when the operation creates its
 target from scratch: replace, or append/upsert when the target was absent. Each
 `retry_cnt` attempt creates a clean target, waits for the normal DDL-readiness
 deadline, and may then wait for `ch_ddl_ready_timeout_extension_cnt` additional
-`timeout_increment` intervals. After insertion, exact target and stage counts
-must match even when `validate_row_count=False`. Readiness failure, insertion
-failure, or a count mismatch drops only the incomplete target and repeats
-finalization from the preserved stage. Source data is rematerialized through
-`full_retry_cnt` only after these local attempts are exhausted. Existing-target
-append and upsert retain their prior behavior because their total row counts
-cannot equal the incoming stage count.
+`timeout_increment` intervals. After insertion, the target count is polled over
+the same bounded readiness windows so asynchronous Distributed delivery and
+replica visibility can converge without rebuilding a still-populating target.
+Exact target and stage counts must match even when `validate_row_count=False`.
+An exhausted readiness deadline, insertion failure, or persistent count mismatch
+drops only the incomplete target and repeats finalization from the preserved
+stage. Source data is rematerialized through `full_retry_cnt` only after these
+local attempts are exhausted. Existing-target append and upsert retain their
+prior behavior because their total row counts cannot equal the incoming stage
+count.
 
 ## Types
 
