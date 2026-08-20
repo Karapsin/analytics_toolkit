@@ -32,6 +32,9 @@ stage_identity_module = importlib.import_module(
 parquet_stage_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.parquet_stage"
 )
+parquet_batches_module = importlib.import_module(
+    "analytics_toolkit.sql.dml.transfer.flow.parquet_batches"
+)
 transfer_options_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.options")
 transfer_concurrency_module = importlib.import_module(
     "analytics_toolkit.sql.dml.transfer.flow.concurrency"
@@ -5882,6 +5885,11 @@ def test_load_stage_batches_uses_parquet_writer_for_trino_fast_path(
         "get_sql_connection",
         lambda key: FakeTransferConnection(key),
     )
+    monkeypatch.setattr(
+        parquet_batches_module,
+        "get_sql_connection",
+        FakeTransferConnection,
+    )
 
     total_rows = attempt_module.load_stage_batches(
         options=options,
@@ -6107,6 +6115,11 @@ def test_load_parquet_stage_infers_schema_from_first_row_group(
         attempt_module,
         "get_sql_connection",
         lambda key: FakeTransferConnection(key),
+    )
+    monkeypatch.setattr(
+        parquet_batches_module,
+        "get_sql_connection",
+        FakeTransferConnection,
     )
 
     total_rows = attempt_module.load_stage_batches(

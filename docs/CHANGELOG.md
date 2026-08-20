@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.10 - 2026-08-20
 
 - Use native ClickHouse row encoding for nullable timezone-aware inserts.
 - Cast Trino VALUES parameters to validated stage types.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Made staged-transfer coordinator fault injection one-shot across retries.
 - Injected a closed staged-transfer coordinator before consolidation replacement checks.
 - Wait for fresh ClickHouse target row counts to converge before retry cleanup.
+- Keep Trino transfer and authentication tests compatible with stricter HTTP authentication validation.
 
 ## 1.3.11.9 - 2026-08-13
 

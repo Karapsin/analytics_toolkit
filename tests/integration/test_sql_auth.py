@@ -64,7 +64,7 @@ def test_real_airflow_connection_source_routes_all_backends(
     }
     monkeypatch.setenv(
         "AIRFLOW_CONN_AIRFLOW_TRINO",
-        "http://integration:integration@127.0.0.1:18080/iceberg",
+        "http://integration@127.0.0.1:18080/iceberg",
     )
     monkeypatch.setenv(
         "AIRFLOW_CONN_AIRFLOW_CH",
