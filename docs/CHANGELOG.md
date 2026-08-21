@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Made SQL integration advisory for dev commits and exhaustive for releases.
 - Recovered rotated SQL connections paths from remembered, caller, and working directories.
 - Omit toolkit timestamps from Python logging records.
+- Preserved Greenplum bytea values in ClickHouse transfers across HTTP and native drivers.
 
 ## 1.3.11.10 - 2026-08-20
 

@@ -283,7 +283,9 @@ nested combinations; cross-backend transfers retain portable type mapping.
 Native UUID source metadata maps to `UUID` on Greenplum and Trino and to
 `Nullable(UUID)` for an initially nullable ClickHouse stage. ClickHouse stage
 nullability is refined from rows, and an explicit `table_schema` still takes
-precedence.
+precedence. Greenplum `bytea` maps to ClickHouse `String`; HTTP and native
+transports preserve the original byte sequence, including embedded nulls and
+bytes that are not valid UTF-8.
 
 Upsert finalization is backend-specific. Greenplum uses staged
 delete-and-insert on `key_columns`. Trino and ClickHouse require

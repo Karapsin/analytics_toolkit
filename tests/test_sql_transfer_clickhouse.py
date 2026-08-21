@@ -37,9 +37,13 @@ class FakeResult:
 
 
 class FakeSourceCursor:
-    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        rows: list[tuple[Any, ...]],
+        description: list[tuple[Any, ...]] | None = None,
+    ) -> None:
         self._rows = rows
-        self.description = [
+        self.description = description or [
             ("month_date", 1082, None, None, None, None),
             ("users", 20, None, None, None, None),
         ]
@@ -61,13 +65,18 @@ class FakeSourceCursor:
 
 
 class FakeSourceConnection:
-    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        rows: list[tuple[Any, ...]],
+        description: list[tuple[Any, ...]] | None = None,
+    ) -> None:
         self._rows = rows
+        self._description = description
         self.cursors: list[FakeSourceCursor] = []
         self.close_calls = 0
 
     def cursor(self) -> FakeSourceCursor:
-        cursor = FakeSourceCursor(self._rows.copy())
+        cursor = FakeSourceCursor(self._rows.copy(), self._description)
         self.cursors.append(cursor)
         return cursor
 
@@ -224,7 +233,8 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
             return source
         if connection_key == "ch":
             return target
-        raise AssertionError(f"Unexpected connection key: {connection_key}")
+        message = f"Unexpected connection key: {connection_key}"
+        raise AssertionError(message)
 
     monkeypatch.setattr(
         transfer_attempt_module,
@@ -299,6 +309,45 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in map(
         _strip_query_label, target.commands
     )
+
+
+def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypatch) -> None:
+    source = FakeSourceConnection(
+        rows=[(memoryview(b"\x00\xff\x80"), "Кириллица")],
+        description=[
+            ("cheque_pk", 17, None, None, None, None),
+            ("name", 25, None, None, None, None),
+        ],
+    )
+    target = FakeClickHouseClient()
+
+    def fake_get_sql_connection(connection_key: str) -> object:
+        if connection_key == "gp":
+            return source
+        if connection_key == "ch":
+            return target
+        raise AssertionError(f"Unexpected connection key: {connection_key}")
+
+    monkeypatch.setattr(transfer_attempt_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(transfer_finalize_module, "get_sql_connection", fake_get_sql_connection)
+
+    transferred_rows = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="ch",
+        from_sql="select cheque_pk, name from source_table",
+        to_table=TARGET_TABLE,
+        write_mode="replace",
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=1,
+        full_timeout_increment=0,
+        order_by=["name"],
+        ch_only_shard=True,
+    )
+
+    assert transferred_rows == 1
+    assert target.inserts[0]["data"] == [(b"\x00\xff\x80", "Кириллица")]
+    assert target.inserts[0]["column_type_names"] == ["String", "String"]
 
 
 def test_transfer_table_clickhouse_only_shard_creates_local_target(

@@ -187,13 +187,69 @@ class NativeClickHouseClient:
 
             types = dict(zip(column_names, column_type_names))
             data = [normalize_typed_row(column_names, row, types) for row in data]
-        return self._client.execute(_insert_query(table, column_names), data)
+        data, settings = _prepare_binary_string_insert(
+            self._client,
+            data,
+            column_type_names,
+        )
+        kwargs = {"settings": settings} if settings is not None else {}
+        return self._client.execute(_insert_query(table, column_names), data, **kwargs)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
         self._client.disconnect_connection()
+
+
+def _prepare_binary_string_insert(
+    client: Any,
+    data: Sequence[Sequence[Any]],
+    column_type_names: Sequence[str] | None,
+) -> tuple[Sequence[Sequence[Any]], dict[str, bool] | None]:
+    if column_type_names is None:
+        return data, None
+    string_indexes = {
+        index for index, type_name in enumerate(column_type_names) if _is_string_type(type_name)
+    }
+    if not string_indexes or not any(
+        isinstance(row[index], (bytes, bytearray, memoryview))
+        for row in data
+        for index in string_indexes
+        if row[index] is not None
+    ):
+        return data, None
+
+    client_settings = getattr(client, "client_settings", {})
+    encoding = client_settings.get("strings_encoding", "utf-8")
+    byte_rows = [
+        tuple(
+            _as_insert_bytes(value, encoding) if index in string_indexes else value
+            for index, value in enumerate(row)
+        )
+        for row in data
+    ]
+    return byte_rows, {"strings_as_bytes": True}
+
+
+def _is_string_type(type_name: str) -> bool:
+    normalized = type_name.replace(" ", "")
+    wrappers = ("Nullable(", "LowCardinality(")
+    while normalized.startswith(wrappers) and normalized.endswith(")"):
+        normalized = normalized.split("(", 1)[1][:-1]
+    return normalized == "String" or normalized.startswith("FixedString(")
+
+
+def _as_insert_bytes(value: Any, encoding: str) -> Any:
+    if value is None or isinstance(value, bytes):
+        return value
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode(encoding)
+    return value
 
 
 def _split_first_stream_block(

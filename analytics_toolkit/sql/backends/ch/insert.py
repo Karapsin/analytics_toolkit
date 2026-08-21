@@ -28,7 +28,7 @@ def insert_dataframe_batch(
             column_type_names=column_type_names(columns, target_column_types),
         )
     else:
-        normalized_batch = normalize_batch(batch)
+        normalized_batch = normalize_typed_batch(batch, target_column_types)
         connection.insert_df(
             table=table_name,
             df=normalized_batch,
@@ -47,6 +47,23 @@ def normalize_batch(batch: pd.DataFrame) -> pd.DataFrame:
     for column_name in normalized.columns:
         series = normalized[column_name]
         normalized[column_name] = series.astype(object).where(series.notna(), None)
+    return normalized
+
+
+def normalize_typed_batch(
+    batch: pd.DataFrame,
+    column_types: dict[str, str] | None,
+) -> pd.DataFrame:
+    normalized = normalize_batch(batch)
+    if not column_types:
+        return normalized
+    for column_name in normalized.columns:
+        type_name = column_types.get(column_name, "")
+        normalized[column_name] = pd.Series(
+            [_normalize_typed_scalar(value, type_name) for value in normalized[column_name]],
+            index=normalized.index,
+            dtype=object,
+        )
     return normalized
 
 
@@ -86,8 +103,11 @@ def _normalize_typed_scalar(value: Any, type_name: str) -> Any:
         return int(value)
     if normalized_type.startswith("Decimal"):
         return Decimal(str(value))
-    if normalized_type == "String" and isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if normalized_type == "String":
+        if isinstance(value, (memoryview, bytearray)):
+            value = bytes(value)
+        elif isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return value
 
 

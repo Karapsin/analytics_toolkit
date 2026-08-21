@@ -7,7 +7,9 @@ import pytest
 from analytics_toolkit.sql.backends.ch.native_client import (
     NativeClickHouseClient,
     NativeQueryResult,
+    _as_insert_bytes,
     _is_column_metadata,
+    _is_string_type,
     _NativeDataFrameStream,
     _normalize_stream_rows,
     _split_first_stream_block,
@@ -199,6 +201,55 @@ def test_insert_rejects_mismatched_type_metadata() -> None:
 
     with pytest.raises(ValueError, match="column_type_names must match"):
         client.insert("db.target", [(1,)], ["value"], ["Int64", "String"])
+
+
+def test_insert_preserves_binary_strings_with_text_columns() -> None:
+    raw = FakeNativeClient()
+    raw.client_settings = {"strings_encoding": "utf-8"}
+    client = NativeClickHouseClient(raw)
+
+    client.insert(
+        "db.target",
+        [
+            (memoryview(b"\x00\xff"), "Кириллица", 1),
+            (bytearray(b"\x01\x80"), "", 2),
+            (None, None, 3),
+        ],
+        ["payload", "label", "row_id"],
+        ["Nullable(String)", "Nullable(LowCardinality(String))", "Int64"],
+    )
+
+    assert raw.execute_calls[-1] == (
+        "INSERT INTO `db`.`target` (`payload`, `label`, `row_id`) VALUES",
+        (
+            [
+                (b"\x00\xff", "Кириллица".encode(), 1),
+                (b"\x01\x80", b"", 2),
+                (None, None, 3),
+            ],
+        ),
+        {"settings": {"strings_as_bytes": True}},
+    )
+
+
+def test_insert_keeps_text_only_native_path_unchanged() -> None:
+    raw = FakeNativeClient()
+    client = NativeClickHouseClient(raw)
+
+    client.insert("db.target", [("text",)], ["value"], ["String"])
+
+    assert raw.execute_calls[-1][1:] == (([("text",)],), {})
+
+
+def test_binary_string_helper_edges() -> None:
+    assert _is_string_type(" FixedString(2) ") is True
+    assert _is_string_type("Int64") is False
+    assert _as_insert_bytes(None, "utf-8") is None
+    assert _as_insert_bytes(b"raw", "utf-8") == b"raw"
+    assert _as_insert_bytes(memoryview(b"view"), "utf-8") == b"view"
+    assert _as_insert_bytes(bytearray(b"mutable"), "utf-8") == b"mutable"
+    assert _as_insert_bytes("Кириллица", "utf-8") == "Кириллица".encode()
+    assert _as_insert_bytes(7, "utf-8") == 7
 
 
 def test_stream_parser_supports_native_driver_shapes() -> None:

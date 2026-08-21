@@ -6353,6 +6353,21 @@
         "ch"
       ]
     },
+    "transfer.gp_bytea_to_ch": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_greenplum_bytea_transfer_preserves_raw_clickhouse_bytes",
+      "backends": [
+        "gp",
+        "ch"
+      ]
+    },
+    "load.ch_binary_string": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_backends.py::test_clickhouse_load_preserves_raw_binary_string_values",
+      "backends": [
+        "ch"
+      ]
+    },
     "transfer.lazy_keyed.gp": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_transfer_lazy_keyed.py::test_lazy_keyed_source_staging_serial_and_capped_concurrent[transfer.lazy_keyed.gp]",

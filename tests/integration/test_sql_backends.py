@@ -190,3 +190,109 @@ def test_representative_cross_backend_transfers() -> None:
             if_exists=True,
             ch_cluster="integration_cluster",
         )
+
+
+@pytest.mark.sql_scenario("transfer.gp_bytea_to_ch")
+def test_greenplum_bytea_transfer_preserves_raw_clickhouse_bytes() -> None:
+    if os.environ.get("SQL_INTEGRATION_GP") != "1":
+        pytest.skip("Greenplum integration runs only on x86_64")
+    gp_table = _table_name("gp", "bytea_source")
+    ch_table = _table_name("ch", "bytea_target")
+
+    try:
+        sql.execute(
+            "gp",
+            f"""
+CREATE TABLE {gp_table} AS
+SELECT *
+FROM (
+    VALUES
+        (1::bigint, decode('00ff80', 'hex')::bytea, 'Кириллица'::text),
+        (2::bigint, decode('', 'hex')::bytea, ''::text)
+) AS source_rows(id, payload, label)
+DISTRIBUTED BY (id)
+""",
+        )
+        assert (
+            sql.transfer(
+                "gp",
+                "ch",
+                from_table=gp_table,
+                to_table=ch_table,
+                write_mode="replace",
+                batch_size=2,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+                retry_cnt=1,
+                full_retry_cnt=1,
+                order_by=["id"],
+                ch_engine="MergeTree",
+                ch_shard_on_cluster="integration_cluster",
+                ch_distributed_on_cluster="integration_cluster",
+                ch_distributed_cluster="integration_cluster",
+                ch_only_shard=True,
+            )
+            == 2
+        )
+        actual = sql.read(
+            "ch",
+            f"SELECT id, hex(payload) AS payload_hex, label FROM {ch_table} ORDER BY id",
+        )
+        assert actual.to_dict("records") == [
+            {"id": 1, "payload_hex": "00FF80", "label": "Кириллица"},
+            {"id": 2, "payload_hex": "", "label": ""},
+        ]
+    finally:
+        sql.drop_tables("gp", gp_table, if_exists=True, ch_cluster=None)
+        sql.drop_tables(
+            "ch",
+            ch_table,
+            if_exists=True,
+            ch_cluster="integration_cluster",
+        )
+
+
+@pytest.mark.sql_scenario("load.ch_binary_string")
+def test_clickhouse_load_preserves_raw_binary_string_values() -> None:
+    ch_table = _table_name("ch", "binary_string")
+    source = pd.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "payload": [memoryview(b"\x00\xff\x80"), bytearray(b"\xc3("), b""],
+            "label": ["Кириллица", "text", ""],
+        }
+    )
+
+    try:
+        assert (
+            sql.load_df(
+                "ch",
+                ch_table,
+                source,
+                write_mode="replace",
+                table_schema={"id": "Int64", "payload": "String", "label": "String"},
+                order_by=["id"],
+                ch_engine="MergeTree",
+                ch_shard_on_cluster="integration_cluster",
+                ch_distributed_on_cluster="integration_cluster",
+                ch_distributed_cluster="integration_cluster",
+                ch_only_shard=True,
+            )
+            == 3
+        )
+        actual = sql.read(
+            "ch",
+            f"SELECT id, hex(payload) AS payload_hex, label FROM {ch_table} ORDER BY id",
+        )
+        assert actual.to_dict("records") == [
+            {"id": 1, "payload_hex": "00FF80", "label": "Кириллица"},
+            {"id": 2, "payload_hex": "C328", "label": "text"},
+            {"id": 3, "payload_hex": "", "label": ""},
+        ]
+    finally:
+        sql.drop_tables(
+            "ch",
+            ch_table,
+            if_exists=True,
+            ch_cluster="integration_cluster",
+        )

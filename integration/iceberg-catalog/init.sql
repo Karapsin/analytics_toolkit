@@ -14,3 +14,12 @@ CREATE TABLE iceberg_namespace_properties (
     property_value VARCHAR(1000),
     PRIMARY KEY (catalog_name, namespace, property_key)
 );
+
+INSERT INTO iceberg_namespace_properties (
+    catalog_name,
+    namespace,
+    property_key,
+    property_value
+) VALUES
+    ('analytics_toolkit', 'integration', 'exists', 'true'),
+    ('analytics_toolkit', 'integration_stage', 'exists', 'true');

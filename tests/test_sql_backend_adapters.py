@@ -2676,6 +2676,11 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
         [1.0, 1.25, {"x": "я"}],
         {"id": "Nullable(Int64)", "amount": "Decimal(10,2)", "payload": "String"},
     ) == (1, Decimal("1.25"), '{"x":"я"}')
+    assert ch_insert_backend_module.normalize_typed_row(
+        ["raw", "mutable"],
+        [memoryview(b"\x00\xff"), bytearray(b"\x01\x80")],
+        {"raw": "Nullable(String)", "mutable": "LowCardinality(String)"},
+    ) == (b"\x00\xff", b"\x01\x80")
     assert ch_insert_backend_module.normalize_typed_row(["value"], ["plain"], None) == (
         "plain",
     )
@@ -2696,6 +2701,25 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
         {"id": "Nullable(Int64)"},
     )
     assert inserted[0]["data"] == [(1,), (None,)]
+    http_inserts: list[dict[str, Any]] = []
+    http = SimpleNamespace(
+        is_native_transport=False,
+        insert_df=lambda **kwargs: http_inserts.append(kwargs),
+    )
+    ch_insert_backend_module.insert_dataframe_batch(
+        http,
+        "events",
+        pd.DataFrame(
+            {
+                "raw": [memoryview(b"\x00\xff")],
+                "mutable": [bytearray(b"\x01\x80")],
+            }
+        ),
+        {"raw": "String", "mutable": "Nullable(String)"},
+    )
+    assert http_inserts[0]["df"].to_dict("records") == [
+        {"raw": b"\x00\xff", "mutable": b"\x01\x80"}
+    ]
     assert ch_insert_backend_module._is_null_like(None) is True
     assert ch_insert_backend_module._is_null_like([1, 2]) is False
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+from analytics_toolkit.sql.connection import get_connection_config
 from release_routines import sql_integration
 from tests.integration import conftest as integration_conftest
 from tests.integration import test_sql_auth as integration_auth
@@ -170,6 +171,37 @@ def test_greenplum_healthcheck_waits_for_stable_final_postmaster() -> None:
     assert "-h 127.0.0.1" in compose
     assert "pg_postmaster_start_time()" in compose
     assert "/data/.auth-tls-ready" in compose
+
+
+def test_iceberg_integration_namespaces_are_preseeded() -> None:
+    init_sql = (sql_integration.INTEGRATION_DIR / "iceberg-catalog" / "init.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "('analytics_toolkit', 'integration', 'exists', 'true')" in init_sql
+    assert "('analytics_toolkit', 'integration_stage', 'exists', 'true')" in init_sql
+    assert integration_conftest._RUNTIME_SCHEMA_STATEMENTS == ()
+    assert (
+        integration_conftest._integration_connections()["trino"]["s3_transfer_staging_schema"]
+        == "hive.default"
+    )
+
+
+def test_integration_connections_explicitly_activate_loopback_file(tmp_path: Path) -> None:
+    def write(connections: dict[str, dict[str, object]]) -> Path:
+        path = tmp_path / ".connections"
+        path.write_text(json.dumps(connections), encoding="utf-8")
+        return path
+
+    try:
+        activated_path = integration_conftest._activate_integration_connections(write)
+        config = get_connection_config("trino")
+
+        assert activated_path == tmp_path / ".connections"
+        assert config.host == "127.0.0.1"
+        assert config.catalog == "iceberg"
+    finally:
+        integration_conftest.general_module.set_connections_path(None)
 
 
 def test_greenplum_auth_uses_native_tls_behind_tcp_passthrough() -> None:

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import analytics_toolkit.general as general_module
 import pytest
 from analytics_toolkit import sql
 from tests.integration.support.faults import FaultController
@@ -148,7 +149,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "verify": False,
             "insert_chunk_size": 100,
             "transfer_staging_schema": "iceberg.integration_stage",
-            "s3_transfer_staging_schema": "hive.integration_stage",
+            "s3_transfer_staging_schema": "hive.default",
             "s3_transfer_staging_location": "s3a://warehouse/staging",
             "upsert_partition_drop_sql_template": (
                 "DELETE FROM {table} WHERE {partition_column} = "
@@ -298,18 +299,33 @@ def integration_connections() -> dict[str, dict[str, object]]:
     return connections
 
 
+def _activate_integration_connections(
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> Path:
+    connections = _integration_connections()
+    _assert_loopback_connections(connections)
+    connections_path = write_sql_connections(connections)
+    general_module.set_connections_path(connections_path)
+    return connections_path
+
+
 @pytest.fixture(autouse=True)
 def default_sql_connections(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
-) -> None:
+) -> Iterator[None]:
     if os.environ.get("ANALYTICS_TOOLKIT_RUN_INTEGRATION") != "1":
         pytest.skip("integration tests require the repository integration workflow")
-    connections = _integration_connections()
-    _assert_loopback_connections(connections)
     monkeypatch.chdir(tmp_path)
-    write_sql_connections(connections)
+    _activate_integration_connections(write_sql_connections)
+    try:
+        yield
+    finally:
+        general_module.set_connections_path(None)
+
+
+_RUNTIME_SCHEMA_STATEMENTS: tuple[str, ...] = ()
 
 
 @pytest.fixture(autouse=True)
@@ -318,9 +334,8 @@ def initialize_integration_schemas(default_sql_connections: None) -> Iterator[No
     if os.environ.get("ANALYTICS_TOOLKIT_RUN_INTEGRATION") != "1":
         yield
         return
-    sql.execute("trino", "CREATE SCHEMA IF NOT EXISTS iceberg.integration")
-    sql.execute("trino", "CREATE SCHEMA IF NOT EXISTS iceberg.integration_stage")
-    sql.execute("trino", "CREATE SCHEMA IF NOT EXISTS hive.integration_stage")
+    for statement in _RUNTIME_SCHEMA_STATEMENTS:
+        sql.execute("trino", statement)
     yield
 
 

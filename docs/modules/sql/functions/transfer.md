@@ -280,6 +280,9 @@ rows = sql.transfer(
   mapped types, `table_schema` overrides, source-local paging columns, insert
   order, and stage-DDL inputs are reused for every key. Connection retries do
   not refresh this contract; a full-attempt retry inspects it once again.
+- Greenplum `bytea` values map to binary-safe ClickHouse `String` columns. Both
+  ClickHouse transports preserve the raw byte sequence without hex or Base64
+  conversion.
 - Unkeyed source-staged transfers keep at least one worker and use no more than
   `min(concurrency, ceil(total_rows / batch_size))` workers. Logs report both
   requested and effective counts.

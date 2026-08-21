@@ -362,7 +362,7 @@ def test_minio_unavailable_after_first_parquet_object_cleans_attempt(
 
     def initialize_object_stage(*, options: Any, stage_state: Any, **_kwargs: Any) -> None:
         suffix = f"{options.transfer_id}__w00000"
-        stage_state.stage_table = f"hive.integration_stage.fault_{options.transfer_id}"
+        stage_state.stage_table = f"hive.default.fault_{options.transfer_id}"
         stage_state.stage_external_location = parquet_module.build_stage_external_location(
             options,
             stage_suffix=suffix,
