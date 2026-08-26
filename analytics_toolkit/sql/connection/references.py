@@ -30,12 +30,6 @@ def resolve_connection_value_references(
     for field_name, value in raw_config.items():
         if not is_connection_value_reference(value, field_name):
             continue
-        if field_name in _LITERAL_ROUTING_FIELDS:
-            message = (
-                f"SQL connection '{connection_key}' routing field '{field_name}' "
-                "must be a literal value."
-            )
-            raise SqlConfigError(message)
         resolved[field_name] = _resolve_reference(
             connection_key,
             field_name,
@@ -49,6 +43,54 @@ def _resolve_reference(
     field_name: str,
     reference: dict[str, Any],
 ) -> Any:
+    source, source_key, path = parse_connection_value_reference(
+        connection_key,
+        field_name,
+        reference,
+    )
+    value = _read_source_value(
+        connection_key,
+        field_name,
+        source,
+        source_key,
+    )
+
+    if path is None:
+        return value
+    document = _parse_json_value(
+        connection_key,
+        field_name,
+        source,
+        source_key,
+        value,
+    )
+    return _read_json_path(
+        connection_key,
+        field_name,
+        document,
+        path,
+    )
+
+
+def parse_connection_value_reference(
+    connection_key: str,
+    field_name: str,
+    reference: dict[str, Any],
+) -> tuple[str, str, tuple[str, ...] | None]:
+    if field_name in _LITERAL_ROUTING_FIELDS:
+        message = (
+            f"SQL connection '{connection_key}' routing field '{field_name}' "
+            "must be a literal value."
+        )
+        raise SqlConfigError(message)
+    return _parse_reference(connection_key, field_name, reference)
+
+
+def _parse_reference(
+    connection_key: str,
+    field_name: str,
+    reference: dict[str, Any],
+) -> tuple[str, str, tuple[str, ...] | None]:
     unexpected_fields = set(reference) - _REFERENCE_FIELDS
     if unexpected_fields:
         unexpected = ", ".join(sorted(unexpected_fields))
@@ -81,29 +123,10 @@ def _resolve_reference(
         )
         raise SqlConfigError(message)
     source_key = raw_source_key.strip()
-    value = _read_source_value(
-        connection_key,
-        field_name,
-        source,
-        source_key,
+    path = (
+        _parse_path(connection_key, field_name, reference["path"]) if "path" in reference else None
     )
-
-    if "path" not in reference:
-        return value
-    path = _parse_path(connection_key, field_name, reference["path"])
-    document = _parse_json_value(
-        connection_key,
-        field_name,
-        source,
-        source_key,
-        value,
-    )
-    return _read_json_path(
-        connection_key,
-        field_name,
-        document,
-        path,
-    )
+    return source, source_key, path
 
 
 def _read_source_value(
@@ -203,5 +226,6 @@ def _read_json_path(
 
 __all__ = [
     "is_connection_value_reference",
+    "parse_connection_value_reference",
     "resolve_connection_value_references",
 ]

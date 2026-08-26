@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 import types
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 config_module = importlib.import_module("analytics_toolkit.sql.connection.config")
+environment_module = importlib.import_module("analytics_toolkit.sql.connection.environment")
 
 
 def _install_fake_airflow(
@@ -82,6 +84,134 @@ def test_direct_connection_resolves_environment_fields(
     assert config.port == 15432
     assert config.password == "env-password"
     assert "env-password" not in repr(config)
+
+
+def test_set_missing_env_variables_prompts_once_and_preserves_existing_values(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    monkeypatch.setenv("EXISTING_SQL_VALUE", "already-set")
+    monkeypatch.setenv("EMPTY_SQL_VALUE", "")
+    monkeypatch.delenv("MISSING_SQL_VALUE", raising=False)
+    write_sql_connections(
+        {
+            "gp": {
+                "type": "gp",
+                "host": {"from": "env", "key": "EXISTING_SQL_VALUE"},
+                "user": {"from": "env", "key": "MISSING_SQL_VALUE"},
+                "password": {"from": "env", "key": "EMPTY_SQL_VALUE"},
+            },
+            "trino": {
+                "type": "trino",
+                "user": {"from": "env", "key": "MISSING_SQL_VALUE"},
+            },
+        }
+    )
+    responses = iter(["missing-value", "", "empty-value"])
+    prompts: list[str] = []
+
+    def prompt(message: str) -> str:
+        prompts.append(message)
+        return next(responses)
+
+    monkeypatch.setattr(environment_module, "getpass", prompt)
+
+    changed = environment_module.set_missing_env_variables()
+
+    assert changed == ["MISSING_SQL_VALUE", "EMPTY_SQL_VALUE"]
+    assert os.environ["EXISTING_SQL_VALUE"] == "already-set"
+    assert os.environ["MISSING_SQL_VALUE"] == "missing-value"
+    assert os.environ["EMPTY_SQL_VALUE"] == "empty-value"
+    assert prompts == [
+        "Enter value for environment variable 'MISSING_SQL_VALUE': ",
+        "Enter value for environment variable 'EMPTY_SQL_VALUE': ",
+        "Enter value for environment variable 'EMPTY_SQL_VALUE': ",
+    ]
+
+
+def test_set_missing_env_variables_is_noop_when_every_value_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    monkeypatch.setenv("SQL_VALUE", "set")
+    write_sql_connections(
+        {
+            "gp": {
+                "type": "gp",
+                "password": {"from": "env", "key": "SQL_VALUE"},
+            }
+        }
+    )
+    monkeypatch.setattr(
+        environment_module,
+        "getpass",
+        lambda _message: pytest.fail("existing environment variable was prompted"),
+    )
+
+    assert environment_module.set_missing_env_variables() == []
+
+
+def test_set_missing_env_variables_reads_airflow_overrides_without_airflow(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, Any]], Path],
+) -> None:
+    monkeypatch.delenv("AIRFLOW_WORKER_VALUE", raising=False)
+    write_sql_connections(
+        {
+            "source": "airflow",
+            "connections": {
+                "trino": {
+                    "type": "trino",
+                    "connection_id": "AirTrino",
+                    "request_timeout": {
+                        "from": "env",
+                        "key": "AIRFLOW_WORKER_VALUE",
+                    },
+                    "password": {
+                        "from": "airflow_variable",
+                        "key": "TRINO_PASSWORD_AF",
+                    },
+                }
+            },
+        }
+    )
+    monkeypatch.setitem(sys.modules, "airflow", None)
+    monkeypatch.setattr(environment_module, "getpass", lambda _message: "900")
+
+    assert environment_module.set_missing_env_variables() == ["AIRFLOW_WORKER_VALUE"]
+    assert os.environ["AIRFLOW_WORKER_VALUE"] == "900"
+
+
+def test_set_missing_env_variables_applies_values_atomically_on_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
+) -> None:
+    monkeypatch.delenv("FIRST_SQL_VALUE", raising=False)
+    monkeypatch.delenv("SECOND_SQL_VALUE", raising=False)
+    write_sql_connections(
+        {
+            "gp": {
+                "type": "gp",
+                "user": {"from": "env", "key": "FIRST_SQL_VALUE"},
+                "password": {"from": "env", "key": "SECOND_SQL_VALUE"},
+            }
+        }
+    )
+    responses: list[str | BaseException] = ["first-value", KeyboardInterrupt()]
+
+    def prompt(_message: str) -> str:
+        response = responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    monkeypatch.setattr(environment_module, "getpass", prompt)
+
+    with pytest.raises(KeyboardInterrupt):
+        environment_module.set_missing_env_variables()
+
+    assert "FIRST_SQL_VALUE" not in os.environ
+    assert "SECOND_SQL_VALUE" not in os.environ
 
 
 def test_environment_json_path_can_supply_nested_and_root_values(

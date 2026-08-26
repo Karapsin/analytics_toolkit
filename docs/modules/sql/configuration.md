@@ -153,6 +153,17 @@ source value as JSON and select a nested value. An empty `path` array selects
 the complete parsed JSON value, which is useful for mapping fields such as
 ClickHouse `settings`.
 
+For an interactive local session, call
+[sql.set_missing_env_variables](functions/set_missing_env_variables.md)() before
+using a connection. It securely prompts once for every unset or empty `env`
+reference and sets the collected values in the current Python process:
+
+```python
+from analytics_toolkit import sql
+
+sql.set_missing_env_variables()
+```
+
 References are resolved in memory on each configuration lookup and are never
 written back to `.connections` or cached by the toolkit. Missing sources,
 malformed JSON, and missing paths raise a connection-specific `SqlConfigError`

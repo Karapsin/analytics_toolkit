@@ -27,6 +27,7 @@ def test_sql_facade_is_the_supported_public_surface() -> None:
         "gp_create_partitions",
         "load_df",
         "read",
+        "set_missing_env_variables",
         "show_tables",
         "table_info",
         "transfer",

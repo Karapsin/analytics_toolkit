@@ -4063,6 +4063,14 @@
         }
       }
     },
+    "set_missing_env_variables": {
+      "classification": "unit_only",
+      "reason": "This export reads local configuration and updates only the current process environment.",
+      "tests": [
+        "tests/test_sql_connection_references.py::test_set_missing_env_variables_prompts_once_and_preserves_existing_values"
+      ],
+      "parameters": {}
+    },
     "show_queries": {
       "classification": "integration",
       "parameters": {

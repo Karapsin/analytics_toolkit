@@ -487,6 +487,16 @@ def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConne
     return _parse_direct_connections_file(parsed, connections_path)
 
 
+def _iter_file_connection_values() -> Iterator[tuple[str, dict[str, Any]]]:
+    connections_source = _load_file_connections_source()
+    if isinstance(connections_source, _AirflowConnectionSource):
+        return iter(
+            (connection_key, entry.overrides)
+            for connection_key, entry in connections_source.connections.items()
+        )
+    return iter(connections_source.items())
+
+
 def _read_connections_file_text() -> tuple[Path, str]:
     connections_path = get_connections_file_path()
     return _read_connections_file_path(
