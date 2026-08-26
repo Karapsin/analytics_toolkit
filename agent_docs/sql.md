@@ -27,6 +27,23 @@ investigation.
   ID and scenario test ID. Register resources before creation so partial
   failures remain cleanable.
 
+## SQL Integration Execution and Watch Policy
+
+- Adding or changing an integration test requires manifest coverage and a fast
+  non-integration regression test; it does not require running local SQL
+  integration during a normal implementation task.
+- Do not invoke `run_checks(area="sql", level="integration")` during normal
+  implementation, documentation, commit, or push completion. Invoke it only
+  when the user explicitly requests local integration validation or during
+  release readiness.
+- Normal completion requires focused checks, pre-commit checks, and the
+  exact-pushed-SHA required-check watch. Advisory core/auth integration starts
+  on push, but agents must not poll it, wait for it, or extend the turn for it.
+  Report its status or URL only if already available from the required-check
+  watch.
+- Release readiness is the exception: it must complete the exhaustive `all`
+  integration profile with both ClickHouse transports.
+
 ## SQL Layout Notes
 
 - `connection/config.py`: finds `.connections`, parses it as JSON, normalizes aliases to lowercase, validates fields, and resolves alias to backend.

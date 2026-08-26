@@ -17,18 +17,13 @@ from . import insert as _insert
 from . import operations as _operations
 from . import queries as _queries
 from . import reconfigure_proxy as _reconfigure
+from . import routing as _routing
 from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
 from . import target_create as _target_create
 from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
 from .config import AIRFLOW_EXTRA_FIELDS
-
-ON_CLUSTER_COMMAND_SETTINGS = {
-    "distributed_ddl_task_timeout": 0,
-    "distributed_ddl_output_mode": "none",
-}
-
 
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
@@ -47,6 +42,10 @@ class ClickHouseAdapter(BackendAdapter):
     requires_upsert_partition_column = True
     supports_ch_create_table_options = True
     resolve_ch_retry_per_host_drops = staticmethod(bool)
+    prepare_sql = _routing.prepare_sql
+    prepare_plan_sql = _routing.prepare_plan_sql
+    local_sql_context = staticmethod(_routing.local_sql)
+    execute_commands = _routing.execute_commands
     create_table_from_sql_fast_path = _create_from_sql.create_table_from_sql_fast_path
     uses_create_table_from_sql_fast_path = _create_from_sql.uses_create_table_from_sql_fast_path
     read_columns = _operations.read_columns
@@ -127,7 +126,7 @@ class ClickHouseAdapter(BackendAdapter):
         try:
             return connection.command(
                 sql,
-                settings=ON_CLUSTER_COMMAND_SETTINGS,
+                settings=_routing.ON_CLUSTER_COMMAND_SETTINGS,
             )
         except TypeError:
             return connection.command(sql)
@@ -152,7 +151,7 @@ class ClickHouseAdapter(BackendAdapter):
         connection_key: str,
     ) -> bool:
         del connection_key
-        result = connection.query(f"EXISTS TABLE {table_name}")
+        result = _routing.query_local(connection, f"EXISTS TABLE {table_name}")
         return bool(result.result_rows and result.result_rows[0][0])
 
     def clear_table_sqls(
@@ -315,7 +314,7 @@ class ClickHouseAdapter(BackendAdapter):
         connection_key: str,
     ) -> dict[str, str]:
         del connection_key
-        result = connection.query(f"DESCRIBE TABLE {table_name}")
+        result = _routing.query_local(connection, f"DESCRIBE TABLE {table_name}")
         rows = getattr(result, "result_rows", None) or []
         return {str(row[0]): str(row[1]) for row in rows if len(row) >= 2}
 

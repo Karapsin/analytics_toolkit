@@ -397,7 +397,8 @@ rejected; use the `s3_transfer_*` pair.
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
 `ddl_ready_timeout_seconds`, `ddl_ready_timeout_extension_cnt`,
-`ch_ddl_wait_policy`, `client_name`, and `compression` fields. The optional
+`ch_ddl_wait_policy`, `cluster_routing`, `client_name`, and `compression` fields.
+The optional
 `driver` selector is
 `"http"` by default and keeps the existing `clickhouse-connect` behavior and
 default port `8123`. Set `"driver": "native"` to use the native ClickHouse
@@ -415,6 +416,53 @@ particular, changing only `"interface": "https"` cannot make the HTTP client
 connect to a native-protocol port.
 `ca_certs_variable` resolves an Airflow Variable lazily when the connection is
 opened, which keeps the certificate path in Airflow instead of the file.
+
+### Automatic ClickHouse Cluster Routing
+
+Set `cluster_routing` on a ClickHouse connection when every user query and
+toolkit-generated data statement for that alias should target one ClickHouse
+cluster. Omitting the field, or setting it to JSON `null`, preserves normal
+single-endpoint behavior. The setting works with both HTTP and native drivers.
+
+```json
+{
+  "clickhouse_clustered": {
+    "type": "ch",
+    "host": "clickhouse.example",
+    "user": "user",
+    "password": "password",
+    "database": "pa_core_stage",
+    "cluster_routing": {
+      "cluster": "core",
+      "sharding_key": "rand()"
+    }
+  }
+}
+```
+
+`cluster` is required. `sharding_key` is optional and defaults to `rand()`.
+Both must be non-empty strings, and the sharding key must be one valid
+ClickHouse expression. Unqualified table names use the connection's `database`;
+without that field they fail before execution. Catalog-qualified names and SQL
+that cannot be parsed safely also fail closed.
+
+Named query sources are rewritten to the `cluster(cluster, database, table)`
+table function. This includes nested queries and named `system` or Distributed
+tables; CTE references and existing table functions are left intact. Text and
+dataframe inserts use
+`cluster(cluster, database, table, sharding_key)` as their insert target. Plain
+supported DDL receives `ON CLUSTER` automatically.
+
+An explicit DDL scope always wins over `cluster_routing`. For example,
+`ON CLUSTER '{cluster}'` remains exactly that macro and is also used to route
+table sources inside the same statement. This lets connection-level routing
+coexist with the `on_cluster` values selected by `ddl_defaults` or explicit
+helper arguments. Toolkit topology probes, readiness checks, cancellation, and
+intentional local fallback DDL remain local control operations.
+
+Dry-run plans expose the routed SQL when their statements are valid executable
+SQL. Existing `cluster(...)` functions are idempotent, so prepared SQL can pass
+through the connection wrapper without being nested a second time.
 
 All backends support optional `transfer_staging_schema` for transfer staging
 tables. When omitted on a target connection, transfer staging defaults to

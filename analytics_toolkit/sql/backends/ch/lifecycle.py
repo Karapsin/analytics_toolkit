@@ -12,6 +12,7 @@ from .ddl import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
 )
+from .routing import local_sql, query_local
 from .wait import (
     _normalize_non_empty_string,
     _query_ch_cluster_table_rows,
@@ -533,8 +534,8 @@ def _build_truncate_ch_table_sql(
 
 def _execute_ch_sqls(connection: Any, sqls: list[str]) -> None:
     adapter = get_backend_adapter("ch")
-    for sql in sqls:
-        adapter.execute_command(connection, sql)
+    with local_sql(connection):
+        adapter.execute_commands(connection, sqls)
 
 
 def _drop_ch_distributed_table_pair_on_cluster_hosts(
@@ -635,7 +636,7 @@ def _query_ch_configured_cluster_hosts(
         f"WHERE cluster = {_sql_string_literal(cluster_name)}\n"
         "ORDER BY host_name"
     )
-    result = connection.query(sql)
+    result = query_local(connection, sql)
     rows = getattr(result, "result_rows", None) or []
     hosts: list[str] = []
     for row in rows:

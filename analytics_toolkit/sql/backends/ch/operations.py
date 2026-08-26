@@ -9,6 +9,8 @@ import analytics_toolkit.sql.backends.common_methods as _common_methods
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
+from .routing import local_sql, query_local, routed_connection_sql
+
 read_columns = _common_methods.read_columns
 
 
@@ -101,7 +103,8 @@ def extract_table_ddl(
     read_sql: Callable[[str, str], Any],
 ) -> str:
     del adapter
-    result = read_sql(connection_key, f"SHOW CREATE TABLE {table_name}")
+    with local_sql():
+        result = read_sql(connection_key, f"SHOW CREATE TABLE {table_name}")
     return _first_result_value(result, table_name)
 
 
@@ -138,7 +141,8 @@ def query_transfer_stage_table_names(
     del adapter, connection_key, table_pattern
     from ..utils import sql_string_literal
 
-    result = connection.query(
+    result = query_local(
+        connection,
         "SELECT name FROM system.tables WHERE database = "
         f"{sql_string_literal(transfer_staging_schema)}"
     )
@@ -485,11 +489,13 @@ def estimate_source_rows(
     del adapter
     from ..source_estimate import _estimate_clickhouse_source_rows
 
-    return _estimate_clickhouse_source_rows(
-        connection,
-        source_sql,
-        query_label=query_label,
-    )
+    routed_source_sql = routed_connection_sql(connection, source_sql)
+    with local_sql(connection):
+        return _estimate_clickhouse_source_rows(
+            connection,
+            routed_source_sql,
+            query_label=query_label,
+        )
 
 
 def _first_result_value(result: Any, table_name: str) -> str:

@@ -97,8 +97,7 @@ def execute_read(
 
     result = run_connection_operation(
         operation_name=(
-            f"executing SQL and reading final query on "
-            f"{options.connection_key} ({options.backend})"
+            f"executing SQL and reading final query on {options.connection_key} ({options.backend})"
         ),
         connection_key=options.connection_key,
         backend=options.backend,
@@ -144,10 +143,10 @@ def _build_execute_read_options(
     if not statements:
         raise InvalidSqlInputError("Query string must not be empty.")
     if query_label is not None:
-        statements = [
-            apply_query_label(statement, query_label)
-            for statement in statements
-        ]
+        statements = [apply_query_label(statement, query_label) for statement in statements]
+    statements = [
+        get_backend_adapter(backend).prepare_sql(config, statement) for statement in statements
+    ]
     return ExecuteReadOptions(
         connection_key=connection_key,
         backend=backend,

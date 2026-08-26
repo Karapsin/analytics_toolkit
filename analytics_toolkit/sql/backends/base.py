@@ -84,6 +84,7 @@ class BackendAdapter:
         raise NotImplementedError
 
     validate_airflow_file_overrides = _adapter_defaults.validate_airflow_file_overrides
+    prepare_sql = _adapter_defaults.prepare_sql
 
     def open_connection(
         self,

@@ -15,6 +15,7 @@ from .ddl import (
     split_ch_table_name_for_distributed_engine,
 )
 from .readiness import run_ch_readiness_wait
+from .routing import query_local
 from .wait_policy import waits_for_distributed, waits_for_shard
 
 if TYPE_CHECKING:
@@ -114,7 +115,7 @@ def _wait_for_ch_table(
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while True:
-        result = connection.query(f"EXISTS TABLE {table_name}")
+        result = query_local(connection, f"EXISTS TABLE {table_name}")
         if result.result_rows and result.result_rows[0][0]:
             return
         if time.monotonic() >= deadline:
@@ -406,7 +407,7 @@ def _wait_for_ch_table_absence(
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while True:
-        result = connection.query(f"EXISTS TABLE {table_name}")
+        result = query_local(connection, f"EXISTS TABLE {table_name}")
         rows = getattr(result, "result_rows", None) or []
         if not rows or not rows[0] or not rows[0][0]:
             return
@@ -703,7 +704,7 @@ def _resolve_ch_cluster_name_for_wait(connection: Any, cluster_name: str) -> str
         return unquoted
 
     try:
-        result = connection.query(f"SELECT getMacro({_sql_string_literal(macro_name)})")
+        result = query_local(connection, f"SELECT getMacro({_sql_string_literal(macro_name)})")
     except Exception as exc:
         raise ValueError(
             f"Could not resolve ClickHouse cluster macro {unquoted!r}. "
@@ -741,7 +742,7 @@ def _extract_ch_macro_name(value: str) -> str | None:
 
 
 def _query_ch_count(connection: Any, sql: str) -> int:
-    result = connection.query(sql)
+    result = query_local(connection, sql)
     rows = getattr(result, "result_rows", None) or []
     if not rows:
         return 0
@@ -850,5 +851,5 @@ def _query_ch_cluster_host_counts(
 
 
 def _query_ch_rows(connection: Any, sql: str) -> list[tuple[Any, ...]]:
-    result = connection.query(sql)
+    result = query_local(connection, sql)
     return list(getattr(result, "result_rows", None) or [])

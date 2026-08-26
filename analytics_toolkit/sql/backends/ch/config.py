@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
+from .routing import parse_cluster_routing, wrap_client
 from .wait_policy import parse_connection_ch_ddl_wait_policy
 
 AIRFLOW_EXTRA_FIELDS = (
@@ -23,6 +24,7 @@ AIRFLOW_EXTRA_FIELDS = (
     "client_name",
     "compression",
     "ddl_defaults",
+    "cluster_routing",
 )
 
 
@@ -141,7 +143,15 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             connection_key,
             "transfer_staging_schema",
         ),
-        ddl_defaults=parse_ddl_defaults(raw_config.get("ddl_defaults"), connection_key, "ch"),
+        ddl_defaults=parse_ddl_defaults(
+            raw_config.get("ddl_defaults"),
+            connection_key,
+            "ch",
+        ),
+        cluster_routing=parse_cluster_routing(
+            raw_config.get("cluster_routing"),
+            connection_key,
+        ),
     )
 
 
@@ -181,16 +191,18 @@ def open_connection(
     resolve_ch_ca_certs: Callable[[Any], str | None],
 ) -> Any:
     if getattr(config, "driver", "http") == "native":
-        return _open_native_connection(
+        client = _open_native_connection(
             config,
             parse_verify_value=parse_verify_value,
             resolve_ch_ca_certs=resolve_ch_ca_certs,
         )
-    return _open_http_connection(
-        config,
-        parse_verify_value=parse_verify_value,
-        resolve_ch_ca_certs=resolve_ch_ca_certs,
-    )
+    else:
+        client = _open_http_connection(
+            config,
+            parse_verify_value=parse_verify_value,
+            resolve_ch_ca_certs=resolve_ch_ca_certs,
+        )
+    return wrap_client(client, config)
 
 
 def _open_http_connection(

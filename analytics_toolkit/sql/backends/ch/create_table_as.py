@@ -34,6 +34,7 @@ from ...ddl.schema import build_table_schema_column_definitions, normalize_table
 from analytics_toolkit.general import time_print
 from ...dml.table.models import ChCreateTableAsOptions
 from ...dml.table._basic_ops import _execute_ch_command
+from .routing import local_sql
 
 
 @timed_public_sql_function
@@ -247,11 +248,13 @@ def ch_create_table_as(
                 time_print(f"Creating target shard table {target_shard_table}")
                 _execute_ch_command(connection, shard_sql)
                 time_print(f"Creating local shard table {target_shard_table}")
-                _execute_ch_command(connection, local_shard_sql)
+                with local_sql(connection):
+                    _execute_ch_command(connection, local_shard_sql)
                 time_print(f"Creating target distributed table {options.target_table}")
                 _execute_ch_command(connection, distributed_sql)
                 time_print(f"Creating local distributed table {options.target_table}")
-                _execute_ch_command(connection, local_distributed_sql)
+                with local_sql(connection):
+                    _execute_ch_command(connection, local_distributed_sql)
                 time_print(f"Waiting for target table pair {options.target_table}")
                 _wait_for_ch_distributed_table_pair(
                     connection,

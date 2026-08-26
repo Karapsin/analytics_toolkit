@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence as SequenceABC
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from numbers import Integral
 from typing import Any, Sequence, Union
 
@@ -60,17 +61,20 @@ def cancel_queries(
     def cancel_query(query_id: int | str) -> dict[str, Any]:
         normalized_id = _normalize_backend_query_id(backend, query_id)
         cancel_sql = _cancel_query_sql(backend, normalized_id)
+        adapter = get_backend_adapter(backend)
+        local_sql_context = getattr(adapter, "local_sql_context", nullcontext)
         try:
-            result = read_sql(
-                connection_key,
-                cancel_sql,
-                print_queries=print_queries,
-                retry_cnt=retry_cnt,
-                timeout_increment=timeout_increment,
-                query_label=query_label,
-            )
+            with local_sql_context():
+                result = read_sql(
+                    connection_key,
+                    cancel_sql,
+                    print_queries=print_queries,
+                    retry_cnt=retry_cnt,
+                    timeout_increment=timeout_increment,
+                    query_label=query_label,
+                )
         except Exception as exc:
-            cancel_result = get_backend_adapter(backend).cancel_error_result(exc)
+            cancel_result = adapter.cancel_error_result(exc)
             if cancel_result is None:
                 raise
         else:

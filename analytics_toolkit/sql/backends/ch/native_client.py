@@ -308,6 +308,9 @@ def _is_column_metadata(value: Any) -> bool:
 
 
 def _insert_query(table: str, column_names: Sequence[str]) -> str:
+    if table.lstrip().upper().startswith("FUNCTION CLUSTER("):
+        quoted_columns = ", ".join(quote_identifier(column, "ch") for column in column_names)
+        return f"INSERT INTO {table.strip()} ({quoted_columns}) VALUES"
     parsed = _parse_table_name(table, "clickhouse")
     parts = [part for part in (parsed.catalog, parsed.db, parsed.name) if part]
     quoted_table = ".".join(quote_identifier(part, "ch") for part in parts)

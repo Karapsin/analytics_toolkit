@@ -120,9 +120,24 @@ class SqlPlan:
         source_table: str | None = None,
         query_label: str | None = None,
     ) -> None:
+        prepared_sql = apply_query_label(sql, query_label)
+        if alias is not None and backend is not None:
+            from analytics_toolkit.sql.backends import get_backend_adapter  # noqa: PLC0415
+
+            prepare_plan_sql = getattr(
+                get_backend_adapter(backend),
+                "prepare_plan_sql",
+                None,
+            )
+            if prepare_plan_sql is not None:
+                prepared_sql = prepare_plan_sql(
+                    alias,
+                    prepared_sql,
+                    [statement.sql for statement in self.statements],
+                )
         self.statements.append(
             SqlStatement(
-                sql=apply_query_label(sql, query_label),
+                sql=prepared_sql,
                 alias=alias,
                 backend=backend,
                 phase=phase,

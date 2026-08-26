@@ -26,6 +26,8 @@ from .references import (
 )
 
 if TYPE_CHECKING:
+    from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting
+
     from .ddl_defaults import DdlDefaults
 
 BackendName = str
@@ -136,6 +138,7 @@ class ChConfig:
     ddl_ready_timeout_seconds: int | None = None
     ddl_ready_timeout_extension_cnt: int | None = None
     ch_ddl_wait_policy: str | None = None
+    cluster_routing: ChClusterRouting | None = None
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]

@@ -44,6 +44,22 @@ fallback creation for a replicated shard includes an explicit UUID when needed
 by a `{uuid}`-based default replica path; the corresponding `ON CLUSTER`
 statement remains unchanged.
 
+## Connection-Wide Cluster Routing
+
+For an alias whose reads, writes, and generated SQL should always fan out over
+a cluster, configure the optional `cluster_routing` object in `.connections`.
+It rewrites named read sources through the ClickHouse `cluster(...)` table
+function, sends inserts to the corresponding cluster function with the
+configured sharding key, and adds `ON CLUSTER` to supported DDL.
+
+This is independent of managed shard/Distributed-pair topology. In particular,
+named Distributed and `system` tables are still routed as named sources. An
+explicit `ON CLUSTER` value from SQL, `ddl_defaults`, or a helper policy has
+precedence over the connection default, so a macro such as `'{cluster}'` is
+preserved and used by that statement. See
+[Automatic ClickHouse Cluster Routing](configuration.md#automatic-clickhouse-cluster-routing)
+for the configuration shape and validation rules.
+
 Use [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md) to replace a
 stored Distributed cluster, sharding key, MergeTree engine, partition key,
 sorting key, or table settings. The helper resolves cluster macros before

@@ -228,6 +228,7 @@ def _build_read_sql_options(
     if len(statements) != 1:
         raise InvalidSqlInputError("read_sql expects exactly one SQL statement.")
     sql = apply_query_label(statements[0].rstrip(";").rstrip(), query_label)
+    sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ReadSqlOptions(
         connection_key=connection_key,
         backend=backend,

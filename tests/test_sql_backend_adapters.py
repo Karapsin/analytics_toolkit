@@ -52,6 +52,9 @@ ch_backend_wait_module = importlib.import_module("analytics_toolkit.sql.backends
 backend_registry_module = importlib.import_module("analytics_toolkit.sql.backends.registry")
 backend_validation_module = importlib.import_module("analytics_toolkit.sql.backends.validation")
 backend_source_count_module = importlib.import_module("analytics_toolkit.sql.backends.source_count")
+backend_common_methods_module = importlib.import_module(
+    "analytics_toolkit.sql.backends.common_methods"
+)
 gp_stage_module = importlib.import_module("analytics_toolkit.sql.backends.gp.stage")
 adapter_defaults_module = importlib.import_module("analytics_toolkit.sql.backends.adapter_defaults")
 trino_adapter_module = importlib.import_module("analytics_toolkit.sql.backends.trino.adapter")
@@ -1582,6 +1585,22 @@ def test_dbapi_execute_commands_rolls_back_and_closes_on_later_failure() -> None
     assert connection.executed == ["good", "bad"]
     assert connection.rollback_calls == 1
     assert connection.closed is True
+
+
+def test_default_execute_commands_dispatches_every_statement() -> None:
+    calls: list[tuple[object, str]] = []
+    connection = object()
+    adapter = SimpleNamespace(
+        execute_command=lambda current_connection, sql: calls.append((current_connection, sql))
+    )
+
+    backend_common_methods_module.execute_commands(
+        adapter,
+        connection,
+        ["SELECT 1", "SELECT 2"],
+    )
+
+    assert calls == [(connection, "SELECT 1"), (connection, "SELECT 2")]
 
 
 def test_noncommitting_dbapi_failures_do_not_require_rollback() -> None:

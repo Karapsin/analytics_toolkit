@@ -156,6 +156,12 @@
     "ch_native": {
       "purpose": "Native-protocol ClickHouse source and target"
     },
+    "ch_routed": {
+      "purpose": "HTTP ClickHouse automatic cluster routing"
+    },
+    "ch_routed_native": {
+      "purpose": "Native-protocol ClickHouse automatic cluster routing"
+    },
     "gp_tls": {
       "purpose": "Greenplum TLS"
     },
@@ -5858,6 +5864,13 @@
     }
   },
   "scenarios": {
+    "clickhouse.cluster_routing.transports": {
+      "profile": "core",
+      "node_id": "tests/integration/test_sql_clickhouse_cluster_routing.py::test_clickhouse_cluster_routing_http_and_native",
+      "backends": [
+        "ch"
+      ]
+    },
     "clickhouse.native.transport": {
       "profile": "core",
       "node_id": "tests/integration/test_sql_clickhouse_native.py::test_native_clickhouse_public_operations_and_transfers",

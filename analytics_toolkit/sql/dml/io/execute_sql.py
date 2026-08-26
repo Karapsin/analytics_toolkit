@@ -276,6 +276,7 @@ def _build_execute_sql_options(
     validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
     sql = apply_query_label(sql, query_label)
+    sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ExecuteSqlOptions(
         connection_key=connection_key,
         backend=backend,

@@ -56,9 +56,17 @@ normal pushes run advisory core and auth jobs. Fault and stress profiles
 run nightly or by manual dispatch. On x86_64, a skipped core/auth manifest
 scenario is a failure.
 
-Do not wait for advisory integration completion before finishing a normal
-commit. If a non-green integration result is already known while planning a
-task, include its correction in that plan. Every correction derived from an
+Do not invoke local SQL integration as a normal implementation-completion step,
+including when an integration scenario was added or changed. Run it only when
+the user explicitly requests local integration validation or during release
+readiness. Normal work ends with focused and pre-commit validation, followed by
+the exact-SHA required-check watch.
+
+Do not wait for, poll, or extend a turn for advisory integration completion
+before finishing a normal commit. During the push watch, poll required checks
+only; report an advisory integration status or URL if it is already available.
+If a non-green integration result is already known while planning a task,
+include its correction in that plan. Every correction derived from an
 integration failure must include a fast non-integration regression test using
 fakes, configuration inspection, or a bounded simulation of the failure mode.
 
@@ -75,8 +83,8 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 8. Run `run_checks(level="precommit")`.
 9. Re-run `workflow_status(...)`.
 10. Commit explicit paths with `git_workflow(action="commit", ...)`.
-11. Wait for every required GitHub check for the exact pushed SHA; report but do
-    not wait for advisory integration jobs.
+11. Wait for every required GitHub check for the exact pushed SHA. Poll required
+    checks only; report but do not poll or wait for advisory integration jobs.
 12. Diagnose required-check failures, fix in-scope defects, and recommit until
     the new SHA's required checks are green.
 13. Report the final SHA, push target, required conclusions, and advisory

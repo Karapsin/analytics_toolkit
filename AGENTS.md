@@ -83,8 +83,11 @@ workflow and check for the exact pushed commit SHA until all are successful.
 This read-only watch is the required completion phase after the final repository
 mutation. Advisory SQL integration workflows still run on every push, but their
 completion is not required for a normal commit and agents must not remain active
-solely to wait for them. A cancelled, superseded, missing, failed, or timed-out
-required check is not success. Resume an interrupted required-check watch with
+solely to wait for them. During the exact-SHA watch, poll required checks only;
+record an advisory integration status or URL if it is already available, but do
+not poll, block on, or extend the turn for advisory integration. A cancelled,
+superseded, missing, failed, or timed-out required check is not success. Resume
+an interrupted required-check watch with
 `git_workflow(action="checks", sha="<exact-sha>")`; never substitute the newest
 branch run for the pushed SHA. This applies to implementation, documentation,
 release, retry, and standalone pushes. Use `main` only for PyPI release preparation and publishing. When
@@ -223,4 +226,11 @@ specific documentation update that would make future RAG retrieval unambiguous.
   mandatory only during release readiness, which must pass the exhaustive `all`
   profile with both ClickHouse transports. Integration cleanup must remove
   project containers, networks, volumes, labelled queries, tables, and MinIO objects.
+- For normal implementation, test, documentation, commit, and push tasks, do not
+  invoke `run_checks(area="sql", level="integration")`. Adding or changing an
+  integration scenario does not make a local integration run mandatory. Invoke
+  it only when the user explicitly requests local integration validation or the
+  task is release readiness; otherwise add the scenario and its fast
+  non-integration regression coverage, run focused and pre-commit checks, and
+  let the advisory push workflows execute without waiting for them.
 - Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.

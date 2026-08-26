@@ -188,6 +188,20 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     connections["ch_native"] = {
         **clickhouse_native,
     }
+    connections["ch_routed"] = {
+        **clickhouse_http,
+        "cluster_routing": {
+            "cluster": "integration_cluster",
+            "sharding_key": "rand()",
+        },
+    }
+    connections["ch_routed_native"] = {
+        **clickhouse_native,
+        "cluster_routing": {
+            "cluster": "integration_cluster",
+            "sharding_key": "rand()",
+        },
+    }
     if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
         connections["trino_pressure"] = {
             **connections["trino_values"],

@@ -11,6 +11,11 @@ from .models import (
     TransferInsertPageSizing,
 )
 
+
+def prepare_sql(adapter: Any, config: Any, sql: str) -> str:
+    del adapter, config
+    return sql
+
 _DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
 _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
