@@ -207,7 +207,7 @@ def _pytest_command(profile: str, profile_dir: Path) -> list[str]:
         _pytest_marker(profile),
         "--junitxml",
         str(profile_dir / "pytest.xml"),
-        "tests/integration",
+        "tests/sql/integration",
     ]
 
 

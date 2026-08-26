@@ -301,27 +301,20 @@
       "agent_tools/mcp_server.py": {
         "ARG001": 1,
         "BLE001": 3,
-        "C401": 1,
         "C901": 1,
         "DTZ011": 3,
         "E402": 2,
-        "E501": 45,
-        "EM101": 7,
-        "EM102": 2,
+        "E501": 8,
         "EXE001": 1,
         "FBT001": 5,
-        "FBT002": 4,
+        "FBT002": 3,
         "PERF401": 1,
-        "PIE810": 2,
+        "PIE810": 1,
         "PLR0911": 4,
         "PLR0913": 2,
-        "PLR1714": 1,
         "PLR2004": 4,
         "PTH105": 1,
-        "RUF005": 1,
-        "RUF059": 1,
-        "S108": 10,
-        "TRY003": 9
+        "S108": 9
       },
       "analytics_toolkit/ab_utils/api.py": {
         "C901": 2,
@@ -424,14 +417,13 @@
       },
       "analytics_toolkit/ab_utils/split.py": {
         "C420": 2,
-        "E501": 1,
-        "EM101": 31,
+        "EM101": 30,
         "EM102": 9,
         "FBT001": 1,
         "FBT002": 1,
         "PERF401": 1,
         "PLR0913": 1,
-        "TRY003": 40
+        "TRY003": 39
       },
       "analytics_toolkit/ab_utils/sql_bootstrap.py": {
         "C901": 1,
@@ -441,7 +433,6 @@
         "PLR0913": 4,
         "PLR2004": 1,
         "S608": 17,
-        "TC006": 4,
         "TRY003": 25,
         "UP032": 3
       },
@@ -532,14 +523,12 @@
       "analytics_toolkit/general/connections.py": {
         "EM102": 2,
         "I001": 1,
-        "PLW0603": 2,
         "TRY003": 2
       },
       "analytics_toolkit/general/logging.py": {
         "B039": 1,
         "EM101": 6,
         "EM102": 2,
-        "I001": 1,
         "PLR0913": 1,
         "PLW0603": 4,
         "TC003": 2,
@@ -559,52 +548,10 @@
         "I001": 1,
         "RUF022": 1
       },
-      "analytics_toolkit/sql/_backend_adapters/__init__.py": {
-        "I001": 1,
-        "RUF022": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/base.py": {
-        "F822": 4,
-        "I001": 1,
-        "RUF022": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/clickhouse.py": {
-        "F822": 4,
-        "I001": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/dbapi.py": {
-        "F822": 1,
-        "I001": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/gp.py": {
-        "F822": 3,
-        "I001": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/registry.py": {
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/trino.py": {
-        "F822": 2,
-        "I001": 1,
-        "TID252": 2
-      },
-      "analytics_toolkit/sql/_backend_adapters/utils.py": {
-        "TID252": 1
-      },
       "analytics_toolkit/sql/_lazy_exports.py": {
         "EM102": 1,
         "I001": 1,
         "TRY003": 1
-      },
-      "analytics_toolkit/sql/backend_adapters.py": {
-        "F822": 17,
-        "I001": 1,
-        "RUF022": 1
       },
       "analytics_toolkit/sql/backends/__init__.py": {
         "I001": 1,
@@ -615,7 +562,6 @@
         "EM101": 6,
         "EM102": 12,
         "FBT001": 2,
-        "I001": 1,
         "PLC0415": 3,
         "PLR0913": 12,
         "TC002": 1,
@@ -626,13 +572,11 @@
       },
       "analytics_toolkit/sql/backends/base.py": {
         "ARG002": 1,
-        "E501": 4,
+        "E501": 1,
         "EM101": 3,
         "EM102": 1,
-        "I001": 1,
         "PLC0415": 5,
         "PLR0913": 9,
-        "PYI041": 1,
         "S608": 4,
         "TC003": 3,
         "TID252": 4,
@@ -640,14 +584,11 @@
       },
       "analytics_toolkit/sql/backends/ch/adapter.py": {
         "EM101": 3,
-        "I001": 4,
+        "I001": 1,
         "PLC0415": 19,
         "PLR0911": 1,
         "PLR0913": 9,
-        "PLR1711": 1,
         "PLR2004": 1,
-        "PYI041": 1,
-        "RET501": 1,
         "S608": 2,
         "TC003": 3,
         "TID252": 18,
@@ -702,11 +643,9 @@
       "analytics_toolkit/sql/backends/ch/lifecycle.py": {
         "BLE001": 3,
         "EM102": 3,
-        "I001": 1,
-        "PLC0415": 1,
         "PLR0913": 5,
         "TC003": 2,
-        "TID252": 3,
+        "TID252": 2,
         "TRY003": 3,
         "TRY300": 1
       },
@@ -725,7 +664,6 @@
         "BLE001": 1,
         "EM101": 5,
         "EM102": 2,
-        "I001": 2,
         "PD009": 1,
         "PLC0415": 22,
         "PLR0913": 6,
@@ -757,22 +695,12 @@
         "TC003": 1,
         "TRY003": 2
       },
-      "analytics_toolkit/sql/backends/ch/upsert.py": {
-        "EM101": 2,
-        "PLC0415": 2,
-        "PLR0913": 3,
-        "TC003": 1,
-        "TID252": 2,
-        "TRY003": 2
-      },
       "analytics_toolkit/sql/backends/ch/wait.py": {
         "BLE001": 5,
         "EM102": 4,
-        "I001": 1,
         "PLR0913": 3,
         "PLR2004": 6,
         "RUF005": 2,
-        "TC003": 2,
         "TID252": 1,
         "TRY003": 4
       },
@@ -792,7 +720,7 @@
       "analytics_toolkit/sql/backends/gp/adapter.py": {
         "BLE001": 1,
         "C901": 2,
-        "EM101": 5,
+        "EM101": 4,
         "FURB171": 2,
         "I001": 3,
         "PLC0415": 15,
@@ -803,7 +731,7 @@
         "S608": 4,
         "TC003": 2,
         "TID252": 22,
-        "TRY003": 5,
+        "TRY003": 4,
         "TRY004": 1,
         "TRY300": 1
       },
@@ -839,7 +767,6 @@
       },
       "analytics_toolkit/sql/backends/gp/stage.py": {
         "EM101": 1,
-        "I001": 1,
         "S324": 1,
         "TRY003": 1
       },
@@ -903,14 +830,12 @@
       "analytics_toolkit/sql/backends/trino/config.py": {
         "EM101": 1,
         "EM102": 1,
-        "I001": 2,
         "PLC0415": 4,
         "TID252": 9,
         "TRY003": 2
       },
       "analytics_toolkit/sql/backends/trino/insert.py": {
         "EM101": 2,
-        "I001": 1,
         "PLC0415": 3,
         "PLR0911": 1,
         "PLR0913": 2,
@@ -958,25 +883,6 @@
         "S608": 4,
         "TC003": 1
       },
-      "analytics_toolkit/sql/clickhouse/__init__.py": {
-        "RUF022": 1
-      },
-      "analytics_toolkit/sql/clickhouse/lifecycle.py": {
-        "RUF022": 1,
-        "TID252": 17
-      },
-      "analytics_toolkit/sql/clickhouse/options.py": {
-        "I001": 1,
-        "PLC0415": 4,
-        "PLR0913": 1,
-        "TC003": 1,
-        "TID252": 4
-      },
-      "analytics_toolkit/sql/clickhouse/wait.py": {
-        "I001": 1,
-        "RUF022": 1,
-        "TID252": 20
-      },
       "analytics_toolkit/sql/connection/__init__.py": {
         "I001": 1,
         "RUF022": 1
@@ -987,13 +893,10 @@
         "EM102": 41,
         "FBT001": 2,
         "FBT002": 1,
-        "FURB110": 2,
-        "I001": 1,
         "PERF203": 1,
         "PLC0415": 4,
         "T201": 4,
         "TC003": 3,
-        "TC006": 1,
         "TID252": 7,
         "TRY003": 45
       },
@@ -1037,9 +940,7 @@
         "I001": 1,
         "PLC0415": 8,
         "PLR0913": 6,
-        "PYI041": 3,
-        "TC003": 2,
-        "TID252": 26,
+        "TID252": 23,
         "TRY003": 5
       },
       "analytics_toolkit/sql/ddl/builders.py": {
@@ -1047,9 +948,6 @@
         "PLR0913": 1,
         "TC003": 1,
         "TID252": 4
-      },
-      "analytics_toolkit/sql/ddl/clickhouse.py": {
-        "TID252": 10
       },
       "analytics_toolkit/sql/ddl/extract_ddl.py": {
         "EM101": 4,
@@ -1104,7 +1002,6 @@
         "F821": 1,
         "FBT001": 10,
         "FBT002": 7,
-        "I001": 1,
         "PLR0913": 3,
         "PYI041": 2,
         "TID252": 16,
@@ -1124,21 +1021,16 @@
       "analytics_toolkit/sql/dml/load/load_df.py": {
         "BLE001": 5,
         "EM101": 14,
-        "FBT001": 12,
         "FBT002": 9,
-        "I001": 1,
         "PLR0913": 3,
-        "PYI041": 2,
         "S608": 1,
         "TC003": 1,
-        "TID252": 53,
         "TRY003": 14,
         "TRY004": 1
       },
       "analytics_toolkit/sql/dml/load/load_sql_table.py": {
         "EM101": 1,
         "EM102": 2,
-        "I001": 1,
         "PLC0415": 13,
         "PLR0913": 10,
         "PYI041": 2,
@@ -1148,14 +1040,10 @@
         "TRY003": 3
       },
       "analytics_toolkit/sql/dml/load/stage.py": {
-        "EM102": 5,
-        "I001": 1,
-        "PLR0913": 2,
+        "EM102": 4,
         "PYI041": 1,
         "TC002": 1,
-        "TC003": 1,
-        "TID252": 6,
-        "TRY003": 5,
+        "TRY003": 4,
         "TRY004": 2
       },
       "analytics_toolkit/sql/dml/table/__init__.py": {
@@ -1178,11 +1066,7 @@
         "TRY003": 2
       },
       "analytics_toolkit/sql/dml/table/api.py": {
-        "F401": 47,
-        "Q000": 1
-      },
-      "analytics_toolkit/sql/dml/table/ch_create_table_as.py": {
-        "TID252": 1
+        "F401": 47
       },
       "analytics_toolkit/sql/dml/table/create_table_from_sql.py": {
         "BLE001": 3,
@@ -1195,7 +1079,6 @@
         "PLR0912": 1,
         "PLR0913": 4,
         "PLR0915": 1,
-        "PYI041": 1,
         "TC003": 1,
         "TID252": 28,
         "TRY003": 7,
@@ -1217,7 +1100,6 @@
         "EM102": 1,
         "FBT001": 12,
         "FBT002": 12,
-        "I001": 1,
         "PLR0913": 4,
         "PYI041": 1,
         "RET501": 1,
@@ -1264,56 +1146,30 @@
         "TRY003": 3
       },
       "analytics_toolkit/sql/dml/transfer/flow/api.py": {
-        "BLE001": 2,
-        "C901": 2,
-        "EM101": 10,
-        "FBT001": 24,
+        "C901": 1,
+        "FBT001": 23,
         "FBT002": 19,
-        "I001": 1,
-        "PLR0912": 1,
         "PLR0913": 2,
-        "PYI041": 4,
-        "S110": 1,
-        "S608": 1,
-        "SIM105": 1,
         "TC003": 2,
-        "TID252": 32,
-        "TRY003": 10,
-        "TRY004": 5
+        "TID252": 21
       },
       "analytics_toolkit/sql/dml/transfer/flow/attempt.py": {
         "ARG001": 1,
-        "B023": 5,
-        "BLE001": 4,
-        "EM101": 6,
-        "F401": 1,
-        "F821": 1,
+        "B023": 4,
+        "BLE001": 3,
+        "EM101": 5,
         "I001": 1,
         "PLR0913": 2,
         "TID252": 23,
-        "TRY003": 6
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/dry_run.py": {
-        "BLE001": 3,
-        "I001": 1,
-        "TC001": 2,
-        "TID252": 11
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/estimate.py": {
-        "RUF100": 1,
-        "TID252": 1
+        "TRY003": 5
       },
       "analytics_toolkit/sql/dml/transfer/flow/finalize.py": {
         "ARG001": 1,
         "BLE001": 3,
         "C901": 1,
-        "EM101": 3,
-        "I001": 1,
         "PLC0415": 3,
-        "PLR0912": 1,
         "TC001": 3,
-        "TID252": 17,
-        "TRY003": 3
+        "TID252": 17
       },
       "analytics_toolkit/sql/dml/transfer/flow/keyed.py": {
         "EM101": 1,
@@ -1323,31 +1179,23 @@
       "analytics_toolkit/sql/dml/transfer/flow/keys.py": {
         "C901": 1,
         "EM101": 22,
-        "EM102": 5,
+        "EM102": 4,
         "I001": 1,
         "PLR0911": 1,
         "S608": 1,
         "SIM108": 1,
         "TID252": 1,
-        "TRY003": 27,
+        "TRY003": 26,
         "TRY004": 5
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/logging.py": {
-        "TC001": 2,
-        "TID252": 2
       },
       "analytics_toolkit/sql/dml/transfer/flow/options.py": {
         "C901": 1,
-        "EM101": 22,
         "EM102": 2,
-        "I001": 1,
         "PLR0912": 1,
         "PLR0913": 2,
         "PLR2004": 1,
         "TC001": 1,
-        "TID252": 8,
-        "TRY003": 24,
-        "TRY004": 7
+        "TID252": 8
       },
       "analytics_toolkit/sql/dml/transfer/flow/parquet_stage.py": {
         "EM101": 5,
@@ -1368,9 +1216,7 @@
       },
       "analytics_toolkit/sql/dml/transfer/flow/row_counts.py": {
         "EM101": 4,
-        "I001": 1,
         "PLR0913": 1,
-        "TID252": 12,
         "TRY003": 4
       },
       "analytics_toolkit/sql/dml/transfer/flow/source.py": {
@@ -1405,10 +1251,7 @@
       "analytics_toolkit/sql/dml/transfer/runtime/retry.py": {
         "BLE001": 3,
         "EM102": 1,
-        "I001": 1,
         "PERF203": 1,
-        "PLR0913": 1,
-        "PYI041": 1,
         "S110": 1,
         "SIM105": 1,
         "TC003": 1,
@@ -1442,7 +1285,6 @@
         "B010": 1,
         "EM101": 3,
         "FBT001": 1,
-        "I001": 1,
         "PLC0415": 3,
         "PLR0913": 4,
         "PYI041": 3,
@@ -1467,7 +1309,6 @@
         "TRY003": 1
       },
       "analytics_toolkit/sql/execution/query_timing.py": {
-        "I001": 1,
         "TC003": 1,
         "TRY203": 1
       },
@@ -1549,14 +1390,13 @@
         "TRY004": 1
       },
       "analytics_toolkit/sql_format/__init__.py": {
-        "EM101": 19,
+        "EM101": 17,
         "EM102": 17,
         "FBT001": 1,
-        "I001": 1,
         "PERF401": 1,
         "PLR0913": 5,
         "SIM103": 1,
-        "TRY003": 36,
+        "TRY003": 34,
         "TRY004": 5
       },
       "release_routines/lib/check_docs_coverage.py": {
@@ -1588,280 +1428,423 @@
         "PLR2004": 1,
         "TRY003": 2
       },
-      "tests/conftest.py": {
-        "TC003": 1
+      "tests/ab_utils/_support/metrics.py": {
+        "PLR0913": 2
       },
-      "tests/sql_fakes.py": {
-        "PLR0911": 1,
-        "PYI034": 1
+      "tests/ab_utils/metrics/compute/bootstrap.py": {
+        "EM101": 1,
+        "TRY003": 1
       },
-      "tests/test_ab_utils_format.py": {
-        "I001": 1
-      },
-      "tests/test_ab_utils_metrics.py": {
+      "tests/ab_utils/planning/mde/calculation_2.py": {
         "C901": 1,
-        "EM101": 3,
-        "EM102": 9,
-        "PLR0402": 1,
-        "PLR0913": 3,
-        "PLR0915": 2,
-        "TRY003": 12
+        "EM102": 2,
+        "PLR0913": 1,
+        "PLR0915": 1,
+        "TRY003": 2
       },
-      "tests/test_ab_utils_parallel.py": {
-        "RUF043": 2
+      "tests/ab_utils/planning/mde/sql_1.py": {
+        "EM102": 6,
+        "PLR0915": 1,
+        "TRY003": 6
       },
-      "tests/test_ab_utils_split.py": {
-        "I001": 1,
-        "PLR0402": 1,
+      "tests/ab_utils/planning/mde/sql_2.py": {
+        "EM101": 2,
+        "EM102": 1,
+        "TRY003": 3
+      },
+      "tests/ab_utils/split/split.py": {
         "PT006": 1,
         "PT011": 4
       },
-      "tests/test_agent_tools_mcp.py": {
-        "E501": 14,
-        "EM101": 2,
-        "EM102": 1,
-        "FLY002": 1,
-        "PT011": 1,
-        "Q003": 1,
-        "TRY003": 3
+      "tests/agent_tools/_support/mcp.py": {
+        "E501": 2
       },
-      "tests/test_coverage_backend_insert_schema.py": {
-        "E501": 1,
-        "I001": 1,
-        "PIE810": 1
-      },
-      "tests/test_coverage_load_sql_table.py": {
-        "I001": 1,
-        "PLR0913": 1,
-        "PT028": 2,
-        "TC003": 1
-      },
-      "tests/test_dates.py": {
-        "DTZ001": 11,
-        "E501": 1,
-        "I001": 1,
-        "PT030": 3
-      },
-      "tests/test_datetime.py": {
-        "DTZ001": 6,
-        "I001": 1
-      },
-      "tests/test_excel_long_format.py": {
-        "E501": 3,
-        "I001": 1,
-        "TC003": 1
-      },
-      "tests/test_general_logging.py": {
-        "DTZ001": 2,
-        "I001": 1,
-        "SIM117": 1
-      },
-      "tests/test_general_read_file.py": {
-        "I001": 1,
-        "PLR0402": 1,
-        "PYI024": 1
-      },
-      "tests/test_rag_docs.py": {
+      "tests/agent_tools/docs/index.py": {
         "E501": 2,
         "FLY002": 8,
-        "I001": 1,
-        "PLC0415": 2,
-        "Q003": 2
+        "PLC0415": 2
       },
-      "tests/test_sql_architecture.py": {
+      "tests/agent_tools/mcp/checks.py": {
+        "FLY002": 1
+      },
+      "tests/agent_tools/mcp/git_2.py": {
+        "E501": 1
+      },
+      "tests/agent_tools/mcp/release.py": {
+        "E501": 1
+      },
+      "tests/agent_tools/mcp/status.py": {
+        "E501": 2
+      },
+      "tests/conftest.py": {
+        "TC003": 1
+      },
+      "tests/dates/functions.py": {
+        "DTZ001": 11,
+        "PT030": 3
+      },
+      "tests/datetime/__init__.py": {
+        "A005": 1
+      },
+      "tests/datetime/functions.py": {
+        "DTZ001": 6
+      },
+      "tests/general/_support/files.py": {
+        "PYI024": 1
+      },
+      "tests/general/logging.py": {
+        "DTZ001": 2,
+        "SIM117": 1
+      },
+      "tests/repository/layout.py": {
+        "TC003": 1
+      },
+      "tests/sql/_support/async_sql.py": {
+        "EM102": 1,
+        "TRY003": 1
+      },
+      "tests/sql/_support/connection_config.py": {
+        "PLR0913": 1,
+        "PLW0108": 1
+      },
+      "tests/sql/_support/create_from_sql.py": {
+        "EM101": 1,
+        "PLR0911": 1,
+        "TRY003": 1
+      },
+      "tests/sql/_support/fakes.py": {
+        "PLR0911": 1,
+        "PYI034": 1
+      },
+      "tests/sql/_support/load_table.py": {
+        "DTZ011": 1,
+        "PLR0911": 1
+      },
+      "tests/sql/_support/parallel_sql.py": {
+        "EM102": 1,
+        "TRY003": 1
+      },
+      "tests/sql/_support/partitions.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/_support/retries.py": {
+        "N818": 3
+      },
+      "tests/sql/_support/staged_keyed.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/architecture/contract.py": {
+        "PERF401": 7,
+        "PLC0415": 4,
+        "PLW2901": 1
+      },
+      "tests/sql/architecture/contract_2.py": {
         "BLE001": 1,
-        "I001": 1,
         "PERF203": 1,
-        "PERF401": 13,
-        "PLC0415": 7,
-        "PLW2901": 1,
-        "SIM300": 1,
-        "TC002": 1
+        "PERF401": 3,
+        "PLC0415": 3
       },
-      "tests/test_sql_async.py": {
-        "C416": 1,
-        "EM101": 1,
-        "EM102": 1,
-        "I001": 1,
-        "PLR0913": 2,
-        "PLR1711": 1,
-        "RET501": 1,
-        "RUF043": 2,
-        "SIM300": 1,
-        "TRY003": 1
+      "tests/sql/architecture/creation.py": {
+        "PERF401": 1
       },
-      "tests/test_sql_backend_adapters.py": {
+      "tests/sql/architecture/facade.py": {
+        "TC003": 1
+      },
+      "tests/sql/architecture/validation.py": {
+        "PERF401": 1
+      },
+      "tests/sql/backends/adapters/clickhouse_2.py": {
         "C901": 3,
-        "DTZ001": 1,
+        "PLR0911": 3
+      },
+      "tests/sql/backends/adapters/dbapi.py": {
         "EM101": 2,
-        "I001": 1,
-        "PLC0415": 6,
-        "PLR0911": 3,
-        "PLR0915": 1,
         "TRY003": 1
       },
-      "tests/test_sql_cancel_queries.py": {
-        "EM102": 3,
-        "I001": 1,
-        "PLR0913": 8,
-        "PT006": 1,
-        "PYI034": 1,
-        "PYI041": 8,
-        "RUF012": 2,
-        "TRY003": 3
+      "tests/sql/backends/adapters/transfer.py": {
+        "PLR0915": 1
       },
-      "tests/test_sql_ch_create_table_as.py": {
+      "tests/sql/backends/ch/create_table_as.py": {
         "EM102": 1,
         "PLR0911": 1,
         "TRY003": 1
       },
-      "tests/test_sql_connection_config.py": {
-        "A002": 2,
-        "EM101": 1,
-        "I001": 1,
+      "tests/sql/backends/insert_schema/contract.py": {
+        "PIE810": 1
+      },
+      "tests/sql/backends/policies/cleanup.py": {
+        "F821": 1
+      },
+      "tests/sql/backends/policies/contract.py": {
+        "F821": 8
+      },
+      "tests/sql/backends/policies/validation.py": {
+        "F821": 17
+      },
+      "tests/sql/connection/config/airflow_2.py": {
+        "PLW0108": 1
+      },
+      "tests/sql/connection/config/trino.py": {
         "PLC0415": 1,
-        "PLR0913": 1,
-        "PLW0108": 3,
-        "PT011": 1,
-        "RUF043": 1,
-        "TC003": 1,
-        "TRY003": 1
+        "PLW0108": 1
       },
-      "tests/test_sql_create_table_from_sql.py": {
-        "EM101": 10,
-        "EM102": 8,
-        "F811": 1,
-        "PLR0911": 1,
-        "SIM117": 2,
-        "TRY003": 18
-      },
-      "tests/test_sql_drop_many_partitions.py": {
-        "I001": 1
-      },
-      "tests/test_sql_drop_tables.py": {
-        "E402": 1,
-        "I001": 1
-      },
-      "tests/test_sql_execute_read.py": {
-        "EM101": 1,
-        "F401": 1,
-        "PLR0913": 1,
-        "TRY003": 1
-      },
-      "tests/test_sql_extract_ddl.py": {
+      "tests/sql/ddl/extract.py": {
         "C901": 1,
         "EM101": 4,
         "EM102": 1,
-        "I001": 1,
         "N818": 1,
         "PLR0911": 1,
         "RUF043": 2,
         "TRY003": 5
       },
-      "tests/test_sql_format.py": {
-        "PLC0415": 42,
-        "PT011": 4
-      },
-      "tests/test_sql_gp_create_partitions.py": {
-        "EM101": 1,
-        "I001": 1,
-        "TRY003": 1
-      },
-      "tests/test_sql_improvements.py": {
-        "F401": 1,
-        "FLY002": 1,
-        "I001": 1,
-        "RUF015": 1,
-        "UP037": 1
-      },
-      "tests/test_sql_load_table.py": {
-        "B009": 1,
-        "DTZ011": 1,
-        "E501": 10,
-        "EM101": 3,
-        "EM102": 5,
-        "PLC0207": 3,
-        "PLR0911": 1,
-        "PLW0108": 1,
-        "TRY003": 8
-      },
-      "tests/test_sql_parallel.py": {
-        "C416": 1,
-        "EM101": 1,
-        "EM102": 1,
-        "I001": 1,
-        "PLR0913": 2,
-        "RUF043": 1,
-        "TRY003": 1
-      },
-      "tests/test_sql_public_facade_smoke.py": {
-        "I001": 1,
-        "TC003": 1
-      },
-      "tests/test_sql_retries.py": {
-        "E501": 2,
-        "EM101": 25,
-        "N818": 3,
-        "PLR0913": 3,
-        "PT017": 1,
-        "PYI034": 1,
-        "Q000": 1,
-        "TRY003": 25
-      },
-      "tests/test_sql_show_queries.py": {
-        "EM101": 1,
-        "I001": 1,
-        "PLR0913": 1,
+      "tests/sql/dml/io/cancel_queries.py": {
+        "EM102": 3,
+        "PLR0913": 8,
         "PT006": 1,
-        "PYI041": 1,
-        "Q000": 1,
-        "TRY003": 1
-      },
-      "tests/test_sql_show_tables.py": {
-        "EM101": 1,
-        "EM102": 2,
-        "I001": 1,
+        "PYI034": 1,
+        "RUF012": 2,
         "TRY003": 3
       },
-      "tests/test_sql_transfer_clickhouse.py": {
+      "tests/sql/dml/io/execute/read.py": {
+        "EM101": 1,
+        "PLR0913": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/load/load_table/contract_2.py": {
+        "PLW0108": 1
+      },
+      "tests/sql/dml/load/load_table/contract_3.py": {
+        "EM101": 1,
+        "EM102": 5,
+        "TRY003": 6
+      },
+      "tests/sql/dml/load/load_table/errors.py": {
+        "EM101": 2,
+        "TRY003": 2
+      },
+      "tests/sql/dml/load/sql_table/branches.py": {
+        "PLR0913": 1,
+        "PT028": 2,
+        "TC003": 1
+      },
+      "tests/sql/dml/table/create_from_sql/cleanup.py": {
+        "EM102": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/table/create_from_sql/contract.py": {
+        "EM102": 2,
+        "TRY003": 2
+      },
+      "tests/sql/dml/table/create_from_sql/creation.py": {
+        "EM102": 4,
+        "TRY003": 4
+      },
+      "tests/sql/dml/table/create_from_sql/errors.py": {
+        "EM101": 9,
+        "EM102": 1,
+        "F811": 1,
+        "SIM117": 2,
+        "TRY003": 10
+      },
+      "tests/sql/dml/table/drop.py": {
+        "E402": 1
+      },
+      "tests/sql/dml/transfer/clickhouse.py": {
         "EM102": 3,
         "PLR0911": 1,
         "TC002": 1,
         "TRY003": 3
       },
-      "tests/test_sql_transfer_row_batches.py": {
-        "C901": 3,
-        "DTZ001": 1,
-        "E501": 4,
-        "EM101": 15,
-        "EM102": 3,
-        "I001": 1,
-        "PD011": 3,
-        "PLW0108": 22,
-        "PT006": 2,
-        "PT018": 1,
-        "RUF043": 1,
-        "TRY003": 18
+      "tests/sql/dml/transfer/contracts.py": {
+        "RUF015": 1
       },
-      "tests/test_sql_transfer_schema.py": {
+      "tests/sql/dml/transfer/ordinal/cleanup.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/ordinal/contract_2.py": {
+        "PT018": 4
+      },
+      "tests/sql/dml/transfer/ordinal/creation.py": {
         "EM101": 2,
-        "PT017": 1,
         "TRY003": 2
       },
-      "tests/test_sql_transfer_source_batches.py": {
+      "tests/sql/dml/transfer/ordinal/errors.py": {
+        "EM101": 3,
+        "TRY003": 3
+      },
+      "tests/sql/dml/transfer/ordinal/validation.py": {
         "EM101": 1,
-        "PYI036": 2,
+        "PT018": 1,
         "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/cleanup.py": {
+        "EM101": 1,
+        "PLW0108": 3,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/errors.py": {
+        "EM101": 1,
+        "PT018": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/flow.py": {
+        "C901": 2,
+        "EM101": 4,
+        "EM102": 2,
+        "PLW0108": 2,
+        "TRY003": 6
+      },
+      "tests/sql/dml/transfer/row_batches/keyed.py": {
+        "EM101": 1,
+        "PLW0108": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/keyed_3.py": {
+        "C901": 1,
+        "EM101": 2,
+        "EM102": 1,
+        "PLW0108": 1,
+        "TRY003": 3
+      },
+      "tests/sql/dml/transfer/row_batches/options_2.py": {
+        "EM101": 3,
+        "TRY003": 3
+      },
+      "tests/sql/dml/transfer/row_batches/parquet.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/progress.py": {
+        "EM101": 1,
+        "PLW0108": 5,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/row_batches/staging.py": {
+        "PLW0108": 5
+      },
+      "tests/sql/dml/transfer/row_batches/staging_2.py": {
+        "EM101": 1,
+        "PLW0108": 5,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/schema/contract.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/schema/validation.py": {
+        "EM101": 1,
+        "PT017": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/source/batches.py": {
+        "EM101": 1,
+        "TRY003": 1
+      },
+      "tests/sql/dml/transfer/staged_keyed/contract.py": {
+        "EM101": 2,
+        "TRY003": 2
+      },
+      "tests/sql/dml/transfer/staged_keyed/contract_2.py": {
+        "EM101": 2,
+        "TRY003": 2
+      },
+      "tests/sql/dml/transfer/staged_keyed/errors.py": {
+        "EM101": 7,
+        "TRY003": 7
+      },
+      "tests/sql/dml/transfer/staged_keyed/errors_2.py": {
+        "EM101": 4,
+        "TRY003": 4
+      },
+      "tests/sql/execution/plans.py": {
+        "FLY002": 1
+      },
+      "tests/sql/execution/retries/contract.py": {
+        "EM101": 2,
+        "TRY003": 2
+      },
+      "tests/sql/execution/retries/errors.py": {
+        "EM101": 11,
+        "PLR0913": 3,
+        "PT017": 1,
+        "PYI034": 1,
+        "TRY003": 11
+      },
+      "tests/sql/execution/retries/errors_2.py": {
+        "EM101": 10,
+        "TRY003": 10
+      },
+      "tests/sql/execution/retries/validation.py": {
+        "EM101": 2,
+        "TRY003": 2
+      },
+      "tests/sql/integration/core/atomicity.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/core/cancellation.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/core/orchestration.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/core/schema_ddl.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/core/types.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/fault/recovery.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration/stress/scenarios.py": {
+        "TC001": 1
+      },
+      "tests/sql/integration_harness/manifest.py": {
+        "TC003": 1
+      },
+      "tests/sql/metadata/show_queries.py": {
+        "EM101": 1,
+        "PLR0913": 1,
+        "PT006": 1,
+        "TRY003": 1
+      },
+      "tests/sql/metadata/show_tables.py": {
+        "EM101": 1,
+        "EM102": 2,
+        "TRY003": 3
+      },
+      "tests/sql/metadata/table_info.py": {
+        "RET503": 1
+      },
+      "tests/sql/orchestration/async_sql/contract.py": {
+        "C416": 1,
+        "PLR0913": 2
+      },
+      "tests/sql/orchestration/async_sql/errors.py": {
+        "EM101": 1
+      },
+      "tests/sql/orchestration/parallel_sql/contract.py": {
+        "C416": 1,
+        "PLR0913": 2
+      },
+      "tests/sql/orchestration/parallel_sql/errors.py": {
+        "EM101": 1
+      },
+      "tests/sql_format/formatting/format.py": {
+        "PLC0415": 27
+      },
+      "tests/sql_format/formatting/format_2.py": {
+        "PLC0415": 3
+      },
+      "tests/sql_format/formatting/greenplum.py": {
+        "PLC0415": 12
       }
     },
     "ruff_format": {
       "agent_tools/docs_assistant.py": {
-        "FORMAT": 1
-      },
-      "agent_tools/mcp_server.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/ab_utils/api.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/ab_utils/cuped.py": {
@@ -1882,9 +1865,6 @@
       "analytics_toolkit/ab_utils/rows.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/ab_utils/split.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/ab_utils/validation.py": {
         "FORMAT": 1
       },
@@ -1892,9 +1872,6 @@
         "FORMAT": 1
       },
       "analytics_toolkit/general/connections.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/general/logging.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/general/read_file.py": {
@@ -1921,9 +1898,6 @@
       "analytics_toolkit/sql/backends/ch/insert.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/backends/ch/lifecycle.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/backends/ch/metadata.py": {
         "FORMAT": 1
       },
@@ -1942,12 +1916,6 @@
       "analytics_toolkit/sql/backends/dataframe_types.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/backends/gp/adapter.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/backends/gp/config.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/backends/gp/ddl.py": {
         "FORMAT": 1
       },
@@ -1955,9 +1923,6 @@
         "FORMAT": 1
       },
       "analytics_toolkit/sql/backends/gp/operations.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/backends/gp/stage.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/backends/metadata.py": {
@@ -1975,19 +1940,10 @@
       "analytics_toolkit/sql/backends/source_schema.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/backends/trino/adapter.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/backends/trino/config.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/backends/trino/insert.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/backends/trino/operations.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/backends/trino/parquet_stage.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/backends/upsert.py": {
@@ -1996,19 +1952,10 @@
       "analytics_toolkit/sql/backends/validation.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/connection/config.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/connection/get_sql_connection.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/core/capabilities.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/core/identifiers.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/ddl/api.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/ddl/identifiers.py": {
@@ -2017,28 +1964,10 @@
       "analytics_toolkit/sql/ddl/schema.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/dml/io/execute_read.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/io/read_sql.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/dml/load/load_df.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/dml/load/load_sql_table.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/load/stage.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/table/api.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/dml/table/drop_tables.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/table/maintenance.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/dml/table/partitions.py": {
@@ -2047,13 +1976,7 @@
       "analytics_toolkit/sql/dml/table/table_validation.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/dml/table/write_modes.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/dml/transfer/flow/api.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/attempt.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/dml/transfer/flow/dry_run.py": {
@@ -2062,22 +1985,7 @@
       "analytics_toolkit/sql/dml/transfer/flow/finalize.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/dml/transfer/flow/keyed.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/keys.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/options.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/parquet_stage.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/dml/transfer/flow/progress.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/flow/row_counts.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/dml/transfer/flow/stream_retries.py": {
@@ -2086,40 +1994,19 @@
       "analytics_toolkit/sql/dml/transfer/io/source.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/dml/transfer/runtime/models.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/dml/transfer/runtime/retry.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/dml/transfer/schema.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/dml/transfer/staging.py": {
         "FORMAT": 1
       },
-      "analytics_toolkit/sql/execution/labels.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/execution/operation_runner.py": {
-        "FORMAT": 1
-      },
       "analytics_toolkit/sql/execution/plan_steps.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/execution/plans.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/execution/query_timing.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/metadata/show_queries.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/metadata/show_tables.py": {
-        "FORMAT": 1
-      },
-      "analytics_toolkit/sql/orchestration/async_sql.py": {
         "FORMAT": 1
       },
       "analytics_toolkit/sql/orchestration/parallel_sql.py": {
@@ -2138,117 +2025,6 @@
         "FORMAT": 1
       },
       "release_routines/lib/project_metadata.py": {
-        "FORMAT": 1
-      },
-      "tests/conftest.py": {
-        "FORMAT": 1
-      },
-      "tests/sql_fakes.py": {
-        "FORMAT": 1
-      },
-      "tests/test_ab_utils_format.py": {
-        "FORMAT": 1
-      },
-      "tests/test_ab_utils_parallel.py": {
-        "FORMAT": 1
-      },
-      "tests/test_ab_utils_split.py": {
-        "FORMAT": 1
-      },
-      "tests/test_agent_tools_mcp.py": {
-        "FORMAT": 1
-      },
-      "tests/test_coverage_backend_insert_schema.py": {
-        "FORMAT": 1
-      },
-      "tests/test_dates.py": {
-        "FORMAT": 1
-      },
-      "tests/test_datetime.py": {
-        "FORMAT": 1
-      },
-      "tests/test_excel_long_format.py": {
-        "FORMAT": 1
-      },
-      "tests/test_general_logging.py": {
-        "FORMAT": 1
-      },
-      "tests/test_general_read_file.py": {
-        "FORMAT": 1
-      },
-      "tests/test_rag_docs.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_architecture.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_async.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_backend_adapters.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_cancel_queries.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_ch_create_table_as.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_connection_config.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_drop_many_partitions.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_drop_tables.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_execute_read.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_extract_ddl.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_format.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_gp_create_partitions.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_identifiers.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_improvements.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_load_table.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_numeric_validation.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_parallel.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_public_facade_smoke.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_retries.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_show_queries.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_transfer_clickhouse.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_transfer_row_batches.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_transfer_schema.py": {
-        "FORMAT": 1
-      },
-      "tests/test_sql_transfer_source_batches.py": {
         "FORMAT": 1
       }
     }

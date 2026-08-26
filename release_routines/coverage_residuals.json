@@ -29,7 +29,7 @@
   },
   "dead_code_removed_during_audit": [
     {
-      "contract_test": "tests/test_coverage_backend_insert_schema.py::test_literal",
+      "contract_test": "tests/sql/backends/insert_schema/contract.py::test_literal",
       "file": "analytics_toolkit/sql/backends/trino/insert.py",
       "reason": "The inner pandas Timestamp NaT check was dominated by _is_null_like().",
       "removed_lines": [
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "contract_test": "tests/test_sql_transfer_row_batches.py::test_resolve_target_adaptation_mode_rejects_non_boolean",
+      "contract_test": "tests/sql/dml/transfer/row_batches/options.py::test_resolve_target_adaptation_mode_branches",
       "file": "analytics_toolkit/sql/dml/transfer/flow/api.py",
       "reason": "build_transfer_options receives target_rows_per_second only after resolve_target_adaptation_mode has validated and returned a bool.",
       "removed_lines": [

@@ -62,6 +62,23 @@ the user explicitly requests local integration validation or during release
 readiness. Normal work ends with focused and pre-commit validation, followed by
 the exact-SHA required-check watch.
 
+## Test Layout
+
+Tests use a module-first tree under `tests/`, mirroring production package paths
+before adding function or behavior directories for larger areas. Pytest collects
+all Python filenames in that tree, so test modules omit the redundant `test_`
+prefix while test functions keep the standard `test_*` names. Filenames must not
+repeat ancestor areas such as `sql` or `ab_utils`, and catch-all names such as
+`edges`, `improvements`, `coverage`, and `round2` must be distributed to the
+subsystem they exercise.
+
+Prefer cohesive test modules below 500 lines; no Python file under `tests/` may
+exceed 700 lines. Put reusable fakes, factories, path helpers, and other
+non-collected support in the nearest `_support` package. Keep global fixtures in
+`tests/conftest.py`, scope area fixtures to the nearest area `conftest.py`, and
+derive repository paths through `tests._support.paths.REPO_ROOT` rather than
+counting parents from an individual test file.
+
 Do not wait for, poll, or extend a turn for advisory integration completion
 before finishing a normal commit. During the push watch, poll required checks
 only; report an advisory integration status or URL if it is already available.

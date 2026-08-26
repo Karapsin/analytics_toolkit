@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Added persistent zsh-compatible secret files for SQL connection references.
 - Fixed ClickHouse stage readiness timeouts being misclassified as name collisions.
 - Added optional ClickHouse connection-wide cluster routing.
+- Reorganized tests into module-first function and area directories.
 
 ## 1.3.11.14 - 2026-08-26
 

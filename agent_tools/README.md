@@ -22,7 +22,7 @@ agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
-agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/test_agent_tools_mcp.py
+agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/agent_tools/mcp
 agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status

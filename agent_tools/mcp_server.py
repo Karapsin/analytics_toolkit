@@ -16,7 +16,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import docs_assistant
+docs_assistant = importlib.import_module(
+    f"{__package__}.docs_assistant" if __package__ else "docs_assistant"
+)
 
 try:  # pragma: no cover - exercised only when the agent-only MCP dependency exists.
     from mcp.server.fastmcp import FastMCP
@@ -132,80 +134,55 @@ TASK_DOCS = {
 TEST_COMMANDS = {
     "ab_utils": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_ab_utils_metrics.py",
-            "args": ["pytest", "-q", "tests/test_ab_utils_metrics.py"],
-            "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
-        },
-        {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_ab_utils_format.py tests/test_ab_utils_split.py tests/test_ab_utils_parallel.py tests/test_ab_utils_sql_native.py",
-            "args": [
-                "pytest",
-                "-q",
-                "tests/test_ab_utils_format.py",
-                "tests/test_ab_utils_split.py",
-                "tests/test_ab_utils_parallel.py",
-                "tests/test_ab_utils_sql_native.py",
-            ],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/ab_utils",
+            "args": ["pytest", "-q", "tests/ab_utils"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "dates": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_dates.py",
-            "args": ["pytest", "-q", "tests/test_dates.py"],
+            "display": (
+                "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/dates tests/datetime"
+            ),
+            "args": ["pytest", "-q", "tests/dates", "tests/datetime"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "excel": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_excel_long_format.py",
-            "args": ["pytest", "-q", "tests/test_excel_long_format.py"],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/excel",
+            "args": ["pytest", "-q", "tests/excel"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "general": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_general_read_file.py tests/test_general_logging.py",
-            "args": [
-                "pytest",
-                "-q",
-                "tests/test_general_read_file.py",
-                "tests/test_general_logging.py",
-            ],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/general",
+            "args": ["pytest", "-q", "tests/general"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "sql": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_sql_connection_config.py tests/test_sql_retries.py tests/test_sql_load_table.py tests/test_sql_integration_manifest.py",
-            "args": [
-                "pytest",
-                "-q",
-                "tests/test_sql_connection_config.py",
-                "tests/test_sql_retries.py",
-                "tests/test_sql_load_table.py",
-                "tests/test_sql_integration_manifest.py",
-            ],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/sql",
+            "args": ["pytest", "-q", "tests/sql"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "agent_tools": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_rag_docs.py tests/test_agent_tools_mcp.py tests/test_required_workflows.py",
-            "args": [
-                "pytest",
-                "-q",
-                "tests/test_rag_docs.py",
-                "tests/test_agent_tools_mcp.py",
-                "tests/test_required_workflows.py",
-            ],
+            "display": (
+                "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q "
+                "tests/agent_tools tests/repository"
+            ),
+            "args": ["pytest", "-q", "tests/agent_tools", "tests/repository"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
     "mcp": [
         {
-            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/test_agent_tools_mcp.py",
-            "args": ["pytest", "-q", "tests/test_agent_tools_mcp.py"],
+            "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/agent_tools/mcp",
+            "args": ["pytest", "-q", "tests/agent_tools/mcp"],
             "env": {"PYTHONPYCACHEPREFIX": "/tmp/utils_dev_pycache"},
         },
     ],
@@ -267,8 +244,7 @@ RELEASE_CHECK_COMMANDS = [
     },
     {
         "display": (
-            "python -m release_routines.sql_integration "
-            "--profile all --clickhouse-driver both"
+            "python -m release_routines.sql_integration --profile all --clickhouse-driver both"
         ),
         "args": [
             sys.executable,
@@ -2550,12 +2526,8 @@ def _check_commands(  # noqa: PLR0913 - mirrors the public check workflow inputs
     raise ValueError(msg)
 
 
-def _sql_focused_command(root: Path) -> dict[str, Any]:
-    tests = sorted(
-        path.relative_to(root).as_posix() for path in (root / "tests").glob("test_sql_*.py")
-    )
-    if not tests:
-        tests = ["tests/test_sql_integration_manifest.py"]
+def _sql_focused_command(_root: Path) -> dict[str, Any]:
+    tests = ["tests/sql"]
     return {
         "display": ("PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q " + " ".join(tests)),
         "args": ["pytest", "-q", *tests],

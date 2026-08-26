@@ -150,6 +150,11 @@ source = ["analytics_toolkit"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"
+testpaths = ["tests"]
+python_files = ["*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+norecursedirs = [".*", "build", "dist", "_support"]
 markers = [
   "integration: disposable real-database tests run only through the repository integration workflow",
   "integration_core: deterministic SQL database behavior",
