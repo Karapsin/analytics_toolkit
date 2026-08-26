@@ -332,8 +332,9 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
 
 def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypatch) -> None:
     source = FakeSourceConnection(
-        rows=[(memoryview(b"\x00\xff\x80"), "Кириллица")],
+        rows=[(1, memoryview(b"\x00\xff\x80"), "Кириллица")],
         description=[
+            ("id", 20, None, None, None, None),
             ("cheque_pk", 17, None, None, None, None),
             ("name", 25, None, None, None, None),
         ],
@@ -353,20 +354,30 @@ def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypat
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
         to_db="ch",
-        from_sql="select cheque_pk, name from source_table",
+        from_sql="select id, cheque_pk, name from source_table",
         to_table=TARGET_TABLE,
         write_mode="replace",
         retry_cnt=1,
         timeout_increment=0,
         full_retry_cnt=1,
         full_timeout_increment=0,
-        order_by=["name"],
+        table_schema={"id": "Int64", "cheque_pk": "String", "name": "String"},
+        order_by=["id"],
         ch_only_shard=True,
     )
 
     assert transferred_rows == 1
-    assert target.inserts[0]["data"] == [(b"\x00\xff\x80", "Кириллица")]
-    assert target.inserts[0]["column_type_names"] == ["String", "String"]
+    assert target.inserts[0]["data"] == [(1, b"\x00\xff\x80", "Кириллица")]
+    assert target.inserts[0]["column_type_names"] == ["Int64", "String", "String"]
+    target_creates = [
+        command
+        for command in map(_strip_query_label, target.commands)
+        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
+    ]
+    assert target_creates
+    assert all("`id` Int64" in command for command in target_creates)
+    assert all("ORDER BY `id`" in command for command in target_creates)
+    assert all("Nullable(Int64)" not in command for command in target_creates)
 
 
 def test_transfer_table_clickhouse_only_shard_creates_local_target(

@@ -225,6 +225,7 @@ DISTRIBUTED BY (id)
                 target_rows_per_second=False,
                 retry_cnt=1,
                 full_retry_cnt=1,
+                table_schema={"id": "Int64", "payload": "String", "label": "String"},
                 order_by=["id"],
                 ch_engine="MergeTree",
                 ch_shard_on_cluster="integration_cluster",

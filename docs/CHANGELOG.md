@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.11.12 - 2026-08-26
+
+- Kept the Greenplum bytea integration sort key non-nullable in ClickHouse.
+
 ## 1.3.11.11 - 2026-08-26
 
 - Made SQL integration advisory for dev commits and exhaustive for releases.
