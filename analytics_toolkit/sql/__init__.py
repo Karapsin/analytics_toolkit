@@ -27,8 +27,8 @@ from .connection.config import (
     validate_connections,
 )
 from .connection.errors import SqlOperationContext, SqlOperationError
-from .connection.environment import set_missing_env_variables
 from .connection.get_sql_connection import get_sql_connection
+from .connection.secret_setup import set_missing_secrets
 from .dml.load.load_df import load_df
 from .dml.io.read_sql import read_sql as read
 from .dml.io.cancel_queries import cancel_queries
@@ -112,6 +112,6 @@ __all__ = [
     "transfer",
     "get_time_print_sink",
     "set_time_print_sink",
-    "set_missing_env_variables",
+    "set_missing_secrets",
     "validate_connections",
 ]

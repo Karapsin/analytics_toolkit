@@ -4063,11 +4063,11 @@
         }
       }
     },
-    "set_missing_env_variables": {
+    "set_missing_secrets": {
       "classification": "unit_only",
-      "reason": "This export reads local configuration and updates only the current process environment.",
+      "reason": "This export reads local configuration and updates only a local secrets file.",
       "tests": [
-        "tests/test_sql_connection_references.py::test_set_missing_env_variables_prompts_once_and_preserves_existing_values"
+        "tests/test_sql_secret_file.py::test_set_missing_secrets_preserves_content_and_quotes_apostrophes"
       ],
       "parameters": {}
     },

@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .errors import SqlConfigError
+from .secret_file import load_secret_values
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _REFERENCE_FIELDS = frozenset({"from", "key", "path"})
-_REFERENCE_SOURCES = frozenset({"airflow_variable", "env"})
+_REFERENCE_SOURCES = frozenset({".secrets", "airflow_variable", "env"})
 _LITERAL_MAPPING_FIELDS = frozenset({"ddl_defaults", "settings"})
 _LITERAL_ROUTING_FIELDS = frozenset({"connection_id", "type"})
+_SECRET_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 def is_connection_value_reference(value: Any, field_name: str) -> bool:
@@ -27,13 +33,30 @@ def resolve_connection_value_references(
     raw_config: dict[str, Any],
 ) -> dict[str, Any]:
     resolved = dict(raw_config)
+    secret_path: Path | None = None
+    secret_values: dict[str, str] | None = None
     for field_name, value in raw_config.items():
         if not is_connection_value_reference(value, field_name):
             continue
-        resolved[field_name] = _resolve_reference(
+        source, source_key, path = parse_connection_value_reference(
             connection_key,
             field_name,
             value,
+        )
+        if source == ".secrets" and secret_values is None:
+            try:
+                secret_path, secret_values = load_secret_values()
+            except SqlConfigError as exc:
+                message = (
+                    f"Could not resolve .secrets for SQL connection "
+                    f"'{connection_key}' field '{field_name}': {exc}"
+                )
+                raise SqlConfigError(message) from exc
+        resolved[field_name] = _resolve_reference(
+            connection_key,
+            field_name,
+            (source, source_key, path),
+            (secret_path, secret_values) if secret_values is not None else None,
         )
     return resolved
 
@@ -41,18 +64,15 @@ def resolve_connection_value_references(
 def _resolve_reference(
     connection_key: str,
     field_name: str,
-    reference: dict[str, Any],
+    parsed_reference: tuple[str, str, tuple[str, ...] | None],
+    secret_source: tuple[Path | None, dict[str, str]] | None,
 ) -> Any:
-    source, source_key, path = parse_connection_value_reference(
-        connection_key,
-        field_name,
-        reference,
-    )
+    source, source_key, path = parsed_reference
     value = _read_source_value(
         connection_key,
         field_name,
-        source,
-        source_key,
+        (source, source_key),
+        secret_source,
     )
 
     if path is None:
@@ -104,14 +124,14 @@ def _parse_reference(
     if not isinstance(raw_source, str):
         message = (
             f"SQL connection '{connection_key}' field '{field_name}' reference "
-            "field 'from' must be 'env' or 'airflow_variable'."
+            "field 'from' must be '.secrets', 'env', or 'airflow_variable'."
         )
         raise SqlConfigError(message)
     source = raw_source.strip().lower()
     if source not in _REFERENCE_SOURCES:
         message = (
             f"SQL connection '{connection_key}' field '{field_name}' reference "
-            "field 'from' must be 'env' or 'airflow_variable'."
+            "field 'from' must be '.secrets', 'env', or 'airflow_variable'."
         )
         raise SqlConfigError(message)
 
@@ -123,6 +143,12 @@ def _parse_reference(
         )
         raise SqlConfigError(message)
     source_key = raw_source_key.strip()
+    if source == ".secrets" and _SECRET_KEY_RE.fullmatch(source_key) is None:
+        message = (
+            f"SQL connection '{connection_key}' field '{field_name}' reference "
+            "to '.secrets' must use a shell identifier as field 'key'."
+        )
+        raise SqlConfigError(message)
     path = (
         _parse_path(connection_key, field_name, reference["path"]) if "path" in reference else None
     )
@@ -132,9 +158,10 @@ def _parse_reference(
 def _read_source_value(
     connection_key: str,
     field_name: str,
-    source: str,
-    source_key: str,
+    source_reference: tuple[str, str],
+    secret_source: tuple[Path | None, dict[str, str]] | None,
 ) -> Any:
+    source, source_key = source_reference
     if source == "env":
         try:
             return os.environ[source_key]
@@ -144,6 +171,26 @@ def _read_source_value(
                 f"'{connection_key}' field '{field_name}' is not set."
             )
             raise SqlConfigError(message) from exc
+    if source == ".secrets":
+        secret_path, secret_values = cast(
+            "tuple[Path | None, dict[str, str]]",
+            secret_source,
+        )
+        try:
+            value = secret_values[source_key]
+        except KeyError as exc:
+            message = (
+                f"Secret '{source_key}' referenced by SQL connection "
+                f"'{connection_key}' field '{field_name}' is not set in {secret_path}."
+            )
+            raise SqlConfigError(message) from exc
+        if not value:
+            message = (
+                f"Secret '{source_key}' referenced by SQL connection "
+                f"'{connection_key}' field '{field_name}' is empty in {secret_path}."
+            )
+            raise SqlConfigError(message)
+        return value
     return _read_airflow_variable(connection_key, field_name, source_key)
 
 

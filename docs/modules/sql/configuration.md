@@ -103,18 +103,18 @@ for an Airflow-source file. The helper never overwrites an existing
 ## Runtime Value References
 
 Any top-level connection field other than routing fields such as `type` and
-`connection_id` may resolve its value at runtime from an environment variable
-or an Airflow Variable. Literal values remain supported, so references can be
-introduced one credential at a time:
+`connection_id` may resolve its value at runtime from a sibling `.secrets`
+file, an environment variable, or an Airflow Variable. Literal values remain
+supported, so references can be introduced one credential at a time:
 
 ```json
 {
   "gp": {
     "type": "gp",
-    "host": {"from": "env", "key": "GP_HOST"},
-    "port": {"from": "env", "key": "GP_PORT"},
+    "host": "gp.example",
+    "port": 5432,
     "user": "analytics_user",
-    "password": {"from": "env", "key": "GP_PASSWORD"},
+    "password": {"from": ".secrets", "key": "GP_PASSWORD"},
     "database": "analytics"
   },
   "trino": {
@@ -135,6 +135,24 @@ introduced one credential at a time:
 }
 ```
 
+The `.secrets` file is always read beside the selected or discovered
+`.connections` file. It uses a deliberately strict zsh-compatible assignment
+format and is parsed as data; the toolkit never executes it:
+
+```zsh
+# .secrets
+export GP_PASSWORD='greenplum-password'
+export TRINO_PASSWORD='trino-password'
+export AWS_ACCESS_KEY_ID='object-storage-access-key'
+export AWS_SECRET_ACCESS_KEY='object-storage-secret-key'
+export CH_PASSWORD='clickhouse-password'
+```
+
+Assignments must use `NAME='value'` or `export NAME='value'` with no spaces
+around `=`. Blank lines and full-line comments are accepted. Unquoted values,
+double-quoted values, interpolation, commands, duplicate names, and multiline
+values are rejected. Add `.secrets` to the consuming project's `.gitignore`.
+
 For that example, Airflow Variable `S3_AF` contains JSON such as:
 
 ```json
@@ -146,31 +164,36 @@ For that example, Airflow Variable `S3_AF` contains JSON such as:
 }
 ```
 
-Use `{"from": "env", "key": "NAME"}` outside Airflow or in a DAG worker.
+Use `{"from": ".secrets", "key": "NAME"}` for persistent local secrets.
+Use `{"from": "env", "key": "NAME"}` for values provided to the process.
 Use `{"from": "airflow_variable", "key": "NAME"}` when Airflow supplies a
 single scalar value. Add `path` as an array of JSON object keys to parse the
 source value as JSON and select a nested value. An empty `path` array selects
 the complete parsed JSON value, which is useful for mapping fields such as
 ClickHouse `settings`.
 
-For an interactive local session, call
-[sql.set_missing_env_variables](functions/set_missing_env_variables.md)() before
-using a connection. It securely prompts once for every unset or empty `env`
-reference and sets the collected values in the current Python process:
+To create or complete the persistent file, call
+[sql.set_missing_secrets](functions/set_missing_secrets.md)() before using a
+connection. It securely prompts once for every absent or empty `.secrets`
+reference and writes all collected values atomically:
 
 ```python
 from analytics_toolkit import sql
 
-sql.set_missing_env_variables()
+sql.set_missing_secrets()
 ```
+
+The generated entries include `export`, so a trusted file can also be loaded
+into zsh with `source /path/to/.secrets`. The toolkit resolves the file
+directly, so sourcing it is not required for SQL helpers.
 
 References are resolved in memory on each configuration lookup and are never
 written back to `.connections` or cached by the toolkit. Missing sources,
 malformed JSON, and missing paths raise a connection-specific `SqlConfigError`
 without including the resolved value. Airflow imports remain lazy: ordinary
-literal and environment-based configurations do not require Airflow. Passwords
-and object-storage secrets are omitted from connection configuration
-representations.
+literal, `.secrets`, and environment-based configurations do not require
+Airflow. Passwords and object-storage secrets are omitted from connection
+configuration representations.
 
 The existing ClickHouse `ca_certs_variable` field remains supported. The
 general equivalent is

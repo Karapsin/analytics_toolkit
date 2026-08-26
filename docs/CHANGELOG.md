@@ -8,7 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Recover connections files that disappear between discovery and reading.
 - Added runtime environment and Airflow Variable references for SQL connection fields.
-- Added interactive prompting for missing SQL environment references.
+- Added persistent zsh-compatible secret files for SQL connection references.
 
 ## 1.3.11.14 - 2026-08-26
 

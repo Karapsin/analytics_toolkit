@@ -29,7 +29,7 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [async_sql](async_sql.md) - run SQL task specs concurrently
 - [parallel_sql](parallel_sql.md) - run independent SQL tasks in parallel
 - [validate_connections](validate_connections.md) - validate configured connections
-- [set_missing_env_variables](set_missing_env_variables.md) - prompt for unset environment references
+- [set_missing_secrets](set_missing_secrets.md) - persist missing file-backed secrets
 - [generate_dummy_connections](generate_dummy_connections.md) - create starter connection config files
 
 ## Backend-Specific Functions
