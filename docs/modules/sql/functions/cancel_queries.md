@@ -55,7 +55,9 @@ cancelled[["backend", "query_id", "cancelled", "terminated"]]
   `query_label` in [show_queries](show_queries.md) before cancelling instead of
   assuming that the newest query belongs to the caller.
 - Cancellation is best-effort for IDs that already finished between discovery
-  and cancellation. Long-running workers should still be joined with a bounded
-  deadline and cancellation repeated from unconditional cleanup.
+  and cancellation. Trino reports those rows with `cancelled=False` and
+  `status="not_running"` instead of failing the whole cancellation batch.
+  Long-running workers should still be joined with a bounded deadline and
+  cancellation repeated from unconditional cleanup.
 
 [SQL functions index](index.md)

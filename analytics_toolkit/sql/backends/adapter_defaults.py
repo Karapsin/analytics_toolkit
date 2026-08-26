@@ -464,6 +464,11 @@ def can_create_transfer_target_before_batches(adapter: Any) -> bool:
     return bool(adapter.supports_early_transfer_target_creation)
 
 
+def cancel_error_result(adapter: Any, error: Exception) -> dict[str, Any] | None:
+    del adapter, error
+    return None
+
+
 def validate_ch_create_table_options(
     adapter: Any,
     *,

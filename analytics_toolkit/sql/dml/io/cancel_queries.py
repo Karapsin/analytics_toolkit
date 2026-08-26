@@ -60,15 +60,21 @@ def cancel_queries(
     def cancel_query(query_id: int | str) -> dict[str, Any]:
         normalized_id = _normalize_backend_query_id(backend, query_id)
         cancel_sql = _cancel_query_sql(backend, normalized_id)
-        result = read_sql(
-            connection_key,
-            cancel_sql,
-            print_queries=print_queries,
-            retry_cnt=retry_cnt,
-            timeout_increment=timeout_increment,
-            query_label=query_label,
-        )
-        cancel_result = _cancel_result(backend, result)
+        try:
+            result = read_sql(
+                connection_key,
+                cancel_sql,
+                print_queries=print_queries,
+                retry_cnt=retry_cnt,
+                timeout_increment=timeout_increment,
+                query_label=query_label,
+            )
+        except Exception as exc:
+            cancel_result = get_backend_adapter(backend).cancel_error_result(exc)
+            if cancel_result is None:
+                raise
+        else:
+            cancel_result = _cancel_result(backend, result)
         return {
             "backend": backend,
             "query_id": normalized_id,

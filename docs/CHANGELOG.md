@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.11.13 - 2026-08-26
+
+- Handled Trino queries that finish during concurrent cancellation.
+
 ## 1.3.11.12 - 2026-08-26
 
 - Kept the Greenplum bytea integration sort key non-nullable in ClickHouse.

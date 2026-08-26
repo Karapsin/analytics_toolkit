@@ -755,6 +755,8 @@ class BackendAdapter:
             "status": status,
         }
 
+    cancel_error_result = _adapter_defaults.cancel_error_result
+
     build_stage_duplicate_keys_sql = _validation.build_stage_duplicate_keys_sql
     build_stage_duplicate_keys_sql_for_tables = (
         _validation.build_stage_duplicate_keys_sql_for_tables

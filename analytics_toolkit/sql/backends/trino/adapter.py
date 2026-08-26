@@ -754,6 +754,13 @@ where {user_filter}
             "message => 'Cancelled by analytics_toolkit.cancel_queries')"
         )
 
+    def cancel_error_result(self, error: Exception) -> dict[str, Any] | None:
+        if getattr(error, "error_name", None) == "NOT_SUPPORTED" and str(
+            getattr(error, "message", "")
+        ).startswith("Target query is not running:"):
+            return {"cancelled": False, "terminated": None, "status": "not_running"}
+        return None
+
 
 def _trino_history_state(state: str) -> str:
     if state == "finished":

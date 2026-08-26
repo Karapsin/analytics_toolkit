@@ -365,6 +365,56 @@ def test_cancel_queries_trino_cancel_all_discovers_current_user_queries(
     assert result["query_id"].tolist() == ["trino-a", "trino-b"]
 
 
+def test_cancel_queries_trino_treats_finished_target_as_terminal_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class QueryNotRunningError(Exception):
+        error_name = "NOT_SUPPORTED"
+        message = "Target query is not running: trino-a"
+
+    monkeypatch.setattr(
+        cancel_module,
+        "show_queries",
+        lambda *args, **kwargs: pd.DataFrame({"query_id": ["trino-a", "trino-b"]}),
+    )
+
+    def fake_read_sql(_connection_key: str, query: str, **_kwargs: object) -> pd.DataFrame:
+        if "'trino-a'" in query:
+            raise QueryNotRunningError
+        return pd.DataFrame()
+
+    monkeypatch.setattr(cancel_module, "read_sql", fake_read_sql)
+
+    result = cancel_module.cancel_queries(
+        "trino",
+        cancel_all=True,
+        concurrency=2,
+        retry_cnt=1,
+    )
+
+    assert result["query_id"].tolist() == ["trino-a", "trino-b"]
+    assert result["cancelled"].tolist() == [False, True]
+    assert result["terminated"].tolist() == [None, None]
+    assert result["status"].tolist() == ["not_running", "submitted"]
+
+
+def test_cancel_queries_preserves_unclassified_backend_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = RuntimeError("cancel failed")
+    monkeypatch.setattr(
+        cancel_module,
+        "read_sql",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(RuntimeError, match="cancel failed") as exc_info:
+        cancel_module.cancel_queries("gp", [42], retry_cnt=1)
+
+    assert exc_info.value is error
+    assert cancel_module.get_backend_adapter("trino").cancel_error_result(error) is None
+
+
 def test_cancel_queries_clickhouse_explicit_ids_uses_kill_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
