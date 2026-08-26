@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Recover connections files that disappear between discovery and reading.
 - Added runtime environment and Airflow Variable references for SQL connection fields.
 - Added persistent zsh-compatible secret files for SQL connection references.
+- Fixed ClickHouse stage readiness timeouts being misclassified as name collisions.
 
 ## 1.3.11.14 - 2026-08-26
 

@@ -15,6 +15,7 @@ from analytics_toolkit.sql.backends import common_methods
 from analytics_toolkit.sql.backends.ch import lifecycle as ch_lifecycle
 from analytics_toolkit.sql.backends.ch.ddl import build_ch_shard_table_name
 from analytics_toolkit.sql.backends.models import SourceColumn
+from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
 from analytics_toolkit.sql.dml.load import stage as load_stage
 from analytics_toolkit.sql.dml.transfer.flow import (
     api as transfer_api,
@@ -752,6 +753,96 @@ def test_target_stage_candidates_include_ambiguous_create_outcomes(
     assert candidates == ["first", "next"]
     assert logs
     assert all(message.startswith("[slice=1/1] ") for message in logs)
+
+
+def test_target_stage_readiness_failure_is_not_retried_as_collision(
+    monkeypatch: Any,
+) -> None:
+    candidates: list[str] = []
+    logs: list[str] = []
+    existence_checks = 0
+
+    monkeypatch.setattr(
+        load_stage,
+        "build_stage_table_name",
+        lambda _backend, _target, **kwargs: str(kwargs["random_suffix"]),
+    )
+
+    def table_exists(*_args: Any, **_kwargs: Any) -> bool:
+        nonlocal existence_checks
+        existence_checks += 1
+        return False
+
+    monkeypatch.setattr(load_stage, "table_exists", table_exists)
+    monkeypatch.setattr(
+        load_stage,
+        "_create_sql_table_with_connection",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            SqlTableReadinessError("visible on 20/22 hosts")
+        ),
+    )
+    monkeypatch.setattr(
+        load_stage,
+        "time_print",
+        lambda message, **_kwargs: logs.append(message),
+    )
+
+    with pytest.raises(SqlTableReadinessError, match="20/22"):
+        load_stage.create_stage_table(
+            "ch",
+            object(),
+            "default.target",
+            pd.DataFrame(columns=["id"]),
+            random_suffix="first",
+            on_stage_candidate=candidates.append,
+        )
+
+    assert existence_checks == 1
+    assert candidates == ["first"]
+    assert not logs
+
+
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_target_stage_collision_retry_fits_hashed_writer_name(
+    monkeypatch: Any,
+    backend: str,
+) -> None:
+    preferred = f"{'a' * 32}__w00000"
+    existence = iter([False, True, False])
+    creates = iter([OSError("ambiguous create"), None])
+
+    monkeypatch.setattr(
+        load_stage,
+        "table_exists",
+        lambda *_args, **_kwargs: next(existence),
+    )
+    monkeypatch.setattr(
+        load_stage.uuid,
+        "uuid4",
+        lambda: SimpleNamespace(hex="1234567890abcdef"),
+    )
+
+    def create(*_args: Any, **_kwargs: Any) -> None:
+        outcome = next(creates)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(load_stage, "_create_sql_table_with_connection", create)
+    monkeypatch.setattr(load_stage, "time_print", lambda *_args, **_kwargs: None)
+
+    result = load_stage.create_stage_table(
+        backend,
+        object(),
+        "public.target",
+        pd.DataFrame(columns=["id"]),
+        random_suffix=preferred,
+        destination_hash="0123456789abcdef",
+    )
+    identifier = result.split(".")[-1].strip('"`')
+
+    assert len(identifier.encode()) <= 62
+    assert identifier.startswith("0123456789abcdef__")
+    assert identifier.endswith(f"{preferred}1234")
 
 
 def test_target_stage_candidate_precedes_partial_clickhouse_create(

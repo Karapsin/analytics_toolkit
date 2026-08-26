@@ -22,6 +22,9 @@ cluster-wide distributed behavior is not wanted.
 Cluster DDL is queued without making Python wait for the full asynchronous
 ClickHouse DDL operation. The helper still checks local and cluster visibility
 before inserting so lagging metadata does not silently break writes.
+If that readiness check times out, staged load and transfer operations preserve
+the partial table pair for policy-aware cleanup and retry the complete public
+operation; they do not misclassify the partial create as a stage-name collision.
 After the shard DDL scope is ready, the helper also verifies that the shard
 table and expected schema exist on every host used by the effective
 `Distributed(...)` routing cluster. A routing/scope mismatch fails immediately

@@ -19,6 +19,10 @@ class SqlConfigError(SqlUtilsError):
     pass
 
 
+class SqlTableReadinessError(TimeoutError, SqlUtilsError):
+    """A created SQL table did not become ready for use before its deadline."""
+
+
 @dataclass(frozen=True)
 class SqlOperationContext:
     operation: str

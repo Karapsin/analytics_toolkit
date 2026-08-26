@@ -196,7 +196,7 @@ def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) ->
     assert actual == created[0]
     relation = actual.split(".")[-1].strip('"')
     assert relation.startswith("0123456789abcdef__orders")
-    assert relation[:-5].endswith("transferid__w00000")
+    assert relation[:-4].endswith("transferid__w00000")
     assert len(relation[-5:]) == 5
     assert len(relation.encode()) <= 63
 
@@ -222,7 +222,7 @@ def test_stage_creation_race_reallocates_and_hashed_prefix_is_stable(monkeypatch
         destination_hash="0123456789abcdef",
     )
     relation = actual.split(".")[-1].strip('"')
-    assert relation[:-5].endswith("transferid__w00000")
+    assert relation[:-4].endswith("transferid__w00000")
     assert len(relation.encode()) <= 63
     assert load_stage.build_stage_table_prefix(
         "trino", "sales.orders", None, "0123456789abcdef"
@@ -1455,8 +1455,8 @@ def test_transfer_stage_backend_helpers_cover_storage_and_identifier_edges() -> 
     assert transfer_stage.build_transfer_stage_tail("ch", None, "suffix") == "suffix"
     with pytest.raises(KeyError):
         transfer_stage.build_transfer_stage_tail("unknown", None, "suffix")
-    assert transfer_stage.collision_stage_suffix("gp", "base", "12345678") == "base12345"
-    assert transfer_stage.collision_stage_suffix("ch", "base", "12345678") == "base12345"
+    assert transfer_stage.collision_stage_suffix("gp", "base", "12345678") == "base1234"
+    assert transfer_stage.collision_stage_suffix("ch", "base", "12345678") == "base1234"
     with pytest.raises(KeyError):
         transfer_stage.collision_stage_suffix("unknown", "base", "123")
 

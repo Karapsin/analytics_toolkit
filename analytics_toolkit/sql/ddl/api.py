@@ -6,12 +6,17 @@ from typing import Any
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.errors import (
+    InvalidSqlInputError,
+    SqlOperationContext,
+    SqlTableReadinessError,
+    sql_preview,
+)
 
 from ..backends import get_backend_adapter
 from analytics_toolkit.sql.backends import get_backend
 from analytics_toolkit.sql.backends.ch.creation_policy import build_policy_create_sqls
 from ..connection.config import get_connection_config, resolve_connection_backend
-from ..connection.errors import InvalidSqlInputError, SqlOperationContext, sql_preview
 from ..connection.get_sql_connection import get_sql_connection
 from ..execution.operation_runner import (
     run_connection_operation,
@@ -781,15 +786,18 @@ def _execute_create_sql_table(
             ch_only_shard=options.ch_only_shard,
         )
         adapter.execute_commands(connection, create_sqls)
-        adapter.after_create_table(
-            connection,
-            options.table_name,
-            ch_cluster=options.ch_cluster,
-            ch_distributed_table=options.ch_distributed_table,
-            ch_only_shard=options.ch_only_shard,
-            expected_column_types=expected_column_types,
-            ch_creation_policy=options.ch_creation_policy,
-        )
+        try:
+            adapter.after_create_table(
+                connection,
+                options.table_name,
+                ch_cluster=options.ch_cluster,
+                ch_distributed_table=options.ch_distributed_table,
+                ch_only_shard=options.ch_only_shard,
+                expected_column_types=expected_column_types,
+                ch_creation_policy=options.ch_creation_policy,
+            )
+        except TimeoutError as exc:
+            raise SqlTableReadinessError(str(exc)) from exc
 
 
 def _build_create_table_sqls(

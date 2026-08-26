@@ -7,6 +7,8 @@ from typing import Any
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 
+COLLISION_STAGE_RANDOM_SUFFIX_LENGTH = 4
+
 
 def execute_transfer_materialization(
     adapter: Any,
@@ -62,7 +64,7 @@ def collision_stage_suffix(
 ) -> str:
     if connection_type not in {"gp", "trino", "ch"}:
         raise KeyError(connection_type)
-    return f"{preferred_suffix}{random_hex[:5]}"
+    return f"{preferred_suffix}{random_hex[:COLLISION_STAGE_RANDOM_SUFFIX_LENGTH]}"
 
 
 def build_source_snapshot_sqls(

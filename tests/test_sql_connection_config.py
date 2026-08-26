@@ -17,6 +17,7 @@ import pytest
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     SqlConfigError,
+    SqlTableReadinessError,
     UnsupportedConnectionTypeError,
 )
 from analytics_toolkit.sql.ddl.models import CreateSqlTableOptions
@@ -3004,6 +3005,74 @@ def test_create_table_target_replace_helper_uses_backend_adapter(
     assert events[1][3]["connection_key"] == "gp_alias"
     assert metadata.retry_attempts == 2
     assert metadata.operation_status == "success"
+
+
+def test_create_table_distinguishes_ddl_timeout_from_readiness_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ddl_timeout = TimeoutError("DDL submission outcome is unknown")
+    readiness_timeout = TimeoutError("visible on 20/22 hosts")
+
+    class FakeAdapter:
+        def __init__(self, *, fail_during_readiness: bool) -> None:
+            self.fail_during_readiness = fail_during_readiness
+
+        def expected_create_table_column_types(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> dict[str, str]:
+            return {"id": "Int64"}
+
+        def execute_commands(self, _connection: object, _sqls: list[str]) -> None:
+            if not self.fail_during_readiness:
+                raise ddl_timeout
+
+        def after_create_table(
+            self,
+            _connection: object,
+            _table_name: str,
+            **_kwargs: object,
+        ) -> None:
+            if self.fail_during_readiness:
+                raise readiness_timeout
+
+    options = CreateSqlTableOptions(
+        connection_key="ch_alias",
+        backend="ch",
+        table_name="scratch.target",
+        df=pd.DataFrame({"id": [1]}),
+    )
+
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_backend_adapter",
+        lambda _backend: FakeAdapter(fail_during_readiness=True),
+    )
+    with pytest.raises(SqlTableReadinessError, match="20/22") as readiness_error:
+        create_sql_table_module._execute_create_sql_table(
+            options=options,
+            connection=object(),
+            create_sqls=["CREATE TABLE scratch.target (id Int64)"],
+            metadata=SqlOperationMetadata(),
+            retry_attempt=None,
+        )
+    assert isinstance(readiness_error.value.__cause__, TimeoutError)
+
+    monkeypatch.setattr(
+        create_sql_table_module,
+        "get_backend_adapter",
+        lambda _backend: FakeAdapter(fail_during_readiness=False),
+    )
+    with pytest.raises(TimeoutError, match="outcome is unknown") as ddl_error:
+        create_sql_table_module._execute_create_sql_table(
+            options=options,
+            connection=object(),
+            create_sqls=["CREATE TABLE scratch.target (id Int64)"],
+            metadata=SqlOperationMetadata(),
+            retry_attempt=None,
+        )
+    assert not isinstance(ddl_error.value, SqlTableReadinessError)
 
 
 def test_create_table_execution_returns_metadata_and_builds_context(

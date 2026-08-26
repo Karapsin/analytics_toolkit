@@ -8,6 +8,7 @@ import pandas as pd
 from sqlglot import exp, parse_one
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
 
 from ...backends import SUPPORTED_BACKENDS, get_backend_adapter
 from ...backends.transfer_stage import (
@@ -105,7 +106,8 @@ def create_stage_table(
                 gp_distributed_by_key=gp_distributed_by_key,
                 **create_kwargs,
             )
-        except Exception:
+        except Exception as exc:
+            _raise_if_readiness_failure(exc)
             if not table_exists(
                 connection_type,
                 connection,
@@ -125,6 +127,11 @@ def create_stage_table(
         "stage table name after "
         f"{STAGE_TABLE_NAME_MAX_ATTEMPTS} attempts."
     )
+
+
+def _raise_if_readiness_failure(exc: Exception) -> None:
+    if isinstance(exc, SqlTableReadinessError):
+        raise exc
 
 
 def _collision_stage_suffix(
