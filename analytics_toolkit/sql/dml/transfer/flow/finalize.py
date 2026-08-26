@@ -4,13 +4,18 @@ from __future__ import annotations
 import time
 import warnings
 from dataclasses import replace as replace_dataclass
-from typing import Any
+from typing import Any, cast
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.ch.creation_policy import (
     DEFAULT_DDL_READY_TIMEOUT_SECONDS,
 )
+from analytics_toolkit.sql.backends.ch.ddl import build_ch_shard_table_name
 from analytics_toolkit.sql.backends.ch.readiness import run_ch_readiness_wait
+from analytics_toolkit.sql.backends.ch.reconfigure_support import (
+    count_rows_on_cluster,
+    resolve_optional_cluster,
+)
 from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     _count_loaded_stage_rows,
@@ -287,12 +292,7 @@ def _wait_for_fresh_target_row_count(
                     _run_target_operation(
                         options,
                         "validate_final_target_row_count",
-                        lambda target_ref: count_table_rows(
-                            options.to_db_backend,
-                            target_ref["connection"],
-                            options.target_table,
-                            query_label=options.query_label,
-                        ),
+                        lambda target_ref: _count_fresh_target_rows(options, target_ref),
                         target_connection_runner=target_connection_runner,
                     )
                 )
@@ -339,6 +339,37 @@ def _wait_for_fresh_target_row_count(
             f"target has {last_target_rows:,} row(s), stage has {expected_rows:,} row(s)."
         )
         raise FreshTargetFinalizationRowCountMismatchError(message) from exc
+
+
+def _count_fresh_target_rows(options: TransferOptions, target_ref: Any) -> int:
+    connection = target_ref["connection"]
+    policy = options.regular_ch_policy
+    if (
+        policy is not None
+        and policy.create_distributed_pair
+        and not options.ch_only_shard
+        and policy.distributed_cluster is not None
+    ):
+        cluster = cast(
+            "str",
+            resolve_optional_cluster(
+                connection,
+                policy.distributed_cluster,
+                "ch_distributed_cluster",
+            ),
+        )
+        return count_rows_on_cluster(
+            connection,
+            build_ch_shard_table_name(options.target_table),
+            cluster,
+            query_label=options.query_label,
+        )
+    return count_table_rows(
+        options.to_db_backend,
+        connection,
+        options.target_table,
+        query_label=options.query_label,
+    )
 
 
 def _analyze_final_target(

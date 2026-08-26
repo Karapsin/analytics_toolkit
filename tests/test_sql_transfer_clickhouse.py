@@ -120,6 +120,9 @@ class FakeClickHouseClient:
         if sql.startswith("SELECT count() FROM "):
             table_name = sql[len("SELECT count() FROM ") :].strip()
             return FakeResult([(self._inserted_rows(table_name),)])
+        if sql.startswith("SELECT count(*) FROM cluster("):
+            relation_name = sql.rsplit(", ", 1)[1].rstrip(")").strip("'")
+            return FakeResult([(self._cluster_inserted_rows(relation_name),)])
         if sql.startswith("SELECT getMacro("):
             return FakeResult([("core",)])
         if "clusterAllReplicas" in sql and "system, one" in sql:
@@ -213,6 +216,22 @@ class FakeClickHouseClient:
                     source_table = body.rsplit(" FROM ", 1)[1].split()[0]
                     return self._inserted_rows(source_table)
         return total
+
+    def _cluster_inserted_rows(self, relation_name: str) -> int:
+        matching_tables = [
+            table_name
+            for table_name in self.created_tables
+            if table_name.rsplit(".", 1)[-1] == relation_name
+        ]
+        total = sum(self._inserted_rows(table_name) for table_name in matching_tables)
+        if total or not relation_name.endswith("_shard"):
+            return total
+        distributed_relation = relation_name[: -len("_shard")]
+        return sum(
+            self._inserted_rows(table_name)
+            for table_name in self.created_tables
+            if table_name.rsplit(".", 1)[-1] == distributed_relation
+        )
 
 
 def _strip_query_label(sql: str) -> str:

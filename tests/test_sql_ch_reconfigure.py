@@ -658,6 +658,27 @@ def test_cluster_count_and_missing_routing_helpers() -> None:
         )
 
 
+def test_cluster_count_uses_current_database_for_unqualified_table() -> None:
+    queries: list[str] = []
+
+    def query(sql: str) -> FakeClickHouseResult:
+        queries.append(sql)
+        return FakeClickHouseResult([(3,)])
+
+    rows = reconfigure_support.count_rows_on_cluster(
+        SimpleNamespace(query=query),
+        "events_shard",
+        "core",
+        query_label="fresh target",
+    )
+
+    assert rows == 3
+    assert queries == [
+        "/* analytics_toolkit query_label=fresh target */\n"
+        "SELECT count(*) FROM cluster('core', currentDatabase(), 'events_shard')"
+    ]
+
+
 def test_to_defaults_converges_policy_then_applies_explicit_overrides() -> None:
     reconfiguration = plan_ch_table_reconfiguration(
         get_backend_adapter("ch"),

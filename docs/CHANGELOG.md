@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Recovered rotated SQL connections paths from remembered, caller, and working directories.
 - Omit toolkit timestamps from Python logging records.
 - Preserved Greenplum bytea values in ClickHouse transfers across HTTP and native drivers.
+- Count fresh ClickHouse targets through their shard routing cluster.
 
 ## 1.3.11.10 - 2026-08-20
 

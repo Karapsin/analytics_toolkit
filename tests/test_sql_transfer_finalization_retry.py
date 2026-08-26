@@ -56,6 +56,62 @@ def _stage_state(*, target_exists: bool) -> TransferStageState:
     )
 
 
+def test_fresh_target_count_uses_shard_table_on_resolved_routing_cluster() -> None:
+    queries: list[str] = []
+
+    def query(sql: str) -> SimpleNamespace:
+        queries.append(sql)
+        if sql == "SELECT getMacro('cluster')":
+            return SimpleNamespace(result_rows=[("core",)])
+        return SimpleNamespace(result_rows=[(5,)])
+
+    options = _options()
+    policy = options.regular_ch_policy
+    assert policy is not None
+    options = replace(
+        options,
+        query_label="fresh target",
+        regular_ch_policy=replace(policy, distributed_cluster="{cluster}"),
+    )
+
+    rows = finalize._count_fresh_target_rows(
+        options,
+        {"connection": SimpleNamespace(query=query)},
+    )
+
+    assert rows == 5
+    assert queries == [
+        "SELECT getMacro('cluster')",
+        "/* analytics_toolkit query_label=fresh target */\n"
+        "SELECT count(*) FROM cluster('core', 'sandbox', 'target_shard')",
+    ]
+
+
+def test_fresh_shard_only_target_count_stays_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = replace(_options(), ch_only_shard=True)
+    local_counts: list[str] = []
+    monkeypatch.setattr(
+        finalize,
+        "count_rows_on_cluster",
+        lambda *_a, **_k: pytest.fail("shard-only targets must not use a routing cluster"),
+    )
+    monkeypatch.setattr(
+        finalize,
+        "count_table_rows",
+        lambda _backend, _connection, table, **_kwargs: local_counts.append(table) or 5,
+    )
+
+    rows = finalize._count_fresh_target_rows(
+        options,
+        {"connection": object()},
+    )
+
+    assert rows == 5
+    assert local_counts == ["sandbox.target"]
+
+
 @pytest.mark.parametrize(
     ("write_mode", "target_exists", "expected"),
     [
@@ -104,7 +160,11 @@ def test_fresh_target_count_converges_without_rebuilding(
         lambda *_args, **kwargs: finalized_policies.append(kwargs["ch_creation_policy"]),
     )
     monkeypatch.setattr(finalize, "_count_loaded_stage_rows", lambda *_a, **_k: 5)
-    monkeypatch.setattr(finalize, "count_table_rows", lambda *_a, **_k: next(target_counts))
+    monkeypatch.setattr(
+        finalize,
+        "count_rows_on_cluster",
+        lambda *_a, **_k: next(target_counts),
+    )
     monkeypatch.setattr(finalize.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         finalize,
@@ -148,7 +208,11 @@ def test_fresh_target_count_rebuilds_after_readiness_exhaustion(
         lambda *_args, **_kwargs: finalized.append("target"),
     )
     monkeypatch.setattr(finalize, "_count_loaded_stage_rows", lambda *_a, **_k: 5)
-    monkeypatch.setattr(finalize, "count_table_rows", lambda *_a, **_k: next(target_counts))
+    monkeypatch.setattr(
+        finalize,
+        "count_rows_on_cluster",
+        lambda *_a, **_k: next(target_counts),
+    )
     monkeypatch.setattr(
         finalize,
         "run_ch_readiness_wait",
@@ -185,7 +249,7 @@ def test_fresh_target_count_query_error_can_converge(
             raise outcome
         return outcome
 
-    monkeypatch.setattr(finalize, "count_table_rows", count_rows)
+    monkeypatch.setattr(finalize, "count_rows_on_cluster", count_rows)
     monkeypatch.setattr(finalize.time, "sleep", lambda _seconds: None)
 
     assert (
@@ -218,7 +282,7 @@ def test_fresh_target_count_timeout_reports_last_observed_with_wait_none(
         "_run_with_fresh_target_connection",
         lambda _options, _role, operation: operation({"connection": object()}),
     )
-    monkeypatch.setattr(finalize, "count_table_rows", lambda *_a, **_k: 4)
+    monkeypatch.setattr(finalize, "count_rows_on_cluster", lambda *_a, **_k: 4)
 
     with pytest.raises(
         finalize.FreshTargetFinalizationRowCountMismatchError,
@@ -255,7 +319,7 @@ def test_fresh_target_count_timeout_preserves_query_error(
     def count_rows(*_args: Any, **_kwargs: Any) -> int:
         raise query_error
 
-    monkeypatch.setattr(finalize, "count_table_rows", count_rows)
+    monkeypatch.setattr(finalize, "count_rows_on_cluster", count_rows)
 
     with pytest.raises(finalize.FreshTargetFinalizationRowCountMismatchError) as exc_info:
         finalize._wait_for_fresh_target_row_count(

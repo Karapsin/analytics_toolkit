@@ -246,18 +246,18 @@ def test_clickhouse_fresh_target_finalization_retries_count_mismatch(
 ) -> None:
     source_table = _table("trino", "fresh_retry_source")
     target_table = _table("ch", "fresh_retry_target")
-    real_count = transfer_finalize.count_table_rows
+    real_count = transfer_finalize.count_rows_on_cluster
     target_count_calls = 0
 
     def mismatched_first_target_count(
-        connection_type: str,
         connection: object,
         table_name: str,
+        cluster: str,
         **kwargs: object,
     ) -> int:
         nonlocal target_count_calls
-        rows = int(real_count(connection_type, connection, table_name, **kwargs))
-        if table_name == target_table:
+        rows = int(real_count(connection, table_name, cluster, **kwargs))
+        if table_name == transfer_finalize.build_ch_shard_table_name(target_table):
             target_count_calls += 1
             if target_count_calls == 1:
                 return rows + 1
@@ -273,7 +273,7 @@ def test_clickhouse_fresh_target_finalization_retries_count_mismatch(
         )
         monkeypatch.setattr(
             transfer_finalize,
-            "count_table_rows",
+            "count_rows_on_cluster",
             mismatched_first_target_count,
         )
         transferred = sql.transfer(

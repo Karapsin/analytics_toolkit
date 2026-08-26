@@ -11,9 +11,10 @@ from analytics_toolkit.sql.ddl.identifiers import (
     _identifier_name,
     _parse_table_name,
 )
+from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlPlan
 
-from .ddl import _sql_string_literal
+from .ddl import _sql_string_literal, split_ch_table_name_for_distributed_engine
 from .reconfigure_ddl import (
     comparable_create_sql,
     distributed_table_parts,
@@ -115,13 +116,20 @@ def count_rows(connection: Any, table: str) -> int:
     return int(rows[0][0]) if rows and rows[0] else 0
 
 
-def count_rows_on_cluster(connection: Any, table: str, cluster: str) -> int:
-    database, relation = distributed_table_parts(table)
-    result = connection.query(
-        "SELECT count() FROM cluster("
+def count_rows_on_cluster(
+    connection: Any,
+    table: str,
+    cluster: str,
+    *,
+    query_label: str | None = None,
+) -> int:
+    database_expression, relation = split_ch_table_name_for_distributed_engine(table)
+    sql = (
+        "SELECT count(*) FROM cluster("
         f"{_sql_string_literal(cluster)}, "
-        f"{_sql_string_literal(database)}, {_sql_string_literal(relation)})"
+        f"{database_expression}, {_sql_string_literal(relation)})"
     )
+    result = connection.query(apply_query_label(sql, query_label))
     rows = getattr(result, "result_rows", None) or []
     return int(rows[0][0]) if rows and rows[0] else 0
 
