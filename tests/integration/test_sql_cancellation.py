@@ -168,10 +168,9 @@ def test_cancel_finished_query_id_does_not_reactivate_query(
     query_id = row["query_id"]
     worker.join(timeout=30)
     poll_until(lambda: _gone(backend, label), description=f"finished query {label}")
+    result = sql.cancel_queries(backend, [query_id], retry_cnt=1)
+    assert result["query_id"].tolist() == [query_id]
     if backend == "trino":
-        with pytest.raises(Exception, match=r"(?i)query|not found|finished"):
-            sql.cancel_queries(backend, [query_id], retry_cnt=1)
-    else:
-        result = sql.cancel_queries(backend, [query_id], retry_cnt=1)
-        assert result["query_id"].tolist() == [query_id]
+        assert result["cancelled"].tolist() == [False]
+        assert result["status"].tolist() == ["not_running"]
     assert _gone(backend, label)

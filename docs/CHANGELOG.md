@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## 1.3.11.14 - 2026-08-26
+
+- Aligned finished-query integration coverage with idempotent Trino cancellation.
+
 ## 1.3.11.13 - 2026-08-26
 
 - Handled Trino queries that finish during concurrent cancellation.
