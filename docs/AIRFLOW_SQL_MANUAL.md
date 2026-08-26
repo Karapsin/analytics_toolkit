@@ -76,7 +76,9 @@ or DAG script, usually the DAG project root. On the first lookup,
 directories, then searches from the current working directory through its
 parents. It remembers the successful path. If that file later disappears after
 a worker or DAG path rotation, it searches the old directory and its parents
-before retrying the script and working-directory chains:
+before retrying the script and working-directory chains. If rotation removes a
+selected file between discovery and reading, it repeats recovery up to five
+times:
 
 ```json
 {

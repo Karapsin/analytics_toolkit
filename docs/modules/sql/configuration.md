@@ -13,9 +13,11 @@ key's `type`.
 The successful path is remembered for later calls. If that file disappears,
 for example after an Airflow worker or DAG path rotation, recovery searches the
 remembered file's directory and parents first, then the calling-script and
-current-working-directory chains. Only a missing file triggers recovery; a
-found file with invalid JSON or invalid connection settings raises its normal
-configuration error.
+current-working-directory chains. If a selected file disappears between path
+discovery and reading, the package repeats that recovery search up to five
+times. Only a missing file triggers recovery; a found file with invalid JSON,
+invalid connection settings, a permissions failure, or another I/O error raises
+its normal error.
 
 When runtime code cannot rely on the current working directory, set the file
 explicitly before calling SQL helpers:

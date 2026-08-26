@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Recover connections files that disappear between discovery and reading.
+
 ## 1.3.11.14 - 2026-08-26
 
 - Aligned finished-query integration coverage with idempotent Trino cancellation.

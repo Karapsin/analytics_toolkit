@@ -34,6 +34,7 @@ DEFAULT_GP_KEEPALIVES_INTERVAL_SECONDS = 10
 DEFAULT_GP_KEEPALIVES_COUNT = 3
 _MISSING_OVERRIDE = object()
 _AIRFLOW_EXTRA_RESOLVER_KEYS = {"from", "key", "fallback"}
+_CONNECTIONS_READ_RECOVERY_RETRIES = 5
 
 
 @dataclass(frozen=True)
@@ -465,10 +466,10 @@ def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
 
 
 def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConnectionSource:
-    connections_path = get_connections_file_path()
+    connections_path, connections_text = _read_connections_file_text()
 
     try:
-        parsed = json.loads(connections_path.read_text(encoding="utf-8"))
+        parsed = json.loads(connections_text)
     except json.JSONDecodeError as exc:
         raise SqlConfigError(f"{connections_path} must contain valid JSON.") from exc
 
@@ -479,6 +480,37 @@ def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConne
         return _parse_airflow_connections_file(parsed, connections_path)
 
     return _parse_direct_connections_file(parsed, connections_path)
+
+
+def _read_connections_file_text() -> tuple[Path, str]:
+    connections_path = get_connections_file_path()
+    return _read_connections_file_path(
+        connections_path,
+        retries_remaining=_CONNECTIONS_READ_RECOVERY_RETRIES,
+    )
+
+
+def _read_connections_file_path(
+    connections_path: Path,
+    *,
+    retries_remaining: int,
+) -> tuple[Path, str]:
+    try:
+        return connections_path, connections_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        if retries_remaining == 0:
+            message = (
+                "SQL connections file disappeared while being read after "
+                f"{_CONNECTIONS_READ_RECOVERY_RETRIES} recovery retries: "
+                f"{connections_path}"
+            )
+            raise SqlConfigError(message) from exc
+
+    recovered_path = find_connections_file_path() or connections_path
+    return _read_connections_file_path(
+        recovered_path,
+        retries_remaining=retries_remaining - 1,
+    )
 
 
 def _is_airflow_connections_file(

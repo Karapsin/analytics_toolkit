@@ -323,6 +323,134 @@ def test_missing_explicit_connections_path_recovers_and_promotes_caller_path(
     )
 
 
+def test_connections_file_read_recovers_from_rotation_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".connections").unlink()
+    old_runtime_dir = tmp_path / "old_worker" / "T"
+    old_runtime_dir.mkdir(parents=True)
+    old_connections = old_runtime_dir / ".connections"
+    old_connections.write_text("{}", encoding="utf-8")
+    script_root = tmp_path / "airflow_project"
+    script_dir = script_root / "dags" / "tasks"
+    script_dir.mkdir(parents=True)
+    script_connections = script_root / ".connections"
+    script_connections.write_text(
+        json.dumps(
+            {
+                "gp": {
+                    "type": "gp",
+                    "host": "current-gp.example",
+                    "user": "user",
+                    "password": "password",
+                    "database": "db",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        config_path_module, "_resolve_calling_base_dir", lambda: script_dir
+    )
+    original_read_text = Path.read_text
+    read_paths: list[Path] = []
+
+    def read_text_with_rotation(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        read_paths.append(path)
+        if path == old_connections.resolve():
+            path.unlink()
+            raise FileNotFoundError(2, "No such file", str(path))
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    general_module.set_connections_path(old_connections)
+    monkeypatch.setattr(Path, "read_text", read_text_with_rotation)
+
+    config = config_module.get_connection_config("gp")
+
+    assert config.host == "current-gp.example"
+    assert read_paths == [old_connections.resolve(), script_connections.resolve()]
+    assert (
+        connections_state_module.get_connections_path_override()
+        == script_connections.resolve()
+    )
+
+
+def test_connections_file_read_race_stops_after_five_retries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections_path = tmp_path / ".connections"
+    read_attempts = 0
+    recovery_attempts = 0
+
+    def missing_read_text(
+        _path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        nonlocal read_attempts
+        del encoding, errors
+        read_attempts += 1
+        raise FileNotFoundError(2, "No such file", str(connections_path))
+
+    def rediscover() -> Path:
+        nonlocal recovery_attempts
+        recovery_attempts += 1
+        return connections_path
+
+    monkeypatch.setattr(
+        config_module, "get_connections_file_path", lambda: connections_path
+    )
+    monkeypatch.setattr(config_module, "find_connections_file_path", rediscover)
+    monkeypatch.setattr(Path, "read_text", missing_read_text)
+
+    with pytest.raises(
+        SqlConfigError,
+        match="disappeared while being read after 5 recovery retries",
+    ) as exc_info:
+        config_module._read_connections_file_text()
+
+    assert isinstance(exc_info.value.__cause__, FileNotFoundError)
+    assert read_attempts == 6
+    assert recovery_attempts == 5
+
+
+def test_connections_file_read_does_not_retry_other_os_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections_path = tmp_path / ".connections"
+
+    def fail_rediscovery() -> Path | None:
+        message = "unexpected recovery lookup"
+        raise AssertionError(message)
+
+    def raise_permission_error(
+        _path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        del encoding, errors
+        message = "permission denied"
+        raise PermissionError(message)
+
+    monkeypatch.setattr(
+        config_module, "get_connections_file_path", lambda: connections_path
+    )
+    monkeypatch.setattr(
+        config_module, "find_connections_file_path", fail_rediscovery
+    )
+    monkeypatch.setattr(Path, "read_text", raise_permission_error)
+
+    with pytest.raises(PermissionError, match="permission denied"):
+        config_module._read_connections_file_text()
+
+
 def test_recovered_connections_path_anchors_relative_certificates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -362,9 +490,20 @@ def test_recovered_connections_path_anchors_relative_certificates(
         ),
     )
     monkeypatch.setattr(config_path_module, "_resolve_calling_base_dir", lambda: None)
+    original_read_text = Path.read_text
+
+    def read_text_with_rotation(
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        if path == old_connections.resolve():
+            path.unlink()
+            raise FileNotFoundError(2, "No such file", str(path))
+        return original_read_text(path, encoding=encoding, errors=errors)
 
     general_module.set_connections_path(old_connections)
-    old_connections.unlink()
+    monkeypatch.setattr(Path, "read_text", read_text_with_rotation)
     connection_module.get_sql_connection("gp_ssl")
 
     assert connect_calls[0]["sslrootcert"] == str(ca_path.resolve())
