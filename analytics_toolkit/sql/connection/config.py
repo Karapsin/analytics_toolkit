@@ -20,6 +20,10 @@ from ..backends.registry import (
 from ..execution.operation_runner import timed_public_sql_function
 from .config_path import find_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
+from .references import (
+    is_connection_value_reference,
+    resolve_connection_value_references,
+)
 
 if TYPE_CHECKING:
     from .ddl_defaults import DdlDefaults
@@ -63,7 +67,7 @@ class TrinoConfig:
     host: str
     port: int
     user: str
-    password: str | None
+    password: str | None = field(repr=False)
     catalog: str | None
     schema: str | None
     auth_mode: str
@@ -90,7 +94,7 @@ class GpConfig:
     host: str
     port: int
     user: str
-    password: str
+    password: str = field(repr=False)
     database: str
     connect_timeout: int
     keepalives: bool
@@ -112,7 +116,7 @@ class ChConfig:
     host: str
     port: int
     user: str
-    password: str
+    password: str = field(repr=False)
     database: str | None
     secure: bool
     verify_value: str | None
@@ -204,8 +208,9 @@ def _build_connection_config(
     connection_key: str,
     raw_config: dict[str, Any],
 ) -> ConnectionConfig:
-    backend = _require_backend(connection_key, raw_config)
-    return get_backend(backend).build_connection_config(connection_key, raw_config)
+    resolved_config = resolve_connection_value_references(connection_key, raw_config)
+    backend = _require_backend(connection_key, resolved_config)
+    return get_backend(backend).build_connection_config(connection_key, resolved_config)
 
 
 def get_connection_backend(connection_key: str) -> BackendName:
@@ -585,7 +590,12 @@ def _parse_airflow_connections_file(
             )
 
         backend = _normalize_backend_name(_require_string(raw_config, raw_key, "type"))
-        get_backend(backend).validate_airflow_file_overrides(raw_config, raw_key)
+        literal_overrides = {
+            field_name: value
+            for field_name, value in raw_config.items()
+            if not is_connection_value_reference(value, field_name)
+        }
+        get_backend(backend).validate_airflow_file_overrides(literal_overrides, raw_key)
         connection_id = cast(
             "str",
             _optional_string(
@@ -865,6 +875,10 @@ def _resolve_airflow_entry_overrides(
 
 def _is_airflow_extra_resolver(field_name: str, value: Any) -> bool:
     if not isinstance(value, dict) or "from" not in value:
+        return False
+
+    raw_source = value.get("from")
+    if not isinstance(raw_source, str) or raw_source.strip().lower() != "extra":
         return False
 
     # ClickHouse settings are themselves a mapping. Treat settings as a resolver

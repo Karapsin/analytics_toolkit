@@ -13,7 +13,8 @@ through the `sql` facade, for example `sql.read(...)`, `sql.load_df(...)`, or
 
 The intended Airflow pattern is:
 
-- keep credentials in Airflow Connections;
+- keep credentials in Airflow Connections or reference existing Airflow
+  Variables;
 - keep only routing metadata and optional connector overrides in `.connections`;
 - call `sql.read`, `sql.execute`, `sql.load_df`, and `sql.transfer` directly from
   DAG tasks.
@@ -140,6 +141,50 @@ Airflow extra key has a different name:
 ```
 
 Plain values still force an override, for example `"request_timeout": 900`.
+
+### Environment And Airflow Variable References
+
+Any non-routing connection field can resolve from an environment variable or
+an Airflow Variable. These references work alongside Airflow Connection fields
+and `extra` resolvers:
+
+```json
+{
+  "source": "airflow",
+  "connections": {
+    "airflow_trino": {
+      "type": "trino",
+      "request_timeout": {
+        "from": "env",
+        "key": "TRINO_REQUEST_TIMEOUT"
+      },
+      "aws_access_key_id": {
+        "from": "airflow_variable",
+        "key": "S3_AF",
+        "path": ["credentials", "access_key"]
+      },
+      "aws_secret_access_key": {
+        "from": "airflow_variable",
+        "key": "S3_AF",
+        "path": ["credentials", "secret_key"]
+      }
+    }
+  }
+}
+```
+
+Without `path`, the named source supplies one scalar value. With `path`, the
+source must contain JSON and the array selects nested object keys. Use an empty
+array to select the whole parsed JSON object. Values are resolved in memory for
+each configuration lookup; the toolkit does not write credentials into
+`.connections` or cache them. Literal routing fields such as `type` and
+`connection_id` cannot use references.
+
+The same `env` syntax works in direct `.connections` files outside Airflow.
+`airflow_variable` is imported only when such a reference is resolved. The
+existing `ca_certs_variable` option remains compatible; a generalized
+alternative is
+`"ca_certs": {"from": "airflow_variable", "key": "ca_certificate"}`.
 
 The key is the Airflow connection ID by default. Use `connection_id` when the
 toolkit alias should be different:
@@ -322,12 +367,12 @@ with host-count diagnostics.
 `wait_none`; explicit function arguments take precedence over the Airflow extra
 or resolver override, and the default is `wait_all`.
 
-Direct Trino Parquet credential families (`aws_access_key_id` plus
+Literal Trino Parquet credential families (`aws_access_key_id` plus
 `aws_secret_access_key`, or `access_key_id` plus `secret_access_key`) are not
 accepted in Airflow-source `.connections` files or Airflow extras. Use the
-worker's standard AWS credential-provider configuration for Airflow-managed
-connections. Non-secret `aws_endpoint_url` or `endpoint_url` may be resolved
-from Airflow extras; specify at most one.
+worker's standard AWS credential-provider configuration or external
+`airflow_variable`/`env` references. Non-secret `aws_endpoint_url` or
+`endpoint_url` may be resolved from Airflow extras; specify at most one.
 
 `interface`, `query_limit`, and `query_retries` remain HTTP-only and are
 rejected in native mode. Setting only `"interface": "https"` does not allow an

@@ -2403,7 +2403,6 @@ def test_airflow_file_extra_fallback_uses_fallback_when_extra_missing(
 @pytest.mark.parametrize(
     "resolver",
     [
-        {"from": "env", "fallback": "https"},
         {"from": "extra", "key": 123, "fallback": "https"},
         {"from": "extra", "fallback": "https", "unexpected": True},
         {"from": "extra", "default": "https"},

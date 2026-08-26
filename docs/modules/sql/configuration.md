@@ -100,6 +100,71 @@ for an Airflow-source file. The helper never overwrites an existing
 }
 ```
 
+## Runtime Value References
+
+Any top-level connection field other than routing fields such as `type` and
+`connection_id` may resolve its value at runtime from an environment variable
+or an Airflow Variable. Literal values remain supported, so references can be
+introduced one credential at a time:
+
+```json
+{
+  "gp": {
+    "type": "gp",
+    "host": {"from": "env", "key": "GP_HOST"},
+    "port": {"from": "env", "key": "GP_PORT"},
+    "user": "analytics_user",
+    "password": {"from": "env", "key": "GP_PASSWORD"},
+    "database": "analytics"
+  },
+  "trino": {
+    "type": "trino",
+    "host": "trino.example",
+    "user": "analytics_user",
+    "aws_access_key_id": {
+      "from": "airflow_variable",
+      "key": "S3_AF",
+      "path": ["credentials", "access_key"]
+    },
+    "aws_secret_access_key": {
+      "from": "airflow_variable",
+      "key": "S3_AF",
+      "path": ["credentials", "secret_key"]
+    }
+  }
+}
+```
+
+For that example, Airflow Variable `S3_AF` contains JSON such as:
+
+```json
+{
+  "credentials": {
+    "access_key": "object-storage-access-key",
+    "secret_key": "object-storage-secret-key"
+  }
+}
+```
+
+Use `{"from": "env", "key": "NAME"}` outside Airflow or in a DAG worker.
+Use `{"from": "airflow_variable", "key": "NAME"}` when Airflow supplies a
+single scalar value. Add `path` as an array of JSON object keys to parse the
+source value as JSON and select a nested value. An empty `path` array selects
+the complete parsed JSON value, which is useful for mapping fields such as
+ClickHouse `settings`.
+
+References are resolved in memory on each configuration lookup and are never
+written back to `.connections` or cached by the toolkit. Missing sources,
+malformed JSON, and missing paths raise a connection-specific `SqlConfigError`
+without including the resolved value. Airflow imports remain lazy: ordinary
+literal and environment-based configurations do not require Airflow. Passwords
+and object-storage secrets are omitted from connection configuration
+representations.
+
+The existing ClickHouse `ca_certs_variable` field remains supported. The
+general equivalent is
+`"ca_certs": {"from": "airflow_variable", "key": "ca_certificate"}`.
+
 ## Per-Connection DDL Defaults
 
 Each connection may define `ddl_defaults`. `regular` applies to persistent
@@ -169,8 +234,9 @@ S3-compatible Parquet staging. Supply one complete family only; incomplete,
 mixed, or dual families are rejected. The values are passed only to
 `fsspec`/`s3fs` as `key` and `secret` for upload and recursive cleanup, not to
 Trino authentication. Omitting credentials preserves the normal AWS provider
-chain. Session-token fields are unsupported, and Airflow-source `.connections`
-files reject direct object-store credentials.
+chain. Session-token fields are unsupported. Airflow-source `.connections`
+files reject literal object-store credentials but accept `env` and
+`airflow_variable` references for those fields.
 
 Use either `aws_endpoint_url` or `endpoint_url` for a custom S3-compatible
 endpoint. The resolved URL is passed as
@@ -384,6 +450,8 @@ Airflow-source entries support resolver objects for optional connection extras.
 Use `{"from": "extra", "fallback": VALUE}` to read the same-named Airflow
 `extra_dejson` key with a fallback, or add `"key": "other_name"` to read a
 different Airflow extra. Plain values still force a file-level override.
+The general `env` and `airflow_variable` references described above may be used
+in the same Airflow-source entry, including for object-storage credentials.
 `ddl_defaults` is a literal nested mapping, even when a DDL property is named
 `from`. The whole object may also come from Airflow extras with an explicit
 resolver, for example
