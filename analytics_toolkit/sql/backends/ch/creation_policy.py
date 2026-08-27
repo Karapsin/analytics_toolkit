@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import string
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import sqlglot
 from sqlglot import expressions as exp
+from sqlglot.errors import SqlglotError
 
 from analytics_toolkit.sql.backends.ch.ddl import (
     _build_order_by_sql,
@@ -147,6 +148,34 @@ def resolve_clickhouse_creation_policy(
         0.0,
         resolve_ch_ddl_wait_policy(ch_ddl_wait_policy, connection_ddl_wait_policy),
     )
+
+
+def prepare_cluster_routed_transfer_staging_policy(
+    config: Any,
+    policy: ClickHouseCreationPolicy,
+) -> ClickHouseCreationPolicy:
+    routing = getattr(config, "cluster_routing", None)
+    if routing is None:
+        return policy
+    if policy.create_distributed_pair:
+        raise SqlConfigError(
+            "ClickHouse cluster_routing requires transfer staging with "
+            "ddl_defaults.staging.create_distributed_pair=false."
+        )
+    try:
+        engine = sqlglot.parse_one(policy.shard_engine, read="clickhouse")
+    except SqlglotError as exc:
+        raise SqlConfigError(
+            "ClickHouse ddl_defaults.staging.shard.engine must be a valid engine expression."
+        ) from exc
+    engine_name = str(getattr(engine, "name", "")).lower()
+    if engine_name != "mergetree":
+        raise SqlConfigError(
+            "ClickHouse cluster_routing requires transfer staging engine MergeTree; "
+            f"{policy.shard_engine!r} is incompatible because transfer stages are read "
+            "across all replicas."
+        )
+    return replace(policy, shard_on_cluster=routing.cluster)
 
 
 def _validate_non_negative_int(value: Any, name: str) -> int:

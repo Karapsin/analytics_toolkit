@@ -2,22 +2,15 @@ from __future__ import annotations
 
 # ruff: noqa: BLE001, I001, PLR0913, TC001, TID252
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from ....backends import get_backend_adapter
+from ....backends.transfer_stage import _TRANSFER_STAGE_SUFFIX_PATTERN
 from ....execution.query_timing import run_timed_query
 from ...load.stage import cleanup_stage_table
 from ..runtime.models import TransferOptions
 from .stage_identity import TransferInternalColumns
-
-
-_TRANSFER_STAGE_SUFFIX_PATTERN = re.compile(
-    r"(?P<transfer_id>[0-9a-f]{32})__"
-    r"(?:source|s[0-9]{5}|w[0-9]{5}|upsert)"
-    r"(?:__c_[0-9a-f]{8}|[0-9a-f]{5})?$"
-)
 
 
 @dataclass(frozen=True)

@@ -3,11 +3,25 @@ from __future__ import annotations
 # ruff: noqa: EM101, I001, TRY003
 
 import hashlib
+import re
 from typing import Any
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 
 COLLISION_STAGE_RANDOM_SUFFIX_LENGTH = 4
+_TRANSFER_STAGE_SUFFIX_PATTERN = re.compile(
+    r"(?P<transfer_id>[0-9a-f]{32})__"
+    r"(?:source|s[0-9]{5}|w[0-9]{5}|upsert)"
+    r"(?:__c_[0-9a-f]{8}|[0-9a-f]{5})?$"
+)
+
+
+def match_transfer_stage_identifier(identifier: str) -> re.Match[str] | None:
+    return _TRANSFER_STAGE_SUFFIX_PATTERN.search(identifier)
+
+
+def is_transfer_stage_identifier(identifier: str) -> bool:
+    return match_transfer_stage_identifier(identifier) is not None
 
 
 def execute_transfer_materialization(

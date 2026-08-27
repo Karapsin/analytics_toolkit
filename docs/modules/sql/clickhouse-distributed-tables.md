@@ -60,6 +60,12 @@ preserved and used by that statement. See
 [Automatic ClickHouse Cluster Routing](configuration.md#automatic-clickhouse-cluster-routing)
 for the configuration shape and validation rules.
 
+Private `sql.transfer` stages are the deliberate exception to one-replica
+reads: their non-replicated `MergeTree` parts are read with
+`clusterAllReplicas(...)` so concurrent inserts can land on different replicas
+without losing rows during consolidation or validation. Final replicated
+targets continue to use normal one-replica-per-shard routing.
+
 Use [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md) to replace a
 stored Distributed cluster, sharding key, MergeTree engine, partition key,
 sorting key, or table settings. The helper resolves cluster macros before

@@ -5871,6 +5871,14 @@
         "ch"
       ]
     },
+    "clickhouse.cluster_routing.transfer_replicas": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/clickhouse_cluster_routing.py::test_clickhouse_cluster_routed_transfer_across_replicas",
+      "backends": [
+        "ch",
+        "trino"
+      ]
+    },
     "clickhouse.native.transport": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/clickhouse_native.py::test_native_clickhouse_public_operations_and_transfers",

@@ -12,6 +12,7 @@ from sqlglot import exp
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
+from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_identifier
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     SqlConfigError,
@@ -161,6 +162,12 @@ def routed_connection_sql(connection: Any, sql: str) -> str:
     return connection.route(sql)
 
 
+def connection_cluster_routing(connection: Any) -> ChClusterRouting | None:
+    if not isinstance(connection, ClusterRoutingClient):
+        return None
+    return connection.cluster_routing
+
+
 def prepare_plan_sql(
     adapter: Any,
     connection_key: str,
@@ -209,6 +216,10 @@ def _is_local_create_fallback(sql: str, previous_sqls: Sequence[str]) -> bool:
 
 
 class ClusterRoutingClient:
+    _client: Any
+    _routing: ChClusterRouting
+    _database: str | None
+
     def __init__(
         self,
         client: Any,
@@ -232,6 +243,10 @@ class ClusterRoutingClient:
     @property
     def is_native_transport(self) -> bool:
         return bool(getattr(self._client, "is_native_transport", False))
+
+    @property
+    def cluster_routing(self) -> ChClusterRouting:
+        return self._routing
 
     def command(self, sql: str, **kwargs: Any) -> Any:
         routed_sql = self.route(sql)
@@ -421,7 +436,13 @@ def _replace_source_table(
     default_database: str | None,
 ) -> None:
     database, relation = _table_parts(table, default_database)
-    replacement = _cluster_table(cluster, database, relation)
+    function_name = "clusterAllReplicas" if is_transfer_stage_identifier(relation) else "cluster"
+    replacement = _cluster_table(
+        cluster,
+        database,
+        relation,
+        function_name=function_name,
+    )
     for key, value in table.args.items():
         if key not in {"this", "db", "catalog"}:
             replacement.set(key, value.copy() if isinstance(value, exp.Expression) else value)
@@ -512,6 +533,7 @@ def _cluster_table(
     table: str,
     *,
     sharding_key: str | None = None,
+    function_name: str = "cluster",
 ) -> exp.Table:
     arguments: list[exp.Expression] = [
         exp.Literal.string(cluster),
@@ -520,7 +542,7 @@ def _cluster_table(
     ]
     if sharding_key is not None:
         arguments.append(exp.Var(this=sharding_key))
-    return exp.Table(this=exp.Anonymous(this="cluster", expressions=arguments))
+    return exp.Table(this=exp.Anonymous(this=function_name, expressions=arguments))
 
 
 def _cluster_function_sql(

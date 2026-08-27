@@ -453,6 +453,25 @@ dataframe inserts use
 `cluster(cluster, database, table, sharding_key)` as their insert target. Plain
 supported DDL receives `ON CLUSTER` automatically.
 
+`sql.transfer` uses non-replicated scratch tables with cluster routing. Keep the
+staging policy on a single physical `MergeTree` and do not create a Distributed
+pair:
+
+```json
+"staging": {
+  "create_distributed_pair": false,
+  "shard": {"engine": "MergeTree", "on_cluster": null}
+}
+```
+
+The toolkit deploys those private stages on the routing cluster, distributes
+stage inserts normally, and reads reserved transfer-stage sources through
+`clusterAllReplicas(...)`. This preserves batches that different concurrent
+inserts placed on different replicas. Regular tables continue to use
+`cluster(...)`. A replicated staging engine or staging Distributed pair is
+rejected before the transfer opens database connections because all-replica
+reads would duplicate replicated rows.
+
 An explicit DDL scope always wins over `cluster_routing`. For example,
 `ON CLUSTER '{cluster}'` remains exactly that macro and is also used to route
 table sources inside the same statement. This lets connection-level routing

@@ -203,6 +203,43 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "sharding_key": "rand()",
         },
     }
+    replicated_cluster_defaults = {
+        "regular": {
+            "create_distributed_pair": True,
+            "shard": {
+                "engine": "ReplicatedMergeTree",
+                "on_cluster": "integration_replicated_cluster",
+            },
+            "distributed": {
+                "engine_template": (
+                    "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
+                ),
+                "cluster": "integration_replicated_cluster",
+                "on_cluster": "integration_replicated_cluster",
+                "sharding_key": "rand()",
+            },
+        },
+        "staging": {
+            "create_distributed_pair": False,
+            "shard": {"engine": "MergeTree", "on_cluster": None},
+        },
+    }
+    connections["ch_routed_replicas"] = {
+        **clickhouse_http,
+        "ddl_defaults": replicated_cluster_defaults,
+        "cluster_routing": {
+            "cluster": "integration_replicated_cluster",
+            "sharding_key": "rand()",
+        },
+    }
+    connections["ch_routed_replicas_native"] = {
+        **clickhouse_native,
+        "ddl_defaults": replicated_cluster_defaults,
+        "cluster_routing": {
+            "cluster": "integration_replicated_cluster",
+            "sharding_key": "rand()",
+        },
+    }
     if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
         connections["trino_pressure"] = {
             **connections["trino_values"],

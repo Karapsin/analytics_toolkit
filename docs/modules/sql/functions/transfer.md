@@ -283,6 +283,12 @@ rows = sql.transfer(
 - Greenplum `bytea` values map to binary-safe ClickHouse `String` columns. Both
   ClickHouse transports preserve the raw byte sequence without hex or Base64
   conversion.
+- A cluster-routed ClickHouse target requires non-replicated `MergeTree`
+  staging with `create_distributed_pair=false`. Writer batches may reside on
+  different replicas; consolidation, validation, finalization, and stale-stage
+  discovery therefore read the private stage tables across all replicas. A
+  replicated staging engine is rejected while regular target tables may remain
+  replicated.
 - Unkeyed source-staged transfers keep at least one worker and use no more than
   `min(concurrency, ceil(total_rows / batch_size))` workers. Logs report both
   requested and effective counts.

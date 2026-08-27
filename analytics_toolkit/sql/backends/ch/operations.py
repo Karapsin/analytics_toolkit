@@ -9,7 +9,12 @@ import analytics_toolkit.sql.backends.common_methods as _common_methods
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
-from .routing import local_sql, query_local, routed_connection_sql
+from .routing import (
+    connection_cluster_routing,
+    local_sql,
+    query_local,
+    routed_connection_sql,
+)
 
 read_columns = _common_methods.read_columns
 
@@ -138,13 +143,18 @@ def query_transfer_stage_table_names(
     transfer_staging_schema: str,
     table_pattern: str,
 ) -> list[str]:
-    del adapter, connection_key, table_pattern
+    del adapter, connection_key
     from ..utils import sql_string_literal
 
+    routing = connection_cluster_routing(connection)
+    source = "system.tables"
+    if routing is not None:
+        source = f"clusterAllReplicas({sql_string_literal(routing.cluster)}, system, tables)"
     result = query_local(
         connection,
-        "SELECT name FROM system.tables WHERE database = "
-        f"{sql_string_literal(transfer_staging_schema)}"
+        f"SELECT DISTINCT name FROM {source} WHERE database = "
+        f"{sql_string_literal(transfer_staging_schema)} AND name LIKE "
+        f"{sql_string_literal(table_pattern)}",
     )
     return [str(row[0]) for row in (result.result_rows or [])]
 

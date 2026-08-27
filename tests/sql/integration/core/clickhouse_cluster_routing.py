@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.dml.transfer.flow.stage_identity import (
+    resolve_destination_identity,
+)
 
 from tests.sql.integration._support.identity import resource_name
 
@@ -47,3 +50,58 @@ def test_clickhouse_cluster_routing_http_and_native(
 
         rows = sql.read(alias, f"SELECT id FROM {table} ORDER BY id")
         assert rows["id"].tolist() == [1, 2, 3, 4]
+
+
+@pytest.mark.sql_scenario("clickhouse.cluster_routing.transfer_replicas")
+def test_clickhouse_cluster_routed_transfer_across_replicas(
+    resource_registry: ResourceRegistry,
+) -> None:
+    source = resource_registry.table(
+        "trino_values",
+        f"iceberg.{_table('replica_source')}",
+    )
+    expected = pd.DataFrame(
+        {
+            "id": list(range(12)),
+            "payload": [f"row-{index}" for index in range(12)],
+        }
+    )
+    assert sql.load_df("trino_values", source, expected, write_mode="replace") == 12
+
+    for alias in ("ch_routed_replicas", "ch_routed_replicas_native"):
+        target = resource_registry.table(
+            alias,
+            _table(alias),
+            ch_cluster="integration_replicated_cluster",
+        )
+        assert (
+            sql.transfer(
+                "trino_values",
+                alias,
+                from_table=source,
+                to_table=target,
+                write_mode="replace",
+                batch_size=2,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+                concurrency=3,
+                retry_cnt=1,
+                full_retry_cnt=1,
+                table_schema={"id": "Int64", "payload": "String"},
+            )
+            == 12
+        )
+
+        actual = sql.read(alias, f"SELECT id, payload FROM {target} ORDER BY id")
+        assert actual.to_dict("records") == expected.to_dict("records")
+
+        stage_prefix = resolve_destination_identity(target, "ch").hash_prefix
+        remaining = sql.read(
+            alias,
+            "SELECT count() AS stage_count "
+            "FROM clusterAllReplicas("
+            "'integration_replicated_cluster', system, tables) "
+            "WHERE database = 'integration' "
+            f"AND name LIKE '{stage_prefix}__%'",
+        )
+        assert int(remaining.iloc[0, 0]) == 0

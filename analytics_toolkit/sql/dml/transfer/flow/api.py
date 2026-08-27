@@ -460,9 +460,7 @@ def build_transfer_options(
     target_defaults = target_adapter.target_connection_defaults(to_config)
     resolved_trino_mode = target_adapter.resolve_transfer_staging_mode(
         trino_mode,
-        s3_transfer_staging_schema=getattr(
-            to_config, "s3_transfer_staging_schema", None
-        ),
+        s3_transfer_staging_schema=getattr(to_config, "s3_transfer_staging_schema", None),
         s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
     )
     resolved_write_mode = transfer_options.resolve_transfer_write_mode(
@@ -553,6 +551,7 @@ def build_transfer_options(
     )
     ddl = resolve_operation_ddl(
         to_config,
+        cluster_routed_transfer_staging=True,
         ch_engine=ch_engine,
         ch_cluster=ch_cluster,
         ch_sharding_key=ch_sharding_key,
