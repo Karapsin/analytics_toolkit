@@ -442,9 +442,12 @@ single-endpoint behavior. The setting works with both HTTP and native drivers.
 
 `cluster` is required. `sharding_key` is optional and defaults to `rand()`.
 Both must be non-empty strings, and the sharding key must be one valid
-ClickHouse expression. Unqualified table names use the connection's `database`;
-without that field they fail before execution. Catalog-qualified names and SQL
-that cannot be parsed safely also fail closed.
+ClickHouse expression. Routing preserves the configured function semantics,
+including the integer-returning `rand()` required by `Distributed` sharding;
+it does not substitute the floating-point `randCanonical()` function.
+Unqualified table names use the connection's `database`; without that field
+they fail before execution. Catalog-qualified names and SQL that cannot be
+parsed safely also fail closed.
 
 Named query sources are rewritten to the `cluster(cluster, database, table)`
 table function. This includes nested queries and named `system` or Distributed

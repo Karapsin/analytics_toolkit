@@ -136,6 +136,25 @@ def test_transfer_stage_sources_route_through_all_replicas() -> None:
     assert "FROM clusterAllReplicas('core', 'stage'," in source_stage_read
 
 
+def test_cluster_routing_preserves_integer_rand_sharding_expression() -> None:
+    routed = route_sql(
+        "CREATE TABLE analytics.events "
+        "ENGINE = Distributed('core', 'analytics', 'events_shard', rand())",
+        routing=ChClusterRouting("core", "rand()"),
+        database="default",
+    )
+
+    assert "rand()" in routed
+    assert "randCanonical()" not in routed
+
+    mixed = route_sql(
+        "SELECT rand(), randCanonical() FROM analytics.events",
+        routing=ChClusterRouting("core", "rand()"),
+        database="default",
+    )
+    assert "SELECT rand(), randCanonical()" in mixed
+
+
 def test_cluster_routed_source_snapshot_creates_waits_and_populates_once(
     monkeypatch: Any,
 ) -> None:

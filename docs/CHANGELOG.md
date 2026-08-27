@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.15 - 2026-08-27
 
 - Recover connections files that disappear between discovery and reading.
 - Added runtime environment and Airflow Variable references for SQL connection fields.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Made cluster-routed ClickHouse transfers preserve non-replicated stage rows across replicas.
 - Made Greenplum transfer replace rebuild targets from the staged schema.
 - Made cluster-routed ClickHouse source staging race-free and duplicate-safe.
+- Preserved integer rand() semantics in ClickHouse cluster-routed SQL.
 
 ## 1.3.11.14 - 2026-08-26
 

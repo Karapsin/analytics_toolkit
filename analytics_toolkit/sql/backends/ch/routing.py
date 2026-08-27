@@ -121,6 +121,7 @@ def route_sql(
             routing.sharding_key,
             has_explicit_cluster=explicit_cluster is not None,
         )
+        _preserve_clickhouse_rand(statement)
         routed.append(statement.sql(dialect="clickhouse"))
     return ";\n".join(routed)
 
@@ -571,6 +572,18 @@ def _add_create_on_cluster(statement: exp.Create, cluster: str) -> None:
 def _is_temporary_create(statement: exp.Create) -> bool:
     properties = statement.args.get("properties")
     return bool(properties and properties.find(exp.TemporaryProperty))
+
+
+def _preserve_clickhouse_rand(statement: exp.Expression) -> None:
+    for function in list(statement.find_all(exp.Rand)):
+        if str(function.meta.get("name", "")).lower() != "rand":
+            continue
+        replacement = exp.Anonymous(
+            this="rand",
+            expressions=[argument.copy() for argument in function.iter_expressions()],
+        )
+        replacement.add_comments(function.comments)
+        function.replace(replacement)
 
 
 def _identifier_value(value: Any) -> str | None:
