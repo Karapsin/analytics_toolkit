@@ -63,8 +63,11 @@ for the configuration shape and validation rules.
 Private `sql.transfer` stages are the deliberate exception to one-replica
 reads: their non-replicated `MergeTree` parts are read with
 `clusterAllReplicas(...)` so concurrent inserts can land on different replicas
-without losing rows during consolidation or validation. Final replicated
-targets continue to use normal one-replica-per-shard routing.
+without losing rows during consolidation or validation. Cluster-routed source
+snapshots first create empty tables on every replica, wait for shard readiness,
+and populate only one replica per shard, so the same all-replica read remains
+reconnect-safe without multiplying rows. Final replicated targets continue to
+use normal one-replica-per-shard routing.
 
 Use [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md) to replace a
 stored Distributed cluster, sharding key, MergeTree engine, partition key,

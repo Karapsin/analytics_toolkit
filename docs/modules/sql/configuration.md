@@ -464,13 +464,17 @@ pair:
 }
 ```
 
-The toolkit deploys those private stages on the routing cluster, distributes
-stage inserts normally, and reads reserved transfer-stage sources through
-`clusterAllReplicas(...)`. This preserves batches that different concurrent
-inserts placed on different replicas. Regular tables continue to use
-`cluster(...)`. A replicated staging engine or staging Distributed pair is
-rejected before the transfer opens database connections because all-replica
-reads would duplicate replicated rows.
+The toolkit deploys those private stages on the routing cluster and reads
+reserved transfer-stage sources through `clusterAllReplicas(...)`. Target
+writers distribute batches normally. Source snapshots are created empty on
+every replica, held behind a shard-readiness barrier, and then populated once
+through `cluster(...)`; this keeps the snapshot reconnect-safe without creating
+one copy per replica. Regular tables continue to use `cluster(...)`. A
+replicated staging engine or staging Distributed pair on either the source or
+target connection is rejected before the transfer opens database connections
+because all-replica reads would duplicate replicated rows. Toolkit-owned routed
+stages always wait for shard readiness even when the connection selects a
+weaker wait policy for ordinary DDL.
 
 An explicit DDL scope always wins over `cluster_routing`. For example,
 `ON CLUSTER '{cluster}'` remains exactly that macro and is also used to route

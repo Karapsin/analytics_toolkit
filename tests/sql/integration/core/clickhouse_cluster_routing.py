@@ -95,13 +95,44 @@ def test_clickhouse_cluster_routed_transfer_across_replicas(
         actual = sql.read(alias, f"SELECT id, payload FROM {target} ORDER BY id")
         assert actual.to_dict("records") == expected.to_dict("records")
 
+        reverse_target = resource_registry.table(
+            "trino_values",
+            f"iceberg.{_table(f'{alias}_reverse')}",
+        )
+        assert (
+            sql.transfer(
+                alias,
+                "trino_values",
+                from_table=target,
+                to_table=reverse_target,
+                write_mode="replace",
+                batch_size=2,
+                adaptive_batch_size=False,
+                target_rows_per_second=False,
+                transfer_keys="id",
+                transfer_key_values=list(range(12)),
+                read_concurrency=3,
+                write_concurrency=2,
+                retry_cnt=1,
+                full_retry_cnt=1,
+            )
+            == 12
+        )
+        reverse_actual = sql.read(
+            "trino_values",
+            f"SELECT id, payload FROM {reverse_target} ORDER BY id",
+        )
+        assert reverse_actual.to_dict("records") == expected.to_dict("records")
+
         stage_prefix = resolve_destination_identity(target, "ch").hash_prefix
+        source_stage_prefix = resolve_destination_identity(reverse_target, "trino").hash_prefix
         remaining = sql.read(
             alias,
             "SELECT count() AS stage_count "
             "FROM clusterAllReplicas("
             "'integration_replicated_cluster', system, tables) "
             "WHERE database = 'integration' "
-            f"AND name LIKE '{stage_prefix}__%'",
+            f"AND (name LIKE '{stage_prefix}__%' "
+            f"OR name LIKE '{source_stage_prefix}__%')",
         )
         assert int(remaining.iloc[0, 0]) == 0

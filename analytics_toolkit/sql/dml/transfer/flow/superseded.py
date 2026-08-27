@@ -99,7 +99,12 @@ def _drop_superseded_stage(
             options.staging_ch_policy
             if context.backend == options.to_db_backend
             and context.connection_key == options.to_db_key
-            else None
+            else (
+                getattr(options, "source_staging_ch_policy", None)
+                if context.backend == options.from_db_backend
+                and context.connection_key == options.from_db_key
+                else None
+            )
         ),
     )
     return qualified

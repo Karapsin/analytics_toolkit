@@ -460,6 +460,7 @@ class TransferOptions:
     parquet_ddl_properties: Mapping[str, Any] | None = None
     regular_ch_policy: Any = None
     staging_ch_policy: Any = None
+    source_staging_ch_policy: Any = None
     attempt_number: int = 1
     collect_final_target_count: bool = False
     final_target_rows: int | None = None

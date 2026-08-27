@@ -455,29 +455,22 @@ def test_materialize_source_key_runs_one_ctas_per_key_without_append(monkeypatch
     metadata = _metadata()
     events: list[tuple[str, str]] = []
     counts = {0: 3, 1: 5}
-    adapter = SimpleNamespace(
-        execute_command=lambda _connection, sql: events.append(("post", sql)),
-    )
-    monkeypatch.setattr(staged_keyed_io, "get_backend_adapter", lambda _backend: adapter)
     monkeypatch.setattr(
         staged_keyed_io,
         "build_snapshot_select_sql",
         lambda **kwargs: f"SELECT slice_{kwargs['slice_id']}",
     )
+
+    def materialize(**kwargs: Any) -> Any:
+        table = kwargs["snapshot_table"]
+        events.append(("ctas", f"CREATE TABLE {table} AS {kwargs['snapshot_select_sql']}"))
+        events.append(("post", f"POST CREATE {table}"))
+        return SimpleNamespace(populate_sql=None, post_create_sqls=())
+
     monkeypatch.setattr(
         staged_keyed_io,
-        "build_source_snapshot_sql",
-        lambda **kwargs: SimpleNamespace(
-            create_sql=(
-                f"CREATE TABLE {kwargs['snapshot_table']} AS {kwargs['snapshot_select_sql']}"
-            ),
-            post_create_sqls=(f"POST CREATE {kwargs['snapshot_table']}",),
-        ),
-    )
-    monkeypatch.setattr(
-        staged_keyed_io,
-        "execute_transfer_materialization",
-        lambda _adapter, _backend, _connection, sql: events.append(("ctas", sql)),
+        "execute_source_snapshot_materialization",
+        materialize,
     )
 
     def count(

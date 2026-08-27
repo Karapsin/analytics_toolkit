@@ -36,6 +36,39 @@ def execute_transfer_materialization(
     adapter.execute_command(connection, sql)
 
 
+def is_cluster_routed_source_snapshot(backend: str, connection: Any) -> bool:
+    if backend != "ch":
+        return False
+    from .ch.routing import connection_cluster_routing  # noqa: PLC0415
+
+    return connection_cluster_routing(connection) is not None
+
+
+def build_source_snapshot_populate_sql(
+    backend: str,
+    snapshot_table: str,
+    snapshot_select_sql: str,
+    *,
+    cluster_routed: bool,
+) -> str | None:
+    if backend == "ch" and cluster_routed:
+        return f"INSERT INTO {snapshot_table} {snapshot_select_sql}"
+    return None
+
+
+def build_append_source_snapshot_sql(
+    backend: str,
+    snapshot_table: str,
+    column_sql: str,
+    snapshot_select_sql: str,
+    *,
+    cluster_routed: bool,
+) -> str:
+    if backend == "ch" and cluster_routed:
+        return f"INSERT INTO {snapshot_table} {snapshot_select_sql}"
+    return f"INSERT INTO {snapshot_table} ({column_sql}) {snapshot_select_sql}"
+
+
 def normalize_unquoted_identifier(identifier: str, backend: str) -> str:
     if backend in {"gp", "trino"}:
         return identifier.lower()
@@ -88,9 +121,15 @@ def build_source_snapshot_sqls(
     slice_column: str,
     ordinal_column: str,
 ) -> tuple[str, tuple[str, ...]]:
+    if backend == "ch":
+        return _ch_source_snapshot_sqls(
+            snapshot_table,
+            snapshot_select_sql,
+            slice_column,
+            ordinal_column,
+        )
     builder = {
         "gp": _gp_source_snapshot_sqls,
-        "ch": _ch_source_snapshot_sqls,
         "trino": _trino_source_snapshot_sqls,
     }[backend]
     return builder(
@@ -98,6 +137,24 @@ def build_source_snapshot_sqls(
         snapshot_select_sql,
         slice_column,
         ordinal_column,
+    )
+
+
+def build_cluster_routed_source_snapshot_sqls(
+    backend: str,
+    snapshot_table: str,
+    snapshot_select_sql: str,
+    slice_column: str,
+    ordinal_column: str,
+) -> tuple[str, tuple[str, ...]]:
+    if backend != "ch":
+        raise KeyError(backend)
+    return _ch_source_snapshot_sqls(
+        snapshot_table,
+        snapshot_select_sql,
+        slice_column,
+        ordinal_column,
+        empty=True,
     )
 
 
@@ -137,10 +194,13 @@ def _ch_source_snapshot_sqls(
     select_sql: str,
     slice_column: str,
     ordinal_column: str,
+    *,
+    empty: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
+    empty_sql = " EMPTY" if empty else ""
     return (
         f"CREATE TABLE {table} ENGINE = MergeTree "
-        f"ORDER BY ({slice_column}, {ordinal_column}) AS {select_sql}",
+        f"ORDER BY ({slice_column}, {ordinal_column}){empty_sql} AS {select_sql}",
         (),
     )
 

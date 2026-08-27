@@ -90,16 +90,19 @@ Set `adaptive_batch_size=False` to keep an explicit `gp_insert_chunk_size`
 fixed.
 
 Transfer row-count validation is separate from progress estimates and is exact.
-For lazy keyed source staging, every CTAS is counted before publication and each
-requested ordinal batch must return its exact size. The writer then compares the
-streamed count with target-stage rows and verifies the exact transfer ID,
+For lazy keyed source staging, every materialized snapshot is counted before
+publication and each requested ordinal batch must return its exact size. With a
+cluster-routed ClickHouse source, materialization creates an empty `MergeTree`
+on every routing-cluster host, waits for shard readiness, and populates one
+logical copy through `cluster(...)`; later reads use `clusterAllReplicas(...)`.
+The writer then compares the streamed count with target-stage rows and verifies the exact transfer ID,
 canonical destination, slice ID, and complete unique ordinal range before that
 key can be acknowledged. Aggregate validation runs again before finalization.
 For ClickHouse sources, row-count protection also prevents connection-level
 `query_limit` caps from silently truncating reads.
 
 Each keyed source stage contains exactly one rendered key and is immutable after
-CTAS. It consumes a live-stage credit until a reader drops it after target
+materialization. It consumes a live-stage credit until a reader drops it after target
 validation. The limit is `effective readers + effective writers`, which bounds
 concurrent source storage without eliminating total DDL/catalog churn; transfers
 with very large key counts still create and drop one source table per key.

@@ -20,6 +20,18 @@ class OperationDdlDefaults:
     staging_ch_policy: Any
 
 
+def resolve_cluster_routed_source_staging_ch_policy(config: Any) -> Any:
+    if not get_backend(config.backend).supports_distributed_table_targets():
+        return None
+    routing = getattr(config, "cluster_routing", None)
+    if routing is None:
+        return None
+    defaults = getattr(config, "ddl_defaults", None)
+    staging = defaults.staging if defaults is not None else legacy_clickhouse_scope(staging=True)
+    policy = _resolve_staging_ch_policy(config, staging)
+    return prepare_cluster_routed_transfer_staging_policy(config, policy)
+
+
 def resolve_operation_ddl(
     config: Any,
     *,
@@ -54,21 +66,7 @@ def resolve_operation_ddl(
         connection_ddl_wait_policy=connection_wait_policy,
         **clickhouse_overrides,
     )
-    staging_policy = resolve_clickhouse_creation_policy(
-        staging,
-        ch_engine=None,
-        ch_cluster=None,
-        ch_sharding_key=None,
-        ch_distributed_table=None,
-        ch_only_shard=False,
-        ch_distributed_engine_template=None,
-        ch_distributed_cluster=None,
-        ch_shard_on_cluster=None,
-        ch_distributed_on_cluster=None,
-        connection_ddl_ready_timeout_seconds=connection_ready_timeout,
-        connection_ddl_ready_timeout_extension_cnt=connection_ready_extension_cnt,
-        connection_ddl_wait_policy=connection_wait_policy,
-    )
+    staging_policy = _resolve_staging_ch_policy(config, staging)
     if cluster_routed_transfer_staging:
         staging_policy = prepare_cluster_routed_transfer_staging_policy(
             config,
@@ -80,4 +78,30 @@ def resolve_operation_ddl(
         None,
         regular_policy,
         staging_policy,
+    )
+
+
+def _resolve_staging_ch_policy(config: Any, staging: Any) -> Any:
+    return resolve_clickhouse_creation_policy(
+        staging,
+        ch_engine=None,
+        ch_cluster=None,
+        ch_sharding_key=None,
+        ch_distributed_table=None,
+        ch_only_shard=False,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        ch_shard_on_cluster=None,
+        ch_distributed_on_cluster=None,
+        connection_ddl_ready_timeout_seconds=getattr(
+            config,
+            "ddl_ready_timeout_seconds",
+            None,
+        ),
+        connection_ddl_ready_timeout_extension_cnt=getattr(
+            config,
+            "ddl_ready_timeout_extension_cnt",
+            None,
+        ),
+        connection_ddl_wait_policy=getattr(config, "ch_ddl_wait_policy", None),
     )

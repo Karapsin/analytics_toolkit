@@ -6,6 +6,10 @@ from typing import Any
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.trino.storage import parquet_storage_options
+from analytics_toolkit.sql.dml.ddl_options import (
+    resolve_cluster_routed_source_staging_ch_policy,
+    resolve_operation_ddl,
+)
 
 from ....backends import get_backend_adapter
 from ....connection.config import get_connection_config
@@ -18,7 +22,6 @@ from ....execution.operation_runner import (
     tracked_sql_operation,
 )
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...ddl_options import resolve_operation_ddl
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
 from ...table.table_validation import normalize_key_columns, normalize_upsert_partition_column
@@ -456,6 +459,11 @@ def build_transfer_options(
     from_config = get_connection_config(from_db)
     to_config = get_connection_config(to_db)
     source_staging_schema = None if ignore_source_staging else from_config.transfer_staging_schema
+    source_staging_ch_policy = (
+        resolve_cluster_routed_source_staging_ch_policy(from_config)
+        if source_staging_schema is not None
+        else None
+    )
     target_adapter = get_backend_adapter(to_config.backend)
     target_defaults = target_adapter.target_connection_defaults(to_config)
     resolved_trino_mode = target_adapter.resolve_transfer_staging_mode(
@@ -675,6 +683,7 @@ def build_transfer_options(
         parquet_ddl_properties=ddl.parquet_properties,
         regular_ch_policy=ddl.regular_ch_policy,
         staging_ch_policy=ddl.staging_ch_policy,
+        source_staging_ch_policy=source_staging_ch_policy,
     )
 
     transfer_options.validate_built_transfer_options(options, target_adapter)

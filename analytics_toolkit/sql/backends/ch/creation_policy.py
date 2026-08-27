@@ -28,7 +28,7 @@ from analytics_toolkit.sql.connection.ddl_defaults import (
 from analytics_toolkit.sql.connection.errors import SqlConfigError
 from analytics_toolkit.sql.execution.validation import validate_positive_number
 
-from .wait_policy import ChDdlWaitPolicy, resolve_ch_ddl_wait_policy
+from .wait_policy import ChDdlWaitPolicy, resolve_ch_ddl_wait_policy, waits_for_shard
 
 DEFAULT_DDL_READY_TIMEOUT_SECONDS = 300.0
 
@@ -175,7 +175,14 @@ def prepare_cluster_routed_transfer_staging_policy(
             f"{policy.shard_engine!r} is incompatible because transfer stages are read "
             "across all replicas."
         )
-    return replace(policy, shard_on_cluster=routing.cluster)
+    wait_policy = policy.ddl_wait_policy
+    if not waits_for_shard(wait_policy):
+        wait_policy = "wait_shard"
+    return replace(
+        policy,
+        shard_on_cluster=routing.cluster,
+        ddl_wait_policy=wait_policy,
+    )
 
 
 def _validate_non_negative_int(value: Any, name: str) -> int:

@@ -8,7 +8,7 @@ import pandas as pd
 
 from ...._log_context import sql_log_context
 from ....backends import get_backend_adapter
-from ....backends.transfer_stage import collision_stage_suffix, execute_transfer_materialization
+from ....backends.transfer_stage import collision_stage_suffix
 from ....connection.get_sql_connection import get_ch_connection_for_host
 from ....connection.refs import ensure_connection_ref
 from ....dml.io.read_sql import _read_backend
@@ -22,7 +22,7 @@ from .row_counts import best_effort_transfer_target_count
 from .source_snapshot import (
     build_snapshot_range_sql,
     build_snapshot_select_sql,
-    build_source_snapshot_sql,
+    execute_source_snapshot_materialization,
 )
 from .stage_validation import validate_transfer_stage_slice
 from .staged_keyed_logging import slice_tag
@@ -152,21 +152,14 @@ def materialize_source_key(
             slice_id=transfer_slice.index,
             internal_columns=metadata.internal_columns,
         )
-        snapshot_sql = build_source_snapshot_sql(
+        execute_source_snapshot_materialization(
             backend=options.from_db_backend,
+            connection=source_ref["connection"],
             snapshot_table=source_stage,
             snapshot_select_sql=select_sql,
             internal_columns=metadata.internal_columns,
+            source_staging_ch_policy=getattr(options, "source_staging_ch_policy", None),
         )
-        adapter = get_backend_adapter(options.from_db_backend)
-        execute_transfer_materialization(
-            adapter,
-            options.from_db_backend,
-            source_ref["connection"],
-            snapshot_sql.create_sql,
-        )
-        for sql in snapshot_sql.post_create_sqls:
-            adapter.execute_command(source_ref["connection"], sql)
         return count_source_slice(
             options,
             source_ref["connection"],
@@ -402,6 +395,7 @@ def drop_source_stage(
                 connection,
                 task.source_stage,
                 query_label=options.query_label,
+                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
             )
         except Exception:
             rollback_quietly(connection)
@@ -440,6 +434,7 @@ def cleanup_source_stages(
                 source_ref["connection"],
                 stage_table,
                 query_label=options.query_label,
+                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
             )
         except Exception as exc:  # noqa: BLE001, PERF203
             first_error = first_error or exc

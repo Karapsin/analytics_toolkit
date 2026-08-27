@@ -48,7 +48,6 @@ def test_materialize_snapshot_builds_all_slices_and_drops_partial_on_failure(
     dropped: list[str] = []
     adapter = SimpleNamespace(
         execute_command=lambda _connection, sql: commands.append(sql),
-        drop_table=lambda _connection, table, **_kwargs: dropped.append(table),
     )
     monkeypatch.setattr(staged_attempt, "_allocate_snapshot_name", lambda *_args: "snap")
     monkeypatch.setattr(staged_attempt, "get_backend_adapter", lambda _backend: adapter)
@@ -56,6 +55,29 @@ def test_materialize_snapshot_builds_all_slices_and_drops_partial_on_failure(
         staged_attempt,
         "execute_transfer_materialization",
         lambda _adapter, _backend, _connection, sql: commands.append(sql),
+    )
+
+    def materialize(**kwargs: Any) -> Any:
+        staged_attempt.execute_transfer_materialization(
+            adapter,
+            options.from_db_backend,
+            kwargs["connection"],
+            f"CREATE TABLE {kwargs['snapshot_table']} AS {kwargs['snapshot_select_sql']}",
+        )
+        return SimpleNamespace(
+            populate_sql=None,
+            post_create_sqls=("CREATE INDEX snapshot_idx",),
+        )
+
+    monkeypatch.setattr(
+        staged_attempt,
+        "execute_source_snapshot_materialization",
+        materialize,
+    )
+    monkeypatch.setattr(
+        staged_attempt,
+        "cleanup_stage_table",
+        lambda _backend, _connection, table, **_kwargs: dropped.append(table),
     )
     monkeypatch.setattr(
         staged_attempt,
@@ -94,11 +116,11 @@ def test_materialize_snapshot_builds_all_slices_and_drops_partial_on_failure(
         lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt("count cancelled")),
     )
 
-    def fail_drop(_connection: Any, table: str, **_kwargs: Any) -> None:
+    def fail_drop(_backend: str, _connection: Any, table: str, **_kwargs: Any) -> None:
         dropped.append(table)
         raise RuntimeError("snapshot cleanup failed")
 
-    adapter.drop_table = fail_drop
+    monkeypatch.setattr(staged_attempt, "cleanup_stage_table", fail_drop)
     dropped.clear()
     with pytest.raises(KeyboardInterrupt, match="count cancelled"):
         staged_attempt._materialize_snapshot(options, {"connection": object()}, state)

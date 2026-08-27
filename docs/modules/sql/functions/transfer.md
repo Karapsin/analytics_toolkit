@@ -371,9 +371,11 @@ rows = sql.transfer(
 - Values are always explicit; the helper does not query distinct key values
   automatically.
 - Keyed transfers render each source slice by replacing placeholders inline.
-  With source staging, each rendered slice is materialized by its own lazy CTAS,
-  counted, streamed to one writer, validated, acknowledged, and dropped while
-  other slices can occupy different phases. On the compatibility path without
+  With source staging, each rendered slice is materialized in its own lazy
+  snapshot, counted, streamed to one writer, validated, acknowledged, and
+  dropped while other slices can occupy different phases. A cluster-routed
+  ClickHouse source creates the snapshot empty across the routing cluster,
+  waits for readiness, and populates it once before all-replica reads. On the compatibility path without
   source staging, workers stream assigned slices into private target stages as
   before. Created worker stages are consolidated before one final target write.
   Trino Parquet staging keeps one external stage table and uses unique staged

@@ -50,7 +50,7 @@ from .source_snapshot import (
     build_append_snapshot_slice_sql,
     build_snapshot_range_sql,
     build_snapshot_select_sql,
-    build_source_snapshot_sql,
+    execute_source_snapshot_materialization,
 )
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
@@ -340,6 +340,7 @@ def _cleanup_unkeyed_attempt(  # noqa: C901
                 source_ref["connection"],
                 snapshot_table,
                 query_label=options.query_label,
+                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
             )
         except BaseException as exc:
             cleanup_error = cleanup_error or exc
@@ -412,6 +413,9 @@ def _materialize_snapshot(
     )
     adapter = get_backend_adapter(options.from_db_backend)
     created = False
+    creation_started = False
+    cluster_routed = False
+    post_create_sqls: tuple[str, ...] = ()
     try:
         for slice_id, source_sql in source_sqls:
             select_sql = build_snapshot_select_sql(
@@ -424,18 +428,22 @@ def _materialize_snapshot(
                 internal_columns=internal,
             )
             if not created:
-                snapshot_sql = build_source_snapshot_sql(
+                creation_started = True
+                snapshot_sql = execute_source_snapshot_materialization(
                     backend=options.from_db_backend,
+                    connection=source_ref["connection"],
                     snapshot_table=snapshot_table,
                     snapshot_select_sql=select_sql,
                     internal_columns=internal,
+                    source_staging_ch_policy=getattr(
+                        options,
+                        "source_staging_ch_policy",
+                        None,
+                    ),
+                    run_post_create_sqls=False,
                 )
-                execute_transfer_materialization(
-                    adapter,
-                    options.from_db_backend,
-                    source_ref["connection"],
-                    snapshot_sql.create_sql,
-                )
+                cluster_routed = snapshot_sql.populate_sql is not None
+                post_create_sqls = snapshot_sql.post_create_sqls
                 created = True
             else:
                 execute_transfer_materialization(
@@ -448,15 +456,10 @@ def _materialize_snapshot(
                         source_columns=stage_state.source_columns,
                         internal_columns=internal,
                         snapshot_select_sql=select_sql,
+                        cluster_routed=cluster_routed,
                     ),
                 )
-        snapshot_sql = build_source_snapshot_sql(
-            backend=options.from_db_backend,
-            snapshot_table=snapshot_table,
-            snapshot_select_sql="SELECT 1",
-            internal_columns=internal,
-        )
-        for sql in snapshot_sql.post_create_sqls:
+        for sql in post_create_sqls:
             adapter.execute_command(source_ref["connection"], sql)
         return snapshot_table, _snapshot_slice_counts(
             options,
@@ -465,13 +468,14 @@ def _materialize_snapshot(
             internal.slice_id,
         )
     except BaseException:
-        if created:
+        if creation_started:
             try:
-                adapter.drop_table(
+                cleanup_stage_table(
+                    options.from_db_backend,
                     source_ref["connection"],
                     snapshot_table,
-                    if_exists=True,
                     query_label=options.query_label,
+                    ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
                 )
             except BaseException:
                 time_print(

@@ -71,6 +71,43 @@ def test_unkeyed_cleanup_attempts_every_resource_and_preserves_first_error(
     assert close_roles == ["target coordinator", "source", "target"]
 
 
+def test_unkeyed_cleanup_reuses_open_source_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_connection = object()
+    dropped: list[tuple[Any, str]] = []
+    monkeypatch.setattr(staged_attempt, "close_connection_ref", lambda *_args: None)
+    monkeypatch.setattr(
+        staged_attempt,
+        "get_sql_connection",
+        lambda _key: pytest.fail("source connection should already be open"),
+    )
+    monkeypatch.setattr(
+        staged_attempt,
+        "cleanup_stage_table",
+        lambda _backend, connection, table, **_kwargs: dropped.append((connection, table)),
+    )
+    options = SimpleNamespace(
+        to_db_key="target",
+        from_db_key="source",
+        from_db_backend="ch",
+        retry_cnt=1,
+        query_label=None,
+        source_staging_ch_policy="source-policy",
+    )
+
+    assert staged_attempt._cleanup_unkeyed_attempt(
+        options,
+        SimpleNamespace(),
+        None,
+        {"connection": source_connection},
+        {},
+        snapshot_table="stage.snapshot",
+        error=None,
+    )
+    assert dropped == [(source_connection, "stage.snapshot")]
+
+
 def test_unkeyed_attempt_summary_tolerates_exception_without_writable_dict() -> None:
     class LockedError(Exception):
         @property
