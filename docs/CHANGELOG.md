@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added optional ClickHouse connection-wide cluster routing.
 - Reorganized tests into module-first function and area directories.
 - Made cluster-routed ClickHouse transfers preserve non-replicated stage rows across replicas.
+- Made Greenplum transfer replace rebuild targets from the staged schema.
 
 ## 1.3.11.14 - 2026-08-26
 

@@ -181,6 +181,9 @@ class GreenplumAdapter(DbApiBackendAdapter):
     ) -> list[str]:
         return [_apply_query_label(f"TRUNCATE TABLE {table_name}", query_label)]
 
+    def transfer_replace_existing_non_ch(self) -> str:
+        return "drop"
+
     build_show_tables_query = _operations.build_show_tables_query
     extract_table_ddl = _operations.extract_table_ddl
     validate_drop_partitions_options = _operations.validate_drop_partitions_options

@@ -17,7 +17,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `from_sql` - source SQL query used by a transfer; provide exactly one of `from_sql` or `from_table`
 - `from_table` - source table name for simple `SELECT * FROM <from_table>` transfers; provide exactly one of `from_sql` or `from_table`
 - `to_table` - target table name
-- `write_mode` - write behavior: append (default), replace, truncate_insert, or upsert; `None` also resolves to append
+- `write_mode` - write behavior: append (default), replace, truncate_insert, or upsert; `replace` rebuilds the destination from the staged schema, while `truncate_insert` preserves the existing schema; `None` also resolves to append
 - `batch_size` - initial number of rows fetched and inserted per transfer batch
 - `adaptive_batch_size` - whether transfer batch size should adapt after successful inserts
 - `min_batch_size` - minimum adaptive transfer batch size

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.models import StageFinalizationRequest
+
 from tests.sql._support.adapters import (
     FakeDbapiConnection,
     RecordingClickHouseClient,
@@ -83,6 +85,7 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
     assert gp_adapter.can_create_transfer_target_before_batches() is True
     assert trino_adapter.can_create_transfer_target_before_batches() is True
     assert ch_adapter.can_create_transfer_target_before_batches() is False
+    assert gp_adapter.transfer_replace_existing_non_ch() == "drop"
     assert gp_adapter.allows_show_tables_catalog_filter() is False
     assert trino_adapter.allows_show_tables_catalog_filter() is True
     assert ch_adapter.allows_show_tables_catalog_filter() is False
@@ -397,3 +400,46 @@ def test_target_lifecycle_helper_preserves_non_ch_replace_modes() -> None:
     )
     assert target_exists is True
     assert clear_connection.executed == ["TRUNCATE TABLE schema.target"]
+
+
+def test_gp_transfer_replace_recreates_target_from_staged_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_backend_adapter("gp")
+    staged_schema = {"dt": "DATE", "offer_code": "TEXT", "group_name": "TEXT"}
+    events: list[object] = []
+    monkeypatch.setattr(
+        adapter,
+        "drop_table",
+        lambda *_args, **_kwargs: events.append("drop"),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "ensure_stage_target_table",
+        lambda request: events.append(("create", dict(request.target_column_types or {}))) or True,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "insert_from_table",
+        lambda *_args, **kwargs: events.append(("insert", dict(kwargs["column_types"] or {}))),
+    )
+
+    adapter.finalize_stage_table(
+        StageFinalizationRequest(
+            connection=object(),
+            stage_table="stage.transfer_rows",
+            target_table="sandbox.target",
+            replace_target_table=True,
+            target_exists=True,
+            sample_batch=pd.DataFrame(columns=list(staged_schema)),
+            target_column_types=staged_schema,
+            insert_column_types=staged_schema,
+            write_mode="replace",
+        )
+    )
+
+    assert events == [
+        "drop",
+        ("create", staged_schema),
+        ("insert", staged_schema),
+    ]

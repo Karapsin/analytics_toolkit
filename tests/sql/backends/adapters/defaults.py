@@ -352,6 +352,15 @@ def test_base_adapter_write_stage_and_finalization_contracts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = MinimalContractAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "build_clear_target_sqls",
+        lambda *_args, **_kwargs: ["CLEAR target"],
+    )
+    assert adapter.transfer_replace_existing_non_ch() == "clear"
+    assert adapter.build_transfer_replace_target_sqls("target") == ["CLEAR target"]
+    assert adapter.transfer_replace_target_phase() == "clear_target"
+
     events: list[Any] = []
     monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
     monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
