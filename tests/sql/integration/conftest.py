@@ -226,6 +226,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     }
     connections["ch_routed_replicas"] = {
         **clickhouse_http,
+        "ch_ddl_wait_policy": "wait_shard",
         "ddl_defaults": replicated_cluster_defaults,
         "cluster_routing": {
             "cluster": "integration_replicated_cluster",
@@ -234,6 +235,7 @@ def _integration_connections() -> dict[str, dict[str, object]]:
     }
     connections["ch_routed_replicas_native"] = {
         **clickhouse_native,
+        "ch_ddl_wait_policy": "wait_shard",
         "ddl_defaults": replicated_cluster_defaults,
         "cluster_routing": {
             "cluster": "integration_replicated_cluster",

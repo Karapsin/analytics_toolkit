@@ -92,8 +92,25 @@ def test_clickhouse_cluster_routed_transfer_across_replicas(
             == 12
         )
 
+        sql.execute(
+            alias,
+            f"INSERT INTO {target} (id, payload) VALUES (12, 'row-12'), (13, 'row-13')",
+        )
+        expected_with_insert = pd.concat(
+            [
+                expected,
+                pd.DataFrame(
+                    {
+                        "id": [12, 13],
+                        "payload": ["row-12", "row-13"],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
         actual = sql.read(alias, f"SELECT id, payload FROM {target} ORDER BY id")
-        assert actual.to_dict("records") == expected.to_dict("records")
+        assert actual.to_dict("records") == expected_with_insert.to_dict("records")
 
         reverse_target = resource_registry.table(
             "trino_values",
@@ -110,19 +127,19 @@ def test_clickhouse_cluster_routed_transfer_across_replicas(
                 adaptive_batch_size=False,
                 target_rows_per_second=False,
                 transfer_keys="id",
-                transfer_key_values=list(range(12)),
+                transfer_key_values=list(range(14)),
                 read_concurrency=3,
                 write_concurrency=2,
                 retry_cnt=1,
                 full_retry_cnt=1,
             )
-            == 12
+            == 14
         )
         reverse_actual = sql.read(
             "trino_values",
             f"SELECT id, payload FROM {reverse_target} ORDER BY id",
         )
-        assert reverse_actual.to_dict("records") == expected.to_dict("records")
+        assert reverse_actual.to_dict("records") == expected_with_insert.to_dict("records")
 
         stage_prefix = resolve_destination_identity(target, "ch").hash_prefix
         source_stage_prefix = resolve_destination_identity(reverse_target, "trino").hash_prefix
@@ -136,3 +153,49 @@ def test_clickhouse_cluster_routed_transfer_across_replicas(
             f"OR name LIKE '{source_stage_prefix}__%')",
         )
         assert int(remaining.iloc[0, 0]) == 0
+
+
+@pytest.mark.sql_scenario("clickhouse.cluster_routing.incomplete_pair_fallback")
+def test_clickhouse_cluster_routing_falls_back_for_incomplete_managed_pair(
+    resource_registry: ResourceRegistry,
+) -> None:
+    for alias in ("ch_routed_replicas", "ch_routed_replicas_native"):
+        target = _table(f"{alias}_incomplete")
+        database, relation = target.split(".", maxsplit=1)
+        shard = f"{database}.{relation}_shard"
+        resource_registry.table("ch", shard)
+        resource_registry.table("ch", target)
+
+        sql.execute(
+            "ch",
+            f"CREATE TABLE {shard} (id Int64) ENGINE = MergeTree ORDER BY id",
+        )
+        sql.execute(
+            "ch",
+            f"CREATE TABLE {target} (id Int64) "
+            "ENGINE = Distributed("
+            f"'integration_cluster', '{database}', '{relation}_shard', rand())",
+        )
+
+        coverage = sql.read(
+            "ch",
+            "SELECT count() AS replica_count "
+            "FROM clusterAllReplicas("
+            "'integration_replicated_cluster', system, tables) "
+            f"WHERE database = '{database}' AND name = '{relation}_shard'",
+        )
+        assert int(coverage.iloc[0, 0]) == 1
+
+        sql.execute(alias, f"INSERT INTO {target} (id) VALUES (1), (2)")
+        assert (
+            sql.load_df(
+                alias,
+                target,
+                pd.DataFrame({"id": [3, 4]}),
+                write_mode="append",
+            )
+            == 2
+        )
+
+        actual = sql.read(alias, f"SELECT id FROM {target} ORDER BY id")
+        assert actual["id"].tolist() == [1, 2, 3, 4]

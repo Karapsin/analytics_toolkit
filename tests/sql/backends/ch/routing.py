@@ -348,7 +348,7 @@ def test_cluster_routing_client_routes_text_methods_and_delegates_attributes() -
     command, kwargs = raw.commands[0]
     assert "DROP TABLE db.events ON CLUSTER 'core'" in command
     assert kwargs["settings"]["distributed_ddl_task_timeout"] == 0
-    assert raw.queries == ["SELECT * FROM cluster('core', 'db', 'events')"]
+    assert raw.queries[-1] == "SELECT * FROM cluster('core', 'db', 'events')"
     assert raw.dataframes == ["SELECT * FROM cluster('core', 'db', 'events')"]
     assert raw.streams == ["SELECT * FROM cluster('core', 'db', 'events')"]
     assert raw.query_limit == 0
@@ -536,7 +536,7 @@ def test_prepare_plan_sql_ignores_unsupported_connection_type(
     assert prepare_plan_sql(get_backend_adapter("ch"), "unsupported", "SELECT 1", []) == "SELECT 1"
 
 
-def test_read_sql_routes_before_opening_connection(
+def test_read_sql_routes_with_live_connection_metadata(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
 ) -> None:
@@ -553,7 +553,9 @@ def test_read_sql_routes_before_opening_connection(
         }
     )
     raw = _HttpClient()
-    monkeypatch.setattr(read_sql_module, "get_sql_connection", lambda _key: raw)
+    routed = wrap_client(raw, _config())
+    routed._database = "analytics"
+    monkeypatch.setattr(read_sql_module, "get_sql_connection", lambda _key: routed)
 
     result = read_sql_module.read_sql("routed", "SELECT * FROM events")
 
@@ -612,9 +614,9 @@ def test_clickhouse_source_estimate_explains_routed_source_locally() -> None:
     )
 
     assert estimate == 1
-    assert raw.queries == [
+    assert raw.queries[-1] == (
         "EXPLAIN ESTIMATE SELECT value FROM cluster('core', 'default', 'events')"
-    ]
+    )
 
 
 @pytest.mark.parametrize("sql", ["SELECT 1", "SELECT * FROM ("])

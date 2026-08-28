@@ -52,11 +52,21 @@ It rewrites named read sources through the ClickHouse `cluster(...)` table
 function, sends inserts to the corresponding cluster function with the
 configured sharding key, and adds `ON CLUSTER` to supported DDL.
 
-This is independent of managed shard/Distributed-pair topology. In particular,
-named Distributed and `system` tables are still routed as named sources. An
-explicit `ON CLUSTER` value from SQL, `ddl_defaults`, or a helper policy has
-precedence over the connection default, so a macro such as `'{cluster}'` is
-preserved and used by that statement. See
+For a toolkit-standard managed pair, routing first verifies that the local
+Distributed facade points to the same-database `<table>_shard` relation. If
+that shard exists on every replica of the effective routing cluster, named
+reads and all insert paths route the physical shard directly. If coverage is
+incomplete or cannot be verified, reads and writes stay on the local
+Distributed facade. Other named tables, including `system` tables, retain the
+normal cluster-routing behavior, while explicit table functions remain
+unchanged.
+
+Consequently, `wait_shard` is sufficient for data access when the physical
+shard has full routing-cluster coverage. The safe fallback requires the local
+facade to be ready because it is intentionally not rewritten. An explicit
+`ON CLUSTER` value from SQL, `ddl_defaults`, or a helper policy has precedence
+over the connection default, so a macro such as `'{cluster}'` is preserved and
+used by that statement. See
 [Automatic ClickHouse Cluster Routing](configuration.md#automatic-clickhouse-cluster-routing)
 for the configuration shape and validation rules.
 

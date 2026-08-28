@@ -449,12 +449,30 @@ Unqualified table names use the connection's `database`; without that field
 they fail before execution. Catalog-qualified names and SQL that cannot be
 parsed safely also fail closed.
 
-Named query sources are rewritten to the `cluster(cluster, database, table)`
-table function. This includes nested queries and named `system` or Distributed
-tables; CTE references and existing table functions are left intact. Text and
-dataframe inserts use
+Named query sources are normally rewritten to the
+`cluster(cluster, database, table)` table function. This includes nested
+queries and named `system` tables; CTE references and existing table functions
+are left intact. Text and dataframe inserts normally use
 `cluster(cluster, database, table, sharding_key)` as their insert target. Plain
 supported DDL receives `ON CLUSTER` automatically.
+
+Managed shard/Distributed pairs receive additional routing. When the named
+table is a local `Distributed(...)` facade that points to the same-database
+`<table>_shard` relation, the toolkit checks that physical shard on every
+replica of the effective routing cluster. Full coverage routes reads directly
+through `cluster(..., <table>_shard)` and routes SQL, dataframe, load, and
+transfer inserts through the physical shard table function. Explicit INSERT
+column lists are preserved. If full coverage cannot be proved, including when
+the topology probe fails, both reads and writes use the local Distributed
+facade instead. A similarly named table that is not an exact managed pair keeps
+the normal routing behavior.
+
+This makes `ch_ddl_wait_policy="wait_shard"` compatible with a fully deployed
+managed shard on the routing cluster because ordinary data operations do not
+depend on Distributed-facade readiness. The incomplete-coverage fallback still
+requires the facade on the connected host to exist and be usable; `wait_shard`
+does not promise facade readiness. Route decisions are cached per connection
+and cleared by table DDL.
 
 `sql.transfer` uses non-replicated scratch tables with cluster routing. Keep the
 staging policy on a single physical `MergeTree` and do not create a Distributed

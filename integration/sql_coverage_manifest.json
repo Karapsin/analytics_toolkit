@@ -5864,6 +5864,13 @@
     }
   },
   "scenarios": {
+    "clickhouse.cluster_routing.incomplete_pair_fallback": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/clickhouse_cluster_routing.py::test_clickhouse_cluster_routing_falls_back_for_incomplete_managed_pair",
+      "backends": [
+        "ch"
+      ]
+    },
     "clickhouse.cluster_routing.transports": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/clickhouse_cluster_routing.py::test_clickhouse_cluster_routing_http_and_native",

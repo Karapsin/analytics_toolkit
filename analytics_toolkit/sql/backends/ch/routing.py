@@ -19,6 +19,8 @@ from analytics_toolkit.sql.connection.errors import (
     UnsupportedConnectionTypeError,
 )
 
+from .managed_routing import ManagedPairResolver, ManagedTableRoute
+
 DEFAULT_CLUSTER_SHARDING_KEY = "rand()"
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
@@ -45,6 +47,20 @@ _PLAN_PLACEHOLDER_RE = re.compile(
 class ChClusterRouting:
     cluster: str
     sharding_key: str = DEFAULT_CLUSTER_SHARDING_KEY
+
+
+@dataclass(frozen=True)
+class _BinaryInsertRoute:
+    context_table: str
+    target_table: str
+
+
+@dataclass(frozen=True)
+class _StatementRoute:
+    cluster: str
+    database: str | None
+    sharding_key: str
+    managed_pair_resolver: ManagedPairResolver | None
 
 
 def parse_cluster_routing(raw: Any, connection_key: str) -> ChClusterRouting | None:
@@ -80,7 +96,8 @@ def prepare_sql(adapter: Any, config: Any, sql: str) -> str:
     routing = getattr(config, "cluster_routing", None)
     if routing is None:
         return sql
-    return route_sql(sql, routing=routing, database=getattr(config, "database", None))
+    route_sql(sql, routing=routing, database=getattr(config, "database", None))
+    return sql
 
 
 def route_sql(
@@ -89,6 +106,7 @@ def route_sql(
     routing: ChClusterRouting,
     database: str | None,
     cluster_override: str | None = None,
+    managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> str:
     try:
         parsed = sqlglot.parse(sql, read="clickhouse", error_level=ErrorLevel.RAISE)
@@ -111,14 +129,24 @@ def route_sql(
         if isinstance(statement, exp.Command):
             message = "ClickHouse cluster routing does not support this statement syntax safely."
             raise InvalidSqlInputError(message)
+        if managed_pair_resolver is not None and _changes_table_metadata(statement):
+            managed_pair_resolver.invalidate()
         explicit_cluster = _explicit_cluster(statement)
         effective_cluster = explicit_cluster or cluster_override or routing.cluster
-        _rewrite_query_sources(statement, effective_cluster, database)
-        _route_statement_target(
+        _rewrite_query_sources(
             statement,
             effective_cluster,
             database,
-            routing.sharding_key,
+            managed_pair_resolver=managed_pair_resolver,
+        )
+        _route_statement_target(
+            statement,
+            _StatementRoute(
+                cluster=effective_cluster,
+                database=database,
+                sharding_key=routing.sharding_key,
+                managed_pair_resolver=managed_pair_resolver,
+            ),
             has_explicit_cluster=explicit_cluster is not None,
         )
         _preserve_clickhouse_rand(statement)
@@ -188,7 +216,8 @@ def prepare_plan_sql(
         or _is_local_create_fallback(sql, previous_sqls)
     ):
         return sql
-    return prepare_sql(adapter, config, sql)
+    del adapter
+    return route_sql(sql, routing=routing, database=getattr(config, "database", None))
 
 
 def execute_commands(adapter: Any, connection: Any, sqls: list[str]) -> None:
@@ -220,6 +249,7 @@ class ClusterRoutingClient:
     _client: Any
     _routing: ChClusterRouting
     _database: str | None
+    _managed_pairs: ManagedPairResolver
 
     def __init__(
         self,
@@ -231,6 +261,7 @@ class ClusterRoutingClient:
         object.__setattr__(self, "_client", client)
         object.__setattr__(self, "_routing", routing)
         object.__setattr__(self, "_database", database)
+        object.__setattr__(self, "_managed_pairs", ManagedPairResolver(client))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
@@ -284,17 +315,17 @@ class ClusterRoutingClient:
                 column_names=column_names,
                 **kwargs,
             )
-        target = self._insert_target(table)
+        insert_route = self._insert_route(table)
         if self.is_native_transport:
             return self._client.insert(
-                table=target,
+                table=insert_route.target_table,
                 data=data,
                 column_names=column_names,
                 **kwargs,
             )
         return self._http_insert(
-            table,
-            target,
+            insert_route.context_table,
+            insert_route.target_table,
             data,
             column_names=column_names,
             column_oriented=False,
@@ -315,12 +346,12 @@ class ClusterRoutingClient:
                 column_names=column_names,
                 **kwargs,
             )
-        target = self._insert_target(table)
+        insert_route = self._insert_route(table)
         if self.is_native_transport:
-            return self._client.insert_df(target, df, column_names, **kwargs)
+            return self._client.insert_df(insert_route.target_table, df, column_names, **kwargs)
         return self._http_insert(
-            table,
-            target,
+            insert_route.context_table,
+            insert_route.target_table,
             df,
             column_names=column_names,
             column_oriented=True,
@@ -333,18 +364,38 @@ class ClusterRoutingClient:
     def route(self, sql: str) -> str:
         if _LOCAL_SQL_EXECUTION.get():
             return sql
-        return route_sql(sql, routing=self._routing, database=self._database)
+        return route_sql(
+            sql,
+            routing=self._routing,
+            database=self._database,
+            managed_pair_resolver=self._managed_pairs,
+        )
 
-    def _insert_target(self, table_name: str) -> str:
+    def _insert_route(self, table_name: str) -> _BinaryInsertRoute:
         table = _parse_table_name(table_name)
         database, relation = _table_parts(table, self._database)
+        managed_route = _resolve_managed_route(
+            self._managed_pairs,
+            cluster=self._routing.cluster,
+            database=database,
+            relation=relation,
+        )
+        if managed_route is not None and managed_route.mode == "local":
+            return _BinaryInsertRoute(table_name, table_name)
+        routed_database = managed_route.database if managed_route is not None else database
+        routed_relation = managed_route.table if managed_route is not None else relation
+        context_table = (
+            _table_name_with_route(table, managed_route)
+            if managed_route is not None
+            else table_name
+        )
         function = _cluster_function_sql(
             self._routing.cluster,
-            database,
-            relation,
+            routed_database,
+            routed_relation,
             sharding_key=self._routing.sharding_key,
         )
-        return f"FUNCTION {function}"
+        return _BinaryInsertRoute(context_table, f"FUNCTION {function}")
 
     def _http_insert(
         self,
@@ -421,6 +472,8 @@ def _rewrite_query_sources(
     statement: exp.Expression,
     cluster: str,
     database: str | None,
+    *,
+    managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> None:
     for scope in traverse_scope(statement) or []:
         for table in list(scope.tables):
@@ -428,15 +481,33 @@ def _rewrite_query_sources(
                 continue
             if table.args.get("db") is None and table.name in scope.cte_sources:
                 continue
-            _replace_source_table(table, cluster, database)
+            _replace_source_table(
+                table,
+                cluster,
+                database,
+                managed_pair_resolver=managed_pair_resolver,
+            )
 
 
 def _replace_source_table(
     table: exp.Table,
     cluster: str,
     default_database: str | None,
+    *,
+    managed_pair_resolver: ManagedPairResolver | None,
 ) -> None:
     database, relation = _table_parts(table, default_database)
+    managed_route = _resolve_managed_route(
+        managed_pair_resolver,
+        cluster=cluster,
+        database=database,
+        relation=relation,
+    )
+    if managed_route is not None and managed_route.mode == "local":
+        return
+    if managed_route is not None:
+        database = managed_route.database
+        relation = managed_route.table
     function_name = "clusterAllReplicas" if is_transfer_stage_identifier(relation) else "cluster"
     replacement = _cluster_table(
         cluster,
@@ -453,38 +524,28 @@ def _replace_source_table(
 
 def _route_statement_target(
     statement: exp.Expression,
-    cluster: str,
-    database: str | None,
-    sharding_key: str,
+    route: _StatementRoute,
     *,
     has_explicit_cluster: bool,
 ) -> None:
     if isinstance(statement, exp.Describe):
         target = statement.this
         if isinstance(target, exp.Table) and isinstance(target.this, exp.Identifier):
+            routed_target, _ = _routed_table_from_table(target, route)
             statement.set(
                 "this",
-                _routed_table_from_table(
-                    target,
-                    cluster,
-                    database,
-                    sharding_key=sharding_key,
-                ),
+                routed_target,
             )
         elif isinstance(target, exp.Subquery):
-            _rewrite_query_sources(target.this, cluster, database)
+            _rewrite_query_sources(
+                target.this,
+                route.cluster,
+                route.database,
+                managed_pair_resolver=route.managed_pair_resolver,
+            )
         return
     if isinstance(statement, exp.Insert):
-        target = statement.this
-        if isinstance(target, exp.Table) and isinstance(target.this, exp.Identifier):
-            routed_target = _routed_table_from_table(
-                target,
-                cluster,
-                database,
-                sharding_key=sharding_key,
-            )
-            statement.set("this", routed_target)
-            statement.set(arg_key="is_function", value=True)
+        _route_insert_target(statement, route)
         return
     if has_explicit_cluster:
         return
@@ -492,25 +553,85 @@ def _route_statement_target(
         if _is_temporary_create(statement):
             message = "ClickHouse cluster routing cannot safely route temporary tables."
             raise InvalidSqlInputError(message)
-        _add_create_on_cluster(statement, cluster)
+        _add_create_on_cluster(statement, route.cluster)
         return
     if isinstance(statement, _ON_CLUSTER_ARG_STATEMENTS):
-        statement.set("cluster", exp.OnCluster(this=exp.Literal.string(cluster)))
+        statement.set("cluster", exp.OnCluster(this=exp.Literal.string(route.cluster)))
+
+
+def _route_insert_target(statement: exp.Insert, route: _StatementRoute) -> None:
+    target = statement.this
+    target_table = target.this if isinstance(target, exp.Schema) else target
+    if not isinstance(target_table, exp.Table) or not isinstance(
+        target_table.this,
+        exp.Identifier,
+    ):
+        return
+    routed_target, is_function = _routed_table_from_table(target_table, route)
+    if isinstance(target, exp.Schema):
+        routed_schema = target.copy()
+        routed_schema.set("this", routed_target)
+        routed_target = routed_schema
+    statement.set("this", routed_target)
+    statement.set(arg_key="is_function", value=is_function)
 
 
 def _routed_table_from_table(
     table: exp.Table,
-    cluster: str,
-    default_database: str | None,
+    route: _StatementRoute,
+) -> tuple[exp.Expression, bool]:
+    database, relation = _table_parts(table, route.database)
+    managed_route = _resolve_managed_route(
+        route.managed_pair_resolver,
+        cluster=route.cluster,
+        database=database,
+        relation=relation,
+    )
+    if managed_route is not None and managed_route.mode == "local":
+        return table.copy(), False
+    if managed_route is not None:
+        database = managed_route.database
+        relation = managed_route.table
+    return (
+        _cluster_table(
+            route.cluster,
+            database,
+            relation,
+            sharding_key=route.sharding_key,
+        ),
+        True,
+    )
+
+
+def _resolve_managed_route(
+    resolver: ManagedPairResolver | None,
     *,
-    sharding_key: str,
-) -> exp.Table:
-    database, relation = _table_parts(table, default_database)
-    return _cluster_table(
-        cluster,
-        database,
-        relation,
-        sharding_key=sharding_key,
+    cluster: str,
+    database: str,
+    relation: str,
+) -> ManagedTableRoute | None:
+    if resolver is None or database.lower() == "system" or is_transfer_stage_identifier(relation):
+        return None
+    return resolver.resolve(cluster=cluster, database=database, table=relation)
+
+
+def _table_name_with_route(table: exp.Table, route: ManagedTableRoute) -> str:
+    routed = table.copy()
+    identifier = cast("exp.Identifier", routed.this)
+    routed.set(
+        "this",
+        exp.to_identifier(
+            route.table,
+            quoted=bool(identifier.args.get("quoted")),
+        ),
+    )
+    return routed.sql(dialect="clickhouse")
+
+
+def _changes_table_metadata(statement: exp.Expression) -> bool:
+    return isinstance(
+        statement,
+        (exp.Alter, exp.Create, exp.Detach, exp.Drop, exp.TruncateTable),
     )
 
 
