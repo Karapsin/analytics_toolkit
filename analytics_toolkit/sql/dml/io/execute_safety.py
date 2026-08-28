@@ -105,7 +105,7 @@ def validate_execute_retry_policy(value: str) -> ExecuteRetryPolicy:
 def is_read_only_sql(sql: str) -> bool:
     statements = [statement for statement in sqlparse.parse(sql) if str(statement).strip()]
     return bool(statements) and all(
-        statement.get_type().upper() in _READ_ONLY_STATEMENT_TYPES  # type: ignore[no-untyped-call]
+        cast("Any", statement).get_type().upper() in _READ_ONLY_STATEMENT_TYPES
         for statement in statements
     )
 
