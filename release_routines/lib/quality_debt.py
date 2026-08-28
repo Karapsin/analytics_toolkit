@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BASELINE = PROJECT_ROOT / "release_routines" / "baselines" / "quality_debt.json"
-RUFF_TARGETS = ("analytics_toolkit", "tests", "agent_tools", "release_routines")
-MYPY_TARGETS = ("analytics_toolkit",)
+RUFF_TARGETS = ("analytics_toolkit", "atk", "tests", "agent_tools", "release_routines")
+MYPY_TARGETS = ("analytics_toolkit", "atk")
 SCHEMA_VERSION = 1
 
 

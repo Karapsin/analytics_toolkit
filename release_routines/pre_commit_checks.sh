@@ -76,7 +76,7 @@ run_static_gate() {
   run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints || static_status=1
   run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh" || static_status=1
   run_stage docs-links "${script_dir}/scripts/check_docs_links.sh" || static_status=1
-  run_stage compileall python -m compileall analytics_toolkit tests || compile_status=1
+  run_stage compileall python -m compileall analytics_toolkit atk tests || compile_status=1
   [ "${compile_status}" -eq 0 ] || static_status=1
   run_stage tox-static tox -e lint,type || static_status=1
   return "${static_status}"

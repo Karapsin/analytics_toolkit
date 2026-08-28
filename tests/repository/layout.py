@@ -9,6 +9,7 @@ TESTS_ROOT = REPO_ROOT / "tests"
 ALLOWED_AREAS = {
     "ab_utils",
     "agent_tools",
+    "atk",
     "dates",
     "datetime",
     "excel",

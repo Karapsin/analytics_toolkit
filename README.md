@@ -24,11 +24,34 @@ From PyPI:
 pip install analytics-toolkit
 ```
 
+The normalized underscore spelling installs the same distribution:
+
+```bash
+pip install analytics_toolkit
+```
+
 From GitHub:
 
 ```bash
 pip install git+https://github.com/Karapsin/analytics_toolkit.git
 ```
+
+## Convenience Import
+
+The installed distribution provides `atk` as an optional shortcut for common
+notebook and analytics imports:
+
+```python
+import atk
+
+frame = atk.pd.DataFrame({"value": [1, 2, 3]})
+today = atk.dt.get_today()
+```
+
+It exposes `pd`, `sql`, `dt`, `dttm`, `ab`, `sql_format`, `excel`, `here`,
+`read_file_here`, `time_print`, `from_here`, `get_time_print_sink`,
+`set_connections_path`, and `write_file` as direct aliases to the corresponding
+pandas and `analytics_toolkit` objects.
 
 ## Areas
 

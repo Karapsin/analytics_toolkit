@@ -220,6 +220,7 @@ def test_run_artifact_smoke_publishes_only_checked_artifacts(
     assert sorted(path.name for path in output_dir.iterdir()) == sorted(artifacts)
     assert any(command[1:3] == ("-m", "twine") for command in commands)
     assert any(command[1:3] == ("-m", "check_wheel_contents") for command in commands)
+    assert any(command[3:5] == ("--toplevel", "analytics_toolkit,atk") for command in commands)
 
 
 def test_run_artifact_smoke_rejects_nonempty_output_before_build(
@@ -277,6 +278,7 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
     assert "--no-cache-dir" not in command_text
     assert "-m pip check" in command_text
     assert "analytics_toolkit.ab_utils" in command_text
+    assert "'atk'" in command_text
     assert "analytics-toolkit --help" in command_text
     assert "analytics-toolkit sql support-matrix" in command_text
 

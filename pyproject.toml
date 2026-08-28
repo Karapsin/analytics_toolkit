@@ -78,12 +78,12 @@ include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["analytics_toolkit*"]
+include = ["analytics_toolkit*", "atk"]
 
 [tool.ruff]
 target-version = "py38"
 line-length = 100
-src = ["analytics_toolkit", "tests", "agent_tools", "release_routines"]
+src = ["analytics_toolkit", "atk", "tests", "agent_tools", "release_routines"]
 extend-exclude = [
   ".mypy_cache",
   ".pytest_cache",
@@ -146,7 +146,7 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true
-source = ["analytics_toolkit"]
+source = ["analytics_toolkit", "atk"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"

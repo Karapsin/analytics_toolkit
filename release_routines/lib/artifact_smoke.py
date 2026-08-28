@@ -21,7 +21,9 @@ PUBLIC_MODULES = (
     "analytics_toolkit.general",
     "analytics_toolkit.sql",
     "analytics_toolkit.sql_format",
+    "atk",
 )
+TOPLEVEL_LIBRARY_ENTRIES = ("analytics_toolkit", "atk")
 _IGNORED_SOURCE_NAMES = {
     ".connections",
     ".git",
@@ -123,16 +125,17 @@ import sysconfig
 modules = ({module_literals},)
 for module in modules:
     importlib.import_module(module)
-package = importlib.import_module("analytics_toolkit")
-package_path = pathlib.Path(package.__file__).resolve()
 site_packages = pathlib.Path(sysconfig.get_paths()["purelib"]).resolve()
-try:
-    package_path.relative_to(site_packages)
-except ValueError as exc:
-    raise SystemExit(
-        f"analytics_toolkit imported outside the isolated site-packages: {{package_path}}"
-    ) from exc
-print(f"Imported all public modules from {{package_path}}")
+for package_name in ("analytics_toolkit", "atk"):
+    package = importlib.import_module(package_name)
+    package_path = pathlib.Path(package.__file__).resolve()
+    try:
+        package_path.relative_to(site_packages)
+    except ValueError as exc:
+        raise SystemExit(
+            f"{{package_name}} imported outside the isolated site-packages: {{package_path}}"
+        ) from exc
+print(f"Imported all public modules from {{site_packages}}")
 """
     _run([python, "-c", import_script], cwd=install_root)
 
@@ -191,7 +194,17 @@ def run_artifact_smoke(
         )
         wheel, sdist = _select_artifacts(dist_dir)
         _run([sys.executable, "-m", "twine", "check", str(wheel), str(sdist)], cwd=workspace)
-        _run([sys.executable, "-m", "check_wheel_contents", str(wheel)], cwd=workspace)
+        _run(
+            [
+                sys.executable,
+                "-m",
+                "check_wheel_contents",
+                "--toplevel",
+                ",".join(TOPLEVEL_LIBRARY_ENTRIES),
+                str(wheel),
+            ],
+            cwd=workspace,
+        )
         for artifact in (wheel, sdist):
             _verify_installed_artifact(artifact, workspace)
 
