@@ -402,7 +402,7 @@ def test_target_lifecycle_helper_preserves_non_ch_replace_modes() -> None:
     assert clear_connection.executed == ["TRUNCATE TABLE schema.target"]
 
 
-def test_gp_transfer_replace_recreates_target_from_staged_schema(
+def test_gp_transfer_replace_rebuilds_offside_from_staged_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = get_backend_adapter("gp")
@@ -410,23 +410,29 @@ def test_gp_transfer_replace_recreates_target_from_staged_schema(
     events: list[object] = []
     monkeypatch.setattr(
         adapter,
-        "drop_table",
-        lambda *_args, **_kwargs: events.append("drop"),
-    )
-    monkeypatch.setattr(
-        adapter,
         "ensure_stage_target_table",
-        lambda request: events.append(("create", dict(request.target_column_types or {}))) or True,
+        lambda request: (
+            events.append(
+                (
+                    "create",
+                    request.target_table,
+                    dict(request.target_column_types or {}),
+                )
+            )
+            or True
+        ),
     )
     monkeypatch.setattr(
         adapter,
         "insert_from_table",
         lambda *_args, **kwargs: events.append(("insert", dict(kwargs["column_types"] or {}))),
     )
+    monkeypatch.setattr(adapter, "count_table_rows", lambda *_args, **_kwargs: 3)
+    connection = FakeDbapiConnection()
 
     adapter.finalize_stage_table(
         StageFinalizationRequest(
-            connection=object(),
+            connection=connection,
             stage_table="stage.transfer_rows",
             target_table="sandbox.target",
             replace_target_table=True,
@@ -438,8 +444,13 @@ def test_gp_transfer_replace_recreates_target_from_staged_schema(
         )
     )
 
-    assert events == [
-        "drop",
-        ("create", staged_schema),
-        ("insert", staged_schema),
-    ]
+    replacement = events[0][1]
+    assert isinstance(replacement, str)
+    assert replacement.startswith("sandbox.target__replace_")
+    assert events == [("create", replacement, staged_schema), ("insert", staged_schema)]
+    assert connection.executed[0].startswith(
+        'ALTER TABLE sandbox.target RENAME TO "target__backup_'
+    )
+    assert connection.executed[1] == (f'ALTER TABLE {replacement} RENAME TO "target"')
+    assert connection.executed[2].startswith("DROP TABLE IF EXISTS sandbox.target__backup_")
+    assert connection.commit_calls == 1

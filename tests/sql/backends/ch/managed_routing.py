@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: C901, EM101, TRY003
 from types import SimpleNamespace
 from typing import Any, ClassVar, Sequence
 
@@ -7,6 +8,8 @@ import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.managed_routing import (
+    ManagedPairResolver,
+    _ClusterObject,
     _query_count,
     _resolve_cluster_name,
     _strip_sql_wrapping_quotes,
@@ -16,6 +19,7 @@ from analytics_toolkit.sql.backends.ch.routing import (
     prepare_sql,
     wrap_client,
 )
+from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 
 class _Result:
@@ -32,8 +36,6 @@ class _InsertContext:
 class _Client:
     engine = "Distributed"
     engine_full = "Distributed('core', 'db', 'events_shard', rand())"
-    configured_hosts = 2
-    reachable_hosts = 2
     visible_tables = 2
 
     def __init__(self) -> None:
@@ -55,18 +57,48 @@ class _Client:
                 raise RuntimeError(message)
             if self.metadata_rows is not None:
                 return _Result(self.metadata_rows)
-            return _Result([(self.engine, self.engine_full)])
+            return _Result(
+                [
+                    (
+                        self.engine,
+                        self.engine_full,
+                        f"CREATE TABLE db.events (id UInt64) ENGINE={self.engine_full}",
+                    )
+                ]
+            )
         if "SELECT getMacro" in sql:
             return _Result(self.macro_rows)
-        if "FROM system.clusters" in sql:
+        if "SELECT shard_num, replica_num, host_name" in sql:
             if self.fail_coverage:
                 message = "topology unavailable"
                 raise RuntimeError(message)
-            return _Result([(self.configured_hosts,)])
+            return _Result([(1, 1, "host1"), (1, 2, "host2")])
         if "system, one" in sql:
-            return _Result([(self.reachable_hosts,)])
+            if self.fail_coverage:
+                raise RuntimeError("topology unavailable")
+            return _Result([(1, 1, "host1"), (1, 2, "host2")])
+        if "system, replicas" in sql:
+            return _Result(
+                [
+                    (1, 1, "host1", "/path/events", "replica1", 0, 0),
+                    (1, 2, "host2", "/path/events", "replica2", 0, 0),
+                ][: self.visible_tables]
+            )
         if "system, tables" in sql:
-            return _Result([(self.visible_tables,)])
+            physical = "name = 'events_shard'" in sql
+            count = self.visible_tables if physical else 2
+            engine = "ReplicatedMergeTree" if physical else self.engine
+            engine_full = (
+                "ReplicatedMergeTree('/path/events', '{replica}')" if physical else self.engine_full
+            )
+            relation = "events_shard" if physical else "events"
+            ddl = f"CREATE TABLE db.{relation} (id UInt64) ENGINE={engine_full}"
+            return _Result(
+                [
+                    (1, replica, f"host{replica}", engine, engine_full, ddl, f"uuid{replica}")
+                    for replica in range(1, count + 1)
+                ]
+            )
         return _Result([(1,)])
 
     def query_df(self, sql: str, **_kwargs: Any) -> pd.DataFrame:
@@ -144,20 +176,17 @@ def test_incomplete_coverage_uses_local_distributed_facade() -> None:
     assert "cluster(" not in raw.commands[0]
 
 
-def test_failed_coverage_probe_uses_local_distributed_facade() -> None:
+def test_failed_coverage_probe_fails_closed() -> None:
     raw = _Client()
     raw.fail_coverage = True
     client = wrap_client(raw, _config())
 
-    client.query_df("SELECT * FROM db.events")
+    with pytest.raises(ClickHouseClusterTopologyError, match="inspect ClickHouse cluster"):
+        client.query_df("SELECT * FROM db.events")
 
-    assert raw.dataframes == ["SELECT * FROM db.events"]
 
-
-def test_empty_routing_cluster_uses_local_distributed_facade() -> None:
+def test_confirmed_missing_physical_shard_uses_local_facade() -> None:
     raw = _Client()
-    raw.configured_hosts = 0
-    raw.reachable_hosts = 0
     raw.visible_tables = 0
     client = wrap_client(raw, _config())
 
@@ -166,14 +195,14 @@ def test_empty_routing_cluster_uses_local_distributed_facade() -> None:
     assert raw.dataframes == ["SELECT * FROM db.events"]
 
 
-def test_nonmanaged_tables_keep_normal_cluster_routing() -> None:
+def test_other_distributed_facade_stays_local() -> None:
     raw = _Client()
     raw.engine_full = "Distributed('core', 'db', 'other_shard', rand())"
     client = wrap_client(raw, _config())
 
     client.query_df("SELECT * FROM db.events")
 
-    assert raw.dataframes == ["SELECT * FROM cluster('core', 'db', 'events')"]
+    assert raw.dataframes == ["SELECT * FROM db.events"]
 
 
 @pytest.mark.parametrize(
@@ -184,7 +213,7 @@ def test_nonmanaged_tables_keep_normal_cluster_routing() -> None:
         ("Distributed", "Distributed('core', 'other', 'events_shard', rand())"),
     ],
 )
-def test_nonstandard_facades_keep_normal_cluster_routing(
+def test_nonstandard_objects_use_engine_dependent_routing(
     engine: str,
     engine_full: str,
 ) -> None:
@@ -195,45 +224,48 @@ def test_nonstandard_facades_keep_normal_cluster_routing(
 
     client.query_df("SELECT * FROM db.events")
 
-    assert raw.dataframes == ["SELECT * FROM cluster('core', 'db', 'events')"]
+    expected = (
+        "SELECT * FROM clusterAllReplicas('core', 'db', 'events')"
+        if engine == "MergeTree"
+        else "SELECT * FROM db.events"
+    )
+    assert raw.dataframes == [expected]
 
 
 @pytest.mark.parametrize(
     "metadata_rows",
     [[], [("Distributed",)], [(1, 2)]],
 )
-def test_incomplete_facade_metadata_keeps_normal_cluster_routing(
+def test_incomplete_facade_metadata_fails_closed(
     metadata_rows: list[tuple[Any, ...]],
 ) -> None:
     raw = _Client()
     raw.metadata_rows = metadata_rows
     client = wrap_client(raw, _config())
 
-    client.query_df("SELECT * FROM db.events")
+    with pytest.raises(ClickHouseClusterTopologyError):
+        client.query_df("SELECT * FROM db.events")
 
-    assert raw.dataframes == ["SELECT * FROM cluster('core', 'db', 'events')"]
 
-
-def test_failed_facade_metadata_keeps_normal_cluster_routing() -> None:
+def test_failed_facade_metadata_fails_closed() -> None:
     raw = _Client()
     raw.fail_metadata = True
     client = wrap_client(raw, _config())
 
-    client.query_df("SELECT * FROM db.events")
+    with pytest.raises(ClickHouseClusterTopologyError, match="Could not inspect"):
+        client.query_df("SELECT * FROM db.events")
 
-    assert raw.dataframes == ["SELECT * FROM cluster('core', 'db', 'events')"]
 
-
-def test_explicit_table_functions_and_system_tables_are_not_resolved() -> None:
+def test_explicit_table_functions_are_normalized_and_system_uses_all_replicas() -> None:
     raw = _Client()
     client = wrap_client(raw, _config())
 
     explicit = client.route("SELECT * FROM cluster('core', 'db', 'events')")
     system = client.route("SELECT * FROM system.tables")
 
-    assert explicit == "SELECT * FROM cluster('core', 'db', 'events')"
-    assert system == "SELECT * FROM cluster('core', 'system', 'tables')"
-    assert raw.queries == []
+    assert explicit == "SELECT * FROM cluster('core', 'db', 'events_shard')"
+    assert system == "SELECT * FROM clusterAllReplicas('core', 'system', 'tables')"
+    assert raw.queries
 
 
 def test_http_and_native_binary_inserts_use_physical_shard() -> None:
@@ -265,9 +297,21 @@ def test_binary_inserts_use_local_facade_when_coverage_is_incomplete() -> None:
     client = wrap_client(raw, _config())
 
     client.insert("db.events", [(1,)], ["id"])
+    client.insert_df("db.events", pd.DataFrame({"id": [1]}), ["id"])
 
-    assert raw.context_tables == ["db.events"]
-    assert raw.insert_contexts[0].table == "db.events"
+    assert raw.context_tables == ["db.events", "db.events"]
+    assert all(context.table == "db.events" for context in raw.insert_contexts)
+    assert all(context.data is not None for context in raw.insert_contexts)
+
+
+def test_explicit_cluster_function_falls_back_to_local_distributed_facade() -> None:
+    raw = _Client()
+    raw.visible_tables = 1
+    client = wrap_client(raw, _config())
+
+    routed = client.route("SELECT * FROM cluster('core', 'db', 'events')")
+
+    assert routed == "SELECT * FROM db.events"
 
 
 def test_table_ddl_invalidates_managed_pair_resolution() -> None:
@@ -334,3 +378,152 @@ def test_empty_count_result_is_zero() -> None:
     raw.metadata_rows = []
 
     assert _query_count(raw, "SELECT engine, engine_full FROM system.tables") == 0
+    assert _query_count(raw, "SELECT count()") == 1
+
+
+def test_view_relations_always_stay_local() -> None:
+    raw = _Client()
+    raw.engine = "View"
+    raw.engine_full = "View"
+
+    route = ManagedPairResolver(raw).resolve(cluster="core", database="db", table="events")
+
+    assert route.mode == "local"
+
+
+def test_local_relation_metadata_rejects_invalid_values() -> None:
+    raw = _Client()
+    raw.metadata_rows = [("MergeTree", 1, "CREATE TABLE db.events")]
+
+    with pytest.raises(ClickHouseClusterTopologyError, match="invalid values"):
+        ManagedPairResolver(raw)._read_local_object(database="db", table="events")
+
+
+@pytest.mark.parametrize("rows", [[(1,)], [], [(1, 1, "a"), (1, 1, "b")]])
+def test_cluster_host_metadata_requires_complete_unique_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[tuple[Any, ...]],
+) -> None:
+    raw = _Client()
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result(rows))
+
+    with pytest.raises(ClickHouseClusterTopologyError):
+        ManagedPairResolver(raw)._cluster_hosts("core")
+
+
+def test_cluster_host_probe_wraps_query_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw = _Client()
+    monkeypatch.setattr(
+        raw,
+        "query",
+        lambda _sql: (_ for _ in ()).throw(OSError("metadata unavailable")),
+    )
+
+    with pytest.raises(ClickHouseClusterTopologyError, match="inspect ClickHouse cluster"):
+        ManagedPairResolver(raw)._cluster_hosts("core")
+
+
+def test_cluster_object_validation_rejects_missing_and_inconsistent_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = _Client()
+    resolver = ManagedPairResolver(raw)
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result([(1,)]))
+    with pytest.raises(ClickHouseClusterTopologyError, match=r"metadata.*incomplete"):
+        resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
+
+    inconsistent = [
+        (1, 1, "host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1"),
+        (1, 2, "host2", "MergeTree", "MergeTree()", "CREATE TABLE b", "uuid2"),
+    ]
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result(inconsistent))
+    with pytest.raises(ClickHouseClusterTopologyError, match="inconsistent engine or DDL"):
+        resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
+
+
+def test_cluster_object_probe_wraps_failure_and_incomplete_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = _Client()
+    resolver = ManagedPairResolver(raw)
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+    monkeypatch.setattr(
+        raw,
+        "query",
+        lambda _sql: (_ for _ in ()).throw(OSError("cluster query failed")),
+    )
+    with pytest.raises(ClickHouseClusterTopologyError, match="every host"):
+        resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
+
+    monkeypatch.setattr(
+        raw,
+        "query",
+        lambda _sql: _Result(
+            [(1, 1, "host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1")]
+        ),
+    )
+    with pytest.raises(ClickHouseClusterTopologyError, match="1/2"):
+        resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [(1,)],
+        [(1, 1, "host1", "/path", "same", 0, 0), (1, 2, "host2", "/path", "same", 0, 0)],
+        [(1, 1, "host1", "/a", "one", 0, 0), (1, 2, "host2", "/b", "two", 0, 0)],
+    ],
+)
+def test_replica_validation_rejects_incomplete_unhealthy_or_mismatched_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[tuple[Any, ...]],
+) -> None:
+    raw = _Client()
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result(rows))
+
+    with pytest.raises(ClickHouseClusterTopologyError):
+        ManagedPairResolver(raw)._validate_replicas(
+            cluster_name="core",
+            database="db",
+            table="events",
+            expected={(1, 1), (1, 2)},
+        )
+
+
+def test_replica_and_reachability_query_failures_are_wrapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = _Client()
+    resolver = ManagedPairResolver(raw)
+    monkeypatch.setattr(
+        raw,
+        "query",
+        lambda _sql: (_ for _ in ()).throw(OSError("host unavailable")),
+    )
+    with pytest.raises(ClickHouseClusterTopologyError, match="validate replicas"):
+        resolver._validate_replicas(
+            cluster_name="core",
+            database="db",
+            table="events",
+            expected={(1, 1)},
+        )
+
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+    with pytest.raises(ClickHouseClusterTopologyError, match="reach every host"):
+        resolver._validate_cluster_reachable("core")
+
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result([(1, 1, "host1")]))
+    with pytest.raises(ClickHouseClusterTopologyError, match="Only 1/2"):
+        resolver._validate_cluster_reachable("core")
+
+
+def test_route_mode_rejects_unknown_replicated_engine() -> None:
+    objects = [
+        _ClusterObject(1, 1, "host1", "Memory", "Memory", "CREATE TABLE a", "uuid1"),
+        _ClusterObject(1, 2, "host2", "Memory", "Memory", "CREATE TABLE a", "uuid2"),
+    ]
+
+    with pytest.raises(ClickHouseClusterTopologyError, match="does not know how"):
+        ManagedPairResolver._route_mode("Memory", objects)

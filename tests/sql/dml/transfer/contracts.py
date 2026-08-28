@@ -53,7 +53,9 @@ def test_transfer_upsert_dry_run_uses_delete_insert_or_merge() -> None:
         key_columns=["id"],
         upsert_partition_column="id",
         table_schema={"id": "UInt64", "score": "Int64"},
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
         dry_run=True,
     )
     assert any(
@@ -133,7 +135,7 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     signature = inspect.signature(sql_module.transfer)
 
     assert "replace_target_table" not in signature.parameters
-    assert signature.parameters["write_mode"].default == "append"
+    assert signature.parameters["write_mode"].default == "replace"
     plan = transfer_api_module.transfer_table(
         from_db="gp",
         to_db="trino",
@@ -147,12 +149,12 @@ def test_transfer_dry_run_includes_source_stage_and_target_steps() -> None:
     assert plan.source_alias == "gp"
     assert plan.target_alias == "trino"
     assert plan.options["adaptive_batch_size"] is True
-    assert plan.options["write_mode"] == "append"
+    assert plan.options["write_mode"] == "replace"
     assert plan.options["min_batch_size"] == 1_000
     assert plan.options["max_batch_size"] == 400_000
     assert plan.options["target_batch_seconds"] == 10.0
     assert plan.statements[0].phase == "read_source"
-    assert not {"clear_target", "drop_target"} & {statement.phase for statement in plan.statements}
+    assert "drop_target" in {statement.phase for statement in plan.statements}
     assert "query_label=copy-target" in plan.statements[0].sql
     assert plan.statements[-1].phase == "drop_stage"
 
@@ -296,7 +298,9 @@ def test_transfer_clickhouse_dry_run_preserves_drop_pair_cluster() -> None:
         to_table="analytics.events",
         write_mode="replace",
         dry_run=True,
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     drop_sqls = [statement.sql for statement in plan.statements if statement.phase == "drop_target"]
@@ -320,7 +324,9 @@ def test_transfer_clickhouse_only_shard_dry_run_uses_local_target_sql() -> None:
         table_schema={"dt": "Date", "id": "UInt64"},
         partition_by=["dt"],
         order_by=["dt", "id"],
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     assert plan.options["ch_only_shard"] is True

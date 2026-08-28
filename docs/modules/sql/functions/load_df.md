@@ -5,7 +5,7 @@
 Load a pandas dataframe into a SQL table on a configured backend.
 
 ```python
-load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_ddl_ready_timeout_seconds: 'float | None' = None, ch_ddl_wait_policy: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None) -> 'int | SqlPlan | SqlOperationResult'
+load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bool' = False, write_mode: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_ddl_ready_timeout_seconds: 'float | None' = None, ch_ddl_wait_policy: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, gp_insert_chunk_size: 'int | None' = None, progress: 'bool' = False, table_schema: 'dict[str, str] | None' = None, empty_source_policy: 'EmptySourcePolicy | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -17,6 +17,7 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `df` - dataframe to load
 - `append` - historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied
 - `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
+- `empty_source_policy` - zero-row behavior: `replace`, `keep`, or `error`; omission resolves to `replace` for replace/truncate modes and `keep` for append/upsert
 - `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
 - `upsert_partition_column` - single staged column that defines affected partitions for Trino and ClickHouse upsert replacement; required for those backends when `write_mode="upsert"`
 - `retry_cnt` - number of operation retries with fresh connections
@@ -78,7 +79,9 @@ rows
   `__`. This stable prefix is collision-resistant but is not proof of identity.
   Existing names are never reused or overwritten; runtime collisions allocate
   another name, and cleanup retains the actual created name.
-- `write_mode` can make append, replace, or truncate_insert behavior explicit while preserving historical `append` defaults.
+- Omitting `write_mode` selects `replace` unless the legacy `append=True` flag is supplied. Prefer an explicit `write_mode` for incremental or truncate-and-load workflows.
+- Replacing an existing table builds and validates an offside table before cutover. Greenplum uses a transaction, Trino uses a reversible rename, and ClickHouse exchanges or reversibly renames the physical/facade replacement pair. New columns are included without dropping the live table first.
+- An empty dataframe follows `empty_source_policy`. Empty replacement creates a zero-row table with the requested schema. Pass `table_schema` when an empty object-typed column has no unambiguous backend type.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.
 - When an upsert target already exists, the existing target schema is used for

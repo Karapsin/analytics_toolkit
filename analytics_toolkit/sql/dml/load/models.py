@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:
+    from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,7 @@ class LoadOptions:
     table_schema: dict[str, str] | None = None
     append: bool = False
     write_mode: str = "replace"
+    empty_source_policy: EmptySourcePolicy | None = None
     gp_distributed_by_key: list[str] | None = None
     gp_partitions: Any = None
     key_columns: list[str] | None = None

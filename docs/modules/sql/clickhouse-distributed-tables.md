@@ -52,18 +52,48 @@ It rewrites named read sources through the ClickHouse `cluster(...)` table
 function, sends inserts to the corresponding cluster function with the
 configured sharding key, and adds `ON CLUSTER` to supported DDL.
 
-For a toolkit-standard managed pair, routing first verifies that the local
-Distributed facade points to the same-database `<table>_shard` relation. If
-that shard exists on every replica of the effective routing cluster, named
-reads and all insert paths route the physical shard directly. If coverage is
-incomplete or cannot be verified, reads and writes stay on the local
-Distributed facade. Other named tables, including `system` tables, retain the
-normal cluster-routing behavior, while explicit table functions remain
-unchanged.
+```json
+{
+  "ch": {
+    "type": "ch",
+    "host": "one-host-from-core",
+    "cluster_routing": {
+      "cluster": "core",
+      "sharding_key": "rand()"
+    }
+  }
+}
+```
 
-Consequently, `wait_shard` is sufficient for data access when the physical
-shard has full routing-cluster coverage. The safe fallback requires the local
-facade to be ready because it is intentionally not rewritten. An explicit
+Before rewriting a live table, routing compares every expected
+shard/replica position from `system.clusters` with `system.tables`. Engine and
+normalized DDL must agree on every host; replicated tables must also have one
+Keeper path per shard, distinct replica names, and healthy replica metadata.
+Probe errors, missing expected metadata, or inconsistent engines raise
+`ClickHouseClusterTopologyError` before user SQL is submitted.
+
+For a toolkit-standard managed pair, routing verifies that the local
+Distributed facade points to the same-database `<table>_shard` relation. If
+that shard exists at every expected routing-cluster position, named reads and
+all insert paths route the physical shard directly. A confirmed incomplete
+physical table falls back to the local Distributed facade, and inserts use
+foreground Distributed delivery so success does not mean "still queued".
+Metadata uncertainty is an error rather than a fallback.
+
+Replicated and shared engines use `cluster(...)`, which selects one replica per
+shard. Consistent non-replicated tables on a multi-replica cluster use
+`clusterAllReplicas(...)` because each host is assumed to own distinct data.
+Single-replica non-replicated tables use `cluster(...)`. Views and non-standard
+Distributed facades stay local; a view's own SQL remains responsible for its
+sources. Toolkit stages and `system` tables use all replicas. Exact explicit
+`cluster(...)`/`clusterAllReplicas(...)` wrappers around a named table are
+normalized to the same engine-dependent choice; unrelated table functions are
+left unchanged.
+
+Consequently, `wait_shard` is compatible with routing when the physical shard
+has full routing-cluster coverage and consistent metadata. The confirmed
+incomplete-pair fallback requires the local facade to be ready because it is
+intentionally not rewritten. An explicit
 `ON CLUSTER` value from SQL, `ddl_defaults`, or a helper policy has precedence
 over the connection default, so a macro such as `'{cluster}'` is preserved and
 used by that statement. See
@@ -99,9 +129,13 @@ name exchange; other database engines use a reversible rename sequence.
 
 ## Replace and Drop
 
-Replace flows verify that old distributed and shard tables disappear before
-recreate. If a host keeps stale metadata, per-host cleanup can retry local drops
-on affected hosts before the replacement continues.
+Replace flows build and populate offside physical and Distributed tables,
+validate row counts and a destination fingerprint, then exchange names in an
+Atomic/Shared database or use a reversible rename sequence. The old target is
+not dropped before the replacement is ready. A failed rollback raises
+`AmbiguousSqlReplaceError` and preserves recovery artifacts. Later replacements
+remove inactive orphan `__replace_...` tables conservatively; artifacts used by
+a live query and backups whose safety is not proven remain untouched.
 
 [sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
 

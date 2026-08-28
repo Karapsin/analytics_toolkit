@@ -4,16 +4,21 @@ from collections.abc import Sequence
 
 import pandas as pd
 
-from ..backends import get_backend_adapter
-from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
-from ..dml.io.read_sql import read_sql
 from ..execution.operation_runner import timed_public_sql_function
+
+
+def read_sql(connection_type: str, query: str) -> pd.DataFrame:
+    from ..dml.io.read_sql import read_sql as read_sql_impl  # noqa: PLC0415
+
+    return read_sql_impl(connection_type, query)
 
 
 @timed_public_sql_function
 def extract_ddl(db_key: str, tables: str | Sequence[str]) -> str:
     """Return semicolon-terminated table DDL statements joined by newlines."""
+    from ..backends import get_backend_adapter  # noqa: PLC0415
+    from ..connection.config import get_connection_config  # noqa: PLC0415
 
     config = get_connection_config(db_key)
     adapter = get_backend_adapter(config.backend)

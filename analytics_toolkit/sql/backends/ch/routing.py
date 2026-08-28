@@ -22,6 +22,8 @@ from analytics_toolkit.sql.connection.errors import (
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
 
 DEFAULT_CLUSTER_SHARDING_KEY = "rand()"
+MIN_CLUSTER_TABLE_FUNCTION_ARGS = 3
+SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS = 4
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
     "distributed_ddl_output_mode": "none",
@@ -53,6 +55,7 @@ class ChClusterRouting:
 class _BinaryInsertRoute:
     context_table: str
     target_table: str
+    foreground: bool = False
 
 
 @dataclass(frozen=True)
@@ -282,8 +285,11 @@ class ClusterRoutingClient:
 
     def command(self, sql: str, **kwargs: Any) -> Any:
         routed_sql = self.route(sql)
-        if "ON CLUSTER" in routed_sql.upper():
-            settings = dict(ON_CLUSTER_COMMAND_SETTINGS)
+        routed_upper = routed_sql.upper()
+        if "ON CLUSTER" in routed_upper or routed_upper.lstrip().startswith("INSERT "):
+            settings = dict(ON_CLUSTER_COMMAND_SETTINGS) if "ON CLUSTER" in routed_upper else {}
+            if routed_upper.lstrip().startswith("INSERT "):
+                settings["distributed_foreground_insert"] = 1
             settings.update(kwargs.get("settings") or {})
             kwargs["settings"] = settings
         try:
@@ -316,6 +322,10 @@ class ClusterRoutingClient:
                 **kwargs,
             )
         insert_route = self._insert_route(table)
+        if insert_route.foreground:
+            settings = {"distributed_foreground_insert": 1}
+            settings.update(kwargs.get("settings") or {})
+            kwargs["settings"] = settings
         if self.is_native_transport:
             return self._client.insert(
                 table=insert_route.target_table,
@@ -347,6 +357,10 @@ class ClusterRoutingClient:
                 **kwargs,
             )
         insert_route = self._insert_route(table)
+        if insert_route.foreground:
+            settings = {"distributed_foreground_insert": 1}
+            settings.update(kwargs.get("settings") or {})
+            kwargs["settings"] = settings
         if self.is_native_transport:
             return self._client.insert_df(insert_route.target_table, df, column_names, **kwargs)
         return self._http_insert(
@@ -381,7 +395,7 @@ class ClusterRoutingClient:
             relation=relation,
         )
         if managed_route is not None and managed_route.mode == "local":
-            return _BinaryInsertRoute(table_name, table_name)
+            return _BinaryInsertRoute(table_name, table_name, foreground=True)
         routed_database = managed_route.database if managed_route is not None else database
         routed_relation = managed_route.table if managed_route is not None else relation
         context_table = (
@@ -394,6 +408,11 @@ class ClusterRoutingClient:
             routed_database,
             routed_relation,
             sharding_key=self._routing.sharding_key,
+            function_name=_route_function_name(
+                managed_route,
+                routed_relation,
+                routed_database,
+            ),
         )
         return _BinaryInsertRoute(context_table, f"FUNCTION {function}")
 
@@ -475,6 +494,12 @@ def _rewrite_query_sources(
     *,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> None:
+    _normalize_explicit_cluster_tables(
+        statement,
+        cluster,
+        database,
+        managed_pair_resolver=managed_pair_resolver,
+    )
     for scope in traverse_scope(statement) or []:
         for table in list(scope.tables):
             if not isinstance(table.this, exp.Identifier):
@@ -487,6 +512,63 @@ def _rewrite_query_sources(
                 database,
                 managed_pair_resolver=managed_pair_resolver,
             )
+
+
+def _normalize_explicit_cluster_tables(
+    statement: exp.Expression,
+    cluster: str,
+    default_database: str | None,
+    *,
+    managed_pair_resolver: ManagedPairResolver | None,
+) -> None:
+    if managed_pair_resolver is None:
+        return
+    for table in list(statement.find_all(exp.Table)):
+        function = table.this
+        if not isinstance(function, exp.Anonymous) or str(function.this).lower() not in {
+            "cluster",
+            "clusterallreplicas",
+        }:
+            continue
+        arguments = list(function.expressions)
+        if len(arguments) < MIN_CLUSTER_TABLE_FUNCTION_ARGS:
+            continue
+        database = _identifier_value(arguments[1]) or default_database
+        relation = _identifier_value(arguments[2])
+        if database is None or relation is None:
+            continue
+        managed_route = _resolve_managed_route(
+            managed_pair_resolver,
+            cluster=cluster,
+            database=database,
+            relation=relation,
+        )
+        if managed_route is None:
+            continue
+        if managed_route.mode == "local":
+            replacement = exp.Table(
+                this=exp.to_identifier(relation),
+                db=exp.to_identifier(database),
+            )
+        else:
+            sharding_key = (
+                arguments[3].sql(dialect="clickhouse")
+                if len(arguments) >= SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS
+                else None
+            )
+            replacement = _cluster_table(
+                cluster,
+                managed_route.database,
+                managed_route.table,
+                sharding_key=sharding_key,
+                function_name=_route_function_name(
+                    managed_route,
+                    managed_route.table,
+                    managed_route.database,
+                ),
+            )
+        _copy_table_decorations(table, replacement)
+        table.replace(replacement)
 
 
 def _replace_source_table(
@@ -508,18 +590,22 @@ def _replace_source_table(
     if managed_route is not None:
         database = managed_route.database
         relation = managed_route.table
-    function_name = "clusterAllReplicas" if is_transfer_stage_identifier(relation) else "cluster"
+    function_name = _route_function_name(managed_route, relation, database)
     replacement = _cluster_table(
         cluster,
         database,
         relation,
         function_name=function_name,
     )
-    for key, value in table.args.items():
-        if key not in {"this", "db", "catalog"}:
-            replacement.set(key, value.copy() if isinstance(value, exp.Expression) else value)
-    replacement.add_comments(table.comments)
+    _copy_table_decorations(table, replacement)
     table.replace(replacement)
+
+
+def _copy_table_decorations(source: exp.Table, target: exp.Table) -> None:
+    for key, value in source.args.items():
+        if key not in {"this", "db", "catalog"}:
+            target.set(key, value.copy() if isinstance(value, exp.Expression) else value)
+    target.add_comments(source.comments)
 
 
 def _route_statement_target(
@@ -598,6 +684,7 @@ def _routed_table_from_table(
             database,
             relation,
             sharding_key=route.sharding_key,
+            function_name=_route_function_name(managed_route, relation, database),
         ),
         True,
     )
@@ -610,9 +697,21 @@ def _resolve_managed_route(
     database: str,
     relation: str,
 ) -> ManagedTableRoute | None:
-    if resolver is None or database.lower() == "system" or is_transfer_stage_identifier(relation):
+    if resolver is None:
         return None
     return resolver.resolve(cluster=cluster, database=database, table=relation)
+
+
+def _route_function_name(
+    route: ManagedTableRoute | None,
+    relation: str,
+    database: str,
+) -> str:
+    if route is not None and route.mode == "all_replicas":
+        return "clusterAllReplicas"
+    if route is None and (database.lower() == "system" or is_transfer_stage_identifier(relation)):
+        return "clusterAllReplicas"
+    return "cluster"
 
 
 def _table_name_with_route(table: exp.Table, route: ManagedTableRoute) -> str:
@@ -673,12 +772,14 @@ def _cluster_function_sql(
     table: str,
     *,
     sharding_key: str,
+    function_name: str = "cluster",
 ) -> str:
     return _cluster_table(
         cluster,
         database,
         table,
         sharding_key=sharding_key,
+        function_name=function_name,
     ).sql(dialect="clickhouse")
 
 

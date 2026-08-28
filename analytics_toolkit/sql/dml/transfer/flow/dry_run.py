@@ -43,6 +43,7 @@ def dry_run_transfer_options(
     lazy_keyed_staging = slices is not None and source_staged
     return {
         "write_mode": options.write_mode,
+        "empty_source_policy": options.empty_source_policy,
         "transfer_id": options.transfer_id,
         "canonical_destination_identity": options.canonical_destination_identity,
         "destination_hash": options.destination_hash,
@@ -127,9 +128,7 @@ def dry_run_transfer_options(
         ),
         "reader_slice_assignments": dry_run_reader_slice_assignments(options),
         "source_stage_count": (
-            len(slices)
-            if lazy_keyed_staging and slices is not None
-            else int(source_staged)
+            len(slices) if lazy_keyed_staging and slices is not None else int(source_staged)
         ),
         "live_source_stage_limit": (
             options.transfer_concurrency.effective_read
@@ -141,9 +140,7 @@ def dry_run_transfer_options(
             False if lazy_keyed_staging else (True if source_staged else None)
         ),
         "source_stage_creation": (
-            "lazy_per_key"
-            if lazy_keyed_staging
-            else ("single_snapshot" if source_staged else None)
+            "lazy_per_key" if lazy_keyed_staging else ("single_snapshot" if source_staged else None)
         ),
         "source_stage_lifecycle": (
             "per_key_ctas_count_stream_validate_acknowledge_drop"
@@ -154,9 +151,7 @@ def dry_run_transfer_options(
         "target_stage_count": len(stage_tables),
         "target_stage_maximum": len(stage_tables) if lazy_keyed_staging else None,
         "target_stage_count_is_maximum": lazy_keyed_staging,
-        "target_stage_creation": (
-            "lazy_first_non_empty_key" if lazy_keyed_staging else "eager"
-        ),
+        "target_stage_creation": ("lazy_first_non_empty_key" if lazy_keyed_staging else "eager"),
         "transfer_slice_count": len(slices) if slices is not None else None,
         "worker_stage_count": len(stage_tables),
         "stage_tables": stage_tables,
@@ -563,9 +558,7 @@ def _add_target_stage_cleanup(
     lazy: bool,
 ) -> None:
     phase = "drop_stage_if_created" if lazy else "drop_stage"
-    cleanup_sqls = get_backend_adapter(
-        options.to_db_backend
-    ).build_creation_policy_cleanup_sqls(
+    cleanup_sqls = get_backend_adapter(options.to_db_backend).build_creation_policy_cleanup_sqls(
         stage_table,
         options.staging_ch_policy,
         query_label=options.query_label,
@@ -637,9 +630,7 @@ def dry_run_stage_table_name(
         return build_stage_table_name(
             options.to_db_backend,
             options.target_table,
-            transfer_staging_schema=(
-                options.s3_transfer_staging_schema
-            ),
+            transfer_staging_schema=(options.s3_transfer_staging_schema),
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=suffix,
             destination_hash=options.destination_hash,

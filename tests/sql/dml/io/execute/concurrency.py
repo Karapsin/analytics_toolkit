@@ -12,9 +12,9 @@ execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execu
 
 def test_execute_sql_list_returns_results_in_input_order(monkeypatch) -> None:
     def fake_execute(options: Any) -> str:
-        if options.sql == "select 1":
+        if options.source_sql == "select 1":
             time.sleep(0.03)
-        return options.sql
+        return options.source_sql
 
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
@@ -32,7 +32,7 @@ def test_execute_sql_list_defaults_to_sequential_execution(monkeypatch) -> None:
     calls: list[str] = []
 
     def fake_execute(options: Any) -> None:
-        calls.append(options.sql)
+        calls.append(options.source_sql)
 
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
@@ -62,7 +62,7 @@ def test_execute_sql_soft_cap_limits_active_workers(monkeypatch) -> None:
         time.sleep(0.02)
         with lock:
             active_workers -= 1
-        return options.sql
+        return options.source_sql
 
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
@@ -178,7 +178,7 @@ def test_execute_sql_retries_failed_item_then_fails_fast(monkeypatch) -> None:
     adapter = execute_sql_module.get_backend_adapter("trino")
     monkeypatch.setattr(adapter, "execute_sql", fake_execute)
 
-    with pytest.raises(RuntimeError, match="temporary failure"):
+    with pytest.raises(execute_sql_module.SqlBatchExecutionError) as caught:
         execute_sql_module.execute_sql(
             "trino",
             ["select fail", "select must_not_run"],
@@ -187,10 +187,11 @@ def test_execute_sql_retries_failed_item_then_fails_fast(monkeypatch) -> None:
             timeout_increment=0,
         )
 
-    assert executed == [
-        ("first", "select fail"),
-        ("second", "select fail"),
-    ]
+    assert [name for name, _query in executed] == ["first", "second"]
+    assert all(query.endswith("select fail") for _name, query in executed)
+    assert caught.value.failed_indexes == (0,)
+    assert caught.value.cancelled_indexes == (1,)
+    assert caught.value.safe_to_retry_queries == ("select fail", "select must_not_run")
     assert [connection.rollback_calls for connection in connections] == [0, 0]
     assert [connection.close_calls for connection in connections] == [1, 1]
 
@@ -212,14 +213,14 @@ def test_execute_sql_concurrent_failure_unregisters_cancellation_scope(
     scope = FakeCancellationScope()
 
     def fake_execute(options: Any) -> None:
-        if options.sql == "select fail":
+        if options.source_sql == "select fail":
             message = "batch failure"
             raise RuntimeError(message)
 
     monkeypatch.setattr(execute_sql_module, "current_cancellation_scope", lambda: scope)
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
-    with pytest.raises(RuntimeError, match="batch failure"):
+    with pytest.raises(execute_sql_module.SqlBatchExecutionError) as caught:
         execute_sql_module.execute_sql(
             "gp",
             ["select fail", "select 2", "select 3"],
@@ -228,3 +229,100 @@ def test_execute_sql_concurrent_failure_unregisters_cancellation_scope(
 
     assert len(scope.registered) == 1
     assert scope.unregistered == scope.registered
+    assert caught.value.failed_indexes == (0,)
+
+
+def test_concurrent_batch_records_cancelled_futures_and_cancels_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeFuture:
+        def __init__(self, outcome: BaseException | str) -> None:
+            self.outcome = outcome
+            self.cancel_calls = 0
+
+        def result(self) -> str:
+            if isinstance(self.outcome, BaseException):
+                raise self.outcome
+            return self.outcome
+
+        def done(self) -> bool:
+            return False
+
+        def cancel(self) -> None:
+            self.cancel_calls += 1
+
+    class FakeExecutor:
+        def __init__(self, **_kwargs: Any) -> None:
+            self.futures = [
+                FakeFuture(RuntimeError("failed")),
+                FakeFuture(execute_sql_module.CancelledError()),
+                FakeFuture(RuntimeError("also failed")),
+            ]
+            self.shutdown_calls: list[tuple[bool, bool]] = []
+
+        def submit(self, *_args: Any) -> FakeFuture:
+            return self.futures.pop(0)
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool) -> None:
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    executor = FakeExecutor()
+    monkeypatch.setattr(execute_sql_module, "ThreadPoolExecutor", lambda **_kwargs: executor)
+    monkeypatch.setattr(execute_sql_module, "as_completed", list)
+    options = [
+        execute_sql_module.ExecuteSqlOptions(
+            "gp",
+            "gp",
+            query,
+            source_sql=query,
+            batch_id="batch",
+        )
+        for query in ["fail", "cancel", "ok"]
+    ]
+
+    with pytest.raises(execute_sql_module.SqlBatchExecutionError) as caught:
+        execute_sql_module._execute_sql_batch(options, concurrency=3)
+
+    assert caught.value.failed_indexes == (0, 2)
+    assert caught.value.cancelled_indexes == (1,)
+    assert executor.shutdown_calls == [(True, False)]
+
+
+def test_concurrent_batch_shuts_down_before_propagating_base_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class InterruptingFuture:
+        def result(self) -> None:
+            raise KeyboardInterrupt
+
+        def cancel(self) -> None:
+            return None
+
+    class FakeExecutor:
+        def __init__(self, **_kwargs: Any) -> None:
+            self.future = InterruptingFuture()
+            self.shutdown_calls: list[tuple[bool, bool]] = []
+
+        def submit(self, *_args: Any) -> InterruptingFuture:
+            return self.future
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool) -> None:
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    executor = FakeExecutor()
+    monkeypatch.setattr(execute_sql_module, "ThreadPoolExecutor", lambda **_kwargs: executor)
+    monkeypatch.setattr(execute_sql_module, "as_completed", list)
+    options = [
+        execute_sql_module.ExecuteSqlOptions(
+            "gp",
+            "gp",
+            "SELECT 1",
+            source_sql="SELECT 1",
+            batch_id="batch",
+        )
+    ]
+
+    with pytest.raises(KeyboardInterrupt):
+        execute_sql_module._execute_sql_batch(options, concurrency=2)
+
+    assert executor.shutdown_calls == [(True, True)]

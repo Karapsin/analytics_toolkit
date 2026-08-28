@@ -48,7 +48,7 @@ def test_clickhouse_transfer_cleanup_adapter_hooks(monkeypatch: pytest.MonkeyPat
         "target",
         "host-a",
     )
-    assert transfer_cleanup.needs_bounded_replace_preclear(object(), False) is True
+    assert transfer_cleanup.needs_bounded_replace_preclear(object(), False) is False
     assert transfer_cleanup.needs_bounded_replace_preclear(object(), True) is False
     assert (
         transfer_cleanup.build_creation_policy_cleanup_sqls(

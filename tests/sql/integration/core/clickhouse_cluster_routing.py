@@ -155,6 +155,94 @@ def test_clickhouse_cluster_routed_transfer_across_replicas(
         assert int(remaining.iloc[0, 0]) == 0
 
 
+@pytest.mark.sql_scenario("clickhouse.cluster_routing.safe_replace_empty")
+def test_clickhouse_cluster_routed_replace_rebuilds_schema_and_handles_empty_source(
+    resource_registry: ResourceRegistry,
+) -> None:
+    source = resource_registry.table(
+        "trino_values",
+        f"iceberg.{_table('replace_source')}",
+    )
+    source_rows = pd.DataFrame(
+        {
+            "id": [10, 20],
+            "payload": ["new-a", "new-b"],
+            "offer_code": ["A", "B"],
+        }
+    )
+    assert sql.load_df("trino_values", source, source_rows, write_mode="replace") == 2
+
+    for alias in ("ch_routed_replicas", "ch_routed_replicas_native"):
+        target = resource_registry.table(
+            alias,
+            _table(f"{alias}_replace"),
+            ch_cluster="integration_replicated_cluster",
+        )
+        assert (
+            sql.load_df(
+                alias,
+                target,
+                pd.DataFrame({"id": [1], "legacy_value": ["old"]}),
+                write_mode="replace",
+                table_schema={"id": "Int64", "legacy_value": "String"},
+                order_by="id",
+            )
+            == 1
+        )
+        assert (
+            sql.load_df(
+                alias,
+                target,
+                source_rows,
+                write_mode="replace",
+                table_schema={
+                    "id": "Int64",
+                    "payload": "String",
+                    "offer_code": "String",
+                },
+                order_by="id",
+            )
+            == 2
+        )
+        actual = sql.read(
+            alias,
+            f"SELECT id, payload, offer_code FROM {target} ORDER BY id",
+        )
+        assert actual.to_dict("records") == source_rows.to_dict("records")
+
+        assert (
+            sql.transfer(
+                "trino_values",
+                alias,
+                from_sql=(f"SELECT id, payload, offer_code FROM {source} WHERE 1 = 0"),
+                to_table=target,
+                table_schema={
+                    "id": "Int64",
+                    "payload": "String",
+                    "offer_code": "String",
+                },
+                retry_cnt=1,
+                full_retry_cnt=1,
+            )
+            == 0
+        )
+        empty = sql.read(alias, f"SELECT count() AS row_count FROM {target}")
+        assert int(empty.iloc[0, 0]) == 0
+
+        database, relation = target.split(".", maxsplit=1)
+        artifacts = sql.read(
+            alias,
+            "SELECT count() AS artifact_count FROM clusterAllReplicas("
+            "'integration_replicated_cluster', system, tables) "
+            f"WHERE database = '{database}' "
+            f"AND (startsWith(name, '{relation}__replace_') "
+            f"OR startsWith(name, '{relation}__backup_') "
+            f"OR startsWith(name, '{relation}_shard__replace_') "
+            f"OR startsWith(name, '{relation}_shard__backup_'))",
+        )
+        assert int(artifacts.iloc[0, 0]) == 0
+
+
 @pytest.mark.sql_scenario("clickhouse.cluster_routing.incomplete_pair_fallback")
 def test_clickhouse_cluster_routing_falls_back_for_incomplete_managed_pair(
     resource_registry: ResourceRegistry,

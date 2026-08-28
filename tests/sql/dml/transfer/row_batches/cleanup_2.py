@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from tests.sql._support.row_batches import (
     Any,
     FakeTransferConnection,
@@ -234,7 +236,10 @@ def test_cleanup_stale_stage_tables_warns_once_when_staging_schema_missing(
 def test_finalize_empty_transfer_warns_only_for_missing_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    options = make_progress_options(write_mode="replace", replace_target_table=True)
+    options = replace(
+        make_progress_options(write_mode="replace", replace_target_table=True),
+        empty_source_policy="keep",
+    )
     messages: list[str] = []
     monkeypatch.setattr(
         finalize_module,
@@ -252,4 +257,151 @@ def test_finalize_empty_transfer_warns_only_for_missing_target(
         models_module.TransferConnectionRefs(),
         models_module.TransferStageState(target_exists=True),
     )
-    assert len(messages) == 1
+    assert len(messages) == 2
+
+
+def test_finalize_empty_transfer_replaces_target_through_empty_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = replace(
+        make_progress_options(write_mode="replace", replace_target_table=True),
+        empty_source_policy="replace",
+    )
+    state = models_module.TransferStageState(
+        target_exists=True,
+        source_columns=["id", "missing"],
+        stage_column_types={"id": "BIGINT"},
+    )
+    finalizations: list[tuple[Any, ...]] = []
+
+    def runner(_role: str, operation: Any) -> Any:
+        return operation({"connection": object()})
+
+    monkeypatch.setattr(
+        finalize_module,
+        "create_stage_table",
+        lambda **_kwargs: "scratch.empty_stage",
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "_finalize_target_once",
+        lambda *args, **_kwargs: finalizations.append(args),
+    )
+
+    finalize_module.finalize_loaded_stage(
+        options,
+        models_module.TransferConnectionRefs(),
+        state,
+        total_rows=0,
+        target_connection_runner=runner,
+    )
+
+    assert state.stage_table == "scratch.empty_stage"
+    assert state.stage_table_created is True
+    assert state.stage_table_candidates == ["scratch.empty_stage"]
+    assert list(state.first_non_empty_batch.columns) == ["id", "missing"]
+    assert state.insert_column_types == {"id": "BIGINT"}
+    assert finalizations[0][0].write_mode == "replace"
+
+
+def test_finalize_empty_transfer_error_and_explicit_schema_paths() -> None:
+    options = replace(
+        make_progress_options(write_mode="replace", replace_target_table=True),
+        empty_source_policy="error",
+    )
+    with pytest.raises(finalize_module.EmptySourceError, match="zero rows"):
+        finalize_module.finalize_empty_transfer(
+            options,
+            models_module.TransferConnectionRefs(),
+            models_module.TransferStageState(target_exists=True),
+        )
+
+    schema_options = replace(options, table_schema={"id": "INTEGER"})
+    assert finalize_module._empty_transfer_target_types(
+        schema_options,
+        models_module.TransferStageState(target_exists=True),
+    ) == {"id": "INTEGER"}
+    assert (
+        finalize_module._empty_transfer_target_types(
+            options,
+            models_module.TransferStageState(target_exists=True),
+        )
+        is None
+    )
+
+
+def test_finalize_empty_transfer_reuses_existing_empty_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = replace(
+        make_progress_options(write_mode="replace", replace_target_table=True),
+        empty_source_policy="replace",
+    )
+    state = models_module.TransferStageState(
+        target_exists=True,
+        first_non_empty_batch=finalize_module.pd.DataFrame({"id": []}),
+        stage_table="scratch.existing_empty",
+        stage_column_types={"id": "BIGINT"},
+        source_columns=["id"],
+    )
+    monkeypatch.setattr(
+        finalize_module,
+        "create_stage_table",
+        lambda **_kwargs: pytest.fail("existing empty stage must be reused"),
+    )
+    monkeypatch.setattr(finalize_module, "_finalize_target_once", lambda *_args, **_kwargs: None)
+
+    finalize_module.finalize_empty_transfer(
+        options,
+        models_module.TransferConnectionRefs(),
+        state,
+    )
+
+    assert state.stage_table_created is False
+
+
+def test_preclear_failure_is_preserved_and_incomplete_target_cleanup_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = replace(
+        make_progress_options(
+            to_db_key="ch",
+            to_db_backend="ch",
+            write_mode="replace",
+            replace_target_table=True,
+        ),
+    )
+    state = models_module.TransferStageState(target_exists=True)
+
+    class Adapter:
+        def needs_bounded_replace_preclear(self, _only_shard: bool) -> bool:
+            return True
+
+        def preclear_distributed_replace_target(self, *_args: Any, **_kwargs: Any) -> None:
+            message = "preclear failed"
+            raise OSError(message)
+
+    monkeypatch.setattr(finalize_module, "get_backend_adapter", lambda _backend: Adapter())
+
+    def runner(_role: str, operation: Any) -> Any:
+        return operation({"connection": object()})
+
+    with pytest.raises(OSError, match="preclear failed"):
+        finalize_module._preclear_clickhouse_replace_target(
+            options,
+            state,
+            target_connection_runner=runner,
+            target_host_connection_runner=lambda _host, _operation: None,
+        )
+
+    cleanup_calls: list[str] = []
+    monkeypatch.setattr(
+        finalize_module,
+        "cleanup_stage_table_with_retry",
+        lambda *_args, **_kwargs: cleanup_calls.append("cleanup"),
+    )
+    finalize_module._drop_incomplete_fresh_target(
+        options,
+        target_connection_runner=runner,
+    )
+    assert cleanup_calls == ["cleanup"]

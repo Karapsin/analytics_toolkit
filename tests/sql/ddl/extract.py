@@ -39,6 +39,19 @@ def test_extract_ddl_is_public_api() -> None:
     assert "extract_ddl" in ddl_module.__all__
     assert "extract_ddl" in sql_module._TIMED_PUBLIC_SQL_FUNCTION_NAMES
     assert getattr(sql_module.extract_ddl, "__sql_public_timing__", False)
+    assert ddl_module.__getattr__("create_sql_table") is sql_module.create_sql_table
+    with pytest.raises(AttributeError):
+        ddl_module.__getattr__("missing")
+
+
+def test_extract_ddl_read_wrapper_delegates_to_public_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_module = importlib.import_module("analytics_toolkit.sql.dml.io.read_sql")
+    expected = pd.DataFrame({"ddl": ["CREATE TABLE t (id INT)"]})
+    monkeypatch.setattr(read_module, "read_sql", lambda _db, _query: expected)
+
+    assert extract_ddl_module.read_sql("gp", "SELECT 1") is expected
 
 
 def test_extract_ddl_clickhouse_single_table_returns_semicolon(

@@ -10,12 +10,17 @@ entrypoint is [sql.load_df](functions/load_df.md).
 Use `write_mode` when the intended mutation matters:
 
 - `append` keeps existing rows and inserts the dataframe rows.
-- `replace` recreates or clears the target using the historical replace path.
+- `replace` builds and validates a new table before switching the live name.
 - `truncate_insert` keeps the existing table shape, clears rows, then inserts.
 - `upsert` stages rows and applies backend-specific replacement semantics.
 
 The older `append` flag still works, but `write_mode` is clearer in shared code.
 Do not mix both unless you are preserving compatibility with an existing call.
+
+Empty dataframes use the same mode-aware contract as transfers. Replace and
+truncate modes materialize an empty result by default; append and upsert keep
+the target. Override this with `empty_source_policy="replace"`, `"keep"`, or
+`"error"`. Empty object-typed columns require `table_schema` for replacement.
 
 ## Schema and Keys
 

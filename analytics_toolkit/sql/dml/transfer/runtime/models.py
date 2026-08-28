@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # ruff: noqa: TID252
-
 import sys
 from collections import deque
 from dataclasses import dataclass, field
@@ -11,6 +10,8 @@ import pandas as pd
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
     from ..flow.stage_identity import TransferInternalColumns
 
@@ -388,6 +389,7 @@ class TransferOptions:
     table_schema: dict[str, str] | None = None
     replace_target_table: bool = True
     write_mode: str = "replace"
+    empty_source_policy: EmptySourcePolicy | None = None
     batch_size: int = 100_000
     retry_cnt: int = 5
     timeout_increment: int | float = 5

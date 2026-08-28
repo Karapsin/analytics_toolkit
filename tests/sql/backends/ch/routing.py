@@ -79,8 +79,36 @@ class _HttpClient:
     def command(self, sql: str, **kwargs: Any) -> None:
         self.commands.append((sql, kwargs))
 
-    def query(self, sql: str, **_kwargs: Any) -> _Result:
+    def query(self, sql: str, **_kwargs: Any) -> Any:
         self.queries.append(sql)
+        if "SELECT engine, engine_full, create_table_query" in sql:
+            return SimpleNamespace(
+                result_rows=[
+                    (
+                        "MergeTree",
+                        "MergeTree()",
+                        "CREATE TABLE db.events (id UInt64) ENGINE=MergeTree ORDER BY tuple()",
+                    )
+                ]
+            )
+        if "SELECT shard_num, replica_num, host_name" in sql:
+            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+        if "system, one" in sql:
+            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+        if "system, tables" in sql:
+            return SimpleNamespace(
+                result_rows=[
+                    (
+                        1,
+                        1,
+                        "host1",
+                        "MergeTree",
+                        "MergeTree()",
+                        "CREATE TABLE db.events (id UInt64) ENGINE=MergeTree ORDER BY tuple()",
+                        "uuid1",
+                    )
+                ]
+            )
         return _Result()
 
     def query_df(self, sql: str, **_kwargs: Any) -> pd.DataFrame:
@@ -220,7 +248,29 @@ def test_route_sql_keeps_table_functions_idempotent_and_routes_named_system_tabl
     routed = route_sql(sql, routing=_routing(), database="default")
 
     assert routed.count("cluster('other', 'db', 'events')") == 1
-    assert "cluster('core', 'system', 'tables') AS s" in routed
+    assert "clusterAllReplicas('core', 'system', 'tables') AS s" in routed
+
+
+def test_explicit_cluster_normalization_skips_unusable_or_unmanaged_functions() -> None:
+    class UnmanagedResolver:
+        def resolve(self, **_kwargs: Any) -> None:
+            return None
+
+    resolver = UnmanagedResolver()
+    for sql, database in [
+        ("SELECT * FROM cluster('core', 'db')", "db"),
+        ("SELECT * FROM cluster('core', tuple(1), tuple(2))", None),
+        ("SELECT * FROM cluster('core', 'db', 'events')", "db"),
+    ]:
+        statement = routing_module.sqlglot.parse_one(sql, read="clickhouse")
+        routing_module._normalize_explicit_cluster_tables(
+            statement,
+            "core",
+            database,
+            managed_pair_resolver=resolver,
+        )
+
+    assert "cluster" in statement.sql(dialect="clickhouse").lower()
 
 
 def test_explicit_on_cluster_routes_embedded_query_and_wins_over_config() -> None:

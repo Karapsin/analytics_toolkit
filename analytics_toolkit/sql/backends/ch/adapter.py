@@ -25,6 +25,7 @@ from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
 from .config import AIRFLOW_EXTRA_FIELDS
 
+
 class ClickHouseAdapter(BackendAdapter):
     backend: BackendName = "ch"
     display_name = "ClickHouse"
@@ -656,134 +657,9 @@ class ClickHouseAdapter(BackendAdapter):
         return True
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
-        target_exists = request.target_exists
-        original_target_exists = target_exists
-        if request.write_mode == "upsert":
-            if not target_exists:
-                self.ensure_stage_target_table(
-                    StageTargetTableRequest(
-                        connection=request.connection,
-                        target_table=request.target_table,
-                        sample_batch=request.sample_batch,
-                        target_column_types=request.target_column_types,
-                        gp_distributed_by_key=request.gp_distributed_by_key,
-                        partition_by=request.partition_by,
-                        order_by=request.order_by,
-                        ch_engine=request.ch_engine,
-                        ch_cluster=request.ch_cluster,
-                        ch_sharding_key=request.ch_sharding_key,
-                        query_label=request.query_label,
-                        connection_key=request.connection_key,
-                        ch_only_shard=request.ch_only_shard,
-                        ch_creation_policy=request.ch_creation_policy,
-                    )
-                )
-                self.insert_from_table(
-                    request.connection,
-                    request.target_table,
-                    request.stage_table,
-                    column_types=request.insert_column_types,
-                    query_label=request.query_label,
-                )
-                return
+        from .safe_replace import finalize_stage_table  # noqa: PLC0415
 
-            self.ensure_distributed_target_pair(
-                request.connection,
-                request.target_table,
-                request.sample_batch,
-                target_exists=target_exists,
-                target_column_types=request.target_column_types,
-                insert_column_types=request.insert_column_types,
-                gp_distributed_by_key=request.gp_distributed_by_key,
-                partition_by=request.partition_by,
-                order_by=request.order_by,
-                ch_engine=request.ch_engine,
-                ch_cluster=request.ch_cluster,
-                ch_sharding_key=request.ch_sharding_key,
-                query_label=request.query_label,
-                connection_key=request.connection_key,
-                ch_replace_table=False,
-                ch_only_shard=request.ch_only_shard,
-                ch_creation_policy=request.ch_creation_policy,
-            )
-            if request.upsert_partition_column is None:
-                raise ValueError(
-                    "upsert_partition_column is required for ClickHouse write_mode='upsert'."
-                )
-            partition_values = self.fetch_upsert_partition_values(
-                request.connection,
-                request.stage_table,
-                partition_column=request.upsert_partition_column,
-                incoming_stage_tables=request.incoming_stage_tables,
-            )
-            for sql in self.build_upsert_stage_sqls(
-                request.target_table,
-                request.stage_table,
-                columns=list(
-                    request.insert_column_types
-                    or request.target_column_types
-                    or request.sample_batch.columns
-                ),
-                key_columns=request.key_columns or [],
-                column_types=request.insert_column_types,
-                ch_cluster=request.ch_cluster,
-                ch_only_shard=request.ch_only_shard,
-                query_label=request.query_label,
-                upsert_partition_column=request.upsert_partition_column,
-                final_stage_table=request.final_upsert_stage_table,
-                incoming_stage_tables=request.incoming_stage_tables,
-                partition_values=partition_values,
-            ):
-                self.execute_command(request.connection, sql)
-            return
-
-        if request.replace_target_table:
-            target_exists = self.apply_target_write_mode(
-                TargetWriteModeRequest(
-                    connection=request.connection,
-                    table_name=request.target_table,
-                    write_mode=request.write_mode,
-                    target_exists=target_exists,
-                    replace_existing_non_ch="clear",
-                    ch_cluster=request.ch_cluster,
-                    query_label=request.query_label,
-                    connection_key=request.connection_key,
-                    ch_retry_per_host_drops=request.ch_retry_per_host_drops,
-                    ch_only_shard=request.ch_only_shard,
-                )
-            )
-
-        self.ensure_distributed_target_pair(
-            request.connection,
-            request.target_table,
-            request.sample_batch,
-            target_exists=target_exists,
-            target_column_types=request.target_column_types,
-            insert_column_types=request.insert_column_types,
-            gp_distributed_by_key=request.gp_distributed_by_key,
-            partition_by=request.partition_by,
-            order_by=request.order_by,
-            ch_engine=request.ch_engine,
-            ch_cluster=request.ch_cluster,
-            ch_sharding_key=request.ch_sharding_key,
-            query_label=request.query_label,
-            connection_key=request.connection_key,
-            ch_replace_table=(
-                original_target_exists
-                and request.replace_target_table
-                and request.write_mode == "replace"
-                and not request.ch_only_shard
-            ),
-            ch_only_shard=request.ch_only_shard,
-            ch_creation_policy=request.ch_creation_policy,
-        )
-        self.insert_from_table(
-            request.connection,
-            request.target_table,
-            request.stage_table,
-            column_types=request.insert_column_types,
-            query_label=request.query_label,
-        )
+        finalize_stage_table(self, request)
 
     def ensure_distributed_target_pair(
         self,

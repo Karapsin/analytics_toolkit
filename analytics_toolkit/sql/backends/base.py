@@ -165,12 +165,8 @@ class BackendAdapter:
 
     drop_table = _adapter_defaults.drop_table
 
-    build_creation_policy_cleanup_sqls = (
-        _adapter_defaults.build_creation_policy_cleanup_sqls
-    )
-    preclear_distributed_replace_target = (
-        _adapter_defaults.preclear_distributed_replace_target
-    )
+    build_creation_policy_cleanup_sqls = _adapter_defaults.build_creation_policy_cleanup_sqls
+    preclear_distributed_replace_target = _adapter_defaults.preclear_distributed_replace_target
     open_transfer_host_connection = _adapter_defaults.open_transfer_host_connection
     needs_bounded_replace_preclear = _adapter_defaults.needs_bounded_replace_preclear
 
@@ -248,7 +244,9 @@ class BackendAdapter:
 
     def map_source_type_to_target(self, column: SourceColumn) -> str:
         raise NotImplementedError
-    map_same_backend_source_type_to_target = _adapter_defaults.map_same_backend_source_type_to_target
+
+    _defaults = _adapter_defaults
+    map_same_backend_source_type_to_target = _defaults.map_same_backend_source_type_to_target
     refine_stage_column_types_from_rows = _adapter_defaults.refine_stage_column_types_from_rows
 
     build_show_tables_query = _adapter_defaults.build_show_tables_query
@@ -599,6 +597,10 @@ class BackendAdapter:
         return True
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
+        from .safe_replace import finalize_existing_stage_replace  # noqa: PLC0415
+
+        if finalize_existing_stage_replace(self, request):
+            return
         target_exists = request.target_exists
         if request.write_mode == "upsert":
             if not target_exists:

@@ -5,7 +5,7 @@
 Stream data from a source SQL query into a target table on another configured connection.
 
 ```python
-transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'append', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_ddl_ready_timeout_seconds: 'float | None' = None, ch_ddl_ready_timeout_extension_cnt: 'int | None' = None, ch_ddl_wait_policy: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, ignore_source_staging: 'bool' = False, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult'
+transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 'str | None' = None, from_table: 'str | None' = None, write_mode: 'str | None' = 'replace', batch_size: 'int' = 100000, adaptive_batch_size: 'bool' = True, min_batch_size: 'int' = 1000, max_batch_size: 'int | None' = None, adaptive_batch_size_step: 'float' = 0.1, target_rows_per_second: 'bool' = True, target_batch_seconds: 'float | None' = None, min_batch_seconds: 'float | None' = None, max_batch_seconds: 'float | None' = None, target_batch_memory_mb: 'float | None' = None, min_batch_memory_mb: 'float | None' = None, max_batch_memory_mb: 'float | None' = None, target_rows_per_second_window: 'int' = 5, target_rows_per_second_deadband: 'float' = 0.15, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, full_retry_cnt: 'int' = 5, full_timeout_increment: 'float' = 600, key_columns: 'str | Sequence[str] | None' = None, upsert_partition_column: 'str | None' = None, gp_distributed_by_key: 'str | Sequence[str] | None' = None, gp_partitions: 'Mapping[str, Any] | None' = None, gp_insert_chunk_size: 'int | None' = None, trino_insert_chunk_size: 'int | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_engine: 'str | None' = None, ch_cluster: 'str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_ddl_ready_timeout_seconds: 'float | None' = None, ch_ddl_ready_timeout_extension_cnt: 'int | None' = None, ch_ddl_wait_policy: 'str | None' = None, ch_only_shard: 'bool' = False, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, progress: 'bool' = False, estimate_total_rows: 'bool' = False, table_schema: 'dict[str, str] | None' = None, transfer_keys: 'str | Sequence[str] | Mapping[str, str] | None' = None, transfer_key_values: 'Sequence[Any] | Mapping[str, Sequence[Any]] | None' = None, concurrency: 'int | None' = None, read_concurrency: 'int | None' = None, write_concurrency: 'int | None' = None, ignore_source_staging: 'bool' = False, trino_mode: 'TrinoTransferMode | None' = None, validate_row_count: 'bool' = True, ch_count_limit_read: 'bool' = True, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, empty_source_policy: 'EmptySourcePolicy | None' = None) -> 'int | SqlPlan | SqlOperationResult'
 ```
 
 ## Inputs
@@ -17,7 +17,8 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `from_sql` - source SQL query used by a transfer; provide exactly one of `from_sql` or `from_table`
 - `from_table` - source table name for simple `SELECT * FROM <from_table>` transfers; provide exactly one of `from_sql` or `from_table`
 - `to_table` - target table name
-- `write_mode` - write behavior: append (default), replace, truncate_insert, or upsert; `replace` rebuilds the destination from the staged schema, while `truncate_insert` preserves the existing schema; `None` also resolves to append
+- `write_mode` - write behavior: replace (default), append, truncate_insert, or upsert; `replace` rebuilds the destination from the staged schema, while `truncate_insert` preserves the existing schema; `None` also resolves to replace
+- `empty_source_policy` - zero-row behavior: `replace`, `keep`, or `error`; omission resolves to `replace` for replace/truncate modes and `keep` for append/upsert
 - `batch_size` - initial number of rows fetched and inserted per transfer batch
 - `adaptive_batch_size` - whether transfer batch size should adapt after successful inserts
 - `min_batch_size` - minimum adaptive transfer batch size
@@ -100,9 +101,10 @@ rows
 # 125000
 ```
 
-Omitting `write_mode` appends rows. Pass `write_mode="replace"` explicitly for
-full-table refreshes. A zero-row source leaves an existing target unchanged,
-including in replace mode.
+Omitting `write_mode`, or passing `None`, replaces the target from the staged
+schema. Pass `write_mode="append"` explicitly for incremental loads. A zero-row
+source follows `empty_source_policy`: replace/truncate modes produce an empty
+target by default, while append/upsert keep the target.
 
 Single-key slices require one or more predicate placeholder occurrences in
 `from_sql`. Every occurrence is replaced with the full predicate, not just the
@@ -351,8 +353,10 @@ rows = sql.transfer(
   dropped only when it did not exist at the start of the transfer. ClickHouse
   target creation stays in finalization so row-based nullability refinement is
   preserved.
-- When the source returns zero rows and the target table does not exist,
-  transfer emits a warning, creates no target table, and returns `0`.
+- When the source returns zero rows, `empty_source_policy` determines whether
+  transfer materializes an empty target, keeps the destination unchanged, or
+  raises `EmptySourceError`. The mode-aware default materializes replace and
+  truncate results and keeps append/upsert targets.
 - Provide exactly one source input: `from_sql` for custom queries or
   `from_table` for simple table copies. Passing both raises
   `Provide only one of from_sql or from_table.` Passing neither raises

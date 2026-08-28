@@ -54,6 +54,39 @@ class _CommandClient:
     def command(self, sql: str, **_kwargs: Any) -> None:
         self.commands.append(sql)
 
+    def query(self, sql: str, **_kwargs: Any) -> Any:
+        if "SELECT engine, engine_full, create_table_query" in sql:
+            return SimpleNamespace(
+                result_rows=[
+                    (
+                        "MergeTree",
+                        "MergeTree()",
+                        "CREATE TABLE analytics.source (id UInt64) "
+                        "ENGINE=MergeTree ORDER BY tuple()",
+                    )
+                ]
+            )
+        if "SELECT shard_num, replica_num, host_name" in sql:
+            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+        if "system, one" in sql:
+            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+        if "system, tables" in sql:
+            return SimpleNamespace(
+                result_rows=[
+                    (
+                        1,
+                        1,
+                        "host1",
+                        "MergeTree",
+                        "MergeTree()",
+                        "CREATE TABLE analytics.source (id UInt64) "
+                        "ENGINE=MergeTree ORDER BY tuple()",
+                        "uuid1",
+                    )
+                ]
+            )
+        return SimpleNamespace(result_rows=[])
+
 
 def _connections(
     staging_engine: str = "MergeTree",
@@ -117,7 +150,7 @@ def test_transfer_stage_sources_route_through_all_replicas() -> None:
         database="default",
     )
 
-    assert "FUNCTION cluster('core', 'stage'," in routed
+    assert "FUNCTION clusterAllReplicas('core', 'stage'," in routed
     assert "FROM clusterAllReplicas('core', 'stage'," in routed
     assert "FROM cluster('core', 'stage'," not in routed
 
@@ -210,7 +243,7 @@ def test_cluster_routed_source_snapshot_creates_waits_and_populates_once(
     assert "ON CLUSTER 'core'" in raw.commands[0]
     assert " EMPTY AS SELECT " in raw.commands[0]
     assert "FROM cluster('core', 'analytics', 'source')" in raw.commands[0]
-    assert "INSERT INTO FUNCTION cluster('core', 'stage'," in raw.commands[1]
+    assert "INSERT INTO FUNCTION clusterAllReplicas('core', 'stage'," in raw.commands[1]
     assert "FROM cluster('core', 'analytics', 'source')" in raw.commands[1]
 
 
@@ -305,7 +338,7 @@ def test_cluster_routed_snapshot_append_uses_routed_insert_without_column_target
         database="default",
     )
 
-    assert "INSERT INTO FUNCTION cluster('core', 'stage'," in routed
+    assert "INSERT INTO FUNCTION clusterAllReplicas('core', 'stage'," in routed
     assert "FROM cluster('core', 'analytics', 'source')" in routed
 
 

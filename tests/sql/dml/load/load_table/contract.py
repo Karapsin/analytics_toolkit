@@ -164,26 +164,26 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
-    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
+    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" not in client.commands
+    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" not in client.commands
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}__replace_")
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE OR REPLACE TABLE {TEST_CH_TABLE}")
-        and "ON CLUSTER '{cluster}'" in command
+        command.startswith(f"CREATE TABLE {TEST_CH_TABLE}__replace_") for command in client.commands
+    )
+    assert any(
+        command.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+        and f"FROM {TEST_CH_STAGE_TABLE}" in command
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
-        and "ON CLUSTER" not in command
-        for command in client.commands
+        command.startswith(f"RENAME TABLE {TEST_CH_SHARD_TABLE} TO ") for command in client.commands
     )
-    assert client.commands[-1] == (
-        f"INSERT INTO {TEST_CH_TABLE} SELECT * FROM {TEST_CH_STAGE_TABLE}"
+    assert any(
+        f" TO {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in command
+        for command in client.commands
     )
     assert not any(query.startswith("DESCRIBE TABLE ") for query in client.queries)
 
@@ -218,8 +218,10 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     create_sql = "\n".join(client.commands)
     assert "`month_date` Nullable(Date)" in create_sql
     assert "`users` Nullable(Int64)" in create_sql
-    assert client.commands[-1] == (
-        f"INSERT INTO {TEST_CH_TABLE} (`month_date`, `users`) "
+    insert_sql = next(command for command in client.commands if command.startswith("INSERT INTO"))
+    assert insert_sql.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+    assert insert_sql.endswith(
+        " (`month_date`, `users`) "
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
         f"CAST(`users` AS Nullable(Int64)) AS `users` "
         f"FROM {TEST_CH_STAGE_TABLE}"
@@ -283,21 +285,31 @@ def test_finalize_stage_table_trino_replace_recreates_target() -> None:
         insert_column_types=column_types,
     )
 
-    assert connection.executed[0] == "DROP TABLE IF EXISTS iceberg.pa_core_sandbox.target"
-    assert connection.executed[1].startswith(
-        'CREATE TABLE iceberg.pa_core_sandbox.target ("contact_id" VARCHAR, '
-        '"first_game_dt" DATE, "last_game_dt" DATE)'
+    assert connection.executed[0].startswith(
+        "CREATE TABLE iceberg.pa_core_sandbox.target__replace_"
     )
-    assert connection.executed[2] == (
-        'INSERT INTO iceberg.pa_core_sandbox.target ("contact_id", '
+    assert (
+        '("contact_id" VARCHAR, "first_game_dt" DATE, "last_game_dt" DATE)'
+        in connection.executed[0]
+    )
+    replacement = connection.executed[0].split("CREATE TABLE ", 1)[1].split(" ", 1)[0]
+    assert connection.executed[1] == (
+        f'INSERT INTO {replacement} ("contact_id", '
         '"first_game_dt", "last_game_dt") '
         'SELECT CAST("contact_id" AS VARCHAR) AS "contact_id", '
         'CAST("first_game_dt" AS DATE) AS "first_game_dt", '
         'CAST("last_game_dt" AS DATE) AS "last_game_dt" '
         "FROM iceberg.pa_core_stage.target__stage"
     )
+    assert "ALTER TABLE iceberg.pa_core_sandbox.target RENAME TO " in connection.executed[4]
+    assert connection.executed[5] == (
+        f"ALTER TABLE {replacement} RENAME TO iceberg.pa_core_sandbox.target"
+    )
+    assert connection.executed[-1].startswith(
+        "DROP TABLE IF EXISTS iceberg.pa_core_sandbox.target__backup_"
+    )
     assert not any(
-        sql.startswith("DELETE FROM iceberg.pa_core_sandbox.target") for sql in connection.executed
+        sql == "DROP TABLE IF EXISTS iceberg.pa_core_sandbox.target" for sql in connection.executed
     )
 
 

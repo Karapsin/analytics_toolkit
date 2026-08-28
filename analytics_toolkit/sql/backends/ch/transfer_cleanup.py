@@ -15,8 +15,8 @@ def open_transfer_host_connection(adapter: Any, connection_key: str, host: str) 
 
 
 def needs_bounded_replace_preclear(adapter: Any, only_shard: object) -> bool:
-    del adapter
-    return not only_shard
+    del adapter, only_shard
+    return False
 
 
 def build_creation_policy_cleanup_sqls(

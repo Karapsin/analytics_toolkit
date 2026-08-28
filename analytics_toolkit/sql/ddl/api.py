@@ -6,6 +6,8 @@ from typing import Any
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend, get_backend_adapter
+from analytics_toolkit.sql.backends.ch.creation_policy import build_policy_create_sqls
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
@@ -13,9 +15,6 @@ from analytics_toolkit.sql.connection.errors import (
     sql_preview,
 )
 
-from ..backends import get_backend_adapter
-from analytics_toolkit.sql.backends import get_backend
-from analytics_toolkit.sql.backends.ch.creation_policy import build_policy_create_sqls
 from ..connection.config import get_connection_config, resolve_connection_backend
 from ..connection.get_sql_connection import get_sql_connection
 from ..execution.operation_runner import (
@@ -33,10 +32,7 @@ from .builders import (
 from .ch_policy import regular_ddl_properties, resolve_create_ch_policy
 from .models import CreateSqlTableOptions
 from .properties import overlay_with_properties
-from .schema import (
-    _build_column_definitions,
-    normalize_table_schema,
-)
+from .schema import _build_column_definitions, normalize_table_schema
 from .target_replace import build_drop_target_sqls, drop_existing_target
 
 
@@ -93,9 +89,16 @@ def create_sql_table(
             gp_partitions=gp_partitions,
             partition_by=partition_by,
             order_by=order_by,
-            ch_engine=ch_engine,
-            ch_cluster=ch_cluster,
-            ch_sharding_key=ch_sharding_key,
+            ch_policy_overrides={
+                "ch_engine": ch_engine,
+                "ch_cluster": ch_cluster,
+                "ch_sharding_key": ch_sharding_key,
+                "ch_distributed_table": ch_distributed_table,
+                "ch_distributed_engine_template": ch_distributed_engine_template,
+                "ch_distributed_cluster": ch_distributed_cluster,
+                "ch_shard_on_cluster": ch_shard_on_cluster,
+                "ch_distributed_on_cluster": ch_distributed_on_cluster,
+            },
             ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
             ch_ddl_wait_policy=ch_ddl_wait_policy,
             ch_only_shard=ch_only_shard,
@@ -233,9 +236,7 @@ def _create_sql_table_from_sql_source(
     gp_partitions: Mapping[str, Any] | None,
     partition_by: Sequence[str] | str | None,
     order_by: Sequence[str] | str | None,
-    ch_engine: str | None,
-    ch_cluster: str | None,
-    ch_sharding_key: str | None,
+    ch_policy_overrides: Mapping[str, Any],
     ch_ddl_ready_timeout_seconds: float | None,
     ch_ddl_wait_policy: str | None,
     ch_only_shard: bool,
@@ -248,6 +249,10 @@ def _create_sql_table_from_sql_source(
     return_metadata: bool,
 ) -> str | int | SqlPlan | SqlOperationResult | None:
     target_config = get_connection_config(db_key)
+    ch_engine = ch_policy_overrides.get("ch_engine")
+    ch_cluster = ch_policy_overrides.get("ch_cluster")
+    ch_sharding_key = ch_policy_overrides.get("ch_sharding_key")
+    policy = None
     if not get_backend(target_config.backend).supports_distributed_table_targets():
         if ch_ddl_wait_policy is not None:
             message = "ch_ddl_wait_policy requires a ClickHouse target."
@@ -258,15 +263,8 @@ def _create_sql_table_from_sql_source(
     else:
         policy = resolve_create_ch_policy(
             target_config,
-            ch_engine=ch_engine,
-            ch_cluster=ch_cluster,
-            ch_sharding_key=ch_sharding_key,
-            ch_distributed_table=None,
+            **ch_policy_overrides,
             ch_only_shard=ch_only_shard,
-            ch_distributed_engine_template=None,
-            ch_distributed_cluster=None,
-            ch_shard_on_cluster=None,
-            ch_distributed_on_cluster=None,
             ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
             ch_ddl_wait_policy=ch_ddl_wait_policy,
         )
@@ -307,8 +305,13 @@ def _create_sql_table_from_sql_source(
         partition_by=partition_by,
         order_by=order_by,
         ch_engine=ch_engine,
-        ch_cluster=ch_cluster,
+        ch_cluster=None,
         ch_sharding_key=ch_sharding_key,
+        ch_distributed_table=getattr(policy, "create_distributed_pair", None),
+        ch_distributed_engine_template=getattr(policy, "distributed_engine_template", None),
+        ch_distributed_cluster=getattr(policy, "distributed_cluster", None),
+        ch_shard_on_cluster=getattr(policy, "shard_on_cluster", None),
+        ch_distributed_on_cluster=getattr(policy, "distributed_on_cluster", None),
         ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
         ch_ddl_wait_policy=ch_ddl_wait_policy,
         ch_only_shard=ch_only_shard,

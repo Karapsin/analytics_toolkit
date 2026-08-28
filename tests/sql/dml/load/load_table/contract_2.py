@@ -550,6 +550,109 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
     assert overlap_calls[0]["stage_table"] == "scratch.stage"
 
 
+def test_existing_replace_uses_safe_stage_finalization_for_direct_and_parquet_loads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = load_df_module.LoadOptions(
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        table_schema={"id": "BIGINT"},
+        write_mode="replace",
+    )
+    state = load_df_module.LoadState(
+        True,
+        True,
+        target_column_types={"id": "BIGINT"},
+    )
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "_run_load_target_action",
+        lambda _options, _role, operation: operation({"connection": object()}),
+    )
+    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **_kwargs: "scratch.stage")
+    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(
+        load_df_module,
+        "finalize_stage_table",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    batch = pd.DataFrame({"id": [1]})
+
+    assert load_df_module._load_dataframe(options, state, batch) == 1
+    assert calls[0][1]["replace_target_table"] is True
+
+    parquet_state = load_df_module.LoadState(
+        True,
+        True,
+        overlap_stage_table="scratch.parquet_stage",
+        target_column_types={"id": "BIGINT"},
+    )
+    load_df_module._finalize_loaded_dataframe_stage(
+        options=options,
+        state=parquet_state,
+        connection=object(),
+        df=batch,
+    )
+    assert calls[1][0][2] == "scratch.parquet_stage"
+
+
+def test_existing_replace_target_preparation_uses_incoming_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = load_df_module.LoadOptions(
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        write_mode="replace",
+    )
+    state = load_df_module.LoadState(True, True)
+    monkeypatch.setattr(
+        load_df_module,
+        "apply_target_write_mode",
+        lambda *_args, **_kwargs: pytest.fail("existing target must stay live"),
+    )
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_load_target_table",
+        lambda *_args, **_kwargs: pytest.fail("replacement must be staged"),
+    )
+    batch = pd.DataFrame({"id": [1]})
+
+    load_df_module._apply_load_target_write_mode(options, state, object())
+    load_df_module._ensure_load_target_table(options, state, object(), batch)
+    load_df_module._load_target_column_metadata(options, state, object(), batch)
+
+    assert state.target_column_types == {"id": "BIGINT"}
+
+
+def test_load_cleanup_forwards_parquet_storage_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = load_df_module.LoadOptions(
+        connection_key="trino",
+        connection_backend="trino",
+        destination_table="sandbox.target",
+        parquet_storage_options={"endpoint_url": "http://minio"},
+    )
+    state = load_df_module.LoadState(
+        False,
+        False,
+        stage_external_location="s3://bucket/stage",
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "cleanup_parquet_stage_location",
+        lambda location, **kwargs: calls.append((location, kwargs)),
+    )
+
+    load_df_module._cleanup_load(options, state)
+
+    assert calls == [("s3://bucket/stage", {"storage_options": {"endpoint_url": "http://minio"}})]
+
+
 def test_load_parquet_collision_exhaustion_and_final_stage_noops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

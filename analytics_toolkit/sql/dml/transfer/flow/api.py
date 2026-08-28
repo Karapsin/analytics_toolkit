@@ -10,6 +10,10 @@ from analytics_toolkit.sql.dml.ddl_options import (
     resolve_cluster_routed_source_staging_ch_policy,
     resolve_operation_ddl,
 )
+from analytics_toolkit.sql.dml.empty_source import (
+    EmptySourcePolicy,
+    validate_empty_source_policy,
+)
 
 from ....backends import get_backend_adapter
 from ....connection.config import get_connection_config
@@ -49,7 +53,7 @@ def transfer_table(
     from_sql: str | None = None,
     to_table: str | None = None,
     from_table: str | None = None,
-    write_mode: str | None = "append",
+    write_mode: str | None = "replace",
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
@@ -107,6 +111,7 @@ def transfer_table(
     ch_count_limit_read: bool = True,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
+    empty_source_policy: EmptySourcePolicy | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     options = build_transfer_options(
         from_db=from_db,
@@ -115,6 +120,7 @@ def transfer_table(
         to_table=to_table,
         from_table=from_table,
         write_mode=write_mode,
+        empty_source_policy=empty_source_policy,
         batch_size=batch_size,
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=min_batch_size,
@@ -367,7 +373,7 @@ def build_transfer_options(
     from_sql: str | None = None,
     to_table: str | None = None,
     from_table: str | None = None,
-    write_mode: str | None = "append",
+    write_mode: str | None = "replace",
     batch_size: int = 100_000,
     adaptive_batch_size: bool = True,
     min_batch_size: int = 1_000,
@@ -422,6 +428,7 @@ def build_transfer_options(
     ch_count_limit_read: bool = True,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
+    empty_source_policy: EmptySourcePolicy | None = None,
     *,
     collect_final_target_count: bool = False,
 ) -> TransferOptions:
@@ -587,6 +594,7 @@ def build_transfer_options(
         table_schema=normalize_table_schema(table_schema),
         replace_target_table=resolved_write_mode != "append",
         write_mode=resolved_write_mode,
+        empty_source_policy=validate_empty_source_policy(empty_source_policy),
         batch_size=batch_size,
         adaptive_batch_size=adaptive_batch_size,
         min_batch_size=resolved_min_batch_size,

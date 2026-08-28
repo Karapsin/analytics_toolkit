@@ -490,7 +490,7 @@ def test_transfer_options_accepts_from_table_source(
     assert options.source_sql == "SELECT * FROM sandbox.source_table"
 
 
-def test_transfer_options_default_and_none_write_modes_append(
+def test_transfer_options_default_and_none_write_modes_replace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configs = {
@@ -512,10 +512,33 @@ def test_transfer_options_default_and_none_write_modes_append(
     default_options = transfer_api_module.build_transfer_options(**kwargs)
     none_options = transfer_api_module.build_transfer_options(**kwargs, write_mode=None)
 
-    assert default_options.write_mode == "append"
-    assert default_options.replace_target_table is False
-    assert none_options.write_mode == "append"
-    assert none_options.replace_target_table is False
+    assert default_options.write_mode == "replace"
+    assert default_options.replace_target_table is True
+    assert none_options.write_mode == "replace"
+    assert none_options.replace_target_table is True
+
+
+def test_transfer_rejects_invalid_empty_source_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs = {
+        "source": make_gp_config("source"),
+        "target": make_gp_config("target"),
+    }
+    monkeypatch.setattr(
+        transfer_api_module,
+        "get_connection_config",
+        lambda db_key: configs[db_key],
+    )
+
+    with pytest.raises(ValueError, match="empty_source_policy"):
+        transfer_api_module.build_transfer_options(
+            from_db="source",
+            to_db="target",
+            from_sql="select id from source_table",
+            to_table="sandbox.target",
+            empty_source_policy="invalid",
+        )
 
 
 def test_transfer_options_defaults_use_time_target_mode_when_not_explicit() -> None:

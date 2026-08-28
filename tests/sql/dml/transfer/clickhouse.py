@@ -7,7 +7,6 @@ from datetime import date
 from typing import Any
 
 import pandas as pd
-import pytest
 
 
 transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
@@ -319,10 +318,10 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         for command in map(_strip_query_label, target.commands)
     )
 
-    assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" in map(
+    assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" not in map(
         _strip_query_label, target.commands
     )
-    assert f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in map(
+    assert f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'" not in map(
         _strip_query_label, target.commands
     )
 
@@ -417,7 +416,7 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     )
 
     assert transferred_rows == 1
-    assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" in map(
+    assert f"DROP TABLE IF EXISTS {TARGET_TABLE}" not in map(
         _strip_query_label,
         target.commands,
     )
@@ -447,7 +446,7 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     )
 
 
-def test_transfer_table_clickhouse_empty_missing_target_warns_and_skips_creation(
+def test_transfer_table_clickhouse_empty_missing_target_creates_empty_target(
     monkeypatch,
 ) -> None:
     source = FakeSourceConnection(rows=[])
@@ -471,29 +470,25 @@ def test_transfer_table_clickhouse_empty_missing_target_warns_and_skips_creation
         fake_get_sql_connection,
     )
 
-    with pytest.warns(
-        UserWarning,
-        match=(
-            "Transfer source returned zero rows and target table "
-            f"{TARGET_TABLE} does not exist; no target table was created."
-        ),
-    ):
-        transferred_rows = transfer_api_module.transfer_table(
-            from_db="gp",
-            to_db="ch",
-            from_sql="select month_date, users from source_table",
-            to_table=TARGET_TABLE,
-            retry_cnt=1,
-            timeout_increment=0,
-            full_retry_cnt=3,
-            full_timeout_increment=0,
-            partition_by=["month_date"],
-            order_by=["month_date"],
-        )
+    transferred_rows = transfer_api_module.transfer_table(
+        from_db="gp",
+        to_db="ch",
+        from_sql="select month_date, users from source_table",
+        to_table=TARGET_TABLE,
+        retry_cnt=1,
+        timeout_increment=0,
+        full_retry_cnt=3,
+        full_timeout_increment=0,
+        partition_by=["month_date"],
+        order_by=["month_date"],
+    )
 
     assert transferred_rows == 0
-    assert target.commands == []
+    assert any(
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
+        for command in map(_strip_query_label, target.commands)
+    )
     assert target.inserts == []
-    assert target.created_tables == set()
+    assert TARGET_TABLE in target.created_tables
     assert source.close_calls == 1
     assert target.close_calls >= 1

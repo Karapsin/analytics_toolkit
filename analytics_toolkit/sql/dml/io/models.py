@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 ReadOutputType = Literal["df", "scalar", "list", "dict"]
@@ -35,6 +35,11 @@ class ExecuteSqlOptions:
     return_sql: bool = False
     return_metadata: bool = False
     progress: bool = False
+    retry_policy: str = "safe"
+    source_sql: str | None = None
+    batch_id: str | None = None
+    batch_index: int | None = None
+    attempt_numbers: list[int] = field(default_factory=list, compare=False, repr=False)
 
 
 @dataclass(frozen=True)

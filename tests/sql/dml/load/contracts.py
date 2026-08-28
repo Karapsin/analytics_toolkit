@@ -198,7 +198,9 @@ def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> N
         dry_run=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     assert plan.statements[0].phase == "clear_target"
@@ -219,7 +221,9 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
         dry_run=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     assert plan.options["ch_only_shard"] is True

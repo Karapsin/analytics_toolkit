@@ -85,7 +85,7 @@ def validate_built_transfer_options(options: TransferOptions, target_adapter: An
 
 def resolve_transfer_write_mode(to_db_backend: str, write_mode: str | None) -> str:
     if write_mode is None:
-        return "append"
+        return "replace"
     return cast("str", get_backend_adapter(to_db_backend).validate_write_mode(write_mode))
 
 

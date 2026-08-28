@@ -50,6 +50,18 @@ def test_public_sql_facade_exports_refactored_helpers() -> None:
     assert sql_module.BACKEND_CAPABILITIES is capabilities_module.BACKEND_CAPABILITIES
 
 
+def test_public_sql_facade_exports_safety_contracts() -> None:
+    assert sql_module.AmbiguousSqlMutationError is not None
+    assert sql_module.AmbiguousSqlReplaceError is not None
+    assert sql_module.ClickHouseClusterTopologyError is not None
+    assert sql_module.EmptySourceError is not None
+    assert sql_module.EmptySourcePolicy is not None
+    assert sql_module.ExecuteRetryPolicy is not None
+    assert sql_module.SqlBatchExecutionError is not None
+    assert sql_module.SqlBatchItemResult is not None
+    assert sql_module.SqlBatchItemStatus is not None
+
+
 @pytest.mark.parametrize(
     "function_name",
     [

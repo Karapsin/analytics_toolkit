@@ -243,20 +243,154 @@ def test_create_sql_table_only_generate_sql_uses_table_schema() -> None:
     assert "orientation=column" in sql
 
 
-def test_empty_dataframe_cannot_create_or_replace_target() -> None:
-    with pytest.raises(ValueError, match="empty DataFrame"):
+def test_empty_dataframe_replace_continues_to_empty_materialization() -> None:
+    result = load_df_module._handle_empty_dataframe_load(
+        SimpleNamespace(
+            append=False,
+            write_mode="replace",
+            empty_source_policy=None,
+            table_schema={"id": "BIGINT"},
+            destination_table="sandbox.target",
+        ),
+        load_df_module.LoadState(
+            target_exists=False,
+            original_target_exists=False,
+        ),
+        pd.DataFrame({"id": pd.Series(dtype="int64")}),
+        operation_metadata=load_df_module.SqlOperationMetadata(),
+        return_metadata=False,
+    )
+
+    assert result is None
+
+
+def test_empty_dataframe_error_policy_fails_before_target_changes() -> None:
+    with pytest.raises(load_df_module.EmptySourceError, match="empty_source_policy='error'"):
+        load_df_module._handle_empty_dataframe_load(
+            SimpleNamespace(
+                write_mode="replace",
+                empty_source_policy="error",
+                destination_table="sandbox.target",
+            ),
+            load_df_module.LoadState(False, False),
+            pd.DataFrame({"id": pd.Series(dtype="int64")}),
+            operation_metadata=load_df_module.SqlOperationMetadata(),
+            return_metadata=False,
+        )
+
+
+def test_empty_dataframe_keep_returns_metadata_and_object_replace_requires_schema() -> None:
+    metadata = load_df_module.SqlOperationMetadata()
+    result = load_df_module._handle_empty_dataframe_load(
+        SimpleNamespace(
+            append=True,
+            write_mode="append",
+            empty_source_policy=None,
+            table_schema=None,
+            destination_table="sandbox.target",
+        ),
+        load_df_module.LoadState(True, True),
+        pd.DataFrame(),
+        operation_metadata=metadata,
+        return_metadata=True,
+    )
+    assert result.rows == 0
+    assert result.metadata.affected_rows == 0
+
+    with pytest.raises(ValueError, match="table_schema is required"):
         load_df_module._handle_empty_dataframe_load(
             SimpleNamespace(
                 append=False,
                 write_mode="replace",
+                empty_source_policy="replace",
+                table_schema=None,
                 destination_table="sandbox.target",
             ),
-            load_df_module.LoadState(
-                target_exists=False,
-                original_target_exists=False,
-            ),
+            load_df_module.LoadState(True, True),
+            pd.DataFrame({"label": pd.Series(dtype="object")}),
             operation_metadata=load_df_module.SqlOperationMetadata(),
             return_metadata=False,
+        )
+
+
+def test_empty_dataframe_dry_run_honors_keep_error_and_replace_policies() -> None:
+    empty = pd.DataFrame({"id": pd.Series(dtype="int64")})
+    keep = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        empty,
+        write_mode="append",
+        empty_source_policy="keep",
+        dry_run=True,
+    )
+    assert keep.sqls == []
+
+    with pytest.raises(load_df_module.EmptySourceError):
+        load_df_module.load_df(
+            "gp",
+            "sandbox.target",
+            empty,
+            empty_source_policy="error",
+            dry_run=True,
+        )
+
+    replace = load_df_module.load_df(
+        "gp",
+        "sandbox.target",
+        empty,
+        table_schema={"id": "BIGINT"},
+        empty_source_policy="replace",
+        dry_run=True,
+    )
+    assert any("DROP TABLE" in sql for sql in replace.sqls)
+
+    object_options = load_df_module.LoadOptions(
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        write_mode="replace",
+        empty_source_policy="replace",
+    )
+    with pytest.raises(ValueError, match="table_schema is required"):
+        load_df_module.build_load_df_plan(
+            object_options,
+            pd.DataFrame({"label": pd.Series(dtype="object")}),
+        )
+
+
+def test_create_load_target_forwards_regular_ddl_properties(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        load_df_module,
+        "_create_sql_table_with_connection",
+        lambda *_args, **kwargs: captured.update(kwargs),
+    )
+    options = load_df_module.LoadOptions(
+        connection_key="gp",
+        connection_backend="gp",
+        destination_table="sandbox.target",
+        table_schema={"id": "BIGINT"},
+        regular_ddl_properties={"orientation": "column"},
+    )
+
+    load_df_module._create_load_target_table(
+        options,
+        load_df_module.LoadState(False, False),
+        object(),
+        pd.DataFrame({"id": [1]}),
+    )
+
+    assert captured["ddl_properties"] == {"orientation": "column"}
+
+
+def test_load_df_rejects_invalid_empty_source_policy() -> None:
+    with pytest.raises(ValueError, match="empty_source_policy"):
+        load_df_module.load_df(
+            "gp",
+            "sandbox.target",
+            pd.DataFrame({"id": [1]}),
+            empty_source_policy="invalid",
+            dry_run=True,
         )
 
 

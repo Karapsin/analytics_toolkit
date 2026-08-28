@@ -23,6 +23,16 @@ class SqlTableReadinessError(TimeoutError, SqlUtilsError):
     """A created SQL table did not become ready for use before its deadline."""
 
 
+class ClickHouseClusterTopologyError(ValueError, SqlUtilsError):
+    """Cluster routing metadata is incomplete, inconsistent, or unhealthy."""
+
+
+class AmbiguousSqlReplaceError(SqlUtilsError):
+    """A replacement cutover failed and its final table state could not be proven."""
+
+    analytics_toolkit_sql_retry_safe = False
+
+
 @dataclass(frozen=True)
 class SqlOperationContext:
     operation: str

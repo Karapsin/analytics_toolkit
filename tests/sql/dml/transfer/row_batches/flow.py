@@ -543,6 +543,6 @@ def test_transfer_append_runs_once_and_metadata_target_count_is_best_effort(
     result = transfer_api_module.transfer_table("source", "target", return_metadata=True)
 
     assert result.rows == 4
-    assert option_inputs[0]["write_mode"] == "append"
+    assert option_inputs[0]["write_mode"] == "replace"
     assert result.metadata.final_target_rows is None
     assert closed == ["close"]

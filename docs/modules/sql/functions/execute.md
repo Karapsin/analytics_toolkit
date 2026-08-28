@@ -5,7 +5,7 @@
 Run one SQL string or a list of independent SQL queries through a configured connection without returning a dataframe.
 
 ```python
-execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'Any'
+execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, retry_policy: 'ExecuteRetryPolicy' = 'safe') -> 'Any'
 ```
 
 ## Inputs
@@ -25,6 +25,7 @@ execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, 
 - `concurrency` - maximum requested workers for list input; defaults to sequential execution with `1` and has no effect on string input
 - `soft_concurrency_cap` - optional lower ceiling applied to list workers without rejecting a higher requested `concurrency`
 - `hard_concurrency_cap` - safety ceiling for effective list concurrency; defaults to `5` and rejects requests above the ceiling
+- `retry_policy` - `safe` retries reads, pre-submission failures, and mutations whose transaction rollback is confirmed; `never` disables retries; `always` retains legacy replay behavior for transient failures
 
 ### Backend-Specific Inputs
 
@@ -65,10 +66,21 @@ results = sql.execute(
 # results == [None, None, None], in input order.
 ```
 
+Handle a partially completed batch explicitly:
+
+```python
+try:
+    sql.execute("gp", ["analyze sandbox.a", "analyze sandbox.b"], concurrency=2)
+except sql.SqlBatchExecutionError as exc:
+    print(exc.successful_indexes)
+    print(exc.safe_to_retry_queries)
+```
+
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.
-- List entries use independent connections and retry lifecycles. Retriable errors are retried through `retry_cnt`; after retries are exhausted, queued work is cancelled and the original error is raised. Already-running or completed queries are not rolled back as a batch.
+- With the default `retry_policy="safe"`, read-only SQL is retryable. A Greenplum mutation is retryable only before submission or after a confirmed rollback. A transient failure after a ClickHouse or Trino mutation was submitted raises `AmbiguousSqlMutationError` instead of replaying the statement.
+- List entries use independent connections and retry lifecycles. After one item fails, work that has not started is cancelled and running work reports its real outcome. `SqlBatchExecutionError.items` records every input as `success`, `failed`, `ambiguous`, or `cancelled`; completed items are never replayed as a batch.
 - List results preserve input order. `dry_run=True` or `return_sql=True` returns one `SqlPlan` per query, and `return_metadata=True` returns one `SqlOperationResult` per query.
 - For Trino and ClickHouse, multi-statement SQL is split and submitted sequentially.
 - For Greenplum, pass `gp_break_query=True` when statement-by-statement execution is needed.

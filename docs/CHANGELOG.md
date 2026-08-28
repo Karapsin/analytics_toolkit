@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Route managed ClickHouse pairs through fully deployed physical shards with safe Distributed fallback.
+- Harden SQL retries, routed topology checks, empty-source handling, and staged replacement cutovers.
 
 ## 1.3.11.15 - 2026-08-27
 

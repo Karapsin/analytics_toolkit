@@ -115,7 +115,7 @@ def test_fresh_shard_only_target_count_stays_local(
 @pytest.mark.parametrize(
     ("write_mode", "target_exists", "expected"),
     [
-        ("replace", True, True),
+        ("replace", True, False),
         ("replace", False, True),
         ("append", False, True),
         ("upsert", False, True),

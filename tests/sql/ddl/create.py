@@ -115,7 +115,9 @@ def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -
         drop_target_if_exists=True,
         insert_data=True,
         dry_run=True,
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     assert [statement.phase for statement in plan.statements] == [
@@ -142,7 +144,9 @@ def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_targ
         ch_only_shard=True,
         partition_by=["dt"],
         order_by=["dt", "id"],
-        ch_cluster="analytics",
+        ch_shard_on_cluster="analytics",
+        ch_distributed_on_cluster="analytics",
+        ch_distributed_cluster="analytics",
     )
 
     assert plan.options["ch_only_shard"] is True

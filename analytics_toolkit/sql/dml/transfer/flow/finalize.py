@@ -6,6 +6,8 @@ import warnings
 from dataclasses import replace as replace_dataclass
 from typing import Any, cast
 
+import pandas as pd
+
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.ch.creation_policy import (
     DEFAULT_DDL_READY_TIMEOUT_SECONDS,
@@ -15,6 +17,10 @@ from analytics_toolkit.sql.backends.ch.readiness import run_ch_readiness_wait
 from analytics_toolkit.sql.backends.ch.reconfigure_support import (
     count_rows_on_cluster,
     resolve_optional_cluster,
+)
+from analytics_toolkit.sql.dml.empty_source import (
+    EmptySourceError,
+    resolve_empty_source_policy,
 )
 from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
@@ -59,7 +65,15 @@ def finalize_loaded_stage(  # noqa: PLR0913
     target_host_connection_runner: Any | None = None,
 ) -> None:
     if total_rows == 0:
-        finalize_empty_transfer(options, connection_refs, stage_state)
+        if target_connection_runner is None:
+            finalize_empty_transfer(options, connection_refs, stage_state)
+        else:
+            finalize_empty_transfer(
+                options,
+                connection_refs,
+                stage_state,
+                target_connection_runner=target_connection_runner,
+            )
         return
 
     if stage_state.first_non_empty_batch is None:
@@ -184,9 +198,7 @@ def _creates_fresh_clickhouse_target(
         "supports_distributed_table_targets",
         lambda: False,
     )
-    return supports_distributed_targets() and (
-        options.write_mode == "replace" or not stage_state.target_exists
-    )
+    return supports_distributed_targets() and not stage_state.target_exists
 
 
 def _finalize_target_once(  # noqa: PLR0913
@@ -322,9 +334,7 @@ def _wait_for_fresh_target_row_count(
                 else DEFAULT_DDL_READY_TIMEOUT_SECONDS
             ),
             extension_cnt=(
-                getattr(policy, "ddl_ready_timeout_extension_cnt", 0)
-                if policy is not None
-                else 0
+                getattr(policy, "ddl_ready_timeout_extension_cnt", 0) if policy is not None else 0
             ),
             timeout_increment_seconds=(
                 getattr(policy, "ddl_ready_timeout_increment_seconds", 0.0)
@@ -509,11 +519,88 @@ def finalize_empty_transfer(
     options: TransferOptions,
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
+    *,
+    target_connection_runner: Any | None = None,
 ) -> None:
     del connection_refs
-    if not stage_state.target_exists:
-        _warn_empty_transfer_missing_target(options)
+    policy = resolve_empty_source_policy(
+        options.empty_source_policy,
+        write_mode=options.write_mode,
+    )
+    if policy == "error":
+        message = (
+            f"Transfer source for {options.target_table} returned zero rows and "
+            "empty_source_policy='error'."
+        )
+        raise EmptySourceError(message)
+    if policy == "keep":
+        if not stage_state.target_exists:
+            _warn_empty_transfer_missing_target(options)
+        else:
+            time_print(
+                f"Keeping {options.target_table} unchanged because the transfer source "
+                "returned zero rows"
+            )
         return
+
+    sample_batch = stage_state.first_non_empty_batch
+    if sample_batch is None:
+        sample_batch = pd.DataFrame(columns=stage_state.source_columns)
+        stage_state.first_non_empty_batch = sample_batch
+    target_column_types = _empty_transfer_target_types(options, stage_state)
+    if stage_state.stage_table is None:
+        stage_state.stage_table = _run_target_operation(
+            options,
+            "create_empty_stage",
+            lambda target_ref: create_stage_table(
+                connection_type=options.to_db_backend,
+                connection=target_ref["connection"],
+                target_table=options.target_table,
+                batch=sample_batch,
+                column_types=target_column_types,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                connection_key=options.to_db_key,
+                query_label=options.query_label,
+                transfer_staging_schema=options.transfer_staging_schema,
+                transfer_staging_username=options.transfer_staging_username,
+                destination_hash=options.destination_hash,
+                ddl_properties=options.staging_ddl_properties,
+                ch_creation_policy=options.staging_ch_policy,
+            ),
+            target_connection_runner=target_connection_runner,
+        )
+        stage_state.stage_table_created = True
+        stage_state.stage_table_candidates.append(stage_state.stage_table)
+    effective_options = replace_dataclass(
+        options,
+        write_mode="replace",
+        replace_target_table=True,
+    )
+    stage_state.insert_column_types = target_column_types
+    _finalize_target_once(
+        effective_options,
+        stage_state,
+        stage_state.stage_table,
+        target_column_types,
+        target_precleared=False,
+        fresh_clickhouse_target=False,
+        target_connection_runner=target_connection_runner,
+    )
+
+
+def _empty_transfer_target_types(
+    options: TransferOptions,
+    stage_state: TransferStageState,
+) -> dict[str, str] | None:
+    if options.table_schema is not None:
+        return dict(options.table_schema)
+    if stage_state.stage_column_types is None:
+        return None
+    return {
+        column: stage_state.stage_column_types[column]
+        for column in stage_state.source_columns
+        if column in stage_state.stage_column_types
+    }
 
 
 def _ensure_final_upsert_stage_table(

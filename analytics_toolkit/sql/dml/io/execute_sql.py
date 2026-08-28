@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+# ruff: noqa: BLE001, C901, PLR0912, TRY300
 import contextvars
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
 from typing import Any, Iterator
+from uuid import uuid4
 
 import sqlparse
 from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.dml.io.execute_safety import (
+    AmbiguousSqlMutationError,
+    ExecuteAttemptState,
+    ExecuteRetryPolicy,
+    SqlBatchExecutionError,
+    SqlBatchItemResult,
+    TrackingConnection,
+    is_read_only_sql,
+    validate_execute_retry_policy,
+)
+from analytics_toolkit.sql.dml.transfer.runtime.retry import (
+    is_non_retryable_sql_error,
+    run_with_retry,
+)
 from analytics_toolkit.sql.execution.cancellation import (
     current_cancellation_scope,
     shutdown_executor,
@@ -18,19 +34,18 @@ from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
+    annotate_sql_exception,
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
-    run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_progress_option,
     validate_retry_options,
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...execution.query_timing import run_timed_query
 from .models import ExecuteSqlOptions
 
 _DEFAULT_HARD_CONCURRENCY_CAP = 5
@@ -53,6 +68,7 @@ def execute_sql(
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
+    retry_policy: ExecuteRetryPolicy = "safe",
 ) -> Any:
     _validate_execute_concurrency_options(
         concurrency=concurrency,
@@ -60,6 +76,8 @@ def execute_sql(
         hard_concurrency_cap=hard_concurrency_cap,
     )
     queries, is_batch = _normalize_execute_queries(query)
+    resolved_retry_policy = validate_execute_retry_policy(retry_policy)
+    batch_id = uuid4().hex if is_batch else None
     options_list = [
         _build_execute_sql_options(
             db_key=db_key,
@@ -69,13 +87,16 @@ def execute_sql(
             gp_commit_each_statement=gp_commit_each_statement,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
+            retry_policy=resolved_retry_policy,
             query_label=query_label,
             dry_run=dry_run,
             return_sql=return_sql,
             return_metadata=return_metadata,
             progress=progress,
+            batch_id=batch_id,
+            batch_index=index if is_batch else None,
         )
-        for query_text in queries
+        for index, query_text in enumerate(queries)
     ]
 
     if not is_batch:
@@ -100,7 +121,14 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
         query_label=options.query_label,
     )
 
-    def operation(connection_ref: dict[str, Any], attempt: int) -> Any:
+    execution_sql = _execution_sql(options)
+    read_only = is_read_only_sql(execution_sql)
+    adapter = get_backend_adapter(options.backend)
+
+    def operation(attempt: int) -> Any:
+        options.attempt_numbers.append(attempt)
+        connection: Any | None = None
+        state = ExecuteAttemptState()
         with tracked_sql_operation(
             metadata=metadata,
             operation_name="execute_sql",
@@ -111,17 +139,52 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
             query_label=options.query_label,
             preview_sql=options.sql,
         ):
-            result = _execute_backend(
-                options.backend,
-                connection_ref["connection"],
-                options.sql,
-                print_queries=options.print_queries,
-                gp_break_query=options.gp_break_query,
-                gp_commit_each_statement=options.gp_commit_each_statement,
-                progress=options.progress,
-            )
-            metadata.affected_rows = None
-            return result
+            try:
+                connection = get_sql_connection(options.connection_key)
+                execution_connection = connection
+                if not read_only and bool(getattr(adapter, "supports_transactions", False)):
+                    execution_connection = TrackingConnection(connection, state)
+                elif not read_only:
+                    state.submitted = True
+                result = _execute_backend(
+                    options.backend,
+                    execution_connection,
+                    execution_sql,
+                    print_queries=options.print_queries,
+                    gp_break_query=options.gp_break_query,
+                    gp_commit_each_statement=options.gp_commit_each_statement,
+                    progress=options.progress,
+                )
+                metadata.affected_rows = None
+                return result
+            except Exception as exc:
+                current_context = context(attempt)
+                annotate_sql_exception(exc, current_context)
+                if connection is None:
+                    raise
+                if read_only or options.retry_policy == "always":
+                    adapter.rollback_quietly(connection)
+                    raise
+                if is_non_retryable_sql_error(exc):
+                    adapter.rollback_quietly(connection)
+                    raise
+                if (
+                    bool(getattr(adapter, "supports_transactions", False))
+                    and not state.commit_started
+                    and not state.committed
+                    and _rollback_confirmed(connection)
+                ):
+                    raise
+                ambiguous = AmbiguousSqlMutationError(
+                    "Mutating SQL may have completed before the connection failed; "
+                    "the toolkit will not replay it automatically.",
+                    context=current_context,
+                    original_error=exc,
+                )
+                raise ambiguous from exc
+            finally:
+                if connection is not None:
+                    _close_execute_connection(connection, options)
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
@@ -133,15 +196,11 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
             sql_preview=sql_preview(options.sql),
         )
 
-    result = run_connection_operation(
+    result = run_with_retry(
         operation_name=f"executing SQL on {options.connection_key} ({options.backend})",
-        connection_key=options.connection_key,
-        backend=options.backend,
-        retry_cnt=options.retry_cnt,
+        retry_cnt=(1 if options.retry_policy == "never" else options.retry_cnt),
         timeout_increment=options.timeout_increment,
-        open_connection=get_sql_connection,
         operation=operation,
-        context_factory=context,
     )
     if options.return_metadata:
         return SqlOperationResult(
@@ -157,7 +216,7 @@ def _execute_sql_batch(
     concurrency: int,
 ) -> list[Any]:
     if concurrency == 1:
-        return [_execute_sql_options(options) for options in options_list]
+        return _execute_sql_batch_sequential(options_list)
 
     executor = ThreadPoolExecutor(
         max_workers=min(concurrency, len(options_list)),
@@ -176,21 +235,151 @@ def _execute_sql_batch(
             future_to_index[future] = index
 
         results: list[Any] = [None] * len(options_list)
+        outcomes: dict[int, SqlBatchItemResult] = {}
+        first_error: BaseException | None = None
         try:
             for future in as_completed(future_to_index):
-                results[future_to_index[future]] = future.result()
+                index = future_to_index[future]
+                options = options_list[index]
+                try:
+                    value = future.result()
+                except CancelledError as exc:
+                    outcomes[index] = _batch_cancelled_item(index, options, exc)
+                except Exception as exc:
+                    outcomes[index] = _batch_failed_item(index, options, exc)
+                    if first_error is None:
+                        first_error = exc
+                        for pending in future_to_index:
+                            if pending is not future and not pending.done():
+                                pending.cancel()
+                else:
+                    results[index] = value
+                    outcomes[index] = _batch_success_item(index, options, value)
         except BaseException:
             for pending in future_to_index:
                 pending.cancel()
             shutdown_executor(executor, wait=True, cancel_futures=True)
             executor_shutdown = True
             raise
+        if first_error is not None:
+            batch_error = SqlBatchExecutionError(
+                options_list[0].batch_id or "unknown",
+                [outcomes[index] for index in range(len(options_list))],
+            )
+            raise batch_error from first_error
         return results
     finally:
         if cancellation_scope is not None:
             cancellation_scope.unregister_executor(executor)
         if not executor_shutdown:
             shutdown_executor(executor, wait=True, cancel_futures=False)
+
+
+def _execute_sql_batch_sequential(options_list: list[ExecuteSqlOptions]) -> list[Any]:
+    results: list[Any] = []
+    outcomes: list[SqlBatchItemResult] = []
+    for index, options in enumerate(options_list):
+        try:
+            value = _execute_sql_options(options)
+        except Exception as exc:
+            outcomes.append(_batch_failed_item(index, options, exc))
+            outcomes.extend(
+                _batch_cancelled_item(
+                    pending_index,
+                    pending,
+                    CancelledError("query was not started after an earlier batch failure"),
+                )
+                for pending_index, pending in enumerate(
+                    options_list[index + 1 :],
+                    start=index + 1,
+                )
+            )
+            batch_error = SqlBatchExecutionError(
+                options.batch_id or "unknown",
+                outcomes,
+            )
+            raise batch_error from exc
+        results.append(value)
+        outcomes.append(_batch_success_item(index, options, value))
+    return results
+
+
+def _batch_success_item(
+    index: int,
+    options: ExecuteSqlOptions,
+    value: Any,
+) -> SqlBatchItemResult:
+    return SqlBatchItemResult(
+        index=index,
+        query=options.source_sql or options.sql,
+        status="success",
+        attempts=len(options.attempt_numbers),
+        result=value,
+    )
+
+
+def _batch_failed_item(
+    index: int,
+    options: ExecuteSqlOptions,
+    error: BaseException,
+) -> SqlBatchItemResult:
+    return SqlBatchItemResult(
+        index=index,
+        query=options.source_sql or options.sql,
+        status=("ambiguous" if isinstance(error, AmbiguousSqlMutationError) else "failed"),
+        attempts=len(options.attempt_numbers),
+        error=error,
+    )
+
+
+def _batch_cancelled_item(
+    index: int,
+    options: ExecuteSqlOptions,
+    error: BaseException,
+) -> SqlBatchItemResult:
+    return SqlBatchItemResult(
+        index=index,
+        query=options.source_sql or options.sql,
+        status="cancelled",
+        attempts=len(options.attempt_numbers),
+        error=error,
+    )
+
+
+def _execution_sql(options: ExecuteSqlOptions) -> str:
+    if options.batch_id is None or options.batch_index is None:
+        return options.sql
+    return apply_query_label(
+        options.sql,
+        f"batch={options.batch_id} item={options.batch_index}",
+    )
+
+
+def _rollback_confirmed(connection: Any) -> bool:
+    try:
+        connection.rollback()
+    except Exception:
+        return False
+    return True
+
+
+def _close_execute_connection(connection: Any, options: ExecuteSqlOptions) -> None:
+    time_print(
+        "Closing connection",
+        connection=options.connection_key,
+        backend=options.backend,
+        phase="close",
+    )
+    try:
+        connection.close()
+    except Exception as exc:  # query outcome is already known; do not replay it for close failure.
+        time_print(
+            f"Connection close failed after SQL outcome was established: {type(exc).__name__}",
+            level="warning",
+            connection=options.connection_key,
+            backend=options.backend,
+            phase="close",
+        )
 
 
 def _normalize_execute_queries(query: str | list[str]) -> tuple[list[str], bool]:
@@ -265,6 +454,9 @@ def _build_execute_sql_options(
     return_sql: bool,
     return_metadata: bool,
     progress: bool,
+    retry_policy: ExecuteRetryPolicy = "safe",
+    batch_id: str | None = None,
+    batch_index: int | None = None,
 ) -> ExecuteSqlOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -291,6 +483,10 @@ def _build_execute_sql_options(
         return_sql=return_sql,
         return_metadata=return_metadata,
         progress=progress,
+        retry_policy=retry_policy,
+        source_sql=query.strip(),
+        batch_id=batch_id,
+        batch_index=batch_index,
     )
 
 
@@ -304,6 +500,7 @@ def build_execute_sql_plan(options: ExecuteSqlOptions) -> SqlPlan:
             "print_queries": options.print_queries,
             "gp_break_query": options.gp_break_query,
             "gp_commit_each_statement": options.gp_commit_each_statement,
+            "retry_policy": options.retry_policy,
         },
         metadata=SqlOperationMetadata(
             statement_count=len(statements),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: FBT001, I001, TID252
+# ruff: noqa: C901, E721, EM101, EM102, FBT001, I001, PLR0912, TID252, TRY003
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -75,7 +75,14 @@ from ..table.table_validation import (
 from ..table.write_modes import (
     apply_target_write_mode,
     build_upsert_stage_sqls,
+    finalize_stage_table,
     upsert_stage_table,
+)
+from ..empty_source import (
+    EmptySourceError,
+    EmptySourcePolicy,
+    resolve_empty_source_policy,
+    validate_empty_source_policy,
 )
 from ..transfer.flow.parquet_stage import (
     PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
@@ -137,6 +144,7 @@ def load_df(
     gp_insert_chunk_size: int | None = None,
     progress: bool = False,
     table_schema: dict[str, str] | None = None,
+    empty_source_policy: EmptySourcePolicy | None = None,
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
@@ -156,6 +164,7 @@ def load_df(
         destination_table=destination_table,
         append=append,
         write_mode=write_mode,
+        empty_source_policy=empty_source_policy,
         gp_distributed_by_key=gp_distributed_by_key,
         gp_partitions=gp_partitions,
         key_columns=key_columns,
@@ -213,15 +222,17 @@ def load_df(
                         connection_ref["connection"],
                     ),
                 )
+                _validate_load_dataframe(options, df)
                 if df.empty:
-                    return _handle_empty_dataframe_load(
+                    empty_result = _handle_empty_dataframe_load(
                         options,
                         state,
+                        df,
                         operation_metadata=operation_metadata,
                         return_metadata=return_metadata,
                     )
-
-                _validate_load_dataframe(options, df)
+                    if empty_result is not None:
+                        return empty_result
                 _run_load_target_action(
                     options,
                     "prepare_target",
@@ -332,6 +343,7 @@ def _build_load_options(
     table_schema: dict[str, str] | None = None,
     retry_cnt: int = 5,
     timeout_increment: float = 5,
+    empty_source_policy: EmptySourcePolicy | None = None,
 ) -> LoadOptions:
     config = get_connection_config(db_key)
     adapter = get_backend_adapter(config.backend)
@@ -379,6 +391,7 @@ def _build_load_options(
         table_schema=normalize_table_schema(table_schema),
         append=resolved_write_mode == "append",
         write_mode=resolved_write_mode,
+        empty_source_policy=validate_empty_source_policy(empty_source_policy),
         gp_distributed_by_key=normalize_key_columns(
             gp_distributed_by_key,
             "gp_distributed_by_key",
@@ -432,9 +445,7 @@ def _build_load_options(
         use_parquet_staging=(
             adapter.resolve_transfer_staging_mode(
                 None,
-                s3_transfer_staging_schema=getattr(
-                    config, "s3_transfer_staging_schema", None
-                ),
+                s3_transfer_staging_schema=getattr(config, "s3_transfer_staging_schema", None),
                 s3_transfer_staging_location=target_defaults.s3_transfer_staging_location,
             )
             == "parquet"
@@ -529,31 +540,38 @@ def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
 def _handle_empty_dataframe_load(
     options: LoadOptions,
     state: LoadState,
+    df: pd.DataFrame | None = None,
     *,
     operation_metadata: SqlOperationMetadata,
     return_metadata: bool,
-) -> int | SqlOperationResult:
-    if options.append and state.target_exists:
-        time_print(f"Skipping empty DataFrame append into {options.destination_table}")
-        if return_metadata:
-            operation_metadata.inserted_rows = 0
-            operation_metadata.affected_rows = 0
-            return SqlOperationResult(
-                rows=0,
-                metadata=operation_metadata,
+) -> int | SqlOperationResult | None:
+    del state
+    empty_df = df if df is not None else pd.DataFrame()
+    effective_write_mode = "append" if getattr(options, "append", False) else options.write_mode
+    policy = resolve_empty_source_policy(
+        getattr(options, "empty_source_policy", None),
+        write_mode=effective_write_mode,
+    )
+    if policy == "error":
+        raise EmptySourceError(
+            f"DataFrame for {options.destination_table} is empty and empty_source_policy='error'."
+        )
+    if policy == "replace":
+        if getattr(options, "table_schema", None) is None and any(
+            dtype == object for dtype in empty_df.dtypes
+        ):
+            raise ValueError(
+                "table_schema is required to replace a table from an empty DataFrame "
+                "with object-typed columns."
             )
-        return 0
-    if options.write_mode == "upsert" and state.target_exists:
-        time_print(f"Skipping empty DataFrame upsert into {options.destination_table}")
-        if return_metadata:
-            operation_metadata.inserted_rows = 0
-            operation_metadata.affected_rows = 0
-            return SqlOperationResult(
-                rows=0,
-                metadata=operation_metadata,
-            )
-        return 0
-    raise ValueError("Cannot create or replace a table from an empty DataFrame.")
+        return None
+
+    time_print(f"Keeping {options.destination_table} unchanged for an empty DataFrame")
+    if return_metadata:
+        operation_metadata.inserted_rows = 0
+        operation_metadata.affected_rows = 0
+        return SqlOperationResult(rows=0, metadata=operation_metadata)
+    return 0
 
 
 def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
@@ -592,7 +610,7 @@ def _prepare_load_target(
 ) -> None:
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
-    _load_target_column_metadata(options, state, connection)
+    _load_target_column_metadata(options, state, connection, df)
 
 
 def _apply_load_target_write_mode(
@@ -601,6 +619,9 @@ def _apply_load_target_write_mode(
     connection: Any,
 ) -> None:
     if options.write_mode in {"append", "upsert"}:
+        return
+
+    if options.write_mode == "replace" and not options.append and state.target_exists:
         return
 
     state.target_exists = apply_target_write_mode(
@@ -627,6 +648,8 @@ def _ensure_load_target_table(
     df: pd.DataFrame,
 ) -> None:
     adapter = get_backend_adapter(options.connection_backend)
+    if options.write_mode == "replace" and not options.append and state.original_target_exists:
+        return
     if not adapter.should_ensure_load_target_table(state.target_exists):
         return
 
@@ -680,7 +703,14 @@ def _load_target_column_metadata(
     options: LoadOptions,
     state: LoadState,
     connection: Any,
+    df: pd.DataFrame,
 ) -> None:
+    if options.write_mode == "replace" and not options.append and state.original_target_exists:
+        adapter = get_backend_adapter(options.connection_backend)
+        state.target_column_types = options.table_schema or {
+            str(column): adapter.infer_dataframe_column_type(df[column]) for column in df.columns
+        }
+        return
     if get_backend_adapter(
         options.connection_backend,
     ).requires_load_target_column_metadata(
@@ -756,6 +786,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
         target_table=options.destination_table,
         options={
             "write_mode": options.write_mode,
+            "empty_source_policy": options.empty_source_policy,
             "append": options.append,
             "key_columns": options.key_columns,
             "upsert_partition_column": options.upsert_partition_column,
@@ -784,7 +815,22 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     )
 
     if df.empty:
-        return plan
+        empty_policy = resolve_empty_source_policy(
+            options.empty_source_policy,
+            write_mode=("append" if options.append else options.write_mode),
+        )
+        if empty_policy == "error":
+            raise EmptySourceError(
+                f"DataFrame for {options.destination_table} is empty and "
+                "empty_source_policy='error'."
+            )
+        if empty_policy == "keep":
+            return plan
+        if options.table_schema is None and any(dtype == object for dtype in df.dtypes):
+            raise ValueError(
+                "table_schema is required to replace a table from an empty DataFrame "
+                "with object-typed columns."
+            )
 
     if options.write_mode == "replace":
         add_drop_target_steps(
@@ -1165,9 +1211,7 @@ def _dry_run_load_stage_name(options: LoadOptions, suffix: str) -> str:
     return build_stage_table_name(
         options.connection_backend,
         options.destination_table,
-        transfer_staging_schema=(
-            options.s3_transfer_staging_schema
-        ),
+        transfer_staging_schema=(options.s3_transfer_staging_schema),
         transfer_staging_username=options.transfer_staging_username,
         random_suffix=suffix,
         destination_hash=options.destination_hash,
@@ -1219,8 +1263,13 @@ def _load_dataframe(
             on_progress=on_progress,
         )
 
-    if (options.append and state.target_exists and options.key_columns) or (
-        options.write_mode == "upsert" and state.original_target_exists
+    safe_staged_replace = (
+        options.write_mode == "replace" and not options.append and state.original_target_exists
+    )
+    if (
+        (options.append and state.target_exists and options.key_columns)
+        or (options.write_mode == "upsert" and state.original_target_exists)
+        or safe_staged_replace
     ):
         stage_create_kwargs: dict[str, Any] = {}
         if options.table_schema is not None:
@@ -1302,6 +1351,37 @@ def _load_dataframe(
                     options.connection_backend,
                 ).mark_upsert_finalization_error(exc)
                 raise
+            return len(df)
+
+        if safe_staged_replace:
+            _run_load_target_action(
+                options,
+                "finalize_target",
+                lambda connection_ref: finalize_stage_table(
+                    options.connection_backend,
+                    connection_ref["connection"],
+                    state.overlap_stage_table,
+                    options.destination_table,
+                    replace_target_table=True,
+                    target_exists=True,
+                    sample_batch=df,
+                    target_column_types=state.target_column_types,
+                    insert_column_types=state.target_column_types,
+                    write_mode="replace",
+                    gp_distributed_by_key=options.gp_distributed_by_key,
+                    gp_partitions=options.gp_partitions,
+                    partition_by=options.partition_by,
+                    order_by=options.order_by,
+                    ch_engine=options.ch_engine,
+                    ch_cluster=options.ch_cluster,
+                    ch_sharding_key=options.ch_sharding_key,
+                    query_label=options.query_label,
+                    connection_key=options.connection_key,
+                    ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                    ch_only_shard=options.ch_only_shard,
+                    ch_creation_policy=options.regular_ch_policy,
+                ),
+            )
             return len(df)
 
         _run_load_target_action(
@@ -1489,6 +1569,33 @@ def _finalize_loaded_dataframe_stage(
                 ),
             )
             return
+
+    if options.write_mode == "replace" and not options.append and state.original_target_exists:
+        finalize_stage_table(
+            options.connection_backend,
+            connection,
+            state.overlap_stage_table,
+            options.destination_table,
+            replace_target_table=True,
+            target_exists=True,
+            sample_batch=df,
+            target_column_types=state.target_column_types,
+            insert_column_types=state.target_column_types,
+            write_mode="replace",
+            gp_distributed_by_key=options.gp_distributed_by_key,
+            gp_partitions=options.gp_partitions,
+            partition_by=options.partition_by,
+            order_by=options.order_by,
+            ch_engine=options.ch_engine,
+            ch_cluster=options.ch_cluster,
+            ch_sharding_key=options.ch_sharding_key,
+            query_label=options.query_label,
+            connection_key=options.connection_key,
+            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+            ch_only_shard=options.ch_only_shard,
+            ch_creation_policy=options.regular_ch_policy,
+        )
+        return
 
     if options.append and state.target_exists and options.key_columns:
         validate_stage_target_key_overlap(

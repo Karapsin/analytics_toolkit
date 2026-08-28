@@ -39,16 +39,17 @@ separate namespace for non-Parquet SQL staging and source snapshots.
 
 Use `write_mode` to choose finalization behavior:
 
-- `append` is the default and inserts staged rows into the existing target.
-- `replace` recreates or clears the target before inserting staged rows.
+- `replace` is the default and builds a validated replacement from staged rows before cutover.
+- `append` inserts staged rows into the existing target.
 - `truncate_insert` clears the existing target shape before inserting staged rows.
 - `upsert` requires `key_columns`, rejects duplicate staged keys, and applies
   backend-specific replacement semantics.
 
-Omitting `write_mode`, or passing `None`, selects `append`. Existing callers
-that require a full-table refresh must pass `write_mode="replace"` explicitly.
-When the source returns zero rows, transfer leaves an existing target unchanged
-for every write mode, including `replace`.
+Omitting `write_mode`, or passing `None`, selects `replace`. Pass
+`write_mode="append"` explicitly for incremental loads. When the source returns
+zero rows, the default empty-source behavior matches the mode: replace and
+truncate materialize a zero-row result, while append and upsert keep the target.
+Set `empty_source_policy="keep"` or `"error"` to override that behavior.
 
 Use [sql.read](functions/read.md) instead when the goal is only to return a
 source query as a dataframe. Use [sql.load_df](functions/load_df.md) when
@@ -261,7 +262,7 @@ proof that the destination mutation succeeded, and append is not retried after
 an ambiguous final append.
 
 ClickHouse finalization retries are narrower when the operation creates its
-target from scratch: replace, or append/upsert when the target was absent. Each
+target from scratch: append/upsert/replace when the target was absent. Each
 `retry_cnt` attempt creates a clean target, waits for the normal DDL-readiness
 deadline, and may then wait for `ch_ddl_ready_timeout_extension_cnt` additional
 `timeout_increment` intervals. After insertion, the target count is polled over
@@ -271,9 +272,10 @@ Exact target and stage counts must match even when `validate_row_count=False`.
 An exhausted readiness deadline, insertion failure, or persistent count mismatch
 drops only the incomplete target and repeats finalization from the preserved
 stage. Source data is rematerialized through `full_retry_cnt` only after these
-local attempts are exhausted. Existing-target append and upsert retain their
-prior behavior because their total row counts cannot equal the incoming stage
-count.
+local attempts are exhausted. Existing-target replace performs its own
+validated replacement and reversible cutover; ambiguous rollback failures are
+not replayed. Existing-target append and upsert retain their prior behavior
+because their total row counts cannot equal the incoming stage count.
 
 ## Types
 

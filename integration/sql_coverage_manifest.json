@@ -220,6 +220,24 @@
     "custom_sql_pipeline"
   ],
   "exports": {
+    "AmbiguousSqlMutationError": {
+      "classification": "unit_only",
+      "reason": "This export describes a local execution safety outcome.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
+        "tests/sql/dml/io/execute/safety.py::test_safe_mutation_does_not_replay_ambiguous_nontransactional_error"
+      ],
+      "parameters": {}
+    },
+    "AmbiguousSqlReplaceError": {
+      "classification": "unit_only",
+      "reason": "This export describes a local replacement safety outcome.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
+        "tests/sql/backends/safe_replace.py::test_greenplum_ambiguous_commit_does_not_replay_or_drop_recovery_artifacts"
+      ],
+      "parameters": {}
+    },
     "BACKEND_CAPABILITIES": {
       "classification": "unit_only",
       "reason": "This export has no database-observing behavior.",
@@ -249,6 +267,65 @@
       "reason": "This export has no database-observing behavior.",
       "tests": [
         "tests/sql/architecture/contracts.py::test_public_sql_type_aliases_are_exported"
+      ],
+      "parameters": {}
+    },
+    "ClickHouseClusterTopologyError": {
+      "classification": "unit_only",
+      "reason": "This export describes a local routing topology validation outcome.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
+        "tests/sql/backends/ch/managed_routing.py::test_incomplete_facade_metadata_fails_closed"
+      ],
+      "parameters": {}
+    },
+    "EmptySourceError": {
+      "classification": "unit_only",
+      "reason": "This export describes a local empty-source policy outcome.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
+        "tests/sql/dml/load/load_table/creation.py::test_empty_dataframe_error_policy_fails_before_target_changes"
+      ],
+      "parameters": {}
+    },
+    "EmptySourcePolicy": {
+      "classification": "unit_only",
+      "reason": "This export is a public policy type alias.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts"
+      ],
+      "parameters": {}
+    },
+    "ExecuteRetryPolicy": {
+      "classification": "unit_only",
+      "reason": "This export is a public policy type alias.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts"
+      ],
+      "parameters": {}
+    },
+    "SqlBatchExecutionError": {
+      "classification": "unit_only",
+      "reason": "This export describes a structured local batch outcome.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
+        "tests/sql/dml/io/execute/concurrency.py::test_execute_sql_retries_failed_item_then_fails_fast"
+      ],
+      "parameters": {}
+    },
+    "SqlBatchItemResult": {
+      "classification": "unit_only",
+      "reason": "This export is a structured local batch result.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts"
+      ],
+      "parameters": {}
+    },
+    "SqlBatchItemStatus": {
+      "classification": "unit_only",
+      "reason": "This export is a public status type alias.",
+      "tests": [
+        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts"
       ],
       "parameters": {}
     },
@@ -2326,6 +2403,35 @@
               ]
             }
           ]
+        },
+        "retry_policy": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "'safe'",
+          "states": [
+            {
+              "state": "default",
+              "value": "'safe'",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/execute/safety.py::test_safe_read_retries_transient_error",
+                "tests/sql/dml/io/execute/safety.py::test_safe_mutation_does_not_replay_ambiguous_nontransactional_error"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/execute/safety.py::test_always_policy_retains_explicit_legacy_mutation_replay"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/execute/safety.py::test_retry_policy_is_validated_before_connection_lookup"
+              ]
+            }
+          ]
         }
       }
     },
@@ -3699,6 +3805,34 @@
               ]
             }
           ]
+        },
+        "empty_source_policy": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/load/load_table/creation.py::test_empty_dataframe_replace_continues_to_empty_materialization"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/load/load_table/creation.py::test_empty_dataframe_error_policy_fails_before_target_changes"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/load/load_table/creation.py::test_load_df_rejects_invalid_empty_source_policy"
+              ]
+            }
+          ]
         }
       }
     },
@@ -4658,14 +4792,14 @@
         },
         "write_mode": {
           "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'append'",
+          "signature_default": "'replace'",
           "states": [
             {
               "state": "default",
-              "value": "'append'",
+              "value": "'replace'",
               "status": "covered",
-              "scenarios": [
-                "transfer.trino.ch.append"
+              "tests": [
+                "tests/sql/dml/transfer/row_batches/options.py::test_transfer_options_default_and_none_write_modes_replace"
               ]
             },
             {
@@ -5812,6 +5946,34 @@
               ]
             }
           ]
+        },
+        "empty_source_policy": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "scenarios": [
+                "clickhouse.cluster_routing.safe_replace_empty"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/transfer/row_batches/cleanup_2.py::test_finalize_empty_transfer_warns_only_for_missing_target"
+              ]
+            },
+            {
+              "state": "invalid",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/transfer/row_batches/options.py::test_transfer_rejects_invalid_empty_source_policy"
+              ]
+            }
+          ]
         }
       }
     },
@@ -5869,6 +6031,14 @@
       "node_id": "tests/sql/integration/core/clickhouse_cluster_routing.py::test_clickhouse_cluster_routing_falls_back_for_incomplete_managed_pair",
       "backends": [
         "ch"
+      ]
+    },
+    "clickhouse.cluster_routing.safe_replace_empty": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/clickhouse_cluster_routing.py::test_clickhouse_cluster_routed_replace_rebuilds_schema_and_handles_empty_source",
+      "backends": [
+        "ch",
+        "trino"
       ]
     },
     "clickhouse.cluster_routing.transports": {
