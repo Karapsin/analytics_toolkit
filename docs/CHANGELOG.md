@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Support typed and untyped SQL parser metadata across environments.
 - Added the import atk convenience facade for common analytics imports.
 - Added query-result insert and create helpers with canonical sql.create_table.
+- Made SQL query validation portable across typed and untyped sqlparse releases.
 
 ## 1.3.11.15 - 2026-08-27
 

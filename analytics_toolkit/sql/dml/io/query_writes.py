@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, PLR0913, PYI041, TID252, TRY003
 from dataclasses import replace
+from typing import Any, cast
 
 import sqlparse
 
@@ -223,7 +224,8 @@ def _normalize_result_statements(query: str) -> list[str]:
 
 def _validate_result_query(query: str) -> None:
     parsed = [statement for statement in sqlparse.parse(query) if str(statement).strip()]
-    if len(parsed) != 1 or parsed[0].get_type().upper() != "SELECT":  # type: ignore[no-untyped-call]
+    is_select = len(parsed) == 1 and cast("Any", parsed[0]).get_type().upper() == "SELECT"
+    if not is_select:
         raise InvalidSqlInputError("The final statement must be a SELECT query.")
 
 
