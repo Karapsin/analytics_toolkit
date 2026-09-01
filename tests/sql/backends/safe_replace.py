@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, TRY003
 import importlib
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,6 +17,7 @@ from analytics_toolkit.sql.backends.safe_replace import (
     finalize_existing_stage_replace,
 )
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from sqlglot import exp, parse_one
 
 ch_safe_replace = importlib.import_module("analytics_toolkit.sql.backends.ch.safe_replace")
 
@@ -126,6 +128,35 @@ def test_greenplum_replace_builds_offside_table_before_transactional_cutover() -
     assert connection.executed[2].startswith("DROP TABLE IF EXISTS sandbox.target__backup_")
     assert connection.commit_calls == 1
     assert adapter.dropped == []
+
+
+def test_greenplum_replace_artifacts_fit_long_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    safe_replace = importlib.import_module("analytics_toolkit.sql.backends.safe_replace")
+    monkeypatch.setattr(
+        safe_replace,
+        "uuid4",
+        lambda: SimpleNamespace(hex="a" * 32),
+    )
+    connection = _Connection()
+    adapter = _Adapter()
+    request = replace(
+        _request(connection),
+        target_table=("public.it_ac18ca9b4086_ddl_native_gp_2a20eb6113_ddl_gp_range_transfer"),
+    )
+
+    assert finalize_existing_stage_replace(adapter, request) is True
+
+    replacement = parse_one(adapter.created[0], read="postgres", into=exp.Table).name
+    rename = parse_one(connection.executed[0], read="postgres")
+    backup = rename.args["actions"][0].this.name
+    stored_target = parse_one(request.target_table, read="postgres", into=exp.Table).name[:63]
+    assert replacement.endswith("__replace_aaaaaaaaaaaa")
+    assert backup.endswith("__backup_aaaaaaaaaaaa")
+    assert len(replacement.encode()) <= 63
+    assert len(backup.encode()) <= 63
+    assert len({stored_target, replacement, backup}) == 3
 
 
 def test_greenplum_ambiguous_commit_does_not_replay_or_drop_recovery_artifacts() -> None:

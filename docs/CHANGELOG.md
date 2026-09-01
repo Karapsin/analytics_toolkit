@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added query-result insert and create helpers with canonical sql.create_table.
 - Made SQL query validation portable across typed and untyped sqlparse releases.
 - Fixed ClickHouse 26 cluster routing, native routed inserts, and restart cleanup.
+- Fixed Greenplum safe-replace artifact names for long table identifiers.
 
 ## 1.3.11.15 - 2026-08-27
 

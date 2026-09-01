@@ -12,6 +12,7 @@ from analytics_toolkit.sql.ddl.identifiers import (
     _parse_table_name,
 )
 
+from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 from .models import StageFinalizationRequest, StageTargetTableRequest
 
 
@@ -27,15 +28,15 @@ def finalize_existing_stage_replace(
         return False
 
     token = uuid4().hex[:12]
-    replacement = _add_table_identifier_suffix(
+    replacement = _replacement_artifact_table(
+        adapter,
         request.target_table,
         f"__replace_{token}",
-        adapter.sqlglot_dialect,
     )
-    backup = _add_table_identifier_suffix(
+    backup = _replacement_artifact_table(
+        adapter,
         request.target_table,
         f"__backup_{token}",
-        adapter.sqlglot_dialect,
     )
     adapter.ensure_stage_target_table(
         StageTargetTableRequest(
@@ -77,6 +78,24 @@ def finalize_existing_stage_replace(
         _best_effort_drop(adapter, request, replacement)
         raise
     return True
+
+
+def _replacement_artifact_table(adapter: Any, table_name: str, suffix: str) -> str:
+    if adapter.backend != "gp":
+        return _add_table_identifier_suffix(table_name, suffix, adapter.sqlglot_dialect)
+
+    table = _parse_table_name(table_name, adapter.sqlglot_dialect)
+    table_identifier = table.this
+    max_base_bytes = GP_IDENTIFIER_MAX_BYTES - len(suffix.encode())
+    base_identifier = _fit_identifier_bytes(
+        _identifier_name(table_identifier),
+        max_base_bytes,
+    )
+    artifact_identifier = table_identifier.copy()
+    artifact_identifier.set("this", f"{base_identifier}{suffix}")
+    artifact_table = table.copy()
+    artifact_table.set("this", artifact_identifier)
+    return artifact_table.sql(dialect=adapter.sqlglot_dialect)
 
 
 def _transactional_cutover(
