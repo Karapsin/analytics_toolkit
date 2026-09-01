@@ -140,6 +140,60 @@ def test_keyed_io_count_and_validation_forward_cached_identity(
     assert validations[0]["streamed_count"] == 7
 
 
+def test_keyed_source_reads_release_transactions_before_pool_reuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = _options(retry_cnt=1)
+    metadata = _metadata()
+    task = _task(options)
+
+    class Connection:
+        def __init__(self) -> None:
+            self.transaction_open = False
+            self.rollback_calls = 0
+
+        def rollback(self) -> None:
+            self.transaction_open = False
+            self.rollback_calls += 1
+
+    connection = Connection()
+    adapter = SimpleNamespace(
+        quote_identifier=lambda name: f'"{name}"',
+        normalize_transfer_source_batch=lambda batch, _types: batch,
+    )
+
+    def read(_backend: str, _connection: Connection, sql: str, **_kwargs: Any) -> Any:
+        connection.transaction_open = True
+        if "COUNT(*)" in sql:
+            return SimpleNamespace(columns=[[1]])
+        return SimpleNamespace(column_names=["id"], columns=[[1]])
+
+    monkeypatch.setattr(staged_keyed_io, "get_backend_adapter", lambda _backend: adapter)
+    monkeypatch.setattr(staged_keyed_io, "_read_backend", read)
+
+    assert (
+        staged_keyed_io.count_source_slice(
+            options,
+            connection,
+            "source.stage",
+            0,
+            metadata,
+        )
+        == 1
+    )
+    assert connection.transaction_open is False
+    assert staged_keyed_io.read_key_batch(
+        options,
+        {"connection": connection},
+        task,
+        metadata,
+        1,
+        2,
+    ).rows == [(1,)]
+    assert connection.transaction_open is False
+    assert connection.rollback_calls == 2
+
+
 def test_keyed_io_rejects_unequal_and_normalized_oversized_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

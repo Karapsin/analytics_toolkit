@@ -178,15 +178,18 @@ def count_source_slice(
 ) -> int:
     adapter = get_backend_adapter(options.from_db_backend)
     slice_column = adapter.quote_identifier(metadata.internal_columns.slice_id)
-    result = _read_backend(
-        options.from_db_backend,
-        connection,
-        f"SELECT COUNT(*) FROM {stage_table} WHERE {slice_column} = {slice_id}",
-        print_queries=False,
-        output_type="dict",
-        action_name="snapshot counting",
-        phase="count_snapshot",
-    )
+    try:
+        result = _read_backend(
+            options.from_db_backend,
+            connection,
+            f"SELECT COUNT(*) FROM {stage_table} WHERE {slice_column} = {slice_id}",
+            print_queries=False,
+            output_type="dict",
+            action_name="snapshot counting",
+            phase="count_snapshot",
+        )
+    finally:
+        rollback_quietly(connection)
     return int(result.columns[0][0])
 
 
@@ -233,6 +236,7 @@ def read_key_batch(
             rollback_quietly(connection)
             _replace_managed_connection(options.from_db_key, source_ref)
             raise
+        rollback_quietly(connection)
         result_row_count = len(result.columns[0]) if result.columns else 0
         if any(len(column) != result_row_count for column in result.columns):
             message = f"{task.tag} Source batch columns have unequal lengths."
