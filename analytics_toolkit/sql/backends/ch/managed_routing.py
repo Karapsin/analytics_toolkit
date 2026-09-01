@@ -14,9 +14,9 @@ from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 FACADE_METADATA_COLUMN_COUNT = 3
-CLUSTER_TABLE_METADATA_COLUMN_COUNT = 7
+CLUSTER_TABLE_METADATA_COLUMN_COUNT = 5
 CLUSTER_HOST_COLUMN_COUNT = 3
-REPLICA_METADATA_COLUMN_COUNT = 7
+REPLICA_METADATA_COLUMN_COUNT = 5
 SQL_QUOTE_PAIR_LENGTH = 2
 
 RouteMode = Literal["cluster", "all_replicas", "local"]
@@ -32,8 +32,6 @@ class ManagedTableRoute:
 
 @dataclass(frozen=True)
 class _ClusterObject:
-    shard_num: int
-    replica_num: int
     host_name: str
     engine: str
     engine_full: str
@@ -83,41 +81,47 @@ class ManagedPairResolver:
                 f"ClickHouse relation {database}.{table} is not visible on the routing host."
             )
         engine, engine_full, _create_query = local
-        objects = self._read_consistent_cluster_object(
-            cluster=cluster,
-            database=database,
-            table=table,
-        )
+        try:
+            _objects, replicas_per_shard = self._read_consistent_cluster_object(
+                cluster=cluster,
+                database=database,
+                table=table,
+                allow_incomplete=engine.lower() == "distributed",
+            )
+        except _IncompleteClusterCoverageError:
+            return ManagedTableRoute(database, table, "local", engine)
 
         if engine.lower() == "distributed":
+            route = ManagedTableRoute(database, table, "local", engine)
             shard = extract_clickhouse_distributed_shard_table(engine_full, database)
-            if shard is None or shard.database != database or shard.table != f"{table}_shard":
-                return ManagedTableRoute(database, table, "local", engine)
-            try:
-                shard_objects = self._read_consistent_cluster_object(
-                    cluster=cluster,
-                    database=shard.database,
-                    table=shard.table,
-                    allow_incomplete=True,
-                )
-            except _IncompleteClusterCoverageError:
-                return ManagedTableRoute(database, table, "local", engine)
-            shard_engine = shard_objects[0].engine
-            return ManagedTableRoute(
-                shard.database,
-                shard.table,
-                self._route_mode(shard_engine, shard_objects),
-                shard_engine,
+            if shard is not None and shard.database == database and shard.table == f"{table}_shard":
+                try:
+                    shard_objects, shard_replicas_per_shard = self._read_consistent_cluster_object(
+                        cluster=cluster,
+                        database=shard.database,
+                        table=shard.table,
+                        allow_incomplete=True,
+                    )
+                except _IncompleteClusterCoverageError:
+                    pass
+                else:
+                    shard_engine = shard_objects[0].engine
+                    route = ManagedTableRoute(
+                        shard.database,
+                        shard.table,
+                        self._route_mode(shard_engine, shard_replicas_per_shard),
+                        shard_engine,
+                    )
+        elif engine.lower() in {"view", "materializedview", "liveview", "windowview"}:
+            route = ManagedTableRoute(database, table, "local", engine)
+        else:
+            route = ManagedTableRoute(
+                database,
+                table,
+                self._route_mode(engine, replicas_per_shard),
+                engine,
             )
-
-        if engine.lower() in {"view", "materializedview", "liveview", "windowview"}:
-            return ManagedTableRoute(database, table, "local", engine)
-        return ManagedTableRoute(
-            database,
-            table,
-            self._route_mode(engine, objects),
-            engine,
-        )
+        return route
 
     def _read_local_object(
         self,
@@ -158,12 +162,12 @@ class ManagedPairResolver:
         database: str,
         table: str,
         allow_incomplete: bool = False,
-    ) -> list[_ClusterObject]:
+    ) -> tuple[list[_ClusterObject], dict[int, int]]:
         cluster_name = _resolve_cluster_name(self._client, cluster)
         expected = self._cluster_hosts(cluster_name)
         cluster_literal = sql_string_literal(cluster_name)
         sql = (
-            "SELECT _shard_num, _replica_num, hostName(), engine, engine_full, "
+            "SELECT hostName(), engine, engine_full, "
             "create_table_query, toString(uuid)\n"
             f"FROM clusterAllReplicas({cluster_literal}, system, tables)\n"
             f"WHERE database = {sql_string_literal(database)}\n"
@@ -176,11 +180,13 @@ class ManagedPairResolver:
                 f"Could not inspect {database}.{table} on every host of cluster {cluster_name!r}."
             ) from exc
         objects = [_cluster_object(row, database, table) for row in rows]
-        actual = {(item.shard_num, item.replica_num) for item in objects}
-        if actual != expected or len(objects) != len(expected):
+        actual_hosts = {item.host_name for item in objects}
+        actual_count = len(actual_hosts)
+        expected_count = sum(expected.values())
+        if actual_count != expected_count or len(objects) != expected_count:
             detail = (
                 f"ClickHouse relation {database}.{table} is present on "
-                f"{len(actual)}/{len(expected)} routing-cluster hosts."
+                f"{actual_count}/{expected_count} routing-cluster hosts."
             )
             if allow_incomplete:
                 raise _IncompleteClusterCoverageError(detail)
@@ -189,10 +195,13 @@ class ManagedPairResolver:
         engines = {item.engine.lower() for item in objects}
         definitions = {_normalized_definition(item) for item in objects}
         if len(engines) != 1 or len(definitions) != 1:
-            raise ClickHouseClusterTopologyError(
+            detail = (
                 f"ClickHouse relation {database}.{table} has inconsistent engine or DDL "
                 f"on cluster {cluster_name!r}."
             )
+            if allow_incomplete:
+                raise _IncompleteClusterCoverageError(detail)
+            raise ClickHouseClusterTopologyError(detail)
         if _is_replicated_engine(objects[0].engine):
             self._validate_replicas(
                 cluster_name=cluster_name,
@@ -200,9 +209,9 @@ class ManagedPairResolver:
                 table=table,
                 expected=expected,
             )
-        return objects
+        return objects, expected
 
-    def _cluster_hosts(self, cluster_name: str) -> set[tuple[int, int]]:
+    def _cluster_hosts(self, cluster_name: str) -> dict[int, int]:
         sql = (
             "SELECT shard_num, replica_num, host_name\n"
             "FROM system.clusters\n"
@@ -225,7 +234,10 @@ class ManagedPairResolver:
             raise ClickHouseClusterTopologyError(
                 f"ClickHouse cluster {cluster_name!r} has no unique routing hosts."
             )
-        return hosts
+        counts: dict[int, int] = {}
+        for shard_num, _replica_position in hosts:
+            counts[shard_num] = counts.get(shard_num, 0) + 1
+        return counts
 
     def _validate_cluster_reachable(self, cluster: str) -> None:
         cluster_name = _resolve_cluster_name(self._client, cluster)
@@ -233,19 +245,18 @@ class ManagedPairResolver:
         try:
             reachable = _query_rows(
                 self._client,
-                "SELECT _shard_num, _replica_num, hostName() FROM clusterAllReplicas("
+                "SELECT hostName() FROM clusterAllReplicas("
                 f"{sql_string_literal(cluster_name)}, system, one)",
             )
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not reach every host of ClickHouse cluster {cluster_name!r}."
             ) from exc
-        actual = {
-            (int(row[0]), int(row[1])) for row in reachable if len(row) >= CLUSTER_HOST_COLUMN_COUNT
-        }
-        if actual != expected:
+        actual = {str(row[0]) for row in reachable if row}
+        expected_count = sum(expected.values())
+        if len(actual) != expected_count or len(reachable) != expected_count:
             raise ClickHouseClusterTopologyError(
-                f"Only {len(actual)}/{len(expected)} hosts of ClickHouse cluster "
+                f"Only {len(actual)}/{expected_count} hosts of ClickHouse cluster "
                 f"{cluster_name!r} are reachable."
             )
 
@@ -255,10 +266,10 @@ class ManagedPairResolver:
         cluster_name: str,
         database: str,
         table: str,
-        expected: set[tuple[int, int]],
+        expected: dict[int, int],
     ) -> None:
         sql = (
-            "SELECT _shard_num, _replica_num, hostName(), zookeeper_path, replica_name, "
+            "SELECT hostName(), zookeeper_path, replica_name, "
             "is_readonly, is_session_expired\n"
             "FROM clusterAllReplicas("
             f"{sql_string_literal(cluster_name)}, system, replicas)\n"
@@ -271,37 +282,38 @@ class ManagedPairResolver:
             raise ClickHouseClusterTopologyError(
                 f"Could not validate replicas for {database}.{table}."
             ) from exc
-        positions: set[tuple[int, int]] = set()
-        paths_by_shard: dict[int, set[str]] = {}
-        names_by_shard: dict[int, set[str]] = {}
+        hosts: set[str] = set()
+        names_by_path: dict[str, set[str]] = {}
         for row in rows:
             if len(row) < REPLICA_METADATA_COLUMN_COUNT:
                 raise ClickHouseClusterTopologyError(
                     f"Replica metadata for {database}.{table} is incomplete."
                 )
-            shard_num, replica_num = int(row[0]), int(row[1])
-            positions.add((shard_num, replica_num))
-            paths_by_shard.setdefault(shard_num, set()).add(str(row[3]))
-            names = names_by_shard.setdefault(shard_num, set())
-            replica_name = str(row[4])
-            if replica_name in names or bool(row[5]) or bool(row[6]):
+            hosts.add(str(row[0]))
+            names = names_by_path.setdefault(str(row[1]), set())
+            replica_name = str(row[2])
+            if replica_name in names or bool(row[3]) or bool(row[4]):
                 raise ClickHouseClusterTopologyError(
                     f"Replica topology for {database}.{table} is inconsistent or unhealthy."
                 )
             names.add(replica_name)
-        if positions != expected or any(len(paths) != 1 for paths in paths_by_shard.values()):
+        if (
+            len(hosts) != sum(expected.values())
+            or len(hosts) != len(rows)
+            or sorted(len(names) for names in names_by_path.values()) != sorted(expected.values())
+        ):
             raise ClickHouseClusterTopologyError(
                 f"Replica topology for {database}.{table} does not match cluster {cluster_name!r}."
             )
 
     @staticmethod
-    def _route_mode(engine: str, objects: list[_ClusterObject]) -> RouteMode:
+    def _route_mode(
+        engine: str,
+        replicas_per_shard: dict[int, int],
+    ) -> RouteMode:
         normalized = engine.lower()
         if _is_replicated_engine(engine) or normalized.startswith("shared"):
             return "cluster"
-        replicas_per_shard: dict[int, int] = {}
-        for item in objects:
-            replicas_per_shard[item.shard_num] = replicas_per_shard.get(item.shard_num, 0) + 1
         if max(replicas_per_shard.values(), default=1) == 1:
             return "cluster"
         if normalized.endswith("mergetree"):
@@ -317,13 +329,11 @@ def _cluster_object(row: tuple[Any, ...], database: str, table: str) -> _Cluster
             f"Cluster metadata for {database}.{table} is incomplete."
         )
     return _ClusterObject(
-        shard_num=int(row[0]),
-        replica_num=int(row[1]),
-        host_name=str(row[2]),
-        engine=str(row[3]),
-        engine_full=str(row[4]),
-        create_table_query=str(row[5]),
-        uuid=str(row[6]),
+        host_name=str(row[0]),
+        engine=str(row[1]),
+        engine_full=str(row[2]),
+        create_table_query=str(row[3]),
+        uuid=str(row[4]),
     )
 
 

@@ -349,12 +349,12 @@ def _target_fingerprint(
         return tuple(tuple(row) for row in rows)
     rows = query_local(
         connection,
-        "SELECT _shard_num, _replica_num, count(), sum(rows), "
+        "SELECT hostName(), count(), sum(rows), "
         "max(max_block_number), max(data_version) FROM clusterAllReplicas("
         f"{_sql_string_literal(cluster)}, system, parts) "
         f"WHERE database = {_sql_string_literal(database)} "
         f"AND table = {_sql_string_literal(relation)} AND active "
-        "GROUP BY _shard_num, _replica_num ORDER BY _shard_num, _replica_num",
+        "GROUP BY hostName() ORDER BY hostName()",
     ).result_rows
     return tuple(tuple(row) for row in rows)
 

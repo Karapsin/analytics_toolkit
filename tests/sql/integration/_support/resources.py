@@ -12,6 +12,8 @@ from typing import Any
 
 from analytics_toolkit import sql
 
+RESOURCE_CLEANUP_ATTEMPTS = 30
+
 
 @dataclass
 class ResourceRegistry:
@@ -70,14 +72,14 @@ class ResourceRegistry:
                 self.cleanup_errors.append(f"worker {worker!r}: {exc!r}")
         for db_key, table, cluster in reversed(self.tables):
             last_error: Exception | None = None
-            for attempt in range(1, 6):
+            for attempt in range(1, RESOURCE_CLEANUP_ATTEMPTS + 1):
                 try:
                     sql.drop_tables(db_key, table, if_exists=True, ch_cluster=cluster)
                     last_error = None
                     break
                 except Exception as exc:
                     last_error = exc
-                    if attempt < 5:
+                    if attempt < RESOURCE_CLEANUP_ATTEMPTS:
                         time.sleep(1)
             if last_error is not None:
                 self.cleanup_errors.append(f"drop {db_key}:{table}: {last_error!r}")

@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Added the import atk convenience facade for common analytics imports.
 - Added query-result insert and create helpers with canonical sql.create_table.
 - Made SQL query validation portable across typed and untyped sqlparse releases.
+- Fixed ClickHouse 26 cluster routing, native routed inserts, and restart cleanup.
 
 ## 1.3.11.15 - 2026-08-27
 

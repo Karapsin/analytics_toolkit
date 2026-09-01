@@ -94,13 +94,11 @@ class _HttpClient:
         if "SELECT shard_num, replica_num, host_name" in sql:
             return SimpleNamespace(result_rows=[(1, 1, "host1")])
         if "system, one" in sql:
-            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+            return SimpleNamespace(result_rows=[("host1",)])
         if "system, tables" in sql:
             return SimpleNamespace(
                 result_rows=[
                     (
-                        1,
-                        1,
                         "host1",
                         "MergeTree",
                         "MergeTree()",
@@ -481,10 +479,11 @@ def test_disabled_routing_helpers_return_original_objects_and_sql() -> None:
     assert routed_connection_sql(raw, "SELECT * FROM events") == "SELECT * FROM events"
 
 
-def test_native_insert_query_accepts_routed_table_function() -> None:
-    assert _insert_query("FUNCTION cluster('core', 'db', 'events', rand())", ["id"]) == (
-        "INSERT INTO FUNCTION cluster('core', 'db', 'events', rand()) (`id`) VALUES"
-    )
+@pytest.mark.parametrize("function_name", ["cluster", "clusterAllReplicas"])
+def test_native_insert_query_accepts_routed_table_function(function_name: str) -> None:
+    table = f"FUNCTION {function_name}('core', 'db', 'events', rand())"
+
+    assert _insert_query(table, ["id"]) == f"INSERT INTO {table} (`id`) VALUES"
 
 
 def test_execute_sql_dry_run_contains_routed_sql(

@@ -69,13 +69,11 @@ class _CommandClient:
         if "SELECT shard_num, replica_num, host_name" in sql:
             return SimpleNamespace(result_rows=[(1, 1, "host1")])
         if "system, one" in sql:
-            return SimpleNamespace(result_rows=[(1, 1, "host1")])
+            return SimpleNamespace(result_rows=[("host1",)])
         if "system, tables" in sql:
             return SimpleNamespace(
                 result_rows=[
                     (
-                        1,
-                        1,
                         "host1",
                         "MergeTree",
                         "MergeTree()",

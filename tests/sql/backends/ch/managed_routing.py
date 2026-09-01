@@ -9,7 +9,6 @@ import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.managed_routing import (
     ManagedPairResolver,
-    _ClusterObject,
     _query_count,
     _resolve_cluster_name,
     _strip_sql_wrapping_quotes,
@@ -44,8 +43,10 @@ class _Client:
         self.commands: list[str] = []
         self.context_tables: list[str] = []
         self.insert_contexts: list[_InsertContext] = []
+        self.visible_facades = 2
         self.fail_coverage = False
         self.fail_metadata = False
+        self.inconsistent_facade = False
         self.metadata_rows: list[tuple[Any, ...]] | None = None
         self.macro_rows: list[tuple[Any, ...]] = [("core",)]
 
@@ -76,17 +77,17 @@ class _Client:
         if "system, one" in sql:
             if self.fail_coverage:
                 raise RuntimeError("topology unavailable")
-            return _Result([(1, 1, "host1"), (1, 2, "host2")])
+            return _Result([("host1",), ("host2",)])
         if "system, replicas" in sql:
             return _Result(
                 [
-                    (1, 1, "host1", "/path/events", "replica1", 0, 0),
-                    (1, 2, "host2", "/path/events", "replica2", 0, 0),
+                    ("host1", "/path/events", "replica1", 0, 0),
+                    ("host2", "/path/events", "replica2", 0, 0),
                 ][: self.visible_tables]
             )
         if "system, tables" in sql:
             physical = "name = 'events_shard'" in sql
-            count = self.visible_tables if physical else 2
+            count = self.visible_tables if physical else self.visible_facades
             engine = "ReplicatedMergeTree" if physical else self.engine
             engine_full = (
                 "ReplicatedMergeTree('/path/events', '{replica}')" if physical else self.engine_full
@@ -95,7 +96,17 @@ class _Client:
             ddl = f"CREATE TABLE db.{relation} (id UInt64) ENGINE={engine_full}"
             return _Result(
                 [
-                    (1, replica, f"host{replica}", engine, engine_full, ddl, f"uuid{replica}")
+                    (
+                        f"host{replica}",
+                        engine,
+                        engine_full,
+                        (
+                            f"{ddl} SETTINGS index_granularity = {replica}"
+                            if self.inconsistent_facade and not physical
+                            else ddl
+                        ),
+                        f"uuid{replica}",
+                    )
                     for replica in range(1, count + 1)
                 ]
             )
@@ -174,6 +185,28 @@ def test_incomplete_coverage_uses_local_distributed_facade() -> None:
     assert raw.dataframes == ["SELECT * FROM db.events"]
     assert raw.commands[0].startswith("INSERT INTO db.events")
     assert "cluster(" not in raw.commands[0]
+
+
+def test_incomplete_distributed_facade_uses_local_facade() -> None:
+    raw = _Client()
+    raw.visible_facades = 1
+    client = wrap_client(raw, _config())
+
+    client.query_df("SELECT * FROM db.events")
+    client.command("INSERT INTO db.events (id) VALUES (2)")
+
+    assert raw.dataframes == ["SELECT * FROM db.events"]
+    assert raw.commands[0].startswith("INSERT INTO db.events")
+
+
+def test_inconsistent_distributed_facade_uses_local_facade() -> None:
+    raw = _Client()
+    raw.inconsistent_facade = True
+
+    wrapped = wrap_client(raw, _config())
+    wrapped.query_df("SELECT * FROM db.events")
+
+    assert raw.dataframes == ["SELECT * FROM db.events"]
 
 
 def test_failed_coverage_probe_fails_closed() -> None:
@@ -428,15 +461,15 @@ def test_cluster_object_validation_rejects_missing_and_inconsistent_metadata(
 ) -> None:
     raw = _Client()
     resolver = ManagedPairResolver(raw)
-    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {1: 2})
 
     monkeypatch.setattr(raw, "query", lambda _sql: _Result([(1,)]))
     with pytest.raises(ClickHouseClusterTopologyError, match=r"metadata.*incomplete"):
         resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
 
     inconsistent = [
-        (1, 1, "host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1"),
-        (1, 2, "host2", "MergeTree", "MergeTree()", "CREATE TABLE b", "uuid2"),
+        ("host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1"),
+        ("host2", "MergeTree", "MergeTree()", "CREATE TABLE b", "uuid2"),
     ]
     monkeypatch.setattr(raw, "query", lambda _sql: _Result(inconsistent))
     with pytest.raises(ClickHouseClusterTopologyError, match="inconsistent engine or DDL"):
@@ -448,7 +481,7 @@ def test_cluster_object_probe_wraps_failure_and_incomplete_coverage(
 ) -> None:
     raw = _Client()
     resolver = ManagedPairResolver(raw)
-    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {1: 2})
     monkeypatch.setattr(
         raw,
         "query",
@@ -460,9 +493,7 @@ def test_cluster_object_probe_wraps_failure_and_incomplete_coverage(
     monkeypatch.setattr(
         raw,
         "query",
-        lambda _sql: _Result(
-            [(1, 1, "host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1")]
-        ),
+        lambda _sql: _Result([("host1", "MergeTree", "MergeTree()", "CREATE TABLE a", "uuid1")]),
     )
     with pytest.raises(ClickHouseClusterTopologyError, match="1/2"):
         resolver._read_consistent_cluster_object(cluster="core", database="db", table="events")
@@ -472,8 +503,8 @@ def test_cluster_object_probe_wraps_failure_and_incomplete_coverage(
     "rows",
     [
         [(1,)],
-        [(1, 1, "host1", "/path", "same", 0, 0), (1, 2, "host2", "/path", "same", 0, 0)],
-        [(1, 1, "host1", "/a", "one", 0, 0), (1, 2, "host2", "/b", "two", 0, 0)],
+        [("host1", "/path", "same", 0, 0), ("host2", "/path", "same", 0, 0)],
+        [("host1", "/a", "one", 0, 0), ("host2", "/b", "two", 0, 0)],
     ],
 )
 def test_replica_validation_rejects_incomplete_unhealthy_or_mismatched_rows(
@@ -488,7 +519,7 @@ def test_replica_validation_rejects_incomplete_unhealthy_or_mismatched_rows(
             cluster_name="core",
             database="db",
             table="events",
-            expected={(1, 1), (1, 2)},
+            expected={1: 2},
         )
 
 
@@ -507,23 +538,29 @@ def test_replica_and_reachability_query_failures_are_wrapped(
             cluster_name="core",
             database="db",
             table="events",
-            expected={(1, 1)},
+            expected={1: 1},
         )
 
-    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {(1, 1), (1, 2)})
+    monkeypatch.setattr(resolver, "_cluster_hosts", lambda _cluster: {1: 2})
     with pytest.raises(ClickHouseClusterTopologyError, match="reach every host"):
         resolver._validate_cluster_reachable("core")
 
-    monkeypatch.setattr(raw, "query", lambda _sql: _Result([(1, 1, "host1")]))
+    monkeypatch.setattr(raw, "query", lambda _sql: _Result([("host1",)]))
     with pytest.raises(ClickHouseClusterTopologyError, match="Only 1/2"):
         resolver._validate_cluster_reachable("core")
 
 
 def test_route_mode_rejects_unknown_replicated_engine() -> None:
-    objects = [
-        _ClusterObject(1, 1, "host1", "Memory", "Memory", "CREATE TABLE a", "uuid1"),
-        _ClusterObject(1, 2, "host2", "Memory", "Memory", "CREATE TABLE a", "uuid2"),
-    ]
-
     with pytest.raises(ClickHouseClusterTopologyError, match="does not know how"):
-        ManagedPairResolver._route_mode("Memory", objects)
+        ManagedPairResolver._route_mode("Memory", {1: 2})
+
+
+def test_cluster_probes_use_supported_hostname_metadata() -> None:
+    raw = _Client()
+
+    ManagedPairResolver(raw).resolve(cluster="core", database="db", table="events")
+
+    cluster_queries = [query for query in raw.queries if "clusterAllReplicas" in query]
+    assert cluster_queries
+    assert all("_replica_num" not in query for query in cluster_queries)
+    assert all("_shard_num" not in query and "hostName()" in query for query in cluster_queries)

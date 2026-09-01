@@ -167,10 +167,12 @@ class NativeClickHouseClient:
         table: str,
         df: pd.DataFrame,
         column_names: Sequence[str],
+        settings: Mapping[str, Any] | None = None,
     ) -> Any:
         query = _insert_query(table, column_names)
         rows = list(df.itertuples(index=False, name=None))
-        return self._client.execute(query, rows)
+        kwargs = {"settings": dict(settings)} if settings else {}
+        return self._client.execute(query, rows, **kwargs)
 
     def insert(
         self,
@@ -178,6 +180,7 @@ class NativeClickHouseClient:
         data: Sequence[Sequence[Any]],
         column_names: Sequence[str],
         column_type_names: Sequence[str] | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> Any:
         if column_type_names is not None and len(column_type_names) != len(column_names):
             message = "column_type_names must match column_names."
@@ -187,12 +190,14 @@ class NativeClickHouseClient:
 
             types = dict(zip(column_names, column_type_names))
             data = [normalize_typed_row(column_names, row, types) for row in data]
-        data, settings = _prepare_binary_string_insert(
+        data, string_settings = _prepare_binary_string_insert(
             self._client,
             data,
             column_type_names,
         )
-        kwargs = {"settings": settings} if settings is not None else {}
+        execution_settings = dict(settings or {})
+        execution_settings.update(string_settings or {})
+        kwargs = {"settings": execution_settings} if execution_settings else {}
         return self._client.execute(_insert_query(table, column_names), data, **kwargs)
 
     def close(self) -> None:
@@ -308,7 +313,8 @@ def _is_column_metadata(value: Any) -> bool:
 
 
 def _insert_query(table: str, column_names: Sequence[str]) -> str:
-    if table.lstrip().upper().startswith("FUNCTION CLUSTER("):
+    normalized_table = table.lstrip().upper()
+    if normalized_table.startswith(("FUNCTION CLUSTER(", "FUNCTION CLUSTERALLREPLICAS(")):
         quoted_columns = ", ".join(quote_identifier(column, "ch") for column in column_names)
         return f"INSERT INTO {table.strip()} ({quoted_columns}) VALUES"
     parsed = _parse_table_name(table, "clickhouse")

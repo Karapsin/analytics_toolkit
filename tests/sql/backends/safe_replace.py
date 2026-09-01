@@ -459,6 +459,12 @@ def test_clickhouse_replace_helpers_cover_local_clusters_and_cleanup_failures() 
     )
     assert ch_safe_replace._clusters(request) == ("shards", "facades", "reads")
     assert ch_safe_replace._target_fingerprint(_ChConnection(), "sandbox.target", None)
+    connection = _ChConnection()
+    assert ch_safe_replace._target_fingerprint(connection, "sandbox.target", "core")
+    fingerprint_query = connection.queries[-1]
+    assert "_replica_num" not in fingerprint_query
+    assert "_shard_num" not in fingerprint_query
+    assert "SELECT hostName(), count()" in fingerprint_query
 
     class _FailingAdapter:
         def execute_command(self, *_args: Any) -> None:

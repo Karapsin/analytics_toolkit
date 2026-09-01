@@ -241,6 +241,28 @@ def test_insert_keeps_text_only_native_path_unchanged() -> None:
     assert raw.execute_calls[-1][1:] == (([("text",)],), {})
 
 
+def test_insert_methods_forward_native_settings() -> None:
+    raw = FakeNativeClient()
+    client = NativeClickHouseClient(raw)
+
+    client.insert(
+        "db.target",
+        [("text",)],
+        ["value"],
+        ["String"],
+        settings={"distributed_foreground_insert": 1},
+    )
+    client.insert_df(
+        "db.target",
+        pd.DataFrame({"value": ["text"]}),
+        ["value"],
+        settings={"distributed_foreground_insert": 1},
+    )
+
+    assert raw.execute_calls[-2][2] == {"settings": {"distributed_foreground_insert": 1}}
+    assert raw.execute_calls[-1][2] == {"settings": {"distributed_foreground_insert": 1}}
+
+
 def test_binary_string_helper_edges() -> None:
     assert _is_string_type(" FixedString(2) ") is True
     assert _is_string_type("Int64") is False

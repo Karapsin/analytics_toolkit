@@ -11,7 +11,9 @@ from analytics_toolkit.sql.connection import get_connection_config
 
 from release_routines import sql_integration
 from tests.sql.integration import conftest as integration_conftest
+from tests.sql.integration._support import resources as integration_resources
 from tests.sql.integration.auth import auth as integration_auth
+from tests.sql.integration.auth import negative as integration_auth_negative
 
 
 @pytest.mark.parametrize(
@@ -91,6 +93,66 @@ def test_integration_pytest_command_bounds_each_test(tmp_path: Path) -> None:
 
     assert f"--timeout={sql_integration.TEST_TIMEOUT_SECONDS}" in command
     assert "--timeout-method=signal" in command
+
+
+def test_resource_cleanup_waits_for_a_restarted_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    attempts = 0
+
+    def drop_table(*_args, **_kwargs) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 5:
+            message = "Trino server is still initializing"
+            raise RuntimeError(message)
+
+    monkeypatch.setattr(integration_resources.sql, "drop_tables", drop_table)
+    monkeypatch.setattr(integration_resources.time, "sleep", lambda _seconds: None)
+    registry = integration_resources.ResourceRegistry(
+        root=tmp_path,
+        project=None,
+        artifact_dir=tmp_path / "artifacts",
+    )
+    registry.table("trino", "iceberg.integration.target")
+
+    assert registry.cleanup() == []
+    assert attempts == 6
+
+
+def test_browser_oauth_reloads_until_keycloak_login_is_visible() -> None:
+    class Login:
+        attempts = 0
+
+        def wait_for(self, **_kwargs) -> None:
+            self.attempts += 1
+            if self.attempts <= 2:
+                raise TimeoutError
+
+    class Page:
+        def __init__(self) -> None:
+            self.login = Login()
+            self.goto_calls = 0
+            self.reload_calls = 0
+
+        def goto(self, *_args, **_kwargs) -> None:
+            self.goto_calls += 1
+
+        def reload(self, **_kwargs) -> None:
+            self.reload_calls += 1
+
+        def locator(self, selector: str) -> Login:
+            assert selector == "#username"
+            return self.login
+
+    page = Page()
+
+    login = integration_auth_negative._open_keycloak_login(page, "https://oauth", TimeoutError)
+
+    assert login is page.login
+    assert page.goto_calls == 1
+    assert page.reload_calls == 2
 
 
 def test_airflow_plain_http_trino_route_never_uses_basic_auth_password() -> None:

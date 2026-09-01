@@ -34,6 +34,9 @@ GP_CERT_CASES = (
     "wrong_key",
 )
 
+_BROWSER_LOGIN_ATTEMPTS = 3
+_BROWSER_LOGIN_TIMEOUT_MS = 15_000
+
 
 @pytest.mark.parametrize(
     ("backend", "valid_alias", "failure"),
@@ -133,6 +136,7 @@ def _install_browser_oauth(
         import trino.auth  # noqa: PLC0415 - auth profile dependency.
         from cryptography import x509  # noqa: PLC0415
         from cryptography.hazmat.primitives import serialization  # noqa: PLC0415
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError  # noqa: PLC0415
         from playwright.sync_api import sync_playwright  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover
         pytest.fail(f"auth integration dependency is missing: {exc}")
@@ -155,8 +159,8 @@ def _install_browser_oauth(
                 args=[f"--ignore-certificate-errors-spki-list={spki_pin}"],
             )
             page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded")
-            page.locator("#username").fill("integration")
+            username = _open_keycloak_login(page, url, PlaywrightTimeoutError)
+            username.fill("integration")
             page.locator("#password").fill(password)
             page.locator("#kc-login").click(no_wait_after=before_callback is not None)
             if before_callback is not None:
@@ -167,6 +171,26 @@ def _install_browser_oauth(
     authentication = real_oauth(redirect)
     monkeypatch.setattr(trino.auth, "OAuth2Authentication", lambda: authentication)
     return callbacks, alias
+
+
+def _open_keycloak_login(page, url: str, timeout_error: type[BaseException]):
+    last_error: BaseException | None = None
+    for attempt in range(_BROWSER_LOGIN_ATTEMPTS):
+        try:
+            if attempt == 0:
+                page.goto(url, wait_until="domcontentloaded")
+            else:
+                page.reload(wait_until="domcontentloaded")
+            username = page.locator("#username")
+            username.wait_for(state="visible", timeout=_BROWSER_LOGIN_TIMEOUT_MS)
+        except timeout_error as exc:  # noqa: PERF203 - browser waits are intentionally retried.
+            last_error = exc
+        else:
+            return username
+    if last_error is None:  # pragma: no cover - the retry range is non-empty.
+        message = "Keycloak login retry did not run."
+        raise RuntimeError(message)
+    raise last_error
 
 
 @pytest.mark.sql_scenario("auth.oauth.reuse")
