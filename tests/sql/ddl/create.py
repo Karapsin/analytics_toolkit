@@ -17,7 +17,7 @@ def test_create_sql_table_logs_generated_sql_preview(monkeypatch, capsys) -> Non
         lambda _key: connection,
     )
 
-    ddl_create_table_module.create_sql_table(
+    ddl_create_table_module.create_table(
         db_key="gp",
         table_name="sandbox.created_table",
         df=pd.DataFrame({"id": [1]}),
@@ -26,7 +26,7 @@ def test_create_sql_table_logs_generated_sql_preview(monkeypatch, capsys) -> Non
     )
 
     output = capsys.readouterr().out
-    assert "[create_sql_table] [gp/gp] [create_target] Finished SQL in " in output
+    assert "[create_table] [gp/gp] [create_target] Finished SQL in " in output
     assert "Finished SQL statement:\nCREATE TABLE sandbox.created_table" in output
     assert connection.executed[0].startswith("CREATE TABLE sandbox.created_table")
 
@@ -40,7 +40,7 @@ def test_create_sql_table_only_generate_sql_accepts_schema_without_dataframe(
         lambda _key: pytest.fail("connection should not be opened"),
     )
 
-    ddl = ddl_create_table_module.create_sql_table(
+    ddl = ddl_create_table_module.create_table(
         db_key="gp",
         table_name="sandbox.schema_only",
         table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
@@ -66,7 +66,7 @@ def test_create_sql_table_accepts_schema_without_dataframe(monkeypatch) -> None:
         fake_get_sql_connection,
     )
 
-    ddl_create_table_module.create_sql_table(
+    ddl_create_table_module.create_table(
         db_key="gp_sandbox",
         table_name="sandbox.schema_only",
         table_schema={"user_id": "BIGINT", "score": "DOUBLE PRECISION"},
@@ -89,13 +89,13 @@ def test_create_sql_table_dry_run_and_return_sql_do_not_open_connection(
         lambda _key: pytest.fail("connection should not be opened"),
     )
 
-    dry_run_plan = ddl_create_table_module.create_sql_table(
+    dry_run_plan = ddl_create_table_module.create_table(
         db_key="gp",
         table_name="sandbox.schema_only",
         table_schema={"id": "BIGINT"},
         dry_run=True,
     )
-    return_sql_plan = ddl_create_table_module.create_sql_table(
+    return_sql_plan = ddl_create_table_module.create_table(
         db_key="gp",
         table_name="sandbox.schema_only",
         table_schema={"id": "BIGINT"},
@@ -107,12 +107,12 @@ def test_create_sql_table_dry_run_and_return_sql_do_not_open_connection(
 
 
 def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> None:
-    plan = ddl_create_table_module.create_sql_table(
+    plan = ddl_create_table_module.create_table(
         "ch",
         "analytics.events",
         sql="select id from source_table",
         source_db="gp",
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         insert_data=True,
         dry_run=True,
         ch_shard_on_cluster="analytics",
@@ -133,12 +133,12 @@ def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -
 
 
 def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target() -> None:
-    plan = ddl_create_table_module.create_sql_table(
+    plan = ddl_create_table_module.create_table(
         "ch",
         "analytics.events",
         sql="select dt, id from source_table",
         source_db="gp",
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         insert_data=True,
         dry_run=True,
         ch_only_shard=True,

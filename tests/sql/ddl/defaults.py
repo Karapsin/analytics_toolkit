@@ -15,7 +15,7 @@ from analytics_toolkit.sql.connection.ddl_defaults import (
     parse_ddl_defaults,
 )
 from analytics_toolkit.sql.connection.errors import SqlConfigError
-from analytics_toolkit.sql.ddl.api import create_sql_table
+from analytics_toolkit.sql.ddl.api import create_table
 from analytics_toolkit.sql.ddl.properties import (
     overlay_with_properties,
     render_ddl_property_value,
@@ -148,7 +148,7 @@ def test_parquet_stage_properties_restore_workflow_required_values() -> None:
 
 
 def test_trino_explicit_properties_override_connection_defaults() -> None:
-    sql = create_sql_table(
+    sql = create_table(
         "trino",
         "memory.default.events",
         table_schema={"id": "bigint"},
@@ -553,7 +553,7 @@ def test_clickhouse_null_on_cluster_omits_cluster_and_local_duplicate() -> None:
 
 def test_public_ch_cluster_compatibility_argument_warns() -> None:
     with pytest.warns(DeprecationWarning, match="ch_cluster is deprecated"):
-        create_sql_table(
+        create_table(
             "ch",
             "analytics.events",
             table_schema={"id": "UInt64"},

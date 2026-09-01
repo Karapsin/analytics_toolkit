@@ -124,7 +124,7 @@ def test_create_sql_table_schema_copy_matrix(
     )
 
     query = f"SELECT row_id, event_date, value, amount FROM {source_table}"
-    sql.create_sql_table(
+    sql.create_table(
         target_alias,
         target_table,
         sql=query,
@@ -136,13 +136,13 @@ def test_create_sql_table_schema_copy_matrix(
     empty_info = sql.table_info(target_alias, target_table, include_row_count=True)
     assert empty_info.exists and empty_info.row_count == 0
 
-    inserted = sql.create_sql_table(
+    inserted = sql.create_table(
         target_alias,
         target_table,
         sql=query,
         source_db=source_alias,
         insert_data=True,
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         retry_cnt=1,
         **_copy_options(target),
     )
@@ -178,7 +178,7 @@ def test_create_sql_table_preserves_same_trino_array_types(
                 AS pers_offers_pk
     """
 
-    sql.create_sql_table(
+    sql.create_table(
         alias,
         target_table,
         sql=source_query,
@@ -194,12 +194,12 @@ def test_create_sql_table_preserves_same_trino_array_types(
         "pers_offers_pk": "array(varbinary)",
     }
 
-    inserted = sql.create_sql_table(
+    inserted = sql.create_table(
         alias,
         target_table,
         sql=source_query,
         insert_data=True,
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         retry_cnt=1,
         query_label=_query_label("trino_complex_schema_insert"),
     )
@@ -220,7 +220,7 @@ def test_greenplum_native_distribution_ddl(resource_registry: ResourceRegistry) 
     if not backend_enabled("gp"):
         pytest.skip("Greenplum requires x86_64")
     table = _registered(resource_registry, "gp", "gp_target", "ddl_gp")
-    sql.create_sql_table(
+    sql.create_table(
         "gp_target",
         table,
         table_schema=_schema("gp"),
@@ -235,7 +235,7 @@ def test_greenplum_native_distribution_ddl(resource_registry: ResourceRegistry) 
 @pytest.mark.sql_scenario("ddl.native.trino")
 def test_trino_native_iceberg_properties(resource_registry: ResourceRegistry) -> None:
     table = _registered(resource_registry, "trino", "trino_target_values", "ddl_trino")
-    sql.create_sql_table(
+    sql.create_table(
         "trino_target_values",
         table,
         table_schema=_schema("trino"),
@@ -269,7 +269,7 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
         "ch_sharding_key": "row_id",
         "retry_cnt": 1,
     }
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         "ch_target",
         table,
         only_generate_sql=True,
@@ -278,15 +278,15 @@ def test_clickhouse_native_distributed_ddl(resource_registry: ResourceRegistry) 
     assert isinstance(generated, str)
     assert "ON CLUSTER integration_cluster" in generated
     assert "ON CLUSTER integration_facade_cluster" in generated
-    sql.create_sql_table(
+    sql.create_table(
         "ch_target",
         table,
         **create_options,
     )
-    replacement = sql.create_sql_table(
+    replacement = sql.create_table(
         "ch_target",
         table,
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         return_metadata=True,
         **create_options,
     )
@@ -330,7 +330,7 @@ def test_clickhouse_reconfigure_managed_pair(resource_registry: ResourceRegistry
         distributed=True,
     )
     frame = _portable_frame()
-    sql.create_sql_table(
+    sql.create_table(
         "ch_target",
         table,
         df=frame,
@@ -396,7 +396,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
     alias = backend_alias(backend, target=True)
     dry_table = resource_registry.table(alias, integration_table(backend, "ddl_dry_run"))
     options = _copy_options(backend)
-    plan = sql.create_sql_table(
+    plan = sql.create_table(
         alias,
         dry_table,
         table_schema=_schema(backend),
@@ -407,7 +407,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
     assert plan.statements
     assert not sql.table_info(alias, dry_table).exists
 
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         alias,
         dry_table,
         table_schema=_schema(backend),
@@ -416,7 +416,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
     )
     assert isinstance(generated, str) and "CREATE" in generated.upper()
 
-    result = sql.create_sql_table(
+    result = sql.create_table(
         alias,
         dry_table,
         table_schema=_schema(backend),
@@ -427,11 +427,11 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
     assert result.metadata.statement_count >= 1
     assert sql.table_info(alias, dry_table).exists
 
-    replacement = sql.create_sql_table(
+    replacement = sql.create_table(
         alias,
         dry_table,
         table_schema=_schema(backend),
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         return_metadata=True,
         retry_cnt=1,
         **options,
@@ -442,7 +442,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
 
     invalid_table = resource_registry.table(alias, integration_table(backend, "ddl_invalid"))
     with pytest.raises(Exception, match=r"(?i)type|schema|syntax|unknown"):
-        sql.create_sql_table(
+        sql.create_table(
             alias,
             invalid_table,
             table_schema={"row_id": "DEFINITELY_NOT_A_REAL_TYPE"},
@@ -456,7 +456,7 @@ def test_create_table_generation_metadata_and_invalid_schema_options(
         integration_table(backend, "ddl_missing_source"),
     )
     with pytest.raises(Exception, match=r"(?i)not found|does not exist|unknown|missing"):
-        sql.create_sql_table(
+        sql.create_table(
             alias,
             missing_table,
             sql="SELECT * FROM integration.definitely_missing_source_table",
@@ -476,8 +476,8 @@ def test_greenplum_random_and_single_key_distribution(
         pytest.skip("Greenplum requires x86_64")
     random_table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_random")
     keyed_table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_keyed")
-    sql.create_sql_table("gp_target", random_table, table_schema=_schema("gp"), retry_cnt=1)
-    sql.create_sql_table(
+    sql.create_table("gp_target", random_table, table_schema=_schema("gp"), retry_cnt=1)
+    sql.create_table(
         "gp_target",
         keyed_table,
         table_schema=_schema("gp"),
@@ -528,7 +528,7 @@ def test_greenplum_initial_range_partitions(
         "query_label": _query_label("gp_partition_range"),
         "retry_cnt": 1,
     }
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         "gp_target",
         table,
         only_generate_sql=True,
@@ -536,7 +536,7 @@ def test_greenplum_initial_range_partitions(
     )
     assert "PARTITION BY RANGE" in generated
     assert "EVERY (INTERVAL '1 month')" in generated
-    sql.create_sql_table("gp_target", table, **create_options)
+    sql.create_table("gp_target", table, **create_options)
 
     initial = pd.DataFrame(
         {
@@ -630,7 +630,7 @@ def test_greenplum_initial_list_partitions(
     table = _registered(resource_registry, "gp", "gp_target", "ddl_gp_list")
     partitions = {"values": ["free", "paid"]}
     frame = pd.DataFrame({"segment": ["free", "paid"], "row_id": [1, 2]})
-    sql.create_sql_table(
+    sql.create_table(
         "gp_target",
         table,
         table_schema={"segment": "TEXT", "row_id": "BIGINT"},
@@ -677,8 +677,8 @@ def test_clickhouse_shard_only_replace_flow(resource_registry: ResourceRegistry)
         "ch_replace_table": True,
         "retry_cnt": 1,
     }
-    sql.create_sql_table("ch_target", table, **options)
-    sql.create_sql_table("ch_target", table, **options)
+    sql.create_table("ch_target", table, **options)
+    sql.create_table("ch_target", table, **options)
     ddl = " ".join(sql.extract_ddl("ch_target", table).upper().split())
     assert "MERGETREE" in ddl and "ORDER BY" in ddl
     info = sql.table_info("ch_target", table)

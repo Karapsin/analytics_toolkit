@@ -5,7 +5,7 @@
 Table creation can start from an in-memory dataframe or from a source SQL query.
 Choose dataframe-based creation when Python owns the rows. Choose query-based
 creation when database metadata should define the target columns. The main
-entrypoint is [sql.create_sql_table](functions/create_sql_table.md).
+entrypoint is [sql.create_table](functions/create_table.md).
 
 ## DataFrame-Based Creation
 

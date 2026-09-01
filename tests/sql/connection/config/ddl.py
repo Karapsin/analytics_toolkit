@@ -34,7 +34,7 @@ def test_create_table_dataframe_and_name_validation_edges() -> None:
             table_schema={"id": "BIGINT"},
         )
     with pytest.raises(ValueError, match="table_name must not be empty"):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             "gp",
             " ",
             pd.DataFrame({"id": [1]}),
@@ -173,10 +173,10 @@ def test_create_table_drop_target_runs_before_every_create_attempt(
         fake_run_connection_operation,
     )
 
-    result = create_sql_table_module.create_sql_table(
+    result = create_sql_table_module.create_table(
         "gp_alias",
         "mart.target",
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         return_metadata=True,
         **schema_source,
     )
@@ -230,7 +230,7 @@ def test_create_table_execution_returns_metadata_and_builds_context(
         fake_run_connection_operation,
     )
 
-    result = create_sql_table_module.create_sql_table(
+    result = create_sql_table_module.create_table(
         "gp_alias",
         "mart.target",
         pd.DataFrame({"id": [1]}),
@@ -247,7 +247,7 @@ def test_create_table_execution_returns_metadata_and_builds_context(
 
 
 def test_create_table_from_sql_dry_run_accepts_scalar_distribution_key() -> None:
-    plan = create_sql_table_module.create_sql_table(
+    plan = create_sql_table_module.create_table(
         db_key="gp",
         table_name="schema.target",
         sql="select description from source_table",
@@ -363,13 +363,13 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
         lambda *args, **kwargs: ["create first;", "create second;"],
     )
 
-    generated = create_sql_table_module.create_sql_table(
+    generated = create_sql_table_module.create_table(
         db_key="target_alias",
         source_db="source_alias",
         table_name="mart.target",
         sql="select id, amount from source",
         gp_distributed_by_key="id",
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         only_generate_sql=True,
         query_label="coverage-ddl",
     )
@@ -391,10 +391,10 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
 def test_create_table_only_generate_includes_drop_for_regular_schema_sources(
     schema_source: dict[str, object],
 ) -> None:
-    generated = create_sql_table_module.create_sql_table(
+    generated = create_sql_table_module.create_table(
         "gp",
         "schema.target",
-        drop_target_if_exists=True,
+        drop_if_exists=True,
         only_generate_sql=True,
         **schema_source,
     )
@@ -403,7 +403,7 @@ def test_create_table_only_generate_includes_drop_for_regular_schema_sources(
 
 
 def test_create_table_sql_accepts_connection_alias() -> None:
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="gp_sandbox",
         table_name="schema.target",
         df=pd.DataFrame({"id": [1], "value": ["x"]}),
@@ -416,7 +416,7 @@ def test_create_table_sql_accepts_connection_alias() -> None:
 
 
 def test_create_table_sql_accepts_scalar_distribution_key() -> None:
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="gp",
         table_name="schema.target",
         df=pd.DataFrame({"description": ["x"], "value": [1]}),
@@ -428,13 +428,13 @@ def test_create_table_sql_accepts_scalar_distribution_key() -> None:
 
 
 def test_create_table_sql_accepts_table_schema_override() -> None:
-    gp_sql = create_sql_table_module.create_sql_table(
+    gp_sql = create_sql_table_module.create_table(
         db_key="gp",
         table_name="schema.target",
         table_schema={"id": "TEXT", "amount": "NUMERIC(10, 2)"},
         only_generate_sql=True,
     )
-    trino_sql = create_sql_table_module.create_sql_table(
+    trino_sql = create_sql_table_module.create_table(
         db_key="trino",
         table_name="schema.target",
         table_schema={"id": "VARCHAR", "amount": "DECIMAL(10, 2)"},
@@ -458,7 +458,7 @@ def test_create_table_sql_accepts_table_schema_override() -> None:
 
 def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
     with pytest.raises(TypeError, match="table_schema"):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             db_key="gp",
             table_name="schema.target",
             table_schema=[("id", "BIGINT")],
@@ -468,7 +468,7 @@ def test_create_table_sql_rejects_invalid_table_schema_type() -> None:
 
 def test_create_table_sql_rejects_multiple_schema_sources() -> None:
     with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             db_key="gp",
             table_name="schema.target",
             df=pd.DataFrame({"id": [1]}),
@@ -488,7 +488,7 @@ def test_create_table_sql_validates_table_schema(
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             db_key="gp",
             table_name="schema.target",
             table_schema=table_schema,

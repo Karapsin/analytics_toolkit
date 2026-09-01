@@ -124,18 +124,21 @@ def _install_transfer_configs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 PUBLIC_DRY_RUN_OPERATIONS = {
-    "create_sql_table",
+    "create_table",
     "drop_partitions",
     "drop_tables",
     "execute",
+    "execute_create",
+    "execute_insert",
     "gp_create_partitions",
     "load_df",
+    "insert",
     "transfer",
 }
 
 
 PUBLIC_DRY_RUN_SMOKE_CASES: dict[str, Callable[[], Any]] = {
-    "create_sql_table": lambda: sql.create_sql_table(
+    "create_table": lambda: sql.create_table(
         "gp",
         "sandbox.schema_only",
         table_schema={"id": "BIGINT"},
@@ -157,6 +160,12 @@ PUBLIC_DRY_RUN_SMOKE_CASES: dict[str, Callable[[], Any]] = {
         "select 1",
         dry_run=True,
     ),
+    "execute_create": lambda: sql.execute_create(
+        "gp", "sandbox.created", "SELECT 1 AS id", dry_run=True
+    ),
+    "execute_insert": lambda: sql.execute_insert(
+        "gp", "sandbox.events", "SELECT 1 AS id", dry_run=True
+    ),
     "gp_create_partitions": lambda: sql.gp_create_partitions(
         "gp",
         "sandbox.events",
@@ -169,6 +178,7 @@ PUBLIC_DRY_RUN_SMOKE_CASES: dict[str, Callable[[], Any]] = {
         pd.DataFrame({"id": [1]}),
         dry_run=True,
     ),
+    "insert": lambda: sql.insert("gp", "sandbox.events", "SELECT 1 AS id", dry_run=True),
     "transfer": lambda: sql.transfer(
         from_db="ch",
         to_db="trino",

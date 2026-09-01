@@ -25,6 +25,7 @@ class CreateSqlTableOptions:
     ch_only_shard: bool = False
     ch_replace_table: bool = False
     drop_target_if_exists: bool = False
+    if_not_exists: bool = False
     dry_run: bool = False
     return_sql: bool = False
     query_label: str | None = None

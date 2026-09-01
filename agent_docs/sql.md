@@ -48,7 +48,7 @@ investigation.
 
 - `connection/config.py`: finds `.connections`, parses it as JSON, normalizes aliases to lowercase, validates fields, and resolves alias to backend.
 - `connection/get_sql_connection.py`: opens backend clients and handles optional CA certificate files and generated bundles from the `.connections` directory.
-- `ddl/create_sql_table.py`: infers dataframe column types, quotes identifiers per backend, and builds ClickHouse distributed DDL.
+- `ddl/create_table.py`: infers dataframe column types, quotes identifiers per backend, and builds ClickHouse distributed DDL.
 - `dml/io`: read/execute helpers using `sqlparse`; `read_sql` accepts exactly one statement.
 - `dml/load`: dataframe loading, stage table creation, batch insertion, Trino chunking, and backend-specific scalar normalization.
 - `dml/table`: shared table existence, analyze, drop, vacuum, stage finalization, and validation helpers.

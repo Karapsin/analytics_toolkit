@@ -21,13 +21,13 @@ from .core.capabilities import (
     BACKEND_CAPABILITIES,
 )
 from .core.types import BackendName, ConnectionKey, SqlTaskType, SqlText, TableName
-from .ddl.api import (
-    create_sql_table,
-)
+from .ddl.api import create_table
+from .ddl.compat import create_sql_table
 from .ddl.extract_ddl import extract_ddl
 from .dml.empty_source import EmptySourceError, EmptySourcePolicy
 from .dml.io.cancel_queries import cancel_queries
 from .dml.io.execute_read import execute_read
+from .dml.io.execute_create import execute_create
 from .dml.io.execute_safety import (
     AmbiguousSqlMutationError,
     ExecuteRetryPolicy,
@@ -36,6 +36,7 @@ from .dml.io.execute_safety import (
     SqlBatchItemStatus,
 )
 from .dml.io.execute_sql import execute_sql as execute
+from .dml.io.query_writes import execute_insert, insert
 from .dml.io.read_sql import read_sql as read
 from .dml.load.load_df import load_df
 from .dml.table import (
@@ -67,9 +68,11 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "parallel_sql",
     "cancel_queries",
     "ch_reconfigure_table",
-    "create_sql_table",
+    "create_table",
     "extract_ddl",
     "execute_read",
+    "execute_create",
+    "execute_insert",
     "execute",
     "drop_tables",
     "drop_partitions",
@@ -77,6 +80,7 @@ _TIMED_PUBLIC_SQL_FUNCTION_NAMES = (
     "gp_create_partitions",
     "gp_vacuum",
     "load_df",
+    "insert",
     "read",
     "show_queries",
     "show_tables",
@@ -114,10 +118,13 @@ __all__ = [
     "cancel_queries",
     "ch_reconfigure_table",
     "cleanup_stale_stage_tables",
+    "create_table",
     "create_sql_table",
     "drop_partitions",
     "drop_tables",
     "execute",
+    "execute_create",
+    "execute_insert",
     "execute_read",
     "extract_ddl",
     "format_plan",
@@ -126,6 +133,7 @@ __all__ = [
     "gp_analyze_partitioned_table",
     "gp_create_partitions",
     "gp_vacuum",
+    "insert",
     "load_df",
     "parallel_sql",
     "read",

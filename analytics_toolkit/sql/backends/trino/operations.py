@@ -1,12 +1,42 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.backends.base import _apply_query_label
+from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..models import TargetConnectionDefaults
 from ..utils import sql_literal
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+
+def build_execute_create_as_sqls(  # noqa: PLR0913
+    adapter: Any,
+    *,
+    table_name: str,
+    source_sql: str,
+    gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any,
+    partition_by: Any,
+    order_by: Any,
+    ddl_properties: Mapping[str, Any] | None,
+    ch_creation_policy: Any,
+    ch_only_shard: bool,
+    if_not_exists: bool,
+) -> tuple[list[str], bool]:
+    del adapter, gp_distributed_by_key, gp_partitions, ch_creation_policy, ch_only_shard
+    from .adapter import _build_trino_table_properties  # noqa: PLC0415
+
+    create = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
+    properties = _build_trino_table_properties(
+        partition_by=partition_by,
+        order_by=order_by,
+    )
+    sql = f"{create} {table_name} WITH ({properties}) AS {source_sql}"
+    return [overlay_with_properties(sql, ddl_properties or {})], False
 
 
 def build_materialize_transfer_source_sql(

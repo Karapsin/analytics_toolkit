@@ -6,8 +6,12 @@ from .models import CreateSqlTableOptions
 
 
 def __getattr__(name: str) -> Any:
+    if name == "create_table":
+        from .api import create_table  # noqa: PLC0415
+
+        return create_table
     if name == "create_sql_table":
-        from .api import create_sql_table  # noqa: PLC0415
+        from .compat import create_sql_table  # noqa: PLC0415
 
         return create_sql_table
     raise AttributeError(name)
@@ -15,6 +19,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "column_list_sql",
+    "create_table",
     "create_sql_table",
     "CreateSqlTableOptions",
     "extract_ddl",

@@ -321,7 +321,7 @@ def test_table_lifecycle_matrix(backend: str) -> None:
     alias = _alias(backend, target=True)
     table = _table(backend, "lifecycle_matrix")
     try:
-        sql.create_sql_table(alias, table, df=_frame(), **_shape_options(backend))
+        sql.create_table(alias, table, df=_frame(), **_shape_options(backend))
         info = sql.table_info(alias, table, include_row_count=True)
         assert info.exists
         if backend == "trino":

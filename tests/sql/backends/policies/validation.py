@@ -147,7 +147,7 @@ def test_create_from_sql_rejects_clickhouse_wait_policy_for_trino(
     write_sql_connections({"trino": _trino_config()})
 
     with pytest.raises(ValueError, match="requires a ClickHouse target"):
-        sql.create_sql_table(
+        sql.create_table(
             "trino",
             "stage.target",
             sql="SELECT 1 AS id",

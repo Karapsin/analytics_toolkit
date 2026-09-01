@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# ruff: noqa: FBT001, FBT002
+
 import re
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from ..registry import get_backend_adapter
 from ...ddl.identifiers import (
@@ -25,6 +28,7 @@ def _build_ch_create_table_sqls(
     ch_distributed_table: bool,
     ch_only_shard: bool,
     ch_replace_table: bool,
+    if_not_exists: bool = True,
     **_: object,
 ) -> list[str]:
     if ch_only_shard:
@@ -36,6 +40,7 @@ def _build_ch_create_table_sqls(
                 order_by=order_by,
                 ch_engine=ch_engine,
                 ch_replace_table=ch_replace_table,
+                if_not_exists=if_not_exists,
             )
         ]
     if ch_distributed_table:
@@ -48,11 +53,14 @@ def _build_ch_create_table_sqls(
             ch_cluster=ch_cluster,
             ch_sharding_key=ch_sharding_key,
             ch_replace_table=ch_replace_table,
+            if_not_exists=if_not_exists,
         )
     return [
-        f"CREATE TABLE {table_name} ({joined_columns}) "
+        f"{'CREATE TABLE IF NOT EXISTS' if if_not_exists else 'CREATE TABLE'} "
+        f"{table_name} ({joined_columns}) "
         "ENGINE = MergeTree ORDER BY tuple()"
     ]
+
 
 def build_ch_distributed_create_table_sqls(
     table_name: str,
@@ -63,6 +71,7 @@ def build_ch_distributed_create_table_sqls(
     ch_cluster: str = "{cluster}",
     ch_sharding_key: str = "rand()",
     ch_replace_table: bool = False,
+    if_not_exists: bool = True,
 ) -> list[str]:
     shard_table = build_ch_shard_table_name(table_name)
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
@@ -70,12 +79,14 @@ def build_ch_distributed_create_table_sqls(
     ch_sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
     partition_sql = _build_partition_by_sql(partition_by)
     order_by_sql = _build_order_by_sql(order_by)
-    database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(
-        shard_table
-    )
+    database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(shard_table)
 
     cluster_create_statement = (
-        "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
+        "CREATE OR REPLACE TABLE"
+        if ch_replace_table
+        else "CREATE TABLE IF NOT EXISTS"
+        if if_not_exists
+        else "CREATE TABLE"
     )
 
     shard_sql = (
@@ -86,14 +97,12 @@ def build_ch_distributed_create_table_sqls(
         f"{partition_sql}"
         f"{order_by_sql}"
     )
-    local_shard_sql = (
-        build_ch_local_create_table_sql(
-            table_name=shard_table,
-            joined_columns=joined_columns,
-            partition_by=partition_by,
-            order_by=order_by,
-            ch_engine=engine,
-        )
+    local_shard_sql = build_ch_local_create_table_sql(
+        table_name=shard_table,
+        joined_columns=joined_columns,
+        partition_by=partition_by,
+        order_by=order_by,
+        ch_engine=engine,
     )
     distributed_sql = (
         f"{cluster_create_statement} {table_name}\n"
@@ -118,6 +127,7 @@ def build_ch_distributed_create_table_sqls(
     )
     return [shard_sql, local_shard_sql, distributed_sql, local_distributed_sql]
 
+
 def build_ch_local_create_table_sql(
     table_name: str,
     joined_columns: str,
@@ -125,12 +135,17 @@ def build_ch_local_create_table_sql(
     order_by: Sequence[str] | str | None = None,
     ch_engine: str = "ReplicatedMergeTree",
     ch_replace_table: bool = False,
+    if_not_exists: bool = True,
 ) -> str:
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
     partition_sql = _build_partition_by_sql(partition_by)
     order_by_sql = _build_order_by_sql(order_by)
     create_statement = (
-        "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
+        "CREATE OR REPLACE TABLE"
+        if ch_replace_table
+        else "CREATE TABLE IF NOT EXISTS"
+        if if_not_exists
+        else "CREATE TABLE"
     )
     sql = (
         f"{create_statement} {table_name}\n"
@@ -141,8 +156,10 @@ def build_ch_local_create_table_sql(
     )
     return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
+
 def build_ch_shard_table_name(table_name: str) -> str:
     return _add_table_identifier_suffix(table_name, "_shard", "clickhouse")
+
 
 def split_ch_table_name_for_distributed_engine(table_name: str) -> tuple[str, str]:
     table = _parse_table_name(table_name, "clickhouse")
@@ -152,6 +169,7 @@ def split_ch_table_name_for_distributed_engine(table_name: str) -> tuple[str, st
         return "currentDatabase()", relation_name
     return _sql_string_literal(_identifier_name(database)), relation_name
 
+
 def _build_partition_by_sql(
     partition_by: Sequence[str] | str | None,
 ) -> str:
@@ -160,13 +178,11 @@ def _build_partition_by_sql(
     expression = _normalize_ch_expression(partition_by, "partition_by")
     return f"PARTITION BY {expression}\n"
 
+
 def _build_order_by_sql(order_by: Sequence[str] | str | None) -> str:
-    expression = (
-        "tuple()"
-        if order_by is None
-        else _normalize_ch_expression(order_by, "order_by")
-    )
+    expression = "tuple()" if order_by is None else _normalize_ch_expression(order_by, "order_by")
     return f"ORDER BY {expression}"
+
 
 def _normalize_ch_expression(value: Sequence[str] | str, option_name: str) -> str:
     if isinstance(value, str):
@@ -182,14 +198,17 @@ def _normalize_ch_expression(value: Sequence[str] | str, option_name: str) -> st
         return quoted_columns[0]
     return f"({', '.join(quoted_columns)})"
 
+
 def _normalize_non_empty_string(value: str, option_name: str) -> str:
     normalized = value.strip()
     if not normalized:
         raise ValueError(f"{option_name} must not be empty.")
     return normalized
 
+
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
 
 def _format_ch_cluster_name(cluster_name: str) -> str:
     normalized = cluster_name.strip()
@@ -201,6 +220,7 @@ def _format_ch_cluster_name(cluster_name: str) -> str:
         return normalized
     return _sql_string_literal(normalized)
 
+
 def _is_simple_identifier(identifier: str) -> bool:
     if not identifier:
         return False
@@ -208,8 +228,10 @@ def _is_simple_identifier(identifier: str) -> bool:
         return False
     return all(char.isalnum() or char == "_" for char in identifier)
 
+
 def _execute_ch_command(connection: Any, sql: str) -> None:
     get_backend_adapter("ch").execute_command(connection, sql)
+
 
 def add_explicit_ch_uuid_to_local_replicated_create(sql: str) -> str:
     if re.search(r"\bON\s+CLUSTER\b", sql, flags=re.IGNORECASE):

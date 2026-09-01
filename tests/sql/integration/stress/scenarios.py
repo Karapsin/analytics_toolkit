@@ -178,7 +178,7 @@ def test_concurrent_writers_preserve_exact_disjoint_rows(
     ]
     row_type = "Int64" if backend == "ch" else "BIGINT"
     value_type = "TEXT" if backend == "gp" else "String" if backend == "ch" else "VARCHAR"
-    sql.create_sql_table(
+    sql.create_table(
         alias,
         table,
         table_schema={"row_id": row_type, "event_date": "DATE", "value": value_type},

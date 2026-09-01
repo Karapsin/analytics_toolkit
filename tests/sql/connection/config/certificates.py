@@ -38,7 +38,7 @@ def test_certificate_bundle_reuse_and_absolute_path() -> None:
     )
 
     with pytest.raises(InvalidSqlInputError, match="Exactly one schema source"):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             db_key="gp",
             table_name="schema.target",
             sql="select 1 as id",

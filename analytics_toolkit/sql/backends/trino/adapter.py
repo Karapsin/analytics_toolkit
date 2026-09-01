@@ -36,6 +36,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     requires_upsert_partition_drop_template = True
     supports_show_tables_catalog_filter = True
     forbidden_airflow_file_override_fields = _parquet_stage.FORBIDDEN_CREDENTIAL_FIELDS
+    build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
 
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)
@@ -121,6 +122,7 @@ class TrinoAdapter(DbApiBackendAdapter):
         ch_distributed_table: bool,
         ch_only_shard: bool,
         ch_replace_table: bool,
+        if_not_exists: bool = False,
     ) -> list[str]:
         del (
             gp_distributed_by_key,
@@ -136,7 +138,8 @@ class TrinoAdapter(DbApiBackendAdapter):
             partition_by=partition_by,
             order_by=order_by,
         )
-        return [f"CREATE TABLE {table_name} ({joined_columns}) WITH ({properties})"]
+        create = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
+        return [f"{create} {table_name} ({joined_columns}) WITH ({properties})"]
 
     def table_exists(
         self,

@@ -80,7 +80,7 @@ def test_every_orchestration_task_type_returns_real_results(
         }
     )
     sql.load_df("ch", source, frame, write_mode="replace", ch_engine="MergeTree", order_by="row_id")
-    sql.create_sql_table(
+    sql.create_table(
         "ch",
         execute_target,
         table_schema={"row_id": "Int64"},

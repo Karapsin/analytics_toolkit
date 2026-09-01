@@ -6,7 +6,7 @@ ClickHouse write helpers default to a distributed table backed by a managed
 local shard table. This keeps user-facing reads pointed at the distributed table
 while writes and DDL preserve the shard/distributed pair. The main workflows
 are [sql.load_df](functions/load_df.md), [sql.transfer](functions/transfer.md),
-and [sql.create_sql_table](functions/create_sql_table.md).
+and [sql.create_table](functions/create_table.md).
 
 ## Shard and Distributed Pair
 

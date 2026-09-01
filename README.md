@@ -103,6 +103,10 @@ rows = sql.transfer(
 - `sql.read`: run a query and return a dataframe.
 - `sql.execute`: run one DDL/DML string or a concurrent list of independent queries.
 - `sql.execute_read`: run setup SQL and return the final result as a dataframe.
+- `sql.insert`: insert one query result into an existing table by column position.
+- `sql.execute_insert`: run setup SQL and insert the final query result.
+- `sql.execute_create`: run setup SQL and create a table from the final query.
+- `sql.create_table`: create a table from a dataframe, schema, or query.
 - `sql.load_df`: load a pandas dataframe into a configured backend table.
 - `sql.transfer`: move rows from a source query to a target table across backends.
 

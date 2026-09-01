@@ -54,7 +54,7 @@ Set `empty_source_policy="keep"` or `"error"` to override that behavior.
 Use [sql.read](functions/read.md) instead when the goal is only to return a
 source query as a dataframe. Use [sql.load_df](functions/load_df.md) when
 Python already owns the rows. Use
-[sql.create_sql_table](functions/create_sql_table.md) with `sql=` when the
+[sql.create_table](functions/create_table.md) with `sql=` when the
 source query schema should create a target table before any optional insert.
 
 ## Batching

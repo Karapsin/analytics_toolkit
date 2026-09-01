@@ -11,7 +11,7 @@ Greenplum creation and
 
 ## Greenplum Initial Creation
 
-When [sql.create_sql_table](functions/create_sql_table.md),
+When [sql.create_table](functions/create_table.md),
 [sql.load_df](functions/load_df.md), or [sql.transfer](functions/transfer.md)
 creates a Greenplum target, pass one `partition_by` column and `gp_partitions`.
 Range definitions use inclusive `start`, exclusive `end`, and an aligned

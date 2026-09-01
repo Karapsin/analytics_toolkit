@@ -26,7 +26,7 @@ RANGE_PARTITIONS = {
 
 
 def test_create_sql_table_renders_exact_greenplum_range_partition_ddl() -> None:
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         "gp",
         "sandbox.events",
         table_schema={"event_date": "DATE", "id": "BIGINT"},
@@ -55,7 +55,7 @@ def test_create_sql_table_renders_exact_greenplum_range_partition_ddl() -> None:
 
 
 def test_create_sql_table_renders_list_partitions_and_escapes_values() -> None:
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         "gp",
         "sandbox.accounts",
         pd.DataFrame({"segment": ["free"], "id": [1]}),
@@ -76,7 +76,7 @@ def test_create_sql_table_plan_and_metadata_keep_complete_partitioned_ddl(
     connection = _RecordingConnection()
     monkeypatch.setattr(ddl_api, "get_sql_connection", lambda key: connection)
 
-    plan = sql.create_sql_table(
+    plan = sql.create_table(
         "gp",
         "sandbox.events",
         table_schema={"event_date": "DATE", "id": "BIGINT"},
@@ -87,7 +87,7 @@ def test_create_sql_table_plan_and_metadata_keep_complete_partitioned_ddl(
     assert plan.options["gp_partitions"] == RANGE_PARTITIONS
     assert "EVERY (INTERVAL '1 month')" in plan.sqls[0]
 
-    result = sql.create_sql_table(
+    result = sql.create_table(
         "gp",
         "sandbox.events",
         table_schema={"event_date": "DATE", "id": "BIGINT"},
@@ -169,7 +169,7 @@ def test_gp_partition_mapping_validation(
     match: str,
 ) -> None:
     with pytest.raises(InvalidSqlInputError, match=match):
-        sql.create_sql_table(
+        sql.create_table(
             "gp",
             "sandbox.events",
             table_schema={"event_date": "DATE"},
@@ -194,7 +194,7 @@ def test_gp_partition_interval_rejects_unsafe_or_unsupported_values(
     interval: Any,
 ) -> None:
     with pytest.raises(InvalidSqlInputError, match="positive whole number"):
-        sql.create_sql_table(
+        sql.create_table(
             "gp",
             "sandbox.events",
             table_schema={"event_date": "DATE"},
@@ -209,7 +209,7 @@ def test_gp_partition_interval_rejects_unsafe_or_unsupported_values(
 
 
 def test_gp_partition_dates_accept_date_and_datetime() -> None:
-    generated = sql.create_sql_table(
+    generated = sql.create_table(
         "gp",
         "sandbox.events",
         table_schema={"event_date": "DATE"},
@@ -228,7 +228,7 @@ def test_gp_partition_dates_accept_date_and_datetime() -> None:
 
 def test_gp_partition_cross_option_and_backend_validation() -> None:
     with pytest.raises(InvalidSqlInputError, match="requires gp_partitions"):
-        sql.create_sql_table(
+        sql.create_table(
             "gp",
             "sandbox.events",
             table_schema={"event_date": "DATE"},
@@ -236,7 +236,7 @@ def test_gp_partition_cross_option_and_backend_validation() -> None:
             only_generate_sql=True,
         )
     with pytest.raises(InvalidSqlInputError, match="requires partition_by"):
-        sql.create_sql_table(
+        sql.create_table(
             "gp",
             "sandbox.events",
             table_schema={"event_date": "DATE"},
@@ -244,7 +244,7 @@ def test_gp_partition_cross_option_and_backend_validation() -> None:
             only_generate_sql=True,
         )
     with pytest.raises(InvalidSqlInputError, match="exactly one column"):
-        sql.create_sql_table(
+        sql.create_table(
             "gp",
             "sandbox.events",
             table_schema={"event_date": "DATE", "id": "BIGINT"},
@@ -254,7 +254,7 @@ def test_gp_partition_cross_option_and_backend_validation() -> None:
         )
     for backend in ("trino", "ch"):
         with pytest.raises(InvalidSqlInputError, match="only be used"):
-            sql.create_sql_table(
+            sql.create_table(
                 backend,
                 "sandbox.events",
                 table_schema={"event_date": "DATE"},

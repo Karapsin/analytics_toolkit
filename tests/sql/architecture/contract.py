@@ -542,17 +542,21 @@ def test_single_db_sql_public_operations_use_db_key() -> None:
     from analytics_toolkit import sql
 
     single_db_operations = {
+        "create_table",
         "create_sql_table",
         "cancel_queries",
         "ch_reconfigure_table",
         "drop_partitions",
         "drop_tables",
         "execute",
+        "execute_create",
+        "execute_insert",
         "execute_read",
         "extract_ddl",
         "gp_create_partitions",
         "gp_vacuum",
         "load_df",
+        "insert",
         "read",
         "show_tables",
         "table_info",

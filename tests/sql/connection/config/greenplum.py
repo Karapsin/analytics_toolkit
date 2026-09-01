@@ -93,7 +93,7 @@ def test_gp_connection_uses_liveness_defaults(
 
 
 def test_gp_create_table_sql_accepts_initial_partitions_and_rejects_order() -> None:
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="gp",
         table_name="schema.target",
         df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),
@@ -112,7 +112,7 @@ def test_gp_create_table_sql_accepts_initial_partitions_and_rejects_order() -> N
     assert "EVERY (INTERVAL '1 month')" in sql
 
     with pytest.raises(ValueError, match="order_by is not supported"):
-        create_sql_table_module.create_sql_table(
+        create_sql_table_module.create_table(
             db_key="gp",
             table_name="schema.target",
             df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),

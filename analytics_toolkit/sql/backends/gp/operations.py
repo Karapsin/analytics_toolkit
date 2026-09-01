@@ -1,11 +1,46 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.backends.base import _apply_query_label
+from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..utils import sql_string_literal
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+
+def build_execute_create_as_sqls(  # noqa: PLR0913
+    adapter: Any,
+    *,
+    table_name: str,
+    source_sql: str,
+    gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any,
+    partition_by: Any,
+    order_by: Any,
+    ddl_properties: Mapping[str, Any] | None,
+    ch_creation_policy: Any,
+    ch_only_shard: bool,
+    if_not_exists: bool,
+) -> tuple[list[str], bool]:
+    del partition_by, order_by, ch_creation_policy, ch_only_shard
+    if gp_partitions is not None:
+        return [f"CREATE TABLE {table_name} (<schema inferred from final query>)"], True
+    create = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
+    storage = (
+        "WITH (appendonly=true, blocksize=32768, compresstype=zstd, "
+        "compresslevel=4, orientation=column)"
+    )
+    distribution = (
+        f"DISTRIBUTED BY ({adapter.column_list_sql(gp_distributed_by_key)})"
+        if gp_distributed_by_key
+        else "DISTRIBUTED RANDOMLY"
+    )
+    sql = f"{create} {table_name} {storage} AS {source_sql} {distribution}"
+    return [overlay_with_properties(sql, ddl_properties or {})], False
 
 
 def build_upsert_stage_sqls(  # noqa: PLR0913
@@ -57,9 +92,7 @@ def build_show_tables_query(
     if trino_catalog is not None:
         from ...connection.errors import InvalidSqlInputError
 
-        raise InvalidSqlInputError(
-            "trino_catalog is only supported for Trino connections."
-        )
+        raise InvalidSqlInputError("trino_catalog is only supported for Trino connections.")
     from ..metadata import build_gp_show_tables_query
 
     return build_gp_show_tables_query(schema, table_names, conditions)
@@ -125,16 +158,11 @@ def build_create_partition_sql(
 ) -> str:
     del adapter
     if value is not None:
-        return (
-            f"ALTER TABLE {table} ADD PARTITION {name} "
-            f"VALUES ({sql_string_literal(value)})"
-        )
+        return f"ALTER TABLE {table} ADD PARTITION {name} VALUES ({sql_string_literal(value)})"
     if start is None or end is None:
         from ...connection.errors import InvalidSqlInputError
 
-        raise InvalidSqlInputError(
-            "Range partitions require both start and end values."
-        )
+        raise InvalidSqlInputError("Range partitions require both start and end values.")
     return (
         f"ALTER TABLE {table} ADD PARTITION {name} "
         f"START ({sql_string_literal(start)}) INCLUSIVE "

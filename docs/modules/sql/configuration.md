@@ -202,7 +202,7 @@ general equivalent is
 ## Per-Connection DDL Defaults
 
 Each connection may define `ddl_defaults`. `regular` applies to persistent
-targets created by `create_sql_table`, create-from-SQL, `load_df`, and
+targets created by `create_table`, create-from-SQL, `load_df`, and
 `transfer`, and is the convergence baseline for
 `ch_reconfigure_table(..., to_defaults=True)`; `staging` applies to
 toolkit-owned stage, worker, upsert, and

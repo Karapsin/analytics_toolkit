@@ -257,8 +257,15 @@ def build_policy_create_sqls(
     policy: ClickHouseCreationPolicy,
     ch_only_shard: bool,
     ch_replace_table: bool,
+    if_not_exists: bool = True,
 ) -> list[str]:
-    statement = "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS"
+    statement = (
+        "CREATE OR REPLACE TABLE"
+        if ch_replace_table
+        else "CREATE TABLE IF NOT EXISTS"
+        if if_not_exists
+        else "CREATE TABLE"
+    )
     shard_name = (
         build_ch_shard_table_name(table_name)
         if policy.create_distributed_pair and not ch_only_shard
@@ -300,6 +307,71 @@ def build_policy_create_sqls(
     return commands
 
 
+def build_policy_create_as_sqls(
+    *,
+    table_name: str,
+    source_sql: str,
+    partition_by: Any,
+    order_by: Any,
+    policy: ClickHouseCreationPolicy,
+    ch_only_shard: bool,
+    if_not_exists: bool,
+) -> tuple[list[str], bool]:
+    """Build ClickHouse CTAS commands and report whether a final insert is needed."""
+    statement = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
+    create_pair = policy.create_distributed_pair and not ch_only_shard
+    shard_name = build_ch_shard_table_name(table_name) if create_pair else table_name
+    empty = "EMPTY " if create_pair else ""
+    shard_sql = _physical_as_sql(
+        statement,
+        shard_name,
+        source_sql,
+        partition_by,
+        order_by,
+        policy.shard_engine,
+        policy.shard_on_cluster,
+        empty=empty,
+    )
+    commands = [shard_sql]
+    if policy.shard_on_cluster is not None:
+        commands.append(
+            _physical_as_sql(
+                "CREATE TABLE IF NOT EXISTS",
+                shard_name,
+                source_sql,
+                partition_by,
+                order_by,
+                policy.shard_engine,
+                None,
+                empty="EMPTY ",
+            )
+        )
+    if not create_pair:
+        return commands, False
+
+    engine = _render_distributed_engine(policy, shard_name)
+    commands.append(
+        _create_as_sql(
+            statement,
+            table_name,
+            source_sql,
+            engine,
+            policy.distributed_on_cluster,
+        )
+    )
+    if policy.distributed_on_cluster is not None:
+        commands.append(
+            _create_as_sql(
+                "CREATE TABLE IF NOT EXISTS",
+                table_name,
+                source_sql,
+                engine,
+                None,
+            )
+        )
+    return commands, True
+
+
 def _physical_sql(
     statement: str,
     table: str,
@@ -314,9 +386,41 @@ def _physical_sql(
     return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
 
+def _physical_as_sql(
+    statement: str,
+    table: str,
+    source_sql: str,
+    partition_by: Any,
+    order_by: Any,
+    engine: str,
+    cluster: str | None,
+    *,
+    empty: str,
+) -> str:
+    cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
+    sql = (
+        f"{statement} {table}{cluster_sql}\n"
+        f"ENGINE = {engine}\n"
+        f"{_build_partition_by_sql(partition_by)}{_build_order_by_sql(order_by)}\n"
+        f"{empty}AS {source_sql}"
+    )
+    return add_explicit_ch_uuid_to_local_replicated_create(sql)
+
+
 def _create_sql(statement: str, table: str, columns: str, engine: str, cluster: str | None) -> str:
     cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
     return f"{statement} {table}{cluster_sql}\n({columns})\nENGINE = {engine}"
+
+
+def _create_as_sql(
+    statement: str,
+    table: str,
+    source_sql: str,
+    engine: str,
+    cluster: str | None,
+) -> str:
+    cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
+    return f"{statement} {table}{cluster_sql}\nENGINE = {engine}\nEMPTY AS {source_sql}"
 
 
 def _render_distributed_engine(policy: ClickHouseCreationPolicy, shard_name: str) -> str:

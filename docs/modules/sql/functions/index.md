@@ -14,11 +14,14 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [read](read.md) - run one query and return a dataframe
 - [execute](execute.md) - run SQL without returning a dataframe
 - [execute_read](execute_read.md) - execute setup SQL, then read the final query
+- [insert](insert.md) - insert one query result into an existing table
+- [execute_insert](execute_insert.md) - execute setup SQL, then insert the final query
+- [execute_create](execute_create.md) - execute setup SQL, then create a table from the final query
 - [show_queries](show_queries.md) - list visible backend queries
 - [cancel_queries](cancel_queries.md) - cancel running backend queries
 - [load_df](load_df.md) - load a dataframe into a SQL table
 - [transfer](transfer.md) - stream query results into another table
-- [create_sql_table](create_sql_table.md) - create a table from schema, dataframe, or query
+- [create_table](create_table.md) - create a table from schema, dataframe, or query
 - [table_info](table_info.md) - inspect table existence and metadata
 - [show_tables](show_tables.md) - list backend tables
 - [drop_tables](drop_tables.md) - drop one or more tables
@@ -38,5 +41,9 @@ section, the helpers most likely to be used in normal workflows appear first.
 - [gp_analyze_partitioned_table](gp_analyze_partitioned_table.md) - analyze Greenplum leaf partitions
 - [gp_create_partitions](gp_create_partitions.md) - create Greenplum partitions
 - [gp_vacuum](gp_vacuum.md) - run Greenplum vacuum
+
+## Deprecated Compatibility Aliases
+
+- [create_sql_table](create_sql_table.md) - deprecated alias; use `sql.create_table`
 
 [SQL module index](../index.md)

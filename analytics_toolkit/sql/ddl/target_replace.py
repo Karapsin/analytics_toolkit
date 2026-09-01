@@ -36,7 +36,7 @@ def drop_existing_target(
         return
     with tracked_sql_operation(
         metadata=metadata,
-        operation_name="create_sql_table",
+        operation_name="create_table",
         alias=options.connection_key,
         backend=options.backend,
         phase="drop_target",

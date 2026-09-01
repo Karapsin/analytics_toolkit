@@ -27,7 +27,7 @@ the target. Override this with `empty_source_policy="replace"`, `"keep"`, or
 By default, table creation uses dataframe columns and inferred backend types.
 Pass `table_schema` when a column needs a specific backend-native type or when
 source data can produce ambiguous pandas dtypes. Use
-[sql.create_sql_table](functions/create_sql_table.md) when you need the table
+[sql.create_table](functions/create_table.md) when you need the table
 creation step independently from loading rows.
 
 Object columns whose non-null values are all Python `uuid.UUID` instances infer

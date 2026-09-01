@@ -259,7 +259,7 @@ def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
 
 
 def test_trino_create_table_sql_accepts_partition_and_order_properties() -> None:
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="trino",
         table_name="schema.target",
         df=pd.DataFrame({"dt": ["2026-05-01"], "id": [1]}),

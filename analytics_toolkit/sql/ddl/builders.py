@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 from ..backends import UNSUPPORTED_BACKEND_MESSAGE, get_backend
 from ..connection.errors import UnsupportedConnectionTypeError
@@ -34,24 +35,29 @@ def _build_backend_create_table_sqls(
     ch_distributed_table: bool,
     ch_only_shard: bool,
     ch_replace_table: bool,
+    if_not_exists: bool = True,
 ) -> list[str]:
     try:
         backend_adapter = get_backend(backend)
     except UnsupportedConnectionTypeError as exc:
         raise UnsupportedConnectionTypeError(UNSUPPORTED_BACKEND_MESSAGE) from exc
-    return backend_adapter.build_create_table_sqls(
-        table_name=table_name,
-        joined_columns=joined_columns,
-        gp_distributed_by_key=gp_distributed_by_key,
-        gp_partitions=gp_partitions,
-        partition_by=partition_by,
-        order_by=order_by,
-        ch_engine=ch_engine,
-        ch_cluster=ch_cluster,
-        ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=ch_distributed_table,
-        ch_only_shard=ch_only_shard,
-        ch_replace_table=ch_replace_table,
+    return cast(
+        "list[str]",
+        cast("Any", backend_adapter).build_create_table_sqls(
+            table_name=table_name,
+            joined_columns=joined_columns,
+            gp_distributed_by_key=gp_distributed_by_key,
+            gp_partitions=gp_partitions,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_distributed_table=ch_distributed_table,
+            ch_only_shard=ch_only_shard,
+            ch_replace_table=ch_replace_table,
+            if_not_exists=if_not_exists,
+        ),
     )
 
 

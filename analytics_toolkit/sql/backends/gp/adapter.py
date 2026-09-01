@@ -50,6 +50,8 @@ class GreenplumAdapter(DbApiBackendAdapter):
     create_semantics = "CREATE TABLE with append-only columnar storage"
     type_family = "postgres"
     supports_create_table_order_by = False
+    requires_execute_create_schema_inference = True
+    build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
 
     def __init__(self) -> None:
         super().__init__(backend="gp", commit_commands=True)
@@ -123,6 +125,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         ch_distributed_table: bool,
         ch_only_shard: bool,
         ch_replace_table: bool,
+        if_not_exists: bool = False,
     ) -> list[str]:
         del (
             ch_engine,
@@ -152,8 +155,9 @@ class GreenplumAdapter(DbApiBackendAdapter):
             gp_partitions,
             quote_identifier=quote_identifier,
         )
+        create = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
         return [
-            f"CREATE TABLE {table_name} ({joined_columns}) "
+            f"{create} {table_name} ({joined_columns}) "
             f"{storage_sql} {distribution_sql}{partition_sql}"
         ]
 

@@ -12,11 +12,15 @@ from tests.sql._support.cross_area import (
     [
         "drop_partitions",
         "drop_tables",
+        "create_table",
         "create_sql_table",
         "ch_reconfigure_table",
         "execute",
+        "execute_create",
+        "execute_insert",
         "gp_create_partitions",
         "load_df",
+        "insert",
         "transfer",
     ],
 )

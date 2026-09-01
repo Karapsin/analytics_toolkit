@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+# ruff: noqa: EM101, TRY003
+
 from collections.abc import Mapping, Sequence
-from typing import Any
+import warnings
+from typing import Any, cast
 
 import pandas as pd
 
@@ -37,7 +40,7 @@ from .target_replace import build_drop_target_sqls, drop_existing_target
 
 
 @timed_public_sql_function
-def create_sql_table(
+def create_table(
     db_key: str,
     table_name: str,
     df: pd.DataFrame | None = None,
@@ -45,7 +48,8 @@ def create_sql_table(
     sql: str | None = None,
     source_db: str | None = None,
     insert_data: bool = False,
-    drop_target_if_exists: bool = False,
+    drop_if_exists: bool = False,
+    if_not_exists: bool = False,
     gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -70,13 +74,36 @@ def create_sql_table(
     query_label: str | None = None,
     return_metadata: bool = False,
     table_schema: Mapping[str, str] | None = None,
+    drop_target_if_exists: bool | None = None,
 ) -> str | SqlPlan | SqlOperationResult | int | None:
     validate_retry_options(retry_cnt, timeout_increment)
+    drop_if_exists = _resolve_drop_if_exists(
+        drop_if_exists=drop_if_exists,
+        drop_target_if_exists=drop_target_if_exists,
+    )
+    _validate_create_mode(
+        drop_if_exists=drop_if_exists,
+        if_not_exists=if_not_exists,
+        ch_replace_table=ch_replace_table,
+    )
     _validate_create_schema_sources(
         df=df,
         sql=sql,
         table_schema=table_schema,
     )
+    config = get_connection_config(db_key)
+    if not (dry_run or return_sql or only_generate_sql):
+        existing_result = _handle_existing_create_target(
+            config=config,
+            table_name=table_name,
+            drop_if_exists=drop_if_exists,
+            if_not_exists=if_not_exists,
+            ch_replace_table=ch_replace_table,
+            query_label=query_label,
+            return_metadata=return_metadata,
+        )
+        if existing_result is not _CREATE_CONTINUE:
+            return cast("str | SqlPlan | SqlOperationResult | int | None", existing_result)
     if sql is not None:
         return _create_sql_table_from_sql_source(
             db_key=db_key,
@@ -84,7 +111,7 @@ def create_sql_table(
             sql=sql,
             source_db=source_db,
             insert_data=insert_data,
-            drop_target_if_exists=drop_target_if_exists,
+            drop_target_if_exists=drop_if_exists,
             gp_distributed_by_key=gp_distributed_by_key,
             gp_partitions=gp_partitions,
             partition_by=partition_by,
@@ -111,7 +138,6 @@ def create_sql_table(
             return_metadata=return_metadata,
         )
 
-    config = get_connection_config(db_key)
     options = _build_create_table_options(
         connection_key=config.connection_key,
         backend=config.backend,
@@ -128,7 +154,8 @@ def create_sql_table(
         ch_distributed_table=ch_distributed_table,
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
-        drop_target_if_exists=drop_target_if_exists,
+        drop_target_if_exists=drop_if_exists,
+        if_not_exists=if_not_exists,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -177,7 +204,7 @@ def create_sql_table(
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
-            operation="create_sql_table",
+            operation="create_table",
             alias=options.connection_key,
             backend=options.backend,
             phase=("replace_target" if options.drop_target_if_exists else "create_target"),
@@ -222,6 +249,80 @@ def _validate_create_schema_sources(
         raise InvalidSqlInputError(
             "Exactly one schema source must be provided: df, sql, or table_schema."
         )
+
+
+_CREATE_CONTINUE = object()
+
+
+def _resolve_drop_if_exists(
+    *,
+    drop_if_exists: bool,
+    drop_target_if_exists: bool | None,
+) -> bool:
+    if not isinstance(drop_if_exists, bool):
+        raise TypeError("drop_if_exists must be a boolean.")
+    if drop_target_if_exists is None:
+        return drop_if_exists
+    warnings.warn(
+        "drop_target_if_exists is deprecated; use drop_if_exists instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    if not isinstance(drop_target_if_exists, bool):
+        raise TypeError("drop_target_if_exists must be a boolean.")
+    if drop_if_exists:
+        raise InvalidSqlInputError(
+            "Use only drop_if_exists; do not also pass drop_target_if_exists."
+        )
+    return drop_target_if_exists
+
+
+def _validate_create_mode(
+    *,
+    drop_if_exists: bool,
+    if_not_exists: bool,
+    ch_replace_table: bool,
+) -> None:
+    if not isinstance(if_not_exists, bool):
+        raise TypeError("if_not_exists must be a boolean.")
+    if drop_if_exists and if_not_exists:
+        raise InvalidSqlInputError("drop_if_exists and if_not_exists cannot both be True.")
+    if ch_replace_table and if_not_exists:
+        raise InvalidSqlInputError("ch_replace_table and if_not_exists cannot both be True.")
+
+
+def _handle_existing_create_target(
+    *,
+    config: Any,
+    table_name: str,
+    drop_if_exists: bool,
+    if_not_exists: bool,
+    ch_replace_table: bool,
+    query_label: str | None,
+    return_metadata: bool,
+) -> object:
+    if drop_if_exists or ch_replace_table or not if_not_exists:
+        return _CREATE_CONTINUE
+    from ..dml.table._basic_ops import table_exists
+
+    connection = get_sql_connection(config.connection_key)
+    try:
+        exists = table_exists(
+            config.backend,
+            connection,
+            table_name,
+            config.connection_key,
+        )
+    finally:
+        connection.close()
+    if not exists:
+        return _CREATE_CONTINUE
+    if return_metadata:
+        return SqlOperationResult(
+            rows=None,
+            metadata=SqlOperationMetadata(statement_count=0, query_label=query_label),
+        )
+    return None
 
 
 def _create_sql_table_from_sql_source(
@@ -272,7 +373,9 @@ def _create_sql_table_from_sql_source(
         ch_cluster = policy.distributed_cluster or policy.shard_on_cluster or "{cluster}"
         ch_sharding_key = policy.sharding_key or "rand()"
     if only_generate_sql:
-        return _generate_create_sql_table_from_query_sql(
+        from .query_source import generate_create_table_from_query_sql
+
+        return generate_create_table_from_query_sql(
             source_db=source_db or db_key,
             table_db=db_key,
             table_name=table_name,
@@ -289,6 +392,9 @@ def _create_sql_table_from_sql_source(
             query_label=query_label,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
+            get_connection_config_fn=get_connection_config,
+            get_backend_adapter_fn=get_backend_adapter,
+            get_sql_connection_fn=get_sql_connection,
         )
 
     from ..dml.table.create_table_from_sql import create_table_from_sql
@@ -322,167 +428,6 @@ def _create_sql_table_from_sql_source(
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
     )
-
-
-def _generate_create_sql_table_from_query_sql(
-    *,
-    source_db: str,
-    table_db: str,
-    table_name: str,
-    sql: str,
-    gp_distributed_by_key: str | Sequence[str] | None,
-    gp_partitions: Mapping[str, Any] | None,
-    partition_by: Sequence[str] | str | None,
-    order_by: Sequence[str] | str | None,
-    ch_engine: str,
-    ch_cluster: str,
-    ch_sharding_key: str,
-    ch_only_shard: bool,
-    drop_target_if_exists: bool,
-    query_label: str | None,
-    retry_cnt: int,
-    timeout_increment: float,
-) -> str:
-    from ..dml.table.create_table_from_sql import (
-        _normalize_only_shard,
-        _normalize_single_query,
-        _validate_source_columns,
-    )
-    from ..dml.table.table_validation import (
-        normalize_key_columns,
-        validate_key_columns_in_columns,
-    )
-    from ..dml.transfer.schema import (
-        inspect_source_query_schema,
-        map_source_schema_to_target,
-    )
-    from ..execution.labels import apply_query_label
-
-    source_config = get_connection_config(source_db)
-    target_config = get_connection_config(table_db)
-    target_adapter = get_backend_adapter(target_config.backend)
-    source_sql = _normalize_single_query(sql)
-    gp_distribution = normalize_key_columns(
-        gp_distributed_by_key,
-        "gp_distributed_by_key",
-    )
-    partition = target_adapter.normalize_ch_columns_or_expression(
-        partition_by,
-        "partition_by",
-    )
-    order = target_adapter.normalize_ch_columns_or_expression(order_by, "order_by")
-    ch_engine_name = target_adapter.normalize_ch_string(ch_engine, "ch_engine")
-    ch_cluster_name = target_adapter.normalize_ch_string(ch_cluster, "ch_cluster")
-    ch_sharding_key_name = target_adapter.normalize_ch_string(
-        ch_sharding_key,
-        "ch_sharding_key",
-    )
-    only_shard = _normalize_only_shard(ch_only_shard)
-    normalized_gp_partitions = target_adapter.normalize_gp_partitions_option(
-        gp_partitions,
-        partition_by=partition,
-        option_owner="db_key",
-    )
-
-    target_adapter.validate_gp_distributed_by_key_option(
-        gp_distribution,
-        option_owner="db_key",
-    )
-    target_adapter.validate_ch_create_table_options(
-        option_owner="db_key",
-        partition_by=partition,
-        order_by=order,
-        ch_engine=ch_engine_name,
-        ch_cluster=ch_cluster_name,
-        ch_sharding_key=ch_sharding_key_name,
-        ch_only_shard=only_shard,
-    )
-
-    def inspect_schema(attempt: int) -> list[Any]:
-        del attempt
-        source_connection = get_sql_connection(source_config.connection_key)
-        try:
-            return inspect_source_query_schema(
-                source_config.backend,
-                source_connection,
-                apply_query_label(source_sql, query_label),
-            )
-        finally:
-            source_connection.close()
-
-    from ..execution.operation_runner import run_retrying_operation
-
-    source_schema = run_retrying_operation(
-        operation_name=(
-            f"inspecting query schema on {source_config.connection_key} ({source_config.backend})"
-        ),
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        operation=inspect_schema,
-        context_factory=lambda attempt: SqlOperationContext(
-            operation="create_sql_table",
-            alias=source_config.connection_key,
-            backend=source_config.backend,
-            phase="inspect_schema",
-            target_table=table_name,
-            retry_attempt=attempt,
-            sql_preview=sql_preview(source_sql),
-        ),
-    )
-
-    source_columns = [column.name for column in source_schema]
-    _validate_source_columns(source_columns)
-    validate_key_columns_in_columns(gp_distribution, source_columns)
-    target_adapter.validate_ch_columns_in_columns(
-        partition,
-        source_columns,
-        "partition_by",
-        data_name="source query",
-    )
-    target_adapter.validate_ch_columns_in_columns(
-        order,
-        source_columns,
-        "order_by",
-        data_name="source query",
-    )
-    target_column_types = map_source_schema_to_target(
-        source_schema,
-        target_config.backend,
-        source_backend=source_config.backend,
-    )
-    create_kwargs = target_adapter.build_create_from_sql_target_create_kwargs(
-        gp_distributed_by_key=gp_distribution,
-        gp_partitions=normalized_gp_partitions,
-        partition_by=partition,
-        order_by=order,
-        ch_engine=ch_engine_name,
-        ch_cluster=ch_cluster_name,
-        ch_sharding_key=ch_sharding_key_name,
-        ch_only_shard=only_shard,
-        drop_target_if_exists=drop_target_if_exists,
-        target_exists_before_drop=False,
-    )
-    create_sqls = _build_create_table_sqls(
-        target_config.backend,
-        table_name,
-        pd.DataFrame(columns=source_columns),
-        table_schema=target_column_types,
-        query_label=query_label,
-        option_owner="db_key",
-        ddl_properties=regular_ddl_properties(target_config),
-        **create_kwargs,
-    )
-    drop_sqls = (
-        target_adapter.build_drop_target_sqls(
-            table_name,
-            ch_cluster=ch_cluster_name,
-            ch_only_shard=only_shard,
-            query_label=query_label,
-        )
-        if drop_target_if_exists
-        else []
-    )
-    return _format_sql_statements([*drop_sqls, *create_sqls])
 
 
 def _format_sql_statements(sqls: Sequence[str]) -> str:
@@ -557,6 +502,11 @@ def _create_sql_table_with_connection(
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
         drop_target_if_exists=False,
+        if_not_exists=getattr(
+            get_backend_adapter(resolved_backend),
+            "default_create_if_not_exists",
+            False,
+        ),
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -601,6 +551,7 @@ def _build_create_table_options(
     ch_only_shard: bool,
     ch_replace_table: bool,
     drop_target_if_exists: bool,
+    if_not_exists: bool,
     dry_run: bool,
     return_sql: bool,
     query_label: str | None,
@@ -658,6 +609,7 @@ def _build_create_table_options(
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
         drop_target_if_exists=drop_target_if_exists,
+        if_not_exists=if_not_exists,
         dry_run=dry_run,
         return_sql=return_sql,
         query_label=query_label,
@@ -709,6 +661,7 @@ def _build_create_sql_table_sqls(
         ch_distributed_table=options.ch_distributed_table,
         ch_only_shard=options.ch_only_shard,
         ch_replace_table=options.ch_replace_table,
+        if_not_exists=options.if_not_exists,
         query_label=options.query_label,
         option_owner=option_owner,
         ddl_properties=options.ddl_properties,
@@ -731,7 +684,9 @@ def _build_create_table_plan(
         target_backend=options.backend,
         target_table=options.table_name,
         options={
+            "drop_if_exists": options.drop_target_if_exists,
             "drop_target_if_exists": options.drop_target_if_exists,
+            "if_not_exists": options.if_not_exists,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
             "ch_ddl_wait_policy": (
                 options.ch_creation_policy.ddl_wait_policy
@@ -773,7 +728,7 @@ def _execute_create_sql_table(
     )
     with tracked_sql_operation(
         metadata=metadata,
-        operation_name="create_sql_table",
+        operation_name="create_table",
         alias=options.connection_key,
         backend=options.backend,
         phase="create_target",
@@ -819,6 +774,7 @@ def _build_create_table_sqls(
     ch_distributed_table: bool = False,
     ch_only_shard: bool = False,
     ch_replace_table: bool = False,
+    if_not_exists: bool | None = None,
     query_label: str | None = None,
     table_schema: Mapping[str, str] | None = None,
     option_owner: str = "db_key",
@@ -839,6 +795,11 @@ def _build_create_table_sqls(
         resolved_column_types,
     )
     adapter = get_backend_adapter(backend)
+    resolved_if_not_exists = (
+        getattr(adapter, "default_create_if_not_exists", False)
+        if if_not_exists is None
+        else if_not_exists
+    )
     normalized_gp_partitions = (
         gp_partitions
         if gp_partitions is not None and not isinstance(gp_partitions, Mapping)
@@ -857,6 +818,7 @@ def _build_create_table_sqls(
             policy=ch_creation_policy,
             ch_only_shard=ch_only_shard,
             ch_replace_table=ch_replace_table,
+            if_not_exists=resolved_if_not_exists,
         )
     else:
         sqls = _build_backend_create_table_sqls(
@@ -876,6 +838,7 @@ def _build_create_table_sqls(
             ch_distributed_table=ch_distributed_table,
             ch_only_shard=ch_only_shard,
             ch_replace_table=ch_replace_table,
+            if_not_exists=resolved_if_not_exists,
         )
     if ddl_properties:
         sqls = [overlay_with_properties(sql, ddl_properties) for sql in sqls]
@@ -898,3 +861,11 @@ def _gp_partition_plan_option(value: Any) -> dict[str, Any] | None:
             "interval": value.interval,
         }
     return {"values": [partition.value for partition in value.partitions]}
+
+
+def __getattr__(name: str) -> Any:
+    if name == "create_sql_table":
+        from .compat import create_sql_table
+
+        return create_sql_table
+    raise AttributeError(name)

@@ -306,7 +306,7 @@ def test_minio_unavailable_before_parquet_upload_reports_primary_failure(
             "value": ["one", "two"],
         }
     )
-    sql.create_sql_table(
+    sql.create_table(
         "trino_target_parquet",
         table,
         table_schema={"row_id": "BIGINT", "event_date": "DATE", "value": "VARCHAR"},

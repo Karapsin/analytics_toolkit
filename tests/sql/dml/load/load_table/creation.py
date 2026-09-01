@@ -212,7 +212,7 @@ def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_
         }
     )
 
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="ch",
         table_name="schema.stage_table",
         df=batch,
@@ -224,7 +224,7 @@ def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_
 
 
 def test_create_sql_table_only_generate_sql_uses_table_schema() -> None:
-    sql = create_sql_table_module.create_sql_table(
+    sql = create_sql_table_module.create_table(
         db_key="gp",
         table_name="schema.stage_table",
         table_schema={

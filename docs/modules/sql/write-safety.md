@@ -15,9 +15,13 @@ notable options.
 
 Common planned workflows include [sql.load_df](functions/load_df.md),
 [sql.transfer](functions/transfer.md),
-[sql.create_sql_table](functions/create_sql_table.md), and
-[sql.drop_partitions](functions/drop_partitions.md). ClickHouse table plans can
-also come from [sql.drop_tables](functions/drop_tables.md).
+[sql.create_table](functions/create_table.md),
+[sql.execute_create](functions/execute_create.md), and
+[sql.drop_partitions](functions/drop_partitions.md). Query-result writes from
+[sql.insert](functions/insert.md) and
+[sql.execute_insert](functions/execute_insert.md) are also plan-aware.
+ClickHouse table plans can also come from
+[sql.drop_tables](functions/drop_tables.md).
 
 Operations that require live inspection for exact SQL may include placeholder
 plan steps instead of opening a connection. Treat those placeholders as a
@@ -55,6 +59,9 @@ a pre-existing target.
 
 Retry-safe phases reopen a connection and start from a clean attempt. Ambiguous
 or unsafe mutations fail explicitly instead of silently reporting success.
+`insert`, `execute_insert`, and `execute_create` default to the same `safe`
+mutation replay policy as `execute`; pass `retry_policy="always"` only when the
+entire operation is known to be replay-safe, or `"never"` to disable retries.
 After a successful retry, the target must contain each expected batch exactly
 once. A cleanup error is reported alongside the primary operation error rather
 than replacing it.

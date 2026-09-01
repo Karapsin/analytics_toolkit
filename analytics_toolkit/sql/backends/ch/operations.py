@@ -16,6 +16,35 @@ from .routing import (
     routed_connection_sql,
 )
 
+
+def build_execute_create_as_sqls(  # noqa: PLR0913
+    adapter: Any,
+    *,
+    table_name: str,
+    source_sql: str,
+    gp_distributed_by_key: list[str] | None,
+    gp_partitions: Any,
+    partition_by: Any,
+    order_by: Any,
+    ddl_properties: Any,
+    ch_creation_policy: Any,
+    ch_only_shard: bool,
+    if_not_exists: bool,
+) -> tuple[list[str], bool]:
+    del adapter, gp_distributed_by_key, gp_partitions, ddl_properties
+    from .creation_policy import build_policy_create_as_sqls  # noqa: PLC0415
+
+    return build_policy_create_as_sqls(
+        table_name=table_name,
+        source_sql=source_sql,
+        partition_by=partition_by,
+        order_by=order_by,
+        policy=ch_creation_policy,
+        ch_only_shard=ch_only_shard,
+        if_not_exists=if_not_exists,
+    )
+
+
 read_columns = _common_methods.read_columns
 
 

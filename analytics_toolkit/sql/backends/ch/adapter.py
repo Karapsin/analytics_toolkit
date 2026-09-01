@@ -41,12 +41,14 @@ class ClickHouseAdapter(BackendAdapter):
     supports_early_transfer_target_creation = False
     upsert_strategy = "partition_replace"
     requires_upsert_partition_column = True
+    default_create_if_not_exists = True
     supports_ch_create_table_options = True
     resolve_ch_retry_per_host_drops = staticmethod(bool)
     prepare_sql = _routing.prepare_sql
     prepare_plan_sql = _routing.prepare_plan_sql
     local_sql_context = staticmethod(_routing.local_sql)
     execute_commands = _routing.execute_commands
+    build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
     create_table_from_sql_fast_path = _create_from_sql.create_table_from_sql_fast_path
     uses_create_table_from_sql_fast_path = _create_from_sql.uses_create_table_from_sql_fast_path
     read_columns = _operations.read_columns
@@ -103,6 +105,7 @@ class ClickHouseAdapter(BackendAdapter):
         ch_distributed_table: bool,
         ch_only_shard: bool,
         ch_replace_table: bool,
+        if_not_exists: bool = True,
     ) -> list[str]:
         del gp_distributed_by_key, gp_partitions
         from .ddl import _build_ch_create_table_sqls
@@ -118,6 +121,7 @@ class ClickHouseAdapter(BackendAdapter):
             ch_distributed_table=ch_distributed_table,
             ch_only_shard=ch_only_shard,
             ch_replace_table=ch_replace_table,
+            if_not_exists=if_not_exists,
         )
 
     def execute_command(self, connection: Any, sql: str) -> Any:
