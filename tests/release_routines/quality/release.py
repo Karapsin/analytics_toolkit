@@ -278,6 +278,9 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
     assert "--no-cache-dir" not in command_text
     assert "-m pip check" in command_text
     assert "analytics_toolkit.ab_utils" in command_text
+    assert "analytics_toolkit.sql_explorer" in command_text
+    assert "package.whl[tui]" in command_text
+    assert "analytics_toolkit.sql_explorer.app" in command_text
     assert "'atk'" in command_text
     assert "analytics-toolkit --help" in command_text
     assert "analytics-toolkit sql support-matrix" in command_text

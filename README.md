@@ -9,7 +9,7 @@ Python toolkit for AB-test analysis, SQL workflows, Excel reports, and date help
 **Version:** `1.3.11.16`<br>
 **Depends:** Python (`>=3.8,<3.15`)<br>
 **Imports:** [clickhouse-connect](https://pypi.org/project/clickhouse-connect/) (`>=0.5.14,<1`), [fsspec](https://pypi.org/project/fsspec/) (`>=2024.2`), [lz4](https://pypi.org/project/lz4/) (`>=4.3.2,<5`), [numpy](https://pypi.org/project/numpy/) (`>=1.24.2,<2`), [openpyxl](https://pypi.org/project/openpyxl/) (`>=3.1.1,<4`), [orjson](https://pypi.org/project/orjson/) (`>=3.8.7,<4`), [pandas](https://pypi.org/project/pandas/) (`>=1.4.4,<3`), [psycopg2-binary](https://pypi.org/project/psycopg2-binary/) (`>=2.9.5,<3`), [pyarrow](https://pypi.org/project/pyarrow/) (`>=14,<23`), [python-dateutil](https://pypi.org/project/python-dateutil/) (`>=2.8.2,<3`), [pytz](https://pypi.org/project/pytz/) (`>=2022.7`), [requests](https://pypi.org/project/requests/) (`>=2.28.2,<3`), [s3fs](https://pypi.org/project/s3fs/) (`>=2024.2`), [scipy](https://pypi.org/project/scipy/) (`>=1.10.1,<2`), [sqlglot](https://pypi.org/project/sqlglot/) (`>=26.33,<31`), [sqlparse](https://pypi.org/project/sqlparse/) (`>=0.4.3,<1`), [tqdm](https://pypi.org/project/tqdm/) (`>=4.65.0,<5`), [trino](https://pypi.org/project/trino/) (`>=0.320,<1`), [zstandard](https://pypi.org/project/zstandard/) (`>=0.20.0,<1`)<br>
-**Suggests:** [apache-airflow](https://pypi.org/project/apache-airflow/) (`>=2.4,<3`; optional extra `airflow`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.9,<0.2.10; python_version == '3.8'`; optional extra `clickhouse-native`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.10,<1; python_version >= '3.9'`; optional extra `clickhouse-native`)<br>
+**Suggests:** [apache-airflow](https://pypi.org/project/apache-airflow/) (`>=2.4,<3`; optional extra `airflow`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.9,<0.2.10; python_version == '3.8'`; optional extra `clickhouse-native`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.10,<1; python_version >= '3.9'`; optional extra `clickhouse-native`), [pyperclip](https://pypi.org/project/pyperclip/) (`>=1.11,<2`; optional extra `tui`), [textual](https://pypi.org/project/textual/) (`>=0.73,<0.74`; optional extra `tui`)<br>
 **Install:** `pip install analytics-toolkit`<br>
 **PyPI:** [pypi.org/project/analytics-toolkit](https://pypi.org/project/analytics-toolkit/)<br>
 **License:** MIT<br>
@@ -57,6 +57,7 @@ pandas and `analytics_toolkit` objects.
 
 - `analytics_toolkit.ab_utils`: AB-test metric comparison helpers.
 - `analytics_toolkit.sql`: SQL read, execute, load, and transfer helpers.
+- `analytics_toolkit.sql_explorer`: optional exploratory SQL terminal interface.
 - `analytics_toolkit.sql_format`: SQL formatting, CTE rewrite, and Greenplum temp-table rewrite helpers.
 - `analytics_toolkit.excel`: Excel report helpers for long-format dataframes.
 - `analytics_toolkit.dates`: date and period helpers.
@@ -109,6 +110,39 @@ rows = sql.transfer(
 - `sql.create_table`: create a table from a dataframe, schema, or query.
 - `sql.load_df`: load a pandas dataframe into a configured backend table.
 - `sql.transfer`: move rows from a source query to a target table across backends.
+
+## Exploratory SQL TUI
+
+Install the optional terminal dependencies and open a configured connection by
+its `.connections` key:
+
+```bash
+pip install 'analytics-toolkit[tui]'
+analytics-toolkit sql explore gp
+```
+
+Run `analytics-toolkit sql explore` without a key to select a valid configured
+connection inside the terminal first.
+
+The same interface can be launched from a terminal Python or IPython console:
+
+```python
+from analytics_toolkit import sql_explorer
+
+sql_explorer.run("gp")
+```
+
+The numbered editor uses standard, non-modal text shortcuts. Run its complete
+SQL buffer with `Ctrl+Enter` (configurable), `F5`, or `Cmd+Enter` when the
+terminal forwards that modifier. Use `Alt+Tab` and `Alt+Shift+Tab` to cycle the
+editor, result pane, and command panel; Up and Down also cross pane boundaries.
+`Ctrl+F` opens find/replace with highlighted matches. Press `Delete` while a
+result pane is focused to close it. See the [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
+for command and safety details.
+
+`Ctrl+C` remains the standard Copy shortcut. Enter `cancel` in the command
+panel to interrupt the active explorer query; `exit` also requests cancellation
+before closing when a query is running.
 
 ## SQL Formatting
 

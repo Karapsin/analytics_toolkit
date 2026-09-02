@@ -5,6 +5,7 @@
 This folder contains one folder per public module:
 
 - [SQL index](sql/index.md)
+- [SQL explorer index](sql_explorer/index.md)
 - [SQL formatting index](sql_format/index.md)
 - [AB utilities index](ab_utils/index.md)
 - [Excel helpers index](excel/index.md)

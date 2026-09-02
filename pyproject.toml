@@ -64,6 +64,10 @@ clickhouse-native = [
   "clickhouse-driver>=0.2.9,<0.2.10; python_version == '3.8'",
   "clickhouse-driver>=0.2.10,<1; python_version >= '3.9'",
 ]
+tui = [
+  "pyperclip>=1.11,<2",
+  "textual>=0.73,<0.74",
+]
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"
@@ -130,6 +134,7 @@ module = [
   "openpyxl.*",
   "orjson.*",
   "pandas.*",
+  "pyperclip.*",
   "psycopg2.*",
   "pyarrow.*",
   "pytz.*",
@@ -138,6 +143,7 @@ module = [
   "scipy.*",
   "sqlglot.*",
   "sqlparse.*",
+  "textual.*",
   "tqdm.*",
   "trino.*",
   "zstandard.*",

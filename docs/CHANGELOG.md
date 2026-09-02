@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Added an optional exploratory SQL terminal interface with connection selection, query cancellation, and configurable controls.
+
 ## 1.3.11.16 - 2026-09-02
 
 - Route managed ClickHouse pairs through fully deployed physical shards with safe Distributed fallback.

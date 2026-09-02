@@ -10,6 +10,7 @@ MODULES = {
     "dates": "analytics_toolkit.dates",
     "excel": "analytics_toolkit.excel",
     "sql": "analytics_toolkit.sql",
+    "sql_explorer": "analytics_toolkit.sql_explorer",
     "sql_format": "analytics_toolkit.sql_format",
 }
 

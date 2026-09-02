@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def _prefer_local_package_path() -> None:
@@ -29,8 +32,8 @@ def _same_path(left: str, right: str) -> bool:
 
 _prefer_local_package_path()
 
-from .sql.core.capabilities import format_support_matrix
-from .sql.connection import validate_connections
+from .sql.connection import validate_connections  # noqa: E402
+from .sql.core.capabilities import format_support_matrix  # noqa: E402
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -61,6 +64,17 @@ def _build_parser() -> argparse.ArgumentParser:
     support_parser = sql_subparsers.add_parser("support-matrix")
     support_parser.set_defaults(handler=_handle_sql_support_matrix)
 
+    explore_parser = sql_subparsers.add_parser(
+        "explore",
+        help="Open the optional exploratory SQL terminal interface.",
+    )
+    explore_parser.add_argument(
+        "db_key",
+        nargs="?",
+        help="Connection key from .connections; omit it to open the terminal picker.",
+    )
+    explore_parser.set_defaults(handler=_handle_sql_explore)
+
     return parser
 
 
@@ -82,6 +96,17 @@ def _handle_sql_validate(args: argparse.Namespace) -> int:
 def _handle_sql_support_matrix(args: argparse.Namespace) -> int:
     del args
     print(format_support_matrix())
+    return 0
+
+
+def _handle_sql_explore(args: argparse.Namespace) -> int:
+    from .sql_explorer import SqlExplorerError, run  # noqa: PLC0415
+
+    try:
+        run(args.db_key)
+    except SqlExplorerError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

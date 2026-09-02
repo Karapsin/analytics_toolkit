@@ -20,6 +20,7 @@ PUBLIC_MODULES = (
     "analytics_toolkit.excel",
     "analytics_toolkit.general",
     "analytics_toolkit.sql",
+    "analytics_toolkit.sql_explorer",
     "analytics_toolkit.sql_format",
     "atk",
 )
@@ -105,6 +106,10 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
     )
     _run([python, "-m", "pip", "check"], cwd=install_root)
     _run(
+        [python, "-c", "import analytics_toolkit.sql_explorer"],
+        cwd=install_root,
+    )
+    _run(
         [
             python,
             "-m",
@@ -115,6 +120,14 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
         cwd=install_root,
     )
     _run([python, "-c", "import clickhouse_driver"], cwd=install_root)
+    _run(
+        [python, "-m", "pip", "install", f"{artifact}[tui]"],
+        cwd=install_root,
+    )
+    _run(
+        [python, "-c", "import analytics_toolkit.sql_explorer.app, pyperclip, textual"],
+        cwd=install_root,
+    )
 
     module_literals = ", ".join(repr(module) for module in PUBLIC_MODULES)
     import_script = f"""
