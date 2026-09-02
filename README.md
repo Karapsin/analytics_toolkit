@@ -133,11 +133,12 @@ sql_explorer.run("gp")
 ```
 
 The numbered editor uses standard, non-modal text shortcuts. Run its complete
-SQL buffer with `Ctrl+Enter` (configurable), `F5`, or `Cmd+Enter` when the
-terminal forwards that modifier. Use `Alt+Tab` and `Alt+Shift+Tab` to cycle the
-editor, result pane, and command panel; Up and Down also cross pane boundaries.
-`Ctrl+F` opens find/replace with highlighted matches. Press `Delete` while a
-result pane is focused to close it. See the [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
+SQL buffer with `Ctrl+Enter` (configurable), `F5`, `Fn+Enter` when reported as
+keypad Enter, or `Cmd+Enter` when a macOS terminal forwards that modifier. Use
+`Alt+Tab` and `Alt+Shift+Tab` to cycle the editor, result pane, and command
+panel; Up and Down also cross pane boundaries. `Ctrl+F` opens find/replace with
+highlighted matches. Press `Delete` while a result pane is focused to close it.
+See the [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
 for command and safety details.
 
 `Ctrl+C` remains the standard Copy shortcut. Enter `cancel` in the command

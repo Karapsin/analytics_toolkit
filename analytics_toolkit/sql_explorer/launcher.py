@@ -35,6 +35,9 @@ def run(db_key: str | None = None) -> None:
             db_key = DatabasePickerApp(choices).run()
             if db_key is None:
                 return
+        from .terminal_keys import install_terminal_key_compatibility  # noqa: PLC0415
+
+        install_terminal_key_compatibility()
         session = ExplorerSession(db_key)
         SqlExplorerApp(session).run()
     finally:

@@ -260,9 +260,16 @@ def test_run_shortcuts_execute_complete_editor_and_show_results() -> None:
             assert len(session.executed) == 2
 
             application.close_results()
-            await pilot.press("super+enter")
-            await pilot.pause()
-            assert len(session.executed) == 3
+            for run_key in (
+                "kp_enter",
+                "hyper+enter",
+                "meta+enter",
+                "super+enter",
+            ):
+                await pilot.press(run_key)
+                await pilot.pause()
+                application.close_results()
+            assert len(session.executed) == 6
 
     asyncio.run(exercise())
 

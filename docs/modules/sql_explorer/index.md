@@ -42,9 +42,10 @@ an error splits it evenly with a result pane. A short command panel remains at
 the bottom.
 
 - `Ctrl+Enter` runs the complete editor buffer by default; `F5` always runs it.
-  `Cmd+Enter` also runs when a macOS terminal forwards the Command modifier;
-  many traditional terminal profiles intercept it, so `Ctrl+Enter` and `F5`
-  are the portable choices.
+  `Fn+Enter` also runs when the terminal reports it as keypad Enter.
+  `Cmd+Enter` runs when a macOS terminal forwards the Command modifier. Some
+  terminal profiles or operating-system shortcuts intercept these keys, so
+  `Ctrl+Enter` and `F5` remain the portable choices.
 - `Alt+Tab` and `Alt+Shift+Tab` cycle the editor, visible result pane, and
   command input. macOS terminals report the Option key as Alt.
 - Up and Down cross to the preceding or following pane at the first or last

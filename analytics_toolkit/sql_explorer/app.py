@@ -47,7 +47,8 @@ Keys
   Alt+Shift+Tab               cycle panes in reverse
   Up / Down                   cross pane boundaries
   Ctrl+Enter                  default run shortcut
-  Cmd+Enter                   run when forwarded by the terminal
+  Fn+Enter                    run when reported as keypad Enter
+  Cmd+Enter                   run when forwarded by a macOS terminal
   F5                          permanent run fallback
   Ctrl+F                      find and replace in the editor
   Delete                      close a focused result/error pane
@@ -59,7 +60,13 @@ class SqlExplorerApp(App[None]):
     CSS = APP_CSS
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("f5", "run_query", "Run", priority=True),
-        Binding("super+enter", "run_query", "Run", show=False, priority=True),
+        Binding(
+            "kp_enter,hyper+enter,meta+enter,super+enter",
+            "run_query",
+            "Run",
+            show=False,
+            priority=True,
+        ),
         Binding(
             "alt+tab",
             "focus_next_pane",
