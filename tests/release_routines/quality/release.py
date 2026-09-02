@@ -101,6 +101,12 @@ def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
     assert validate_minimum_constraints(dependencies, constraints) == []
 
 
+def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    assert workflow.count("-e '.[tui]'") == 2
+
+
 def test_minimum_constraint_validation_accepts_equivalent_zero_components() -> None:
     failures = validate_minimum_constraints(
         ["fsspec>=2024.2", "pyarrow>=14,<23"],

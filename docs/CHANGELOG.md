@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Added an optional exploratory SQL terminal interface with connection selection, query cancellation, and configurable controls.
+- Install optional SQL TUI dependencies in CI.
 
 ## 1.3.11.16 - 2026-09-02
 

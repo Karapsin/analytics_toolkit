@@ -48,11 +48,11 @@ jobs:
 
       - name: Install latest test environment
         if: matrix.env_name != 'py38-min'
-        run: python -m pip install -e . pytest
+        run: python -m pip install -e '.[tui]' pytest
 
       - name: Install minimum Python 3.8 test environment
         if: matrix.env_name == 'py38-min'
-        run: python -m pip install -c constraints/py38-min.txt -e . pytest==8.3.5
+        run: python -m pip install -c constraints/py38-min.txt -e '.[tui]' pytest==8.3.5
 
       - name: Validate minimum dependency constraints
         if: matrix.env_name == 'py38-min'
