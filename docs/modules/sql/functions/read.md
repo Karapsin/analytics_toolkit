@@ -5,7 +5,7 @@
 Run one SQL query through a configured connection and return the selected output shape.
 
 ```python
-read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None) -> 'Any | SqlOperationResult'
+read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None) -> 'Any | SqlOperationResult'
 ```
 
 ## Inputs
@@ -14,6 +14,7 @@ read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int
 - `query` - text of SQL to execute or read
 - `output_type` - output shape: `df`, `scalar`, `list`, or `dict`; defaults to `df`
 - `to_excel` - optional `.xlsx` output filename; writes the dataframe without its index and requires `output_type="df"`
+- `to_csv` - optional `.csv` output filename; writes the dataframe without its index and requires `output_type="df"`
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
@@ -28,6 +29,16 @@ from analytics_toolkit import sql
 orders = sql.read(
     db_key="gp",
     query="select order_id, user_id, amount from sandbox.orders limit 100",
+)
+```
+
+Write the dataframe to CSV without its index while keeping it as the return value:
+
+```python
+orders = sql.read(
+    db_key="gp",
+    query="select order_id, user_id, amount from sandbox.orders limit 100",
+    to_csv="orders.csv",
 )
 ```
 
@@ -86,6 +97,7 @@ orders_by_column = sql.read(
 - Prefer this short entrypoint in user-facing examples.
 - `scalar` requires exactly one row and one column; `list` requires exactly one column.
 - `dict` reads backend columns directly without creating an intermediate dataframe and requires unique column names.
+- `to_excel` and `to_csv` cannot be used together in the same call.
 - With `return_metadata=True`, `SqlOperationResult.data` contains the selected output shape while row metadata retains the query row count.
 
 [SQL functions index](index.md)

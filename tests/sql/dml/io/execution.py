@@ -91,6 +91,7 @@ def test_read_sql_with_metadata_delegates_to_shared_implementation(
         retry_cnt=2,
         timeout_increment=0.5,
         query_label="metadata",
+        to_csv="metadata.csv",
     )
     assert result is expected
     assert calls == [
@@ -104,6 +105,7 @@ def test_read_sql_with_metadata_delegates_to_shared_implementation(
             "return_metadata": True,
             "output_type": "df",
             "to_excel": None,
+            "to_csv": "metadata.csv",
         }
     ]
 

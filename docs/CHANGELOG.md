@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.16 - 2026-09-02
 
 - Route managed ClickHouse pairs through fully deployed physical shards with safe Distributed fallback.
 - Harden SQL retries, routed topology checks, empty-source handling, and staged replacement cutovers.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Fixed ClickHouse 26 cluster routing, native routed inserts, and restart cleanup.
 - Fixed Greenplum safe-replace artifact names for long table identifiers.
 - Released pooled source read transactions before concurrent Greenplum stage cleanup.
+- Added CSV file export support to sql.read dataframe results.
 
 ## 1.3.11.15 - 2026-08-27
 

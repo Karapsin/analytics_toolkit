@@ -4718,6 +4718,27 @@
               ]
             }
           ]
+        },
+        "to_csv": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/read/outputs.py::test_read_output_type_defaults_to_dataframe"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/read/outputs.py::test_read_exports_dataframe_to_csv"
+              ]
+            }
+          ]
         }
       }
     },

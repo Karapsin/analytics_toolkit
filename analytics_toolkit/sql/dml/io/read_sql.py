@@ -73,6 +73,7 @@ def read_sql(
     return_metadata: bool = False,
     output_type: ReadOutputType = "df",
     to_excel: str | None = None,
+    to_csv: str | None = None,
 ) -> Any | SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -84,6 +85,7 @@ def read_sql(
         return_metadata=return_metadata,
         output_type=output_type,
         to_excel=to_excel,
+        to_csv=to_csv,
     )
 
 
@@ -96,6 +98,7 @@ def read_sql_with_metadata(
     query_label: str | None = None,
     output_type: ReadOutputType = "df",
     to_excel: str | None = None,
+    to_csv: str | None = None,
 ) -> SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -107,6 +110,7 @@ def read_sql_with_metadata(
         return_metadata=True,
         output_type=output_type,
         to_excel=to_excel,
+        to_csv=to_csv,
     )
 
 
@@ -121,6 +125,7 @@ def _read_sql_impl(
     return_metadata: bool,
     output_type: ReadOutputType,
     to_excel: str | None = None,
+    to_csv: str | None = None,
 ) -> Any | SqlOperationResult:
     options = _build_read_sql_options(
         db_key=db_key,
@@ -132,6 +137,7 @@ def _read_sql_impl(
         return_metadata=return_metadata,
         output_type=output_type,
         to_excel=to_excel,
+        to_csv=to_csv,
     )
     metadata = SqlOperationMetadata(
         statement_count=1,
@@ -187,6 +193,8 @@ def _read_sql_impl(
     output = _format_read_output(result, options.output_type)
     if options.to_excel is not None:
         cast("pd.DataFrame", output).to_excel(options.to_excel, index=False)
+    if options.to_csv is not None:
+        cast("pd.DataFrame", output).to_csv(options.to_csv, index=False)
     if return_metadata:
         return SqlOperationResult(
             rows=metadata.read_rows,
@@ -207,6 +215,7 @@ def _build_read_sql_options(
     return_metadata: bool,
     output_type: ReadOutputType,
     to_excel: str | None = None,
+    to_csv: str | None = None,
 ) -> ReadSqlOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -219,8 +228,14 @@ def _build_read_sql_options(
         supported = ", ".join(repr(value) for value in _READ_OUTPUT_TYPES)
         message = f"Unsupported output_type {output_type!r}. Supported values: {supported}."
         raise InvalidSqlInputError(message)
+    if to_excel is not None and to_csv is not None:
+        message = "to_excel and to_csv cannot be used together."
+        raise InvalidSqlInputError(message)
     if to_excel is not None and output_type != "df":
         message = "to_excel is only supported when output_type='df'."
+        raise InvalidSqlInputError(message)
+    if to_csv is not None and output_type != "df":
+        message = "to_csv is only supported when output_type='df'."
         raise InvalidSqlInputError(message)
     validate_retry_options(retry_cnt, timeout_increment)
 
@@ -240,6 +255,7 @@ def _build_read_sql_options(
         return_metadata=return_metadata,
         output_type=output_type,
         to_excel=to_excel,
+        to_csv=to_csv,
     )
 
 

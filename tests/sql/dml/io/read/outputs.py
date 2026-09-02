@@ -53,6 +53,7 @@ def test_read_output_type_defaults_to_dataframe(
     result = sql_module.read("gp", "select 1", retry_cnt=1)
 
     assert inspect.signature(sql_module.read).parameters["output_type"].default == "df"
+    assert inspect.signature(sql_module.read).parameters["to_csv"].default is None
     assert isinstance(result, pd.DataFrame)
     assert result.to_dict("list") == {"value": [1]}
 
@@ -76,6 +77,25 @@ def test_read_exports_dataframe_to_excel(
     assert calls == [("example.xlsx", False)]
 
 
+def test_read_exports_dataframe_to_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = FakeDbapiConnection(rows=[(1,)], description=[("value",)])
+    calls: list[tuple[object, bool]] = []
+    monkeypatch.setattr(read_sql_module, "get_sql_connection", lambda _key: connection)
+
+    def fake_to_csv(self: pd.DataFrame, path: object, *, index: bool) -> None:
+        assert self.to_dict("list") == {"value": [1]}
+        calls.append((path, index))
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", fake_to_csv)
+
+    result = sql_module.read("gp", "select 1", retry_cnt=1, to_csv="example.csv")
+
+    assert result.to_dict("list") == {"value": [1]}
+    assert calls == [("example.csv", False)]
+
+
 def test_read_rejects_excel_export_for_non_dataframe_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -91,6 +111,45 @@ def test_read_rejects_excel_export_for_non_dataframe_output(
             "select 1",
             output_type="scalar",
             to_excel="example.xlsx",
+        )
+
+
+def test_read_rejects_csv_export_for_non_dataframe_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        read_sql_module,
+        "get_sql_connection",
+        lambda _key: pytest.fail("Unsupported export must fail before connecting."),
+    )
+
+    with pytest.raises(read_sql_module.InvalidSqlInputError, match="only supported"):
+        sql_module.read(
+            "gp",
+            "select 1",
+            output_type="scalar",
+            to_csv="example.csv",
+        )
+
+
+def test_read_rejects_multiple_export_formats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        read_sql_module,
+        "get_sql_connection",
+        lambda _key: pytest.fail("Conflicting exports must fail before connecting."),
+    )
+
+    with pytest.raises(
+        read_sql_module.InvalidSqlInputError,
+        match="to_excel and to_csv cannot be used together",
+    ):
+        sql_module.read(
+            "gp",
+            "select 1",
+            to_excel="example.xlsx",
+            to_csv="example.csv",
         )
 
 
