@@ -146,7 +146,19 @@ class ClickHouseAdapter(BackendAdapter):
         read_dbapi_query: Callable[[Any, str], Any],
     ) -> Any:
         del read_dbapi_query
-        return connection.query_df(query)
+        return self._query_dataframe(connection, query)
+
+    def _query_dataframe(self, connection: Any, query: str) -> Any:
+        from analytics_toolkit.sql.dml.io.dataframes import (  # noqa: PLC0415
+            dataframe_from_columns,
+        )
+
+        query_result = connection.query(query, column_oriented=True)
+        return dataframe_from_columns(
+            query_result.column_names,
+            query_result.result_columns,
+            row_count=int(query_result.row_count),
+        )
 
     def table_exists(
         self,
@@ -458,7 +470,7 @@ class ClickHouseAdapter(BackendAdapter):
             _maybe_print_query(statements[-1], print_queries, split_preview=True)
             return run_timed_query(
                 self.backend,
-                lambda: connection.query_df(statements[-1]),
+                lambda: self._query_dataframe(connection, statements[-1]),
                 phase="read",
             )
         except Exception:

@@ -78,6 +78,13 @@ when the Trino connection route is saturated.
 | UUID | `UUID` | `UUID` | `Nullable(UUID)` |
 | canonical JSON | `JSONB` | `VARCHAR` | `String` |
 
+Dataframe reads build each result column from raw backend values before pandas
+dtype inference can coerce nullable integers through `float64`. Common inferred
+dtypes are `Int64`, `UInt64`, `boolean`, `Float64`, and `string`. Genuine float
+values remain floating point even when mathematically integral. Empty,
+all-null, mixed, out-of-range, and unsupported columns safely remain `object`;
+inference does not claim to reproduce declared database schema types.
+
 Integration comparisons normalize decimals to scale four, timestamps to UTC
 microsecond ISO-8601, UUIDs to lowercase, JSON with sorted keys, and backend
 null/scalar wrappers to Python values. Column and deterministic row order must

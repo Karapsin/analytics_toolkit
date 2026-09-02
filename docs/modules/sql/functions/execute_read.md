@@ -54,6 +54,9 @@ result.head()
 ## Notes
 
 - Every statement except the last is executed first; the last statement is read into a dataframe.
+- The returned dataframe uses the same value-inferred pandas nullable extension
+  dtypes as `sql.read`, preserving nullable integers without `float64`
+  conversion or precision loss.
 - Timing logs label setup execution as `[setup]` and the final dataframe query as `[read]`.
 
 [SQL functions index](index.md)

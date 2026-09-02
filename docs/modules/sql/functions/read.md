@@ -95,6 +95,12 @@ orders_by_column = sql.read(
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.
+- Dataframe output infers pandas nullable extension dtypes directly from raw
+  backend values. Common results use `Int64`, `UInt64`, `boolean`, `Float64`,
+  and `string`; empty, all-null, mixed, or unsupported columns remain `object`.
+- Nullable integers are never routed through `float64`, so large integer values
+  remain exact. Dtypes are inferred from values rather than declared database
+  schema metadata.
 - `scalar` requires exactly one row and one column; `list` requires exactly one column.
 - `dict` reads backend columns directly without creating an intermediate dataframe and requires unique column names.
 - `to_excel` and `to_csv` cannot be used together in the same call.

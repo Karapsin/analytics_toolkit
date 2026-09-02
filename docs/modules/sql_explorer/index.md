@@ -66,6 +66,8 @@ At most 200 rows are displayed. Query-shaped final statements are wrapped with
 a 201-row server-side limit so the explorer can indicate when further rows are
 available without fetching an unbounded result. The wrapper preserves the
 query's line layout so backend error line numbers correspond to editor numbers.
+Finite Decimal cells are displayed without insignificant trailing zeros, while
+their exact dataframe values remain unchanged.
 
 ## Execution and safety
 

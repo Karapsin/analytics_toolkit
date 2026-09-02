@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
 
 import pandas as pd
@@ -405,7 +406,12 @@ def _format_cell(value: object) -> str:
             return "NULL"
     except (TypeError, ValueError):
         pass
-    rendered = str(value).replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    if isinstance(value, Decimal) and value.is_finite():
+        normalized = Decimal(0) if value == 0 else value.normalize()
+        rendered = format(normalized, "f")
+    else:
+        rendered = str(value)
+    rendered = rendered.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
     if len(rendered) > _MAX_CELL_LENGTH:
         return rendered[: _MAX_CELL_LENGTH - 1] + "…"
     return rendered

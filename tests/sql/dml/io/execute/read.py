@@ -19,9 +19,20 @@ class FakeClickHouseClient:
     def command(self, sql: str) -> None:
         self.commands.append(sql)
 
-    def query_df(self, sql: str) -> pd.DataFrame:
+    def query(self, sql: str, *, column_oriented: bool) -> object:
+        assert column_oriented is True
         self.read_queries.append(sql)
-        return self.result.copy()
+        return type(
+            "QueryResult",
+            (),
+            {
+                "column_names": tuple(str(column) for column in self.result.columns),
+                "result_columns": tuple(
+                    self.result.iloc[:, index].tolist() for index in range(len(self.result.columns))
+                ),
+                "row_count": len(self.result),
+            },
+        )()
 
     def close(self) -> None:
         self.close_calls += 1
@@ -77,7 +88,7 @@ def test_execute_read_clickhouse_executes_setup_and_reads_last(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    expected = pd.DataFrame({"value": [10]})
+    expected = pd.DataFrame({"value": pd.array([10], dtype="Int64")})
     client = FakeClickHouseClient(expected)
     monkeypatch.setattr(
         execute_read_module,
@@ -132,7 +143,12 @@ def test_execute_read_gp_executes_setup_statement_set_and_reads_last(
     ]
     pd.testing.assert_frame_equal(
         result,
-        pd.DataFrame({"id": [1], "label": ["ok"]}),
+        pd.DataFrame(
+            {
+                "id": pd.array([1], dtype="Int64"),
+                "label": pd.array(["ok"], dtype="string"),
+            }
+        ),
     )
     assert connection.commit_calls == 1
     assert connection.close_calls == 1

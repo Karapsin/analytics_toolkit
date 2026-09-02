@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -654,3 +655,6 @@ def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:
     assert app_module._format_cell("a\nb") == "a\\nb"
     assert app_module._format_cell("x" * 600).endswith("…")
     assert app_module._format_cell([1, 2]) == "[1, 2]"
+    assert app_module._format_cell(Decimal("20778982.000000000000")) == "20778982"
+    assert app_module._format_cell(Decimal("123.4500")) == "123.45"
+    assert app_module._format_cell(Decimal("-0.000")) == "0"

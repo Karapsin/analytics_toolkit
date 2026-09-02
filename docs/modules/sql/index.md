@@ -9,6 +9,10 @@ SQL text formatting and CTE rewrites live in
 [analytics_toolkit.sql_format](../sql_format/index.md). The `sql` module stays
 focused on configured database operations.
 
+Dataframes returned by `sql.read` and `sql.execute_read` infer modern pandas
+nullable dtypes from raw backend values. Nullable integers remain exact instead
+of being coerced through floating point when a result also contains `NULL`.
+
 ClickHouse aliases with `cluster_routing` automatically use a fully deployed
 managed physical shard for named reads and writes, with a safe local
 Distributed-facade fallback when full routing-cluster coverage cannot be

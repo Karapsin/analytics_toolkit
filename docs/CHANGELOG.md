@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Added an optional exploratory SQL terminal interface with connection selection, query cancellation, and configurable controls.
 - Install optional SQL TUI dependencies in CI.
 - Support terminal-delivered Fn+Enter and Cmd+Enter in the SQL explorer.
+- Preserve modern nullable pandas dtypes in SQL dataframe reads and compact explorer decimals.
 
 ## 1.3.11.16 - 2026-09-02
 

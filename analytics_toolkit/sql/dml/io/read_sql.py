@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import pandas as pd
 import sqlparse
 
 from analytics_toolkit.general import time_print
@@ -26,8 +25,11 @@ from ...execution.operation_runner import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult
 from ...execution.query_timing import run_timed_query
+from .dataframes import column_result_from_rows, dataframe_from_column_result
 from .models import ReadOutputType, ReadSqlOptions
 
+if TYPE_CHECKING:
+    import pandas as pd
 
 _READ_OUTPUT_TYPES = ("df", "scalar", "list", "dict")
 
@@ -36,9 +38,9 @@ def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
     cursor = conn.cursor()
     try:
         cursor.execute(query)
-        columns = [column[0] for column in cursor.description or []]
+        columns = [str(column[0]) for column in cursor.description or []]
         rows = cursor.fetchall()
-        return pd.DataFrame(rows, columns=columns)
+        return dataframe_from_column_result(column_result_from_rows(columns, rows))
     finally:
         cursor.close()
 
@@ -49,15 +51,7 @@ def _read_dbapi_columns(conn: DbApiConnection, query: str) -> ReadColumnResult:
         cursor.execute(query)
         column_names = tuple(str(column[0]) for column in cursor.description or [])
         rows = cursor.fetchall()
-        columns: tuple[list[Any], ...] = tuple([] for _ in column_names)
-        for row in rows:
-            for column, value in zip(columns, row):
-                column.append(value)
-        return ReadColumnResult(
-            column_names=column_names,
-            columns=columns,
-            row_count=len(rows),
-        )
+        return column_result_from_rows(column_names, rows)
     finally:
         cursor.close()
 
@@ -333,7 +327,11 @@ def _format_read_output(
             for name, column in zip(column_result.column_names, column_result.columns)
         }
 
-    dataframe = cast("pd.DataFrame", result)
+    dataframe = (
+        dataframe_from_column_result(result)
+        if isinstance(result, ReadColumnResult)
+        else cast("pd.DataFrame", result)
+    )
     if output_type == "scalar":
         if dataframe.shape != (1, 1):
             message = (

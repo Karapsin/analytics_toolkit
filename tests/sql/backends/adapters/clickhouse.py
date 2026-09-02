@@ -41,7 +41,8 @@ def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
             if sql == "SELECT 2":
                 raise command_error
 
-        def query_df(self, sql: str) -> pd.DataFrame:
+        def query(self, sql: str, *, column_oriented: bool) -> pd.DataFrame:
+            assert column_oriented is True
             raise read_error
 
     with pytest.raises(RuntimeError, match="command failed"):

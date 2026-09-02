@@ -104,7 +104,12 @@ def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
 
     pd.testing.assert_frame_equal(
         gp_result,
-        pd.DataFrame({"id": [1], "label": ["ok"]}),
+        pd.DataFrame(
+            {
+                "id": pd.array([1], dtype="Int64"),
+                "label": pd.array(["ok"], dtype="string"),
+            }
+        ),
     )
     assert printed == [("select id, label", True)]
     assert gp_connection.executed == ["select id, label"]
@@ -113,9 +118,18 @@ def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
         def __init__(self) -> None:
             self.queries: list[str] = []
 
-        def query_df(self, sql: str) -> pd.DataFrame:
+        def query(self, sql: str, *, column_oriented: bool) -> object:
+            assert column_oriented is True
             self.queries.append(sql)
-            return pd.DataFrame({"value": [2]})
+            return type(
+                "QueryResult",
+                (),
+                {
+                    "column_names": ("value",),
+                    "result_columns": ([2],),
+                    "row_count": 1,
+                },
+            )()
 
     ch_client = ReadClickHouseClient()
     ch_result = get_backend_adapter("ch").read_dataframe(
@@ -123,10 +137,13 @@ def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
         "select value",
         print_queries=False,
         print_query=lambda query, enabled: printed.append((query, enabled)),
-        read_dbapi_query=lambda connection, query: pytest.fail("ClickHouse should use query_df"),
+        read_dbapi_query=lambda connection, query: pytest.fail("ClickHouse should use query"),
     )
 
-    pd.testing.assert_frame_equal(ch_result, pd.DataFrame({"value": [2]}))
+    pd.testing.assert_frame_equal(
+        ch_result,
+        pd.DataFrame({"value": pd.array([2], dtype="Int64")}),
+    )
     assert ch_client.queries == ["select value"]
 
 

@@ -609,7 +609,7 @@ def test_read_sql_routes_with_live_connection_metadata(
     result = read_sql_module.read_sql("routed", "SELECT * FROM events")
 
     assert list(result["value"]) == [1]
-    assert raw.dataframes == ["SELECT * FROM cluster('core', 'analytics', 'events')"]
+    assert raw.queries[-1] == "SELECT * FROM cluster('core', 'analytics', 'events')"
 
 
 def test_cancel_query_stays_local_with_cluster_routing(
@@ -633,7 +633,7 @@ def test_cancel_query_stays_local_with_cluster_routing(
 
     cancel_queries_module.cancel_queries("routed", ["query-id"])
 
-    assert raw.dataframes == ["KILL QUERY WHERE query_id = 'query-id' SYNC"]
+    assert raw.queries == ["KILL QUERY WHERE query_id = 'query-id' SYNC"]
 
 
 def test_generated_create_commands_preserve_intentional_local_fallback() -> None:

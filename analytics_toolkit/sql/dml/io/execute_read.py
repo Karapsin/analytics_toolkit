@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
 
-import pandas as pd
+from analytics_toolkit.general import time_print
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -21,7 +21,7 @@ from ...execution.operation_runner import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult
 from ...execution.query_timing import run_timed_query
-from analytics_toolkit.general import time_print
+from .dataframes import column_result_from_rows, dataframe_from_column_result
 from .execute_sql import (
     _iterate_statements_with_progress,
     _maybe_print_query,
@@ -29,6 +29,9 @@ from .execute_sql import (
     _validate_progress,
 )
 from .models import ExecuteReadOptions
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 @timed_public_sql_function
@@ -195,9 +198,9 @@ def _read_dbapi_cursor(
 
     def read_query() -> pd.DataFrame:
         cursor.execute(query)
-        columns = [column[0] for column in cursor.description or []]
+        columns = [str(column[0]) for column in cursor.description or []]
         rows = cursor.fetchall()
-        return pd.DataFrame(rows, columns=columns)
+        return dataframe_from_column_result(column_result_from_rows(columns, rows))
 
     return run_timed_query(connection_type, read_query, phase="read")
 
