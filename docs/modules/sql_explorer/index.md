@@ -78,7 +78,7 @@ cursor. Repeating the key chains cursors across as many logical lines as needed;
 pressing toward an occupied adjacent line removes that cursor, while at least one
 cursor always remains. Each cursor has an independent selection, and editing or
 pasting applies at every cursor. Escape collapses multiple cursors to the active
-one before its normal pane-navigation behavior. Tab and Shift+Tab indent or
+one before toggling focus between the editor and command panel. Tab and Shift+Tab indent or
 unindent selected logical lines. Double-clicking selects a complete SQL word such
 as `table_name`.
 
@@ -182,11 +182,10 @@ The button remains disabled while no user SQL runs or while cancellation is
 pending; the interface remains busy until the SQL worker acknowledges completion
 or cancellation.
 
-Escape moves forward through editor, visible result/error, command panel, then
-back to editor. A confirmation or navigation modal consumes Escape first;
-Find/Replace and completion overlays close before pane navigation. Alt+Tab and
-Alt+Shift+Tab remain optional pane-cycle aliases because Linux window managers
-and terminal emulators often intercept them.
+Escape toggles between the editor and command panel. From a visible result/error
+pane, Escape moves to the command panel; use Up and Down at pane boundaries to
+enter or leave results/errors. A confirmation or navigation modal consumes Escape
+first; Find/Replace and completion overlays close before focus navigation.
 
 ## Commands
 

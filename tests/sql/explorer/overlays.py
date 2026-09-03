@@ -116,7 +116,7 @@ def test_confirmation_arrows_select_topmost_binary_dialog_actions() -> None:
     asyncio.run(exercise())
 
 
-def test_escape_cycles_panes_and_overlays_consume_it_first() -> None:
+def test_escape_toggles_editor_command_and_skips_results() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
@@ -127,11 +127,24 @@ def test_escape_cycles_panes_and_overlays_consume_it_first() -> None:
 
             editor.focus()
             await pilot.press("escape")
+            assert application.focused is command
+            await pilot.press("escape")
+            assert application.focused is editor
+            await pilot.press("down")
             assert application.focused is table
             await pilot.press("escape")
             assert application.focused is command
             await pilot.press("escape")
             assert application.focused is editor
+
+    asyncio.run(exercise())
+
+
+def test_escape_overlays_consume_it_first() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
 
             await pilot.press("ctrl+f")
             bar = application.query_one(FindReplaceBar)

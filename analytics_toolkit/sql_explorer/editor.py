@@ -304,7 +304,7 @@ class SqlEditor(TextArea):
             event.prevent_default()
             application.action_plain_tab()
             return
-        if event.key == "escape" and self.cursor_count > 1:
+        if event.key == "escape":
             event.stop()
             event.prevent_default()
             application.action_escape()

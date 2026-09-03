@@ -134,9 +134,9 @@ sql_explorer.run("gp")
 
 The SQL editor and text inputs use steady, non-blinking carets. The numbered
 editor has standard, non-modal shortcuts. `Ctrl+Enter` and `F5` are the portable
-run keys; a non-empty selection runs instead of the full buffer. `Cmd+Enter` and
-Alt-based pane shortcuts are optional because terminal emulators and window
-managers may intercept them. Press `Ctrl+O` (or forwarded `Cmd+O`) to enter
+run keys; a non-empty selection runs instead of the full buffer. `Cmd+Enter` is
+optional because terminal emulators may intercept it. Press `Ctrl+O` (or
+forwarded `Cmd+O`) to enter
 read-only navigation mode on the host where the Explorer is running. Its path
 input supports Tab completion and keyboard candidate choice. All in-root files
 are visible for orientation, but only `.sql` files can be opened. Over SSH,

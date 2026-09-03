@@ -31,8 +31,6 @@ Keys
   Ctrl+S                      save the opened SQL file
   Ctrl+N                      name and create a blank SQL file
   Cmd+O                       optional terminal-forwarded open shortcut
-  Alt+Tab                     optionally cycle panes
-  Alt+Shift+Tab               cycle panes in reverse
   Up / Down                   cross pane boundaries or navigate Find/Replace
   Left / Right                choose a visible confirmation action
   Shift+Up / Shift+Down       add or remove editor cursors
@@ -42,7 +40,7 @@ Keys
   F5                          permanent run fallback
   Ctrl+F                      find and replace in the editor
   Delete                      close a focused result/error pane
-  Escape                      close overlays, collapse cursors, or move panes
+  Escape                      close overlays, collapse cursors, or toggle editor/command
   Interrupt                   request cancellation of the active query
   Ctrl+C                      copy editor or result selection
   Tab                         complete SQL or indent when unavailable

@@ -113,7 +113,7 @@ def test_database_picker_can_be_cancelled() -> None:
     asyncio.run(exercise())
 
 
-def test_mount_and_tab_cycle_visible_workspaces() -> None:
+def test_mount_has_no_tab_pane_cycle() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test(size=(100, 35)) as pilot:
@@ -123,17 +123,11 @@ def test_mount_and_tab_cycle_visible_workspaces() -> None:
             assert application.focused is editor
             status = application.query_one("#session-status", Static)
             assert "mode=exploratory" in str(status.render())
+            assert {binding.key for binding in application.BINDINGS}.isdisjoint(
+                {"alt+tab", "alt+shift+tab"}
+            )
 
-            await pilot.press("alt+tab")
-            assert application.focused is command
-            await pilot.press("alt+shift+tab")
-            assert application.focused is editor
-
-            application.show_dataframe(pd.DataFrame({"a": [1], "b": [None]}))
-            await pilot.press("alt+tab")
-            assert isinstance(application.focused, ResultTable)
-            await pilot.press("delete")
-            assert application.results_open is False
+            await pilot.press("alt+tab", "alt+shift+tab")
             assert application.focused is editor
 
     asyncio.run(exercise())

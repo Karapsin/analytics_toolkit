@@ -84,25 +84,11 @@ class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixi
             show=False,
             priority=True,
         ),
-        Binding(
-            "alt+tab",
-            "focus_next_pane",
-            "Next pane",
-            show=False,
-            priority=True,
-        ),
-        Binding(
-            "alt+shift+tab",
-            "focus_previous_pane",
-            "Previous pane",
-            show=False,
-            priority=True,
-        ),
         Binding("tab", "plain_tab", "Indent", show=False, priority=True),
         Binding("shift+tab", "plain_shift_tab", "Unindent", show=False, priority=True),
         Binding("ctrl+c", "copy_focused", "Copy", show=False, priority=True),
         Binding("ctrl+f", "open_find", "Find", show=False, priority=True),
-        Binding("escape", "escape", "Next pane", show=False),
+        Binding("escape", "escape", "Toggle editor/command", show=False),
     ]
 
     def __init__(self, session: ExplorerSession) -> None:
@@ -202,7 +188,10 @@ class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixi
         if editor.cursor_count > 1:
             editor.collapse_to_active()
             return
-        self.action_focus_next_pane()
+        if isinstance(self.focused, (SqlEditor, ResultTable, ResultMessage)):
+            self.query_one("#command-input", Input).focus()
+            return
+        editor.focus()
 
     def action_plain_tab(self) -> None:
         if isinstance(self.screen, FileNavigationScreen):

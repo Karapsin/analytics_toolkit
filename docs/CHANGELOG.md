@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Update SQL Explorer pane navigation.
+
 ## 1.3.11.17 - 2026-09-03
 
 - Added an optional exploratory SQL terminal interface with connection selection, query cancellation, and configurable controls.
