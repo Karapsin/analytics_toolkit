@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pandas as pd
 from analytics_toolkit.sql_explorer import app as app_module
 from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplorerApp
+from analytics_toolkit.sql_explorer.completion import CompletionRequest, CompletionResult
 from analytics_toolkit.sql_explorer.widgets import (
     CompletionMenu,
     FileNavigationScreen,
@@ -67,17 +68,28 @@ def test_escape_cycles_panes_and_overlays_consume_it_first() -> None:
             assert bar.styles.display == "none"
             assert application.focused is editor
 
-            editor.text = "SEL"
-            editor.cursor_location = (0, 3)
+            editor.text = "L"
+            editor.cursor_location = (0, 1)
             await pilot.press("tab")
             menu = application.query_one(CompletionMenu)
             assert menu.is_open is True
+            stopped: list[bool] = []
+            application.on_option_list_option_selected(
+                SimpleNamespace(option_list=menu, stop=lambda: stopped.append(True))
+            )
+            assert stopped == [True]
+            assert editor.text == "left join"
+
+            editor.text = "L"
+            editor.cursor_location = (0, 1)
+            await pilot.press("tab")
             application.action_escape()
             await pilot.pause()
             assert menu.is_open is False
             assert application.focused is editor
 
             menu.open(())
+            menu.move_highlight(1)
             assert menu.is_open is False
             assert menu.selected_suggestion() is None
 
@@ -97,6 +109,16 @@ def test_terminal_forwarded_command_o_alias_opens_navigation_mode() -> None:
         async with application.run_test() as pilot:
             await pilot.press("meta+o")
             assert isinstance(application.screen, FileNavigationScreen)
+            application._set_notice("Navigation remains active.")
+            application._update_status()
+            request = CompletionRequest("gp", "gp", "keyword", "s")
+            result = CompletionResult(request, 1, ())
+            application._receive_completion(result)
+            application._receive_namespace(result)
+            await asyncio.sleep(1.1)
+            await pilot.pause()
+            workspace = application.screen_stack[0]
+            assert "Navigation remains active." in str(workspace.query_one("#notice").render())
             await pilot.press("escape")
 
     asyncio.run(exercise())

@@ -13,6 +13,7 @@ from analytics_toolkit.sql_explorer.app import ResultMessage, SqlExplorerApp
 from analytics_toolkit.sql_explorer.runtime import ExplorerQueryState, format_duration
 from analytics_toolkit.sql_explorer.statements import ExecutionRoute, build_execution_plan
 from rich.text import Text
+from textual.css.query import NoMatches
 from textual.widgets import Button, Static
 
 from tests.sql.explorer.app import FakeSession
@@ -302,5 +303,27 @@ def test_finish_exit_and_non_completion_event_branches(
             assert application._completion is not None
             application._completion.stop()
             application._completion = None
+
+    asyncio.run(exercise())
+
+
+def test_status_updates_ignore_unavailable_workspace_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        application._update_status()
+        application._set_notice("not mounted")
+        async with application.run_test():
+            workspace = application.screen_stack[0]
+
+            def missing(*_args: object, **_kwargs: object) -> None:
+                message = "remounting"
+                raise NoMatches(message)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(workspace, "query_one", missing)
+                application._update_status()
+                application._set_notice("remounting")
 
     asyncio.run(exercise())

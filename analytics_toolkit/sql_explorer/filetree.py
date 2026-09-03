@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
@@ -17,7 +14,7 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def safe_entries(root: Path, *, browse_root: Path | None = None) -> list[Path]:
-    """Return visible directories and SQL files contained by *root*.
+    """Return in-root directories and regular files contained by *root*.
 
     Filesystem errors are deliberately propagated so the TUI can report them in
     its message surface instead of silently presenting an empty directory.
@@ -27,8 +24,6 @@ def safe_entries(root: Path, *, browse_root: Path | None = None) -> list[Path]:
     browse_root = (browse_root or root).resolve()
     entries = list(root.iterdir())
     for entry in entries:
-        if entry.name.startswith("."):
-            continue
         if entry.is_symlink():
             try:
                 if not _is_relative_to(entry.resolve(), browse_root):
@@ -36,15 +31,41 @@ def safe_entries(root: Path, *, browse_root: Path | None = None) -> list[Path]:
             except OSError:
                 continue
         try:
-            if entry.is_dir() or (entry.is_file() and entry.suffix.lower() == ".sql"):
+            if entry.is_dir() or entry.is_file():
                 result.append(entry)
         except OSError:
             continue
     return sorted(result, key=lambda path: (not path.is_dir(), path.name.casefold()))
 
 
+def completion_entries(root: Path, value: str) -> tuple[Path, tuple[Path, ...]]:
+    """Return the directory and entries matching a shell-style path prefix."""
+    browse_root = root.resolve()
+    if not value:
+        directory = browse_root
+        prefix = ""
+    else:
+        entered = Path(value).expanduser()
+        target = entered if entered.is_absolute() else browse_root / entered
+        if value.endswith("/"):
+            directory = target.resolve()
+            prefix = ""
+        else:
+            directory = target.parent.resolve()
+            prefix = target.name
+    if not _is_relative_to(directory, browse_root):
+        message = f"Path must remain inside {browse_root}"
+        raise ValueError(message)
+    entries = tuple(
+        entry
+        for entry in safe_entries(directory, browse_root=browse_root)
+        if entry.name.casefold().startswith(prefix.casefold())
+    )
+    return directory, entries
+
+
 def read_sql_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-__all__ = ["read_sql_file", "safe_entries"]
+__all__ = ["completion_entries", "read_sql_file", "safe_entries"]

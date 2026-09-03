@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from inspect import signature
 from typing import Any
 
@@ -113,6 +114,22 @@ def test_visible_cell_formatting_cannot_break_tsv_boundaries() -> None:
 
             assert str(table.get_cell_at(Coordinate(0, 0))) == "a\\tb\\nc"
             assert table.copy_text() == "a\\tb\\nc\tNULL"
+
+    asyncio.run(exercise())
+
+
+def test_visible_numeric_cells_and_copied_tsv_use_thousands_separators() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test():
+            application.show_dataframe(
+                pd.DataFrame({"integer": [1234567], "decimal": [Decimal("9876543.2100")]})
+            )
+            table = application.query_one(ResultTable)
+            table.set_cell_selection(0, 0)
+            table.set_cell_selection(0, 1, extend=True)
+
+            assert table.copy_text() == "1,234,567\t9,876,543.21"
 
     asyncio.run(exercise())
 

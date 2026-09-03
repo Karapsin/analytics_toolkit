@@ -140,7 +140,7 @@ def test_local_keyword_context_and_suggestions_require_no_sql(
     )
     context = parse_completion_context("SEL", 3, backend="gp", connection_key="gp")
     assert context.request.kind == "keyword"
-    assert keyword_suggestions(context.request.prefix) == ("SELECT",)
+    assert keyword_suggestions(context.request.prefix) == ("select",)
     assert context.replacement_start == 0
     assert sql_calls == []
 
@@ -299,22 +299,27 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
 
             await pilot.press("tab")
             menu = application.query_one(CompletionMenu)
-            assert menu.is_open is True
-            assert menu.suggestions == ("SELECT",)
-            await pilot.press("enter")
-            assert editor.text == "SELECT"
+            assert menu.is_open is False
+            assert editor.text == "select"
             assert application.focused is editor
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
             await pilot.press("tab")
             assert menu.is_open is True
-            assert menu.suggestions == ("LEFT JOIN", "LIMIT")
+            assert menu.suggestions == ("left join", "limit")
+            assert application.focused is editor
+            await pilot.press("i")
+            assert editor.text == "Li"
+            assert menu.suggestions == ("limit",)
+            await pilot.press("backspace")
+            assert editor.text == "L"
+            assert menu.suggestions == ("left join", "limit")
             await pilot.press("down", "enter")
-            assert editor.text == "LIMIT"
+            assert editor.text == "limit"
 
-            editor.text = "WH"
-            editor.cursor_location = (0, 2)
+            editor.text = "L"
+            editor.cursor_location = (0, 1)
             await pilot.press("tab")
             await pilot.press("escape")
             assert menu.is_open is False
@@ -392,8 +397,8 @@ def test_coordinator_keyword_and_idle_worker_paths() -> None:
     completed: list[completion_module.CompletionResult] = []
     request = CompletionRequest("gp", "gp", "keyword", "SEL", context="keyword:0")
     request_id = coordinator.enqueue(request, on_success=completed.append)
-    assert completed == [completion_module.CompletionResult(request, request_id, ("SELECT",))]
-    assert coordinator._run(request) == ("SELECT",)
+    assert completed == [completion_module.CompletionResult(request, request_id, ("select",))]
+    assert coordinator._run(request) == ("select",)
 
     coordinator._wake.set()
     sleep(0.05)
@@ -501,7 +506,8 @@ def test_inflight_result_filters_latest_prefix_and_cache_handles_backspace() -> 
             _wait_for(lambda: len(provider.table_calls) == 1)
             await pilot.pause()
             menu = application.query_one(CompletionMenu)
-            assert menu.suggestions == ("sample_one",)
+            assert menu.is_open is False
+            assert editor.text == "SELECT * FROM sample_one"
 
             menu.action_close()
             editor.text = "SELECT * FROM sampl"
@@ -531,7 +537,7 @@ def test_metadata_failure_does_not_remove_local_keyword_completion() -> None:
     coordinator.enqueue(request, on_error=lambda _result, exc: errors.append(str(exc)))
     _wait_for(lambda: bool(errors))
     assert errors == ["metadata unavailable"]
-    assert keyword_suggestions("SEL") == ("SELECT",)
+    assert keyword_suggestions("SEL") == ("select",)
     coordinator.stop()
 
 
@@ -546,16 +552,16 @@ def test_app_completion_request_defensive_paths() -> None:
             editor.text = "SEL"
             editor.cursor_location = (0, 3)
             await pilot.press("tab")
-            assert menu.is_open is True
-            menu.action_accept()
-            assert editor.text == "SELECT"
+            assert menu.is_open is False
+            assert editor.text == "select"
             await pilot.pause()
 
-            editor.text = "WH"
-            editor.cursor_location = (0, 2)
+            editor.text = "L"
+            editor.cursor_location = (0, 1)
             editor.action_completion_or_indent()
-            assert menu.suggestions == ("WHERE",)
-            menu.action_close()
+            assert menu.suggestions == ("left join", "limit")
+            menu.action_accept()
+            assert editor.text == "left join"
 
             editor.text = "SELECT * FROM sample"
             editor.selection = Selection((0, 14), (0, 16))
@@ -575,8 +581,8 @@ def test_app_completion_request_defensive_paths() -> None:
 
             stub.schemas[None] = ("sample_schema",)
             assert application._request_completion() is True
-            assert menu.suggestions == ("sample_schema",)
-            menu.action_close()
+            assert editor.text == "SELECT * FROM sample_schema"
+            assert menu.is_open is False
 
             editor.text = "SELECT * FROM sample"
             editor.cursor_location = (0, len(editor.text))

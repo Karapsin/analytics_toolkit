@@ -62,8 +62,9 @@ default; exploratory mode is not a database-enforced read-only session.
 
 ## Editor and completion
 
-The editor displays line numbers, uses SQL syntax highlighting, and keeps long
-SQL lines unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
+The editor and text inputs use steady non-blinking carets. The editor displays
+line numbers, applies SQL syntax highlighting, and keeps long SQL lines
+unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
 stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
 3.13–3.14, so highlighting is available on every supported Python version. If
 a parser installation is damaged or cannot load, the editor still opens
@@ -83,16 +84,20 @@ available without reducing the normal editor width.
 Tab is conditional:
 
 1. If the completion menu is open, Tab accepts its highlighted suggestion.
-2. If the cursor has a completion prefix, Tab opens or requests suggestions.
-3. Otherwise, Tab performs normal indentation.
+2. If the cursor has one matching suggestion, Tab inserts it immediately.
+3. If the cursor has multiple matches, Tab opens the suggestion menu.
+4. If metadata is needed, Tab requests it and applies the same one-or-many rule.
+5. Otherwise, Tab performs normal indentation.
 
-Up and Down move through an open completion menu, Enter accepts, and Escape
-closes it. Local keyword completion does not query a database. Backend metadata
-completion supports Trino catalogs, schemas, and tables; Greenplum schemas and
-tables; and ClickHouse databases and tables. Trino catalog discovery starts
-when the Explorer opens, then schema discovery is queued for each catalog. All
-metadata requests use one independent FIFO worker and never replace the visible
-user-query status.
+The editor keeps keyboard focus while the menu is open, so continued typing or
+backspacing filters the visible options. A typed prefix that narrows the menu to
+one option remains editable until Tab or Enter accepts it. Up and Down move the
+highlight, and Escape closes the menu. Local keyword completion uses lower-case
+SQL keywords and does not query a database. Backend metadata completion supports
+Trino catalogs, schemas, and tables; Greenplum schemas and tables; and ClickHouse
+databases and tables. Trino catalog discovery starts when the Explorer opens,
+then schema discovery is queued for each catalog. All metadata requests use one
+independent FIFO worker and never replace the visible user-query status.
 
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
 The prefix must contain at least six characters. The first Tab request calls
@@ -109,22 +114,28 @@ Escape returns to the editor without opening a file.
 
 Navigation starts at resolved `Path.cwd()` on the host running the Explorer.
 Consequently, an Explorer launched over SSH reads the remote host's filesystem,
-not the Linux client's filesystem. Directories appear first, then `.sql` files,
-with case-insensitive sorting. Hidden entries, non-SQL files, and symlinks that
-resolve outside the navigation root are omitted.
+not the Linux client's filesystem. Directories appear first, then all regular
+files, with case-insensitive sorting; hidden and non-SQL files remain visible.
+Symlinks that resolve outside the navigation root are omitted.
 
-Enter or click opens a UTF-8 SQL file. The current path appears in status. The
-browser is read-only: it never creates, saves, renames, or deletes files. If the
-editor has unsaved changes, opening another file requires explicit discard
-confirmation. File, decoding, and permission failures appear in the normal
-result/message surface and do not terminate the Explorer.
+Normal typing goes into the path field and filters the current path segment.
+Tab completes a sole match or cycles through multiple visible candidates;
+Shift+Tab, Up, and Down move through those candidates. Enter or click descends
+into a directory. On a file, Enter or click opens it only when its suffix is
+`.sql` (case-insensitive); other files remain visible but cannot be opened.
+The current SQL file path appears in status. The browser is read-only: it never
+creates, saves, renames, or deletes files. If the editor has unsaved changes,
+opening another file requires explicit discard confirmation. File, decoding,
+and permission failures appear in the normal result/message surface and do not
+terminate the Explorer.
 
 ## Results and clipboard
 
 At most 200 result rows are displayed. Query-shaped final statements use a
 201-row server-side limit so the Explorer can indicate when more rows exist
 without fetching an unbounded result. Finite Decimal cells display without
-insignificant trailing zeros, nulls display as `NULL`, and embedded tabs or line
+insignificant trailing zeros. Integers, decimals, and floating-point values use
+comma thousands separators. Nulls display as `NULL`, and embedded tabs or line
 breaks are escaped visibly.
 
 Rows have visual labels beginning at 1. Click selects one data cell; drag or

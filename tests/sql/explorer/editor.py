@@ -183,12 +183,12 @@ def test_double_click_tracking_selects_identifier_with_underscore(
             editor.action_double_click_word((0, 0))
             assert editor.selection == Selection.cursor((0, 0))
 
-            editor.text = "SEL"
-            editor.cursor_location = (0, 3)
+            editor.text = "L"
+            editor.cursor_location = (0, 1)
             await editor._on_key(events.Key("tab", "\t"))
             assert application.query_one("#completion-menu").styles.display == "block"
             await editor._on_key(events.Key("x", "x"))
-            assert editor.text == "SELx"
+            assert editor.text == "Lx"
 
     asyncio.run(exercise())
 
@@ -206,6 +206,10 @@ def test_sql_editor_configuration_and_parser_failure_fallback(
             assert editor.show_line_numbers is True
             assert editor.soft_wrap is False
             assert editor.tab_behavior == "indent"
+            assert editor.cursor_blink is False
+            assert editor._cursor_visible is True
+            await asyncio.sleep(0.6)
+            assert editor._cursor_visible is True
 
             original = TextArea.__init__
             calls: list[dict[str, Any]] = []
@@ -220,6 +224,7 @@ def test_sql_editor_configuration_and_parser_failure_fallback(
             monkeypatch.setattr(TextArea, "__init__", fail_first)
             fallback = SqlEditor()
             assert fallback.language is None
+            assert fallback.cursor_blink is False
             assert calls[0]["language"] == "sql"
             assert calls[1]["language"] is None
 

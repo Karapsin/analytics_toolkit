@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
+from numbers import Integral, Real
 from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, Tuple, cast
@@ -17,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, OptionList, Static, TextArea, Tree
 from typing_extensions import override
 
-from .filetree import safe_entries
+from .filetree import completion_entries, safe_entries
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -83,6 +84,7 @@ class SqlEditor(TextArea):
             # Textual syntax parsers are optional; editing must remain available.
             kwargs["language"] = None
             super().__init__(*args, **kwargs)
+        self.cursor_blink = False
         # Textual 0.73 calculates the initial non-wrapped virtual width before
         # applying line-number gutter state; refresh it to avoid a negative crop.
         if not self.soft_wrap:
@@ -96,10 +98,22 @@ class SqlEditor(TextArea):
         cast("SqlExplorerApp", self.app).action_plain_tab()
 
     async def _on_key(self, event: events.Key) -> None:
+        application = cast("SqlExplorerApp", self.app)
+        menu = application.query_one(CompletionMenu)
+        if menu.is_open and event.key in {"up", "down", "enter", "escape"}:
+            event.stop()
+            event.prevent_default()
+            if event.key == "enter":
+                application.action_plain_tab()
+            elif event.key == "escape":
+                menu.action_close()
+            else:
+                menu.move_highlight(-1 if event.key == "up" else 1)
+            return
         if event.key == "tab":
             event.stop()
             event.prevent_default()
-            cast("SqlExplorerApp", self.app).action_plain_tab()
+            application.action_plain_tab()
             return
         await super()._on_key(event)
 
@@ -552,7 +566,13 @@ class ResultMessage(Static, can_focus=True):
         cast("SqlExplorerApp", self.app).close_results()
 
 
-class CommandInput(Input):
+class _NonBlinkingInput(Input):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.cursor_blink = False
+
+
+class CommandInput(_NonBlinkingInput):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "focus_previous_pane", "Previous pane", show=False),
         Binding("down", "focus_next_pane", "Next pane", show=False),
@@ -576,6 +596,7 @@ class SqlFileTree(Tree[object]):
     def __init__(self, root: Any = None, *args: Any, **kwargs: Any) -> None:
         self.root_path = Path(root or Path.cwd()).resolve()
         super().__init__(self.root_path.name or str(self.root_path), *args, **kwargs)
+        self.auto_expand = False
 
     def on_mount(self) -> None:
         self.refresh_directory(self.root, self.root_path)
@@ -591,9 +612,12 @@ class SqlFileTree(Tree[object]):
         for entry in entries:
             node.add(entry.name, data=entry, allow_expand=entry.is_dir())
 
-    def on_tree_node_expanded(self, event: Tree.NodeExpanded[object]) -> None:
-        if event.node.data is not None:
-            self.refresh_directory(event.node, event.node.data)
+    def show_entries(self, directory: Path, entries: tuple[Path, ...]) -> None:
+        self.move_cursor(None)
+        self.reset(directory.name or str(directory), data=directory)
+        self.root.expand()
+        for entry in entries:
+            self.root.add(entry.name, data=entry, allow_expand=entry.is_dir())
 
 
 class FileNavigationScreen(ModalScreen[Optional[Path]]):
@@ -601,6 +625,11 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Close navigation", show=False),
+        Binding("tab", "complete_path", "Complete path", show=False, priority=True),
+        Binding("shift+tab", "previous_match", "Previous match", show=False, priority=True),
+        Binding("up", "previous_match", "Previous match", show=False, priority=True),
+        Binding("down", "next_match", "Next match", show=False, priority=True),
+        Binding("enter", "choose_path", "Open or descend", show=False, priority=True),
     ]
 
     CSS = """
@@ -615,8 +644,12 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         background: $panel;
         padding: 1;
     }
-    #navigation-title, #navigation-help {
+    #navigation-title, #navigation-notice, #navigation-help {
         height: 1;
+    }
+    #navigation-path {
+        height: 3;
+        margin-bottom: 1;
     }
     #navigation-tree {
         height: 1fr;
@@ -631,21 +664,133 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
     def __init__(self, root: Path | None = None) -> None:
         super().__init__()
         self.root_path = (root or Path.cwd()).resolve()
+        self._matches: tuple[Path, ...] = ()
+        self._match_index = -1
 
     def compose(self) -> ComposeResult:
         with Vertical(id="navigation-dialog"):
             yield Static(f"Open SQL file — {self.root_path}", id="navigation-title")
+            yield _NonBlinkingInput(
+                placeholder="Type a path; Tab completes",
+                id="navigation-path",
+            )
             yield SqlFileTree(self.root_path, id="navigation-tree")
-            yield Static("Enter/click: open   Escape: cancel", id="navigation-help")
+            yield Static("", id="navigation-notice")
+            yield Static(
+                "Tab: complete/cycle   ↑↓: choose   Enter/click: open   Escape: cancel",
+                id="navigation-help",
+            )
 
     def on_mount(self) -> None:
-        self.query_one(SqlFileTree).focus()
+        self._refresh_matches("")
+        self.query_one("#navigation-path", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "navigation-path":
+            self._refresh_matches(event.value)
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[object]) -> None:
         path = event.node.data
-        if isinstance(path, Path) and path.suffix.casefold() == ".sql":
+        if isinstance(path, Path):
             event.stop()
+            self._choose_entry(path)
+
+    def action_complete_path(self) -> None:
+        if not self._matches:
+            self._refresh_matches(self.query_one("#navigation-path", Input).value)
+            if not self._matches:
+                return
+        if len(self._matches) == 1:
+            path = self._matches[0]
+            try:
+                is_directory = path.is_dir()
+            except OSError as exc:
+                self._set_navigation_notice(f"{type(exc).__name__}: {exc}")
+                return
+            if is_directory:
+                self._descend(path)
+            else:
+                self._set_path_value(self._display_path(path))
+                self._set_navigation_notice("Path completed; press Enter to open it.")
+            return
+        self._highlight_match(self._match_index + 1)
+
+    def action_previous_match(self) -> None:
+        self._highlight_match(self._match_index - 1 if self._match_index >= 0 else -1)
+
+    def action_next_match(self) -> None:
+        self._highlight_match(self._match_index + 1)
+
+    def action_choose_path(self) -> None:
+        if not self._matches:
+            self._set_navigation_notice("No matching path.")
+            return
+        exact_name = Path(self.query_one("#navigation-path", Input).value.rstrip("/")).name
+        exact = next(
+            (path for path in self._matches if path.name.casefold() == exact_name.casefold()),
+            None,
+        )
+        index = max(self._match_index, 0)
+        self._choose_entry(exact or self._matches[index])
+
+    def _refresh_matches(self, value: str) -> None:
+        tree = self.query_one(SqlFileTree)
+        try:
+            directory, matches = completion_entries(self.root_path, value)
+        except (OSError, ValueError) as exc:
+            self._matches = ()
+            self._match_index = -1
+            tree.show_entries(self.root_path, ())
+            self._set_navigation_notice(f"{type(exc).__name__}: {exc}")
+            return
+        self._matches = matches
+        self._match_index = -1
+        tree.show_entries(directory, matches)
+        self._set_navigation_notice(
+            f"{len(matches)} matching entr{'y' if len(matches) == 1 else 'ies'}."
+        )
+
+    def _highlight_match(self, index: int) -> None:
+        if not self._matches:
+            self._set_navigation_notice("No matching path.")
+            return
+        self._match_index = index % len(self._matches)
+        tree = self.query_one(SqlFileTree)
+        node = tree.root.children[self._match_index]
+        tree.move_cursor(node)
+        self._set_navigation_notice(str(self._matches[self._match_index].name))
+        self.query_one("#navigation-path", Input).focus()
+
+    def _choose_entry(self, path: Path) -> None:
+        try:
+            is_directory = path.is_dir()
+        except OSError as exc:
+            self._set_navigation_notice(f"{type(exc).__name__}: {exc}")
+            return
+        if is_directory:
+            self._descend(path)
+        elif path.suffix.casefold() == ".sql":
             self.dismiss(path)
+        else:
+            self._set_navigation_notice("Only .sql files can be opened.")
+            self.query_one("#navigation-path", Input).focus()
+
+    def _descend(self, path: Path) -> None:
+        value = self._display_path(path) + "/"
+        self._set_path_value(value)
+        self._refresh_matches(value)
+
+    def _set_path_value(self, value: str) -> None:
+        path_input = self.query_one("#navigation-path", Input)
+        path_input.value = value
+        path_input.cursor_position = len(value)
+        path_input.focus()
+
+    def _display_path(self, path: Path) -> str:
+        return path.relative_to(self.root_path).as_posix()
+
+    def _set_navigation_notice(self, message: str) -> None:
+        self.query_one("#navigation-notice", Static).update(message)
 
     def on_sql_file_tree_directory_error(
         self,
@@ -687,8 +832,12 @@ class CompletionMenu(OptionList):
         self.add_options(suggestions)
         self.highlighted = 0 if suggestions else None
         self.styles.display = "block" if suggestions else "none"
-        if suggestions:
-            self.focus()
+
+    def move_highlight(self, offset: int) -> None:
+        if not self.suggestions:
+            return
+        current = self.highlighted if self.highlighted is not None else 0
+        self.highlighted = max(0, min(current + offset, len(self.suggestions) - 1))
 
     def selected_suggestion(self) -> str | None:
         if self.highlighted is None:
@@ -710,9 +859,9 @@ class FindReplaceBar(Vertical):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="Find", id="find-pattern")
+        yield _NonBlinkingInput(placeholder="Find", id="find-pattern")
         yield Button("Next", id="find-next")
-        yield Input(placeholder="Replace", id="replace-pattern")
+        yield _NonBlinkingInput(placeholder="Replace", id="replace-pattern")
         with Horizontal(id="replace-actions"):
             yield Button("Replace", id="replace-current")
             yield Button("Replace All", id="replace-all")
@@ -906,7 +1055,11 @@ def _format_cell(value: object) -> str:
         pass
     if isinstance(value, Decimal) and value.is_finite():
         normalized = Decimal(0) if value == 0 else value.normalize()
-        rendered = format(normalized, "f")
+        rendered = format(normalized, ",f")
+    elif isinstance(value, Integral) and not isinstance(value, bool):
+        rendered = format(value, ",d")
+    elif isinstance(value, Real) and not isinstance(value, bool):
+        rendered = format(value, ",")
     else:
         rendered = str(value)
     rendered = (

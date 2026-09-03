@@ -22,6 +22,8 @@ def test_find_replace_ui_highlights_navigates_and_replaces() -> None:
             replacement_input = application.query_one("#replace-pattern", Input)
             assert bar.styles.display != "none"
             assert application.focused is search_input
+            assert search_input.cursor_blink is False
+            assert replacement_input.cursor_blink is False
 
             search_input.value = "alpha"
             await pilot.pause()

@@ -119,6 +119,7 @@ def test_mount_and_tab_cycle_visible_workspaces() -> None:
         async with application.run_test(size=(100, 35)) as pilot:
             editor = application.query_one(SqlEditor)
             command = application.query_one("#command-input", Input)
+            assert command.cursor_blink is False
             assert application.focused is editor
             status = application.query_one("#session-status", Static)
             assert "mode=exploratory" in str(status.render())
@@ -657,6 +658,9 @@ def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:
     assert app_module._format_cell("a\nb") == "a\\nb"
     assert app_module._format_cell("x" * 600).endswith("…")
     assert app_module._format_cell([1, 2]) == "[1, 2]"
-    assert app_module._format_cell(Decimal("20778982.000000000000")) == "20778982"
+    assert app_module._format_cell(Decimal("20778982.000000000000")) == "20,778,982"
     assert app_module._format_cell(Decimal("123.4500")) == "123.45"
     assert app_module._format_cell(Decimal("-0.000")) == "0"
+    assert app_module._format_cell(1234567) == "1,234,567"
+    assert app_module._format_cell(1234567.5) == "1,234,567.5"
+    assert app_module._format_cell(True) == "True"

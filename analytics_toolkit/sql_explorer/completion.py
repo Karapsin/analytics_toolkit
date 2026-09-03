@@ -21,21 +21,21 @@ if TYPE_CHECKING:
 CompletionKind = Literal["keyword", "table", "catalog", "schema"]
 
 KEYWORDS: Final[tuple[str, ...]] = (
-    "SELECT",
-    "FROM",
-    "WHERE",
-    "GROUP BY",
-    "ORDER BY",
-    "HAVING",
-    "JOIN",
-    "LEFT JOIN",
-    "RIGHT JOIN",
-    "INNER JOIN",
-    "LIMIT",
-    "INSERT INTO",
-    "UPDATE",
-    "DELETE FROM",
-    "CREATE TABLE",
+    "select",
+    "from",
+    "where",
+    "group by",
+    "order by",
+    "having",
+    "join",
+    "left join",
+    "right join",
+    "inner join",
+    "limit",
+    "insert into",
+    "update",
+    "delete from",
+    "create table",
 )
 MIN_TABLE_PREFIX_LENGTH: Final[int] = 6
 _CATALOG_SCHEMA_TABLE_PARTS: Final[int] = 3

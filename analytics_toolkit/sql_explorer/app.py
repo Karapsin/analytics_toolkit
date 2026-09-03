@@ -12,6 +12,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
 from .clipboard import TerminalClipboard
@@ -81,7 +82,11 @@ Keys
 
 Notes
   Selected SQL runs instead of the complete buffer.
-  Navigation reads the remote host's current directory and never writes files.
+  A sole completion inserts directly; built-in SQL keywords use lower case.
+  Keep typing to filter an open completion menu, then use Tab or Enter.
+  Text carets remain visible without blinking.
+  Navigation searches the remote current directory and never writes files.
+  All files are visible there, but only .sql files can be opened.
   OSC 52 copy targets the SSH client's clipboard when the terminal permits it.
 """
 
@@ -230,6 +235,9 @@ class SqlExplorerApp(App[None]):
         self.action_focus_next_pane()
 
     def action_plain_tab(self) -> None:
+        if isinstance(self.screen, FileNavigationScreen):
+            self.screen.action_complete_path()
+            return
         menu = self.query_one(CompletionMenu)
         if menu.is_open:
             self._accept_completion()
@@ -239,6 +247,9 @@ class SqlExplorerApp(App[None]):
             focused.action_indent()
 
     def action_plain_shift_tab(self) -> None:
+        if isinstance(self.screen, FileNavigationScreen):
+            self.screen.action_previous_match()
+            return
         focused = self.focused
         if isinstance(focused, SqlEditor):
             focused.action_unindent()
@@ -431,6 +442,7 @@ class SqlExplorerApp(App[None]):
         self._saved_text = text
         self._set_notice(f"Loaded {path}")
         self._update_status()
+        self.call_after_refresh(self._update_status)
         editor.focus()
 
     def _navigation_closed(self, path: Path | None) -> None:
@@ -544,6 +556,8 @@ class SqlExplorerApp(App[None]):
             )
 
     def _receive_completion(self, result: CompletionResult) -> None:
+        if len(self.screen_stack) > 1:
+            return
         context = self._completion_at_cursor()
         if context.request.scope != result.request.scope:
             return
@@ -556,6 +570,8 @@ class SqlExplorerApp(App[None]):
             self._set_notice("No matching table names found.")
 
     def _receive_namespace(self, _result: CompletionResult) -> None:
+        if len(self.screen_stack) > 1:
+            return
         context = self._completion_at_cursor()
         if context.request.kind == "table":
             self._open_namespace_completion(context)
@@ -564,9 +580,15 @@ class SqlExplorerApp(App[None]):
         self,
         context: CompletionContext,
         suggestions: tuple[str, ...],
+        *,
+        accept_single: bool = True,
     ) -> None:
         self._completion_context = context
         menu = self.query_one(CompletionMenu)
+        if accept_single and len(suggestions) == 1:
+            self._insert_completion(context, suggestions[0])
+            menu.action_close()
+            return
         editor = self.query_one(SqlEditor)
         cursor_x, cursor_y = editor.cursor_render_offset
         menu.styles.offset = (cursor_x + editor.gutter_width + 1, cursor_y + 1)
@@ -579,12 +601,19 @@ class SqlExplorerApp(App[None]):
             menu.action_close()
             return
         context = self._completion_at_cursor()
+        self._insert_completion(context, suggestion)
+        menu.action_close()
+
+    def _insert_completion(
+        self,
+        context: CompletionContext,
+        suggestion: str,
+    ) -> None:
         editor = self.query_one(SqlEditor)
         start = self._offset_to_location(editor.text, context.replacement_start)
         end = self._offset_to_location(editor.text, context.replacement_end)
         result = editor.replace(suggestion, start, end, maintain_selection_offset=False)
         editor.cursor_location = result.end_location
-        menu.action_close()
 
     def _refresh_open_completion(self) -> None:
         menu = self.query_one(CompletionMenu)
@@ -604,7 +633,7 @@ class SqlExplorerApp(App[None]):
             if suggestions is None:
                 return
         if suggestions:
-            self._open_completion(context, suggestions)
+            self._open_completion(context, suggestions, accept_single=False)
         else:
             menu.action_close()
 
@@ -789,13 +818,21 @@ class SqlExplorerApp(App[None]):
         return value or self._clipboard
 
     def _update_status(self) -> None:
+        if not self.screen_stack:
+            return
+        workspace = self.screen_stack[0]
+        try:
+            editor = workspace.query_one("#query-editor", SqlEditor)
+            status_widget = workspace.query_one("#session-status", Static)
+            interrupt = workspace.query_one("#interrupt", Button)
+        except NoMatches:
+            return
         confirmation = "on" if self.session.settings.confirm_mutations else "off"
         state = "cancelling" if self.cancelling else "busy" if self.busy else "ready"
         status = (
             f"db={self.session.database.connection_key} "
             f"backend={self.session.database.backend} mode=exploratory "
         )
-        editor = self.query_one("#query-editor", SqlEditor)
         if self._current_file is not None:
             dirty = "*" if editor.text != self._saved_text else ""
             status += f"file={self._current_file}{dirty} "
@@ -816,17 +853,18 @@ class SqlExplorerApp(App[None]):
                 warning = Text(" consider optimizing your query or sit tight", style="bold red")
                 status_text = Text(status + suffix)
                 status_text.append(warning)
-                self.query_one("#session-status", Static).update(status_text)
+                status_widget.update(status_text)
             else:
-                self.query_one("#session-status", Static).update(status + suffix)
+                status_widget.update(status + suffix)
         else:
             suffix = f"run={self.session.settings.run_binding} confirm={confirmation} state={state}"
-            self.query_one("#session-status", Static).update(status + suffix)
-        interrupt = self.query_one("#interrupt", Button)
+            status_widget.update(status + suffix)
         interrupt.disabled = not self.busy or self.cancelling
 
     def _set_notice(self, message: str | None) -> None:
-        self.query_one("#notice", Static).update(message or "")
+        if self.screen_stack:
+            with suppress(NoMatches):
+                self.screen_stack[0].query_one("#notice", Static).update(message or "")
 
 
 __all__ = [

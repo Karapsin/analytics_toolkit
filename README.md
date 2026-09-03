@@ -132,21 +132,27 @@ from analytics_toolkit import sql_explorer
 sql_explorer.run("gp")
 ```
 
-The numbered SQL editor uses standard, non-modal shortcuts. `Ctrl+Enter` and
-`F5` are the portable run keys; a non-empty selection runs instead of the full
-buffer. `Cmd+Enter` and Alt-based pane shortcuts are optional because terminal
-emulators and window managers may intercept them. Press `Ctrl+O` (or forwarded
-`Cmd+O`) to enter read-only navigation mode for `.sql` files on the host where
-the Explorer is running. Over SSH, this is the remote host's filesystem.
+The SQL editor and text inputs use steady, non-blinking carets. The numbered
+editor has standard, non-modal shortcuts. `Ctrl+Enter` and `F5` are the portable
+run keys; a non-empty selection runs instead of the full buffer. `Cmd+Enter` and
+Alt-based pane shortcuts are optional because terminal emulators and window
+managers may intercept them. Press `Ctrl+O` (or forwarded `Cmd+O`) to enter
+read-only navigation mode on the host where the Explorer is running. Its path
+input supports Tab completion and keyboard candidate choice. All in-root files
+are visible for orientation, but only `.sql` files can be opened. Over SSH,
+this is the remote host's filesystem.
 
-`Tab` opens local SQL or backend metadata completion when applicable and
-otherwise indents. A table lookup starts only after six prefix characters,
-calls `sql.show_tables` once for that context, and filters longer or shortened
-prefixes locally. Results support rectangular selection and visible-value TSV
-copying. `Ctrl+C` emits OSC 52 first so an SSH client terminal can copy into its
-local clipboard; terminal policy may disable OSC 52, in which case Pyperclip or
-the in-memory fallback remains available. Use the `Interrupt` button or the
-`cancel` command for the active user query. See the
+`Tab` inserts a sole completion directly, opens the menu for multiple local SQL
+or backend metadata matches, and otherwise indents. Built-in SQL keywords are
+lower case. Keep typing while the menu is open to narrow its options. A table
+lookup starts only after six prefix characters, calls `sql.show_tables` once
+for that context, and filters longer or shortened prefixes locally. Results
+use comma thousands separators for numeric values and support rectangular
+selection with visible-value TSV copying. `Ctrl+C` emits
+OSC 52 first so an SSH client terminal can copy into its local clipboard;
+terminal policy may disable OSC 52, in which case Pyperclip or the in-memory
+fallback remains available. Use the `Interrupt` button or the `cancel` command
+for the active user query. See the
 [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
 for navigation, completion, clipboard, and safety details.
 
