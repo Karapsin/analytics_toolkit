@@ -73,9 +73,14 @@ without highlighting and remains editable.
 Portable editing keys include Home, End, arrows, Shift+arrows, Tab, Shift+Tab,
 Enter, Escape, Ctrl+C, Ctrl+Enter, and F5. Home always moves to column zero of
 the current logical line and collapses selection; Ctrl+Home goes to the start of
-the document. Shift+Up and Shift+Down extend by complete logical lines. Tab and
-Shift+Tab indent or unindent every selected logical line while preserving the
-selection. Double-clicking selects a complete SQL word such as `table_name`.
+the document. Shift+Up and Shift+Down add a cursor above or below the active
+cursor. Repeating the key chains cursors across as many logical lines as needed;
+pressing toward an occupied adjacent line removes that cursor, while at least one
+cursor always remains. Each cursor has an independent selection, and editing or
+pasting applies at every cursor. Escape collapses multiple cursors to the active
+one before its normal pane-navigation behavior. Tab and Shift+Tab indent or
+unindent selected logical lines. Double-clicking selects a complete SQL word such
+as `table_name`.
 
 `Ctrl+F` opens a compact Find/Replace overlay on the right side of the query
 area. Find, Replace, Replace All, match highlighting, and Escape-to-close remain
@@ -111,8 +116,13 @@ catalog, database, schema, or SQL-clause context change permits a new lookup.
 ## Navigation mode
 
 File navigation is a separate modal mode, not a permanent workspace pane. Open
-it with `Ctrl+O`, terminal-forwarded `Cmd+O`, `open`, or `mode navigation`.
-Escape returns to the editor without opening a file.
+an existing file with `Ctrl+O`, terminal-forwarded `Cmd+O`, `open`, or `mode
+navigation`. Escape returns to the editor without opening a file. `Ctrl+S` or
+`save` writes edits back to the opened `.sql` file. `Ctrl+N` first asks for a
+filename ending in `.sql`, then opens the same browser to choose a destination
+directory; selecting it creates the file without overwriting an existing one.
+When the buffer is an unchanged opened file, its non-empty SQL is copied into
+the new file; otherwise the new file starts empty.
 
 Navigation starts at resolved `Path.cwd()` on the host running the Explorer.
 Consequently, an Explorer launched over SSH reads the remote host's filesystem,
@@ -125,11 +135,12 @@ Tab completes a sole match or cycles through multiple visible candidates;
 Shift+Tab, Up, and Down move through those candidates. Enter or click descends
 into a directory. On a file, Enter or click opens it only when its suffix is
 `.sql` (case-insensitive); other files remain visible but cannot be opened.
-The current SQL file path appears in status. The browser is read-only: it never
-creates, saves, renames, or deletes files. If the editor has unsaved changes,
-opening another file requires explicit discard confirmation. File, decoding,
-and permission failures appear in the normal result/message surface and do not
-terminate the Explorer.
+The current SQL file path appears in status. File browsing never renames or
+deletes files; save writes only an opened existing `.sql` file, and new-file
+creation is limited to the selected project directory. If the editor has
+unsaved changes, opening another file or creating a blank file requires explicit
+discard confirmation. File, decoding, and permission failures appear in the
+normal result/message surface and do not terminate the Explorer.
 
 ## Results and clipboard
 
@@ -183,8 +194,13 @@ Enter commands in the lower panel, with or without a leading colon:
 
 - `run` - run the selection or complete editor buffer
 - `open` - enter remote-host SQL file navigation mode
+- `save` - save edits to the opened SQL file
 - `cancel` - request cancellation of the active Explorer user query
 - `mode [exploratory|navigation]` - show the current mode or enter navigation
+- `mv LINE_NUMBER` - move to the start of a one-based editor line
+- `mvs LINE_NUMBER` - select from the active cursor to a one-based line start
+- `cp` - copy selections in document order, or the whole editor when unselected
+- `pst` - paste the Explorer clipboard once at every cursor or selection
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation

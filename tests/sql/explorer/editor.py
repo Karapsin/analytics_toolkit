@@ -119,20 +119,23 @@ def test_home_uses_selection_endpoint_row_and_always_collapses() -> None:
     asyncio.run(exercise())
 
 
-def test_shift_vertical_selection_extends_by_complete_logical_lines() -> None:
+def test_shift_vertical_keys_chain_and_toggle_multi_cursors() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
             editor = application.query_one(SqlEditor)
             editor.text = "first\nsecond\nthird"
-            editor.cursor_location = (1, 3)
+            editor.cursor_location = (2, 3)
 
             await pilot.press("shift+up")
-            assert editor.selection == Selection((1, 3), (0, 0))
+            assert editor.selection == Selection.cursor((1, 3))
+            assert editor.cursor_count == 2
+            await pilot.press("shift+up")
+            assert editor.selection == Selection.cursor((0, 3))
+            assert editor.cursor_count == 3
             await pilot.press("shift+down")
-            assert editor.selection == Selection((1, 3), (1, len("second")))
-            await pilot.press("shift+down", "shift+down")
-            assert editor.selection.end == (2, len("third"))
+            assert editor.cursor_count == 2
+            assert editor.selection == Selection.cursor((0, 3))
 
     asyncio.run(exercise())
 

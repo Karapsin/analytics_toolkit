@@ -1,27 +1,23 @@
 from __future__ import annotations
 
-import re
 from decimal import Decimal
 from numbers import Integral, Real
 from pathlib import Path
-from time import monotonic
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
 import pandas as pd
-from rich.style import Style
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
-from textual.document._document import Selection
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, OptionList, Static, TextArea, Tree
-from typing_extensions import override
+from textual.widgets import Button, DataTable, Input, OptionList, Static, Tree
 
+from .editor import SqlEditor
 from .filetree import completion_entries, safe_entries
 
 if TYPE_CHECKING:
-    from rich.text import Text
+    from rich.style import Style
     from textual import events
     from textual.app import ComposeResult
 
@@ -30,331 +26,6 @@ if TYPE_CHECKING:
 
 _MAX_CELL_LENGTH = 512
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
-_INDENT = "    "
-_DOUBLE_CLICK_SECONDS = 0.5
-_SEARCH_MATCH_STYLE = Style(color="black", bgcolor="bright_yellow", bold=True)
-
-SearchMatch = Tuple[Tuple[int, int], Tuple[int, int]]
-
-
-class SqlEditor(TextArea):
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("up", "cursor_up", "Cursor up", show=False),
-        Binding("down", "cursor_down", "Cursor down", show=False),
-        Binding("home", "home", "Line start", show=False),
-        Binding("end", "cursor_line_end", "Line end", show=False),
-        Binding("shift+up", "cursor_up(True)", "Select line up", show=False),
-        Binding("shift+down", "cursor_down(True)", "Select line down", show=False),
-        Binding(
-            "shift+home",
-            "cursor_line_start(True)",
-            "Select to line start",
-            show=False,
-        ),
-        Binding(
-            "shift+end",
-            "cursor_line_end(True)",
-            "Select to line end",
-            show=False,
-        ),
-        Binding("ctrl+a", "select_all", "Select all", show=False),
-        Binding("ctrl+x", "cut", "Cut", show=False),
-        Binding("ctrl+v", "paste", "Paste", show=False),
-        Binding("ctrl+z", "undo", "Undo", show=False),
-        Binding("ctrl+y,ctrl+shift+z", "redo", "Redo", show=False),
-        Binding("ctrl+home", "cursor_document_start", "Document start", show=False),
-        Binding("ctrl+end", "cursor_document_end", "Document end", show=False),
-        Binding("tab", "completion_or_indent", "Complete or indent", show=False),
-        Binding("shift+tab", "unindent", "Unindent", show=False),
-    ]
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._search_pattern = ""
-        self._search_matches: tuple[SearchMatch, ...] = ()
-        self._search_index = -1
-        self._last_click_at = 0.0
-        self._last_click_location: tuple[int, int] | None = None
-        kwargs.setdefault("language", "sql")
-        # Keep Textual's default theme: it is the most portable code-editor
-        # palette across the supported 0.73 terminal renderers.
-        kwargs.setdefault("tab_behavior", "indent")
-        try:
-            super().__init__(*args, **kwargs)
-        except (ImportError, ModuleNotFoundError, ValueError):
-            # Textual syntax parsers are optional; editing must remain available.
-            kwargs["language"] = None
-            super().__init__(*args, **kwargs)
-        self.cursor_blink = False
-        # Textual 0.73 calculates the initial non-wrapped virtual width before
-        # applying line-number gutter state; refresh it to avoid a negative crop.
-        if not self.soft_wrap:
-            self._refresh_size()
-
-    def action_home(self) -> None:
-        row = self.selection.end[0]
-        self.move_cursor((row, 0))
-
-    def action_completion_or_indent(self) -> None:
-        cast("SqlExplorerApp", self.app).action_plain_tab()
-
-    async def _on_key(self, event: events.Key) -> None:
-        application = cast("SqlExplorerApp", self.app)
-        menu = application.query_one(CompletionMenu)
-        if menu.is_open and event.key in {"up", "down", "enter", "escape"}:
-            event.stop()
-            event.prevent_default()
-            if event.key == "enter":
-                application.action_plain_tab()
-            elif event.key == "escape":
-                menu.action_close()
-            else:
-                menu.move_highlight(-1 if event.key == "up" else 1)
-            return
-        if event.key == "tab":
-            event.stop()
-            event.prevent_default()
-            application.action_plain_tab()
-            return
-        await super()._on_key(event)
-
-    async def _on_click(self, event: events.Click) -> None:
-        """Select an identifier on a second click without changing drag behavior."""
-        location = self.get_target_document_location(event)
-        clicked_at = monotonic()
-        previous = self._last_click_location
-        is_double = (
-            previous is not None
-            and previous[0] == location[0]
-            and abs(previous[1] - location[1]) <= 1
-            and clicked_at - self._last_click_at <= _DOUBLE_CLICK_SECONDS
-        )
-        self._last_click_at = clicked_at
-        self._last_click_location = location
-        if is_double:
-            self.action_double_click_word(location)
-            self._last_click_at = 0.0
-            self._last_click_location = None
-            event.stop()
-
-    def action_double_click_word(self, location: tuple[int, int]) -> None:
-        row, column = location
-        line = self.document[row]
-        if not line:
-            self.move_cursor((row, column))
-            return
-        column = min(column, len(line) - 1)
-        if not (line[column].isalnum() or line[column] == "_"):
-            self.move_cursor((row, column))
-            return
-        start = column
-        end = column + 1
-        while start and (line[start - 1].isalnum() or line[start - 1] == "_"):
-            start -= 1
-        while end < len(line) and (line[end].isalnum() or line[end] == "_"):
-            end += 1
-        self.move_cursor((row, start))
-        self.move_cursor((row, end), select=True)
-
-    @property
-    def cursor_render_offset(self) -> tuple[int, int]:
-        """Return the rendered cursor offset for positioning child overlays."""
-        return self._cursor_offset[0], self._cursor_offset[1]
-
-    @property
-    def search_match_count(self) -> int:
-        return len(self._search_matches)
-
-    @property
-    def search_position(self) -> int | None:
-        return self._search_index + 1 if self._search_index >= 0 else None
-
-    def set_search_pattern(self, pattern: str) -> int:
-        self._search_pattern = pattern
-        self.refresh_search_matches()
-        return self.search_match_count
-
-    def refresh_search_matches(self) -> None:
-        pattern = self._search_pattern
-        matches: list[SearchMatch] = []
-        if pattern:
-            expression = re.compile(re.escape(pattern), flags=re.IGNORECASE)
-            for row in range(self.document.line_count):
-                matches.extend(
-                    ((row, match.start()), (row, match.end()))
-                    for match in expression.finditer(self.document[row])
-                )
-        self._search_matches = tuple(matches)
-        selected = tuple(sorted(self.selection))
-        self._search_index = next(
-            (index for index, match in enumerate(self._search_matches) if match == selected),
-            -1,
-        )
-        self.refresh()
-
-    def select_next_search_match(self) -> int | None:
-        if not self._search_matches:
-            return None
-        self._search_index = (self._search_index + 1) % len(self._search_matches)
-        self._select_search_match(self._search_index)
-        return self._search_index + 1
-
-    def replace_current_search_match(self, replacement: str) -> bool:
-        if not self._search_matches:
-            return False
-        index = max(self._search_index, 0)
-        start, end = self._search_matches[index]
-        result = self.replace(replacement, start, end, maintain_selection_offset=False)
-        resume_at = result.end_location
-        self.refresh_search_matches()
-        if self._search_matches:
-            self._search_index = next(
-                (
-                    match_index
-                    for match_index, (match_start, _) in enumerate(self._search_matches)
-                    if match_start >= resume_at
-                ),
-                0,
-            )
-            self._select_search_match(self._search_index)
-        return True
-
-    def replace_all_search_matches(self, replacement: str) -> int:
-        if not self._search_pattern:
-            return 0
-        updated, count = re.subn(
-            re.escape(self._search_pattern),
-            lambda _: replacement,
-            self.text,
-            flags=re.IGNORECASE,
-        )
-        if count:
-            self.text = updated
-        self.refresh_search_matches()
-        return count
-
-    def clear_search(self) -> None:
-        self._search_pattern = ""
-        self.refresh_search_matches()
-
-    def get_line(self, line_index: int) -> Text:
-        line = super().get_line(line_index)
-        for (start_row, start_column), (end_row, end_column) in self._search_matches:
-            if start_row == line_index == end_row:
-                line.stylize(_SEARCH_MATCH_STYLE, start_column, end_column)
-        return line
-
-    def _select_search_match(self, index: int) -> None:
-        start, end = self._search_matches[index]
-        self.move_cursor(start)
-        self.move_cursor(end, select=True, center=True)
-
-    def action_cut(self) -> None:
-        selected = self.selected_text
-        if not selected:
-            return
-        cast("SqlExplorerApp", self.app).copy_to_explorer_clipboard(selected)
-        start, end = self.selection
-        self.replace("", start, end, maintain_selection_offset=False)
-
-    def action_paste(self) -> None:
-        value = cast("SqlExplorerApp", self.app).paste_from_explorer_clipboard()
-        if value:
-            start, end = self.selection
-            self.replace(value, start, end, maintain_selection_offset=False)
-
-    def action_cursor_document_start(self) -> None:
-        self.cursor_location = (0, 0)
-
-    def action_cursor_document_end(self) -> None:
-        last_row = self.document.line_count - 1
-        self.cursor_location = (last_row, len(self.document[last_row]))
-
-    @override
-    def action_cursor_up(self, select: bool = False) -> None:
-        if select:
-            anchor, endpoint = self.selection
-            target_row = max(0, endpoint[0] - 1)
-            self.selection = Selection(anchor, (target_row, 0))
-            self.record_cursor_width()
-            return
-        if not select and self.cursor_location[0] == 0:
-            cast("SqlExplorerApp", self.app).action_focus_previous_pane()
-            return
-        super().action_cursor_up(select=select)
-
-    @override
-    def action_cursor_down(self, select: bool = False) -> None:
-        if select:
-            anchor, endpoint = self.selection
-            target_row = min(self.document.line_count - 1, endpoint[0] + 1)
-            self.selection = Selection(
-                anchor,
-                (target_row, len(self.document[target_row])),
-            )
-            self.record_cursor_width()
-            return
-        if not select and self.cursor_location[0] == self.document.line_count - 1:
-            cast("SqlExplorerApp", self.app).action_focus_next_pane()
-            return
-        super().action_cursor_down(select=select)
-
-    @override
-    def action_cursor_line_start(self, select: bool = False) -> None:
-        row, _ = self.cursor_location
-        self.move_cursor((row, 0), select=select)
-
-    def action_indent(self) -> None:
-        start, end = self.selection
-        if start == end:
-            result = self.replace(_INDENT, start, end)
-            self.cursor_location = result.end_location
-            return
-        low, high = sorted((start, end))
-        first = low[0]
-        last = high[0] - (high[1] == 0 and high[0] > low[0])
-        lines = self.text.splitlines(keepends=True)
-        for row in range(last, first - 1, -1):
-            lines[row] = _INDENT + lines[row]
-        self.text = "".join(lines)
-        adjusted_low = (low[0], 0)
-        adjusted_high = (
-            high[0],
-            high[1] + (len(_INDENT) if high[0] <= last else 0),
-        )
-        self.selection = Selection(
-            adjusted_low if start <= end else adjusted_high,
-            adjusted_high if start <= end else adjusted_low,
-        )
-
-    def action_unindent(self) -> None:
-        start, end = self.selection
-        if start != end:
-            low, high = sorted((start, end))
-            first = low[0]
-            last = high[0] - (high[1] == 0 and high[0] > low[0])
-            lines = self.text.splitlines(keepends=True)
-            removed: dict[int, int] = {}
-            for row in range(first, last + 1):
-                amount = min(len(lines[row]) - len(lines[row].lstrip(" ")), 4)
-                removed[row] = amount
-                lines[row] = lines[row][amount:]
-            self.text = "".join(lines)
-            adjusted_low = (low[0], max(0, low[1] - removed.get(low[0], 0)))
-            adjusted_high = (
-                high[0],
-                max(0, high[1] - removed.get(high[0], 0)),
-            )
-            self.selection = Selection(
-                adjusted_low if start <= end else adjusted_high,
-                adjusted_high if start <= end else adjusted_low,
-            )
-            return
-        row, column = self.cursor_location
-        line = self.document[row]
-        removable = min(len(line) - len(line.lstrip(" ")), 4, column)
-        if removable:
-            self.replace("", (row, 0), (row, removable))
-            self.cursor_location = (row, column - removable)
 
 
 class ResultTable(DataTable[Any]):
@@ -621,7 +292,7 @@ class SqlFileTree(Tree[object]):
 
 
 class FileNavigationScreen(ModalScreen[Optional[Path]]):
-    """Read-only remote-host file navigation mode."""
+    """Browse SQL files, or choose a destination directory for a new file."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Close navigation", show=False),
@@ -661,23 +332,30 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
     }
     """
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, select_directory: bool = False) -> None:
         super().__init__()
         self.root_path = (root or Path.cwd()).resolve()
+        self.select_directory = select_directory
+        self._directory = self.root_path
         self._matches: tuple[Path, ...] = ()
         self._match_index = -1
 
     def compose(self) -> ComposeResult:
         with Vertical(id="navigation-dialog"):
-            yield Static(f"Open SQL file — {self.root_path}", id="navigation-title")
+            action = "Select destination directory" if self.select_directory else "Open SQL file"
+            yield Static(f"{action} — {self.root_path}", id="navigation-title")
             yield _NonBlinkingInput(
                 placeholder="Type a path; Tab completes",
                 id="navigation-path",
             )
             yield SqlFileTree(self.root_path, id="navigation-tree")
+            if self.select_directory:
+                yield Button("Select this directory", id="navigation-select-directory")
             yield Static("", id="navigation-notice")
             yield Static(
-                "Tab: complete/cycle   ↑↓: choose   Enter/click: open   Escape: cancel",
+                "Tab: complete/cycle   ↑↓: choose   Enter/click: open   Escape: cancel"
+                if not self.select_directory
+                else "Tab: complete/cycle   Enter: select typed directory   Click: descend",
                 id="navigation-help",
             )
 
@@ -722,6 +400,9 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         self._highlight_match(self._match_index + 1)
 
     def action_choose_path(self) -> None:
+        if self.select_directory and self.query_one("#navigation-path", Input).value.endswith("/"):
+            self.dismiss(self._directory)
+            return
         if not self._matches:
             self._set_navigation_notice("No matching path.")
             return
@@ -745,6 +426,7 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
             return
         self._matches = matches
         self._match_index = -1
+        self._directory = directory
         tree.show_entries(directory, matches)
         self._set_navigation_notice(
             f"{len(matches)} matching entr{'y' if len(matches) == 1 else 'ies'}."
@@ -769,11 +451,23 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
             return
         if is_directory:
             self._descend(path)
+        elif self.select_directory:
+            self._set_navigation_notice("Choose a directory, then select it with the button.")
+            self.query_one("#navigation-path", Input).focus()
         elif path.suffix.casefold() == ".sql":
             self.dismiss(path)
         else:
             self._set_navigation_notice("Only .sql files can be opened.")
             self.query_one("#navigation-path", Input).focus()
+
+    def action_choose_directory(self) -> None:
+        if not self.select_directory:
+            return
+        self.dismiss(self._directory)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "navigation-select-directory":
+            self.action_choose_directory()
 
     def _descend(self, path: Path) -> None:
         value = self._display_path(path) + "/"

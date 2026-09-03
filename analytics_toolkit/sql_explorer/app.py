@@ -16,6 +16,7 @@ from textual.css.query import NoMatches
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
 from .clipboard import TerminalClipboard
+from .commands import HELP_TEXT, SqlExplorerCursorCommandsMixin
 from .completion import (
     MIN_TABLE_PREFIX_LENGTH,
     CompletionContext,
@@ -25,7 +26,9 @@ from .completion import (
     keyword_suggestions,
     parse_completion_context,
 )
+from .editor import SqlEditor
 from .errors import SqlExplorerConfigurationError
+from .file_commands import SqlExplorerFileCommandsMixin
 from .filetree import read_sql_file
 from .picker import DatabasePickerApp
 from .runtime import format_duration
@@ -39,7 +42,6 @@ from .widgets import (
     FindReplaceBar,
     ResultMessage,
     ResultTable,
-    SqlEditor,
     _format_cell,
 )
 
@@ -49,47 +51,6 @@ if TYPE_CHECKING:
 
     from .runtime import ExplorerCancelResult, ExplorerRunResult, ExplorerSession
     from .statements import ExplorerExecutionPlan
-
-_HELP_TEXT = """Commands
-  run                         execute the editor
-  open                        open remote-host SQL file navigation
-  cancel                      cancel the active explorer query
-  mode [exploratory|navigation]
-                              show or enter a mode
-  db DB_KEY                   switch the configured connection
-  shortcut KEY|reset          change the primary run shortcut
-  confirm on|off|toggle       control mutation confirmation
-  clear query|results|all     clear workspace content
-  help                        show this help
-  exit | quit                 close the explorer
-
-Keys
-  Ctrl+O                      open remote-host SQL file navigation
-  Cmd+O                       optional terminal-forwarded open shortcut
-  Alt+Tab                     optionally cycle panes
-  Alt+Shift+Tab               cycle panes in reverse
-  Up / Down                   cross pane boundaries or navigate Find/Replace
-  Left / Right                choose a visible confirmation action
-  Ctrl+Enter                  default run shortcut
-  Fn+Enter                    run when reported as keypad Enter
-  Cmd+Enter                   run when forwarded by a macOS terminal
-  F5                          permanent run fallback
-  Ctrl+F                      find and replace in the editor
-  Delete                      close a focused result/error pane
-  Escape                      close overlays or move forward through panes
-  Interrupt                   request cancellation of the active query
-  Ctrl+C                      copy editor or result selection
-  Tab                         complete SQL or indent when unavailable
-
-Notes
-  Selected SQL runs instead of the complete buffer.
-  A sole completion inserts directly; built-in SQL keywords use lower case.
-  Keep typing to filter an open completion menu, then use Tab or Enter.
-  Text carets remain visible without blinking.
-  Navigation searches the remote current directory and never writes files.
-  All files are visible there, but only .sql files can be opened.
-  OSC 52 copy targets the SSH client's clipboard when the terminal permits it.
-"""
 
 _SLOW_QUERY_SECONDS = 300
 
@@ -101,12 +62,14 @@ def _remove_dynamic_binding(bindings: Any, key: str) -> None:
     storage.pop(key, None)
 
 
-class SqlExplorerApp(App[None]):
+class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixin, App[None]):
     TITLE = "analytics-toolkit SQL explorer"
     CSS = APP_CSS
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("f5", "run_query", "Run", priority=True),
         Binding("ctrl+o", "open_navigation", "Open SQL file", priority=True),
+        Binding("ctrl+s", "save_file", "Save SQL file", show=False, priority=True),
+        Binding("ctrl+n", "new_sql_file", "New SQL file", show=False, priority=True),
         Binding(
             "meta+o,super+o",
             "open_navigation",
@@ -197,6 +160,7 @@ class SqlExplorerApp(App[None]):
             self._set_notice("A SQL operation is already running.")
             return
         editor = self.query_one("#query-editor", SqlEditor)
+        editor.collapse_to_active()
         sql_text = editor.selected_text if not editor.selection.is_empty else editor.text
         try:
             plan = self.session.plan(sql_text)
@@ -234,6 +198,10 @@ class SqlExplorerApp(App[None]):
         if menu.is_open:
             menu.action_close()
             return
+        editor = self.query_one("#query-editor", SqlEditor)
+        if editor.cursor_count > 1:
+            editor.collapse_to_active()
+            return
         self.action_focus_next_pane()
 
     def action_plain_tab(self) -> None:
@@ -258,9 +226,10 @@ class SqlExplorerApp(App[None]):
 
     def action_copy_focused(self) -> None:
         focused = self.focused
-        if isinstance(focused, SqlEditor) and focused.selected_text:
-            self.copy_to_explorer_clipboard(focused.selected_text)
-            self._set_notice("Copied selection.")
+        if isinstance(focused, SqlEditor):
+            self.copy_to_explorer_clipboard(focused.command_copy_text())
+            has_selection = any(not item.is_empty for item in focused.cursor_selections)
+            self._set_notice("Copied editor selection." if has_selection else "Copied editor.")
         elif isinstance(focused, ResultTable):
             value = focused.copy_text()
             if value:
@@ -268,6 +237,7 @@ class SqlExplorerApp(App[None]):
                 self._set_notice("Copied selection.")
 
     def action_open_find(self) -> None:
+        self.query_one(SqlEditor).collapse_to_active()
         self.query_one(FindReplaceBar).open()
 
     def action_find_previous_control(self) -> None:
@@ -700,9 +670,14 @@ class SqlExplorerApp(App[None]):
             "exit": self._command_exit,
             "help": self._command_help,
             "mode": self._command_mode,
+            "mv": self._command_move,
+            "mvs": self._command_move_select,
             "open": self._command_open,
+            "cp": self._command_copy,
+            "pst": self._command_paste,
             "quit": self._command_exit,
             "run": self._command_run,
+            "save": self._command_save,
             "shortcut": self._command_shortcut,
         }
         handler = handlers.get(command)
@@ -738,7 +713,7 @@ class SqlExplorerApp(App[None]):
         if arguments:
             self.show_error(SqlExplorerConfigurationError("Usage: help"))
             return
-        self.show_message(_HELP_TEXT)
+        self.show_message(HELP_TEXT)
 
     def _command_exit(self, arguments: list[str]) -> None:
         if arguments:
@@ -828,7 +803,9 @@ class SqlExplorerApp(App[None]):
             return
         target = arguments[0].lower()
         if target in {"query", "all"}:
-            self.query_one("#query-editor", SqlEditor).text = ""
+            editor = self.query_one("#query-editor", SqlEditor)
+            editor.text = ""
+            editor.collapse_to_active()
         if target in {"results", "all"}:
             self.close_results()
         self._set_notice(f"Cleared {target}.")

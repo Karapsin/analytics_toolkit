@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.17 - 2026-09-03
 
 - Added an optional exploratory SQL terminal interface with connection selection, query cancellation, and configurable controls.
 - Install optional SQL TUI dependencies in CI.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Added path-completing SQL file navigation and steady TUI carets.
 - Fix Trino cleanup of numeric transfer-stage names.
 - Enable SQL Explorer overlay arrow-key navigation.
+- Added SQL Explorer multi-cursor editing, clipboard commands, and SQL file save/create flows.
 
 ## 1.3.11.16 - 2026-09-02
 

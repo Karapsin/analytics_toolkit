@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from analytics_toolkit.sql_explorer import widgets as widgets_module
 from analytics_toolkit.sql_explorer.app import ResultMessage, SqlEditor, SqlExplorerApp
+from analytics_toolkit.sql_explorer.file_commands import NewSqlFileScreen
 from analytics_toolkit.sql_explorer.filetree import (
     completion_entries,
     read_sql_file,
@@ -257,6 +258,180 @@ def test_dirty_buffer_requires_explicit_discard_before_file_replacement(
             await pilot.press("y")
             await pilot.pause()
             assert editor.text == "select 2"
+
+    asyncio.run(exercise())
+
+
+def test_save_command_and_shortcut_persist_an_opened_sql_file(tmp_path: Path) -> None:
+    sql_file = tmp_path / "query.sql"
+    sql_file.write_text("select 1", encoding="utf-8")
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            application.load_sql_file(sql_file)
+            editor = application.query_one(SqlEditor)
+            editor.text = "select 2"
+            await pilot.press("ctrl+s")
+            assert sql_file.read_text(encoding="utf-8") == "select 2"
+
+            editor.text = "select 3"
+            command = application.query_one("#command-input", Input)
+            command.value = "save"
+            command.focus()
+            await pilot.press("enter")
+            assert sql_file.read_text(encoding="utf-8") == "select 3"
+            assert application._saved_text == "select 3"
+
+    asyncio.run(exercise())
+
+
+def test_new_sql_file_collects_name_then_selects_a_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target_directory = tmp_path / "queries"
+    target_directory.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            await pilot.press("ctrl+n")
+            assert isinstance(application.screen, NewSqlFileScreen)
+            await pilot.press("q", "u", "e", "r", "y", ".", "s", "q", "l", "enter")
+            assert isinstance(application.screen, FileNavigationScreen)
+            screen = application.screen
+            assert screen.select_directory is True
+
+            path_input = screen.query_one("#navigation-path", Input)
+            path_input.value = "queries/"
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            created = target_directory / "query.sql"
+            assert created.read_text(encoding="utf-8") == ""
+            assert application._current_file == created.resolve()
+            assert application.query_one(SqlEditor).text == ""
+
+    asyncio.run(exercise())
+
+
+def test_new_sql_file_copies_an_unchanged_opened_buffer(tmp_path: Path) -> None:
+    source = tmp_path / "source.sql"
+    source.write_text("select 42", encoding="utf-8")
+    target = tmp_path / "copy.sql"
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test():
+            application.load_sql_file(source)
+            application._new_sql_directory_selected("copy.sql", tmp_path)
+            assert target.read_text(encoding="utf-8") == "select 42"
+            assert application._current_file == target.resolve()
+            assert application._saved_text == "select 42"
+
+    asyncio.run(exercise())
+
+
+def test_new_file_and_save_reject_invalid_destinations_and_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    existing = tmp_path / "existing.sql"
+    existing.write_text("select 1", encoding="utf-8")
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            application.action_save_file()
+            application._current_file = tmp_path / "missing.sql"
+            application.action_save_file()
+            application._command_save(["unexpected"])
+
+            application._new_sql_directory_selected("new.sql", None)
+            application._new_sql_directory_selected("new.sql", tmp_path.parent)
+            application._new_sql_directory_selected("existing.sql", tmp_path)
+
+            editor = application.query_one(SqlEditor)
+            editor.text = "dirty"
+            application._saved_text = "saved"
+            application._new_sql_directory_selected("dirty.sql", tmp_path)
+            assert isinstance(application.screen, DiscardChangesScreen)
+            application.action_new_sql_file()
+            await pilot.press("escape")
+
+    asyncio.run(exercise())
+
+
+def test_new_file_dialog_and_write_errors_are_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    existing = tmp_path / "existing.sql"
+    existing.write_text("select 1", encoding="utf-8")
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            application.action_new_sql_file()
+            await pilot.pause()
+            screen = application.screen
+            assert isinstance(screen, NewSqlFileScreen)
+            screen.action_confirm()
+            assert "ending in .sql" in str(screen.query_one("#new-file-notice", Static).render())
+            screen.on_input_submitted(SimpleNamespace(input=SimpleNamespace(id="other")))
+            screen.on_input_submitted(SimpleNamespace(input=SimpleNamespace(id="new-file-name")))
+            screen.query_one("#new-file-name", Input).value = "chosen.sql"
+            screen.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="new-file-confirm")))
+            await pilot.pause()
+            assert isinstance(application.screen, FileNavigationScreen)
+            await pilot.press("escape")
+
+            application._new_sql_filename_selected(None)
+            FileNavigationScreen(tmp_path).action_choose_directory()
+
+            picker = FileNavigationScreen(tmp_path, select_directory=True)
+            await application.push_screen(picker)
+            picker._choose_entry(existing)
+            assert "Choose a directory" in str(
+                picker.query_one("#navigation-notice", Static).render()
+            )
+            picker.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="other")))
+            picker.on_button_pressed(
+                SimpleNamespace(button=SimpleNamespace(id="navigation-select-directory"))
+            )
+
+            cancelled = NewSqlFileScreen()
+            await application.push_screen(cancelled)
+            cancelled.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="other")))
+            cancelled.on_button_pressed(
+                SimpleNamespace(button=SimpleNamespace(id="new-file-cancel"))
+            )
+
+            application._current_file = existing
+            path_type = type(tmp_path)
+            original_write_text = path_type.write_text
+            original_open = path_type.open
+
+            def fail_write_text(path: Path, *args: object, **kwargs: object) -> int:
+                message = "cannot save"
+                raise PermissionError(message)
+
+            def fail_open(path: Path, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+                if path.name == "failure.sql":
+                    message = "cannot create"
+                    raise PermissionError(message)
+                return original_open(path, *args, **kwargs)
+
+            monkeypatch.setattr(path_type, "write_text", fail_write_text)
+            application.action_save_file()
+            monkeypatch.setattr(path_type, "write_text", original_write_text)
+            monkeypatch.setattr(path_type, "open", fail_open)
+            application._create_sql_file(tmp_path / "failure.sql")
 
     asyncio.run(exercise())
 
