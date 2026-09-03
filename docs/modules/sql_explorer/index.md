@@ -79,7 +79,9 @@ selection. Double-clicking selects a complete SQL word such as `table_name`.
 
 `Ctrl+F` opens a compact Find/Replace overlay on the right side of the query
 area. Find, Replace, Replace All, match highlighting, and Escape-to-close remain
-available without reducing the normal editor width.
+available without reducing the normal editor width. While it is open, Up and
+Down cycle through its controls; Left and Right keep their normal text-caret
+behavior in its inputs.
 
 Tab is conditional:
 
@@ -193,5 +195,9 @@ Enter commands in the lower panel, with or without a leading colon:
 
 The confirmation choice and primary run shortcut are saved in the user's config
 directory. SQL text and query results are not persisted.
+
+In either two-choice confirmation dialog, Left selects the affirmative action
+and Right selects cancellation; Enter activates the focused choice. The existing
+Y, N, Escape, and mouse controls remain available.
 
 [All module docs](../README.md)

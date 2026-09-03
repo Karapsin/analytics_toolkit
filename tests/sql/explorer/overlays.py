@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -9,6 +10,7 @@ from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplor
 from analytics_toolkit.sql_explorer.completion import CompletionRequest, CompletionResult
 from analytics_toolkit.sql_explorer.widgets import (
     CompletionMenu,
+    DiscardChangesScreen,
     FileNavigationScreen,
     FindReplaceBar,
 )
@@ -39,6 +41,77 @@ def test_search_panel_is_compact_right_overlay_with_responsive_limits() -> None:
             assert bar.styles.max_width.value == 48
             assert bar.styles.dock == "right"
             assert bar.styles.layer == "overlay"
+
+    asyncio.run(exercise())
+
+
+def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            application.action_find_next_control()
+            application.disable_find_navigation()
+            assert application.focused is editor
+            await pilot.press("ctrl+f")
+            application.enable_find_navigation()
+
+            for control_id in (
+                "find-next",
+                "replace-pattern",
+                "replace-current",
+                "replace-all",
+                "find-pattern",
+            ):
+                await pilot.press("down")
+                assert application.focused.id == control_id
+
+            editor.focus()
+            await pilot.press("down")
+            assert application.focused.id == "find-pattern"
+            await pilot.press("up")
+            assert application.focused.id == "replace-all"
+            await pilot.press("escape")
+            application.disable_find_navigation()
+            assert application.focused is editor
+
+    asyncio.run(exercise())
+
+
+def test_confirmation_arrows_select_topmost_binary_dialog_actions() -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        application = SqlExplorerApp(session)
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "delete from sample"
+            await pilot.press("ctrl+f")
+            await pilot.press("f5")
+
+            assert application.focused.id == "confirm-execute"
+            application.action_find_next_control()
+            assert application.focused.id == "confirm-execute"
+            await pilot.press("right")
+            assert application.focused.id == "confirm-cancel"
+            await pilot.press("left")
+            assert application.focused.id == "confirm-execute"
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert len(application.screen_stack) == 1
+            assert session.executed == []
+
+            application.push_screen(DiscardChangesScreen(Path("next.sql")))
+            await pilot.pause()
+            assert application.focused.id == "discard-confirm"
+            await pilot.press("right")
+            assert application.focused.id == "discard-cancel"
+            await pilot.press("left")
+            assert application.focused.id == "discard-confirm"
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert len(application.screen_stack) == 1
 
     asyncio.run(exercise())
 

@@ -875,10 +875,33 @@ class FindReplaceBar(Vertical):
         self.styles.display = "block"
         editor.set_search_pattern(search_input.value)
         search_input.focus()
+        cast("SqlExplorerApp", self.app).enable_find_navigation()
         self._update_notice()
+
+    @property
+    def is_open(self) -> bool:
+        return self.styles.display != "none"
+
+    def focus_relative(self, direction: int) -> None:
+        """Move focus through the visible Find/Replace controls."""
+        controls = (
+            self.query_one("#find-pattern", Input),
+            self.query_one("#find-next", Button),
+            self.query_one("#replace-pattern", Input),
+            self.query_one("#replace-current", Button),
+            self.query_one("#replace-all", Button),
+        )
+        focused = self.app.focused
+        try:
+            index = controls.index(focused)
+        except ValueError:
+            controls[0 if direction > 0 else -1].focus()
+            return
+        controls[(index + direction) % len(controls)].focus()
 
     def action_close(self) -> None:
         self.styles.display = "none"
+        cast("SqlExplorerApp", self.app).disable_find_navigation()
         editor = self.app.query_one("#query-editor", SqlEditor)
         editor.clear_search()
         editor.focus()
@@ -935,6 +958,8 @@ class FindReplaceBar(Vertical):
 
 class ConfirmMutationScreen(ModalScreen[bool]):
     BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("left", "select_confirm", "Select execute", show=False, priority=True),
+        Binding("right", "select_cancel", "Select cancel", show=False, priority=True),
         Binding("y", "confirm", "Execute", show=False),
         Binding("n,escape", "cancel", "Cancel", show=False),
     ]
@@ -991,6 +1016,12 @@ class ConfirmMutationScreen(ModalScreen[bool]):
     def action_cancel(self) -> None:
         self.dismiss(result=False)
 
+    def action_select_confirm(self) -> None:
+        self.query_one("#confirm-execute", Button).focus()
+
+    def action_select_cancel(self) -> None:
+        self.query_one("#confirm-cancel", Button).focus()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "confirm-execute")
 
@@ -999,6 +1030,8 @@ class DiscardChangesScreen(ModalScreen[bool]):
     """Confirm replacing an editor buffer that has unsaved changes."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("left", "select_discard", "Select discard", show=False, priority=True),
+        Binding("right", "select_cancel", "Select cancel", show=False, priority=True),
         Binding("y", "discard", "Discard", show=False),
         Binding("n,escape", "cancel", "Keep editing", show=False),
     ]
@@ -1040,6 +1073,12 @@ class DiscardChangesScreen(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(result=False)
+
+    def action_select_discard(self) -> None:
+        self.query_one("#discard-confirm", Button).focus()
+
+    def action_select_cancel(self) -> None:
+        self.query_one("#discard-cancel", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "discard-confirm")

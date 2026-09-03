@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Refined SQL Explorer completion and numeric result formatting.
 - Added path-completing SQL file navigation and steady TUI carets.
 - Fix Trino cleanup of numeric transfer-stage names.
+- Enable SQL Explorer overlay arrow-key navigation.
 
 ## 1.3.11.16 - 2026-09-02
 

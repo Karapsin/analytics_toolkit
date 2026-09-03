@@ -68,7 +68,8 @@ Keys
   Cmd+O                       optional terminal-forwarded open shortcut
   Alt+Tab                     optionally cycle panes
   Alt+Shift+Tab               cycle panes in reverse
-  Up / Down                   cross pane boundaries
+  Up / Down                   cross pane boundaries or navigate Find/Replace
+  Left / Right                choose a visible confirmation action
   Ctrl+Enter                  default run shortcut
   Fn+Enter                    run when reported as keypad Enter
   Cmd+Enter                   run when forwarded by a macOS terminal
@@ -155,6 +156,7 @@ class SqlExplorerApp(App[None]):
         self._completion_context: CompletionContext | None = None
         self._current_file: Path | None = None
         self._saved_text = ""
+        self._find_navigation_bound = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="workspace"):
@@ -268,10 +270,51 @@ class SqlExplorerApp(App[None]):
     def action_open_find(self) -> None:
         self.query_one(FindReplaceBar).open()
 
+    def action_find_previous_control(self) -> None:
+        self._focus_find_control(-1)
+
+    def action_find_next_control(self) -> None:
+        self._focus_find_control(1)
+
     def action_open_navigation(self) -> None:
         if len(self.screen_stack) > 1:
             return
         self.push_screen(FileNavigationScreen(Path.cwd()), self._navigation_closed)
+
+    def enable_find_navigation(self) -> None:
+        if self._find_navigation_bound:
+            return
+        self._bindings.bind(
+            "up",
+            "find_previous_control",
+            "Find/Replace previous control",
+            show=False,
+            priority=True,
+        )
+        self._bindings.bind(
+            "down",
+            "find_next_control",
+            "Find/Replace next control",
+            show=False,
+            priority=True,
+        )
+        self._find_navigation_bound = True
+        self.refresh_bindings()
+
+    def disable_find_navigation(self) -> None:
+        if not self._find_navigation_bound:
+            return
+        _remove_dynamic_binding(self._bindings, "up")
+        _remove_dynamic_binding(self._bindings, "down")
+        self._find_navigation_bound = False
+        self.refresh_bindings()
+
+    def _focus_find_control(self, direction: int) -> None:
+        if len(self.screen_stack) != 1:
+            return
+        bar = self.query_one(FindReplaceBar)
+        if bar.is_open:
+            bar.focus_relative(direction)
 
     def _focus_relative(self, direction: int) -> None:
         panes: list[Widget] = [self.query_one("#query-editor", SqlEditor)]
