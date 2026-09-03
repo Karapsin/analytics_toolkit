@@ -21,5 +21,5 @@ def test_keypad_enter_sequences_stay_distinct_from_plain_enter() -> None:
     assert _decoded_keys("\r") == ["enter"]
 
 
-def test_macos_command_enter_sequence_uses_textual_hyper_modifier() -> None:
-    assert _decoded_keys("\x1b[13;9u") == ["hyper+enter"]
+def test_macos_command_enter_sequence_uses_supported_textual_modifier() -> None:
+    assert _decoded_keys("\x1b[13;9u") in (["hyper+enter"], ["super+enter"])

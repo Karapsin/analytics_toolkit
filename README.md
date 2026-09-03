@@ -9,7 +9,7 @@ Python toolkit for AB-test analysis, SQL workflows, Excel reports, and date help
 **Version:** `1.3.11.16`<br>
 **Depends:** Python (`>=3.8,<3.15`)<br>
 **Imports:** [clickhouse-connect](https://pypi.org/project/clickhouse-connect/) (`>=0.5.14,<1`), [fsspec](https://pypi.org/project/fsspec/) (`>=2024.2`), [lz4](https://pypi.org/project/lz4/) (`>=4.3.2,<5`), [numpy](https://pypi.org/project/numpy/) (`>=1.24.2,<2`), [openpyxl](https://pypi.org/project/openpyxl/) (`>=3.1.1,<4`), [orjson](https://pypi.org/project/orjson/) (`>=3.8.7,<4`), [pandas](https://pypi.org/project/pandas/) (`>=1.4.4,<3`), [psycopg2-binary](https://pypi.org/project/psycopg2-binary/) (`>=2.9.5,<3`), [pyarrow](https://pypi.org/project/pyarrow/) (`>=14,<23`), [python-dateutil](https://pypi.org/project/python-dateutil/) (`>=2.8.2,<3`), [pytz](https://pypi.org/project/pytz/) (`>=2022.7`), [requests](https://pypi.org/project/requests/) (`>=2.28.2,<3`), [s3fs](https://pypi.org/project/s3fs/) (`>=2024.2`), [scipy](https://pypi.org/project/scipy/) (`>=1.10.1,<2`), [sqlglot](https://pypi.org/project/sqlglot/) (`>=26.33,<31`), [sqlparse](https://pypi.org/project/sqlparse/) (`>=0.4.3,<1`), [tqdm](https://pypi.org/project/tqdm/) (`>=4.65.0,<5`), [trino](https://pypi.org/project/trino/) (`>=0.320,<1`), [zstandard](https://pypi.org/project/zstandard/) (`>=0.20.0,<1`)<br>
-**Suggests:** [apache-airflow](https://pypi.org/project/apache-airflow/) (`>=2.4,<3`; optional extra `airflow`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.9,<0.2.10; python_version == '3.8'`; optional extra `clickhouse-native`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.10,<1; python_version >= '3.9'`; optional extra `clickhouse-native`), [pyperclip](https://pypi.org/project/pyperclip/) (`>=1.11,<2`; optional extra `tui`), [textual](https://pypi.org/project/textual/) (`>=0.73,<0.74`; optional extra `tui`)<br>
+**Suggests:** [apache-airflow](https://pypi.org/project/apache-airflow/) (`>=2.4,<3`; optional extra `airflow`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.9,<0.2.10; python_version == '3.8'`; optional extra `clickhouse-native`), [clickhouse-driver](https://pypi.org/project/clickhouse-driver/) (`>=0.2.10,<1; python_version >= '3.9'`; optional extra `clickhouse-native`), [pyperclip](https://pypi.org/project/pyperclip/) (`>=1.11,<2`; optional extra `tui`), [textual](https://pypi.org/project/textual/) (`>=0.73,<0.74; python_version < '3.13'`; optional extra `tui`), [textual](https://pypi.org/project/textual/) (`[syntax]>=0.89.1,<0.90; python_version >= '3.13'`; optional extra `tui`), [tree-sitter](https://pypi.org/project/tree-sitter/) (`>=0.20.1,<0.21.0; python_version < '3.13'`; optional extra `tui`), [tree-sitter](https://pypi.org/project/tree-sitter/) (`>=0.23,<0.24; python_version >= '3.13'`; optional extra `tui`), [tree-sitter-languages](https://pypi.org/project/tree-sitter-languages/) (`==1.10.2; python_version < '3.13'`; optional extra `tui`), [tree-sitter-sql](https://pypi.org/project/tree-sitter-sql/) (`>=0.3,<0.3.8; python_version >= '3.13'`; optional extra `tui`)<br>
 **Install:** `pip install analytics-toolkit`<br>
 **PyPI:** [pypi.org/project/analytics-toolkit](https://pypi.org/project/analytics-toolkit/)<br>
 **License:** MIT<br>
@@ -132,18 +132,23 @@ from analytics_toolkit import sql_explorer
 sql_explorer.run("gp")
 ```
 
-The numbered editor uses standard, non-modal text shortcuts. Run its complete
-SQL buffer with `Ctrl+Enter` (configurable), `F5`, `Fn+Enter` when reported as
-keypad Enter, or `Cmd+Enter` when a macOS terminal forwards that modifier. Use
-`Alt+Tab` and `Alt+Shift+Tab` to cycle the editor, result pane, and command
-panel; Up and Down also cross pane boundaries. `Ctrl+F` opens find/replace with
-highlighted matches. Press `Delete` while a result pane is focused to close it.
-See the [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
-for command and safety details.
+The numbered SQL editor uses standard, non-modal shortcuts. `Ctrl+Enter` and
+`F5` are the portable run keys; a non-empty selection runs instead of the full
+buffer. `Cmd+Enter` and Alt-based pane shortcuts are optional because terminal
+emulators and window managers may intercept them. Press `Ctrl+O` (or forwarded
+`Cmd+O`) to enter read-only navigation mode for `.sql` files on the host where
+the Explorer is running. Over SSH, this is the remote host's filesystem.
 
-`Ctrl+C` remains the standard Copy shortcut. Enter `cancel` in the command
-panel to interrupt the active explorer query; `exit` also requests cancellation
-before closing when a query is running.
+`Tab` opens local SQL or backend metadata completion when applicable and
+otherwise indents. A table lookup starts only after six prefix characters,
+calls `sql.show_tables` once for that context, and filters longer or shortened
+prefixes locally. Results support rectangular selection and visible-value TSV
+copying. `Ctrl+C` emits OSC 52 first so an SSH client terminal can copy into its
+local clipboard; terminal policy may disable OSC 52, in which case Pyperclip or
+the in-memory fallback remains available. Use the `Interrupt` button or the
+`cancel` command for the active user query. See the
+[SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
+for navigation, completion, clipboard, and safety details.
 
 ## SQL Formatting
 

@@ -389,7 +389,9 @@ def test_cancel_command_interrupts_busy_operation() -> None:
             await pilot.pause()
 
             assert session.cancel_calls == 1
-            assert application.cancelling is False
+            # The cancel worker only requests interruption. The UI remains in
+            # cancelling state until the user-query worker acknowledges it.
+            assert application.cancelling is True
             notice = application.query_one("#notice", Static)
             assert "Cancellation requested" in str(notice.render())
 

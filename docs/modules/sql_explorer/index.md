@@ -3,97 +3,12 @@
 # analytics_toolkit.sql_explorer
 
 `sql_explorer` opens an exploratory terminal interface over a database key from
-the current project's `.connections` file. Its optional interface dependencies
-are not installed with the base package:
+the current project's `.connections` file. The base package does not install
+its interface, syntax, or clipboard dependencies; install the optional extra:
 
 ```bash
 pip install 'analytics-toolkit[tui]'
 ```
-
-Launch it from a shell:
-
-```bash
-analytics-toolkit sql explore gp
-```
-
-Omit the key to choose from valid `.connections` entries inside the terminal:
-
-```bash
-analytics-toolkit sql explore
-```
-
-Or from a terminal Python or IPython console:
-
-```python
-from analytics_toolkit import sql_explorer
-
-sql_explorer.run("gp")
-```
-
-Calling `sql_explorer.run()` without an argument opens the same terminal picker.
-
-The launcher requires an interactive terminal. Notebook kernels and redirected
-standard input or output are rejected because they cannot host the TUI.
-
-## Workspaces and keys
-
-The main workspace starts as a SQL editor. A successful row-producing query or
-an error splits it evenly with a result pane. A short command panel remains at
-the bottom.
-
-- `Ctrl+Enter` runs the complete editor buffer by default; `F5` always runs it.
-  `Fn+Enter` also runs when the terminal reports it as keypad Enter.
-  `Cmd+Enter` runs when a macOS terminal forwards the Command modifier. Some
-  terminal profiles or operating-system shortcuts intercept these keys, so
-  `Ctrl+Enter` and `F5` remain the portable choices.
-- `Alt+Tab` and `Alt+Shift+Tab` cycle the editor, visible result pane, and
-  command input. macOS terminals report the Option key as Alt.
-- Up and Down cross to the preceding or following pane at the first or last
-  editor line and first or last result row. They always cross from the command
-  input. Inside those boundaries they retain normal cursor movement.
-- Plain `Tab` and `Shift+Tab` indent and unindent in the SQL editor.
-- The editor displays line numbers. `Home` and `End` always move to the current
-  line's absolute start and end; adding Shift selects to that edge.
-- `Ctrl+F` opens a VS Code-style find/replace bar with Find and Replace inputs
-  plus Next, Replace, and Replace All buttons. Matches are case-insensitive,
-  wrap around, and are all highlighted in bright yellow. Enter advances from
-  Find or replaces the current match from Replace; Escape closes the bar.
-- `Delete` closes a focused result or error pane and expands the editor.
-- Editing is non-modal and includes the usual select-all, cut, copy, paste,
-  undo, redo, document-start, and document-end shortcuts.
-
-At most 200 rows are displayed. Query-shaped final statements are wrapped with
-a 201-row server-side limit so the explorer can indicate when further rows are
-available without fetching an unbounded result. The wrapper preserves the
-query's line layout so backend error line numbers correspond to editor numbers.
-Finite Decimal cells are displayed without insignificant trailing zeros, while
-their exact dataframe values remain unchanged.
-
-## Execution and safety
-
-A single row-producing statement uses `sql.read`. A multi-statement buffer whose
-last statement produces rows uses `sql.execute_read`. Buffers without a result
-use `sql.execute`. Non-read statements require confirmation by default; this is
-an exploratory mode, not a database-enforced read-only session.
-
-The confirmation choice and primary run shortcut are saved in the user's config
-directory. SQL text and query results are not persisted by the explorer.
-
-## Commands
-
-Enter commands in the lower panel, with or without a leading colon:
-
-- `run` runs the editor buffer.
-- `cancel` requests cancellation of the active query started by this explorer.
-- `mode [exploratory]` displays or selects the only current mode.
-- `db DB_KEY` switches to another valid configured connection.
-- `shortcut KEY` saves the primary run shortcut; `shortcut reset` restores
-  `Ctrl+Enter`.
-- `confirm on|off|toggle` changes and saves mutation confirmation.
-- `clear query|results|all` clears workspace content.
-- `help` opens the in-app command reference.
-- `exit` or `quit` closes the explorer. If a query is running, the explorer
-  requests targeted cancellation first and exits after that request completes.
 
 ## All SQL Explorer Functions
 
@@ -101,7 +16,171 @@ Enter commands in the lower panel, with or without a leading colon:
 
 ## Workflow Guides
 
-Workspace behavior, execution routing, safety, and commands are described in
-the sections above.
+- [Launch and execution](#launch-and-execution)
+- [Editor and completion](#editor-and-completion)
+- [Navigation mode](#navigation-mode)
+- [Results and clipboard](#results-and-clipboard)
+- [Query status and cancellation](#query-status-and-cancellation)
+- [Commands](#commands)
+
+## Launch and execution
+
+Launch from a shell with a `.connections` key:
+
+```bash
+analytics-toolkit sql explore gp
+```
+
+Omit the key to choose from valid entries inside the terminal, or launch from a
+terminal Python or IPython console:
+
+```python
+from analytics_toolkit import sql_explorer
+
+sql_explorer.run("gp")
+```
+
+The launcher requires an interactive terminal. Notebook kernels and redirected
+standard input or output cannot host the TUI.
+
+`Ctrl+Enter` and `F5` are the recommended portable run shortcuts. `Fn+Enter`
+runs when reported as keypad Enter. `Cmd+Enter` is optional compatibility for a
+terminal that forwards the macOS Command modifier; it is not a portable
+requirement.
+
+When the editor has a non-empty selection, exactly that selected text is
+planned, confirmed when necessary, and executed. Otherwise, the complete buffer
+runs. Starting a query does not replace the editor text or collapse its
+selection. A selected multi-statement fragment follows the same routing and
+mutation-confirmation rules as a full buffer, and the confirmation dialog shows
+the SQL that will execute.
+
+A single row-producing statement uses `sql.read`. A multi-statement selection
+or buffer whose final statement produces rows uses `sql.execute_read`. SQL with
+no result uses `sql.execute`. Non-read statements require confirmation by
+default; exploratory mode is not a database-enforced read-only session.
+
+## Editor and completion
+
+The editor displays line numbers, uses SQL syntax highlighting, and keeps long
+SQL lines unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
+stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
+3.13–3.14, so highlighting is available on every supported Python version. If
+a parser installation is damaged or cannot load, the editor still opens
+without highlighting and remains editable.
+
+Portable editing keys include Home, End, arrows, Shift+arrows, Tab, Shift+Tab,
+Enter, Escape, Ctrl+C, Ctrl+Enter, and F5. Home always moves to column zero of
+the current logical line and collapses selection; Ctrl+Home goes to the start of
+the document. Shift+Up and Shift+Down extend by complete logical lines. Tab and
+Shift+Tab indent or unindent every selected logical line while preserving the
+selection. Double-clicking selects a complete SQL word such as `table_name`.
+
+`Ctrl+F` opens a compact Find/Replace overlay on the right side of the query
+area. Find, Replace, Replace All, match highlighting, and Escape-to-close remain
+available without reducing the normal editor width.
+
+Tab is conditional:
+
+1. If the completion menu is open, Tab accepts its highlighted suggestion.
+2. If the cursor has a completion prefix, Tab opens or requests suggestions.
+3. Otherwise, Tab performs normal indentation.
+
+Up and Down move through an open completion menu, Enter accepts, and Escape
+closes it. Local keyword completion does not query a database. Backend metadata
+completion supports Trino catalogs, schemas, and tables; Greenplum schemas and
+tables; and ClickHouse databases and tables. Trino catalog discovery starts
+when the Explorer opens, then schema discovery is queued for each catalog. All
+metadata requests use one independent FIFO worker and never replace the visible
+user-query status.
+
+Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
+The prefix must contain at least six characters. The first Tab request calls
+`sql.show_tables(...)` once with that initial six-character prefix and current
+catalog/database/schema context. Results are cached; longer prefixes and
+backspacing filter those candidates locally without another metadata query. A
+catalog, database, schema, or SQL-clause context change permits a new lookup.
+
+## Navigation mode
+
+File navigation is a separate modal mode, not a permanent workspace pane. Open
+it with `Ctrl+O`, terminal-forwarded `Cmd+O`, `open`, or `mode navigation`.
+Escape returns to the editor without opening a file.
+
+Navigation starts at resolved `Path.cwd()` on the host running the Explorer.
+Consequently, an Explorer launched over SSH reads the remote host's filesystem,
+not the Linux client's filesystem. Directories appear first, then `.sql` files,
+with case-insensitive sorting. Hidden entries, non-SQL files, and symlinks that
+resolve outside the navigation root are omitted.
+
+Enter or click opens a UTF-8 SQL file. The current path appears in status. The
+browser is read-only: it never creates, saves, renames, or deletes files. If the
+editor has unsaved changes, opening another file requires explicit discard
+confirmation. File, decoding, and permission failures appear in the normal
+result/message surface and do not terminate the Explorer.
+
+## Results and clipboard
+
+At most 200 result rows are displayed. Query-shaped final statements use a
+201-row server-side limit so the Explorer can indicate when more rows exist
+without fetching an unbounded result. Finite Decimal cells display without
+insignificant trailing zeros, nulls display as `NULL`, and embedded tabs or line
+breaks are escaped visibly.
+
+Rows have visual labels beginning at 1. Click selects one data cell; drag or
+Shift-click creates an inclusive rectangular range; Shift+arrows extend it.
+Plain arrows clear the rectangle and move the active cell. Clicking a header
+selects only that header label. Ctrl+C serializes selected displayed data as
+tab-separated columns and newline-separated rows. Visual row labels are never
+copied, and an ordinary data rectangle never gains a header row.
+
+Copy first emits a base64-encoded OSC 52 sequence to the active terminal. This
+is the SSH-compatible route by which a terminal on a Linux client can place
+remote Explorer text in the client's local clipboard. OSC 52 may be disabled by
+terminal or multiplexer policy. The Explorer still attempts remote Pyperclip
+and keeps an in-memory fallback, but it does not assume that a remote macOS
+clipboard and a local Linux clipboard are the same. Bracketed paste is the
+portable SSH paste path; Ctrl+V/Pyperclip remains a local fallback.
+
+## Query status and cancellation
+
+The status area retains the latest user-query label, SQL route, state, and
+elapsed duration after success, failure, cancellation, result clearing, pane
+closing, or focus changes. Active elapsed time refreshes about once per second.
+After five minutes, status adds a bold red warning:
+`consider optimizing your query or sit tight`.
+
+The `Interrupt` button and `cancel` command use the same targeted cancellation
+path. They identify only the active Explorer user-query label through
+`sql.show_queries(...)` and call `sql.cancel_queries(...)` for matching IDs.
+Metadata completion queries are independent and are never interruption targets.
+The button remains disabled while no user SQL runs or while cancellation is
+pending; the interface remains busy until the SQL worker acknowledges completion
+or cancellation.
+
+Escape moves forward through editor, visible result/error, command panel, then
+back to editor. A confirmation or navigation modal consumes Escape first;
+Find/Replace and completion overlays close before pane navigation. Alt+Tab and
+Alt+Shift+Tab remain optional pane-cycle aliases because Linux window managers
+and terminal emulators often intercept them.
+
+## Commands
+
+Enter commands in the lower panel, with or without a leading colon:
+
+- `run` - run the selection or complete editor buffer
+- `open` - enter remote-host SQL file navigation mode
+- `cancel` - request cancellation of the active Explorer user query
+- `mode [exploratory|navigation]` - show the current mode or enter navigation
+- `db DB_KEY` - switch to another valid configured connection
+- `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
+- `confirm on|off|toggle` - change and save mutation confirmation
+- `clear query|results|all` - clear workspace content
+- `help` - open the in-app command reference
+- `exit` or `quit` - close the Explorer, requesting targeted cancellation first
+  when user SQL is running
+
+The confirmation choice and primary run shortcut are saved in the user's config
+directory. SQL text and query results are not persisted.
 
 [All module docs](../README.md)

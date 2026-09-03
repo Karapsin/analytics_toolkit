@@ -32,6 +32,13 @@ sql_explorer.run()
 - Install `analytics-toolkit[tui]` before launching the interface.
 - Run this function from an interactive terminal Python or IPython console, not
   a notebook.
+- `Ctrl+Enter` and `F5` are the portable run shortcuts; terminal-forwarded
+  `Cmd+Enter` is optional.
+- `Ctrl+O`, `Cmd+O` when forwarded, `open`, or `mode navigation` opens a
+  read-only `.sql` browser rooted at the running process's current directory.
+  Over SSH, that directory and its files belong to the remote host.
+- Copy emits OSC 52 before trying Pyperclip, allowing a supporting SSH client
+  terminal to place text in its local clipboard.
 - The function returns after the user exits the TUI.
 
 [Functions index](index.md)

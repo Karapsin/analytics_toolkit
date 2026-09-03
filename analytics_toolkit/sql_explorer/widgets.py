@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
+from pathlib import Path
+from time import monotonic
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Tuple, cast
 
 import pandas as pd
 from rich.style import Style
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
+from textual.document._document import Selection
+from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, Static, TextArea
+from textual.widgets import Button, DataTable, Input, OptionList, Static, TextArea, Tree
 from typing_extensions import override
+
+from .filetree import safe_entries
 
 if TYPE_CHECKING:
     from rich.text import Text
+    from textual import events
     from textual.app import ComposeResult
 
     from .app import SqlExplorerApp
@@ -22,6 +30,7 @@ if TYPE_CHECKING:
 _MAX_CELL_LENGTH = 512
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
 _INDENT = "    "
+_DOUBLE_CLICK_SECONDS = 0.5
 _SEARCH_MATCH_STYLE = Style(color="black", bgcolor="bright_yellow", bold=True)
 
 SearchMatch = Tuple[Tuple[int, int], Tuple[int, int]]
@@ -31,8 +40,10 @@ class SqlEditor(TextArea):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
         Binding("down", "cursor_down", "Cursor down", show=False),
-        Binding("home", "cursor_line_start", "Line start", show=False),
+        Binding("home", "home", "Line start", show=False),
         Binding("end", "cursor_line_end", "Line end", show=False),
+        Binding("shift+up", "cursor_up(True)", "Select line up", show=False),
+        Binding("shift+down", "cursor_down(True)", "Select line down", show=False),
         Binding(
             "shift+home",
             "cursor_line_start(True)",
@@ -52,13 +63,88 @@ class SqlEditor(TextArea):
         Binding("ctrl+y,ctrl+shift+z", "redo", "Redo", show=False),
         Binding("ctrl+home", "cursor_document_start", "Document start", show=False),
         Binding("ctrl+end", "cursor_document_end", "Document end", show=False),
+        Binding("tab", "completion_or_indent", "Complete or indent", show=False),
+        Binding("shift+tab", "unindent", "Unindent", show=False),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._search_pattern = ""
         self._search_matches: tuple[SearchMatch, ...] = ()
         self._search_index = -1
-        super().__init__(*args, **kwargs)
+        self._last_click_at = 0.0
+        self._last_click_location: tuple[int, int] | None = None
+        kwargs.setdefault("language", "sql")
+        # Keep Textual's default theme: it is the most portable code-editor
+        # palette across the supported 0.73 terminal renderers.
+        kwargs.setdefault("tab_behavior", "indent")
+        try:
+            super().__init__(*args, **kwargs)
+        except (ImportError, ModuleNotFoundError, ValueError):
+            # Textual syntax parsers are optional; editing must remain available.
+            kwargs["language"] = None
+            super().__init__(*args, **kwargs)
+        # Textual 0.73 calculates the initial non-wrapped virtual width before
+        # applying line-number gutter state; refresh it to avoid a negative crop.
+        if not self.soft_wrap:
+            self._refresh_size()
+
+    def action_home(self) -> None:
+        row = self.selection.end[0]
+        self.move_cursor((row, 0))
+
+    def action_completion_or_indent(self) -> None:
+        cast("SqlExplorerApp", self.app).action_plain_tab()
+
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            cast("SqlExplorerApp", self.app).action_plain_tab()
+            return
+        await super()._on_key(event)
+
+    async def _on_click(self, event: events.Click) -> None:
+        """Select an identifier on a second click without changing drag behavior."""
+        location = self.get_target_document_location(event)
+        clicked_at = monotonic()
+        previous = self._last_click_location
+        is_double = (
+            previous is not None
+            and previous[0] == location[0]
+            and abs(previous[1] - location[1]) <= 1
+            and clicked_at - self._last_click_at <= _DOUBLE_CLICK_SECONDS
+        )
+        self._last_click_at = clicked_at
+        self._last_click_location = location
+        if is_double:
+            self.action_double_click_word(location)
+            self._last_click_at = 0.0
+            self._last_click_location = None
+            event.stop()
+
+    def action_double_click_word(self, location: tuple[int, int]) -> None:
+        row, column = location
+        line = self.document[row]
+        if not line:
+            self.move_cursor((row, column))
+            return
+        column = min(column, len(line) - 1)
+        if not (line[column].isalnum() or line[column] == "_"):
+            self.move_cursor((row, column))
+            return
+        start = column
+        end = column + 1
+        while start and (line[start - 1].isalnum() or line[start - 1] == "_"):
+            start -= 1
+        while end < len(line) and (line[end].isalnum() or line[end] == "_"):
+            end += 1
+        self.move_cursor((row, start))
+        self.move_cursor((row, end), select=True)
+
+    @property
+    def cursor_render_offset(self) -> tuple[int, int]:
+        """Return the rendered cursor offset for positioning child overlays."""
+        return self._cursor_offset[0], self._cursor_offset[1]
 
     @property
     def search_match_count(self) -> int:
@@ -171,6 +257,12 @@ class SqlEditor(TextArea):
 
     @override
     def action_cursor_up(self, select: bool = False) -> None:
+        if select:
+            anchor, endpoint = self.selection
+            target_row = max(0, endpoint[0] - 1)
+            self.selection = Selection(anchor, (target_row, 0))
+            self.record_cursor_width()
+            return
         if not select and self.cursor_location[0] == 0:
             cast("SqlExplorerApp", self.app).action_focus_previous_pane()
             return
@@ -178,6 +270,15 @@ class SqlEditor(TextArea):
 
     @override
     def action_cursor_down(self, select: bool = False) -> None:
+        if select:
+            anchor, endpoint = self.selection
+            target_row = min(self.document.line_count - 1, endpoint[0] + 1)
+            self.selection = Selection(
+                anchor,
+                (target_row, len(self.document[target_row])),
+            )
+            self.record_cursor_width()
+            return
         if not select and self.cursor_location[0] == self.document.line_count - 1:
             cast("SqlExplorerApp", self.app).action_focus_next_pane()
             return
@@ -190,15 +291,55 @@ class SqlEditor(TextArea):
 
     def action_indent(self) -> None:
         start, end = self.selection
-        result = self.replace(_INDENT, start, end)
-        self.cursor_location = result.end_location
+        if start == end:
+            result = self.replace(_INDENT, start, end)
+            self.cursor_location = result.end_location
+            return
+        low, high = sorted((start, end))
+        first = low[0]
+        last = high[0] - (high[1] == 0 and high[0] > low[0])
+        lines = self.text.splitlines(keepends=True)
+        for row in range(last, first - 1, -1):
+            lines[row] = _INDENT + lines[row]
+        self.text = "".join(lines)
+        adjusted_low = (low[0], 0)
+        adjusted_high = (
+            high[0],
+            high[1] + (len(_INDENT) if high[0] <= last else 0),
+        )
+        self.selection = Selection(
+            adjusted_low if start <= end else adjusted_high,
+            adjusted_high if start <= end else adjusted_low,
+        )
 
     def action_unindent(self) -> None:
+        start, end = self.selection
+        if start != end:
+            low, high = sorted((start, end))
+            first = low[0]
+            last = high[0] - (high[1] == 0 and high[0] > low[0])
+            lines = self.text.splitlines(keepends=True)
+            removed: dict[int, int] = {}
+            for row in range(first, last + 1):
+                amount = min(len(lines[row]) - len(lines[row].lstrip(" ")), 4)
+                removed[row] = amount
+                lines[row] = lines[row][amount:]
+            self.text = "".join(lines)
+            adjusted_low = (low[0], max(0, low[1] - removed.get(low[0], 0)))
+            adjusted_high = (
+                high[0],
+                max(0, high[1] - removed.get(high[0], 0)),
+            )
+            self.selection = Selection(
+                adjusted_low if start <= end else adjusted_high,
+                adjusted_high if start <= end else adjusted_low,
+            )
+            return
         row, column = self.cursor_location
         line = self.document[row]
-        removable = min(len(line) - len(line.lstrip(" ")), len(_INDENT), column)
+        removable = min(len(line) - len(line.lstrip(" ")), 4, column)
         if removable:
-            self.replace("", (row, column - removable), (row, column))
+            self.replace("", (row, 0), (row, removable))
             self.cursor_location = (row, column - removable)
 
 
@@ -206,20 +347,189 @@ class ResultTable(DataTable[Any]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
         Binding("down", "cursor_down", "Cursor down", show=False),
+        Binding("left", "cursor_left", "Cursor left", show=False),
+        Binding("right", "cursor_right", "Cursor right", show=False),
+        Binding("shift+up", "cursor_up(True)", "Extend up", show=False),
+        Binding("shift+down", "cursor_down(True)", "Extend down", show=False),
+        Binding("shift+left", "cursor_left(True)", "Extend left", show=False),
+        Binding("shift+right", "cursor_right(True)", "Extend right", show=False),
         Binding("delete", "close_results", "Close results", show=False),
     ]
 
-    def action_cursor_up(self) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.selection_anchor: tuple[int, int] | None = None
+        self.selected_cells: tuple[tuple[int, int], tuple[int, int]] | None = None
+        self.selected_header: str | None = None
+        self.selected_header_index: int | None = None
+        self._dragging = False
+        self._drag_moved = False
+
+    def set_cell_selection(self, row: int, column: int, *, extend: bool = False) -> None:
+        if not extend or self.selection_anchor is None:
+            self.selection_anchor = (row, column)
+        anchor = self.selection_anchor
+        self.selected_cells = (anchor, (row, column))
+        self.selected_header = None
+        self.selected_header_index = None
+        self.cursor_coordinate = Coordinate(row, column)
+        self._refresh_selection()
+
+    def select_header(self, label: str, column: int | None = None) -> None:
+        self.selected_header = label
+        self.selected_header_index = column
+        self.selected_cells = None
+        self._refresh_selection()
+
+    def clear_rectangular_selection(self) -> None:
+        self.selection_anchor = None
+        self.selected_cells = None
+        self.selected_header = None
+        self.selected_header_index = None
+        self._refresh_selection()
+
+    def copy_text(self) -> str:
+        if self.selected_header is not None:
+            return self.selected_header
+        if self.selected_cells is None:
+            row, column = self.cursor_coordinate
+            return str(self.get_cell_at(Coordinate(row, column)))
+        (row_a, col_a), (row_b, col_b) = self.selected_cells
+        rows = range(min(row_a, row_b), max(row_a, row_b) + 1)
+        cols = range(min(col_a, col_b), max(col_a, col_b) + 1)
+        return "\n".join(
+            "\t".join(str(self.get_cell_at(Coordinate(r, c))) for c in cols) for r in rows
+        )
+
+    def action_cursor_up(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
+        if select:
+            self._extend_by(-1, 0)
+            return
         if self.row_count == 0 or self.cursor_row == 0:
             cast("SqlExplorerApp", self.app).action_focus_previous_pane()
             return
+        self.clear_rectangular_selection()
         super().action_cursor_up()
 
-    def action_cursor_down(self) -> None:
+    def action_cursor_down(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
+        if select:
+            self._extend_by(1, 0)
+            return
         if self.row_count == 0 or self.cursor_row >= self.row_count - 1:
             cast("SqlExplorerApp", self.app).action_focus_next_pane()
             return
+        self.clear_rectangular_selection()
         super().action_cursor_down()
+
+    def action_cursor_left(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
+        if select:
+            self._extend_by(0, -1)
+            return
+        self.clear_rectangular_selection()
+        super().action_cursor_left()
+
+    def action_cursor_right(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
+        if select:
+            self._extend_by(0, 1)
+            return
+        self.clear_rectangular_selection()
+        super().action_cursor_right()
+
+    def _extend_by(self, rows: int, columns: int) -> None:
+        column_count = len(self.columns)
+        if not self.row_count or not column_count:
+            return
+        row, column = self.cursor_coordinate
+        row = min(max(0, row + rows), self.row_count - 1)
+        column = min(max(0, column + columns), column_count - 1)
+        self.set_cell_selection(row, column, extend=True)
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        coordinate = self._event_coordinate(event)
+        if coordinate is None:
+            return
+        row, column = coordinate
+        if row >= 0 and column >= 0:
+            self.set_cell_selection(row, column, extend=event.shift)
+            self._dragging = True
+            self._drag_moved = False
+            self.capture_mouse()
+            self.focus()
+            event.stop()
+
+    def _on_mouse_move(self, event: events.MouseMove) -> None:
+        if not self._dragging:
+            super()._on_mouse_move(event)
+            return
+        coordinate = self._event_coordinate(event)
+        if coordinate is not None and coordinate[0] >= 0 and coordinate[1] >= 0:
+            self.set_cell_selection(*coordinate, extend=True)
+            self._drag_moved = True
+            event.stop()
+
+    async def _on_mouse_up(self, event: events.MouseUp) -> None:
+        if self._dragging:
+            self._dragging = False
+            self.release_mouse()
+            event.stop()
+
+    async def _on_click(self, event: events.Click) -> None:
+        coordinate = self._event_coordinate(event)
+        if coordinate is None:
+            return
+        row, column = coordinate
+        if row == -1 and column >= 0:
+            label = str(self.ordered_columns[column].label)
+            self.select_header(label, column)
+            self.focus()
+            event.stop()
+            return
+        if row >= 0 and column >= 0:
+            if not self._drag_moved:
+                self.set_cell_selection(row, column, extend=event.shift)
+            self._drag_moved = False
+            self.focus()
+            event.stop()
+
+    @staticmethod
+    def _event_coordinate(event: events.MouseEvent) -> tuple[int, int] | None:
+        meta = event.style.meta
+        if "row" not in meta or "column" not in meta:
+            return None
+        return int(meta["row"]), int(meta["column"])
+
+    def _render_cell(  # noqa: PLR0913
+        self,
+        row_index: int,
+        column_index: int,
+        base_style: Style,
+        width: int,
+        cursor: bool = False,  # noqa: FBT001,FBT002
+        hover: bool = False,  # noqa: FBT001,FBT002
+    ) -> Any:
+        selected = self._is_selected(row_index, column_index)
+        return super()._render_cell(
+            row_index,
+            column_index,
+            base_style,
+            width,
+            cursor=cursor or selected,
+            hover=hover,
+        )
+
+    def _is_selected(self, row: int, column: int) -> bool:
+        if row == -1:
+            return column == self.selected_header_index
+        if column < 0 or self.selected_cells is None:
+            return False
+        (row_a, col_a), (row_b, col_b) = self.selected_cells
+        return min(row_a, row_b) <= row <= max(row_a, row_b) and min(col_a, col_b) <= column <= max(
+            col_a, col_b
+        )
+
+    def _refresh_selection(self) -> None:
+        self._cell_render_cache.clear()
+        self.refresh()
 
     def action_close_results(self) -> None:
         cast("SqlExplorerApp", self.app).close_results()
@@ -255,17 +565,155 @@ class CommandInput(Input):
         cast("SqlExplorerApp", self.app).action_focus_next_pane()
 
 
+class SqlFileTree(Tree[object]):
+    """A read-only tree; it deliberately exposes no filesystem mutations."""
+
+    class DirectoryError(Message):
+        def __init__(self, error: OSError) -> None:
+            super().__init__()
+            self.error = error
+
+    def __init__(self, root: Any = None, *args: Any, **kwargs: Any) -> None:
+        self.root_path = Path(root or Path.cwd()).resolve()
+        super().__init__(self.root_path.name or str(self.root_path), *args, **kwargs)
+
+    def on_mount(self) -> None:
+        self.refresh_directory(self.root, self.root_path)
+        self.root.expand()
+
+    def refresh_directory(self, node: Any, path: Any) -> None:
+        try:
+            entries = safe_entries(path, browse_root=self.root_path)
+        except OSError as exc:
+            self.post_message(self.DirectoryError(exc))
+            return
+        node.remove_children()
+        for entry in entries:
+            node.add(entry.name, data=entry, allow_expand=entry.is_dir())
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded[object]) -> None:
+        if event.node.data is not None:
+            self.refresh_directory(event.node, event.node.data)
+
+
+class FileNavigationScreen(ModalScreen[Optional[Path]]):
+    """Read-only remote-host file navigation mode."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "cancel", "Close navigation", show=False),
+    ]
+
+    CSS = """
+    FileNavigationScreen {
+        align: center middle;
+    }
+    #navigation-dialog {
+        width: 80%;
+        height: 80%;
+        max-width: 120;
+        border: round $accent;
+        background: $panel;
+        padding: 1;
+    }
+    #navigation-title, #navigation-help {
+        height: 1;
+    }
+    #navigation-tree {
+        height: 1fr;
+        border: round $panel-lighten-2;
+    }
+    #navigation-tree:focus {
+        border: double $accent;
+        background: $panel-lighten-1;
+    }
+    """
+
+    def __init__(self, root: Path | None = None) -> None:
+        super().__init__()
+        self.root_path = (root or Path.cwd()).resolve()
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="navigation-dialog"):
+            yield Static(f"Open SQL file — {self.root_path}", id="navigation-title")
+            yield SqlFileTree(self.root_path, id="navigation-tree")
+            yield Static("Enter/click: open   Escape: cancel", id="navigation-help")
+
+    def on_mount(self) -> None:
+        self.query_one(SqlFileTree).focus()
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected[object]) -> None:
+        path = event.node.data
+        if isinstance(path, Path) and path.suffix.casefold() == ".sql":
+            event.stop()
+            self.dismiss(path)
+
+    def on_sql_file_tree_directory_error(
+        self,
+        event: SqlFileTree.DirectoryError,
+    ) -> None:
+        event.stop()
+        message = f"{type(event.error).__name__}: {event.error}"
+        if not self.is_active:
+            return
+        self.dismiss(result=None)
+        self.app.call_after_refresh(
+            cast("SqlExplorerApp", self.app).show_message,
+            message,
+        )
+
+    def action_cancel(self) -> None:
+        self.dismiss(result=None)
+
+
+class CompletionMenu(OptionList):
+    """Cursor-adjacent SQL completion overlay."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "close", "Close completion", show=False),
+        Binding("tab", "accept", "Accept completion", show=False),
+    ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.suggestions: tuple[str, ...] = ()
+
+    @property
+    def is_open(self) -> bool:
+        return self.styles.display != "none"
+
+    def open(self, suggestions: tuple[str, ...]) -> None:
+        self.suggestions = suggestions
+        self.clear_options()
+        self.add_options(suggestions)
+        self.highlighted = 0 if suggestions else None
+        self.styles.display = "block" if suggestions else "none"
+        if suggestions:
+            self.focus()
+
+    def selected_suggestion(self) -> str | None:
+        if self.highlighted is None:
+            return None
+        return self.suggestions[self.highlighted]
+
+    def action_close(self) -> None:
+        self.styles.display = "none"
+        self.suggestions = ()
+        cast("SqlExplorerApp", self.app).query_one(SqlEditor).focus()
+
+    def action_accept(self) -> None:
+        cast("SqlExplorerApp", self.app).action_plain_tab()
+
+
 class FindReplaceBar(Vertical):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "close", "Close find", show=False),
     ]
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="find-row"):
-            yield Input(placeholder="Find", id="find-pattern")
-            yield Button("Next", id="find-next")
-        with Horizontal(id="replace-row"):
-            yield Input(placeholder="Replace", id="replace-pattern")
+        yield Input(placeholder="Find", id="find-pattern")
+        yield Button("Next", id="find-next")
+        yield Input(placeholder="Replace", id="replace-pattern")
+        with Horizontal(id="replace-actions"):
             yield Button("Replace", id="replace-current")
             yield Button("Replace All", id="replace-all")
 
@@ -374,7 +822,7 @@ class ConfirmMutationScreen(ModalScreen[bool]):
         self.backend = backend
 
     def compose(self) -> ComposeResult:
-        preview = "\n\n".join(self.plan.statements)
+        preview = self.plan.execution_sql
         if len(preview) > _MAX_CONFIRMATION_PREVIEW_LENGTH:
             preview = preview[: _MAX_CONFIRMATION_PREVIEW_LENGTH - 3] + "..."
         with Vertical(id="confirmation-dialog"):
@@ -398,6 +846,56 @@ class ConfirmMutationScreen(ModalScreen[bool]):
         self.dismiss(event.button.id == "confirm-execute")
 
 
+class DiscardChangesScreen(ModalScreen[bool]):
+    """Confirm replacing an editor buffer that has unsaved changes."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "discard", "Discard", show=False),
+        Binding("n,escape", "cancel", "Keep editing", show=False),
+    ]
+
+    CSS = """
+    DiscardChangesScreen {
+        align: center middle;
+    }
+    #discard-dialog {
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        border: round $warning;
+        background: $panel;
+        padding: 1 2;
+    }
+    #discard-buttons {
+        height: 3;
+        align-horizontal: center;
+    }
+    """
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="discard-dialog"):
+            yield Static(
+                f"Discard unsaved changes and open {self.path}?",
+                markup=False,
+            )
+            with Horizontal(id="discard-buttons"):
+                yield Button("Discard [Y]", variant="warning", id="discard-confirm")
+                yield Button("Keep editing [N]", id="discard-cancel")
+
+    def action_discard(self) -> None:
+        self.dismiss(result=True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(result=False)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "discard-confirm")
+
+
 def _format_cell(value: object) -> str:
     if value is None:
         return "NULL"
@@ -411,7 +909,12 @@ def _format_cell(value: object) -> str:
         rendered = format(normalized, "f")
     else:
         rendered = str(value)
-    rendered = rendered.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    rendered = (
+        rendered.replace("\r\n", "\\n")
+        .replace("\r", "\\n")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
     if len(rendered) > _MAX_CELL_LENGTH:
         return rendered[: _MAX_CELL_LENGTH - 1] + "…"
     return rendered
@@ -419,9 +922,13 @@ def _format_cell(value: object) -> str:
 
 __all__ = [
     "CommandInput",
+    "CompletionMenu",
     "ConfirmMutationScreen",
+    "DiscardChangesScreen",
+    "FileNavigationScreen",
     "FindReplaceBar",
     "ResultMessage",
     "ResultTable",
     "SqlEditor",
+    "SqlFileTree",
 ]
