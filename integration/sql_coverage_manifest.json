@@ -8779,6 +8779,14 @@
         "gp"
       ]
     },
+    "transfer.trino.gp.replace.numeric_stage_cleanup": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/matrix.py::test_trino_to_gp_replace_cleans_numeric_prefix_source_stage",
+      "backends": [
+        "trino",
+        "gp"
+      ]
+    },
     "transfer.trino.gp.truncate_insert": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/matrix.py::test_transfer_pair_and_write_mode_matrix[transfer.trino.gp.truncate_insert]",

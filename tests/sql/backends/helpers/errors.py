@@ -6,6 +6,7 @@ from tests.sql._support.backend_helpers import (
     RecordingConnection,
     RecordingCursor,
     RoutingClickHouseConnection,
+    SimpleNamespace,
     ch_metadata,
     ch_wait,
     gp_ddl,
@@ -178,6 +179,17 @@ def test_trino_operation_cursor_and_error_paths() -> None:
         table_pattern="tmp_%",
     ) == ["tmp_a", "2"]
     assert cursor.closed is True
+
+    numeric_stage = "0727abcdef012345__test" + "a" * 32 + "__source"
+    assert (
+        trino_operations.qualify_transfer_stage_table_name(
+            SimpleNamespace(quote_identifier=lambda value: f'"{value}"'),
+            "trino",
+            "iceberg.integration_stage",
+            numeric_stage,
+        )
+        == f'iceberg.integration_stage."{numeric_stage}"'
+    )
 
     with pytest.raises(ValueError, match="No DDL"):
         trino_operations._first_result_value(pd.DataFrame(), "events")

@@ -48,7 +48,7 @@ def test_cleanup_stale_stage_tables_preserves_trino_catalog_schema_for_explicit(
     )
 
     assert discovered == [
-        "hive.scratch.stage_x",
+        'hive.scratch."stage_x"',
         "iceberg.scratch.stage_y",
     ]
 

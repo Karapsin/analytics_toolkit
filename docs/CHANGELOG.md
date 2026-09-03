@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Added SSH-friendly SQL Explorer navigation, completion, cancellation, and rectangular result copying.
 - Refined SQL Explorer completion and numeric result formatting.
 - Added path-completing SQL file navigation and steady TUI carets.
+- Fix Trino cleanup of numeric transfer-stage names.
 
 ## 1.3.11.16 - 2026-09-02
 

@@ -282,7 +282,7 @@ def test_cleanup_stale_stage_tables_clean_all_preserves_trino_catalog_schema(
         clean_all=True,
     )
 
-    assert discovered == ["hive.scratch.target__analytics_toolkit_target_user__stage__match"]
+    assert discovered == ['hive.scratch."target__analytics_toolkit_target_user__stage__match"']
     assert query_calls == [("hive.scratch", "%")]
 
 

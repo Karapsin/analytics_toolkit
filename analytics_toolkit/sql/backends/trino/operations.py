@@ -225,14 +225,13 @@ def qualify_transfer_stage_table_name(
     transfer_staging_schema: str,
     table_name: str,
 ) -> str:
-    del adapter
     from .adapter import split_trino_table_name
 
     catalog_name, schema_name, _ = split_trino_table_name(
         f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
         connection_key=connection_key,
     )
-    return f"{catalog_name}.{schema_name}.{table_name}"
+    return f"{catalog_name}.{schema_name}.{adapter.quote_identifier(table_name)}"
 
 
 def _first_result_value(result: Any, table_name: str) -> str:

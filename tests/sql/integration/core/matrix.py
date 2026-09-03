@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.dml.load.stage import build_stage_table_name
 from analytics_toolkit.sql.dml.transfer.flow import finalize as transfer_finalize
+from analytics_toolkit.sql.dml.transfer.flow.stage_identity import resolve_destination_identity
 
 from tests.sql.integration._support.identity import resource_name
 from tests.sql.integration._support.normalization import assert_exact_frame
 from tests.sql.integration.manifest import scenario_param
+
+if TYPE_CHECKING:
+    from tests.sql.integration._support.resources import ResourceRegistry
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 BACKENDS = ("gp", "trino", "ch")
@@ -101,6 +107,15 @@ def _transfer_seed_and_expected(write_mode: str) -> tuple[pd.DataFrame, pd.DataF
             pd.concat([source, seed], ignore_index=True) if write_mode == "append" else source
         )
     return seed, expected.sort_values("id").reset_index(drop=True)
+
+
+def _numeric_hash_target_table(resource_registry: ResourceRegistry) -> str:
+    for attempt in range(1, 65):
+        table = _table("gp", f"numeric_stage_cleanup_{attempt}")
+        if resolve_destination_identity(table, "gp").hash_prefix[0].isdigit():
+            return resource_registry.table("gp_target", table)
+    message = "Could not allocate a target table with a numeric stage hash."
+    raise AssertionError(message)
 
 
 @pytest.mark.parametrize(
@@ -239,6 +254,66 @@ def test_transfer_pair_and_write_mode_matrix(
             if_exists=True,
             ch_cluster="integration_cluster" if target == "ch" else None,
         )
+
+
+@pytest.mark.sql_scenario("transfer.trino.gp.replace.numeric_stage_cleanup")
+def test_trino_to_gp_replace_cleans_numeric_prefix_source_stage(
+    resource_registry: ResourceRegistry,
+) -> None:
+    if not _enabled("gp"):
+        pytest.skip("Greenplum requires x86_64")
+    source_alias = "trino_source_values"
+    target_alias = "gp_target"
+    source_table = resource_registry.table(source_alias, _table("trino", "numeric_stage_source"))
+    target_table = _numeric_hash_target_table(resource_registry)
+    destination_hash = resolve_destination_identity(target_table, "gp").hash_prefix
+    stale_stage = resource_registry.table(
+        source_alias,
+        build_stage_table_name(
+            "trino",
+            target_table,
+            transfer_staging_schema="iceberg.integration_stage",
+            random_suffix=f"{'a' * 32}__source",
+            destination_hash=destination_hash,
+        ),
+    )
+    source = _frame()
+    sql.create_table(
+        source_alias,
+        stale_stage,
+        table_schema={"id": "BIGINT"},
+        partition_by=["id"],
+        retry_cnt=1,
+    )
+    sql.load_df(
+        source_alias,
+        source_table,
+        source,
+        write_mode="replace",
+        **_shape_options("trino"),
+    )
+
+    transferred = sql.transfer(
+        source_alias,
+        target_alias,
+        from_sql=f"SELECT id, dt, value FROM {source_table}",
+        to_table=target_table,
+        write_mode="replace",
+        batch_size=1,
+        adaptive_batch_size=False,
+        target_rows_per_second=False,
+        retry_cnt=1,
+        **_shape_options("gp"),
+    )
+
+    assert destination_hash[0].isdigit()
+    assert transferred == len(source)
+    actual = sql.read(
+        target_alias,
+        f"SELECT id, dt, value FROM {target_table} ORDER BY id",
+    )
+    assert_exact_frame(actual, source, date_columns=("dt",))
+    assert not sql.table_info(source_alias, stale_stage).exists
 
 
 @pytest.mark.sql_scenario("transfer.trino.ch.fresh_target_retry")
