@@ -122,6 +122,20 @@ def split_trino_table_name(
     raise ValueError(f"Invalid table name: {table_name}")
 
 
+def resolve_trino_table_name(
+    table_name: str,
+    connection_key: str = "trino",
+) -> str:
+    """Resolve Trino defaults without discarding explicit identifier quotes."""
+    identifier = TableIdentifier.parse(table_name, "trino")
+    parts = split_trino_table_name(table_name, connection_key=connection_key)
+    added_defaults = len(parts) - len(identifier.parts)
+    return TableIdentifier(
+        parts=parts,
+        quoted=(False,) * added_defaults + identifier.quoted,
+    ).render("trino")
+
+
 def _table_identifiers(table: exp.Table) -> list[exp.Identifier]:
     identifiers: list[exp.Identifier] = []
     for key in ("catalog", "db"):

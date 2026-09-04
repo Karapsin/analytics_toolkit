@@ -129,6 +129,22 @@ def test_visual_evidence_refresh_ignores_screen_teardown(tmp_path: Path) -> None
     assert not (tmp_path / "evidence.json").exists()
 
 
+def test_overflow_tab_restore_ignores_screen_teardown() -> None:
+    class ClosingOverflowApp:
+        visual_scene_id = "tabs-overflow"
+        active_workspace = SimpleNamespace(tab_id="9")
+
+        def _activate_tab(self, _tab_id: str) -> None:
+            message = "workspace-9.find_bar"
+            raise sql_explorer_visual_scene.NoMatches(message)
+
+    restored = sql_explorer_visual_scene.VisualExplorerApp._restore_primary_overflow_tab(
+        cast("Any", ClosingOverflowApp()),
+    )
+
+    assert restored is False
+
+
 def test_visual_receipt_tracks_full_content_and_becomes_stale(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     _write_visual_repo(root)

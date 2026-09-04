@@ -674,11 +674,11 @@ class TrinoAdapter(DbApiBackendAdapter):
         *,
         connection_key: str,
     ) -> str | None:
-        catalog, schema_name, relation_name = split_trino_table_name(
-            table_name,
-            connection_key=connection_key,
+        from ...core.identifiers import (  # noqa: PLC0415, TID252 - registry cycle.
+            resolve_trino_table_name,
         )
-        return f"{catalog}.{schema_name}.{relation_name}"
+
+        return resolve_trino_table_name(table_name, connection_key=connection_key)
 
     def running_query_ids_sql(self) -> str:
         return """select query_id

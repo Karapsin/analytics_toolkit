@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.11.18 - 2026-09-04
 
 - Update SQL Explorer pane navigation.
 - Add SQL Explorer result exports.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Refreshed SQL Explorer layout, query summaries, and text editing.
 - Polished SQL Explorer layout and query status, added the macOS visual-review gate, and fixed SQL integration regressions.
 - Stabilized SQL Explorer visual evidence timing and restored the auth integration timeout dependency.
+- Preserved quoted Trino table names and hardened SQL Explorer visual teardown.
 
 ## 1.3.11.17 - 2026-09-03
 

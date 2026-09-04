@@ -220,12 +220,21 @@ class VisualExplorerApp(SqlExplorerApp):
         self.set_interval(0.2, self._refresh_visual_evidence)
 
     def _refresh_visual_evidence(self) -> None:
-        if self.visual_scene_id == "tabs-overflow" and self.active_workspace.tab_id != "1":
-            self._activate_tab("1")
+        if not self._restore_primary_overflow_tab():
             return
         _refresh_evidence_if_mounted(
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
+
+    def _restore_primary_overflow_tab(self) -> bool:
+        """Restore the review tab while tolerating a screen being torn down."""
+        try:
+            if self.visual_scene_id != "tabs-overflow" or self.active_workspace.tab_id == "1":
+                return True
+            self._activate_tab("1")
+        except (NoMatches, ScreenStackError):
+            return False
+        return False
 
     def _open_visual_completion(self) -> None:
         self.active_workspace.completion_menu.open(

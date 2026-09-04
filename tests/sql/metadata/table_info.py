@@ -153,6 +153,25 @@ def test_table_info_trino_resolves_unqualified_and_schema_qualified_names(
     ]
 
 
+def test_table_info_trino_preserves_quoted_numeric_relation(monkeypatch) -> None:
+    def resolver(
+        sql: str,
+        params: tuple[Any, ...] | None,
+    ) -> list[tuple[Any, ...]]:
+        assert "information_schema.tables" in sql
+        assert params == ("integration_stage", "31f9ecdb2fe8ab38__stage")
+        return []
+
+    connection = RoutingDbapiConnection(resolver)
+    monkeypatch.setattr(table_info_module, "get_sql_connection", lambda _key: connection)
+    table = 'iceberg.integration_stage."31f9ecdb2fe8ab38__stage"'
+
+    info = table_info_module.table_info("trino", table)
+
+    assert info.exists is False
+    assert info.resolved_table == table
+
+
 def test_table_info_clickhouse_includes_shard_table(monkeypatch) -> None:
     client = InspectableClickHouseClient()
     monkeypatch.setattr(table_info_module, "get_sql_connection", lambda key: client)
