@@ -28,6 +28,7 @@ from .completion import (
 )
 from .editor import SqlEditor
 from .errors import SqlExplorerConfigurationError
+from .exports import SqlExplorerExportCommandsMixin
 from .file_commands import SqlExplorerFileCommandsMixin
 from .filetree import read_sql_file
 from .picker import DatabasePickerApp
@@ -62,7 +63,12 @@ def _remove_dynamic_binding(bindings: Any, key: str) -> None:
     storage.pop(key, None)
 
 
-class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixin, App[None]):
+class SqlExplorerApp(
+    SqlExplorerCursorCommandsMixin,
+    SqlExplorerFileCommandsMixin,
+    SqlExplorerExportCommandsMixin,
+    App[None],
+):
     TITLE = "analytics-toolkit SQL explorer"
     CSS = APP_CSS
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -406,6 +412,8 @@ class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixi
             self.show_error(SqlExplorerConfigurationError(str(exc)))
             return
         self._handle_command(parts)
+        if len(self.screen_stack) == 1:
+            self.query_one("#command-input", Input).focus()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if isinstance(event.text_area, SqlEditor):
@@ -668,6 +676,8 @@ class SqlExplorerApp(SqlExplorerCursorCommandsMixin, SqlExplorerFileCommandsMixi
             "run": self._command_run,
             "save": self._command_save,
             "shortcut": self._command_shortcut,
+            "to_csv": self._command_to_csv,
+            "to_excel": self._command_to_excel,
         }
         handler = handlers.get(command)
         if handler is None:

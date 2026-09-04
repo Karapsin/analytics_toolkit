@@ -61,6 +61,7 @@ class ResultTable(DataTable[Any]):
         self._refresh_selection()
 
     def select_header(self, label: str, column: int | None = None) -> None:
+        self.selection_anchor = None
         self.selected_header = label
         self.selected_header_index = column
         self.selected_cells = None
@@ -90,8 +91,16 @@ class ResultTable(DataTable[Any]):
         if select:
             self._extend_by(-1, 0)
             return
-        if self.row_count == 0 or self.cursor_row == 0:
+        if self.selected_header is not None:
+            self.clear_rectangular_selection()
             cast("SqlExplorerApp", self.app).action_focus_previous_pane()
+            return
+        if not self.columns:
+            cast("SqlExplorerApp", self.app).action_focus_previous_pane()
+            return
+        if self.row_count == 0 or self.cursor_row == 0:
+            column = self.cursor_column
+            self.select_header(str(self.ordered_columns[column].label), column)
             return
         self.clear_rectangular_selection()
         super().action_cursor_up()
@@ -99,6 +108,13 @@ class ResultTable(DataTable[Any]):
     def action_cursor_down(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
         if select:
             self._extend_by(1, 0)
+            return
+        if self.selected_header is not None:
+            column = self.selected_header_index if self.selected_header_index is not None else 0
+            if self.row_count:
+                self.set_cell_selection(0, column)
+            else:
+                cast("SqlExplorerApp", self.app).action_focus_next_pane()
             return
         if self.row_count == 0 or self.cursor_row >= self.row_count - 1:
             cast("SqlExplorerApp", self.app).action_focus_next_pane()
@@ -110,12 +126,22 @@ class ResultTable(DataTable[Any]):
         if select:
             self._extend_by(0, -1)
             return
+        if self.selected_header is not None:
+            column = self.selected_header_index if self.selected_header_index is not None else 0
+            column = max(0, column - 1)
+            self.select_header(str(self.ordered_columns[column].label), column)
+            return
         self.clear_rectangular_selection()
         super().action_cursor_left()
 
     def action_cursor_right(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
         if select:
             self._extend_by(0, 1)
+            return
+        if self.selected_header is not None:
+            column = self.selected_header_index if self.selected_header_index is not None else 0
+            column = min(len(self.columns) - 1, column + 1)
+            self.select_header(str(self.ordered_columns[column].label), column)
             return
         self.clear_rectangular_selection()
         super().action_cursor_right()

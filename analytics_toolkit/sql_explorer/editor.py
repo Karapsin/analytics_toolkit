@@ -453,7 +453,11 @@ class SqlEditor(TextArea):
                 )
             if selection.end[0] == line_index and theme and theme.cursor_style:
                 column = selection.end[1]
-                line.stylize(theme.cursor_style, max(0, column - 1), max(1, column))
+                if not line:
+                    line.append(" ")
+                    line.stylize(theme.cursor_style, 0, 1)
+                else:
+                    line.stylize(theme.cursor_style, max(0, column - 1), max(1, column))
         return line
 
     def action_completion_or_indent(self) -> None:

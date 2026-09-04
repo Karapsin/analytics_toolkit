@@ -140,6 +140,23 @@ def test_shift_vertical_keys_chain_and_toggle_multi_cursors() -> None:
     asyncio.run(exercise())
 
 
+def test_secondary_cursor_is_visible_on_an_empty_line() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "first\n\nthird"
+            editor.cursor_location = (2, 0)
+
+            await pilot.press("shift+up", "shift+up")
+
+            rendered = editor.get_line(1)
+            assert rendered.plain == " "
+            assert any(span.start == 0 and span.end == 1 for span in rendered.spans)
+
+    asyncio.run(exercise())
+
+
 def test_selected_indent_and_unindent_include_inserted_spaces() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())

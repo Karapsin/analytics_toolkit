@@ -7,6 +7,8 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Update SQL Explorer pane navigation.
+- Add SQL Explorer result exports.
+- Keep SQL Explorer command focus and cursors visible.
 
 ## 1.3.11.17 - 2026-09-03
 

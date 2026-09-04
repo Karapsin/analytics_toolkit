@@ -148,7 +148,9 @@ lower case. Keep typing while the menu is open to narrow its options. A table
 lookup starts only after six prefix characters, calls `sql.show_tables` once
 for that context, and filters longer or shortened prefixes locally. Results
 use comma thousands separators for numeric values and support rectangular
-selection with visible-value TSV copying. `Ctrl+C` emits
+selection with visible-value TSV copying. Use `to_excel` or `to_csv` in the
+command panel to choose a project directory and save the current result without
+its dataframe index. `Ctrl+C` emits
 OSC 52 first so an SSH client terminal can copy into its local clipboard;
 terminal policy may disable OSC 52, in which case Pyperclip or the in-memory
 fallback remains available. Use the `Interrupt` button or the `cancel` command

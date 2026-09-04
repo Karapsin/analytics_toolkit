@@ -56,6 +56,13 @@ class ExplorerRunResult:
 
 
 @dataclass(frozen=True)
+class ExplorerExportState:
+    plan: ExplorerExecutionPlan
+    dataframe: pd.DataFrame | None
+    truncated: bool
+
+
+@dataclass(frozen=True)
 class ExplorerCancelResult:
     matched_queries: int
     cancelled_queries: int
@@ -101,9 +108,11 @@ class ExplorerSession:
         self.active_query: ExplorerQueryState | None = None
         self.last_query: ExplorerQueryState | None = None
         self._cancellation_requested_for: str | None = None
+        self._export_state: ExplorerExportState | None = None
 
     def switch_database(self, db_key: str) -> DatabaseSelection:
         self.database = validate_database(db_key)
+        self._export_state = None
         return self.database
 
     def set_run_binding(self, value: str) -> ExplorerSettings:
@@ -125,6 +134,7 @@ class ExplorerSession:
         return build_execution_plan(sql_text, self.database.backend)
 
     def execute(self, plan: ExplorerExecutionPlan) -> ExplorerRunResult:
+        self._export_state = None
         query_label = f"sql_explorer run={uuid4().hex}"
         self.active_query_label = query_label
         started_at = monotonic()
@@ -154,7 +164,7 @@ class ExplorerSession:
                     retry_policy="safe",
                     **common_options,
                 )
-            run_result = self._build_run_result(plan, result)
+            run_result, export_dataframe = self._build_run_result(plan, result)
         except BaseException:
             final_state: QueryState = (
                 "cancelled" if self._cancellation_requested_for == query_label else "failed"
@@ -178,18 +188,82 @@ class ExplorerSession:
                 self.active_query = None
             if self._cancellation_requested_for == query_label:
                 self._cancellation_requested_for = None
+        if run_result.dataframe is not None:
+            self._export_state = ExplorerExportState(plan, export_dataframe, run_result.truncated)
         return run_result
+
+    def export_state(self) -> ExplorerExportState:
+        if self._export_state is None:
+            raise _missing_export_result_error()
+        return self._export_state
+
+    def export_dataframe(self) -> pd.DataFrame:
+        state = self.export_state()
+        if state.dataframe is not None:
+            return state.dataframe.copy()
+
+        plan = state.plan
+        query_label = f"sql_explorer export={uuid4().hex}"
+        started_at = monotonic()
+        self.active_query_label = query_label
+        self.active_query = ExplorerQueryState(query_label, plan.route, started_at, None, "running")
+        self._cancellation_requested_for = None
+        common_options = {
+            "retry_cnt": 1,
+            "timeout_increment": 0,
+            "query_label": query_label,
+            "return_metadata": True,
+        }
+        try:
+            if plan.route is ExecutionRoute.READ:
+                result = sql.read(
+                    self.database.connection_key,
+                    plan.full_execution_sql,
+                    **common_options,
+                )
+            else:
+                result = sql.execute_read(
+                    self.database.connection_key,
+                    plan.full_execution_sql,
+                    **common_options,
+                )
+            dataframe = self._result_dataframe(result)
+        except BaseException:
+            final_state: QueryState = (
+                "cancelled" if self._cancellation_requested_for == query_label else "failed"
+            )
+            self.last_query = ExplorerQueryState(
+                query_label, plan.route, started_at, monotonic(), final_state
+            )
+            raise
+        else:
+            self.last_query = ExplorerQueryState(
+                query_label, plan.route, started_at, monotonic(), "completed"
+            )
+        finally:
+            if self.active_query_label == query_label:
+                self.active_query_label = None
+            if self.active_query and self.active_query.label == query_label:
+                self.active_query = None
+            if self._cancellation_requested_for == query_label:
+                self._cancellation_requested_for = None
+        return dataframe
+
+    @staticmethod
+    def _result_dataframe(result: object) -> pd.DataFrame:
+        dataframe = getattr(result, "data", result)
+        if not isinstance(dataframe, pd.DataFrame):
+            message = "Result-producing SQL did not return a dataframe."
+            raise TypeError(message)
+        return dataframe
 
     @staticmethod
     def _build_run_result(
         plan: ExplorerExecutionPlan,
         result: object,
-    ) -> ExplorerRunResult:
+    ) -> tuple[ExplorerRunResult, pd.DataFrame | None]:
         if plan.returns_rows:
-            dataframe = getattr(result, "data", result)
-            if not isinstance(dataframe, pd.DataFrame):
-                message = "Result-producing SQL did not return a dataframe."
-                raise TypeError(message)
+            dataframe = ExplorerSession._result_dataframe(result)
             raw_rows = len(dataframe)
             truncated = raw_rows > DISPLAY_ROW_LIMIT
             displayed = dataframe.head(DISPLAY_ROW_LIMIT).copy()
@@ -200,22 +274,28 @@ class ExplorerSession:
                 status = f"Showing the first {DISPLAY_ROW_LIMIT} of {total_rows:,} rows."
             else:
                 status = f"Returned {raw_rows:,} row(s)."
-            return ExplorerRunResult(
-                route=plan.route,
-                dataframe=displayed,
-                displayed_rows=len(displayed),
-                total_rows=total_rows,
-                truncated=truncated,
-                status=status,
+            return (
+                ExplorerRunResult(
+                    route=plan.route,
+                    dataframe=displayed,
+                    displayed_rows=len(displayed),
+                    total_rows=total_rows,
+                    truncated=truncated,
+                    status=status,
+                ),
+                None if truncated and plan.server_limited else dataframe.copy(),
             )
 
-        return ExplorerRunResult(
-            route=plan.route,
-            dataframe=None,
-            displayed_rows=0,
-            total_rows=None,
-            truncated=False,
-            status=f"Executed {plan.statement_count} statement(s) successfully.",
+        return (
+            ExplorerRunResult(
+                route=plan.route,
+                dataframe=None,
+                displayed_rows=0,
+                total_rows=None,
+                truncated=False,
+                status=f"Executed {plan.statement_count} statement(s) successfully.",
+            ),
+            None,
         )
 
     def cancel_active(self) -> ExplorerCancelResult:
@@ -286,6 +366,10 @@ class ExplorerSession:
         )
 
 
+def _missing_export_result_error() -> SqlExplorerConfigurationError:
+    return SqlExplorerConfigurationError("Run a row-producing query before exporting.")
+
+
 def validate_database(db_key: str) -> DatabaseSelection:
     results = sql.validate_connections([db_key], connect=False)
     if not results:
@@ -302,6 +386,7 @@ def validate_database(db_key: str) -> DatabaseSelection:
 __all__ = [
     "DatabaseSelection",
     "ExplorerCancelResult",
+    "ExplorerExportState",
     "ExplorerQueryState",
     "ExplorerRunResult",
     "ExplorerSession",

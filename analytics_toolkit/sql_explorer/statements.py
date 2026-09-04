@@ -44,6 +44,10 @@ class ExplorerExecutionPlan:
     def statement_count(self) -> int:
         return len(self.statements)
 
+    @property
+    def full_execution_sql(self) -> str:
+        return ";\n".join(self.statements)
+
 
 def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
     statements = tuple(

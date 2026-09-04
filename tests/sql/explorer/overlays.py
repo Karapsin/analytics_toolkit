@@ -120,6 +120,7 @@ def test_escape_toggles_editor_command_and_skips_results() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
+            await pilot.pause()
             editor = application.query_one(SqlEditor)
             command = application.query_one("#command-input", Input)
             application.show_dataframe(pd.DataFrame({"x": [1]}))

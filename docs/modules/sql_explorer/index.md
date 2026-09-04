@@ -62,6 +62,8 @@ default; exploratory mode is not a database-enforced read-only session.
 
 ## Editor and completion
 
+After executing a command, focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
+
 The editor and text inputs use steady non-blinking carets. The editor displays
 line numbers, applies SQL syntax highlighting, and keeps long SQL lines
 unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
@@ -153,8 +155,10 @@ breaks are escaped visibly.
 
 Rows have visual labels beginning at 1. Click selects one data cell; drag or
 Shift-click creates an inclusive rectangular range; Shift+arrows extend it.
-Plain arrows clear the rectangle and move the active cell. Clicking a header
-selects only that header label. Ctrl+C serializes selected displayed data as
+Plain arrows clear the rectangle and move the active cell. Up from the first
+result row selects its column header; Left and Right move between headers, Down
+returns to the same column's first row, and a second Up leaves the result pane.
+Clicking a header selects only that header label. Ctrl+C serializes selected displayed data as
 tab-separated columns and newline-separated rows. Visual row labels are never
 copied, and an ordinary data rectangle never gains a header row.
 
@@ -204,15 +208,20 @@ Enter commands in the lower panel, with or without a leading colon:
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation
 - `clear query|results|all` - clear workspace content
+- `to_excel` - choose a project directory and save the current result as `.xlsx`
+- `to_csv` - choose a project directory and save the current result as `.csv`
 - `help` - open the in-app command reference
 - `exit` or `quit` - close the Explorer, requesting targeted cancellation first
   when user SQL is running
 
 The confirmation choice and primary run shortcut are saved in the user's config
-directory. SQL text and query results are not persisted.
+directory. SQL text is not persisted. The export commands first ask for one
+filename with the required suffix, then reuse the project directory browser. An
+existing destination requires replacement confirmation. If a result has more than
+200 rows, confirm saving all rows before the Explorer reruns a capped query.
 
-In either two-choice confirmation dialog, Left selects the affirmative action
-and Right selects cancellation; Enter activates the focused choice. The existing
-Y, N, Escape, and mouse controls remain available.
+In every two-choice confirmation dialog, Left selects the affirmative action and
+Right selects cancellation; Enter activates the focused choice. The existing Y,
+N, Escape, and mouse controls remain available.
 
 [All module docs](../README.md)

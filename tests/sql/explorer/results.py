@@ -6,7 +6,7 @@ from inspect import signature
 from typing import Any
 
 import pandas as pd
-from analytics_toolkit.sql_explorer.app import ResultTable, SqlExplorerApp
+from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplorerApp
 from rich.style import Style
 from textual import events
 from textual.coordinate import Coordinate
@@ -71,6 +71,55 @@ def test_keyboard_rectangular_selection_and_plain_movement() -> None:
             await pilot.press("down")
             assert table.cursor_coordinate == Coordinate(2, 1)
             assert table.selected_cells is None
+
+    asyncio.run(exercise())
+
+
+def test_keyboard_navigation_selects_and_moves_result_headers() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            application.show_dataframe(pd.DataFrame({"first": ["a0"], "second": ["b0"]}))
+            table = application.query_one(ResultTable)
+            table.focus()
+            table.set_cell_selection(0, 1)
+
+            await pilot.press("up")
+            assert table.selected_header == "second"
+            assert table.copy_text() == "second"
+            await pilot.press("left")
+            assert table.selected_header == "first"
+            await pilot.press("right")
+            assert table.selected_header == "second"
+            await pilot.press("down")
+            assert table.selected_header is None
+            assert table.cursor_coordinate == Coordinate(0, 1)
+            await pilot.press("up", "up")
+            assert application.focused is application.query_one(SqlEditor)
+
+    asyncio.run(exercise())
+
+
+def test_empty_results_keep_headers_selectable_and_close_results() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            application.show_dataframe(pd.DataFrame(columns=["first"]))
+            table = application.query_one(ResultTable)
+            table.focus()
+
+            await pilot.press("up")
+            assert table.selected_header == "first"
+            await pilot.press("down")
+            assert application.focused is application.query_one("#command-input")
+
+            table.action_close_results()
+            assert application.results_open is False
+
+            application.show_dataframe(pd.DataFrame())
+            table.focus()
+            await pilot.press("up")
+            assert application.focused is application.query_one(SqlEditor)
 
     asyncio.run(exercise())
 

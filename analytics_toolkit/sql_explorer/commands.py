@@ -23,6 +23,8 @@ HELP_TEXT = """Commands
   shortcut KEY|reset          change the primary run shortcut
   confirm on|off|toggle       control mutation confirmation
   clear query|results|all     clear workspace content
+  to_excel                    save the current result as an Excel workbook
+  to_csv                      save the current result as CSV
   help                        show this help
   exit | quit                 close the explorer
 

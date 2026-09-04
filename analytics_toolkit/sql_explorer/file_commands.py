@@ -19,8 +19,8 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 
-class NewSqlFileScreen(ModalScreen[Optional[str]]):
-    """Collect a safe SQL filename before choosing its destination."""
+class NewFileScreen(ModalScreen[Optional[str]]):
+    """Collect a safe filename before choosing its destination."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", show=False),
@@ -28,7 +28,7 @@ class NewSqlFileScreen(ModalScreen[Optional[str]]):
     ]
 
     CSS = """
-    NewSqlFileScreen {
+    NewFileScreen {
         align: center middle;
     }
     #new-file-dialog {
@@ -48,10 +48,16 @@ class NewSqlFileScreen(ModalScreen[Optional[str]]):
     }
     """
 
+    def __init__(self, *, suffix: str, title: str, placeholder: str) -> None:
+        super().__init__()
+        self.suffix = suffix
+        self._dialog_title = title
+        self._placeholder = placeholder
+
     def compose(self) -> ComposeResult:
         with Vertical(id="new-file-dialog"):
-            yield Static("New SQL file name (.sql required)", markup=False)
-            yield Input(placeholder="query.sql", id="new-file-name")
+            yield Static(self._dialog_title, markup=False)
+            yield Input(placeholder=self._placeholder, id="new-file-name")
             yield Static("", id="new-file-notice")
             with Horizontal(id="new-file-actions"):
                 yield Button("Choose directory", variant="primary", id="new-file-confirm")
@@ -66,8 +72,10 @@ class NewSqlFileScreen(ModalScreen[Optional[str]]):
 
     def action_confirm(self) -> None:
         value = self.query_one("#new-file-name", Input).value.strip()
-        if not self._is_sql_filename(value):
-            self.query_one("#new-file-notice", Static).update("Enter one filename ending in .sql.")
+        if not self._is_filename(value):
+            self.query_one("#new-file-notice", Static).update(
+                f"Enter one filename ending in {self.suffix}."
+            )
             return
         self.dismiss(value)
 
@@ -80,13 +88,23 @@ class NewSqlFileScreen(ModalScreen[Optional[str]]):
         elif event.button.id == "new-file-cancel":
             self.action_cancel()
 
-    @staticmethod
-    def _is_sql_filename(value: str) -> bool:
+    def _is_filename(self, value: str) -> bool:
         return (
             bool(value)
             and Path(value).name == value
             and value not in {".", ".."}
-            and Path(value).suffix.casefold() == ".sql"
+            and Path(value).suffix.casefold() == self.suffix.casefold()
+        )
+
+
+class NewSqlFileScreen(NewFileScreen):
+    """Collect a safe SQL filename before choosing its destination."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            suffix=".sql",
+            title="New SQL file name (.sql required)",
+            placeholder="query.sql",
         )
 
 

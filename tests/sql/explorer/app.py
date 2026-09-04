@@ -152,6 +152,8 @@ def test_vertical_arrows_cross_only_workspace_boundaries() -> None:
             await pilot.press("up")
             assert application.focused is table
             await pilot.press("up")
+            assert table.selected_header == "value"
+            await pilot.press("up")
             assert application.focused is editor
 
             await pilot.press("down")
@@ -343,6 +345,25 @@ def test_commands_update_session_and_workspace() -> None:
             await pilot.press("enter")
             assert editor.text == ""
             assert application.results_open is False
+
+    asyncio.run(exercise())
+
+
+def test_commands_keep_the_command_pane_focused() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            command = application.query_one("#command-input", Input)
+            editor = application.query_one(SqlEditor)
+            editor.text = "first\nsecond"
+
+            for command_text in ("cp", "mv 2", "mvs 1", "clear query"):
+                command.value = command_text
+                command.focus()
+                await pilot.press("enter")
+                assert application.focused is command
+
+            assert editor.text == ""
 
     asyncio.run(exercise())
 

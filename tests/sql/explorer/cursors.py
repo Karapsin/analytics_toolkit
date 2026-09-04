@@ -31,18 +31,20 @@ def test_move_commands_use_one_based_line_starts_and_clear_extra_cursors() -> No
             await pilot.press("enter")
             assert editor.cursor_count == 1
             assert editor.selection == Selection.cursor((1, 0))
-            assert application.focused is editor
+            assert application.focused is command
 
             editor.cursor_location = (1, 2)
             command.value = "mvs 1"
             command.focus()
             await pilot.press("enter")
             assert editor.selection == Selection((1, 2), (0, 0))
+            assert application.focused is command
 
             command.value = "mv 0"
             command.focus()
             await pilot.press("enter")
             assert "between 1 and 3" in str(application.query_one("#result-message").render())
+            assert application.focused is command
 
     asyncio.run(exercise())
 

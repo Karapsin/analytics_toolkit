@@ -96,6 +96,96 @@ def test_unwrapped_result_reports_known_total(
     assert result.status == "Showing the first 200 of 205 rows."
 
 
+def test_export_replays_capped_query_without_display_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    def fake_read(_db_key: str, query: str, **_kwargs: Any) -> pd.DataFrame:
+        calls.append(query)
+        return pd.DataFrame({"value": range(201 if len(calls) == 1 else 205)})
+
+    monkeypatch.setattr(runtime.sql, "read", fake_read)
+    session.execute(build_execution_plan("select value from sample", "gp"))
+
+    state = session.export_state()
+    assert state.truncated is True
+    assert state.dataframe is None
+    assert len(session.export_dataframe()) == 205
+    assert "LIMIT 201" in calls[0]
+    assert "LIMIT 201" not in calls[1]
+    assert calls[1] == "select value from sample"
+
+
+def test_export_uses_cached_unwrapped_result_without_replaying(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    def fake_read(_db_key: str, query: str, **_kwargs: Any) -> pd.DataFrame:
+        calls.append(query)
+        return pd.DataFrame({"value": range(205)})
+
+    monkeypatch.setattr(runtime.sql, "read", fake_read)
+    session.execute(build_execution_plan("show tables", "gp"))
+
+    assert len(session.export_dataframe()) == 205
+    assert calls == ["show tables"]
+
+
+def test_export_requires_results_and_replays_execute_read_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    plan = build_execution_plan("create temp table x(a int); select * from x", "gp")
+    session._export_state = runtime.ExplorerExportState(plan, None, truncated=True)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def fake_execute_read(_db_key: str, query: str, **kwargs: Any) -> SimpleNamespace:
+        calls.append((query, kwargs))
+        session.active_query_label = "another query"
+        session.active_query = None
+        return SimpleNamespace(data=pd.DataFrame({"value": [1, 2]}))
+
+    monkeypatch.setattr(runtime.sql, "execute_read", fake_execute_read)
+
+    assert session.export_dataframe().to_dict(orient="list") == {"value": [1, 2]}
+    assert calls[0][0] == plan.full_execution_sql
+    assert calls[0][1]["query_label"].startswith("sql_explorer export=")
+    assert session.active_query_label == "another query"
+
+    session._export_state = None
+    with pytest.raises(SqlExplorerConfigurationError, match="row-producing"):
+        session.export_state()
+
+
+def test_failed_export_marks_query_failed_and_clears_active_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    plan = build_execution_plan("select value from sample", "gp")
+    session._export_state = runtime.ExplorerExportState(plan, None, truncated=True)
+
+    def fail_read(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
+        raise RuntimeError
+
+    monkeypatch.setattr(runtime.sql, "read", fail_read)
+
+    with pytest.raises(RuntimeError):
+        session.export_dataframe()
+
+    assert session.active_query_label is None
+    assert session.active_query is None
+    assert session.last_query is not None
+    assert session.last_query.state == "failed"
+
+
 def test_execute_read_and_execute_are_dispatched(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
