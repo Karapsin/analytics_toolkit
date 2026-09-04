@@ -4,9 +4,10 @@ import asyncio
 import json
 import re
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+from textual.app import ScreenStackError
 
 from agent_tools import mcp_server, sql_explorer_visual, sql_explorer_visual_scene
 from tests.agent_tools._support.mcp import _init_git_repo, _write_minimal_repo_files
@@ -96,11 +97,36 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
                 manifest,
             )
         async with application.run_test(size=(160, 47)) as pilot:
-            await pilot.pause(1.0)
+            for _attempt in range(100):
+                await pilot.pause(0.1)
+                if evidence.is_file():
+                    geometry = json.loads(evidence.read_text(encoding="utf-8"))
+                    if geometry["ok"] is True:
+                        break
 
     asyncio.run(exercise())
     geometry = json.loads(evidence.read_text(encoding="utf-8"))
     assert geometry["ok"] is True, geometry["assertions"]
+
+
+def test_visual_evidence_refresh_ignores_screen_teardown(tmp_path: Path) -> None:
+    class ClosingApp:
+        screen_stack = (object(),)
+
+        @property
+        def screen(self) -> None:
+            message = "No screens on stack"
+            raise ScreenStackError(message)
+
+    refreshed = sql_explorer_visual_scene._refresh_evidence_if_mounted(
+        cast("Any", ClosingApp()),
+        "editor-ready",
+        tmp_path / "evidence.json",
+        mcp_server.REPO_ROOT / sql_explorer_visual.MANIFEST,
+    )
+
+    assert refreshed is False
+    assert not (tmp_path / "evidence.json").exists()
 
 
 def test_visual_receipt_tracks_full_content_and_becomes_stale(tmp_path: Path) -> None:

@@ -34,6 +34,8 @@ from analytics_toolkit.sql_explorer.widgets import (
     FileNavigationScreen,
     ResultTable,
 )
+from textual.app import ScreenStackError
+from textual.css.query import NoMatches
 from textual.widgets import Button, Input
 
 if TYPE_CHECKING:
@@ -215,10 +217,13 @@ class VisualExplorerApp(SqlExplorerApp):
             raise ValueError(f"unsupported SQL Explorer visual scene: {scene}")
 
         self.call_after_refresh(self._refresh_visual_evidence)
-        self.set_timer(0.8, self._refresh_visual_evidence)
+        self.set_interval(0.2, self._refresh_visual_evidence)
 
     def _refresh_visual_evidence(self) -> None:
-        _write_evidence(
+        if self.visual_scene_id == "tabs-overflow" and self.active_workspace.tab_id != "1":
+            self._activate_tab("1")
+            return
+        _refresh_evidence_if_mounted(
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
 
@@ -237,10 +242,10 @@ class VisualDatabasePickerApp(DatabasePickerApp):
     def on_mount(self) -> None:
         super().on_mount()
         self.call_after_refresh(self._refresh_visual_evidence)
-        self.set_timer(0.8, self._refresh_visual_evidence)
+        self.set_interval(0.2, self._refresh_visual_evidence)
 
     def _refresh_visual_evidence(self) -> None:
-        _write_evidence(
+        _refresh_evidence_if_mounted(
             self,
             "database-picker",
             self.visual_evidence_path,
@@ -264,6 +269,22 @@ def _widget_geometry(widget: Widget) -> dict[str, Any]:
         "bottom": region.bottom,
         "display": widget.display,
     }
+
+
+def _refresh_evidence_if_mounted(
+    app: App[Any],
+    scene_id: str,
+    evidence_path: Path,
+    manifest_path: Path,
+) -> bool:
+    """Refresh evidence while a scene is mounted, tolerating normal teardown."""
+    if not app.screen_stack:
+        return False
+    try:
+        _write_evidence(app, scene_id, evidence_path, manifest_path)
+    except (NoMatches, ScreenStackError):
+        return False
+    return True
 
 
 def _write_evidence(
@@ -303,6 +324,8 @@ def _write_evidence(
         )
         tab = app.query_one("#tab-1")
         assertions["compact_tab_height"] = tab.region.height == 1
+        if scene_id == "tabs-overflow":
+            assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
         summary = workspace.query_one("#query-summary")
         interrupt = workspace.query_one("#interrupt", Button)
         assertions["interrupt_spelling"] = str(interrupt.label) == "Interrupt"
@@ -334,6 +357,10 @@ def _write_evidence(
         "assertions": assertions,
         "ok": bool(assertions) and all(assertions.values()),
     }
+    # A mounted scene may emit an incomplete diagnostic frame before it settles,
+    # but teardown must never replace geometry that already passed every check.
+    if not payload["ok"] and evidence_path.exists():
+        return
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = evidence_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

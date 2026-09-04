@@ -112,10 +112,14 @@ def test_auth_integration_jobs_keep_mcp_out_of_airflow_environment() -> None:
         encoding="utf-8"
     )
     auth_and_fault = workflow.split("  auth:", 1)[1].split("  stress:", 1)[0]
+    auth_requirements = (REPO_ROOT / "integration" / "requirements-auth.txt").read_text(
+        encoding="utf-8"
+    )
 
     assert "integration/requirements-auth.txt" in auth_and_fault
     assert "agent_tools/requirements-mcp.txt" not in auth_and_fault
     assert "python -m pip check" in auth_and_fault
+    assert "pytest-timeout>=2.4,<3" in auth_requirements
 
 
 def test_minimum_constraint_validation_accepts_equivalent_zero_components() -> None:
