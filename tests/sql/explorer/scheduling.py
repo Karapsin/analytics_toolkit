@@ -44,7 +44,7 @@ def test_user_query_scheduler_is_fifo_and_limits_each_tab_to_one_job() -> None:
     assert scheduler.position("missing") is None
 
 
-def test_query_scheduler_snapshots_database_and_supports_safe_concurrency_changes() -> None:
+def test_query_scheduler_snapshots_database_and_runs_different_databases_in_parallel() -> None:
     scheduler = ExplorerQueryScheduler()
     first_database = DatabaseSelection("gp", "gp")
     second_database = DatabaseSelection("lake", "trino")
@@ -52,15 +52,32 @@ def test_query_scheduler_snapshots_database_and_supports_safe_concurrency_change
     first = scheduler.enqueue("first", plan, first_database)
     second = scheduler.enqueue("second", plan, second_database)
 
-    scheduler.set_concurrency(2)
-
     assert scheduler.take_startable() == (first, second)
     assert first is not None
     assert first.database == first_database
     assert second is not None
     assert second.database == second_database
-    scheduler.set_concurrency(1)
     assert scheduler.active_count == 2
+    assert scheduler.is_database_active("GP") is True
+    assert scheduler.is_database_active("missing") is False
+
+
+def test_query_scheduler_queues_per_database_and_respects_external_database_work() -> None:
+    scheduler = ExplorerQueryScheduler()
+    gp = DatabaseSelection("gp", "gp")
+    lake = DatabaseSelection("lake", "trino")
+    plan = build_execution_plan("select 1", "gp")
+    first_gp = scheduler.enqueue("first-gp", plan, gp)
+    second_gp = scheduler.enqueue("second-gp", plan, gp)
+    first_lake = scheduler.enqueue("first-lake", plan, lake)
+
+    assert scheduler.position("second-gp") == 2
+    assert scheduler.take_startable({"lake"}) == (first_gp,)
+    assert scheduler.position("second-gp") == 1
+    assert scheduler.position("first-lake") == 1
+    assert first_gp is not None
+    scheduler.complete(first_gp.job_id)
+    assert scheduler.take_startable() == (second_gp, first_lake)
 
 
 def test_removing_a_tab_drops_only_its_pending_query() -> None:
@@ -76,12 +93,6 @@ def test_removing_a_tab_drops_only_its_pending_query() -> None:
     assert scheduler.pending_count == 1
     assert scheduler.job_for_tab("first") == first
     assert scheduler.job_for_tab("third") == third
-
-
-@pytest.mark.parametrize("value", [0, True, "1"])
-def test_query_scheduler_rejects_invalid_concurrency(value: object) -> None:
-    with pytest.raises(ValueError, match="positive integer"):
-        ExplorerQueryScheduler(value)  # type: ignore[arg-type]
 
 
 class _BlockingMetadataProvider:

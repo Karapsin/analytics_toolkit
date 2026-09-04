@@ -11,11 +11,7 @@ from analytics_toolkit.sql_explorer.runtime import (
     DatabaseSelection,
     ExplorerRunResult,
 )
-from analytics_toolkit.sql_explorer.tabs import (
-    ConfirmConcurrencyScreen,
-    SaveChangesScreen,
-    WorkspaceTab,
-)
+from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen, WorkspaceTab
 from analytics_toolkit.sql_explorer.widgets import FileNavigationScreen
 from textual.document._document import Selection
 
@@ -127,21 +123,8 @@ def test_tab_modal_actions_and_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
                 SimpleNamespace(button=SimpleNamespace(id=button_id))  # type: ignore[arg-type]
             )
 
-        concurrency = ConfirmConcurrencyScreen(4)
-        concurrency_decisions: list[bool] = []
-        monkeypatch.setattr(concurrency, "dismiss", concurrency_decisions.append)
-        concurrency.action_confirm()
-        concurrency.action_cancel()
-        concurrency.on_button_pressed(
-            SimpleNamespace(button=SimpleNamespace(id="concurrency-confirm"))  # type: ignore[arg-type]
-        )
-        concurrency.on_button_pressed(
-            SimpleNamespace(button=SimpleNamespace(id="concurrency-cancel"))  # type: ignore[arg-type]
-        )
-
         assert focus_moves == ["previous", "next"]
         assert save_decisions == ["save", "discard", "cancel", "save", "discard", "cancel"]
-        assert concurrency_decisions == [True, False, True, False]
 
     asyncio.run(exercise())
 
@@ -173,7 +156,7 @@ def test_dirty_tab_close_prompts_and_last_tab_is_protected() -> None:
     asyncio.run(exercise())
 
 
-def test_forwarded_command_shortcuts_and_concurrency_setting_apply_globally() -> None:
+def test_forwarded_command_shortcuts_control_tabs() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
@@ -190,21 +173,6 @@ def test_forwarded_command_shortcuts_and_concurrency_setting_apply_globally() ->
             await pilot.press("meta+w")
             await pilot.pause()
             assert application.active_workspace is first
-
-            application._command_concurrency(["2"])
-            assert application._query_scheduler.concurrency == 2
-            assert all(
-                workspace.session.settings.max_concurrent_queries == 2
-                for workspace in application._workspaces.values()
-            )
-
-            application._command_concurrency(["4"])
-            assert isinstance(application.screen, ConfirmConcurrencyScreen)
-            await pilot.press("y")
-            assert application._query_scheduler.concurrency == 4
-            application._command_concurrency(["5"])
-            await pilot.press("right", "left", "n")
-            assert application._query_scheduler.concurrency == 4
 
     asyncio.run(exercise())
 
@@ -298,7 +266,6 @@ def test_query_queue_routes_snapshot_and_results_to_the_originating_tab(
             application.action_new_tab()
             await pilot.pause()
             second = application.active_workspace
-            second.session.database = SimpleNamespace(connection_key="lake", backend="trino")
             second.editor.text = "select 2"
             application.action_run_query()
             assert len(started) == 1
@@ -317,10 +284,40 @@ def test_query_queue_routes_snapshot_and_results_to_the_originating_tab(
             application._finish_query_job(first_job, first_result, None)
 
             assert len(started) == 2
-            assert started[1][0].database.connection_key == "lake"
+            assert started[1][0].database.connection_key == "gp"
             assert first.results_open is True
             assert first.result_table.row_count == 1
             assert second.results_open is False
+
+    asyncio.run(exercise())
+
+
+def test_query_scheduler_runs_different_databases_in_parallel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        started: list[Any] = []
+        monkeypatch.setattr(
+            application,
+            "_execute_in_worker",
+            lambda job, _session: started.append(job),
+        )
+        async with application.run_test() as pilot:
+            application.active_workspace.editor.text = "select 1"
+            application.action_run_query()
+            assert application._database_is_busy("GP") is True
+            assert application._database_is_busy("lake") is False
+            application.action_new_tab()
+            await pilot.pause()
+            second = application.active_workspace
+            second.session.database = SimpleNamespace(connection_key="lake", backend="trino")
+            second.editor.text = "select 2"
+            application.action_run_query()
+
+            assert [job.database.connection_key for job in started] == ["gp", "lake"]
+            assert application._query_scheduler.active_count == 2
+            assert application._database_is_busy("lake") is True
 
     asyncio.run(exercise())
 

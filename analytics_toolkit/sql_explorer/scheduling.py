@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .runtime import DatabaseSelection
     from .statements import ExplorerExecutionPlan
 
@@ -22,17 +24,12 @@ class ExplorerQueryJob:
 
 
 class ExplorerQueryScheduler:
-    """Bounded FIFO scheduler with at most one outstanding job per tab."""
+    """FIFO scheduler with one active query per database and per tab."""
 
-    def __init__(self, concurrency: int = 1) -> None:
-        self._concurrency = self._validate_concurrency(concurrency)
+    def __init__(self) -> None:
         self._next_job_id = 0
         self._pending: deque[ExplorerQueryJob] = deque()
         self._active: dict[int, ExplorerQueryJob] = {}
-
-    @property
-    def concurrency(self) -> int:
-        return self._concurrency
 
     @property
     def active_count(self) -> int:
@@ -41,9 +38,6 @@ class ExplorerQueryScheduler:
     @property
     def pending_count(self) -> int:
         return len(self._pending)
-
-    def set_concurrency(self, value: int) -> None:
-        self._concurrency = self._validate_concurrency(value)
 
     def enqueue(
         self,
@@ -58,12 +52,24 @@ class ExplorerQueryScheduler:
         self._pending.append(job)
         return job
 
-    def take_startable(self) -> tuple[ExplorerQueryJob, ...]:
+    def take_startable(
+        self,
+        blocked_database_keys: Iterable[str] = (),
+    ) -> tuple[ExplorerQueryJob, ...]:
         jobs: list[ExplorerQueryJob] = []
-        while self._pending and len(self._active) < self._concurrency:
+        unavailable = {key.casefold() for key in blocked_database_keys}
+        unavailable.update(job.database.connection_key.casefold() for job in self._active.values())
+        retained: deque[ExplorerQueryJob] = deque()
+        while self._pending:
             job = self._pending.popleft()
+            database_key = job.database.connection_key.casefold()
+            if database_key in unavailable:
+                retained.append(job)
+                continue
             self._active[job.job_id] = job
+            unavailable.add(database_key)
             jobs.append(job)
+        self._pending = retained
         return tuple(jobs)
 
     def complete(self, job_id: int) -> ExplorerQueryJob | None:
@@ -89,18 +95,23 @@ class ExplorerQueryScheduler:
     def is_active(self, job_id: int) -> bool:
         return job_id in self._active
 
-    def position(self, tab_id: str) -> int | None:
-        for position, job in enumerate(self._pending, start=1):
-            if job.tab_id == tab_id:
-                return position
-        return None
+    def is_database_active(self, connection_key: str) -> bool:
+        normalized = connection_key.casefold()
+        return any(
+            job.database.connection_key.casefold() == normalized for job in self._active.values()
+        )
 
-    @staticmethod
-    def _validate_concurrency(value: int) -> int:
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            message = "Query concurrency must be a positive integer."
-            raise ValueError(message)
-        return value
+    def position(self, tab_id: str) -> int | None:
+        target = next((job for job in self._pending if job.tab_id == tab_id), None)
+        if target is None:
+            return None
+        normalized = target.database.connection_key.casefold()
+        matching_tabs = [
+            job.tab_id
+            for job in self._pending
+            if job.database.connection_key.casefold() == normalized
+        ]
+        return matching_tabs.index(tab_id) + 1
 
 
 __all__ = ["ExplorerQueryJob", "ExplorerQueryScheduler"]

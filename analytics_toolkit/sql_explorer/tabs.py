@@ -1,6 +1,6 @@
 """Tab-strip controls and tab lifecycle confirmation screens."""
 
-# ruff: noqa: FBT001, FBT003, RUF001, SLF001
+# ruff: noqa: FBT001, RUF001, SLF001
 
 from __future__ import annotations
 
@@ -134,65 +134,6 @@ class SaveChangesScreen(ModalScreen[CloseDecision]):
         decision = decisions.get(event.button.id)
         if decision is not None:
             self.dismiss(decision)
-
-
-class ConfirmConcurrencyScreen(ModalScreen[bool]):
-    """Confirm an unusually high user-query concurrency limit."""
-
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("left", "select_confirm", "Select confirm", show=False, priority=True),
-        Binding("right", "select_cancel", "Select cancel", show=False, priority=True),
-        Binding("y", "confirm", "Confirm", show=False),
-        Binding("n,escape", "cancel", "Cancel", show=False),
-    ]
-
-    CSS = """
-    ConfirmConcurrencyScreen {
-        align: center middle;
-    }
-    #concurrency-dialog {
-        width: 70%;
-        max-width: 80;
-        height: auto;
-        border: round $warning;
-        background: $panel;
-        padding: 1 2;
-    }
-    #concurrency-buttons {
-        height: 3;
-        align-horizontal: center;
-    }
-    """
-
-    def __init__(self, value: int) -> None:
-        super().__init__()
-        self.value = value
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="concurrency-dialog"):
-            yield Static(
-                f"Allow up to {self.value} concurrent user queries? "
-                "This can overload database services.",
-                markup=False,
-            )
-            with Horizontal(id="concurrency-buttons"):
-                yield Button("Apply [Y]", variant="warning", id="concurrency-confirm")
-                yield Button("Cancel [N]", id="concurrency-cancel")
-
-    def action_confirm(self) -> None:
-        self.dismiss(True)
-
-    def action_cancel(self) -> None:
-        self.dismiss(False)
-
-    def action_select_confirm(self) -> None:
-        self.query_one("#concurrency-confirm", Button).focus()
-
-    def action_select_cancel(self) -> None:
-        self.query_one("#concurrency-cancel", Button).focus()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "concurrency-confirm")
 
 
 class SqlExplorerTabCommandsMixin:
@@ -372,7 +313,6 @@ class SqlExplorerTabCommandsMixin:
 
 __all__ = [
     "CloseDecision",
-    "ConfirmConcurrencyScreen",
     "NewTabButton",
     "SaveChangesScreen",
     "SqlExplorerTabCommandsMixin",

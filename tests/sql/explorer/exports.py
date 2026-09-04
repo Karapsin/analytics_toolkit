@@ -111,9 +111,23 @@ class ExportHarness(SqlExplorerExportCommandsMixin):
 
     def _export_in_worker(self, output_format: str, path: Path, *_args: object) -> None:
         self.writes.append((output_format, path))
+        self.workspace.busy = False
+        self.workspace.query_state = "ready"
+        self.workspace.operation_database = None
 
     def _drain_query_queue(self) -> None:
         pass
+
+    def _database_is_busy(self, connection_key: str) -> bool:
+        normalized = connection_key.casefold()
+        return any(
+            workspace.busy
+            and (
+                getattr(workspace, "operation_database", None) or workspace.session.database
+            ).connection_key.casefold()
+            == normalized
+            for workspace in self._workspaces.values()
+        )
 
     def _remove_workspace(self, tab_id: str) -> None:
         self.removed.append(tab_id)
@@ -345,3 +359,31 @@ def test_export_callbacks_ignore_closed_tabs_and_finish_closing_tabs(tmp_path: P
 
     assert application.removed == ["1", "1"]
     assert application.exit_checks == 2
+
+
+def test_export_blocks_only_when_its_database_has_active_sql(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        plan = build_execution_plan("select value from sample", "gp")
+        state = SimpleNamespace(plan=plan, dataframe=pd.DataFrame({"value": [1]}), truncated=False)
+        application = ExportHarness(state)
+        busy_workspace = SimpleNamespace(
+            busy=True,
+            operation_database=None,
+            session=SimpleNamespace(database=SimpleNamespace(connection_key="gp")),
+        )
+        application._workspaces["busy"] = busy_workspace
+        application.workspace.session.database = SimpleNamespace(
+            connection_key="lake",
+            backend="trino",
+        )
+
+        application._start_export_command("csv", [])
+        assert isinstance(application.screens[-1][0], NewFileScreen)
+
+        application.workspace.session.database = SimpleNamespace(connection_key="gp", backend="gp")
+        application._write_export("csv", tmp_path / "blocked.csv", "1")
+
+        assert application.writes == []
+        assert "on gp" in application.notices[-1]
+
+    asyncio.run(exercise())

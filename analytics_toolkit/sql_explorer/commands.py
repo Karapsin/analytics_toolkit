@@ -21,7 +21,6 @@ HELP_TEXT = """Commands
   db DB_KEY                   switch the configured connection
   shortcut KEY|reset          change the primary run shortcut
   confirm on|off|toggle       control mutation confirmation
-  concurrency N               set the global user-query concurrency limit
   clear query|results|all     clear workspace content
   to_excel                    save the current result as an Excel workbook
   to_csv                      save the current result as CSV

@@ -83,14 +83,13 @@ reuses the active clean untitled tab or opens a new tab, preserving the current
 workspace. New tabs inherit the active database, after which `db DB_KEY` changes
 only the selected tab.
 
-User queries enter one global FIFO queue. The default concurrency is one across
-all tabs, each tab may have only one queued or active query, and the SQL plus
-database are captured when Run is pressed. Use `concurrency N` to persist a
-different positive limit; values above three require overload confirmation.
-Lowering the limit does not cancel work already running. Metadata completion
-uses separate FIFO queues: tabs on the same database alias share one queue and
-cache, while different aliases have independent queues that may run in parallel
-with user SQL.
+User queries enter a shared FIFO queue for their selected database. At most one
+user query runs on each database across all tabs, while queries for different
+databases may run in parallel. Each tab may have only one queued or active
+query, and the SQL plus database are captured when Run is pressed. Metadata
+completion uses separate FIFO queues: tabs on the same database alias share one
+queue and cache, while different aliases have independent queues that may run
+in parallel with user SQL.
 
 ## Editor and completion
 
@@ -244,7 +243,6 @@ Enter commands in the lower panel, with or without a leading colon:
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation
-- `concurrency N` - set and save the global user-query concurrency limit
 - `clear query|results|all` - clear workspace content
 - `to_excel` - choose a project directory and save the current result as `.xlsx`
 - `to_csv` - choose a project directory and save the current result as `.csv`
@@ -252,7 +250,7 @@ Enter commands in the lower panel, with or without a leading colon:
 - `exit` or `quit` - close the Explorer, requesting targeted cancellation first
   when user SQL is running
 
-The confirmation choice, query concurrency, and primary run shortcut are saved
+The confirmation choice and primary run shortcut are saved
 in the user's config directory. SQL text is not persisted. The export commands first ask for one
 filename with the required suffix, then reuse the project directory browser. An
 existing destination requires replacement confirmation. If a result has more than

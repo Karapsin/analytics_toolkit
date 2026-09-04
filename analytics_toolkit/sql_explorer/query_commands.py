@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class SqlExplorerQueryCommandsMixin:
-    """Run immutable tab snapshots through one bounded global FIFO queue."""
+    """Run immutable tab snapshots through one FIFO queue per database."""
 
     def action_run_query(self) -> None:
         app = cast("Any", self)
@@ -87,12 +87,12 @@ class SqlExplorerQueryCommandsMixin:
 
     def _drain_query_queue(self) -> None:
         app = cast("Any", self)
-        if any(
-            workspace.busy and workspace.running_job_id is None
+        blocked_databases = {
+            (workspace.operation_database or workspace.session.database).connection_key
             for workspace in app._workspaces.values()
-        ):
-            return
-        for job in app._query_scheduler.take_startable():
+            if workspace.busy and workspace.running_job_id is None
+        }
+        for job in app._query_scheduler.take_startable(blocked_databases):
             workspace = app._workspaces.get(job.tab_id)
             if workspace is None:
                 app._query_scheduler.complete(job.job_id)
@@ -105,6 +105,20 @@ class SqlExplorerQueryCommandsMixin:
             app._set_notice(f"Running via sql.{job.plan.route.value}...", workspace)
             app._update_status(workspace)
             app._execute_in_worker(job, workspace.session)
+
+    def _database_is_busy(self, connection_key: str) -> bool:
+        app = cast("Any", self)
+        normalized = connection_key.casefold()
+        if app._query_scheduler.is_database_active(normalized):
+            return True
+        return any(
+            workspace.busy
+            and (
+                workspace.operation_database or workspace.session.database
+            ).connection_key.casefold()
+            == normalized
+            for workspace in app._workspaces.values()
+        )
 
     @work(thread=True, group="sql-explorer", exclusive=False, exit_on_error=False)
     def _execute_in_worker(

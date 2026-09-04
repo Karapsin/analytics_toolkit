@@ -37,15 +37,9 @@ def test_session_validates_database_and_persists_preferences(
     assert session.set_run_binding("F8").run_binding == "f8"
     assert session.set_run_binding("reset").run_binding == "ctrl+enter"
     assert session.set_confirmation(enabled=False).confirm_mutations is False
-    assert session.set_query_concurrency(2).max_concurrent_queries == 2
     assert runtime.load_settings(tmp_path / "settings.json").settings == ExplorerSettings(
         confirm_mutations=False,
-        max_concurrent_queries=2,
     )
-    with pytest.raises(SqlExplorerConfigurationError, match="positive integer"):
-        session.set_query_concurrency(0)
-    with pytest.raises(SqlExplorerConfigurationError, match="positive integer"):
-        session.set_query_concurrency(True)
 
 
 def test_session_switches_database(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

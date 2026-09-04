@@ -104,8 +104,12 @@ class SqlExplorerExportCommandsMixin:
         if arguments:
             app.show_error(SqlExplorerConfigurationError(f"Usage: {command}"))
             return
-        if any(candidate.busy for candidate in app._workspaces.values()):
-            app._set_notice("Wait for the current SQL operation before exporting.", workspace)
+        connection_key = workspace.session.database.connection_key
+        if app._database_is_busy(connection_key):
+            app._set_notice(
+                f"Wait for the current SQL operation on {connection_key} before exporting.",
+                workspace,
+            )
             return
         table = workspace.result_table
         if not workspace.results_open or table.styles.display == "none":
@@ -255,9 +259,17 @@ class SqlExplorerExportCommandsMixin:
         workspace = app._workspaces.get(tab_id or app._active_tab_id)
         if workspace is None:
             return
+        connection_key = workspace.session.database.connection_key
+        if app._database_is_busy(connection_key):
+            app._set_notice(
+                f"Wait for the current SQL operation on {connection_key} before exporting.",
+                workspace,
+            )
+            return
         workspace.busy = True
         workspace.cancelling = False
         workspace.query_state = "running"
+        workspace.operation_database = workspace.session.database
         app._set_notice(f"Exporting query result to {path}...", workspace)
         app._update_status(workspace)
         self._export_in_worker(output_format, path, workspace.tab_id, workspace.session)

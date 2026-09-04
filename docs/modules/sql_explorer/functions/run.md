@@ -37,8 +37,9 @@ sql_explorer.run()
   accept terminal-forwarded Command/Fn-like events when available.
 - `Ctrl+T` creates a complete workspace tab, `Ctrl+W` closes it safely, and
   `Ctrl+Tab` / `Ctrl+Shift+Tab` switch with wraparound.
-- User SQL is queued globally with concurrency one by default. Metadata uses a
-  separate shared FIFO queue for each database alias.
+- User SQL uses a shared FIFO queue per database, with at most one active user
+  query on each database. Metadata uses a separate shared FIFO queue for each
+  database alias.
 - `Ctrl+O`, `Cmd+O` when forwarded, `open`, or `mode navigation` opens a
   read-only browser rooted at the running process's current directory. Its path
   input supports Tab completion; every in-root file is visible, but only `.sql`

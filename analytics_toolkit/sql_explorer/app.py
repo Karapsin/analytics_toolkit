@@ -29,7 +29,6 @@ from .runtime import format_duration
 from .scheduling import ExplorerQueryScheduler
 from .styles import APP_CSS
 from .tabs import (
-    ConfirmConcurrencyScreen,
     NewTabButton,
     SqlExplorerTabCommandsMixin,
     TabCloseButton,
@@ -56,7 +55,6 @@ if TYPE_CHECKING:
     from .runtime import ExplorerSession
 
 _SLOW_QUERY_SECONDS = 300
-_CONCURRENCY_WARNING_THRESHOLD = 3
 
 
 def _remove_dynamic_binding(bindings: Any, key: str) -> None:
@@ -121,7 +119,7 @@ class SqlExplorerApp(
         initial = SqlExplorerWorkspace("1", 1, session)
         self._workspaces: dict[str, SqlExplorerWorkspace] = {"1": initial}
         self._tab_order: list[str] = ["1"]
-        self._query_scheduler = ExplorerQueryScheduler(session.settings.max_concurrent_queries)
+        self._query_scheduler = ExplorerQueryScheduler()
         self._completion_pool = CompletionCoordinatorPool()
         self._exit_requested = False
         self._exit_dirty_tabs: list[str] = []
@@ -535,7 +533,6 @@ class SqlExplorerApp(
         handlers = {
             "cancel": self._command_cancel,
             "clear": self._command_clear,
-            "concurrency": self._command_concurrency,
             "confirm": self._command_confirmation,
             "db": self._command_database,
             "exit": self._command_exit,
@@ -674,43 +671,6 @@ class SqlExplorerApp(
         self._update_all_statuses()
         state = "on" if settings.confirm_mutations else "off"
         self._set_notice(f"Mutation confirmation is {state}.")
-
-    def _command_concurrency(self, arguments: list[str]) -> None:
-        if len(arguments) != 1:
-            self.show_error(SqlExplorerConfigurationError("Usage: concurrency N"))
-            return
-        try:
-            value = int(arguments[0])
-        except ValueError:
-            self.show_error(
-                SqlExplorerConfigurationError("Query concurrency must be a positive integer.")
-            )
-            return
-        if value < 1:
-            self.show_error(
-                SqlExplorerConfigurationError("Query concurrency must be a positive integer.")
-            )
-            return
-        if value > _CONCURRENCY_WARNING_THRESHOLD:
-            self.push_screen(
-                ConfirmConcurrencyScreen(value),
-                lambda confirmed: self._apply_concurrency(value) if confirmed else None,
-            )
-            return
-        self._apply_concurrency(value)
-
-    def _apply_concurrency(self, value: int) -> None:
-        try:
-            settings = self.session.set_query_concurrency(value)
-        except Exception as exc:  # noqa: BLE001 -- settings errors are rendered in the TUI.
-            self.show_error(exc)
-            return
-        for workspace in self._workspaces.values():
-            workspace.session.settings = settings
-        self._query_scheduler.set_concurrency(value)
-        self._update_all_statuses()
-        self._set_notice(f"User query concurrency: {value}.")
-        self._drain_query_queue()
 
     def _command_clear(self, arguments: list[str]) -> None:
         if len(arguments) != 1 or arguments[0].lower() not in {"query", "results", "all"}:

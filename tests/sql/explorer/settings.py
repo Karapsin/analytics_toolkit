@@ -27,7 +27,7 @@ def test_missing_settings_use_safe_defaults(tmp_path: Path) -> None:
     assert loaded.warning is None
 
 
-def test_version_one_settings_migrate_to_default_query_concurrency(tmp_path: Path) -> None:
+def test_version_one_settings_migrate_to_current_version(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(
         '{"version": 1, "run_binding": "f5", "confirm_mutations": true}',
@@ -38,7 +38,6 @@ def test_version_one_settings_migrate_to_default_query_concurrency(tmp_path: Pat
 
     assert loaded.warning is None
     assert loaded.settings.version == 2
-    assert loaded.settings.max_concurrent_queries == 1
 
 
 def test_settings_round_trip_atomically_with_private_permissions(tmp_path: Path) -> None:
@@ -79,8 +78,6 @@ def test_shortcut_aliases_are_normalized(value: str, expected: str) -> None:
         '{"version": 99, "run_binding": "f5", "confirm_mutations": true}',
         '{"version": 1, "run_binding": 5, "confirm_mutations": true}',
         '{"version": 1, "run_binding": "f5", "confirm_mutations": "yes"}',
-        '{"version": 2, "run_binding": "f5", "confirm_mutations": true, '
-        '"max_concurrent_queries": 0}',
     ],
 )
 def test_invalid_settings_are_ignored_with_warning(tmp_path: Path, payload: str) -> None:

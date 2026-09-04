@@ -156,8 +156,9 @@ its dataframe index. `Ctrl+C` emits
 OSC 52 first so an SSH client terminal can copy into its local clipboard;
 terminal policy may disable OSC 52, in which case Pyperclip or the in-memory
 fallback remains available. Use the `Interrupt` button or the `cancel` command
-for the active tab's user query. User SQL has one global FIFO queue with
-concurrency one by default; metadata has a separate shared queue per database.
+for the active tab's user query. User SQL has one shared FIFO queue per database,
+with at most one active user query on each database; metadata has its own
+separate shared queue per database.
 See the
 [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
 for navigation, completion, clipboard, and safety details.

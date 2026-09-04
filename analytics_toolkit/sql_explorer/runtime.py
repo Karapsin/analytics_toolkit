@@ -149,14 +149,6 @@ class ExplorerSession:
         save_settings(self.settings, self.settings_path)
         return self.settings
 
-    def set_query_concurrency(self, value: int) -> ExplorerSettings:
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            message = "Query concurrency must be a positive integer."
-            raise SqlExplorerConfigurationError(message)
-        self.settings = replace(self.settings, max_concurrent_queries=value)
-        save_settings(self.settings, self.settings_path)
-        return self.settings
-
     def plan(self, sql_text: str) -> ExplorerExecutionPlan:
         return build_execution_plan(sql_text, self.database.backend)
 

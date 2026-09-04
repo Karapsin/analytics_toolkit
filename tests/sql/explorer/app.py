@@ -68,10 +68,6 @@ class FakeSession:
         self.settings = replace(self.settings, confirm_mutations=enabled)
         return self.settings
 
-    def set_query_concurrency(self, value: int) -> ExplorerSettings:
-        self.settings = replace(self.settings, max_concurrent_queries=value)
-        return self.settings
-
     def cancel_active(self) -> ExplorerCancelResult:
         self.cancel_calls += 1
         return ExplorerCancelResult(1, 1, "Cancellation requested for 1 query.")
@@ -531,9 +527,6 @@ def test_command_validation_branches(
             application._command_database([])
             application._command_shortcut([])
             application._command_confirmation([])
-            application._command_concurrency([])
-            application._command_concurrency(["many"])
-            application._command_concurrency(["0"])
             application._command_confirmation(["on"])
             application._command_clear([])
 
@@ -554,12 +547,6 @@ def test_command_validation_branches(
                 lambda **kwargs: (_ for _ in ()).throw(OSError("settings failed")),
             )
             application._command_confirmation(["toggle"])
-            monkeypatch.setattr(
-                session,
-                "set_query_concurrency",
-                lambda value: (_ for _ in ()).throw(OSError(value)),
-            )
-            application._apply_concurrency(2)
 
             await pilot.pause()
 
