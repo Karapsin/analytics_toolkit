@@ -1,5 +1,5 @@
 """Save and new-file commands for the SQL Explorer."""
-# ruff: noqa: SLF001
+# ruff: noqa: FBT003, PLR0913, SLF001
 
 from __future__ import annotations
 
@@ -11,9 +11,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 
-from .editor import SqlEditor
 from .errors import SqlExplorerConfigurationError
-from .widgets import DiscardChangesScreen, FileNavigationScreen
+from .widgets import FileNavigationScreen
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -113,21 +112,33 @@ class SqlExplorerFileCommandsMixin:
 
     def action_save_file(self) -> None:
         app = cast("Any", self)
-        path = app._current_file
+        if len(app.screen_stack) > 1:
+            return
+        workspace = app.active_workspace
+        if workspace.current_file is None:
+            app._start_new_sql_file(workspace, text=workspace.editor.text)
+        else:
+            app._save_workspace(workspace)
+
+    def _save_workspace(self, workspace: Any) -> bool:
+        app = cast("Any", self)
+        path = workspace.current_file
         if path is None:
-            app._set_notice("Open an existing .sql file before saving.")
-            return
+            return False
         if path.suffix.casefold() != ".sql" or not path.is_file():
-            app.show_error(OSError("The opened SQL file no longer exists."))
-            return
+            app.show_error(OSError("The opened SQL file no longer exists."), workspace)
+            return False
+        text = workspace.editor.text
         try:
-            path.write_text(app.query_one(SqlEditor).text, encoding="utf-8")
+            path.write_text(text, encoding="utf-8")
         except OSError as exc:
-            app.show_error(exc)
-            return
-        app._saved_text = app.query_one(SqlEditor).text
-        app._set_notice(f"Saved {path}")
-        app._update_status()
+            app.show_error(exc, workspace)
+            return False
+        workspace.saved_text = text
+        app._set_notice(f"Saved {path}", workspace)
+        app._refresh_tab(workspace)
+        app._update_status(workspace)
+        return True
 
     def _command_save(self, arguments: list[str]) -> None:
         app = cast("Any", self)
@@ -139,53 +150,155 @@ class SqlExplorerFileCommandsMixin:
     def action_new_sql_file(self) -> None:
         app = cast("Any", self)
         if len(app.screen_stack) == 1:
-            app.push_screen(NewSqlFileScreen(), app._new_sql_filename_selected)
-
-    def _new_sql_filename_selected(self, filename: str | None) -> None:
-        app = cast("Any", self)
-        if filename is not None:
-            app.push_screen(
-                FileNavigationScreen(Path.cwd(), select_directory=True),
-                lambda directory: app._new_sql_directory_selected(filename, directory),
+            workspace = app.active_workspace
+            app._start_new_sql_file(
+                workspace,
+                text="",
+                new_tab=not workspace.is_clean_untitled,
             )
 
-    def _new_sql_directory_selected(self, filename: str, directory: Path | None) -> None:
+    def _start_new_sql_file(
+        self,
+        workspace: Any,
+        *,
+        text: str,
+        after_create: Any = None,
+        new_tab: bool = False,
+    ) -> None:
         app = cast("Any", self)
+        app.push_screen(
+            NewSqlFileScreen(),
+            lambda filename: app._new_sql_filename_selected(
+                filename,
+                workspace,
+                text=text,
+                after_create=after_create,
+                new_tab=new_tab,
+            ),
+        )
+
+    def _new_sql_filename_selected(
+        self,
+        filename: str | None,
+        workspace: Any = None,
+        *,
+        text: str = "",
+        after_create: Any = None,
+        new_tab: bool = False,
+    ) -> None:
+        app = cast("Any", self)
+        workspace = workspace or app.active_workspace
+        if filename is None:
+            if after_create is not None:
+                after_create(False)
+            return
+        app.push_screen(
+            FileNavigationScreen(Path.cwd(), select_directory=True),
+            lambda directory: app._new_sql_directory_selected(
+                filename,
+                directory,
+                workspace,
+                text=text,
+                after_create=after_create,
+                new_tab=new_tab,
+            ),
+        )
+
+    def _new_sql_directory_selected(
+        self,
+        filename: str,
+        directory: Path | None,
+        workspace: Any = None,
+        *,
+        text: str | None = None,
+        after_create: Any = None,
+        new_tab: bool = False,
+    ) -> None:
+        app = cast("Any", self)
+        workspace = workspace or app.active_workspace
         if directory is None:
+            if after_create is not None:
+                after_create(False)
             return
         path = (directory / filename).resolve()
         try:
             path.relative_to(Path.cwd().resolve())
         except ValueError:
             error = SqlExplorerConfigurationError("Destination must remain in this project.")
-            app.show_error(error)
+            app.show_error(error, workspace)
+            if after_create is not None:
+                after_create(False)
             return
         if path.exists():
-            app.show_error(SqlExplorerConfigurationError(f"File already exists: {path}"))
-            return
-        editor = app.query_one(SqlEditor)
-        if editor.text != app._saved_text:
-            app.push_screen(
-                DiscardChangesScreen(path),
-                lambda discard: app._create_sql_file(path) if discard else None,
+            app.show_error(
+                SqlExplorerConfigurationError(f"File already exists: {path}"),
+                workspace,
             )
+            if after_create is not None:
+                after_create(False)
             return
-        text = editor.text if app._current_file is not None and editor.text else ""
-        app._create_sql_file(path, text=text)
+        file_text = (
+            workspace.editor.text
+            if text is None and workspace.current_file is not None
+            else text or ""
+        )
+        app._create_sql_file(
+            path,
+            text=file_text,
+            workspace=workspace,
+            after_create=after_create,
+            new_tab=new_tab,
+        )
 
-    def _create_sql_file(self, path: Path, *, text: str = "") -> None:
+    def _create_sql_file(
+        self,
+        path: Path,
+        *,
+        text: str = "",
+        workspace: Any = None,
+        after_create: Any = None,
+        new_tab: bool = False,
+    ) -> bool:
         app = cast("Any", self)
+        workspace = workspace or app.active_workspace
         try:
             with path.open("x", encoding="utf-8") as file:
                 file.write(text)
         except OSError as exc:
-            app.show_error(exc)
-            return
-        editor = app.query_one(SqlEditor)
-        editor.text = text
-        editor.cursor_location = (0, 0)
-        app._current_file = path
-        app._saved_text = text
-        app._set_notice(f"Created {path}")
-        app._update_status()
+            app.show_error(exc, workspace)
+            if after_create is not None:
+                after_create(False)
+            return False
+        target = app._add_workspace() if new_tab else workspace
+        if target.is_mounted:
+            app._finish_created_sql_file(target, path, text, after_create)
+        else:
+            target.pending_mount_action = lambda: app._finish_created_sql_file(
+                target,
+                path,
+                text,
+                after_create,
+            )
+        return True
+
+    def _finish_created_sql_file(
+        self,
+        workspace: Any,
+        path: Path,
+        text: str,
+        after_create: Any,
+    ) -> None:
+        app = cast("Any", self)
+        editor = workspace.editor
+        if editor.text != text:
+            editor.text = text
+            editor.cursor_location = (0, 0)
+        workspace.current_file = path
+        workspace.saved_text = text
+        app._activate_tab(workspace.tab_id)
+        app._set_notice(f"Created {path}", workspace)
+        app._refresh_tab(workspace)
+        app._update_status(workspace)
         editor.focus()
+        if after_create is not None:
+            after_create(True)

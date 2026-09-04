@@ -290,6 +290,7 @@ def test_finish_exit_and_non_completion_event_branches(
             plan = build_execution_plan("select 1", "gp")
             result = session.execute(plan)
 
+            application._finish_result(result)
             application._exit_after_cancel = True
             application._finish_result(result)
             application._exit_after_cancel = True
@@ -315,7 +316,7 @@ def test_status_updates_ignore_unavailable_workspace_widgets(
         application._update_status()
         application._set_notice("not mounted")
         async with application.run_test():
-            workspace = application.screen_stack[0]
+            workspace = application.active_workspace
 
             def missing(*_args: object, **_kwargs: object) -> None:
                 message = "remounting"

@@ -565,9 +565,11 @@ class CompletionMenu(OptionList):
         return self.suggestions[self.highlighted]
 
     def action_close(self) -> None:
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
         self.styles.display = "none"
         self.suggestions = ()
-        cast("SqlExplorerApp", self.app).query_one(SqlEditor).focus()
+        workspace_for(self).editor.focus()
 
     def action_accept(self) -> None:
         cast("SqlExplorerApp", self.app).action_plain_tab()
@@ -587,7 +589,9 @@ class FindReplaceBar(Vertical):
             yield Button("Replace All", id="replace-all")
 
     def open(self) -> None:
-        editor = self.app.query_one("#query-editor", SqlEditor)
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        editor = workspace_for(self).editor
         search_input = self.query_one("#find-pattern", Input)
         selected = editor.selected_text
         if selected and "\n" not in selected:
@@ -620,30 +624,43 @@ class FindReplaceBar(Vertical):
         controls[(index + direction) % len(controls)].focus()
 
     def action_close(self) -> None:
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
         self.styles.display = "none"
         cast("SqlExplorerApp", self.app).disable_find_navigation()
-        editor = self.app.query_one("#query-editor", SqlEditor)
+        editor = workspace_for(self).editor
         editor.clear_search()
         editor.focus()
 
     def find_next(self) -> None:
-        position = self.app.query_one("#query-editor", SqlEditor).select_next_search_match()
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        position = workspace_for(self).editor.select_next_search_match()
         self._update_notice(position)
 
     def replace_current(self) -> None:
-        editor = self.app.query_one("#query-editor", SqlEditor)
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        editor = workspace_for(self).editor
         replacement = self.query_one("#replace-pattern", Input).value
         editor.replace_current_search_match(replacement)
         self._update_notice(editor.search_position)
 
     def replace_all(self) -> None:
-        editor = self.app.query_one("#query-editor", SqlEditor)
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        editor = workspace_for(self).editor
         replacement = self.query_one("#replace-pattern", Input).value
         count = editor.replace_all_search_matches(replacement)
-        cast("SqlExplorerApp", self.app).show_notice(f"Replaced {count} occurrence(s).")
+        cast("SqlExplorerApp", self.app).show_notice(
+            f"Replaced {count} occurrence(s).",
+            workspace_for(self),
+        )
 
     def _update_notice(self, position: int | None = None) -> None:
-        editor = self.app.query_one("#query-editor", SqlEditor)
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        editor = workspace_for(self).editor
         pattern = self.query_one("#find-pattern", Input).value
         if not pattern:
             message = "Enter text to find."
@@ -653,7 +670,7 @@ class FindReplaceBar(Vertical):
             message = f"Found {editor.search_match_count} occurrence(s)."
         else:
             message = f"Match {position} of {editor.search_match_count}."
-        cast("SqlExplorerApp", self.app).show_notice(message)
+        cast("SqlExplorerApp", self.app).show_notice(message, workspace_for(self))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "find-pattern":
@@ -664,7 +681,9 @@ class FindReplaceBar(Vertical):
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "find-pattern":
             return
-        self.app.query_one("#query-editor", SqlEditor).set_search_pattern(event.value)
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        workspace_for(self).editor.set_search_pattern(event.value)
         self._update_notice()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

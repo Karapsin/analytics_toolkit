@@ -156,6 +156,10 @@ class SqlEditor(TextArea):
             return self.text
         return "\n".join(self.document.get_text_range(*sorted(selection)) for selection in selected)
 
+    def execution_text(self) -> str:
+        """Return all selected SQL in document order, or the complete buffer."""
+        return self.command_copy_text()
+
     def paste_clipboard(self, value: str) -> bool:
         if not value:
             return False
@@ -319,9 +323,9 @@ class SqlEditor(TextArea):
 
     async def _on_key(self, event: events.Key) -> None:
         application = cast("SqlExplorerApp", self.app)
-        from .widgets import CompletionMenu  # noqa: PLC0415 -- avoids widget import cycle.
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
-        menu = application.query_one(CompletionMenu)
+        menu = workspace_for(self).completion_menu
         if menu.is_open and event.key in {"up", "down", "enter", "escape"}:
             event.stop()
             event.prevent_default()

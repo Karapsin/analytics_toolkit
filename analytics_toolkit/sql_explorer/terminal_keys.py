@@ -5,6 +5,8 @@ from importlib import import_module
 from typing import MutableMapping, cast
 
 _LEGACY_KEYPAD_ENTER_SEQUENCE = "\x1bOM"
+_CONTROL_COMPATIBLE_MODIFIERS = frozenset({"hyper", "meta", "super"})
+_MODIFIED_KEY_PARTS = 2
 
 
 class _ExplorerKey(str, Enum):
@@ -21,4 +23,17 @@ def install_terminal_key_compatibility() -> None:
     sequence_keys[_LEGACY_KEYPAD_ENTER_SEQUENCE] = (_ExplorerKey.KEYPAD_ENTER,)
 
 
-__all__ = ["install_terminal_key_compatibility"]
+def control_compatible_key(key: str) -> str:
+    """Map forwarded Command/Fn-like modifiers to an Explorer Ctrl chord."""
+    tokens = key.split("+")
+    if len(tokens) < _MODIFIED_KEY_PARTS or tokens[-1] == "enter":
+        return key
+    modifiers = set(tokens[:-1])
+    if not modifiers.intersection(_CONTROL_COMPATIBLE_MODIFIERS):
+        return key
+    modifiers.difference_update(_CONTROL_COMPATIBLE_MODIFIERS)
+    modifiers.add("ctrl")
+    return "+".join((*sorted(modifiers), tokens[-1]))
+
+
+__all__ = ["control_compatible_key", "install_terminal_key_compatibility"]

@@ -37,9 +37,15 @@ def test_session_validates_database_and_persists_preferences(
     assert session.set_run_binding("F8").run_binding == "f8"
     assert session.set_run_binding("reset").run_binding == "ctrl+enter"
     assert session.set_confirmation(enabled=False).confirm_mutations is False
+    assert session.set_query_concurrency(2).max_concurrent_queries == 2
     assert runtime.load_settings(tmp_path / "settings.json").settings == ExplorerSettings(
-        confirm_mutations=False
+        confirm_mutations=False,
+        max_concurrent_queries=2,
     )
+    with pytest.raises(SqlExplorerConfigurationError, match="positive integer"):
+        session.set_query_concurrency(0)
+    with pytest.raises(SqlExplorerConfigurationError, match="positive integer"):
+        session.set_query_concurrency(True)
 
 
 def test_session_switches_database(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -50,6 +56,45 @@ def test_session_switches_database(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert selected.connection_key == "warehouse"
     assert session.database == selected
     assert session.plan("select 1").route is ExecutionRoute.READ
+
+
+def test_session_fork_is_idle_and_keeps_an_independent_database_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    session.active_query_label = "running"
+
+    child = session.fork()
+    child.database = runtime.DatabaseSelection("warehouse", "gp")
+
+    assert child.active_query_label is None
+    assert child.settings is session.settings
+    assert child.database.connection_key == "warehouse"
+    assert session.database.connection_key == "gp"
+
+
+def test_execute_and_export_keep_the_pressed_database_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    def fake_read(db_key: str, *_args: Any, **_kwargs: Any) -> pd.DataFrame:
+        calls.append(db_key)
+        return pd.DataFrame({"value": range(201 if len(calls) == 1 else 2)})
+
+    monkeypatch.setattr(runtime.sql, "read", fake_read)
+    snapshot = runtime.DatabaseSelection("warehouse", "gp")
+    session.execute(
+        build_execution_plan("select value from sample", "gp"),
+        database=snapshot,
+    )
+    session.database = runtime.DatabaseSelection("other", "gp")
+    session.export_dataframe()
+
+    assert calls == ["warehouse", "warehouse"]
 
 
 def test_read_execution_displays_only_two_hundred_rows(
@@ -117,6 +162,25 @@ def test_export_replays_capped_query_without_display_limit(
     assert "LIMIT 201" in calls[0]
     assert "LIMIT 201" not in calls[1]
     assert calls[1] == "select value from sample"
+
+
+def test_export_clears_its_matching_cancellation_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    plan = build_execution_plan("select value from sample", "gp")
+    session._export_state = runtime.ExplorerExportState(plan, None, truncated=True)
+
+    def fake_read(*_args: Any, **kwargs: Any) -> pd.DataFrame:
+        session._cancellation_requested_for = kwargs["query_label"]
+        return pd.DataFrame({"value": [1]})
+
+    monkeypatch.setattr(runtime.sql, "read", fake_read)
+
+    session.export_dataframe()
+
+    assert session._cancellation_requested_for is None
 
 
 def test_export_uses_cached_unwrapped_result_without_replaying(

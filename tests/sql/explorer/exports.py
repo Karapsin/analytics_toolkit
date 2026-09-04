@@ -48,37 +48,78 @@ class FailingExportSession(ExportSession):
 
 class ExportHarness(SqlExplorerExportCommandsMixin):
     def __init__(self, state: SimpleNamespace) -> None:
-        self.busy = False
-        self.cancelling = False
-        self.results_open = True
         self.session = SimpleNamespace(
             export_state=lambda: state,
             settings=SimpleNamespace(confirm_mutations=True),
             database=SimpleNamespace(connection_key="gp", backend="gp"),
         )
+        self.workspace = SimpleNamespace(
+            tab_id="1",
+            busy=False,
+            cancelling=False,
+            closing=False,
+            results_open=True,
+            query_state="ready",
+            session=self.session,
+            result_table=SimpleNamespace(styles=SimpleNamespace(display="block")),
+            reset_query_state=lambda: None,
+        )
+        self._active_tab_id = "1"
+        self._workspaces = {"1": self.workspace}
         self.errors: list[Exception] = []
         self.notices: list[str] = []
         self.screens: list[tuple[object, Any]] = []
         self.writes: list[tuple[str, Path]] = []
         self.status_updates = 0
+        self.removed: list[str] = []
+        self.exit_checks = 0
 
     def query_one(self, _selector: str, _widget_type: object) -> SimpleNamespace:
         return SimpleNamespace(styles=SimpleNamespace(display="block"))
 
-    def show_error(self, error: Exception) -> None:
+    @property
+    def active_workspace(self) -> SimpleNamespace:
+        return self.workspace
+
+    @property
+    def busy(self) -> bool:
+        return bool(self.workspace.busy)
+
+    @busy.setter
+    def busy(self, value: bool) -> None:
+        self.workspace.busy = value
+
+    @property
+    def results_open(self) -> bool:
+        return bool(self.workspace.results_open)
+
+    @results_open.setter
+    def results_open(self, value: bool) -> None:
+        self.workspace.results_open = value
+
+    def show_error(self, error: Exception, _workspace: object = None) -> None:
         self.errors.append(error)
 
-    def _set_notice(self, notice: str) -> None:
+    def _set_notice(self, notice: str, _workspace: object = None) -> None:
         self.notices.append(notice)
 
-    def _update_status(self) -> None:
+    def _update_status(self, _workspace: object = None) -> None:
         self.status_updates += 1
 
     def push_screen(self, screen: object, callback: Any) -> None:
         self.screens.append((screen, callback))
 
-    def _export_in_worker(self, output_format: str, path: Path) -> None:
+    def _export_in_worker(self, output_format: str, path: Path, *_args: object) -> None:
         self.writes.append((output_format, path))
+
+    def _drain_query_queue(self) -> None:
+        pass
+
+    def _remove_workspace(self, tab_id: str) -> None:
+        self.removed.append(tab_id)
+
+    def _finish_exit_if_ready(self) -> None:
+        self.exit_checks += 1
 
 
 async def _wait_for(pilot: Any, predicate: Any) -> None:
@@ -285,3 +326,22 @@ def test_truncated_export_confirmation_rechecks_mutation_plan(tmp_path: Path, mo
         assert application.notices == ["Export cancelled.", "Export cancelled."]
 
     asyncio.run(exercise())
+
+
+def test_export_callbacks_ignore_closed_tabs_and_finish_closing_tabs(tmp_path: Path) -> None:
+    plan = build_execution_plan("select value from sample", "gp")
+    state = SimpleNamespace(plan=plan, dataframe=pd.DataFrame({"value": [1]}), truncated=False)
+    application = ExportHarness(state)
+
+    application._full_export_confirmed("csv", True, "missing")
+    application._export_directory_selected("csv", "result.csv", tmp_path, "missing")
+    application._write_export("csv", tmp_path / "result.csv", "missing")
+    application._finish_export(tmp_path / "result.csv", "missing")
+    application._finish_export_error(RuntimeError("closed"), "missing")
+
+    application.workspace.closing = True
+    application._finish_export(tmp_path / "result.csv", "1")
+    application._finish_export_error(RuntimeError("closing"), "1")
+
+    assert application.removed == ["1", "1"]
+    assert application.exit_checks == 2

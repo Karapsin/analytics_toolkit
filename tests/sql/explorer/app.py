@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from copy import copy
 from dataclasses import replace
-from decimal import Decimal
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -36,7 +36,7 @@ class FakeSession:
     def plan(self, sql_text: str) -> Any:
         return build_execution_plan(sql_text, self.database.backend)
 
-    def execute(self, plan: Any) -> ExplorerRunResult:
+    def execute(self, plan: Any, *, database: Any = None) -> ExplorerRunResult:
         self.executed.append(plan)
         return ExplorerRunResult(
             route=plan.route,
@@ -46,6 +46,11 @@ class FakeSession:
             truncated=False,
             status="Returned 2 row(s).",
         )
+
+    def fork(self) -> FakeSession:
+        child = copy(self)
+        child.database = copy(self.database)
+        return child
 
     def switch_database(self, key: str) -> Any:
         if key == "bad":
@@ -63,13 +68,17 @@ class FakeSession:
         self.settings = replace(self.settings, confirm_mutations=enabled)
         return self.settings
 
+    def set_query_concurrency(self, value: int) -> ExplorerSettings:
+        self.settings = replace(self.settings, max_concurrent_queries=value)
+        return self.settings
+
     def cancel_active(self) -> ExplorerCancelResult:
         self.cancel_calls += 1
         return ExplorerCancelResult(1, 1, "Cancellation requested for 1 query.")
 
 
 class ErrorSession(FakeSession):
-    def execute(self, plan: Any) -> ExplorerRunResult:
+    def execute(self, plan: Any, *, database: Any = None) -> ExplorerRunResult:
         message = plan.execution_sql
         raise RuntimeError(message)
 
@@ -81,7 +90,7 @@ class CancelErrorSession(FakeSession):
 
 
 class NoRowsSession(FakeSession):
-    def execute(self, plan: Any) -> ExplorerRunResult:
+    def execute(self, plan: Any, *, database: Any = None) -> ExplorerRunResult:
         return ExplorerRunResult(
             route=plan.route,
             dataframe=None,
@@ -522,6 +531,9 @@ def test_command_validation_branches(
             application._command_database([])
             application._command_shortcut([])
             application._command_confirmation([])
+            application._command_concurrency([])
+            application._command_concurrency(["many"])
+            application._command_concurrency(["0"])
             application._command_confirmation(["on"])
             application._command_clear([])
 
@@ -542,6 +554,12 @@ def test_command_validation_branches(
                 lambda **kwargs: (_ for _ in ()).throw(OSError("settings failed")),
             )
             application._command_confirmation(["toggle"])
+            monkeypatch.setattr(
+                session,
+                "set_query_concurrency",
+                lambda value: (_ for _ in ()).throw(OSError(value)),
+            )
+            application._apply_concurrency(2)
 
             await pilot.pause()
 
@@ -555,6 +573,14 @@ def test_workspace_and_editor_defensive_branches(
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
             editor = application.query_one(SqlEditor)
+            application.results_open = True
+            assert application.results_open is True
+            application.cancelling = False
+            assert application.cancelling is False
+            application._completion_context = None
+            assert application._completion_context is None
+            application._exit_after_cancel = False
+            assert application._exit_after_cancel is False
             editor.text = "select 1"
             application.show_message("result")
             application._command_clear(["query"])
@@ -665,17 +691,3 @@ def test_clipboard_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         assert application.paste_from_explorer_clipboard() == "fallback"
 
     asyncio.run(exercise())
-
-
-def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:
-    assert app_module._format_cell(None) == "NULL"
-    assert app_module._format_cell(float("nan")) == "NULL"
-    assert app_module._format_cell("a\nb") == "a\\nb"
-    assert app_module._format_cell("x" * 600).endswith("…")
-    assert app_module._format_cell([1, 2]) == "[1, 2]"
-    assert app_module._format_cell(Decimal("20778982.000000000000")) == "20,778,982"
-    assert app_module._format_cell(Decimal("123.4500")) == "123.45"
-    assert app_module._format_cell(Decimal("-0.000")) == "0"
-    assert app_module._format_cell(1234567) == "1,234,567"
-    assert app_module._format_cell(1234567.5) == "1,234,567.5"
-    assert app_module._format_cell(True) == "True"

@@ -60,6 +60,7 @@ class ExplorerExportState:
     plan: ExplorerExecutionPlan
     dataframe: pd.DataFrame | None
     truncated: bool
+    database: DatabaseSelection | None = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,25 @@ class ExplorerSession:
         self.active_query: ExplorerQueryState | None = None
         self.last_query: ExplorerQueryState | None = None
         self._cancellation_requested_for: str | None = None
+        self._active_database: DatabaseSelection | None = None
         self._export_state: ExplorerExportState | None = None
+
+    def fork(self) -> ExplorerSession:
+        """Create an idle tab session with the current database and settings."""
+        child = object.__new__(ExplorerSession)
+        child.__dict__.update(
+            settings=self.settings,
+            settings_warning=None,
+            settings_path=self.settings_path,
+            database=self.database,
+            active_query_label=None,
+            active_query=None,
+            last_query=None,
+            _cancellation_requested_for=None,
+            _active_database=None,
+            _export_state=None,
+        )
+        return child
 
     def switch_database(self, db_key: str) -> DatabaseSelection:
         self.database = validate_database(db_key)
@@ -130,15 +149,30 @@ class ExplorerSession:
         save_settings(self.settings, self.settings_path)
         return self.settings
 
+    def set_query_concurrency(self, value: int) -> ExplorerSettings:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            message = "Query concurrency must be a positive integer."
+            raise SqlExplorerConfigurationError(message)
+        self.settings = replace(self.settings, max_concurrent_queries=value)
+        save_settings(self.settings, self.settings_path)
+        return self.settings
+
     def plan(self, sql_text: str) -> ExplorerExecutionPlan:
         return build_execution_plan(sql_text, self.database.backend)
 
-    def execute(self, plan: ExplorerExecutionPlan) -> ExplorerRunResult:
+    def execute(
+        self,
+        plan: ExplorerExecutionPlan,
+        *,
+        database: DatabaseSelection | None = None,
+    ) -> ExplorerRunResult:
         self._export_state = None
+        operation_database = database or self.database
         query_label = f"sql_explorer run={uuid4().hex}"
         self.active_query_label = query_label
         started_at = monotonic()
         self.active_query = ExplorerQueryState(query_label, plan.route, started_at, None, "running")
+        self._active_database = operation_database
         self._cancellation_requested_for = None
         common_options = {
             "retry_cnt": 1,
@@ -149,17 +183,17 @@ class ExplorerSession:
         try:
             if plan.route is ExecutionRoute.READ:
                 result = sql.read(
-                    self.database.connection_key,
+                    operation_database.connection_key,
                     plan.execution_sql,
                     **common_options,
                 )
             elif plan.route is ExecutionRoute.EXECUTE_READ:
                 result = sql.execute_read(
-                    self.database.connection_key, plan.execution_sql, **common_options
+                    operation_database.connection_key, plan.execution_sql, **common_options
                 )
             else:
                 result = sql.execute(
-                    self.database.connection_key,
+                    operation_database.connection_key,
                     plan.execution_sql,
                     retry_policy="safe",
                     **common_options,
@@ -188,8 +222,15 @@ class ExplorerSession:
                 self.active_query = None
             if self._cancellation_requested_for == query_label:
                 self._cancellation_requested_for = None
+            if self.active_query_label is None:
+                self._active_database = None
         if run_result.dataframe is not None:
-            self._export_state = ExplorerExportState(plan, export_dataframe, run_result.truncated)
+            self._export_state = ExplorerExportState(
+                plan,
+                export_dataframe,
+                run_result.truncated,
+                operation_database,
+            )
         return run_result
 
     def export_state(self) -> ExplorerExportState:
@@ -203,10 +244,12 @@ class ExplorerSession:
             return state.dataframe.copy()
 
         plan = state.plan
+        operation_database = state.database or self.database
         query_label = f"sql_explorer export={uuid4().hex}"
         started_at = monotonic()
         self.active_query_label = query_label
         self.active_query = ExplorerQueryState(query_label, plan.route, started_at, None, "running")
+        self._active_database = operation_database
         self._cancellation_requested_for = None
         common_options = {
             "retry_cnt": 1,
@@ -217,13 +260,13 @@ class ExplorerSession:
         try:
             if plan.route is ExecutionRoute.READ:
                 result = sql.read(
-                    self.database.connection_key,
+                    operation_database.connection_key,
                     plan.full_execution_sql,
                     **common_options,
                 )
             else:
                 result = sql.execute_read(
-                    self.database.connection_key,
+                    operation_database.connection_key,
                     plan.full_execution_sql,
                     **common_options,
                 )
@@ -247,6 +290,8 @@ class ExplorerSession:
                 self.active_query = None
             if self._cancellation_requested_for == query_label:
                 self._cancellation_requested_for = None
+            if self.active_query_label is None:
+                self._active_database = None
         return dataframe
 
     @staticmethod
@@ -305,10 +350,11 @@ class ExplorerSession:
         if self.active_query is not None and self.active_query.label == query_label:
             self.active_query = replace(self.active_query, state="cancelling")
 
+        database = self._active_database or self.database
         query_ids: list[int | str] = []
         for attempt in range(_CANCEL_LOOKUP_ATTEMPTS):  # pragma: no branch
             running = sql.show_queries(
-                self.database.connection_key,
+                database.connection_key,
                 state="active",
                 retry_cnt=1,
                 timeout_increment=0,
@@ -341,7 +387,7 @@ class ExplorerSession:
         self._cancellation_requested_for = query_label
         try:
             cancelled = sql.cancel_queries(
-                self.database.connection_key,
+                database.connection_key,
                 query_ids,
                 retry_cnt=1,
                 timeout_increment=0,

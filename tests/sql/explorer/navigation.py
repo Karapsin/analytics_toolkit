@@ -233,7 +233,7 @@ def test_open_command_and_keyboard_navigation_load_utf8_file(
     asyncio.run(exercise())
 
 
-def test_dirty_buffer_requires_explicit_discard_before_file_replacement(
+def test_opening_from_a_dirty_buffer_uses_a_new_tab_and_reuses_open_files(
     tmp_path: Path,
 ) -> None:
     first = tmp_path / "first.sql"
@@ -245,19 +245,20 @@ def test_dirty_buffer_requires_explicit_discard_before_file_replacement(
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
             application.load_sql_file(first)
-            editor = application.query_one(SqlEditor)
-            editor.text = "select changed"
+            first_workspace = application.active_workspace
+            first_workspace.editor.text = "select changed"
 
             application.load_sql_file(second)
-            assert isinstance(application.screen, DiscardChangesScreen)
-            await pilot.press("escape")
             await pilot.pause()
-            assert editor.text == "select changed"
+            assert len(application._workspaces) == 2
+            assert first_workspace.editor.text == "select changed"
+            assert application.active_workspace.editor.text == "select 2"
+            second_workspace = application.active_workspace
 
             application.load_sql_file(second)
-            await pilot.press("y")
             await pilot.pause()
-            assert editor.text == "select 2"
+            assert len(application._workspaces) == 2
+            assert application.active_workspace is second_workspace
 
     asyncio.run(exercise())
 
@@ -347,6 +348,7 @@ def test_new_file_and_save_reject_invalid_destinations_and_names(
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
             application.action_save_file()
+            await pilot.press("escape")
             application._current_file = tmp_path / "missing.sql"
             application.action_save_file()
             application._command_save(["unexpected"])
@@ -359,7 +361,7 @@ def test_new_file_and_save_reject_invalid_destinations_and_names(
             editor.text = "dirty"
             application._saved_text = "saved"
             application._new_sql_directory_selected("dirty.sql", tmp_path)
-            assert isinstance(application.screen, DiscardChangesScreen)
+            assert (tmp_path / "dirty.sql").read_text(encoding="utf-8") == "dirty"
             application.action_new_sql_file()
             await pilot.press("escape")
 
@@ -436,6 +438,76 @@ def test_new_file_dialog_and_write_errors_are_reported(
     asyncio.run(exercise())
 
 
+def test_new_file_callbacks_report_every_cancel_and_completion_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    existing = tmp_path / "existing.sql"
+    existing.write_text("select 1", encoding="utf-8")
+
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        callbacks: list[bool] = []
+        async with application.run_test() as pilot:
+            workspace = application.active_workspace
+            assert application._save_workspace(workspace) is False
+
+            application._new_sql_filename_selected(None, after_create=callbacks.append)
+            application._new_sql_directory_selected(
+                "cancelled.sql",
+                None,
+                after_create=callbacks.append,
+            )
+            application._new_sql_directory_selected(
+                "outside.sql",
+                tmp_path.parent,
+                after_create=callbacks.append,
+            )
+            application._new_sql_directory_selected(
+                existing.name,
+                tmp_path,
+                after_create=callbacks.append,
+            )
+
+            path_type = type(tmp_path)
+            original_open = path_type.open
+
+            def fail_open(path: Path, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+                if path.name == "failure.sql":
+                    message = "cannot create"
+                    raise PermissionError(message)
+                return original_open(path, *args, **kwargs)
+
+            monkeypatch.setattr(path_type, "open", fail_open)
+            application._create_sql_file(
+                tmp_path / "failure.sql",
+                after_create=callbacks.append,
+            )
+            monkeypatch.setattr(path_type, "open", original_open)
+
+            workspace.editor.text = "different"
+            application._finish_created_sql_file(
+                workspace,
+                tmp_path / "finished.sql",
+                "created text",
+                callbacks.append,
+            )
+            assert workspace.editor.text == "created text"
+            assert workspace.editor.cursor_location == (0, 0)
+
+            modal = NewSqlFileScreen()
+            await application.push_screen(modal)
+            application.action_save_file()
+            application.action_new_sql_file()
+            modal.dismiss(None)
+            await pilot.pause()
+
+        assert callbacks == [False, False, False, False, False, True]
+
+    asyncio.run(exercise())
+
+
 def test_file_decode_and_directory_errors_use_result_surface(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -446,7 +518,7 @@ def test_file_decode_and_directory_errors_use_result_surface(
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
-            application.load_sql_file(invalid)
+            application._load_sql_file_now(invalid)
             assert "UnicodeDecodeError" in str(application.query_one(ResultMessage).render())
 
             def fail_entries(*_args: object, **_kwargs: object) -> list[Path]:
@@ -520,9 +592,30 @@ def test_navigation_widget_defensive_events_and_discard_buttons(
 
         screen = DiscardChangesScreen(tmp_path / "next.sql")
         dismissed: list[bool] = []
-        monkeypatch.setattr(screen, "dismiss", dismissed.append)
+
+        def record_dismiss(value: bool | None = None, *, result: bool | None = None) -> None:
+            dismissed.append(result if result is not None else bool(value))
+
+        monkeypatch.setattr(screen, "dismiss", record_dismiss)
         screen.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="discard-confirm")))
         screen.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="discard-cancel")))
+        assert dismissed == [True, False]
+
+    asyncio.run(exercise())
+
+
+def test_discard_dialog_keyboard_actions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    async def exercise() -> None:
+        screen = DiscardChangesScreen(tmp_path / "next.sql")
+        dismissed: list[bool] = []
+
+        def record_dismiss(*, result: bool) -> None:
+            dismissed.append(result)
+
+        monkeypatch.setattr(screen, "dismiss", record_dismiss)
+        screen.action_discard()
+        screen.action_cancel()
+
         assert dismissed == [True, False]
 
     asyncio.run(exercise())

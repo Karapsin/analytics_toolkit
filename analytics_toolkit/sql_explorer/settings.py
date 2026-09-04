@@ -11,8 +11,9 @@ from typing import Any
 
 from .errors import SqlExplorerConfigurationError
 
-SETTINGS_VERSION = 1
+SETTINGS_VERSION = 2
 DEFAULT_RUN_BINDING = "ctrl+enter"
+DEFAULT_QUERY_CONCURRENCY = 1
 _FUNCTION_KEY_RE = re.compile(r"f(?:[1-9]|1[0-2])\Z")
 _MODIFIED_KEY_RE = re.compile(r"(?:ctrl|alt)\+(?:enter|[a-z])\Z")
 _BINDING_ALIASES = {
@@ -28,11 +29,17 @@ _RESERVED_BINDINGS = {
     "ctrl+c",
     "ctrl+delete",
     "ctrl+e",
+    "ctrl+f",
     "ctrl+home",
     "ctrl+left",
+    "ctrl+n",
+    "ctrl+o",
     "ctrl+right",
+    "ctrl+s",
     "ctrl+shift+z",
     "ctrl+v",
+    "ctrl+t",
+    "ctrl+w",
     "ctrl+x",
     "ctrl+y",
     "ctrl+z",
@@ -48,6 +55,7 @@ class ExplorerSettings:
     version: int = SETTINGS_VERSION
     run_binding: str = DEFAULT_RUN_BINDING
     confirm_mutations: bool = True
+    max_concurrent_queries: int = DEFAULT_QUERY_CONCURRENCY
 
 
 @dataclass(frozen=True)
@@ -125,7 +133,8 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
     if not isinstance(raw, dict):
         message = "settings must contain a JSON object"
         raise TypeError(message)
-    if raw.get("version") != SETTINGS_VERSION:
+    version = raw.get("version")
+    if version not in {1, SETTINGS_VERSION}:
         message = f"unsupported settings version {raw.get('version')!r}"
         raise ValueError(message)
     confirm_mutations = raw.get("confirm_mutations")
@@ -136,13 +145,19 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
     if not isinstance(run_binding, str):
         message = "run_binding must be a string"
         raise TypeError(message)
+    concurrency = raw.get("max_concurrent_queries", DEFAULT_QUERY_CONCURRENCY)
+    if isinstance(concurrency, bool) or not isinstance(concurrency, int) or concurrency < 1:
+        message = "max_concurrent_queries must be a positive integer"
+        raise TypeError(message)
     return ExplorerSettings(
         run_binding=normalize_run_binding(run_binding),
         confirm_mutations=confirm_mutations,
+        max_concurrent_queries=concurrency,
     )
 
 
 __all__ = [
+    "DEFAULT_QUERY_CONCURRENCY",
     "DEFAULT_RUN_BINDING",
     "ExplorerSettings",
     "SettingsLoadResult",

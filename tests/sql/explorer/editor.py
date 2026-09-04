@@ -79,6 +79,29 @@ def test_selected_multi_statement_routing_and_confirmation_preview() -> None:
     asyncio.run(exercise())
 
 
+def test_run_joins_all_nonempty_cursor_selections_in_document_order() -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        application = SqlExplorerApp(session)
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "select *\nfrom analytics_toolkit_explorer_result"
+            editor._set_selections(
+                Selection((1, 0), (1, len("from analytics_toolkit_explorer_result"))),
+                [Selection((0, 0), (0, len("select *")))],
+            )
+
+            await pilot.press("f5")
+            await pilot.pause()
+
+            assert session.executed[0].statements == (
+                "select *\nfrom analytics_toolkit_explorer_result",
+            )
+            assert editor.cursor_count == 2
+
+    asyncio.run(exercise())
+
+
 def test_whitespace_only_selection_is_not_replaced_by_full_buffer() -> None:
     async def exercise() -> None:
         session = FakeSession()

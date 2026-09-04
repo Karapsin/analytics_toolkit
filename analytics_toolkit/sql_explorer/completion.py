@@ -122,11 +122,18 @@ class CompletionCacheEntry:
 
 
 @dataclass(frozen=True)
-class _CompletionTask:
-    request: CompletionRequest
+class _CompletionSubscriber:
+    owner_id: str | None
     request_id: int
     on_success: Callable[[CompletionResult], None]
     on_error: Callable[[CompletionResult, Exception], None]
+
+
+@dataclass
+class _CompletionTask:
+    request: CompletionRequest
+    request_id: int
+    subscribers: list[_CompletionSubscriber]
     bootstrap: bool = False
 
 
@@ -301,6 +308,10 @@ class CompletionCoordinator:
     _schemas: dict[str | None, tuple[str, ...]] = field(default_factory=dict, init=False)
     _request_seq: int = field(default=0, init=False)
     _in_flight: tuple[object, ...] | None = field(default=None, init=False)
+    _tasks_by_scope: dict[tuple[object, ...], _CompletionTask] = field(
+        default_factory=dict,
+        init=False,
+    )
     _lock: Lock = field(default_factory=Lock, init=False)
     _wake: Event = field(default_factory=Event, init=False)
     _stopping: bool = field(default=False, init=False)
@@ -342,6 +353,7 @@ class CompletionCoordinator:
             self._stopping = True
             self._queue.clear()
             self._queued_scopes.clear()
+            self._tasks_by_scope.clear()
         self._wake.set()
 
     def enqueue(
@@ -351,6 +363,7 @@ class CompletionCoordinator:
         on_success: Callable[[CompletionResult], None] | None = None,
         on_error: Callable[[CompletionResult, Exception], None] | None = None,
         bootstrap: bool = False,
+        owner_id: str | None = None,
     ) -> int:
         on_success = on_success or (lambda _result: None)
         on_error = on_error or (lambda _result, _exc: None)
@@ -365,13 +378,16 @@ class CompletionCoordinator:
             return request_id
 
         scope = request.scope
+        subscriber = _CompletionSubscriber(owner_id, request_id, on_success, on_error)
         with self._lock:
-            if scope in self._queued_scopes or self._in_flight == scope:
+            existing = self._tasks_by_scope.get(scope)
+            if existing is not None:
+                existing.subscribers.append(subscriber)
                 return request_id
             self._queued_scopes.add(scope)
-            self._queue.append(
-                _CompletionTask(request, request_id, on_success, on_error, bootstrap)
-            )
+            task = _CompletionTask(request, request_id, [subscriber], bootstrap)
+            self._queue.append(task)
+            self._tasks_by_scope[scope] = task
         self._wake.set()
         return request_id
 
@@ -396,6 +412,7 @@ class CompletionCoordinator:
         catalog: str | None = None,
         on_success: Callable[[CompletionResult], None] | None = None,
         on_error: Callable[[CompletionResult, Exception], None] | None = None,
+        owner_id: str | None = None,
     ) -> int:
         return self.enqueue(
             CompletionRequest(
@@ -409,7 +426,30 @@ class CompletionCoordinator:
             on_success=on_success,
             on_error=on_error,
             bootstrap=self.backend == "trino",
+            owner_id=owner_id,
         )
+
+    def remove_owner(self, owner_id: str) -> None:
+        """Remove one tab's queued callbacks without disturbing other subscribers."""
+        with self._lock:
+            retained: deque[_CompletionTask] = deque()
+            for task in self._queue:
+                task.subscribers = [
+                    subscriber for subscriber in task.subscribers if subscriber.owner_id != owner_id
+                ]
+                if task.subscribers or task.bootstrap:
+                    retained.append(task)
+                else:
+                    self._queued_scopes.discard(task.request.scope)
+                    self._tasks_by_scope.pop(task.request.scope, None)
+            self._queue = retained
+            in_flight = self._tasks_by_scope.get(self._in_flight or ())
+            if in_flight is not None:
+                in_flight.subscribers = [
+                    subscriber
+                    for subscriber in in_flight.subscribers
+                    if subscriber.owner_id != owner_id
+                ]
 
     def snapshot(self) -> tuple[int, int, bool]:
         with self._lock:
@@ -420,7 +460,7 @@ class CompletionCoordinator:
             self._request_seq += 1
             return self._request_seq
 
-    def _worker(self) -> None:
+    def _worker(self) -> None:  # noqa: C901 -- keeps queue state changes in one worker loop.
         while True:
             self._wake.wait()
             task = self._take_task()
@@ -431,10 +471,21 @@ class CompletionCoordinator:
             try:
                 values = normalize_completion_values(self._run(task.request))
             except Exception as exc:  # noqa: BLE001 -- isolated metadata notice.
-                task.on_error(CompletionResult(task.request, task.request_id, ()), exc)
+                with self._lock:
+                    subscribers = tuple(task.subscribers)
+                for subscriber in subscribers:
+                    subscriber.on_error(
+                        CompletionResult(task.request, subscriber.request_id, ()),
+                        exc,
+                    )
             else:
                 self._store_result(task.request, values)
-                task.on_success(CompletionResult(task.request, task.request_id, values))
+                with self._lock:
+                    subscribers = tuple(task.subscribers)
+                for subscriber in subscribers:
+                    subscriber.on_success(
+                        CompletionResult(task.request, subscriber.request_id, values)
+                    )
                 if task.bootstrap and task.request.kind == "catalog":
                     for catalog in values:
                         self.enqueue_schemas(
@@ -444,6 +495,7 @@ class CompletionCoordinator:
             finally:
                 with self._lock:
                     self._in_flight = None
+                    self._tasks_by_scope.pop(task.request.scope, None)
                     has_more = bool(self._queue)
                 if has_more:
                     self._wake.set()
@@ -492,6 +544,61 @@ class CompletionCoordinator:
                 catalog=request.catalog,
             )
         return keyword_suggestions(request.prefix)
+
+
+@dataclass
+class _CoordinatorPoolEntry:
+    coordinator: CompletionCoordinator
+    owners: set[str] = field(default_factory=set)
+
+
+class CompletionCoordinatorPool:
+    """Share one serialized metadata coordinator for each connection key."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, _CoordinatorPoolEntry] = {}
+
+    def acquire(
+        self,
+        connection_key: str,
+        backend: str,
+        owner_id: str,
+        *,
+        on_error: Callable[[CompletionResult, Exception], None] | None = None,
+    ) -> CompletionCoordinator:
+        normalized_key = connection_key.casefold()
+        entry = self._entries.get(normalized_key)
+        if entry is None:
+            coordinator = CompletionCoordinator(connection_key, backend)
+            coordinator.start_bootstrap(on_error=on_error)
+            entry = _CoordinatorPoolEntry(coordinator)
+            self._entries[normalized_key] = entry
+        entry.owners.add(owner_id)
+        return entry.coordinator
+
+    def release(self, owner_id: str, connection_key: str | None = None) -> None:
+        keys = (connection_key.casefold(),) if connection_key is not None else tuple(self._entries)
+        for key in keys:
+            entry = self._entries.get(key)
+            if entry is None or owner_id not in entry.owners:
+                continue
+            entry.coordinator.remove_owner(owner_id)
+            entry.owners.discard(owner_id)
+            if not entry.owners:
+                entry.coordinator.stop()
+                self._entries.pop(key, None)
+
+    def stop(self) -> None:
+        for entry in self._entries.values():
+            entry.coordinator.stop()
+        self._entries.clear()
+
+    def coordinator_for(self, connection_key: str) -> CompletionCoordinator | None:
+        entry = self._entries.get(connection_key.casefold())
+        return entry.coordinator if entry is not None else None
+
+    def snapshot(self) -> dict[str, tuple[int, int, bool]]:
+        return {key: entry.coordinator.snapshot() for key, entry in self._entries.items()}
 
 
 _TABLE_CONTEXT_RE: Final = re.compile(r"(?is)(?:^|.*\b)(from|join|update|insert\s+into|into)\s*$")
@@ -584,6 +691,7 @@ __all__ = [
     "CompletionCacheEntry",
     "CompletionContext",
     "CompletionCoordinator",
+    "CompletionCoordinatorPool",
     "CompletionRequest",
     "CompletionResult",
     "GreenplumCompletionProvider",

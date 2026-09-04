@@ -33,12 +33,18 @@ sql_explorer.run()
 - Run this function from an interactive terminal Python or IPython console, not
   a notebook.
 - Editor and text-input carets remain visible and do not blink.
-- `Ctrl+Enter` and `F5` are the portable run shortcuts; terminal-forwarded
-  `Cmd+Enter` is optional.
+- `Ctrl+Enter` and `F5` are the portable run shortcuts. Explorer Ctrl shortcuts
+  accept terminal-forwarded Command/Fn-like events when available.
+- `Ctrl+T` creates a complete workspace tab, `Ctrl+W` closes it safely, and
+  `Ctrl+Tab` / `Ctrl+Shift+Tab` switch with wraparound.
+- User SQL is queued globally with concurrency one by default. Metadata uses a
+  separate shared FIFO queue for each database alias.
 - `Ctrl+O`, `Cmd+O` when forwarded, `open`, or `mode navigation` opens a
   read-only browser rooted at the running process's current directory. Its path
   input supports Tab completion; every in-root file is visible, but only `.sql`
   files can be opened. Over SSH, that directory belongs to the remote host.
+- `Ctrl+S` creates a file for an untitled buffer and saves its exact text;
+  `Ctrl+N` creates a blank file without replacing a dirty or opened tab.
 - Copy emits OSC 52 before trying Pyperclip, allowing a supporting SSH client
   terminal to place text in its local clipboard.
 - `Tab` inserts a sole completion directly. With multiple matches, the menu

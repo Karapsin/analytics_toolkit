@@ -17,6 +17,7 @@ pip install 'analytics-toolkit[tui]'
 ## Workflow Guides
 
 - [Launch and execution](#launch-and-execution)
+- [Tabs and scheduling](#tabs-and-scheduling)
 - [Editor and completion](#editor-and-completion)
 - [Navigation mode](#navigation-mode)
 - [Results and clipboard](#results-and-clipboard)
@@ -43,22 +44,53 @@ sql_explorer.run("gp")
 The launcher requires an interactive terminal. Notebook kernels and redirected
 standard input or output cannot host the TUI.
 
-`Ctrl+Enter` and `F5` are the recommended portable run shortcuts. `Fn+Enter`
-runs when reported as keypad Enter. `Cmd+Enter` is optional compatibility for a
-terminal that forwards the macOS Command modifier; it is not a portable
-requirement.
+`Ctrl+Enter` and `F5` are the recommended portable run shortcuts. Explorer Ctrl
+shortcuts also accept terminal-forwarded macOS Command and Fn-like modifier
+events. `Fn+Enter` runs when reported as keypad Enter, and `Cmd+Enter` runs when
+the terminal forwards that chord. Terminals and multiplexers may intercept
+Command or Fn before the application receives it, so Ctrl remains portable.
 
-When the editor has a non-empty selection, exactly that selected text is
-planned, confirmed when necessary, and executed. Otherwise, the complete buffer
-runs. Starting a query does not replace the editor text or collapse its
-selection. A selected multi-statement fragment follows the same routing and
-mutation-confirmation rules as a full buffer, and the confirmation dialog shows
-the SQL that will execute.
+When the editor has non-empty selections, every selected fragment is joined in
+document order with newlines, then planned, confirmed when necessary, and
+executed. Otherwise, the complete buffer runs. This lets a selected `SELECT`
+line and a separately selected `FROM` line execute as one statement. Starting a
+query does not replace the editor text or collapse its selections. A selected
+multi-statement fragment follows the same routing and mutation-confirmation
+rules as a full buffer, and the confirmation dialog shows the SQL that will
+execute.
 
 A single row-producing statement uses `sql.read`. A multi-statement selection
 or buffer whose final statement produces rows uses `sql.execute_read`. SQL with
 no result uses `sql.execute`. Non-read statements require confirmation by
 default; exploratory mode is not a database-enforced read-only session.
+
+## Tabs and scheduling
+
+Each tab is an independent SQL workspace with its own editor, command line,
+database selection, result or error pane, completion UI, file, and focus
+position. Labels use `[db] file.sql`; unsaved work adds `*`, and a new tab uses
+`[db] Untitled N`. Click the trailing `+` or press `Ctrl+T` to create a tab.
+Click its `×` or press `Ctrl+W` to close it. `Ctrl+Tab` moves forward and
+`Ctrl+Shift+Tab` moves backward with wraparound. The final tab remains open.
+
+Closing a changed file or a non-empty untitled tab asks whether to Save, Don't
+Save, or Cancel. Closing a running tab first applies that decision, then targets
+only that tab's query for cancellation and waits for its worker to finish. A
+cancellation failure keeps the tab open. Exiting checks every dirty tab.
+
+Opening a file focuses its existing tab when it is already open. Otherwise it
+reuses the active clean untitled tab or opens a new tab, preserving the current
+workspace. New tabs inherit the active database, after which `db DB_KEY` changes
+only the selected tab.
+
+User queries enter one global FIFO queue. The default concurrency is one across
+all tabs, each tab may have only one queued or active query, and the SQL plus
+database are captured when Run is pressed. Use `concurrency N` to persist a
+different positive limit; values above three require overload confirmation.
+Lowering the limit does not cancel work already running. Metadata completion
+uses separate FIFO queues: tabs on the same database alias share one queue and
+cache, while different aliases have independent queues that may run in parallel
+with user SQL.
 
 ## Editor and completion
 
@@ -108,8 +140,10 @@ highlight, and Escape closes the menu. Local keyword completion uses lower-case
 SQL keywords and does not query a database. Backend metadata completion supports
 Trino catalogs, schemas, and tables; Greenplum schemas and tables; and ClickHouse
 databases and tables. Trino catalog discovery starts when the Explorer opens,
-then schema discovery is queued for each catalog. All metadata requests use one
-independent FIFO worker and never replace the visible user-query status.
+then schema discovery is queued for each catalog. Same-request lookups from
+multiple tabs fan out from one metadata operation. Closing a tab removes its
+queued callbacks without affecting other subscribers. Metadata never replaces
+the visible user-query status.
 
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
 The prefix must contain at least six characters. The first Tab request calls
@@ -123,11 +157,12 @@ catalog, database, schema, or SQL-clause context change permits a new lookup.
 File navigation is a separate modal mode, not a permanent workspace pane. Open
 an existing file with `Ctrl+O`, terminal-forwarded `Cmd+O`, `open`, or `mode
 navigation`. Escape returns to the editor without opening a file. `Ctrl+S` or
-`save` writes edits back to the opened `.sql` file. `Ctrl+N` first asks for a
-filename ending in `.sql`, then opens the same browser to choose a destination
-directory; selecting it creates the file without overwriting an existing one.
-When the buffer is an unchanged opened file, its non-empty SQL is copied into
-the new file; otherwise the new file starts empty.
+`save` writes edits back to the opened `.sql` file. When the tab is untitled,
+Save starts the new-file flow, writes the editor text exactly, and continues in
+that file without replacing editor state. `Ctrl+N` always creates a blank SQL
+file; it reuses a clean untitled tab or opens the file in a new tab so an active
+file or dirty buffer stays untouched. Both flows ask for a filename and
+destination directory and never overwrite an existing file.
 
 Navigation starts at resolved `Path.cwd()` on the host running the Explorer.
 Consequently, an Explorer launched over SSH reads the remote host's filesystem,
@@ -142,10 +177,9 @@ into a directory. On a file, Enter or click opens it only when its suffix is
 `.sql` (case-insensitive); other files remain visible but cannot be opened.
 The current SQL file path appears in status. File browsing never renames or
 deletes files; save writes only an opened existing `.sql` file, and new-file
-creation is limited to the selected project directory. If the editor has
-unsaved changes, opening another file or creating a blank file requires explicit
-discard confirmation. File, decoding, and permission failures appear in the
-normal result/message surface and do not terminate the Explorer.
+creation is limited to the selected project directory. File, decoding, and
+permission failures appear in the originating tab's result/message surface and
+do not terminate the Explorer.
 
 ## Results and clipboard
 
@@ -210,6 +244,7 @@ Enter commands in the lower panel, with or without a leading colon:
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation
+- `concurrency N` - set and save the global user-query concurrency limit
 - `clear query|results|all` - clear workspace content
 - `to_excel` - choose a project directory and save the current result as `.xlsx`
 - `to_csv` - choose a project directory and save the current result as `.csv`
@@ -217,8 +252,8 @@ Enter commands in the lower panel, with or without a leading colon:
 - `exit` or `quit` - close the Explorer, requesting targeted cancellation first
   when user SQL is running
 
-The confirmation choice and primary run shortcut are saved in the user's config
-directory. SQL text is not persisted. The export commands first ask for one
+The confirmation choice, query concurrency, and primary run shortcut are saved
+in the user's config directory. SQL text is not persisted. The export commands first ask for one
 filename with the required suffix, then reuse the project directory browser. An
 existing destination requires replacement confirmation. If a result has more than
 200 rows, confirm saving all rows before the Explorer reruns a capped query.

@@ -134,9 +134,11 @@ sql_explorer.run("gp")
 
 The SQL editor and text inputs use steady, non-blinking carets. The numbered
 editor has standard, non-modal shortcuts. `Ctrl+Enter` and `F5` are the portable
-run keys; a non-empty selection runs instead of the full buffer. `Cmd+Enter` is
-optional because terminal emulators may intercept it. Press `Ctrl+O` (or
-forwarded `Cmd+O`) to enter
+run keys; multiple non-empty selections are joined in document order instead of
+running only one. Terminal-forwarded Command/Fn-like chords share Explorer Ctrl
+shortcuts, though terminals may intercept them. `Ctrl+T`, `Ctrl+W`, and the
+Ctrl+Tab variants manage independent `[db] file.sql` workspace tabs. Press
+`Ctrl+O` (or forwarded `Cmd+O`) to enter
 read-only navigation mode on the host where the Explorer is running. Its path
 input supports Tab completion and keyboard candidate choice. All in-root files
 are visible for orientation, but only `.sql` files can be opened. Over SSH,
@@ -154,7 +156,9 @@ its dataframe index. `Ctrl+C` emits
 OSC 52 first so an SSH client terminal can copy into its local clipboard;
 terminal policy may disable OSC 52, in which case Pyperclip or the in-memory
 fallback remains available. Use the `Interrupt` button or the `cancel` command
-for the active user query. See the
+for the active tab's user query. User SQL has one global FIFO queue with
+concurrency one by default; metadata has a separate shared queue per database.
+See the
 [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
 for navigation, completion, clipboard, and safety details.
 

@@ -4,15 +4,40 @@ APP_CSS = """
 Screen {
     layout: vertical;
 }
-#workspace {
+#tab-strip {
+    height: 3;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: $panel;
+}
+.workspace-tab {
+    width: auto;
+    height: 3;
+}
+.workspace-tab.active {
+    background: $accent-darken-2;
+}
+.tab-select {
+    width: auto;
+    min-width: 16;
+    height: 3;
+    border: none;
+}
+.tab-close, .new-tab {
+    width: 5;
+    min-width: 5;
+    height: 3;
+    border: none;
+}
+#workspace-stack, .sql-workspace {
     height: 1fr;
 }
-#query-pane {
+.query-pane {
     height: 1fr;
     border: round $panel-lighten-2;
     layers: base overlay;
 }
-#query-pane:focus-within {
+.query-pane:focus-within {
     border: double $accent;
     background: $panel-lighten-1;
 }
@@ -60,12 +85,12 @@ Screen {
     border: round $accent;
     background: $panel;
 }
-#result-pane {
+.result-pane {
     height: 1fr;
     display: none;
     border: round $panel-lighten-2;
 }
-#result-pane:focus-within {
+.result-pane:focus-within {
     border: double $accent;
     background: $panel-lighten-1;
 }
@@ -75,12 +100,12 @@ Screen {
 #result-table:focus, #result-message:focus {
     background: $panel-lighten-1;
 }
-#command-panel {
+.command-panel {
     height: 8;
     border: round $panel-lighten-2;
     background: $panel;
 }
-#command-panel:focus-within {
+.command-panel:focus-within {
     border: double $accent;
     background: $panel-lighten-1;
 }
@@ -93,7 +118,7 @@ Screen {
     border: none;
     padding: 0 1;
 }
-#interrupt {
+.interrupt {
     width: 16;
     height: 3;
     margin-left: 1;

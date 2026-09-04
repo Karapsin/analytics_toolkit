@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from .editor import SqlEditor
 from .errors import SqlExplorerConfigurationError
 
 HELP_TEXT = """Commands
@@ -22,6 +21,7 @@ HELP_TEXT = """Commands
   db DB_KEY                   switch the configured connection
   shortcut KEY|reset          change the primary run shortcut
   confirm on|off|toggle       control mutation confirmation
+  concurrency N               set the global user-query concurrency limit
   clear query|results|all     clear workspace content
   to_excel                    save the current result as an Excel workbook
   to_csv                      save the current result as CSV
@@ -30,9 +30,11 @@ HELP_TEXT = """Commands
 
 Keys
   Ctrl+O                      open remote-host SQL file navigation
-  Ctrl+S                      save the opened SQL file
+  Ctrl+S                      save, creating a file for an untitled buffer
   Ctrl+N                      name and create a blank SQL file
-  Cmd+O                       optional terminal-forwarded open shortcut
+  Ctrl+T / Ctrl+W             create / close a workspace tab
+  Ctrl+Tab                    select the next tab (Shift reverses)
+  Cmd/Fn-like modifiers       share Ctrl shortcuts when forwarded by the terminal
   Up / Down                   cross pane boundaries or navigate Find/Replace
   Left / Right                choose a visible confirmation action
   Shift+Up / Shift+Down       add or remove editor cursors
@@ -62,7 +64,7 @@ class SqlExplorerCursorCommandsMixin:
         except ValueError:
             app.show_error(SqlExplorerConfigurationError("Line number must be a positive integer."))
             return None
-        editor = app.query_one(SqlEditor)
+        editor = app.active_workspace.editor
         if line_number < 1 or line_number > editor.document.line_count:
             app.show_error(
                 SqlExplorerConfigurationError(
@@ -75,13 +77,13 @@ class SqlExplorerCursorCommandsMixin:
     def _command_move(self, arguments: list[str]) -> None:
         app = cast("Any", self)
         if (line_number := app._command_line_number("mv", arguments)) is not None:
-            app.query_one(SqlEditor).move_to_line_start(line_number)
+            app.active_workspace.editor.move_to_line_start(line_number)
             app._set_notice(f"Moved to line {line_number}.")
 
     def _command_move_select(self, arguments: list[str]) -> None:
         app = cast("Any", self)
         if (line_number := app._command_line_number("mvs", arguments)) is not None:
-            app.query_one(SqlEditor).select_to_line_start(line_number)
+            app.active_workspace.editor.select_to_line_start(line_number)
             app._set_notice(f"Selected to line {line_number}.")
 
     def _command_copy(self, arguments: list[str]) -> None:
@@ -89,7 +91,7 @@ class SqlExplorerCursorCommandsMixin:
         if arguments:
             app.show_error(SqlExplorerConfigurationError("Usage: cp"))
             return
-        editor = app.query_one(SqlEditor)
+        editor = app.active_workspace.editor
         app.copy_to_explorer_clipboard(editor.command_copy_text())
         app._set_notice(
             "Copied editor selection."
@@ -102,7 +104,7 @@ class SqlExplorerCursorCommandsMixin:
         if arguments:
             app.show_error(SqlExplorerConfigurationError("Usage: pst"))
             return
-        editor = app.query_one(SqlEditor)
+        editor = app.active_workspace.editor
         if editor.paste_clipboard(app.paste_from_explorer_clipboard()):
             app._set_notice(f"Pasted at {editor.cursor_count} cursor(s).")
         else:

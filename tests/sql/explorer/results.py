@@ -6,12 +6,27 @@ from inspect import signature
 from typing import Any
 
 import pandas as pd
+from analytics_toolkit.sql_explorer import app as app_module
 from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplorerApp
 from rich.style import Style
 from textual import events
 from textual.coordinate import Coordinate
 
 from tests.sql.explorer.app import FakeSession
+
+
+def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:
+    assert app_module._format_cell(None) == "NULL"
+    assert app_module._format_cell(float("nan")) == "NULL"
+    assert app_module._format_cell("a\nb") == "a\\nb"
+    assert app_module._format_cell("x" * 600).endswith("…")
+    assert app_module._format_cell([1, 2]) == "[1, 2]"
+    assert app_module._format_cell(Decimal("20778982.000000000000")) == "20,778,982"
+    assert app_module._format_cell(Decimal("123.4500")) == "123.45"
+    assert app_module._format_cell(Decimal("-0.000")) == "0"
+    assert app_module._format_cell(1234567) == "1,234,567"
+    assert app_module._format_cell(1234567.5) == "1,234,567.5"
+    assert app_module._format_cell(True) == "True"
 
 
 def _mouse_event(
