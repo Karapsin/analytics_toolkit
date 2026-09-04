@@ -15,6 +15,9 @@ from textual.widgets import Button, DataTable, Input, OptionList, Static, Tree
 
 from .editor import SqlEditor
 from .filetree import completion_entries, safe_entries
+from .inputs import EditableInput
+from .panes import CommandInput, ResultMessage
+from .scrollbars import LeftVerticalScrollbarMixin
 
 if TYPE_CHECKING:
     from rich.style import Style
@@ -28,7 +31,7 @@ _MAX_CELL_LENGTH = 512
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
 
 
-class ResultTable(DataTable[Any]):
+class ResultTable(LeftVerticalScrollbarMixin, DataTable[Any]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
         Binding("down", "cursor_down", "Cursor down", show=False),
@@ -246,42 +249,6 @@ class ResultTable(DataTable[Any]):
         cast("SqlExplorerApp", self.app).close_results()
 
 
-class ResultMessage(Static, can_focus=True):
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("up", "focus_previous_pane", "Previous pane", show=False),
-        Binding("down", "focus_next_pane", "Next pane", show=False),
-        Binding("delete", "close_results", "Close results", show=False),
-    ]
-
-    def action_focus_previous_pane(self) -> None:
-        cast("SqlExplorerApp", self.app).action_focus_previous_pane()
-
-    def action_focus_next_pane(self) -> None:
-        cast("SqlExplorerApp", self.app).action_focus_next_pane()
-
-    def action_close_results(self) -> None:
-        cast("SqlExplorerApp", self.app).close_results()
-
-
-class _NonBlinkingInput(Input):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.cursor_blink = False
-
-
-class CommandInput(_NonBlinkingInput):
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("up", "focus_previous_pane", "Previous pane", show=False),
-        Binding("down", "focus_next_pane", "Next pane", show=False),
-    ]
-
-    def action_focus_previous_pane(self) -> None:
-        cast("SqlExplorerApp", self.app).action_focus_previous_pane()
-
-    def action_focus_next_pane(self) -> None:
-        cast("SqlExplorerApp", self.app).action_focus_next_pane()
-
-
 class SqlFileTree(Tree[object]):
     """A read-only tree; it deliberately exposes no filesystem mutations."""
 
@@ -365,12 +332,13 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         self._directory = self.root_path
         self._matches: tuple[Path, ...] = ()
         self._match_index = -1
+        self._directory_confirmation_armed = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="navigation-dialog"):
             action = "Select destination directory" if self.select_directory else "Open SQL file"
             yield Static(f"{action} — {self.root_path}", id="navigation-title")
-            yield _NonBlinkingInput(
+            yield EditableInput(
                 placeholder="Type a path; Tab completes",
                 id="navigation-path",
             )
@@ -391,12 +359,14 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "navigation-path":
+            self._clear_directory_confirmation()
             self._refresh_matches(event.value)
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[object]) -> None:
         path = event.node.data
         if isinstance(path, Path):
             event.stop()
+            self._clear_directory_confirmation()
             self._choose_entry(path)
 
     def action_complete_path(self) -> None:
@@ -420,12 +390,19 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         self._highlight_match(self._match_index + 1)
 
     def action_previous_match(self) -> None:
+        if self._directory_confirmation_armed:
+            self._resume_directory_selection()
         self._highlight_match(self._match_index - 1 if self._match_index >= 0 else -1)
 
     def action_next_match(self) -> None:
+        if self._directory_confirmation_armed:
+            self._resume_directory_selection()
         self._highlight_match(self._match_index + 1)
 
     def action_choose_path(self) -> None:
+        if self._directory_confirmation_armed:
+            self.action_choose_directory()
+            return
         if self.select_directory and self.query_one("#navigation-path", Input).value.endswith("/"):
             self.dismiss(self._directory)
             return
@@ -496,6 +473,7 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
             self.action_choose_directory()
 
     def _descend(self, path: Path) -> None:
+        self._clear_directory_confirmation()
         value = self._display_path(path) + "/"
         self._set_path_value(value)
         self._refresh_matches(value)
@@ -527,7 +505,56 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         )
 
     def action_cancel(self) -> None:
+        if self.select_directory and not self._directory_confirmation_armed:
+            self._arm_directory_confirmation()
+            return
         self.dismiss(result=None)
+
+    def _arm_directory_confirmation(self) -> None:
+        self._directory_confirmation_armed = True
+        button = self.query_one("#navigation-select-directory", Button)
+        button.add_class("armed")
+        button.focus()
+        self._set_navigation_notice(
+            "Enter: select this directory   Escape: cancel   Arrows: keep browsing"
+        )
+
+    def _clear_directory_confirmation(self) -> None:
+        if not self._directory_confirmation_armed:
+            return
+        self._directory_confirmation_armed = False
+        self.query_one("#navigation-select-directory", Button).remove_class("armed")
+
+    def _resume_directory_selection(self) -> EditableInput:
+        self._clear_directory_confirmation()
+        path_input = self.query_one("#navigation-path", EditableInput)
+        path_input.focus_preserving_cursor()
+        self._set_navigation_notice(
+            f"{len(self._matches)} matching entr{'y' if len(self._matches) == 1 else 'ies'}."
+        )
+        return path_input
+
+    async def _on_key(self, event: events.Key) -> None:
+        key_parts = event.key.split("+")
+        key = key_parts[-1]
+        if self._directory_confirmation_armed and key in {"left", "right"}:
+            path_input = self._resume_directory_selection()
+            select = "shift" in key_parts
+            word = "ctrl" in key_parts
+            if key == "left":
+                action = (
+                    path_input.action_cursor_left_word if word else path_input.action_cursor_left
+                )
+                self.app.call_after_refresh(action, select)
+            else:
+                action = (
+                    path_input.action_cursor_right_word if word else path_input.action_cursor_right
+                )
+                self.app.call_after_refresh(action, select)
+            event.stop()
+            event.prevent_default()
+            return
+        await super()._on_key(event)
 
 
 class CompletionMenu(OptionList):
@@ -581,9 +608,9 @@ class FindReplaceBar(Vertical):
     ]
 
     def compose(self) -> ComposeResult:
-        yield _NonBlinkingInput(placeholder="Find", id="find-pattern")
+        yield EditableInput(placeholder="Find", id="find-pattern")
+        yield EditableInput(placeholder="Replace", id="replace-pattern")
         yield Button("Next", id="find-next")
-        yield _NonBlinkingInput(placeholder="Replace", id="replace-pattern")
         with Horizontal(id="replace-actions"):
             yield Button("Replace", id="replace-current")
             yield Button("Replace All", id="replace-all")
@@ -610,8 +637,8 @@ class FindReplaceBar(Vertical):
         """Move focus through the visible Find/Replace controls."""
         controls = (
             self.query_one("#find-pattern", Input),
-            self.query_one("#find-next", Button),
             self.query_one("#replace-pattern", Input),
+            self.query_one("#find-next", Button),
             self.query_one("#replace-current", Button),
             self.query_one("#replace-all", Button),
         )

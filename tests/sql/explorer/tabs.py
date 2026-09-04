@@ -11,7 +11,11 @@ from analytics_toolkit.sql_explorer.runtime import (
     DatabaseSelection,
     ExplorerRunResult,
 )
-from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen, WorkspaceTab
+from analytics_toolkit.sql_explorer.tabs import (
+    SaveChangesScreen,
+    TabSelectButton,
+    WorkspaceTab,
+)
 from analytics_toolkit.sql_explorer.widgets import FileNavigationScreen
 from textual.document._document import Selection
 
@@ -71,11 +75,20 @@ def test_tab_labels_show_database_filename_dirty_state_and_click_controls(
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test(size=(120, 40)) as pilot:
+
+            def active_tab_label() -> str:
+                active_tab = application.query_one(
+                    f"#tab-{application._active_tab_id}", WorkspaceTab
+                )
+                return active_tab.query_one(TabSelectButton).label.plain
+
             first = application.active_workspace
             assert first.tab_title == "[gp] Untitled 1"
+            assert active_tab_label() == "[gp] Untitled 1"
             first.editor.text = "select changed"
             await pilot.pause()
             assert first.tab_title == "[gp] Untitled 1*"
+            assert active_tab_label() == "[gp] Untitled 1*"
 
             application.load_sql_file(sql_file)
             await pilot.pause()
@@ -84,6 +97,7 @@ def test_tab_labels_show_database_filename_dirty_state_and_click_controls(
 
             application._command_database(["lake"])
             assert application.active_workspace.tab_title == "[lake] query.sql"
+            assert active_tab_label() == "[lake] query.sql"
 
             await pilot.click("#new-tab")
             await pilot.pause()

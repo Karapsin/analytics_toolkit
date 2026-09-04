@@ -126,8 +126,8 @@ def test_mount_has_no_tab_pane_cycle() -> None:
             command = application.query_one("#command-input", Input)
             assert command.cursor_blink is False
             assert application.focused is editor
-            status = application.query_one("#session-status", Static)
-            assert "mode=exploratory" in str(status.render())
+            assert not list(application.query("#session-status"))
+            assert "Ln 1, Col 1" in str(application.query_one("#editor-status", Static).render())
             assert {binding.key for binding in application.BINDINGS}.isdisjoint(
                 {"alt+tab", "alt+shift+tab"}
             )
@@ -255,7 +255,7 @@ def test_run_shortcuts_execute_complete_editor_and_show_results() -> None:
             assert application.results_open is True
             assert application.query_one(ResultTable).row_count == 2
             notice = application.query_one("#notice", Static)
-            assert "Returned 2 row(s)." in str(notice.render())
+            assert str(notice.renderable) == ""
 
             application.close_results()
             await pilot.press("f5")

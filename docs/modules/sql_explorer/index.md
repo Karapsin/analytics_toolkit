@@ -96,8 +96,9 @@ in parallel with user SQL.
 After executing a command, focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
 The editor and text inputs use steady non-blinking carets. The editor displays
-line numbers, applies SQL syntax highlighting, and keeps long SQL lines
-unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
+line numbers, keeps its vertical scrollbar on the left, shows the active
+one-based line and column in its lower-right corner, applies SQL syntax
+highlighting, and keeps long SQL lines unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
 stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
 3.13–3.14, so highlighting is available on every supported Python version. If
 a parser installation is damaged or cannot load, the editor still opens
@@ -118,11 +119,18 @@ one before toggling focus between the editor and command panel. Tab and Shift+Ta
 unindent selected logical lines. Double-clicking selects a complete SQL word such
 as `table_name`.
 
-`Ctrl+F` opens a compact Find/Replace overlay on the right side of the query
-area. Find, Replace, Replace All, match highlighting, and Escape-to-close remain
-available without reducing the normal editor width. While it is open, Up and
-Down cycle through its controls; Left and Right keep their normal text-caret
-behavior in its inputs.
+`Ctrl+F` opens a floating Find/Replace overlay on the upper-right side of the
+query area. It presents Find, Replace, Next, Replace, and Replace All in that
+order without reducing the normal editor width. Match highlighting and
+Escape-to-close remain available. While it is open, Up and Down cycle through
+its controls; Left and Right keep their normal text-caret behavior in its
+inputs.
+
+Every single-line field, including commands, Find/Replace, navigation paths,
+and export or SQL filenames, supports Shift selection, word selection,
+`Ctrl+A`, copy, cut, paste, undo, and redo. Terminal-forwarded Command keys use
+the same portable Ctrl behavior. Typing, pasting, or deleting replaces the
+active selection, and pasted values remain single-line.
 
 Tab is conditional:
 
@@ -174,15 +182,22 @@ Tab completes a sole match or cycles through multiple visible candidates;
 Shift+Tab, Up, and Down move through those candidates. Enter or click descends
 into a directory. On a file, Enter or click opens it only when its suffix is
 `.sql` (case-insensitive); other files remain visible but cannot be opened.
-The current SQL file path appears in status. File browsing never renames or
-deletes files; save writes only an opened existing `.sql` file, and new-file
-creation is limited to the selected project directory. File, decoding, and
+The current SQL file path appears in the tab tooltip. File browsing never
+renames or deletes files; save writes only an opened existing `.sql` file, and
+new-file creation is limited to the selected project directory. File, decoding, and
 permission failures appear in the originating tab's result/message surface and
 do not terminate the Explorer.
 
+When navigation is choosing a destination directory, the first Escape focuses
+and arms **Select this directory**. Enter then confirms the displayed directory;
+a second Escape cancels. Any arrow key returns to path navigation and also
+performs its normal move. The ordinary open-file browser still closes on its
+first Escape.
+
 ## Results and clipboard
 
-At most 200 result rows are displayed. Query-shaped final statements use a
+At most 200 result rows are displayed, with the result grid's vertical
+scrollbar on the left. Query-shaped final statements use a
 201-row server-side limit so the Explorer can indicate when more rows exist
 without fetching an unbounded result. Finite Decimal cells display without
 insignificant trailing zeros. Integers, decimals, and floating-point values use
@@ -208,11 +223,19 @@ portable SSH paste path; Ctrl+V/Pyperclip remains a local fallback.
 
 ## Query status and cancellation
 
-The status area retains the latest user-query label, SQL route, state, and
-elapsed duration after success, failure, cancellation, result clearing, pane
-closing, or focus changes. Active elapsed time refreshes about once per second.
-After five minutes, status adds a bold red warning:
+The top of the command pane shows compact query cards instead of a verbose
+query label. A running query has an animated indicator and live elapsed time;
+completed, failed, and cancelled queries retain their outcome and elapsed time
+after result clearing, pane closing, focus changes, or tab switching. Successful
+row-producing queries also retain their displayed row count, using `200+ rows`
+when the result was server-truncated or `200 of 1,234 rows` when the total is
+known. Durations adapt from sub-second values such as `0.128s` to values such as
+`1m 05s`. After five minutes, a running query adds the warning
 `consider optimizing your query or sit tight`.
+
+The outlined red **Interrupt** button is the rightmost control in the same
+status strip. It is enabled only while a query can be interrupted. Operational
+notices and the command input remain directly below the strip.
 
 The `Interrupt` button and `cancel` command use the same targeted cancellation
 path. They identify only the active Explorer user-query label through

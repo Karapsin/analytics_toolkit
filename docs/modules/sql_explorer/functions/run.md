@@ -32,7 +32,9 @@ sql_explorer.run()
 - Install `analytics-toolkit[tui]` before launching the interface.
 - Run this function from an interactive terminal Python or IPython console, not
   a notebook.
-- Editor and text-input carets remain visible and do not blink.
+- Editor and text-input carets remain visible and do not blink. Every
+  single-line field supports selection, clipboard, word movement, undo, and
+  redo shortcuts.
 - `Ctrl+Enter` and `F5` are the portable run shortcuts. Explorer Ctrl shortcuts
   accept terminal-forwarded Command/Fn-like events when available.
 - `Ctrl+T` creates a complete workspace tab, `Ctrl+W` closes it safely, and
@@ -43,7 +45,9 @@ sql_explorer.run()
 - `Ctrl+O`, `Cmd+O` when forwarded, `open`, or `mode navigation` opens a
   read-only browser rooted at the running process's current directory. Its path
   input supports Tab completion; every in-root file is visible, but only `.sql`
-  files can be opened. Over SSH, that directory belongs to the remote host.
+  files can be opened. In destination-directory mode, Escape arms the selection
+  button before a second Escape cancels. Over SSH, that directory belongs to
+  the remote host.
 - `Ctrl+S` creates a file for an untitled buffer and saves its exact text;
   `Ctrl+N` creates a blank file without replacing a dirty or opened tab.
 - Copy emits OSC 52 before trying Pyperclip, allowing a supporting SSH client

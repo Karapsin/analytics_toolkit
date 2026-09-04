@@ -23,10 +23,11 @@ from .errors import SqlExplorerConfigurationError
 from .exports import SqlExplorerExportCommandsMixin
 from .file_commands import SqlExplorerFileCommandsMixin
 from .filetree import read_sql_file
+from .inputs import EditableInput
 from .picker import DatabasePickerApp
 from .query_commands import SqlExplorerQueryCommandsMixin
-from .runtime import format_duration
 from .scheduling import ExplorerQueryScheduler
+from .status import QuerySummaryBar, query_summary_for
 from .styles import APP_CSS
 from .tabs import (
     NewTabButton,
@@ -53,8 +54,6 @@ if TYPE_CHECKING:
     from textual.widget import Widget
 
     from .runtime import ExplorerSession
-
-_SLOW_QUERY_SECONDS = 300
 
 
 def _remove_dynamic_binding(bindings: Any, key: str) -> None:
@@ -224,6 +223,7 @@ class SqlExplorerApp(
         self.query_one("#tab-1", WorkspaceTab).set_active(True)
         self._refresh_close_buttons()
         self._update_status(workspace)
+        self._update_editor_status(workspace)
         if self.session.settings_warning:
             self._set_notice(self.session.settings_warning, workspace)
         workspace.editor.focus()
@@ -283,7 +283,10 @@ class SqlExplorerApp(
 
     def action_copy_focused(self) -> None:
         focused = self.focused
-        if isinstance(focused, SqlEditor):
+        if isinstance(focused, EditableInput):
+            if focused.copy_selection():
+                self._set_notice("Copied selection.")
+        elif isinstance(focused, SqlEditor):
             self.copy_to_explorer_clipboard(focused.command_copy_text())
             has_selection = any(not item.is_empty for item in focused.cursor_selections)
             self._set_notice("Copied editor selection." if has_selection else "Copied editor.")
@@ -403,8 +406,15 @@ class SqlExplorerApp(
     ) -> None:
         workspace = workspace or self.active_workspace
         message = f"{type(exc).__name__}: {exc}"
-        self._set_notice("SQL explorer operation failed.", workspace)
+        query = getattr(workspace.session, "last_query", None)
+        notice = (
+            "SQL explorer query was cancelled."
+            if query is not None and query.state == "cancelled"
+            else "SQL explorer operation failed."
+        )
+        self._set_notice(notice, workspace)
         self.show_message(message, workspace)
+        self._update_status(workspace)
 
     def show_notice(
         self,
@@ -459,10 +469,15 @@ class SqlExplorerApp(
             workspace = workspace_for(event.text_area)
             event.text_area.refresh_search_matches()
             self._refresh_tab(workspace)
+            self._update_editor_status(workspace)
             if len(self.screen_stack) > 1:
                 return
             self._refresh_open_completion(workspace)
             self._update_status(workspace)
+
+    def on_text_area_selection_changed(self, event: TextArea.SelectionChanged) -> None:
+        if isinstance(event.text_area, SqlEditor):
+            self._update_editor_status(workspace_for(event.text_area))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if isinstance(event.option_list, CompletionMenu):
@@ -722,47 +737,25 @@ class SqlExplorerApp(
             return
         workspace = workspace or self.active_workspace
         try:
-            editor = workspace.editor
-            status_widget = workspace.query_one("#session-status", Static)
+            summary = workspace.query_one(QuerySummaryBar)
             interrupt = workspace.query_one(".interrupt", Button)
         except NoMatches:
             return
-        session = workspace.session
-        confirmation = "on" if session.settings.confirm_mutations else "off"
-        state: str = workspace.query_state
-        if state == "queued":
-            position = self._query_scheduler.position(workspace.tab_id)
-            state = f"queued:{position or 1}"
-        status = (
-            f"db={session.database.connection_key} "
-            f"backend={session.database.backend} mode=exploratory "
-        )
-        if workspace.current_file is not None:
-            dirty = "*" if workspace.is_dirty else ""
-            status += f"file={workspace.current_file}{dirty} "
-        elif editor.text:
-            status += "file=<unsaved>* "
-        query = getattr(session, "active_query", None) or getattr(
-            session,
-            "last_query",
-            None,
-        )
-        if query is not None:
-            duration = format_duration(query.elapsed_seconds)
-            status += f"query={query.label} route=sql.{query.route.value} elapsed={duration}"
-            suffix = f" run={session.settings.run_binding} confirm={confirmation} state={state}"
-            if query.elapsed_seconds >= _SLOW_QUERY_SECONDS:
-                warning = Text(" consider optimizing your query or sit tight", style="bold red")
-                status_text = Text(status + suffix)
-                status_text.append(warning)
-                status_widget.update(status_text)
-            else:
-                status_widget.update(status + suffix)
-        else:
-            suffix = f"run={session.settings.run_binding} confirm={confirmation} state={state}"
-            status_widget.update(status + suffix)
+        summary.update_presentation(query_summary_for(workspace))
         interrupt.disabled = not workspace.busy or workspace.cancelling
         self._refresh_tab(workspace)
+
+    def _update_editor_status(self, workspace: SqlExplorerWorkspace | None = None) -> None:
+        if not self.screen_stack:
+            return
+        workspace = workspace or self.active_workspace
+        try:
+            row, column = workspace.editor.cursor_location
+            workspace.query_one("#editor-status", Static).update(
+                f"SQL  Ln {row + 1}, Col {column + 1}"
+            )
+        except NoMatches:
+            return
 
     def _set_notice(
         self,

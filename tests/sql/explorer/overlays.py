@@ -34,11 +34,11 @@ def test_search_panel_is_compact_right_overlay_with_responsive_limits() -> None:
         async with application.run_test(size=(200, 40)):
             bar = application.query_one(FindReplaceBar)
             assert bar.styles.width is not None
-            assert bar.styles.width.value == 12.5
+            assert bar.styles.width.value == 55
             assert bar.styles.min_width is not None
-            assert bar.styles.min_width.value == 24
+            assert bar.styles.min_width.value == 32
             assert bar.styles.max_width is not None
-            assert bar.styles.max_width.value == 48
+            assert bar.styles.max_width.value == 80
             assert bar.styles.dock == "right"
             assert bar.styles.layer == "overlay"
 
@@ -57,8 +57,8 @@ def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
             application.enable_find_navigation()
 
             for control_id in (
-                "find-next",
                 "replace-pattern",
+                "find-next",
                 "replace-current",
                 "replace-all",
                 "find-pattern",

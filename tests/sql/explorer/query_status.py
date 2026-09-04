@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from threading import Event, Thread
+from time import monotonic
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -10,11 +11,15 @@ import pandas as pd
 import pytest
 from analytics_toolkit.sql_explorer import runtime
 from analytics_toolkit.sql_explorer.app import ResultMessage, SqlExplorerApp
-from analytics_toolkit.sql_explorer.runtime import ExplorerQueryState, format_duration
+from analytics_toolkit.sql_explorer.runtime import (
+    ExplorerQueryState,
+    ExplorerRunResult,
+    format_duration,
+)
 from analytics_toolkit.sql_explorer.statements import ExecutionRoute, build_execution_plan
-from rich.text import Text
+from analytics_toolkit.sql_explorer.status import format_compact_duration
 from textual.css.query import NoMatches
-from textual.widgets import Button, Static
+from textual.widgets import Button, LoadingIndicator, Static
 
 from tests.sql.explorer.app import FakeSession
 
@@ -38,6 +43,20 @@ def test_duration_formatting_uses_readable_seconds_minutes_and_hours() -> None:
     assert format_duration(65) == "1 minute 5 seconds"
     assert format_duration(60) == "1 minute"
     assert format_duration(5_405) == "1 hour 30 minutes 5 seconds"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0.128, "0.128s"),
+        (6.0, "6s"),
+        (12.34, "12.3s"),
+        (65.9, "1m 05s"),
+        (5_405.9, "1h 30m 05s"),
+    ],
+)
+def test_compact_duration_adapts_to_elapsed_time(seconds: float, expected: str) -> None:
+    assert format_compact_duration(seconds) == expected
 
 
 def test_session_retains_completed_and_failed_query_records(
@@ -197,35 +216,113 @@ def test_query_cleanup_and_cancel_failures_remain_label_targeted(
     assert session.active_query.label == "different"
 
 
-def test_status_keeps_query_after_results_close_and_styles_slow_warning() -> None:
+def test_running_summary_animates_and_keeps_slow_warning() -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        session.active_query = ExplorerQueryState(
+            "sql_explorer run=active",
+            ExecutionRoute.READ,
+            monotonic() - 301,
+            None,
+            "running",
+        )
+        application = SqlExplorerApp(session)
+        async with application.run_test():
+            application.active_workspace.query_state = "running"
+            application.busy = True
+            application._update_status()
+            assert application.query_one("#query-running-indicator", LoadingIndicator).display
+            assert "Query running" in str(application.query_one("#query-outcome").render())
+            assert "consider optimizing" in str(application.query_one("#query-warning").render())
+            assert application.query_one("#interrupt", Button).disabled is False
+
+    asyncio.run(exercise())
+
+
+def test_completed_summary_keeps_rows_and_elapsed_after_results_close() -> None:
     async def exercise() -> None:
         session = FakeSession()
         session.last_query = ExplorerQueryState(
-            "sql_explorer run=kept",
+            "sql_explorer run=completed",
             ExecutionRoute.READ,
-            0.0,
-            301.0,
+            10.0,
+            10.128,
             "completed",
         )
         application = SqlExplorerApp(session)
         async with application.run_test():
-            application.show_message("result")
+            result = ExplorerRunResult(
+                route=ExecutionRoute.READ,
+                dataframe=pd.DataFrame({"value": range(200)}),
+                displayed_rows=200,
+                total_rows=1_234,
+                truncated=True,
+                status="Showing the first 200 of 1,234 rows.",
+            )
+            application._render_result(result, application.active_workspace)
             application.close_results()
             application._update_status()
-            status = application.query_one("#session-status", Static).render()
-            status = getattr(status, "_renderable", status)
 
-            assert isinstance(status, Text)
-            assert "sql_explorer run=kept" in status.plain
-            assert "route=sql.read" in status.plain
-            assert "consider optimizing your query or sit tight" in status.plain
-            warning_spans = [
-                span
-                for span in status.spans
-                if "consider optimizing" in status.plain[span.start : span.end]
-            ]
-            assert warning_spans
-            assert warning_spans[0].style == "bold red"
+            assert "Query succeeded" in str(application.query_one("#query-outcome").render())
+            assert "200 of 1,234 rows" in str(application.query_one("#query-rows").render())
+            assert "0.128s" in str(application.query_one("#query-elapsed").render())
+            assert application.query_one("#interrupt", Button).disabled is True
+            assert str(application.query_one("#notice", Static).renderable) == ""
+
+    asyncio.run(exercise())
+
+
+def test_query_summary_hides_cards_for_queue_and_formats_unknown_truncation() -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        session.last_query = ExplorerQueryState(
+            "sql_explorer run=completed",
+            ExecutionRoute.READ,
+            0.0,
+            65.0,
+            "completed",
+        )
+        application = SqlExplorerApp(session)
+        async with application.run_test():
+            workspace = application.active_workspace
+            workspace.last_run_result = ExplorerRunResult(
+                route=ExecutionRoute.READ,
+                dataframe=pd.DataFrame({"value": range(200)}),
+                displayed_rows=200,
+                total_rows=None,
+                truncated=True,
+                status="Showing the first 200 rows; more rows are available.",
+            )
+            application._update_status()
+            assert "200+ rows" in str(application.query_one("#query-rows").render())
+
+            workspace.last_run_result = ExplorerRunResult(
+                route=ExecutionRoute.READ,
+                dataframe=pd.DataFrame({"value": [1]}),
+                displayed_rows=1,
+                total_rows=1,
+                truncated=False,
+                status="1 row.",
+            )
+            application._update_status()
+            assert "1 row" in str(application.query_one("#query-rows").render())
+
+            workspace.last_run_result = ExplorerRunResult(
+                route=ExecutionRoute.READ,
+                dataframe=pd.DataFrame({"value": [1, 2]}),
+                displayed_rows=2,
+                total_rows=2,
+                truncated=False,
+                status="2 rows.",
+            )
+            application._update_status()
+            assert "2 rows" in str(application.query_one("#query-rows").render())
+
+            workspace.query_state = "queued"
+            application._update_status()
+            assert application.query_one("#query-outcome").display is False
+            assert application.query_one("#query-rows").display is False
+            assert application.query_one("#query-elapsed").display is False
 
     asyncio.run(exercise())
 
@@ -255,7 +352,7 @@ def test_interrupt_stays_disabled_until_query_worker_acknowledges() -> None:
     asyncio.run(exercise())
 
 
-def test_metadata_notice_does_not_replace_user_query_status() -> None:
+def test_metadata_notice_remains_without_the_removed_verbose_status() -> None:
     async def exercise() -> None:
         session = FakeSession()
         session.last_query = ExplorerQueryState(
@@ -269,10 +366,9 @@ def test_metadata_notice_does_not_replace_user_query_status() -> None:
         async with application.run_test():
             application._set_notice("Metadata completion unavailable: permission denied")
             application._update_status()
-            status = str(application.query_one("#session-status", Static).render())
             notice = str(application.query_one("#notice", Static).render())
-            assert "sql_explorer run=user-query" in status
-            assert "route=sql.execute" in status
+            assert not list(application.query("#session-status"))
+            assert "Query failed" in str(application.query_one("#query-outcome").render())
             assert "Metadata completion unavailable" in notice
 
     asyncio.run(exercise())
@@ -325,6 +421,7 @@ def test_status_updates_ignore_unavailable_workspace_widgets(
             with monkeypatch.context() as patch:
                 patch.setattr(workspace, "query_one", missing)
                 application._update_status()
+                application._update_editor_status()
                 application._set_notice("remounting")
 
     asyncio.run(exercise())

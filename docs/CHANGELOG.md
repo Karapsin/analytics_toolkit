@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Fix SQL Explorer multi-cursor navigation and modernize repository MCP tooling.
 - Add tabbed SQL Explorer workspaces with queued execution and shortcut parity.
 - Enforce one active SQL Explorer query per database.
+- Refreshed SQL Explorer layout, query summaries, and text editing.
 
 ## 1.3.11.17 - 2026-09-03
 

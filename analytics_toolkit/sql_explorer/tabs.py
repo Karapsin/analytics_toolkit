@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
 
+from rich.text import Text
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.css.query import NoMatches
@@ -26,7 +27,7 @@ _TAB_SWITCH_MINIMUM = 2
 
 class TabSelectButton(Button):
     def __init__(self, tab_id: str, label: str) -> None:
-        super().__init__(label, classes="tab-select")
+        super().__init__(Text(label), classes="tab-select")
         self.tab_id = tab_id
 
 
@@ -56,8 +57,8 @@ class WorkspaceTab(Horizontal):
     def set_title(self, title: str, *, path: str | None = None) -> None:
         self._title = title
         button = self.query_one(TabSelectButton)
-        button.label = title
-        button.tooltip = path or title
+        button.label = Text(title)
+        button.tooltip = Text(path or title)
 
     def set_active(self, active: bool) -> None:
         self.set_class(active, "active")
@@ -206,6 +207,7 @@ class SqlExplorerTabCommandsMixin:
         app = cast("Any", self)
         app.active_workspace.restore_focus()
         app._update_status(app.active_workspace)
+        app._update_editor_status(app.active_workspace)
 
     def action_next_tab(self) -> None:
         self._switch_tab(1)

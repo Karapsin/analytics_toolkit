@@ -102,7 +102,7 @@ class SqlExplorerQueryCommandsMixin:
             workspace.query_state = "running"
             workspace.running_job_id = job.job_id
             workspace.operation_database = job.database
-            app._set_notice(f"Running via sql.{job.plan.route.value}...", workspace)
+            app._set_notice(None, workspace)
             app._update_status(workspace)
             app._execute_in_worker(job, workspace.session)
 
@@ -171,11 +171,13 @@ class SqlExplorerQueryCommandsMixin:
         workspace: SqlExplorerWorkspace,
     ) -> None:
         app = cast("Any", self)
-        app._set_notice(result.status, workspace)
+        workspace.last_run_result = result
+        app._set_notice(None, workspace)
         if result.dataframe is None:
             app.close_results(focus_editor=False, workspace=workspace)
         else:
             app.show_dataframe(result.dataframe, workspace)
+        app._update_status(workspace)
 
     def _finish_result(self, result: ExplorerRunResult) -> None:
         app = cast("Any", self)

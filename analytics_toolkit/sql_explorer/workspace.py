@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Button, Input, Static
+from textual.widgets import Input, Static
 
 from .editor import SqlEditor
+from .status import QuerySummaryBar
 from .widgets import CommandInput, CompletionMenu, FindReplaceBar, ResultMessage, ResultTable
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from textual.widget import Widget
 
     from .completion import CompletionContext, CompletionCoordinator
-    from .runtime import DatabaseSelection, ExplorerSession
+    from .runtime import DatabaseSelection, ExplorerRunResult, ExplorerSession
 
 WorkspaceQueryState = Literal["ready", "queued", "running", "cancelling"]
 
@@ -53,6 +54,7 @@ class SqlExplorerWorkspace(Vertical):
         self.closing = False
         self.exit_after_cancel = False
         self.pending_mount_action: Callable[[], None] | None = None
+        self.last_run_result: ExplorerRunResult | None = None
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="query-pane"):
@@ -63,14 +65,15 @@ class SqlExplorerWorkspace(Vertical):
             )
             yield FindReplaceBar(id="find-replace-bar")
             yield CompletionMenu(id="completion-menu", wrap=False)
+            yield Static("SQL  Ln 1, Col 1", id="editor-status", markup=False)
         with Vertical(classes="result-pane"):
             yield ResultTable(id="result-table", cursor_type="cell", zebra_stripes=True)
             yield ResultMessage("", id="result-message", markup=False)
         with Vertical(classes="command-panel"):
-            yield Static("", id="session-status", markup=False)
+            yield QuerySummaryBar(id="query-summary")
             yield Static("", id="notice", markup=False)
-            yield Button("Interrupt", id="interrupt", classes="interrupt", disabled=True)
-            yield CommandInput(placeholder=": command", id="command-input")
+            with Horizontal(id="command-row"):
+                yield CommandInput(placeholder=": command", id="command-input")
 
     def on_mount(self) -> None:
         if self.tab_id != "1":

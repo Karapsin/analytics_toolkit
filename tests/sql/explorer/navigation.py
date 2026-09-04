@@ -13,6 +13,7 @@ from analytics_toolkit.sql_explorer.filetree import (
     read_sql_file,
     safe_entries,
 )
+from analytics_toolkit.sql_explorer.tabs import TabSelectButton
 from analytics_toolkit.sql_explorer.widgets import (
     DiscardChangesScreen,
     FileNavigationScreen,
@@ -227,8 +228,8 @@ def test_open_command_and_keyboard_navigation_load_utf8_file(
             await pilot.pause()
             editor = application.query_one(SqlEditor)
             assert editor.text == "select 'Привет'"
-            status = str(application.query_one("#session-status", Static).render())
-            assert str(sql_file.resolve()) in status
+            tooltip = application.query_one(TabSelectButton).tooltip
+            assert str(sql_file.resolve()) in str(tooltip)
 
     asyncio.run(exercise())
 
@@ -391,7 +392,7 @@ def test_new_file_dialog_and_write_errors_are_reported(
             screen.on_button_pressed(SimpleNamespace(button=SimpleNamespace(id="new-file-confirm")))
             await pilot.pause()
             assert isinstance(application.screen, FileNavigationScreen)
-            await pilot.press("escape")
+            await pilot.press("escape", "escape")
 
             application._new_sql_filename_selected(None)
             FileNavigationScreen(tmp_path).action_choose_directory()

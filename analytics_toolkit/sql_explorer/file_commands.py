@@ -12,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 
 from .errors import SqlExplorerConfigurationError
+from .inputs import EditableInput
 from .widgets import FileNavigationScreen
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class NewFileScreen(ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="new-file-dialog"):
             yield Static(self._dialog_title, markup=False)
-            yield Input(placeholder=self._placeholder, id="new-file-name")
+            yield EditableInput(placeholder=self._placeholder, id="new-file-name")
             yield Static("", id="new-file-notice")
             with Horizontal(id="new-file-actions"):
                 yield Button("Choose directory", variant="primary", id="new-file-confirm")
