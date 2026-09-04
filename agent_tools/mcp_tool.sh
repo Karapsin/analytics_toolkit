@@ -8,4 +8,8 @@ if [[ ! -x "${python_bin}" ]]; then
   python_bin="python"
 fi
 
+if [[ "$#" -eq 0 ]]; then
+  exec "${python_bin}" "${repo_dir}/agent_tools/mcp_server.py"
+fi
+
 exec "${python_bin}" "${repo_dir}/agent_tools/mcp_server.py" call "$@"

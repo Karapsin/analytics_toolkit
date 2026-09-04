@@ -1,0 +1,10 @@
+[mcp_servers.analytics_toolkit_agent_tools]
+command = "sh"
+args = [
+  "-c",
+  'repo_root="$(git rev-parse --show-toplevel)" && exec "$repo_root/agent_tools/mcp_tool.sh"',
+]
+enabled = true
+required = false
+startup_timeout_sec = 30
+tool_timeout_sec = 7200

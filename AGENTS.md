@@ -18,13 +18,19 @@ reports the instruction files that must be read next.
 
 If MCP is not available, run only the mandatory `git switch dev` and
 `git pull --ff-only origin dev` first,
-then set up the local agent-only MCP environment and call `prepare_start` before
-continuing:
+then set up the local agent-only MCP environment with Python 3.10 or newer and
+call `prepare_start` before continuing:
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 .venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt
 ```
+
+The committed `.codex/config.toml` registers the repository MCP server for
+trusted project sessions. Codex loads project MCP configuration at session
+startup, so restart Codex or reopen the workspace after bootstrapping or
+changing the configuration. `agent_tools/mcp_tool.sh` with no arguments starts
+the stdio server; arguments continue to invoke its manual JSON CLI.
 
 ### Read-Only Planning Exception
 

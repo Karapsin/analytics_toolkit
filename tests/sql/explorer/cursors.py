@@ -94,6 +94,94 @@ def test_escape_collapses_extra_cursors_before_changing_panes() -> None:
     asyncio.run(exercise())
 
 
+def test_word_navigation_moves_and_selects_at_every_cursor() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "alpha beta\none three"
+            editor.cursor_location = (0, len("alpha beta"))
+            editor.action_add_cursor_below()
+
+            await pilot.press("ctrl+left")
+            assert editor.cursor_selections == (
+                Selection.cursor((0, len("alpha "))),
+                Selection.cursor((1, len("one "))),
+            )
+
+            await pilot.press("ctrl+right")
+            assert editor.cursor_selections == (
+                Selection.cursor((0, len("alpha beta"))),
+                Selection.cursor((1, len("one three"))),
+            )
+
+            await pilot.press("ctrl+shift+left")
+            assert editor.cursor_selections == (
+                Selection((0, len("alpha beta")), (0, len("alpha "))),
+                Selection((1, len("one three")), (1, len("one "))),
+            )
+
+            editor._set_selections(Selection.cursor((1, 0)), [Selection.cursor((0, 0))])
+            await pilot.press("ctrl+shift+right")
+            assert editor.cursor_selections == (
+                Selection((0, 0), (0, len("alpha"))),
+                Selection((1, 0), (1, len("one"))),
+            )
+
+    asyncio.run(exercise())
+
+
+def test_word_navigation_preserves_cross_line_cursor_deduplication() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "alpha\nbeta"
+            editor._set_selections(Selection.cursor((1, 0)), [Selection.cursor((0, len("alpha")))])
+
+            await pilot.press("ctrl+left")
+
+            assert editor.cursor_count == 1
+            assert editor.selection == Selection.cursor((0, len("alpha")))
+
+            await pilot.press("ctrl+right")
+            assert editor.selection == Selection.cursor((1, 0))
+
+    asyncio.run(exercise())
+
+
+def test_home_moves_every_cursor_to_its_current_line_start() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "  alpha\n\n    gamma"
+            editor._set_selections(
+                Selection((2, 2), (2, 7)),
+                [Selection.cursor((0, 5)), Selection.cursor((1, 0))],
+            )
+
+            await pilot.press("home")
+            assert editor.cursor_selections == (
+                Selection.cursor((0, 0)),
+                Selection.cursor((1, 0)),
+                Selection.cursor((2, 0)),
+            )
+
+            editor._set_selections(Selection.cursor((2, 7)), [Selection.cursor((0, 5))])
+            await pilot.press("shift+home")
+            assert editor.cursor_selections == (
+                Selection((0, 5), (0, 0)),
+                Selection((2, 7), (2, 0)),
+            )
+
+            editor._set_selections(Selection.cursor((2, 7)), [])
+            editor.action_home()
+            assert editor.selection == Selection.cursor((2, 0))
+
+    asyncio.run(exercise())
+
+
 def test_cursor_commands_report_invalid_usage_and_empty_paste(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(app_module.pyperclip, "paste", lambda: "")
 

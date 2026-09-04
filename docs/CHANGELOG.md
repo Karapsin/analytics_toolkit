@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Update SQL Explorer pane navigation.
 - Add SQL Explorer result exports.
 - Keep SQL Explorer command focus and cursors visible.
+- Fix SQL Explorer multi-cursor navigation and modernize repository MCP tooling.
 
 ## 1.3.11.17 - 2026-09-03
 

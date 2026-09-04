@@ -28,6 +28,19 @@ agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
+The agent-only MCP runtime requires Python 3.10 or newer and MCP SDK 2. The
+committed `.codex/config.toml` registers the server automatically for trusted
+project sessions. Bootstrap or refresh `.venv` with `requirements-mcp.txt`, then
+restart Codex or reopen the workspace after cloning or changing MCP
+configuration; MCP servers are loaded when a session starts. Running
+`agent_tools/mcp_tool.sh` without arguments starts the stdio server, while the
+commands above retain the manual JSON CLI.
+
+The project registration is optional (`required = false`) so a missing local
+environment does not prevent Codex from opening. The launcher never installs
+dependencies automatically; bootstrap failures report the command needed to
+repair the environment.
+
 MCP tools return compact receipts by default. Successful summary responses omit
 internal command records; failures return a structured blocker with one bounded
 excerpt. Complete stdout and stderr remain available with private permissions

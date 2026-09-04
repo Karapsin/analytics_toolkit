@@ -72,11 +72,14 @@ stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
 a parser installation is damaged or cannot load, the editor still opens
 without highlighting and remains editable.
 
-Portable editing keys include Home, End, arrows, Shift+arrows, Tab, Shift+Tab,
-Enter, Escape, Ctrl+C, Ctrl+Enter, and F5. Home always moves to column zero of
-the current logical line and collapses selection; Ctrl+Home goes to the start of
-the document. Shift+Up and Shift+Down add a cursor above or below the active
-cursor. Repeating the key chains cursors across as many logical lines as needed;
+Portable editing keys include Home, End, arrows, Shift+arrows, Ctrl+A,
+Ctrl+Left, Ctrl+Right, Tab, Shift+Tab, Enter, Escape, Ctrl+C, Ctrl+Enter, and F5.
+Home always moves every cursor to column zero of its current logical line and
+collapses its selection; Ctrl+Home goes to the start of the document. Ctrl+A
+selects the full buffer. Ctrl+Left and Ctrl+Right move every cursor by one word,
+and their Shift variants extend every cursor's independent selection. Shift+Up
+and Shift+Down add a cursor above or below the active cursor. Repeating the key
+chains cursors across as many logical lines as needed;
 pressing toward an occupied adjacent line removes that cursor, while at least one
 cursor always remains. Each cursor has an independent selection, and editing or
 pasting applies at every cursor. Escape collapses multiple cursors to the active

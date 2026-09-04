@@ -21,9 +21,9 @@ docs_assistant = importlib.import_module(
 )
 
 try:  # pragma: no cover - exercised only when the agent-only MCP dependency exists.
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 except ImportError:  # pragma: no cover - normal package test env has no MCP dependency.
-    FastMCP = None  # type: ignore[assignment]
+    MCPServer = None  # type: ignore[assignment,misc]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +83,12 @@ GITHUB_CHECK_DISCOVERY_SECONDS = 5 * 60
 GITHUB_CHECK_WAIT_SECONDS = 60
 SQL_ARCHITECTURE_MAX_LINES = 900
 SQL_ARCHITECTURE_WARNING_LINES = 50
+MCP_SERVER_INSTRUCTIONS = (
+    "Repository-local analytics-toolkit workflow server. Call prepare_start before repository "
+    "inspection or changes, follow its instruction routing, use change_impact for implementation "
+    "preflight, and use the managed status, version, check, git, and release workflows instead of "
+    "their underlying scripts."
+)
 PYTHON_CACHE_DIR = "/tmp/utils_dev_pycache"  # noqa: S108 - repository-wide test cache.
 SQL_ARCHITECTURE_EXCEPTIONS = {
     "analytics_toolkit/sql/connection/config.py",
@@ -1738,15 +1744,18 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
 
 def create_mcp_server() -> Any:
     """Create the MCP server instance."""
-    if FastMCP is None:
+    if MCPServer is None:
         msg = (
-            "The MCP SDK is not installed. Run "
+            "The MCP SDK 2 runtime is not installed. Using Python 3.10 or newer, run "
             "`.venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt` "
             "from the repository root, then start this server again."
         )
         raise RuntimeError(msg)
 
-    server = FastMCP("analytics-toolkit-agent-tools")
+    server = MCPServer(
+        "analytics-toolkit-agent-tools",
+        instructions=MCP_SERVER_INSTRUCTIONS,
+    )
 
     server.tool()(prepare_start)
     server.tool()(docs)

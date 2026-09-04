@@ -32,12 +32,16 @@ class SqlEditor(TextArea):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
         Binding("down", "cursor_down", "Cursor down", show=False),
-        Binding("home", "home", "Line start", show=False),
+        Binding("home", "cursor_line_start", "Line start", show=False),
         Binding("end", "cursor_line_end", "Line end", show=False),
+        Binding("ctrl+left", "cursor_word_left", "Cursor word left", show=False),
+        Binding("ctrl+right", "cursor_word_right", "Cursor word right", show=False),
         Binding("shift+up", "add_cursor_above", "Add cursor above", show=False),
         Binding("shift+down", "add_cursor_below", "Add cursor below", show=False),
         Binding("shift+home", "cursor_line_start(True)", "Select to line start", show=False),
         Binding("shift+end", "cursor_line_end(True)", "Select to line end", show=False),
+        Binding("ctrl+shift+left", "cursor_word_left(True)", "Select word left", show=False),
+        Binding("ctrl+shift+right", "cursor_word_right(True)", "Select word right", show=False),
         Binding("ctrl+a", "select_all", "Select all", show=False),
         Binding("ctrl+x", "cut", "Cut", show=False),
         Binding("ctrl+v", "paste", "Paste", show=False),
@@ -237,14 +241,43 @@ class SqlEditor(TextArea):
             return row, column + 1
         return (row + 1, 0) if row < self.document.line_count - 1 else location
 
+    def _word_left_of(self, location: tuple[int, int]) -> tuple[int, int]:
+        row, column = location
+        if row > 0 and column == 0:
+            return row - 1, len(self.document[row - 1])
+
+        search_string = self.document[row][:column].rstrip()
+        matches = list(re.finditer(self._word_pattern, search_string))
+        return row, matches[-1].start() if matches else 0
+
+    def _word_right_of(self, location: tuple[int, int]) -> tuple[int, int]:
+        row, column = location
+        line = self.document[row]
+        if row < self.document.line_count - 1 and column == len(line):
+            return row + 1, 0
+
+        search_string = line[column:]
+        stripped = search_string.lstrip()
+        strip_offset = len(search_string) - len(stripped)
+        matches = list(re.finditer(self._word_pattern, stripped))
+        if not matches:
+            return row, len(line)
+        return row, column + strip_offset + matches[0].start()
+
     def action_cursor_left(self, select: bool = False) -> None:
         self._move_all(self._left_of, select=select)
 
     def action_cursor_right(self, select: bool = False) -> None:
         self._move_all(self._right_of, select=select)
 
+    def action_cursor_word_left(self, select: bool = False) -> None:
+        self._move_all(self._word_left_of, select=select)
+
+    def action_cursor_word_right(self, select: bool = False) -> None:
+        self._move_all(self._word_right_of, select=select)
+
     def action_home(self) -> None:
-        self._move_all(lambda location: (location[0], 0))
+        self.action_cursor_line_start()
 
     def action_cursor_line_start(self, select: bool = False) -> None:
         self._move_all(lambda location: (location[0], 0), select=select)

@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import sys
+import warnings
+from contextlib import AsyncExitStack
+
 from tests.agent_tools._support.mcp import (
     Path,
     _write_minimal_repo_files,
@@ -26,8 +32,9 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeMCP:
-        def __init__(self, name: str) -> None:
+        def __init__(self, name: str, *, instructions: str) -> None:
             self.name = name
+            self.instructions = instructions
             self.tools: list[str] = []
             self.resources: list[str] = []
 
@@ -47,15 +54,16 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
 
     created: list[FakeMCP] = []
 
-    def fake_factory(name: str) -> FakeMCP:
-        server = FakeMCP(name)
+    def fake_factory(name: str, *, instructions: str) -> FakeMCP:
+        server = FakeMCP(name, instructions=instructions)
         created.append(server)
         return server
 
-    monkeypatch.setattr(mcp_server, "FastMCP", fake_factory)
+    monkeypatch.setattr(mcp_server, "MCPServer", fake_factory)
 
     mcp_server.create_mcp_server()
 
+    assert "prepare_start" in created[0].instructions
     assert created[0].tools == [
         "prepare_start",
         "docs",
@@ -67,6 +75,60 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
         "git_workflow",
         "release_workflow",
     ]
+
+
+def test_mcp_v2_stdio_server_exposes_consolidated_contract() -> None:
+    if mcp_server.MCPServer is None:
+        pytest.skip("agent-only MCP 2 dependency is not installed")
+
+    from mcp import ClientSession, StdioServerParameters  # noqa: PLC0415
+    from mcp.client.stdio import stdio_client  # noqa: PLC0415
+
+    async def exercise() -> None:
+        environment = dict(os.environ)
+        environment["MCP_PYTHON"] = sys.executable
+        parameters = StdioServerParameters(
+            command="sh",
+            args=[
+                "-c",
+                'repo_root="$(git rev-parse --show-toplevel)" '
+                '&& exec "$repo_root/agent_tools/mcp_tool.sh"',
+            ],
+            env=environment,
+            cwd=mcp_server.REPO_ROOT / "tests",
+        )
+        async with AsyncExitStack() as stack:
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(parameters))
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+            await session.initialize()
+            tools = await session.list_tools()
+            resources = await session.list_resources()
+
+        assert [tool.name for tool in tools.tools] == [
+            "prepare_start",
+            "docs",
+            "workflow_status",
+            "workflow_metrics",
+            "change_impact",
+            "version_bump",
+            "run_checks",
+            "git_workflow",
+            "release_workflow",
+        ]
+        assert "repo://AGENTS.md" in {str(resource.uri) for resource in resources.resources}
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        asyncio.run(exercise())
+
+
+def test_project_codex_config_registers_portable_mcp_launcher() -> None:
+    config = (mcp_server.REPO_ROOT / ".codex" / "config.toml").read_text(encoding="utf-8")
+
+    assert "[mcp_servers.analytics_toolkit_agent_tools]" in config
+    assert "git rev-parse --show-toplevel" in config
+    assert "required = false" in config
+    assert "tool_timeout_sec = 7200" in config
 
 
 def test_mcp_tool_wrapper_routes_force_release_flag(tmp_path: Path) -> None:
