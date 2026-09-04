@@ -19,6 +19,9 @@ from typing import Any
 docs_assistant = importlib.import_module(
     f"{__package__}.docs_assistant" if __package__ else "docs_assistant"
 )
+sql_explorer_visual = importlib.import_module(
+    f"{__package__}.sql_explorer_visual" if __package__ else "sql_explorer_visual"
+)
 
 try:  # pragma: no cover - exercised only when the agent-only MCP dependency exists.
     from mcp.server import MCPServer
@@ -109,6 +112,7 @@ MODULE_DOCS = {
     "agent_tool": "agent_tools/README.md",
     "agent_tools": "agent_tools/README.md",
     "sql": "agent_docs/sql.md",
+    "sql_explorer": "agent_docs/sql.md",
     "excel": "agent_docs/excel.md",
     "dates": "agent_docs/dates.md",
     "date": "agent_docs/dates.md",
@@ -640,6 +644,7 @@ def workflow_status(  # noqa: PLR0913 - public MCP input shape is intentionally 
         "dependency_metadata_status": dependency_metadata,
         "recommended_checks": recommended,
         "missing_mandatory_actions": missing,
+        "sql_explorer_visual_review": sql_explorer_visual.verify_visual_receipt(root_path),
     }
     context = _workflow_context(
         root_path,
@@ -1497,6 +1502,28 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 "Pass explicit paths for the current batch, then retry git_workflow(action='commit')."
             ],
         )
+    visual_verification = sql_explorer_visual.verify_visual_receipt(
+        root_path,
+        paths=commit_paths,
+    )
+    if not visual_verification["ok"]:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Commit blocked by SQL Explorer visual review.",
+            result={"sql_explorer_visual_review": visual_verification},
+            blockers=[
+                {
+                    "phase": "visual_review",
+                    "message": visual_verification["message"],
+                }
+            ],
+            next_actions=[
+                "Capture every SQL Explorer scene in a fresh macOS VM, inspect every PNG, "
+                "record pass verdicts, and complete visual_workflow before committing."
+            ],
+        )
     version_requirement = _version_bump_requirement(root_path, commit_paths)
     if version_requirement["missing"]:
         return _tool_output(
@@ -1764,6 +1791,8 @@ def create_mcp_server() -> Any:
     server.tool()(change_impact)
     server.tool()(version_bump)
     server.tool()(run_checks)
+    server.tool()(sql_explorer_visual.visual_workflow)
+    server.tool()(sql_explorer_visual.visual_review)
     server.tool()(git_workflow)
     server.tool()(release_workflow)
 
@@ -2114,6 +2143,40 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             integration_clickhouse_driver=args.integration_clickhouse_driver,
             root=args.root,
             detail=args.detail,
+        )
+    )
+
+    visual_workflow_parser = subparsers.add_parser("visual-workflow")
+    visual_workflow_parser.add_argument(
+        "action", choices=["start", "capture", "status", "complete"]
+    )
+    visual_workflow_parser.add_argument("--review-id")
+    visual_workflow_parser.add_argument("--root", default=".")
+    visual_workflow_parser.set_defaults(
+        handler=lambda args: sql_explorer_visual.visual_workflow(
+            action=args.action,
+            review_id=args.review_id,
+            root=args.root,
+        )
+    )
+
+    visual_review_parser = subparsers.add_parser("visual-review")
+    visual_review_parser.add_argument("--review-id", required=True)
+    visual_review_parser.add_argument("--scene-id", required=True)
+    visual_review_parser.add_argument(
+        "--verdict",
+        choices=["pass", "product_defect", "infrastructure_failure"],
+        required=True,
+    )
+    visual_review_parser.add_argument("--notes")
+    visual_review_parser.add_argument("--root", default=".")
+    visual_review_parser.set_defaults(
+        handler=lambda args: sql_explorer_visual.visual_review(
+            review_id=args.review_id,
+            scene_id=args.scene_id,
+            verdict=args.verdict,
+            notes=args.notes,
+            root=args.root,
         )
     )
 
@@ -3316,6 +3379,11 @@ def _missing_mandatory_actions(
             missing.append(
                 "Run run_checks(level='precommit') before git_workflow(action='commit')."
             )
+        visual = sql_explorer_visual.verify_visual_receipt(root)
+        if not visual["ok"]:
+            missing.append(
+                "Complete the full fresh-macOS-VM SQL Explorer visual review before commit."
+            )
     return missing
 
 
@@ -3697,11 +3765,16 @@ def _push_readiness(root: Path) -> dict[str, Any]:
             {"phase": "push", "message": "Push workflow requires a clean working tree."}
         )
 
+    visual = sql_explorer_visual.verify_visual_receipt(root, for_push=True)
+    if not visual["ok"]:
+        blockers.append({"phase": "visual_review", "message": visual["message"]})
+
     remote = _remote_dev_status(root, require_equal=False)
     blockers.extend(remote["blockers"])
     return {
         "repo_health": health,
         "remote_dev_status": remote["result"],
+        "sql_explorer_visual_review": visual,
         "command_results": remote["command_results"],
         "blockers": blockers,
     }

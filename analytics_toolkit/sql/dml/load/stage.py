@@ -349,7 +349,7 @@ def _build_stage_identifier(
     )
     return exp.to_identifier(
         identifier,
-        quoted=bool(table.this.args.get("quoted")),
+        quoted=bool(table.this.args.get("quoted")) or identifier[0].isdigit(),
     )
 
 

@@ -8,6 +8,8 @@ from textual.containers import Vertical
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from .styles import explorer_css_variables
+
 
 class DatabasePickerApp(App[Optional[str]]):
     TITLE = "analytics-toolkit SQL explorer"
@@ -24,7 +26,7 @@ class DatabasePickerApp(App[Optional[str]]):
         max-width: 80;
         height: 70%;
         max-height: 30;
-        border: round $accent;
+        border: solid $accent;
     }
     #database-picker-title {
         height: 3;
@@ -42,6 +44,9 @@ class DatabasePickerApp(App[Optional[str]]):
     def __init__(self, choices: tuple[tuple[str, str], ...]) -> None:
         super().__init__()
         self.choices = choices
+
+    def get_css_variables(self) -> dict[str, str]:
+        return explorer_css_variables()
 
     def compose(self) -> ComposeResult:
         with Vertical(id="database-picker"):

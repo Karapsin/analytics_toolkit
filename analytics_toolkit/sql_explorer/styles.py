@@ -1,11 +1,42 @@
 from __future__ import annotations
 
+from textual.design import ColorSystem
+
+
+def explorer_design() -> dict[str, ColorSystem]:
+    """Return the fixed dark palette shared by every Explorer entry screen."""
+
+    def dark_system() -> ColorSystem:
+        return ColorSystem(
+            primary="#1677B8",
+            secondary="#303840",
+            warning="#D88900",
+            error="#E5484D",
+            success="#46A758",
+            accent="#D88900",
+            background="#0E1113",
+            surface="#171A1D",
+            panel="#20252A",
+            boost="#FFFFFF0A",
+            dark=True,
+            luminosity_spread=0.08,
+            text_alpha=0.92,
+        )
+
+    return {"dark": dark_system(), "light": dark_system()}
+
+
+def explorer_css_variables() -> dict[str, str]:
+    """Return Explorer colors early enough for Textual's first CSS compilation."""
+    return explorer_design()["dark"].generate()
+
+
 APP_CSS = """
 Screen {
     layout: vertical;
 }
 #tab-strip {
-    height: 3;
+    height: 2;
     overflow-x: auto;
     overflow-y: hidden;
     background: $panel;
@@ -14,38 +45,48 @@ Screen {
 }
 .workspace-tab {
     width: auto;
-    height: 2;
+    height: 1;
 }
 .tab-select {
     width: auto;
-    min-width: 16;
-    height: 2;
+    min-width: 0;
+    height: 1;
     border: none;
     padding: 0 1;
     background: $panel;
+    color: $text-muted;
+    content-align: left middle;
 }
 .tab-close, .new-tab {
-    width: 4;
-    min-width: 4;
-    height: 2;
+    width: 3;
+    min-width: 3;
+    height: 1;
     border: none;
     padding: 0;
     background: $panel;
 }
 .workspace-tab.active .tab-select,
 .workspace-tab.active .tab-close {
-    background: $accent-darken-1;
-    color: $text;
+    background: $accent;
+    color: $background;
     text-style: bold;
+}
+.tab-select:hover, .tab-select:focus,
+.tab-close:hover, .tab-close:focus,
+.new-tab:hover, .new-tab:focus {
+    background: $panel-lighten-2;
+    color: $accent-lighten-1;
 }
 #workspace-stack, .sql-workspace {
     height: 1fr;
 }
 .query-pane {
     height: 1fr;
+    border: solid $panel-lighten-2;
     layers: base overlay;
 }
 .query-pane:focus-within {
+    border: solid $accent;
     background: $panel-lighten-1;
 }
 #query-editor {
@@ -60,6 +101,7 @@ Screen {
 }
 #editor-status {
     height: 2;
+    layer: base;
     border-top: solid $panel-lighten-2;
     padding: 0 1;
     background: $panel;
@@ -78,9 +120,9 @@ Screen {
     max-width: 80;
     height: auto;
     background: $panel;
-    border: round $warning;
+    border: solid $warning;
     padding: 1;
-    margin: 2 2 0 0;
+    margin: 1 1 0 0;
 }
 #find-pattern, #replace-pattern {
     width: 100%;
@@ -88,14 +130,14 @@ Screen {
     margin-bottom: 1;
 }
 #find-pattern:focus, #replace-pattern:focus {
-    border: tall $accent;
+    border: solid $accent;
 }
 #find-next {
     width: 100%;
     height: 3;
     min-width: 0;
     margin-bottom: 1;
-    border: tall $panel-lighten-2;
+    border: solid $panel-lighten-2;
     background: $surface;
 }
 #replace-actions {
@@ -105,7 +147,7 @@ Screen {
     width: 1fr;
     height: 3;
     min-width: 0;
-    border: tall $panel-lighten-2;
+    border: solid $panel-lighten-2;
     background: $surface;
 }
 #completion-menu {
@@ -115,16 +157,17 @@ Screen {
     max-width: 48;
     height: auto;
     max-height: 12;
-    border: round $accent;
+    border: solid $accent;
     background: $panel;
 }
 .result-pane {
     height: 1fr;
     display: none;
-    border-top: solid $panel-lighten-2;
+    margin-top: 1;
+    border: solid $panel-lighten-2;
 }
 .result-pane:focus-within {
-    border-top: solid $accent;
+    border: solid $accent;
     background: $panel-lighten-1;
 }
 #result-table, #result-message {
@@ -141,12 +184,13 @@ Screen {
     background: $panel-lighten-1;
 }
 .command-panel {
-    height: 6;
-    border-top: solid $panel-lighten-2;
+    height: 7;
+    margin-top: 1;
+    border: solid $panel-lighten-2;
     background: $panel;
 }
 .command-panel:focus-within {
-    border-top: solid $accent;
+    border: solid $accent;
     background: $panel-lighten-1;
 }
 #query-summary {
@@ -156,11 +200,12 @@ Screen {
 }
 #query-running-indicator {
     display: none;
-    width: 5;
-    min-width: 5;
+    width: 3;
+    min-width: 3;
     height: 3;
     background: $panel;
-    color: $accent;
+    color: $text-muted;
+    content-align: center middle;
 }
 .query-card {
     display: none;
@@ -233,10 +278,10 @@ EditableInput > .input--selection {
 }
 
 #navigation-select-directory.armed {
-    background: $accent-darken-1;
-    color: $text;
+    background: $panel-lighten-2;
+    color: $accent-lighten-1;
     text-style: bold;
 }
 """
 
-__all__ = ["APP_CSS"]
+__all__ = ["APP_CSS", "explorer_css_variables", "explorer_design"]

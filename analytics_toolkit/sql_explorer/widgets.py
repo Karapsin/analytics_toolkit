@@ -17,7 +17,6 @@ from .editor import SqlEditor
 from .filetree import completion_entries, safe_entries
 from .inputs import EditableInput
 from .panes import CommandInput, ResultMessage
-from .scrollbars import LeftVerticalScrollbarMixin
 
 if TYPE_CHECKING:
     from rich.style import Style
@@ -31,7 +30,7 @@ _MAX_CELL_LENGTH = 512
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
 
 
-class ResultTable(LeftVerticalScrollbarMixin, DataTable[Any]):
+class ResultTable(DataTable[Any]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
         Binding("down", "cursor_down", "Cursor down", show=False),
@@ -304,7 +303,7 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
         width: 80%;
         height: 80%;
         max-width: 120;
-        border: round $accent;
+        border: solid $accent;
         background: $panel;
         padding: 1;
     }
@@ -317,10 +316,10 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
     }
     #navigation-tree {
         height: 1fr;
-        border: round $panel-lighten-2;
+        border: solid $panel-lighten-2;
     }
     #navigation-tree:focus {
-        border: double $accent;
+        border: solid $accent;
         background: $panel-lighten-1;
     }
     """
@@ -739,7 +738,7 @@ class ConfirmMutationScreen(ModalScreen[bool]):
         max-width: 100;
         height: auto;
         max-height: 80%;
-        border: round $warning;
+        border: solid $warning;
         background: $panel;
         padding: 1 2;
     }
@@ -810,7 +809,7 @@ class DiscardChangesScreen(ModalScreen[bool]):
         width: 70%;
         max-width: 80;
         height: auto;
-        border: round $warning;
+        border: solid $warning;
         background: $panel;
         padding: 1 2;
     }

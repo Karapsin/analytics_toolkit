@@ -48,7 +48,11 @@ class NativeQueryResult:
     def result_columns(self) -> list[tuple[Any, ...]]:
         if self._result_columns is None:
             if self._column_oriented:
-                self._result_columns = [tuple(column) for column in self._data]
+                self._result_columns = (
+                    [tuple(column) for column in self._data]
+                    if self._data
+                    else [() for _name in self.column_names]
+                )
             elif self._data:
                 self._result_columns = list(zip(*self._data))
             else:

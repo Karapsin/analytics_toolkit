@@ -28,7 +28,7 @@ from .picker import DatabasePickerApp
 from .query_commands import SqlExplorerQueryCommandsMixin
 from .scheduling import ExplorerQueryScheduler
 from .status import QuerySummaryBar, query_summary_for
-from .styles import APP_CSS
+from .styles import APP_CSS, explorer_css_variables
 from .tabs import (
     NewTabButton,
     SqlExplorerTabCommandsMixin,
@@ -126,6 +126,9 @@ class SqlExplorerApp(
         self._clipboard = ""
         self._terminal_clipboard = TerminalClipboard()
         self._find_navigation_bound = False
+
+    def get_css_variables(self) -> dict[str, str]:
+        return explorer_css_variables()
 
     @property
     def active_workspace(self) -> SqlExplorerWorkspace:

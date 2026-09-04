@@ -121,6 +121,12 @@ frontends for the native wire protocol, including hostname-verification
 failures. Completion requires no toolkit tables, labelled
 queries, MinIO stage objects, project containers, networks, or volumes.
 
+The auth and fault CI jobs install `integration/requirements-auth.txt` without
+the optional agent MCP dependency set. Airflow's pinned constraints own that
+environment; keeping MCP SDK and its HTTP client requirements out prevents the
+test bootstrap from downgrading one dependency set to satisfy the other. The
+jobs still run `pip check` before starting services.
+
 Normal commit completion waits only for required fast CI; advisory integration
 jobs continue independently. Release readiness reruns and requires the
 exhaustive `all` profile across both ClickHouse transports. Any integration

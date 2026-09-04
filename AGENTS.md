@@ -63,6 +63,8 @@ Use these MCP tools for the corresponding agent workflow steps:
   `workflow_status`.
 - Version, README version, and changelog updates: `version_bump`.
 - Focused, pre-commit, and release validation checks: `run_checks`.
+- Fresh-macOS SQL Explorer capture and review: `visual_workflow` and
+  `visual_review`.
 - Stage/commit and push workflow: `git_workflow`.
 - Release readiness and PyPI publishing entrypoint: `release_workflow`.
 
@@ -101,6 +103,17 @@ a PyPI release is requested, merge `dev` into `main` with
 `release_workflow(action="merge-dev")`, then run release readiness and
 publishing from `main`.
 
+Any change under `analytics_toolkit/sql_explorer/`, its visual harness, or its
+scene manifest requires the full SQL Explorer visual review before commit or
+push. Use `visual_workflow` to create a new clone from the pinned macOS OCI
+digest for that review; never reuse, start, stop, or delete an existing VM.
+Capture every manifest scene through headless VNC at 1280x800, open every full
+PNG, and record an individual `pass` verdict with `visual_review`. Completion
+requires every automated geometry check and agent verdict to pass, then shuts
+down and deletes only the run-owned VM. `git_workflow` blocks SQL Explorer
+commits and pushes when this content-bound receipt is missing, stale, partial,
+or non-green. Treat reference images as design guidance, not pixel baselines.
+
 When planning any repository task, include a corrective work item for every
 known non-green integration result rather than treating it as unrelated debt.
 Whenever an integration failure leads to a code, configuration, test-harness,
@@ -125,6 +138,10 @@ agent_tools/mcp_tool.sh workflow-metrics
 agent_tools/mcp_tool.sh workflow-status --task "documentation" --module sql
 agent_tools/mcp_tool.sh version-bump "Updated SQL docs" --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level focused --dry-run
+agent_tools/mcp_tool.sh visual-workflow start
+agent_tools/mcp_tool.sh visual-workflow capture --review-id <review-id>
+agent_tools/mcp_tool.sh visual-review --review-id <review-id> --scene-id <scene-id> --verdict pass
+agent_tools/mcp_tool.sh visual-workflow complete --review-id <review-id>
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
 agent_tools/mcp_tool.sh release-workflow --action status
 ```

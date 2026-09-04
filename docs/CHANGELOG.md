@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Add tabbed SQL Explorer workspaces with queued execution and shortcut parity.
 - Enforce one active SQL Explorer query per database.
 - Refreshed SQL Explorer layout, query summaries, and text editing.
+- Polished SQL Explorer layout and query status, added the macOS visual-review gate, and fixed SQL integration regressions.
 
 ## 1.3.11.17 - 2026-09-03
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.core.identifiers import TableIdentifier
+
 from tests.sql._support.transfer_ordinal import (
     Any,
     RowBatch,
@@ -62,7 +64,7 @@ def test_effective_transfer_worker_count_uses_initial_batch_count(
 
 def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) -> None:
     existence_checks = 0
-    created: list[str] = []
+    created: list[tuple[str, dict[str, Any]]] = []
 
     def fake_exists(*_args: Any, **_kwargs: Any) -> bool:
         nonlocal existence_checks
@@ -73,7 +75,7 @@ def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) ->
     monkeypatch.setattr(
         load_stage,
         "_create_sql_table_with_connection",
-        lambda _backend, _connection, table, *_args, **_kwargs: created.append(table),
+        lambda _backend, _connection, table, *_args, **kwargs: created.append((table, kwargs)),
     )
     actual = load_stage.create_stage_table(
         "trino",
@@ -82,9 +84,11 @@ def test_explicit_stage_suffix_collision_allocates_new_name(monkeypatch: Any) ->
         pd.DataFrame({"id": [1]}),
         random_suffix="transferid__w00000",
         destination_hash="0123456789abcdef",
+        ddl_properties={"compression_codec": "'ZSTD'"},
     )
 
-    assert actual == created[0]
+    assert actual == created[0][0]
+    assert created[0][1]["ddl_properties"] == {"compression_codec": "'ZSTD'"}
     relation = actual.split(".")[-1].strip('"')
     assert relation.startswith("0123456789abcdef__orders")
     assert relation[:-4].endswith("transferid__w00000")
@@ -107,6 +111,21 @@ def test_hashed_stage_name_keeps_prefix_and_gp_byte_limit() -> None:
     assert "a" * 32 in relation
     assert len(relation.encode()) <= 62
     assert len(f"_{relation}".encode()) <= 63
+
+
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_numeric_hashed_stage_identifier_is_quoted_and_parseable(backend: str) -> None:
+    schema = "iceberg.staging" if backend == "trino" else "staging"
+    name = load_stage.build_stage_table_name(
+        backend,
+        "sales.orders",
+        transfer_staging_schema=schema,
+        random_suffix="a" * 32,
+        destination_hash="0123456789abcdef",
+    )
+
+    assert '"0123456789abcdef__' in name or "`0123456789abcdef__" in name
+    assert TableIdentifier.parse(name, backend).relation.startswith("0123456789abcdef__")
 
 
 def test_internal_columns_resolve_case_and_suffix_collisions() -> None:

@@ -86,7 +86,7 @@ class SaveChangesScreen(ModalScreen[CloseDecision]):
         width: 70%;
         max-width: 80;
         height: auto;
-        border: round $warning;
+        border: solid $warning;
         background: $panel;
         padding: 1 2;
     }

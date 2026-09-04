@@ -17,9 +17,9 @@ from analytics_toolkit.sql_explorer.runtime import (
     format_duration,
 )
 from analytics_toolkit.sql_explorer.statements import ExecutionRoute, build_execution_plan
-from analytics_toolkit.sql_explorer.status import format_compact_duration
+from analytics_toolkit.sql_explorer.status import CircularSpinner, format_compact_duration
 from textual.css.query import NoMatches
-from textual.widgets import Button, LoadingIndicator, Static
+from textual.widgets import Button, Static
 
 from tests.sql.explorer.app import FakeSession
 
@@ -227,14 +227,26 @@ def test_running_summary_animates_and_keeps_slow_warning() -> None:
             "running",
         )
         application = SqlExplorerApp(session)
-        async with application.run_test():
+        async with application.run_test() as pilot:
             application.active_workspace.query_state = "running"
             application.busy = True
             application._update_status()
-            assert application.query_one("#query-running-indicator", LoadingIndicator).display
+            indicator = application.query_one("#query-running-indicator", CircularSpinner)
+            assert indicator.display
+            first_frame = str(indicator.renderable)
+            await pilot.pause(CircularSpinner.INTERVAL_SECONDS * 1.5)
+            assert str(indicator.renderable) != first_frame
             assert "Query running" in str(application.query_one("#query-outcome").render())
             assert "consider optimizing" in str(application.query_one("#query-warning").render())
-            assert application.query_one("#interrupt", Button).disabled is False
+            interrupt = application.query_one("#interrupt", Button)
+            assert str(interrupt.label) == "Interrupt"
+            assert interrupt.disabled is False
+
+            application.active_workspace.query_state = "ready"
+            application.busy = False
+            application._update_status()
+            assert indicator.display is False
+            assert str(indicator.renderable) == CircularSpinner.FRAMES[0]
 
     asyncio.run(exercise())
 

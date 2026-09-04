@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "review_batch_size": 5,
+  "viewport": {
+    "platform": "macos",
+    "width": 1280,
+    "height": 800,
+    "terminal_profile": "SQL Explorer Visual Review"
+  },
+  "style_contract": "Dark charcoal, square hard edges, sparse amber accents: brutal, but polished.",
+  "scenes": [
+    {
+      "id": "database-picker",
+      "required_elements": ["#database-picker", "#database-picker-title", "#database-options", "#database-picker-help"]
+    },
+    {
+      "id": "editor-ready",
+      "required_elements": ["#tab-strip", "#tab-1", "#new-tab", "#workspace-stack", "#query-editor", "#editor-status", "#query-summary", "#notice", "#command-row", "#command-input", "#interrupt"]
+    },
+    {
+      "id": "tabs-overflow",
+      "required_elements": ["#tab-strip", "#tab-1", "#query-editor", "#editor-status"]
+    },
+    {
+      "id": "completion",
+      "required_elements": ["#query-editor", "#completion-menu", "#editor-status"]
+    },
+    {
+      "id": "find-replace",
+      "required_elements": ["#query-editor", "#find-replace-bar", "#find-pattern", "#replace-pattern", "#find-next", "#replace-actions", "#replace-current", "#replace-all", "#notice"]
+    },
+    {
+      "id": "query-running",
+      "required_elements": ["#query-summary", "#query-running-indicator", "#query-outcome", "#query-elapsed", "#query-warning", "#interrupt", "#command-input"]
+    },
+    {
+      "id": "result-success",
+      "required_elements": ["#query-editor", "#editor-status", "#result-table", "#query-outcome", "#query-rows", "#query-elapsed", "#interrupt"]
+    },
+    {
+      "id": "result-message",
+      "required_elements": ["#query-editor", "#editor-status", "#result-message", "#query-outcome", "#query-elapsed", "#notice"]
+    },
+    {
+      "id": "file-open",
+      "required_elements": ["#navigation-dialog", "#navigation-title", "#navigation-path", "#navigation-tree", "#navigation-notice", "#navigation-help"]
+    },
+    {
+      "id": "directory-armed",
+      "required_elements": ["#navigation-dialog", "#navigation-title", "#navigation-path", "#navigation-tree", "#navigation-select-directory", "#navigation-notice", "#navigation-help"]
+    },
+    {
+      "id": "new-file",
+      "required_elements": ["#new-file-dialog", "#new-file-name", "#new-file-notice", "#new-file-actions", "#new-file-confirm", "#new-file-cancel"]
+    },
+    {
+      "id": "mutation-confirm",
+      "required_elements": ["#confirmation-dialog", "#confirmation-preview", "#confirmation-buttons", "#confirm-execute", "#confirm-cancel"]
+    },
+    {
+      "id": "discard-confirm",
+      "required_elements": ["#discard-dialog", "#discard-buttons", "#discard-confirm", "#discard-cancel"]
+    },
+    {
+      "id": "save-changes",
+      "required_elements": ["#save-changes-dialog", "#save-changes-buttons", "#save-changes-save", "#save-changes-discard", "#save-changes-cancel"]
+    },
+    {
+      "id": "export-confirm",
+      "required_elements": ["#export-confirmation-dialog", "#export-confirmation-buttons", "#export-confirm", "#export-cancel"]
+    }
+  ]
+}

@@ -35,7 +35,7 @@ class NewFileScreen(ModalScreen[Optional[str]]):
         width: 70%;
         max-width: 80;
         height: auto;
-        border: round $accent;
+        border: solid $accent;
         background: $panel;
         padding: 1 2;
     }

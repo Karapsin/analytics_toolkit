@@ -13,8 +13,6 @@ from textual.document._document import Selection
 from textual.widgets import TextArea
 from typing_extensions import TypeAlias
 
-from .scrollbars import LeftVerticalScrollbarMixin
-
 if TYPE_CHECKING:
     from rich.text import Text
     from textual import events
@@ -28,7 +26,7 @@ _SEARCH_MATCH_STYLE = Style(color="black", bgcolor="bright_yellow", bold=True)
 SearchMatch: TypeAlias = Tuple[Tuple[int, int], Tuple[int, int]]
 
 
-class SqlEditor(LeftVerticalScrollbarMixin, TextArea):
+class SqlEditor(TextArea):
     """A Textual editor with independent selections on separate logical lines."""
 
     BINDINGS: ClassVar[list[BindingType]] = [

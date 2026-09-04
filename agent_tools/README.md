@@ -22,6 +22,11 @@ agent_tools/mcp_tool.sh version-bump --change-type release --force-release --dry
 agent_tools/mcp_tool.sh run-checks --area agent_tools --level focused --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --dry-run
 agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile core
+agent_tools/mcp_tool.sh visual-workflow start
+agent_tools/mcp_tool.sh visual-workflow capture --review-id <review-id>
+agent_tools/mcp_tool.sh visual-workflow status --review-id <review-id>
+agent_tools/mcp_tool.sh visual-review --review-id <review-id> --scene-id <scene-id> --verdict pass
+agent_tools/mcp_tool.sh visual-workflow complete --review-id <review-id>
 agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/agent_tools/mcp
 agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
@@ -70,6 +75,14 @@ before a PyPI release. Use `release-workflow --action publish` only when release
 readiness is clean. Release status runs the exhaustive SQL integration `all`
 profile with HTTP and native ClickHouse and records its success in the
 exact-tree release receipt.
+
+SQL Explorer production or visual-harness changes also require the private
+visual receipt created by `visual-workflow`. A review creates a fresh clone of
+the pinned macOS OCI image, runs it headlessly at 1280x800, captures every scene
+over VNC, and destroys only that run-owned clone. `visual-workflow status`
+returns the next PNG batch; the agent must open every image and record one
+scene verdict through `visual-review`. Only an all-pass, current-content receipt
+allows `git-workflow` to commit or push the Explorer change.
 
 Normal `version-bump` calls add the supplied summary under `## Unreleased` and
 roll the section into a new version when it reaches ten bullets. For an explicit
@@ -147,7 +160,8 @@ payloads and repeated repository discovery are not returned.
 
 `mcp_server.py` exposes the consolidated tool surface:
 `prepare_start`, `docs`, `workflow_status`, `workflow_metrics`, `change_impact`, `version_bump`,
-`run_checks`, `git_workflow`, and `release_workflow`.
+`run_checks`, `visual_workflow`, `visual_review`, `git_workflow`, and
+`release_workflow`.
 
 ## Docs Assistant
 

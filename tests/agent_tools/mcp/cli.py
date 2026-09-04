@@ -72,6 +72,8 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
         "change_impact",
         "version_bump",
         "run_checks",
+        "visual_workflow",
+        "visual_review",
         "git_workflow",
         "release_workflow",
     ]
@@ -112,6 +114,8 @@ def test_mcp_v2_stdio_server_exposes_consolidated_contract() -> None:
             "change_impact",
             "version_bump",
             "run_checks",
+            "visual_workflow",
+            "visual_review",
             "git_workflow",
             "release_workflow",
         ]

@@ -14,6 +14,7 @@ from analytics_toolkit.sql.backends.ch.native_client import (
     _normalize_stream_rows,
     _split_first_stream_block,
 )
+from analytics_toolkit.sql.backends.registry import get_backend_adapter
 
 
 class FakeNativeClient:
@@ -98,8 +99,24 @@ def test_empty_query_result_preserves_metadata() -> None:
     assert rows.result_columns == [()]
     assert rows.row_count == 0
     assert columns.result_rows == []
-    assert columns.result_columns == []
+    assert columns.result_columns == [()]
     assert columns.row_count == 0
+
+    class EmptyNativeConnection:
+        def query(self, _sql: str, *, column_oriented: bool) -> NativeQueryResult:
+            assert column_oriented is True
+            return NativeQueryResult(
+                [],
+                [("query_id", "String"), ("elapsed_seconds", "Float64")],
+                column_oriented=True,
+            )
+
+    dataframe = get_backend_adapter("ch")._query_dataframe(
+        EmptyNativeConnection(),
+        "SELECT query_id, elapsed_seconds FROM system.processes WHERE 0",
+    )
+    assert dataframe.empty
+    assert list(dataframe.columns) == ["query_id", "elapsed_seconds"]
 
 
 def test_dataframe_read_and_streaming() -> None:

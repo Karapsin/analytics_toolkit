@@ -34,11 +34,17 @@ sql_explorer.run()
   a notebook.
 - Editor and text-input carets remain visible and do not blink. Every
   single-line field supports selection, clipboard, word movement, undo, and
-  redo shortcuts.
+  redo shortcuts. Editor and result scrollbars are on the right, and separated
+  square-bordered panes do not overlap.
 - `Ctrl+Enter` and `F5` are the portable run shortcuts. Explorer Ctrl shortcuts
   accept terminal-forwarded Command/Fn-like events when available.
 - `Ctrl+T` creates a complete workspace tab, `Ctrl+W` closes it safely, and
   `Ctrl+Tab` / `Ctrl+Shift+Tab` switch with wraparound.
+- Compact tab labels always include `[db]`; the active tab uses a dark surface
+  and amber text.
+- While SQL is running, a muted grey circular loop and human-readable duration
+  appear at the right of the command status strip, with the correctly spelled
+  **Interrupt** control at the far right.
 - User SQL uses a shared FIFO queue per database, with at most one active user
   query on each database. Metadata uses a separate shared FIFO queue for each
   database alias.

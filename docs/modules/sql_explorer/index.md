@@ -95,9 +95,11 @@ in parallel with user SQL.
 
 After executing a command, focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
-The editor and text inputs use steady non-blinking carets. The editor displays
-line numbers, keeps its vertical scrollbar on the left, shows the active
-one-based line and column in its lower-right corner, applies SQL syntax
+The editor and text inputs use steady non-blinking carets. The compact active
+tab uses a dark surface with amber text and always includes its database key.
+The editor displays line numbers, keeps its vertical scrollbar on the right,
+shows the active one-based line and column in its lower-right corner without
+covering the first editor rows, applies SQL syntax
 highlighting, and keeps long SQL lines unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
 stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
 3.13–3.14, so highlighting is available on every supported Python version. If
@@ -197,7 +199,9 @@ first Escape.
 ## Results and clipboard
 
 At most 200 result rows are displayed, with the result grid's vertical
-scrollbar on the left. Query-shaped final statements use a
+scrollbar on the right. The query, result, and command panes use square borders
+with a one-row separation so their focus treatments never overlap.
+Query-shaped final statements use a
 201-row server-side limit so the Explorer can indicate when more rows exist
 without fetching an unbounded result. Finite Decimal cells display without
 insignificant trailing zeros. Integers, decimals, and floating-point values use
@@ -224,7 +228,8 @@ portable SSH paste path; Ctrl+V/Pyperclip remains a local fallback.
 ## Query status and cancellation
 
 The top of the command pane shows compact query cards instead of a verbose
-query label. A running query has an animated indicator and live elapsed time;
+query label. A running query has a muted grey circular loop and live,
+human-readable elapsed time;
 completed, failed, and cancelled queries retain their outcome and elapsed time
 after result clearing, pane closing, focus changes, or tab switching. Successful
 row-producing queries also retain their displayed row count, using `200+ rows`

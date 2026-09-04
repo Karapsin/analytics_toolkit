@@ -6,16 +6,51 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from textual.containers import Horizontal
-from textual.widgets import Button, LoadingIndicator, Static
+from textual.widgets import Button, Static
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+    from textual.timer import Timer
 
     from .workspace import SqlExplorerWorkspace
 
 _SLOW_QUERY_SECONDS = 300
 _SECONDS_PER_MINUTE = 60
 OutcomeStyle = Literal["running", "success", "error", "cancelled"]
+
+
+class CircularSpinner(Static):
+    """A restrained circular activity indicator for running queries."""
+
+    FRAMES = ("◴", "◷", "◶", "◵")
+    INTERVAL_SECONDS = 0.12
+
+    def __init__(self, *, id: str | None = None) -> None:  # noqa: A002 - Textual API name.
+        super().__init__(self.FRAMES[0], id=id, markup=False)
+        self._frame_index = 0
+        self._animation_timer: Timer | None = None
+
+    def on_mount(self) -> None:
+        self._animation_timer = self.set_interval(
+            self.INTERVAL_SECONDS,
+            self._advance,
+            pause=True,
+        )
+
+    def set_running(self, *, running: bool) -> None:
+        self.styles.display = "block" if running else "none"
+        if self._animation_timer is None:
+            return
+        if running:
+            self._animation_timer.resume()
+        else:
+            self._animation_timer.pause()
+            self._frame_index = 0
+            self.update(self.FRAMES[0])
+
+    def _advance(self) -> None:
+        self._frame_index = (self._frame_index + 1) % len(self.FRAMES)
+        self.update(self.FRAMES[self._frame_index])
 
 
 @dataclass(frozen=True)
@@ -99,7 +134,7 @@ class QuerySummaryBar(Horizontal):
     _OUTCOME_CLASSES = ("running", "success", "error", "cancelled")
 
     def compose(self) -> ComposeResult:
-        yield LoadingIndicator(id="query-running-indicator")
+        yield CircularSpinner(id="query-running-indicator")
         yield Static("", id="query-outcome", classes="query-card", markup=False)
         yield Static("", id="query-rows", classes="query-card", markup=False)
         yield Static("", id="query-elapsed", classes="query-card", markup=False)
@@ -112,8 +147,8 @@ class QuerySummaryBar(Horizontal):
         )
 
     def update_presentation(self, presentation: QuerySummaryPresentation) -> None:
-        indicator = self.query_one("#query-running-indicator", LoadingIndicator)
-        indicator.styles.display = "block" if presentation.running else "none"
+        indicator = self.query_one("#query-running-indicator", CircularSpinner)
+        indicator.set_running(running=presentation.running)
         self._update_card("#query-outcome", presentation.outcome)
         self._update_card("#query-rows", presentation.rows)
         self._update_card("#query-elapsed", presentation.elapsed)
@@ -131,6 +166,7 @@ class QuerySummaryBar(Horizontal):
 
 
 __all__ = [
+    "CircularSpinner",
     "QuerySummaryBar",
     "QuerySummaryPresentation",
     "format_compact_duration",
