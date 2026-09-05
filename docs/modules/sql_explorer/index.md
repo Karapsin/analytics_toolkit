@@ -83,6 +83,9 @@ reuses the active clean untitled tab or opens a new tab, preserving the current
 workspace. New tabs inherit the active database, after which `db DB_KEY` changes
 only the selected tab.
 
+Changing databases preserves the tab's filename or `Untitled N` label and dirty
+marker, resizing the tab to fit the updated database alias.
+
 User queries enter a shared FIFO queue for their selected database. At most one
 user query runs on each database across all tabs, while queries for different
 databases may run in parallel. Each tab may have only one queued or active
@@ -92,6 +95,23 @@ queue and cache, while different aliases have independent queues that may run
 in parallel with user SQL.
 
 ## Editor and completion
+
+The `format` command formats selected SQL, or the complete active editor when
+nothing is selected, through
+[`sql_format.format_sql`](../sql_format/functions/format_sql.md). It uses the
+active database dialect and the formatter's defaults, including lowercase
+keywords, four-space indentation, `where 1=1` normalization, and positional
+grouping/ordering where applicable. Multiple statements are formatted separately
+with a blank line between them. Formatting is local, does not execute SQL, and
+can be undone in one step. If any selected statement cannot be formatted, no
+editor text changes. Command focus stays in the command pane.
+
+Selectable controls share the startup database picker's subtle mouse-hover
+highlight. Keyboard selections use the active tab's amber background and dark
+text across buttons, tabs, database and completion lists, file navigation,
+and result cells. Editor and input text selections retain their previous
+translucent highlighting. Hovering a selected control keeps its amber selection
+visible. Unselected dialog buttons use neutral colors.
 
 After executing a command, focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
@@ -228,8 +248,11 @@ portable SSH paste path; Ctrl+V/Pyperclip remains a local fallback.
 ## Query status and cancellation
 
 The top of the command pane shows compact query cards instead of a verbose
-query label. A running query has a muted grey circular loop and live,
-human-readable elapsed time;
+query label. A running query has a rectangular loop with a moving, fading snake segment.
+Its top and bottom strokes align with the query card borders using ordinary
+terminal line characters, without plugins. Elapsed time refreshes every 0.1 seconds
+while running, showing tenths of a second below one minute (for example, `0.1s`
+or `12.3s`);
 completed, failed, and cancelled queries retain their outcome and elapsed time
 after result clearing, pane closing, focus changes, or tab switching. Successful
 row-producing queries also retain their displayed row count, using `200+ rows`
@@ -238,11 +261,11 @@ known. Durations adapt from sub-second values such as `0.128s` to values such as
 `1m 05s`. After five minutes, a running query adds the warning
 `consider optimizing your query or sit tight`.
 
-The outlined red **Interrupt** button is the rightmost control in the same
+The outlined red **STOP** button is the rightmost control in the same
 status strip. It is enabled only while a query can be interrupted. Operational
 notices and the command input remain directly below the strip.
 
-The `Interrupt` button and `cancel` command use the same targeted cancellation
+The `STOP` button and `cancel` command use the same targeted cancellation
 path. They identify only the active Explorer user-query label through
 `sql.show_queries(...)` and call `sql.cancel_queries(...)` for matching IDs.
 Metadata completion queries are independent and are never interruption targets.
@@ -260,6 +283,7 @@ first; Find/Replace and completion overlays close before focus navigation.
 Enter commands in the lower panel, with or without a leading colon:
 
 - `run` - run the selection or complete editor buffer
+- `format` - format selections or the complete editor using the active SQL dialect
 - `open` - enter remote-host SQL file navigation mode
 - `save` - save edits to the opened SQL file
 - `cancel` - request cancellation of the active Explorer user query

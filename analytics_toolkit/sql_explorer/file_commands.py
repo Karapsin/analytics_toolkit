@@ -60,7 +60,7 @@ class NewFileScreen(ModalScreen[Optional[str]]):
             yield EditableInput(placeholder=self._placeholder, id="new-file-name")
             yield Static("", id="new-file-notice")
             with Horizontal(id="new-file-actions"):
-                yield Button("Choose directory", variant="primary", id="new-file-confirm")
+                yield Button("Choose directory", id="new-file-confirm")
                 yield Button("Cancel", id="new-file-cancel")
 
     def on_mount(self) -> None:

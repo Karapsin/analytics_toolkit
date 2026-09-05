@@ -25,6 +25,13 @@ CloseDecision = Literal["save", "discard", "cancel"]
 _TAB_SWITCH_MINIMUM = 2
 
 
+class WorkspaceTabStrip(HorizontalScroll):
+    """Keep one label row available when the horizontal scrollbar appears."""
+
+    def watch_show_horizontal_scrollbar(self, visible: bool) -> None:
+        self.set_class(visible, "overflowing")
+
+
 class TabSelectButton(Button):
     def __init__(self, tab_id: str, label: str) -> None:
         super().__init__(Text(label), classes="tab-select")
@@ -55,10 +62,16 @@ class WorkspaceTab(Horizontal):
         yield TabCloseButton(self.tab_id)
 
     def set_title(self, title: str, *, path: str | None = None) -> None:
+        changed = self._title != title
         self._title = title
         button = self.query_one(TabSelectButton)
         button.label = Text(title)
         button.tooltip = Text(path or title)
+        # Button.label repaints without requesting layout in supported Textual versions.
+        # Invalidate its measured width and the containing tab after a DB/name change.
+        if changed:
+            button.refresh(layout=True)
+            self.refresh(layout=True)
 
     def set_active(self, active: bool) -> None:
         self.set_class(active, "active")
@@ -104,8 +117,8 @@ class SaveChangesScreen(ModalScreen[CloseDecision]):
         with Vertical(id="save-changes-dialog"):
             yield Static(f"Save changes to {self.title}?", markup=False)
             with Horizontal(id="save-changes-buttons"):
-                yield Button("Save [S]", variant="primary", id="save-changes-save")
-                yield Button("Don't Save [D]", variant="warning", id="save-changes-discard")
+                yield Button("Save [S]", id="save-changes-save")
+                yield Button("Don't Save [D]", id="save-changes-discard")
                 yield Button("Cancel", id="save-changes-cancel")
 
     def on_mount(self) -> None:
@@ -321,4 +334,5 @@ __all__ = [
     "TabCloseButton",
     "TabSelectButton",
     "WorkspaceTab",
+    "WorkspaceTabStrip",
 ]

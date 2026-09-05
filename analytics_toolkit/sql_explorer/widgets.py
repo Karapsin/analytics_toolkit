@@ -772,7 +772,7 @@ class ConfirmMutationScreen(ModalScreen[bool]):
             )
             yield Static(preview, id="confirmation-preview", markup=False)
             with Horizontal(id="confirmation-buttons"):
-                yield Button("Execute [Y]", variant="warning", id="confirm-execute")
+                yield Button("Execute [Y]", id="confirm-execute")
                 yield Button("Cancel [N]", id="confirm-cancel")
 
     def action_confirm(self) -> None:
@@ -830,7 +830,7 @@ class DiscardChangesScreen(ModalScreen[bool]):
                 markup=False,
             )
             with Horizontal(id="discard-buttons"):
-                yield Button("Discard [Y]", variant="warning", id="discard-confirm")
+                yield Button("Discard [Y]", id="discard-confirm")
                 yield Button("Keep editing [N]", id="discard-cancel")
 
     def action_discard(self) -> None:

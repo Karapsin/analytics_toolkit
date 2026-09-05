@@ -10,7 +10,7 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import HorizontalScroll, Vertical
+from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
@@ -35,6 +35,7 @@ from .tabs import (
     TabCloseButton,
     TabSelectButton,
     WorkspaceTab,
+    WorkspaceTabStrip,
 )
 from .terminal_keys import control_compatible_key
 from .widgets import (
@@ -210,7 +211,7 @@ class SqlExplorerApp(
         await super().on_event(event)
 
     def compose(self) -> ComposeResult:
-        with HorizontalScroll(id="tab-strip"):
+        with WorkspaceTabStrip(id="tab-strip"):
             yield WorkspaceTab("1", self.active_workspace.tab_title)
             yield NewTabButton()
         with Vertical(id="workspace-stack"):
@@ -230,7 +231,7 @@ class SqlExplorerApp(
         if self.session.settings_warning:
             self._set_notice(self.session.settings_warning, workspace)
         workspace.editor.focus()
-        self.set_interval(1.0, self._update_all_statuses)
+        self.set_interval(0.1, self._update_all_statuses)
 
     def on_unmount(self) -> None:
         self._completion_pool.stop()
@@ -554,6 +555,7 @@ class SqlExplorerApp(
             "confirm": self._command_confirmation,
             "db": self._command_database,
             "exit": self._command_exit,
+            "format": self._command_format,
             "help": self._command_help,
             "mode": self._command_mode,
             "mv": self._command_move,

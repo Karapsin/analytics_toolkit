@@ -44,7 +44,7 @@ sql_explorer.run()
   and amber text.
 - While SQL is running, a muted grey circular loop and human-readable duration
   appear at the right of the command status strip, with the correctly spelled
-  **Interrupt** control at the far right.
+  **STOP** control at the far right.
 - User SQL uses a shared FIFO queue per database, with at most one active user
   query on each database. Metadata uses a separate shared FIFO queue for each
   database alias.

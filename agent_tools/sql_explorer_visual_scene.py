@@ -27,7 +27,7 @@ from analytics_toolkit.sql_explorer.runtime import (
 )
 from analytics_toolkit.sql_explorer.settings import ExplorerSettings
 from analytics_toolkit.sql_explorer.statements import ExecutionRoute, build_execution_plan
-from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
+from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen, TabSelectButton
 from analytics_toolkit.sql_explorer.widgets import (
     ConfirmMutationScreen,
     DiscardChangesScreen,
@@ -35,8 +35,9 @@ from analytics_toolkit.sql_explorer.widgets import (
     ResultTable,
 )
 from textual.app import ScreenStackError
+from textual.color import Color
 from textual.css.query import NoMatches
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, OptionList
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -111,7 +112,17 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         )
         scene = self.visual_scene_id
-        if scene == "tabs-overflow":
+        if scene == "tab-database-change":
+            self._add_workspace()
+            self.set_timer(0.3, self._switch_visual_database)
+        elif scene == "formatted-sql":
+            workspace.editor.text = (
+                "select order_id, revenue from analytics.daily_orders where revenue > 100;\n"
+                "select count(*) from analytics.daily_orders;"
+            )
+            self._command_format([])
+            workspace.command_input.focus()
+        elif scene == "tabs-overflow":
             for index in range(2, 10):
                 tab_workspace = self._add_workspace()
                 tab_workspace.session.database = SimpleNamespace(
@@ -204,8 +215,12 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         elif scene == "discard-confirm":
             self.push_screen(DiscardChangesScreen(Path("quarterly_report.sql")))
-        elif scene == "save-changes":
+        elif scene in {"save-changes", "save-changes-cancel"}:
             self.push_screen(SaveChangesScreen("quarterly_report.sql"))
+            if scene == "save-changes-cancel":
+                self.call_after_refresh(
+                    lambda: self.screen.query_one("#save-changes-cancel", Button).focus()
+                )
         elif scene == "export-confirm":
             self.push_screen(
                 ConfirmExportScreen(
@@ -218,6 +233,11 @@ class VisualExplorerApp(SqlExplorerApp):
 
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
+
+    def _switch_visual_database(self) -> None:
+        self._activate_tab("2")
+        self._command_database(["warehouse_connection"])
+        self.active_workspace.command_input.focus()
 
     def _refresh_visual_evidence(self) -> None:
         if not self._restore_primary_overflow_tab():
@@ -250,6 +270,7 @@ class VisualDatabasePickerApp(DatabasePickerApp):
 
     def on_mount(self) -> None:
         super().on_mount()
+        self.query_one(OptionList)._mouse_hovering_over = 1  # noqa: SLF001 - freeze hover for VNC.
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
 
@@ -335,12 +356,16 @@ def _write_evidence(
         assertions["compact_tab_height"] = tab.region.height == 1
         if scene_id == "tabs-overflow":
             assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
+            assertions["overflow_keeps_tab_labels_visible"] = (
+                app.query_one("#tab-strip").scrollable_content_region.height >= 1
+            )
         summary = workspace.query_one("#query-summary")
         interrupt = workspace.query_one("#interrupt", Button)
-        assertions["interrupt_spelling"] = str(interrupt.label) == "Interrupt"
+        assertions["stop_spelling"] = str(interrupt.label) == "STOP"
         assertions["interrupt_right_aligned"] = (
             interrupt.region.right == summary.content_region.right
         )
+        _assert_changed_controls(app, scene_id, assertions)
 
         panes = [workspace.query_one(".query-pane")]
         if workspace.results_open:
@@ -355,6 +380,8 @@ def _write_evidence(
                 assertions[f"{name}_scrollbar_right"] = (
                     widget.vertical_scrollbar.region.right == widget.content_region.right
                 )
+
+    assertions.update(_button_color_assertions(app))
 
     payload = {
         "schema_version": 1,
@@ -374,6 +401,41 @@ def _write_evidence(
     temporary = evidence_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(evidence_path)
+
+
+def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
+    assertions = {}
+    for button in app.screen.query("ModalScreen Button, FindReplaceBar Button"):
+        focused = button.has_focus and not button.disabled
+        color = app.get_css_variables()["accent" if focused else "surface"]
+        assertions[f"button_focus_color:{button.id}"] = button.styles.background == Color.parse(
+            color
+        )
+    return assertions
+
+
+def _assert_changed_controls(
+    app: VisualExplorerApp, scene_id: str, assertions: dict[str, bool]
+) -> None:
+    workspace = app.active_workspace
+    editor = workspace.editor
+    if scene_id == "tab-database-change":
+        button = app.query_one("#tab-2 .tab-select", TabSelectButton)
+        assertions["updated_tab_title_visible"] = (
+            "[warehouse_connection] Untitled 2" in button.render_line(0).text
+        )
+    if scene_id == "formatted-sql":
+        assertions["formatted_script_visible"] = (
+            "select\n    order_id," in editor.text and ";\n\nselect" in editor.text
+        )
+    if scene_id == "query-running":
+        indicator = workspace.query_one("#query-running-indicator")
+        outcome = workspace.query_one("#query-outcome")
+        assertions["snake_loop_matches_query_card_height"] = (
+            indicator.region.y == outcome.region.y
+            and indicator.region.bottom == outcome.region.bottom
+            and all(indicator.render_line(row).text.strip() for row in range(3))
+        )
 
 
 def _parser() -> argparse.ArgumentParser:

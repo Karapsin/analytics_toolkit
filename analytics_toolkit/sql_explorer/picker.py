@@ -8,7 +8,7 @@ from textual.containers import Vertical
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from .styles import explorer_css_variables
+from .styles import INTERACTION_CSS, explorer_css_variables
 
 
 class DatabasePickerApp(App[Optional[str]]):
@@ -17,7 +17,9 @@ class DatabasePickerApp(App[Optional[str]]):
         Binding("escape,q", "cancel", "Cancel", show=False),
     ]
 
-    CSS = """
+    CSS = (
+        INTERACTION_CSS
+        + """
     Screen {
         align: center middle;
     }
@@ -40,6 +42,7 @@ class DatabasePickerApp(App[Optional[str]]):
         padding: 0 2;
     }
     """
+    )
 
     def __init__(self, choices: tuple[tuple[str, str], ...]) -> None:
         super().__init__()

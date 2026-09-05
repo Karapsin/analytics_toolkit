@@ -42,6 +42,11 @@ Screen {
     background: $panel;
     border-bottom: solid $accent;
     scrollbar-size-horizontal: 1;
+    scrollbar-background: $panel;
+    scrollbar-color: $accent-darken-1;
+}
+#tab-strip.overflowing {
+    height: 3;
 }
 .workspace-tab {
     width: auto;
@@ -70,12 +75,6 @@ Screen {
     background: $accent;
     color: $background;
     text-style: bold;
-}
-.tab-select:hover, .tab-select:focus,
-.tab-close:hover, .tab-close:focus,
-.new-tab:hover, .new-tab:focus {
-    background: $panel-lighten-2;
-    color: $accent-lighten-1;
 }
 #workspace-stack, .sql-workspace {
     height: 1fr;
@@ -137,8 +136,6 @@ Screen {
     height: 3;
     min-width: 0;
     margin-bottom: 1;
-    border: solid $panel-lighten-2;
-    background: $surface;
 }
 #replace-actions {
     height: 3;
@@ -147,8 +144,6 @@ Screen {
     width: 1fr;
     height: 3;
     min-width: 0;
-    border: solid $panel-lighten-2;
-    background: $surface;
 }
 #completion-menu {
     display: none;
@@ -200,8 +195,8 @@ Screen {
 }
 #query-running-indicator {
     display: none;
-    width: 3;
-    min-width: 3;
+    width: 5;
+    min-width: 5;
     height: 3;
     background: $panel;
     color: $text-muted;
@@ -245,9 +240,6 @@ Screen {
     border: solid $error;
     text-style: bold;
 }
-.interrupt:hover, .interrupt:focus {
-    background: $error 20%;
-}
 .interrupt:disabled {
     color: $text-disabled;
     border: solid $error-darken-3;
@@ -271,17 +263,65 @@ Screen {
     color: $text;
     text-style: bold;
 }
+ModalScreen Button, FindReplaceBar Button {
+    background: $surface;
+    color: $text;
+    border: solid $panel-lighten-2;
+    text-style: none;
+    tint: transparent;
+}
+
+"""
+
+INTERACTION_CSS = """
+/* Use one visible neutral hover color; keyboard selection stays amber. */
+Button:hover, Input:hover, TextArea:hover,
+OptionList > .option-list--option-hover,
+Tree > .tree--highlight-line,
+DataTable > .datatable--hover,
+DataTable > .datatable--header-hover {
+    background: $panel-lighten-2;
+}
+Button:focus, Button:focus:hover,
+.interrupt:focus, .interrupt:focus:hover,
+OptionList > .option-list--option-highlighted,
+OptionList > .option-list--option-hover-highlighted,
+OptionList:focus > .option-list--option-highlighted,
+OptionList:focus > .option-list--option-hover-highlighted,
+Tree > .tree--cursor, Tree:focus > .tree--cursor,
+DataTable > .datatable--cursor,
+DataTable > .datatable--fixed-cursor,
+DataTable > .datatable--header-cursor {
+    background: $accent;
+    color: $background;
+    text-style: bold;
+    tint: transparent;
+}
+ModalScreen Button:focus, FindReplaceBar Button:focus, .interrupt:focus {
+    border: solid $accent;
+}
+Button:disabled, Button:disabled:hover {
+    background: $surface;
+    color: $text-disabled;
+    text-style: none;
+    tint: transparent;
+}
+Input:focus, OptionList:focus, Tree:focus, ResultMessage:focus {
+    border: solid $accent;
+}
+Tree > .tree--highlight {
+    text-style: none;
+}
+Tree > .tree--guides-hover, Tree > .tree--guides-selected {
+    color: $accent;
+}
 EditableInput > .input--selection {
     background: $accent 45%;
     color: $text;
     text-style: bold;
 }
-
-#navigation-select-directory.armed {
-    background: $panel-lighten-2;
-    color: $accent-lighten-1;
-    text-style: bold;
-}
 """
 
-__all__ = ["APP_CSS", "explorer_css_variables", "explorer_design"]
+APP_CSS += INTERACTION_CSS
+
+__all__ = ["APP_CSS", "INTERACTION_CSS", "explorer_css_variables", "explorer_design"]

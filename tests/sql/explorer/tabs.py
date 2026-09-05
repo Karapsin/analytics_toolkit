@@ -96,6 +96,7 @@ def test_tab_labels_show_database_filename_dirty_state_and_click_controls(
             assert application.active_workspace.tab_title == "[gp] query.sql"
 
             application._command_database(["lake"])
+            await pilot.pause()
             assert application.active_workspace.tab_title == "[lake] query.sql"
             assert active_tab_label() == "[lake] query.sql"
 

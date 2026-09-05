@@ -68,6 +68,33 @@
     {
       "id": "export-confirm",
       "required_elements": ["#export-confirmation-dialog", "#export-confirmation-buttons", "#export-confirm", "#export-cancel"]
+    },
+    {
+      "id": "tab-database-change",
+      "required_elements": [
+        "#tab-strip",
+        "#tab-2",
+        "#query-editor",
+        "#command-input"
+      ]
+    },
+    {
+      "id": "formatted-sql",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#notice"
+      ]
+    },
+    {
+      "id": "save-changes-cancel",
+      "required_elements": [
+        "#save-changes-dialog",
+        "#save-changes-save",
+        "#save-changes-discard",
+        "#save-changes-cancel"
+      ]
     }
   ]
 }

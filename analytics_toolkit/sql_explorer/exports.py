@@ -63,7 +63,6 @@ class ConfirmExportScreen(ModalScreen[bool]):
             with Horizontal(id="export-confirmation-buttons"):
                 yield Button(
                     f"{self.confirm_label} [Y]",
-                    variant="warning",
                     id="export-confirm",
                 )
                 yield Button("Cancel [N]", id="export-cancel")

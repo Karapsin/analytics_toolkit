@@ -70,7 +70,9 @@ def test_visual_manifest_covers_every_literal_sql_explorer_element() -> None:
     covered = {element for scene in manifest["scenes"] for element in scene["required_elements"]}
 
     assert required <= covered
-    assert len(manifest["scenes"]) == 15
+    assert {"tab-database-change", "formatted-sql", "save-changes-cancel"} <= {
+        scene["id"] for scene in manifest["scenes"]
+    }
     assert manifest["viewport"] == {
         "platform": "macos",
         "width": 1280,

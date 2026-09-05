@@ -216,6 +216,31 @@ def test_query_cleanup_and_cancel_failures_remain_label_targeted(
     assert session.active_query.label == "different"
 
 
+def test_running_elapsed_shows_tenths_and_refreshes_between_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [10.128]
+    monkeypatch.setattr(runtime, "monotonic", lambda: now[0])
+
+    async def exercise() -> None:
+        session = FakeSession()
+        session.active_query = ExplorerQueryState(
+            "running", ExecutionRoute.READ, 10.0, None, "running"
+        )
+        application = SqlExplorerApp(session)
+        async with application.run_test() as pilot:
+            application.active_workspace.query_state = "running"
+            application._update_status()
+            elapsed = application.query_one("#query-elapsed", Static)
+            assert str(elapsed.renderable) == "0.1s"
+            for seconds, expected in ((10.245, "0.2s"), (10.36, "0.4s"), (22.3, "12.3s")):
+                now[0] = seconds
+                await pilot.pause(0.15)
+                assert str(elapsed.renderable) == expected
+
+    asyncio.run(exercise())
+
+
 def test_running_summary_animates_and_keeps_slow_warning() -> None:
     async def exercise() -> None:
         session = FakeSession()
@@ -233,20 +258,25 @@ def test_running_summary_animates_and_keeps_slow_warning() -> None:
             application._update_status()
             indicator = application.query_one("#query-running-indicator", CircularSpinner)
             assert indicator.display
-            first_frame = str(indicator.renderable)
+            first_frame = indicator.renderable
             await pilot.pause(CircularSpinner.INTERVAL_SECONDS * 1.5)
-            assert str(indicator.renderable) != first_frame
+            assert indicator.renderable != first_frame
             assert "Query running" in str(application.query_one("#query-outcome").render())
             assert "consider optimizing" in str(application.query_one("#query-warning").render())
             interrupt = application.query_one("#interrupt", Button)
-            assert str(interrupt.label) == "Interrupt"
+            assert str(interrupt.label) == "STOP"
             assert interrupt.disabled is False
+            outcome = application.query_one("#query-outcome")
+            assert indicator.region.y == outcome.region.y
+            assert indicator.region.bottom == outcome.region.bottom
+            assert indicator.region.width == 5
+            assert all(indicator.render_line(row).text.strip() for row in range(3))
 
             application.active_workspace.query_state = "ready"
             application.busy = False
             application._update_status()
             assert indicator.display is False
-            assert str(indicator.renderable) == CircularSpinner.FRAMES[0]
+            assert indicator.renderable == CircularSpinner.FRAMES[0]
 
     asyncio.run(exercise())
 

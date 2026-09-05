@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Fix SQL Explorer tab titles, unify hover and control selection colors, add SQL formatting, and show STOP with a full-height snake loop and smooth running timer.
+
 ## 1.3.11.18 - 2026-09-04
 
 - Update SQL Explorer pane navigation.

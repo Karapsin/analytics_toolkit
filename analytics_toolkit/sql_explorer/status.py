@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Literal
 from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
+from .spinner import SNAKE_FRAMES
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.timer import Timer
@@ -20,9 +22,9 @@ OutcomeStyle = Literal["running", "success", "error", "cancelled"]
 
 
 class CircularSpinner(Static):
-    """A restrained circular activity indicator for running queries."""
+    """A full-height rectangular snake indicator for running queries."""
 
-    FRAMES = ("◴", "◷", "◶", "◵")
+    FRAMES = SNAKE_FRAMES
     INTERVAL_SECONDS = 0.12
 
     def __init__(self, *, id: str | None = None) -> None:  # noqa: A002 - Textual API name.
@@ -99,7 +101,11 @@ def query_summary_for(workspace: SqlExplorerWorkspace) -> QuerySummaryPresentati
         return QuerySummaryPresentation(
             outcome="Query running",
             outcome_style="running",
-            elapsed=format_compact_duration(elapsed_seconds),
+            elapsed=(
+                f"{max(0.0, elapsed_seconds):.1f}s"
+                if elapsed_seconds < _SECONDS_PER_MINUTE
+                else format_compact_duration(elapsed_seconds)
+            ),
             running=True,
             warning=(
                 "consider optimizing your query or sit tight"
@@ -140,7 +146,7 @@ class QuerySummaryBar(Horizontal):
         yield Static("", id="query-elapsed", classes="query-card", markup=False)
         yield Static("", id="query-warning", classes="query-card", markup=False)
         yield Button(
-            "Interrupt",
+            "STOP",
             id="interrupt",
             classes="interrupt",
             disabled=True,

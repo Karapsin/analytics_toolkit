@@ -6,9 +6,11 @@ from __future__ import annotations
 from typing import Any, cast
 
 from .errors import SqlExplorerConfigurationError
+from .formatting import format_editor
 
 HELP_TEXT = """Commands
   run                         execute the editor
+  format                      format selections or the complete SQL editor
   open                        open remote-host SQL file navigation
   save                        save the opened SQL file
   cancel                      cancel the active explorer query
@@ -44,7 +46,7 @@ Keys
   Ctrl+F                      find and replace in the editor
   Delete                      close a focused result/error pane
   Escape                      close overlays, collapse cursors, or toggle editor/command
-  Interrupt                   request cancellation of the active query
+  STOP                        request cancellation of the active query
   Ctrl+C                      copy editor or result selection
   Tab                         complete SQL or indent when unavailable
 """
@@ -52,6 +54,19 @@ Keys
 
 class SqlExplorerCursorCommandsMixin:
     """The new editor-navigation command surface, kept outside the app shell."""
+
+    def _command_format(self, arguments: list[str]) -> None:
+        app = cast("Any", self)
+        if arguments:
+            app.show_error(SqlExplorerConfigurationError("Usage: format"))
+            return
+        workspace = app.active_workspace
+        try:
+            changed = format_editor(workspace.editor, workspace.session.database.backend)
+        except ValueError as exc:
+            app.show_error(exc, workspace)
+            return
+        app._set_notice("Formatted SQL." if changed else "SQL unchanged.", workspace)
 
     def _command_line_number(self, command: str, arguments: list[str]) -> int | None:
         app = cast("Any", self)
