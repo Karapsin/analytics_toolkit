@@ -91,6 +91,33 @@ def test_app_copy_order_and_unavailable_clipboard_fallback(
     asyncio.run(exercise())
 
 
+def test_result_copy_uses_raw_values_for_cells_and_rectangles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def exercise() -> None:
+        copied: list[str] = []
+        application = SqlExplorerApp(FakeSession())
+        monkeypatch.setattr(application, "copy_to_explorer_clipboard", copied.append)
+        async with application.run_test() as pilot:
+            application.show_dataframe(
+                pd.DataFrame({"number": [1000, -2000], "text": ["1,000", "x" * 600]})
+            )
+            table = application.active_workspace.result_table
+            table.focus()
+            await pilot.press("ctrl+c")
+            assert copied[-1] == "1000"
+            table.set_cell_selection(0, 0)
+            table.set_cell_selection(1, 1, extend=True)
+            await pilot.press("ctrl+c")
+            assert copied[-1] == "1000\t1,000\n-2000\t" + "x" * 600
+            application.show_dataframe(pd.DataFrame({"number": [3000.25]}))
+            table.focus()
+            await pilot.press("ctrl+c")
+            assert copied[-1] == "3000.25"
+
+    asyncio.run(exercise())
+
+
 def test_ctrl_c_copies_editor_range_and_selected_result_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 from analytics_toolkit.sql_explorer import app as app_module
 from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplorerApp
+from analytics_toolkit.sql_explorer.cells import copy_cell
 from rich.style import Style
 from textual import events
 from textual.coordinate import Coordinate
@@ -16,6 +17,7 @@ from tests.sql.explorer.app import FakeSession
 
 
 def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:
+    assert copy_cell("1,000") == "1,000"
     assert app_module._format_cell(None) == "NULL"
     assert app_module._format_cell(float("nan")) == "NULL"
     assert app_module._format_cell("a\nb") == "a\\nb"
@@ -182,7 +184,7 @@ def test_visible_cell_formatting_cannot_break_tsv_boundaries() -> None:
     asyncio.run(exercise())
 
 
-def test_visible_numeric_cells_and_copied_tsv_use_thousands_separators() -> None:
+def test_numeric_cells_display_grouping_but_copy_raw_values() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test():
@@ -193,7 +195,11 @@ def test_visible_numeric_cells_and_copied_tsv_use_thousands_separators() -> None
             table.set_cell_selection(0, 0)
             table.set_cell_selection(0, 1, extend=True)
 
-            assert table.copy_text() == "1,234,567\t9,876,543.21"
+            assert str(table.get_cell_at(Coordinate(0, 0))) == "1,234,567"
+            assert table.copy_text() == "1234567\t9876543.2100"
+            table.clear_rectangular_selection()
+            table.move_cursor(row=0, column=0)
+            assert table.copy_text() == "1234567"
 
     asyncio.run(exercise())
 

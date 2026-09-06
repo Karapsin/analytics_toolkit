@@ -14,6 +14,7 @@ from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
+from .cells import ResultCell
 from .clipboard import TerminalClipboard
 from .commands import HELP_TEXT, SqlExplorerCursorCommandsMixin
 from .completion import CompletionContext, CompletionCoordinator, CompletionCoordinatorPool
@@ -383,7 +384,7 @@ class SqlExplorerApp(
             table.add_column(Text(str(column)), key=f"column-{index}")
         for row_number, row in enumerate(dataframe.itertuples(index=False, name=None), 1):
             table.add_row(
-                *(Text(_format_cell(value)) for value in row),
+                *(ResultCell(value) for value in row),
                 label=str(row_number),
             )
         workspace.result_message.styles.display = "none"
@@ -782,4 +783,5 @@ __all__ = [
     "ResultTable",
     "SqlEditor",
     "SqlExplorerApp",
+    "_format_cell",
 ]

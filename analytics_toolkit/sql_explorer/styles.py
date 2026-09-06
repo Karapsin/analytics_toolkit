@@ -114,19 +114,19 @@ Screen {
     display: none;
     dock: right;
     layer: overlay;
-    width: 55%;
+    width: 40%;
     min-width: 32;
-    max-width: 80;
+    max-width: 56;
     height: auto;
     background: $panel;
     border: solid $warning;
-    padding: 1;
+    padding: 0 1;
     margin: 1 1 0 0;
 }
 #find-pattern, #replace-pattern {
     width: 100%;
     height: 3;
-    margin-bottom: 1;
+    margin-bottom: 0;
 }
 #find-pattern:focus, #replace-pattern:focus {
     border: solid $accent;
@@ -135,7 +135,7 @@ Screen {
     width: 100%;
     height: 3;
     min-width: 0;
-    margin-bottom: 1;
+    margin-bottom: 0;
 }
 #replace-actions {
     height: 3;

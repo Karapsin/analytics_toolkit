@@ -142,11 +142,13 @@ unindent selected logical lines. Double-clicking selects a complete SQL word suc
 as `table_name`.
 
 `Ctrl+F` opens a floating Find/Replace overlay on the upper-right side of the
-query area. It presents Find, Replace, Next, Replace, and Replace All in that
+query area, using 40% of its width (32–56 columns) and 14 terminal rows.
+It presents Find, Replace, Next, Replace, and Replace All in that
 order without reducing the normal editor width. Match highlighting and
 Escape-to-close remain available. While it is open, Up and Down cycle through
 its controls; Left and Right keep their normal text-caret behavior in its
-inputs.
+inputs. When Replace or Replace All is focused, either Left or Right switches
+to the other button without executing it; Enter activates the focused button.
 
 Every single-line field, including commands, Find/Replace, navigation paths,
 and export or SQL filenames, supports Shift selection, word selection,
@@ -233,8 +235,10 @@ Shift-click creates an inclusive rectangular range; Shift+arrows extend it.
 Plain arrows clear the rectangle and move the active cell. Up from the first
 result row selects its column header; Left and Right move between headers, Down
 returns to the same column's first row, and a second Up leaves the result pane.
-Clicking a header selects only that header label. Ctrl+C serializes selected displayed data as
-tab-separated columns and newline-separated rows. Visual row labels are never
+Clicking a header selects only that header label. Ctrl+C copies underlying cell values as tab-separated columns and newline-separated
+rows, without display thousands separators or truncation: an integer shown as
+`1,000` copies as `1000`. Text commas and numeric precision are preserved; nulls
+remain `NULL`, and embedded tabs or line breaks remain escaped. Visual row labels are never
 copied, and an ordinary data rectangle never gains a header row.
 
 Copy first emits a base64-encoded OSC 52 sequence to the active terminal. This

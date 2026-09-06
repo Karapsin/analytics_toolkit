@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from decimal import Decimal
-from numbers import Integral, Real
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
-import pandas as pd
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
@@ -13,6 +10,8 @@ from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, OptionList, Static, Tree
 
+from .cells import _format_cell
+from .cells import copy_cell as _copy_cell
 from .editor import SqlEditor
 from .filetree import completion_entries, safe_entries
 from .inputs import EditableInput
@@ -26,7 +25,6 @@ if TYPE_CHECKING:
     from .app import SqlExplorerApp
     from .statements import ExplorerExecutionPlan
 
-_MAX_CELL_LENGTH = 512
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
 
 
@@ -81,12 +79,12 @@ class ResultTable(DataTable[Any]):
             return self.selected_header
         if self.selected_cells is None:
             row, column = self.cursor_coordinate
-            return str(self.get_cell_at(Coordinate(row, column)))
+            return _copy_cell(self.get_cell_at(Coordinate(row, column)))
         (row_a, col_a), (row_b, col_b) = self.selected_cells
         rows = range(min(row_a, row_b), max(row_a, row_b) + 1)
         cols = range(min(col_a, col_b), max(col_a, col_b) + 1)
         return "\n".join(
-            "\t".join(str(self.get_cell_at(Coordinate(r, c))) for c in cols) for r in rows
+            "\t".join(_copy_cell(self.get_cell_at(Coordinate(r, c))) for c in cols) for r in rows
         )
 
     def action_cursor_up(self, select: bool = False) -> None:  # noqa: FBT001,FBT002
@@ -614,6 +612,22 @@ class FindReplaceBar(Vertical):
             yield Button("Replace", id="replace-current")
             yield Button("Replace All", id="replace-all")
 
+    def on_key(self, event: events.Key) -> None:
+        focused = self.app.focused
+        if event.key not in {"left", "right"} or focused not in (
+            self.query_one("#replace-current", Button),
+            self.query_one("#replace-all", Button),
+        ):
+            return
+        target = (
+            "#replace-all"
+            if focused is self.query_one("#replace-current", Button)
+            else "#replace-current"
+        )
+        self.query_one(target, Button).focus()
+        event.prevent_default()
+        event.stop()
+
     def open(self) -> None:
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
@@ -849,34 +863,6 @@ class DiscardChangesScreen(ModalScreen[bool]):
         self.dismiss(event.button.id == "discard-confirm")
 
 
-def _format_cell(value: object) -> str:
-    if value is None:
-        return "NULL"
-    try:
-        if bool(pd.isna(value)):
-            return "NULL"
-    except (TypeError, ValueError):
-        pass
-    if isinstance(value, Decimal) and value.is_finite():
-        normalized = Decimal(0) if value == 0 else value.normalize()
-        rendered = format(normalized, ",f")
-    elif isinstance(value, Integral) and not isinstance(value, bool):
-        rendered = format(value, ",d")
-    elif isinstance(value, Real) and not isinstance(value, bool):
-        rendered = format(value, ",")
-    else:
-        rendered = str(value)
-    rendered = (
-        rendered.replace("\r\n", "\\n")
-        .replace("\r", "\\n")
-        .replace("\n", "\\n")
-        .replace("\t", "\\t")
-    )
-    if len(rendered) > _MAX_CELL_LENGTH:
-        return rendered[: _MAX_CELL_LENGTH - 1] + "…"
-    return rendered
-
-
 __all__ = [
     "CommandInput",
     "CompletionMenu",
@@ -888,4 +874,5 @@ __all__ = [
     "ResultTable",
     "SqlEditor",
     "SqlFileTree",
+    "_format_cell",
 ]

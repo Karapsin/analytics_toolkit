@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pandas as pd
+import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.tabs import NewTabButton, TabSelectButton, WorkspaceTab
 from analytics_toolkit.sql_explorer.widgets import FindReplaceBar, ResultTable
@@ -102,10 +103,13 @@ def test_narrow_editor_keeps_lines_one_and_two_visible_without_status_overlap() 
     asyncio.run(exercise())
 
 
-def test_find_replace_panel_uses_target_order_and_floats_at_upper_right() -> None:
+@pytest.mark.parametrize("size", [(80, 32), (120, 32), (160, 45), (200, 40)])
+def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
+    size: tuple[int, int],
+) -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
-        async with application.run_test(size=(160, 45)) as pilot:
+        async with application.run_test(size=size) as pilot:
             application.action_open_find()
             await pilot.pause()
             panel = application.query_one(FindReplaceBar)
@@ -116,7 +120,10 @@ def test_find_replace_panel_uses_target_order_and_floats_at_upper_right() -> Non
                 "replace-actions",
             ]
             query_pane = application.active_workspace.query_one(".query-pane", Vertical)
-            assert panel.region.width == 80
+            assert 32 <= panel.region.width <= 56
+            assert panel.region.height == 14
+            assert panel.region.bottom <= query_pane.region.bottom
+            assert panel.query_one("#replace-all").region.bottom <= panel.content_region.bottom
             assert panel.region.right < query_pane.content_region.right
             assert panel.region.y > query_pane.content_region.y
 

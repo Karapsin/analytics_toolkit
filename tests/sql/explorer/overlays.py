@@ -34,11 +34,11 @@ def test_search_panel_is_compact_right_overlay_with_responsive_limits() -> None:
         async with application.run_test(size=(200, 40)):
             bar = application.query_one(FindReplaceBar)
             assert bar.styles.width is not None
-            assert bar.styles.width.value == 55
+            assert bar.styles.width.value == 40
             assert bar.styles.min_width is not None
             assert bar.styles.min_width.value == 32
             assert bar.styles.max_width is not None
-            assert bar.styles.max_width.value == 80
+            assert bar.styles.max_width.value == 56
             assert bar.styles.dock == "right"
             assert bar.styles.layer == "overlay"
 
@@ -73,6 +73,49 @@ def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
             assert application.focused.id == "replace-all"
             await pilot.press("escape")
             application.disable_find_navigation()
+            assert application.focused is editor
+
+    asyncio.run(exercise())
+
+
+def test_horizontal_arrows_toggle_replace_buttons_without_editing_text() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.query_one(SqlEditor)
+            editor.text = "alpha alpha"
+            await pilot.press("ctrl+f")
+            find = application.query_one("#find-pattern", Input)
+            replacement = application.query_one("#replace-pattern", Input)
+            find.value = "alpha"
+            replacement.value = "beta"
+            await pilot.pause()
+            for field in (find, replacement):
+                field.focus()
+                await pilot.pause()
+                field.cursor_position = 2
+                await pilot.press("left")
+                assert application.focused is field
+                assert field.cursor_position == 1
+                await pilot.press("right")
+                assert field.cursor_position == 2
+            for start, other in (
+                ("replace-current", "replace-all"),
+                ("replace-all", "replace-current"),
+            ):
+                for key in ("left", "right"):
+                    application.query_one(f"#{start}").focus()
+                    await pilot.press(key)
+                    assert application.focused.id == other
+                    assert editor.text == "alpha alpha"
+            find.focus()
+            await pilot.press("enter")
+            application.query_one("#replace-all").focus()
+            await pilot.press("left", "enter")
+            assert editor.text == "beta alpha"
+            await pilot.press("right", "enter")
+            assert editor.text == "beta beta"
+            await pilot.press("escape")
             assert application.focused is editor
 
     asyncio.run(exercise())
