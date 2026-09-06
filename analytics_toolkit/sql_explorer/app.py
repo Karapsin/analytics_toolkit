@@ -825,9 +825,9 @@ class SqlExplorerApp(
         try:
             summary = workspace.query_one(QuerySummaryBar)
             interrupt = workspace.query_one(".interrupt", Button)
+            summary.update_presentation(query_summary_for(workspace))
         except NoMatches:
             return
-        summary.update_presentation(query_summary_for(workspace))
         interrupt.disabled = not workspace.busy or workspace.cancelling
         interrupt.display = workspace.query_state in {"running", "cancelling"}
         self._refresh_tab(workspace)

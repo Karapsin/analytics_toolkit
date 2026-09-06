@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Compact the SQL Explorer search panel, add arrow navigation between replace actions, and copy result values without display formatting.
 - Reduce the SQL Explorer search panel to seven rows with single-row fields and actions.
 - Add SQL Explorer column and command completion, cancel stale metadata, separate result controls and notices, and add an arrow/Enter create-table form plus save/exit aliases.
+- Avoid SQL Explorer status timer errors while summary widgets are being removed.
 
 ## 1.3.11.18 - 2026-09-04
 

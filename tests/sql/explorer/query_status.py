@@ -469,4 +469,8 @@ def test_status_updates_ignore_unavailable_workspace_widgets(
                 application._update_editor_status()
                 application._set_notice("remounting")
 
+            # During teardown the bar can outlive its child cards for a timer tick.
+            await workspace.query_one("#query-outcome").remove()
+            application._update_all_statuses()
+
     asyncio.run(exercise())
