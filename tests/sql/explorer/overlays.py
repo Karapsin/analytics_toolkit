@@ -61,6 +61,7 @@ def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
                 "find-next",
                 "replace-current",
                 "replace-all",
+                "close-find",
                 "find-pattern",
             ):
                 await pilot.press("down")
@@ -70,7 +71,7 @@ def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
             await pilot.press("down")
             assert application.focused.id == "find-pattern"
             await pilot.press("up")
-            assert application.focused.id == "replace-all"
+            assert application.focused.id == "close-find"
             await pilot.press("escape")
             application.disable_find_navigation()
             assert application.focused is editor

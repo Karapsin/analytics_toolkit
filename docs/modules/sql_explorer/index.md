@@ -71,8 +71,9 @@ Each tab is an independent SQL workspace with its own editor, command line,
 database selection, result or error pane, completion UI, file, and focus
 position. Labels use `[db] file.sql`; unsaved work adds `*`, and a new tab uses
 `[db] Untitled N`. Click the trailing `+` or press `Ctrl+T` to create a tab.
-Click its `×` or press `Ctrl+W` to close it. `Ctrl+PageDown` moves forward and
-`Ctrl+PageUp` moves backward with wraparound. The final tab remains open.
+Click its `×` or press `Ctrl+W` to close it. `Ctrl+Tab` moves forward and
+`Ctrl+Shift+Tab` moves backward with wraparound, like browser tabs.
+`Ctrl+PageDown` and `Ctrl+PageUp` remain available as alternatives. The final tab remains open.
 
 Closing a changed file or a non-empty untitled tab asks whether to Save, Don't
 Save, or Cancel. Closing a running tab first applies that decision, then targets
@@ -114,7 +115,11 @@ and result cells. Editor and input text selections retain their previous
 translucent highlighting. Hovering a selected control keeps its amber selection
 visible. Unselected dialog buttons use neutral colors.
 
-After executing a command, focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
+Clicking anywhere in the command pane focuses command entry. Clicking the
+editor pane border or line/column status focuses the editor without moving its
+cursor or selection. Buttons, search fields, and completion choices still
+perform their actions. After executing a command,
+focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
 The editor and text inputs use steady non-blinking carets. The compact active
 tab uses a dark surface with amber text and always includes its database key.
@@ -143,11 +148,14 @@ unindent selected logical lines. Double-clicking selects a complete SQL word suc
 as `table_name`.
 
 `Ctrl+F` opens a floating Find/Replace overlay on the upper-right side of the
-query area, using 40% of its width (32–56 columns) and 7 terminal rows.
+query area, using 40% of its width (32–56 columns) and 8 terminal rows.
 Single-row fields and buttons leave one blank row between inputs and actions.
-It presents Find, Replace, Next, Replace, and Replace All in that
-order without reducing the normal editor width. Match highlighting and
-Escape-to-close remain available. While it is open, Up and Down cycle through
+A right-aligned `×` close button sits on its own row above the Find input.
+Below it, Find, Replace, Next, Replace, and Replace All appear in that order without reducing the normal editor width. Match highlighting and
+Escape-to-close remain available. The close button also clears search
+highlights and returns focus to the editor. Search feedback appears in the
+command pane only while Find/Replace is open; closing it clears that feedback
+without removing a newer command or query notice. While it is open, Up and Down cycle through
 its controls; Left and Right keep their normal text-caret behavior in its
 inputs. When Replace or Replace All is focused, either Left or Right switches
 to the other button without executing it; Enter activates the focused button.
@@ -295,8 +303,14 @@ known. Durations adapt from sub-second values such as `0.128s` to values such as
 `1m 05s`. After five minutes, a running query adds the warning
 `consider optimizing your query or sit tight`.
 
-The outlined red **STOP** button is the rightmost control in the same
-status strip. It is enabled only while a query can be interrupted. Operational
+The outlined amber **RUN** button occupies the rightmost position in the
+status strip when the current tab is ready. It executes the same SQL selection
+or editor contents as Ctrl+Enter, including mutation confirmation. RUN is hidden
+while that tab has a queued, running, or cancelling query or another SQL
+operation in progress; work on other tabs does not prevent submitting a query
+from an idle tab.
+
+The outlined red **STOP** button replaces RUN while a query is running. It is enabled only while a query can be interrupted. Operational
 system notices share the status-button row; the command input sits below it.
 
 The `STOP` button and `cancel` command use the same targeted cancellation

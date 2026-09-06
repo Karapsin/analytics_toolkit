@@ -85,9 +85,9 @@ class SqlExplorerApp(
         Binding("ctrl+n", "new_sql_file", "New SQL file", show=False, priority=True),
         Binding("ctrl+t", "new_tab", "New tab", show=False, priority=True),
         Binding("ctrl+w", "close_tab", "Close tab", show=False, priority=True),
-        Binding("ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
+        Binding("ctrl+tab,ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
         Binding(
-            "ctrl+pageup",
+            "ctrl+shift+tab,ctrl+pageup",
             "previous_tab",
             "Previous tab",
             show=False,
@@ -110,13 +110,6 @@ class SqlExplorerApp(
         Binding("ctrl+space", "complete", "Complete", show=False, priority=True),
         Binding("tab", "plain_tab", "Complete or indent", show=False, priority=True),
         Binding("shift+tab", "plain_shift_tab", "Unindent", show=False, priority=True),
-        Binding(
-            "ctrl+tab,ctrl+shift+tab",
-            "ignore_tab",
-            "Disabled",
-            show=False,
-            priority=True,
-        ),
         Binding("ctrl+c", "copy_focused", "Copy", show=False, priority=True),
         Binding("ctrl+f", "open_find", "Find", show=False, priority=True),
         Binding("escape", "escape", "Toggle editor/command", show=False),
@@ -216,18 +209,18 @@ class SqlExplorerApp(
         self.active_workspace.exit_after_cancel = bool(value)
 
     async def on_event(self, event: events.Event) -> None:
-        if (
-            isinstance(event, events.Key)
-            and event.key.split("+")[-1] == "tab"
-            and event.key not in {"tab", "shift+tab"}
-        ):
-            event.stop()
-            event.prevent_default()
-            return
         if isinstance(event, events.Key) and not event.is_forwarded:
             compatible = control_compatible_key(event.key)
             if compatible != event.key:
                 event = events.Key(compatible, None)
+        if (
+            isinstance(event, events.Key)
+            and event.key.split("+")[-1] == "tab"
+            and event.key not in {"tab", "shift+tab", "ctrl+tab", "ctrl+shift+tab"}
+        ):
+            event.stop()
+            event.prevent_default()
+            return
         await super().on_event(event)
 
     def compose(self) -> ComposeResult:
@@ -291,7 +284,7 @@ class SqlExplorerApp(
         editor.focus()
 
     def action_ignore_tab(self) -> None:
-        """Tab-key actions are intentionally disabled throughout Explorer."""
+        """Compatibility action for explicitly ignored Tab-key combinations."""
 
     def action_plain_tab(self) -> None:
         if isinstance(self.screen, CreateTableScreen):
@@ -705,7 +698,11 @@ class SqlExplorerApp(
             self.action_new_tab()
         elif event.button.id == "close-results":
             self.close_results(workspace=workspace_for(event.button))
+        elif event.button.id == "run-query":
+            workspace_for(event.button).command_input.focus()
+            self.action_run_query()
         elif event.button.has_class("interrupt"):
+            workspace_for(event.button).command_input.focus()
             self._request_cancel(
                 workspace=workspace_for(event.button),
                 exit_after=False,
@@ -825,9 +822,12 @@ class SqlExplorerApp(
         try:
             summary = workspace.query_one(QuerySummaryBar)
             interrupt = workspace.query_one(".interrupt", Button)
+            run = workspace.query_one("#run-query", Button)
             summary.update_presentation(query_summary_for(workspace))
         except NoMatches:
             return
+        run.disabled = workspace.busy or workspace.query_state != "ready"
+        run.display = not run.disabled
         interrupt.disabled = not workspace.busy or workspace.cancelling
         interrupt.display = workspace.query_state in {"running", "cancelling"}
         self._refresh_tab(workspace)
@@ -851,6 +851,7 @@ class SqlExplorerApp(
     ) -> None:
         if self.screen_stack:
             workspace = workspace or self.active_workspace
+            workspace.find_notice_active = False
             if message != workspace.completion_loading_notice:
                 workspace.completion_loading_notice = None
             with suppress(NoMatches):

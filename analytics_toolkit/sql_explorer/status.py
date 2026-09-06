@@ -146,6 +146,7 @@ class QuerySummaryBar(Horizontal):
         yield Static("", id="query-rows", classes="query-card", markup=False)
         yield Static("", id="query-elapsed", classes="query-card", markup=False)
         yield Static("", id="query-warning", classes="query-card", markup=False)
+        yield Button("RUN", id="run-query", classes="run-query", tooltip="Run SQL")
         yield Button(
             "STOP",
             id="interrupt",

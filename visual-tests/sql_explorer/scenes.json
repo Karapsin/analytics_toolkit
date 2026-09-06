@@ -29,6 +29,7 @@
         "#editor-status",
         "#query-summary",
         "#notice",
+        "#run-query",
         "#command-row",
         "#command-input"
       ]
@@ -55,6 +56,8 @@
       "required_elements": [
         "#query-editor",
         "#find-replace-bar",
+        "#find-header",
+        "#close-find",
         "#find-pattern",
         "#replace-pattern",
         "#find-next",

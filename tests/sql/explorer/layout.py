@@ -124,6 +124,7 @@ def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
             await pilot.pause()
             panel = application.query_one(FindReplaceBar)
             assert [child.id for child in panel.children] == [
+                "find-header",
                 "find-pattern",
                 "replace-pattern",
                 "find-next",
@@ -131,7 +132,11 @@ def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
             ]
             query_pane = application.active_workspace.query_one(".query-pane", Vertical)
             assert 32 <= panel.region.width <= 56
-            assert panel.region.height == 7
+            assert panel.region.height == 8
+            assert (
+                panel.query_one("#close-find").region.bottom
+                <= panel.query_one("#find-pattern").region.y
+            )
             assert panel.region.bottom <= query_pane.region.bottom
             assert panel.query_one("#replace-all").region.bottom <= panel.content_region.bottom
             assert panel.region.right < query_pane.content_region.right

@@ -11,6 +11,9 @@ Generated from package version bumps and recent commit history.
 - Reduce the SQL Explorer search panel to seven rows with single-row fields and actions.
 - Add SQL Explorer column and command completion, cancel stale metadata, separate result controls and notices, and add an arrow/Enter create-table form plus save/exit aliases.
 - Avoid SQL Explorer status timer errors while summary widgets are being removed.
+- Add SQL Explorer RUN and Find close controls, command-pane click focus, clean search notices, and browser-style tab shortcuts.
+- Keep SQL Explorer macOS visual captures within the framebuffer and reject oversized terminal geometry.
+- Focus the SQL editor from clicks on its pane border and status strip while preserving the selection.
 
 ## 1.3.11.18 - 2026-09-04
 

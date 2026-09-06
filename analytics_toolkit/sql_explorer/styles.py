@@ -123,6 +123,18 @@ Screen {
     padding: 0 1;
     margin: 1 1 0 0;
 }
+#find-header {
+    height: 1;
+    align-horizontal: right;
+}
+#close-find {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
 #find-pattern, #replace-pattern {
     width: 100%;
     height: 1;
@@ -269,7 +281,7 @@ Screen {
 #query-warning {
     text-style: bold;
 }
-.interrupt {
+.run-query, .interrupt {
     width: 14;
     min-width: 14;
     height: 3;
@@ -279,6 +291,10 @@ Screen {
     color: $error;
     border: solid $error;
     text-style: bold;
+}
+.run-query {
+    color: $accent;
+    border: solid $accent;
 }
 .interrupt:disabled {
     color: $text-disabled;

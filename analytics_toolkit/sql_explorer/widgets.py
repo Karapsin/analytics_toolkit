@@ -608,6 +608,8 @@ class FindReplaceBar(Vertical):
     ]
 
     def compose(self) -> ComposeResult:
+        with Horizontal(id="find-header"):
+            yield Button("\u00d7", id="close-find", tooltip="Close Find/Replace")
         yield EditableInput(placeholder="Find", id="find-pattern")
         yield EditableInput(placeholder="Replace", id="replace-pattern")
         yield Button("Next", id="find-next")
@@ -657,6 +659,7 @@ class FindReplaceBar(Vertical):
             self.query_one("#find-next", Button),
             self.query_one("#replace-current", Button),
             self.query_one("#replace-all", Button),
+            self.query_one("#close-find", Button),
         )
         focused = self.app.focused
         try:
@@ -670,8 +673,12 @@ class FindReplaceBar(Vertical):
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
         self.styles.display = "none"
-        cast("SqlExplorerApp", self.app).disable_find_navigation()
-        editor = workspace_for(self).editor
+        app = cast("SqlExplorerApp", self.app)
+        app.disable_find_navigation()
+        workspace = workspace_for(self)
+        if workspace.find_notice_active:
+            app.show_notice("", workspace)
+        editor = workspace.editor
         editor.clear_search()
         editor.focus()
 
@@ -695,10 +702,7 @@ class FindReplaceBar(Vertical):
         editor = workspace_for(self).editor
         replacement = self.query_one("#replace-pattern", Input).value
         count = editor.replace_all_search_matches(replacement)
-        cast("SqlExplorerApp", self.app).show_notice(
-            f"Replaced {count} occurrence(s).",
-            workspace_for(self),
-        )
+        self._show_notice(f"Replaced {count} occurrence(s).")
 
     def _update_notice(self, position: int | None = None) -> None:
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
@@ -713,7 +717,16 @@ class FindReplaceBar(Vertical):
             message = f"Found {editor.search_match_count} occurrence(s)."
         else:
             message = f"Match {position} of {editor.search_match_count}."
-        cast("SqlExplorerApp", self.app).show_notice(message, workspace_for(self))
+        self._show_notice(message)
+
+    def _show_notice(self, message: str) -> None:
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        if not self.is_open:
+            return
+        workspace = workspace_for(self)
+        cast("SqlExplorerApp", self.app).show_notice(message, workspace)
+        workspace.find_notice_active = True
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "find-pattern":
@@ -722,7 +735,7 @@ class FindReplaceBar(Vertical):
             self.replace_current()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id != "find-pattern":
+        if event.input.id != "find-pattern" or not self.is_open:
             return
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
@@ -730,7 +743,9 @@ class FindReplaceBar(Vertical):
         self._update_notice()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "find-next":
+        if event.button.id == "close-find":
+            self.action_close()
+        elif event.button.id == "find-next":
             self.find_next()
         elif event.button.id == "replace-current":
             self.replace_current()

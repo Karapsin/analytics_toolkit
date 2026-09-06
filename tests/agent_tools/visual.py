@@ -262,6 +262,16 @@ def test_geometry_waits_for_the_scene_final_state(
     assert sql_explorer_visual._wait_geometry(geometry, timeout=1)["ok"] is True
 
 
+@pytest.mark.parametrize("screen", [{"width": 208, "height": 52}, {"width": 220, "height": 47}])
+def test_geometry_rejects_terminal_grid_that_would_be_clipped(
+    tmp_path: Path, screen: dict[str, int]
+) -> None:
+    geometry = tmp_path / "completion.json"
+    geometry.write_text(json.dumps({"ok": True, "screen": screen}), encoding="utf-8")
+    with pytest.raises(sql_explorer_visual.VisualReviewError, match="capture viewport"):
+        sql_explorer_visual._wait_geometry(geometry)
+
+
 def test_terminal_scene_keeps_textual_output_attached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -284,7 +294,7 @@ def test_terminal_scene_keeps_textual_output_attached(
     assert len(captured) == 1
     assert "open -na Terminal" in captured[0]
     assert "2>" not in captured[0]
-    assert "\\033[3;0;24t\\033[8;61;208t" in captured[0]
+    assert "\\033[3;0;24t\\033[8;47;208t" in captured[0]
     assert "TEXTUAL_COLOR_SYSTEM=256" in captured[0]
     assert "SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256=1" in captured[0]
     assert "unset COLORTERM" in captured[0]

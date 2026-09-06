@@ -29,6 +29,8 @@ MACOS_IMAGE = (
     "sha256:fdd8b72a6ee46fc8ad35dc1b9f3b1f162b6607b82a584947d20bb28d3dcb99ed"
 )
 VIEWPORT = (1280, 800)
+TERMINAL_COLUMNS = 208
+TERMINAL_ROWS = 47
 OPAQUE_BLACK_NS_COLOR = (
     "YnBsaXN0MDDUAQIDBAUGBwpYJHZlcnNpb25ZJGFyY2hpdmVyVCR0b3BYJG9iamVjdHMSAAGGoF8Q"
     "D05TS2V5ZWRBcmNoaXZlctEICVRyb290gAGjCwwTVSRudWxs0w0ODxAREldOU1doaXRlXE5TQ29s"
@@ -482,8 +484,9 @@ def _open_terminal_scene(
     guest_output: str,
     venv: str,
 ) -> None:
+    # Pro uses 14-pixel rows; 47 rows leave room for macOS and Terminal chrome.
     command = (
-        "printf '\\033[3;0;24t\\033[8;61;208t'; sleep 1; "
+        f"printf '\\033[3;0;24t\\033[8;{TERMINAL_ROWS};{TERMINAL_COLUMNS}t'; sleep 1; "
         f"cd {shlex.quote(guest_root)} && "
         "export TERM=xterm-256color TEXTUAL_COLOR_SYSTEM=256 "
         "SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256=1; unset COLORTERM; "
@@ -509,6 +512,12 @@ def _wait_geometry(path: Path, timeout: float = 30.0) -> dict[str, Any]:
         if path.is_file():
             latest = _read_json(path)
             if latest.get("ok") is True:
+                screen = latest.get("screen", {})
+                if (
+                    screen.get("height", 0) > TERMINAL_ROWS
+                    or screen.get("width", 0) > TERMINAL_COLUMNS
+                ):
+                    raise VisualReviewError("Terminal grid extends beyond the capture viewport")
                 return latest
         time.sleep(0.25)
     if latest is not None:

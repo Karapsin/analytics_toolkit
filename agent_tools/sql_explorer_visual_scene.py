@@ -447,6 +447,14 @@ def _write_evidence(
             )
         summary = workspace.query_one("#query-summary")
         interrupt = workspace.query_one("#interrupt", Button)
+        run = workspace.query_one("#run-query", Button)
+        assertions["run_spelling"] = str(run.label) == "RUN"
+        assertions["run_visible_only_ready"] = run.display == (
+            not workspace.busy and workspace.query_state == "ready"
+        )
+        assertions["run_right_aligned"] = (
+            not run.display or run.region.right == summary.content_region.right
+        )
         assertions["stop_spelling"] = str(interrupt.label) == "STOP"
         assertions["interrupt_right_aligned"] = (
             not interrupt.display or interrupt.region.right == summary.content_region.right
@@ -508,6 +516,11 @@ def _assert_changed_controls(
 ) -> None:
     workspace = app.active_workspace
     editor = workspace.editor
+    if scene_id == "find-replace":
+        assertions["find_close_above_input"] = (
+            workspace.query_one("#close-find").region.bottom
+            <= workspace.query_one("#find-pattern").region.y
+        )
     if scene_id == "tab-database-change":
         button = app.query_one("#tab-2 .tab-select", TabSelectButton)
         assertions["updated_tab_title_visible"] = (

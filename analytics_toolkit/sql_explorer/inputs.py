@@ -256,9 +256,9 @@ class EditableInput(Input):
 
     def focus_preserving_cursor(self) -> None:
         """Focus the input without Textual moving its cursor to the end."""
-        self._preserve_cursor_on_focus = True
-        self.focus()
-        self.app.call_after_refresh(self._finish_cursor_preserving_focus)
+        if not self.has_focus:
+            self._preserve_cursor_on_focus = True
+            self.focus()
 
     def _finish_cursor_preserving_focus(self) -> None:
         self._preserve_cursor_on_focus = False
@@ -269,14 +269,18 @@ class EditableInput(Input):
         event.stop()
 
     def _on_focus(self, event: events.Focus) -> None:
+        event.prevent_default()
         cursor = self.cursor_position
         anchor = self._selection_anchor
+        # Run Input and Widget focus handling once, including DescendantFocus.
         super()._on_focus(event)
+        super(Input, self)._on_focus(event)
         if self._preserve_cursor_on_focus:
             self.cursor_position = cursor
             self._selection_anchor = anchor
         else:
             self._selection_anchor = None
+        self._finish_cursor_preserving_focus()
         self.refresh()
 
     async def _on_click(self, event: events.Click) -> None:

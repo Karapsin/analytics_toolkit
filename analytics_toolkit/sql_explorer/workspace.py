@@ -27,6 +27,21 @@ if TYPE_CHECKING:
 WorkspaceQueryState = Literal["ready", "queued", "running", "cancelling"]
 
 
+class QueryPane(Vertical, can_focus=True):
+    """Forward focus from the surrounding editor surface without moving the cursor."""
+
+    def on_focus(self) -> None:
+        workspace_for(self).editor.focus(scroll_visible=False)
+
+
+class CommandPanel(Vertical, can_focus=True):
+    """Forward focus from the command surface, including disabled controls."""
+
+    def on_focus(self) -> None:
+        command = workspace_for(self).query_one("#command-input", CommandInput)
+        command.focus_preserving_cursor()
+
+
 class SqlExplorerWorkspace(Vertical):
     """Own the widgets and mutable state that must not leak between tabs."""
 
@@ -55,6 +70,7 @@ class SqlExplorerWorkspace(Vertical):
         self.completion_cursor: tuple[int, int] | None = None
         self.completion_epoch = 0
         self.completion_loading_notice: str | None = None
+        self.find_notice_active = False
         self.completion_allow_empty_columns = False
         self.create_table_draft: dict[str, Any] = {}
         self.last_focused: Widget | None = None
@@ -64,7 +80,7 @@ class SqlExplorerWorkspace(Vertical):
         self.last_run_result: ExplorerRunResult | None = None
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="query-pane"):
+        with QueryPane(classes="query-pane"):
             yield SqlEditor(
                 id="query-editor",
                 show_line_numbers=True,
@@ -81,7 +97,7 @@ class SqlExplorerWorkspace(Vertical):
                 )
             yield ResultTable(id="result-table", cursor_type="cell", zebra_stripes=True)
             yield ResultMessage("", id="result-message", markup=False)
-        with Vertical(classes="command-panel"):
+        with CommandPanel(classes="command-panel"):
             yield QuerySummaryBar(id="query-summary")
             with Horizontal(id="command-row"):
                 yield OptionList(id="command-completion", wrap=False)
