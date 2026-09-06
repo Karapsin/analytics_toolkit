@@ -125,25 +125,36 @@ Screen {
 }
 #find-pattern, #replace-pattern {
     width: 100%;
-    height: 3;
+    height: 1;
+    border: none;
+    padding: 0 1;
     margin-bottom: 0;
 }
 #find-pattern:focus, #replace-pattern:focus {
-    border: solid $accent;
+    border: none;
+}
+#replace-pattern {
+    margin-bottom: 1;
 }
 #find-next {
     width: 100%;
-    height: 3;
+    height: 1;
     min-width: 0;
     margin-bottom: 0;
 }
 #replace-actions {
-    height: 3;
+    height: 1;
 }
 #replace-current, #replace-all {
     width: 1fr;
-    height: 3;
+    height: 1;
     min-width: 0;
+}
+#find-next, #replace-current, #replace-all,
+#find-next:focus, #replace-current:focus, #replace-all:focus {
+    min-height: 1;
+    border: none;
+    padding: 0 1;
 }
 #completion-menu {
     display: none;

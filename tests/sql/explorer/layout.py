@@ -103,7 +103,7 @@ def test_narrow_editor_keeps_lines_one_and_two_visible_without_status_overlap() 
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("size", [(80, 32), (120, 32), (160, 45), (200, 40)])
+@pytest.mark.parametrize("size", [(80, 24), (120, 32), (160, 45), (200, 40)])
 def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
     size: tuple[int, int],
 ) -> None:
@@ -121,7 +121,7 @@ def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
             ]
             query_pane = application.active_workspace.query_one(".query-pane", Vertical)
             assert 32 <= panel.region.width <= 56
-            assert panel.region.height == 14
+            assert panel.region.height == 7
             assert panel.region.bottom <= query_pane.region.bottom
             assert panel.query_one("#replace-all").region.bottom <= panel.content_region.bottom
             assert panel.region.right < query_pane.content_region.right

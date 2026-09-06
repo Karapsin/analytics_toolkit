@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Fix SQL Explorer tab titles, unify hover and control selection colors, add SQL formatting, and show STOP with a full-height snake loop and smooth running timer.
 - Compact the SQL Explorer search panel, add arrow navigation between replace actions, and copy result values without display formatting.
+- Reduce the SQL Explorer search panel to seven rows with single-row fields and actions.
 
 ## 1.3.11.18 - 2026-09-04
 

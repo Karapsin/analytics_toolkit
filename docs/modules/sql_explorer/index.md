@@ -142,7 +142,8 @@ unindent selected logical lines. Double-clicking selects a complete SQL word suc
 as `table_name`.
 
 `Ctrl+F` opens a floating Find/Replace overlay on the upper-right side of the
-query area, using 40% of its width (32–56 columns) and 14 terminal rows.
+query area, using 40% of its width (32–56 columns) and 7 terminal rows.
+Single-row fields and buttons leave one blank row between inputs and actions.
 It presents Find, Replace, Next, Replace, and Replace All in that
 order without reducing the normal editor width. Match highlighting and
 Escape-to-close remain available. While it is open, Up and Down cycle through
