@@ -286,8 +286,7 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Close navigation", show=False),
-        Binding("tab", "complete_path", "Complete path", show=False, priority=True),
-        Binding("shift+tab", "previous_match", "Previous match", show=False, priority=True),
+        Binding("ctrl+space", "complete_path", "Complete path", show=False, priority=True),
         Binding("up", "previous_match", "Previous match", show=False, priority=True),
         Binding("down", "next_match", "Next match", show=False, priority=True),
         Binding("enter", "choose_path", "Open or descend", show=False, priority=True),
@@ -336,7 +335,7 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
             action = "Select destination directory" if self.select_directory else "Open SQL file"
             yield Static(f"{action} — {self.root_path}", id="navigation-title")
             yield EditableInput(
-                placeholder="Type a path; Tab completes",
+                placeholder="Type a path; Ctrl+Space completes",
                 id="navigation-path",
             )
             yield SqlFileTree(self.root_path, id="navigation-tree")
@@ -344,9 +343,9 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
                 yield Button("Select this directory", id="navigation-select-directory")
             yield Static("", id="navigation-notice")
             yield Static(
-                "Tab: complete/cycle   ↑↓: choose   Enter/click: open   Escape: cancel"
+                "Ctrl+Space: complete   ↑↓: choose   Enter/click: open   Escape: cancel"
                 if not self.select_directory
-                else "Tab: complete/cycle   Enter: select typed directory   Click: descend",
+                else "Ctrl+Space: complete   Enter: select typed directory   Click: descend",
                 id="navigation-help",
             )
 
@@ -559,7 +558,7 @@ class CompletionMenu(OptionList):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "close", "Close completion", show=False),
-        Binding("tab", "accept", "Accept completion", show=False),
+        Binding("enter", "accept", "Accept completion", show=False),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -576,6 +575,7 @@ class CompletionMenu(OptionList):
         self.add_options(suggestions)
         self.highlighted = 0 if suggestions else None
         self.styles.display = "block" if suggestions else "none"
+        self.styles.height = min(12, len(suggestions) + 2)
 
     def move_highlight(self, offset: int) -> None:
         if not self.suggestions:
@@ -593,10 +593,13 @@ class CompletionMenu(OptionList):
 
         self.styles.display = "none"
         self.suggestions = ()
-        workspace_for(self).editor.focus()
+        workspace = workspace_for(self)
+        workspace.completion_allow_empty_columns = False
+        cast("SqlExplorerApp", self.app)._cancel_completion_request(workspace)  # noqa: SLF001
+        workspace.editor.focus()
 
     def action_accept(self) -> None:
-        cast("SqlExplorerApp", self.app).action_plain_tab()
+        cast("SqlExplorerApp", self.app).action_complete()
 
 
 class FindReplaceBar(Vertical):

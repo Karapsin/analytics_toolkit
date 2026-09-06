@@ -49,8 +49,7 @@ class SqlEditor(TextArea):
         Binding("ctrl+y,ctrl+shift+z", "redo", "Redo", show=False),
         Binding("ctrl+home", "cursor_document_start", "Document start", show=False),
         Binding("ctrl+end", "cursor_document_end", "Document end", show=False),
-        Binding("tab", "completion_or_indent", "Complete or indent", show=False),
-        Binding("shift+tab", "unindent", "Unindent", show=False),
+        Binding("ctrl+space", "completion_or_indent", "Complete SQL", show=False),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -106,6 +105,7 @@ class SqlEditor(TextArea):
         self._secondary_selections = retained
         self.selection = active
         self.refresh()
+        self.post_message(self.SelectionChanged(self.selection, self))
 
     def collapse_to_active(self) -> None:
         if self._secondary_selections:
@@ -325,21 +325,29 @@ class SqlEditor(TextArea):
         application = cast("SqlExplorerApp", self.app)
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
+        if event.key.split("+")[-1] == "tab":
+            event.stop()
+            event.prevent_default()
+            if event.key == "tab":
+                application.action_plain_tab()
+            elif event.key == "shift+tab":
+                application.action_plain_shift_tab()
+            return
         menu = workspace_for(self).completion_menu
         if menu.is_open and event.key in {"up", "down", "enter", "escape"}:
             event.stop()
             event.prevent_default()
             if event.key == "enter":
-                application.action_plain_tab()
+                application.action_complete()
             elif event.key == "escape":
                 menu.action_close()
             else:
                 menu.move_highlight(-1 if event.key == "up" else 1)
             return
-        if event.key == "tab":
+        if event.key == "ctrl+space":
             event.stop()
             event.prevent_default()
-            application.action_plain_tab()
+            application.action_complete()
             return
         if event.key == "escape":
             event.stop()
@@ -501,7 +509,7 @@ class SqlEditor(TextArea):
         if self.cursor_count > 1:
             self._apply_batch_edit(_INDENT)
             return
-        cast("SqlExplorerApp", self.app).action_plain_tab()
+        cast("SqlExplorerApp", self.app).action_complete()
 
     def action_indent(self) -> None:
         if self.cursor_count > 1:

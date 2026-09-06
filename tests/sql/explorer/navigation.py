@@ -157,22 +157,22 @@ def test_navigation_path_input_completes_and_descends_to_sql_file(
                 node.label.plain for node in tree.root.children
             }
 
-            await pilot.press("p", "r", "o", "tab")
+            await pilot.press("p", "r", "o", "ctrl+space")
             assert path_input.value == "projects/"
             await pilot.press("o")
             assert [node.label.plain for node in tree.root.children] == ["one", "other"]
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert tree.cursor_node is not None
             assert tree.cursor_node.label.plain == "one"
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert tree.cursor_node is not None
             assert tree.cursor_node.label.plain == "other"
-            await pilot.press("shift+tab")
+            await pilot.press("up")
             assert tree.cursor_node is not None
             assert tree.cursor_node.label.plain == "one"
-            await pilot.press("n", "tab")
+            await pilot.press("n", "ctrl+space")
             assert path_input.value == "projects/one/"
-            await pilot.press("q", "tab")
+            await pilot.press("q", "ctrl+space")
             assert path_input.value == "projects/one/query.sql"
             assert isinstance(application.screen, FileNavigationScreen)
 
@@ -199,7 +199,7 @@ def test_navigation_shows_non_sql_files_but_refuses_to_open_them(tmp_path: Path)
 
             path_input.value = ".hidden"
             path_input.cursor_position = len(path_input.value)
-            await pilot.press("tab", "enter")
+            await pilot.press("ctrl+space", "enter")
             assert isinstance(application.screen, FileNavigationScreen)
             assert "Only .sql files" in str(screen.query_one("#navigation-notice").render())
             await pilot.press("escape")
@@ -224,7 +224,7 @@ def test_open_command_and_keyboard_navigation_load_utf8_file(
             await pilot.press("enter")
             assert isinstance(application.screen, FileNavigationScreen)
 
-            await pilot.press("q", "tab", "enter")
+            await pilot.press("q", "ctrl+space", "enter")
             await pilot.pause()
             editor = application.query_one(SqlEditor)
             assert editor.text == "select 'Привет'"

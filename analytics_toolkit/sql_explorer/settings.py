@@ -21,6 +21,11 @@ _BINDING_ALIASES = {
     "option+enter": "alt+enter",
 }
 _RESERVED_BINDINGS = {
+    "ctrl+space",
+    "ctrl+tab",
+    "ctrl+shift+tab",
+    "ctrl+pageup",
+    "ctrl+pagedown",
     "alt+left",
     "alt+right",
     "ctrl+a",

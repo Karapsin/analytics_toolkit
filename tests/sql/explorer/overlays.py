@@ -200,7 +200,7 @@ def test_escape_overlays_consume_it_first() -> None:
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             menu = application.query_one(CompletionMenu)
             assert menu.is_open is True
             stopped: list[bool] = []
@@ -212,7 +212,7 @@ def test_escape_overlays_consume_it_first() -> None:
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             application.action_escape()
             await pilot.pause()
             assert menu.is_open is False
@@ -250,5 +250,32 @@ def test_terminal_forwarded_command_o_alias_opens_navigation_mode() -> None:
             workspace = application.screen_stack[0]
             assert "Navigation remains active." in str(workspace.query_one("#notice").render())
             await pilot.press("escape")
+
+    asyncio.run(exercise())
+
+
+def test_completion_keys_route_to_file_modal_and_ignore_unrelated_controls(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            editor = application.active_workspace.editor
+            original = editor.text
+            application.query_one("#new-tab").focus()
+            await pilot.pause()
+            application.action_plain_tab()
+            application.action_complete()
+            assert editor.text == original
+            application.push_screen(DiscardChangesScreen(tmp_path / "file.sql"))
+            await pilot.pause()
+            focused = application.focused
+            application.action_plain_tab()
+            application.action_complete()
+            assert application.focused is focused
+            application.pop_screen()
+            application.push_screen(FileNavigationScreen(tmp_path))
+            await pilot.pause()
+            application.action_plain_tab()
+            application.action_complete()
+            assert isinstance(application.screen, FileNavigationScreen)
 
     asyncio.run(exercise())

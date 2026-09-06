@@ -89,7 +89,12 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 
 ## Fresh-Agent Sequence
 
-1. Run `prepare_start(...)`.
+1. Run `prepare_start(...)`, including during planning when session rules allow
+   startup preparation. Existing startup authorization persists; do not ask
+   again solely because work is a plan. Follow the root read-only exception
+   when the user explicitly skips sync, disclose staleness, and revalidate after
+   normal startup before edits or tests. Repository policy cannot override
+   higher-priority session restrictions.
 2. Read `instruction_routing.read_next`; do not reread auto-discovered `AGENTS.md`.
 3. Run `change_impact(...)` for consolidated focused RAG, contract, architecture,
    documentation, and check planning.

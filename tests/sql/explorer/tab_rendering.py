@@ -27,7 +27,7 @@ def test_new_tab_database_switch_reflows_visible_title() -> None:
             workspace.editor.text = "select 1"
             await pilot.pause()
             assert "Untitled 2*" in button.render_line(0).text
-            await pilot.press("ctrl+tab", "ctrl+tab")
+            await pilot.press("ctrl+pagedown", "ctrl+pagedown")
             assert application.active_workspace is workspace
             assert "Untitled 2*" in button.render_line(0).text
             for _ in range(6):

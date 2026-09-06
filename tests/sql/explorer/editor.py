@@ -226,9 +226,12 @@ def test_double_click_tracking_selects_identifier_with_underscore(
             editor.action_double_click_word((0, 0))
             assert editor.selection == Selection.cursor((0, 0))
 
+            await editor._on_key(events.Key("tab", None))
+            await editor._on_key(events.Key("shift+tab", None))
+            await editor._on_key(events.Key("ctrl+tab", None))
             editor.text = "L"
             editor.cursor_location = (0, 1)
-            await editor._on_key(events.Key("tab", "\t"))
+            await editor._on_key(events.Key("ctrl+space", None))
             assert application.query_one("#completion-menu").styles.display == "block"
             await editor._on_key(events.Key("x", "x"))
             assert editor.text == "Lx"

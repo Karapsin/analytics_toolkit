@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
+from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.exports import ConfirmExportScreen
 from analytics_toolkit.sql_explorer.file_commands import NewSqlFileScreen
 from analytics_toolkit.sql_explorer.picker import DatabasePickerApp
@@ -37,7 +38,7 @@ from analytics_toolkit.sql_explorer.widgets import (
 from textual.app import ScreenStackError
 from textual.color import Color
 from textual.css.query import NoMatches
-from textual.widgets import Button, Input, OptionList
+from textual.widgets import Button, Collapsible, Input, OptionList, Static
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -96,6 +97,10 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_scene_id = scene_id
         self.visual_evidence_path = evidence_path
         self.visual_manifest_path = manifest_path
+        self.creation_scene_ready = not (
+            scene_id.startswith("create-table")
+            or scene_id in {"command-completion", "database-completion"}
+        )
         super().__init__(VisualSession())
 
     def on_mount(self) -> None:
@@ -112,7 +117,49 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         )
         scene = self.visual_scene_id
-        if scene == "tab-database-change":
+        if scene.startswith("create-table"):
+            self._open_creation_scene(scene)
+        elif scene == "completion-narrowed":
+            workspace.editor.text = "SELECT customer_na FROM analytics.daily_orders"
+            workspace.editor.cursor_location = (0, len("SELECT customer_na"))
+            self.set_timer(
+                0.3,
+                lambda: self._open_completion(
+                    self._completion_at_cursor(), ("customer_name",), accept_single=False
+                ),
+            )
+        elif scene in {"command-completion", "database-completion"}:
+            command = workspace.command_input
+            command.value = "db wa" if scene == "database-completion" else "c"
+            command.cursor_position = len(command.value)
+            command.database_keys = ("warehouse", "warehouse_dev")
+            command.focus()
+
+            def show_commands() -> None:
+                command.refresh_completion()
+                self.call_after_refresh(self._mark_scene_ready)
+
+            self.set_timer(0.3, show_commands)
+        elif scene in {"completion-columns", "completion-empty-columns"}:
+            workspace.editor.text = (
+                "SELECT c.c FROM analytics.customers c "
+                "JOIN analytics.orders o ON c.id = o.customer_id"
+            )
+            if scene == "completion-empty-columns":
+                workspace.editor.text = "SELECT  FROM analytics.customers"
+                workspace.editor.cursor_location = (0, 7)
+                workspace.completion_allow_empty_columns = True
+            else:
+                workspace.editor.cursor_location = (0, 10)
+            self.set_timer(
+                0.3,
+                lambda: self._open_completion(
+                    self._completion_at_cursor(),
+                    ("customer_id", "customer_name", "created_at"),
+                    accept_single=False,
+                ),
+            )
+        elif scene == "tab-database-change":
             self._add_workspace()
             self.set_timer(0.3, self._switch_visual_database)
         elif scene == "formatted-sql":
@@ -240,11 +287,16 @@ class VisualExplorerApp(SqlExplorerApp):
         self.active_workspace.command_input.focus()
 
     def _refresh_visual_evidence(self) -> None:
+        if not self.creation_scene_ready:
+            return
         if not self._restore_primary_overflow_tab():
             return
         _refresh_evidence_if_mounted(
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
+
+    def _mark_scene_ready(self) -> None:
+        self.creation_scene_ready = True
 
     def _restore_primary_overflow_tab(self) -> bool:
         """Restore the review tab while tolerating a screen being torn down."""
@@ -256,9 +308,43 @@ class VisualExplorerApp(SqlExplorerApp):
             return False
         return False
 
+    def _open_creation_scene(self, scene: str) -> None:
+        draft = {
+            "table_name": "sandbox.customer_summary",
+            "rows": [("customer_id", "BIGINT"), ("revenue", "NUMERIC(18,2)")],
+            "source": "from_sql" if scene == "create-table-sql" else "table_schema",
+            "from_sql": (
+                "select customer_id, sum(revenue) as revenue\n"
+                "from analytics.orders\ngroup by customer_id"
+            ),
+        }
+        screen = CreateTableScreen("gp", "gp", draft)
+        self.push_screen(screen)
+
+        def configure() -> None:
+            if not screen.is_mounted:
+                return
+            if scene == "create-table-types":
+                field = screen.query(".create-column-type").first(Input)
+                field.focus()
+                field.value = "B"
+            elif scene == "create-table-advanced":
+                advanced = screen.query_one("#create-table-advanced", Collapsible)
+                advanced.collapsed = False
+                advanced.scroll_visible(top=True, animate=False)
+            elif scene == "create-table-invalid":
+                screen.query_one("#create-table-notice", Static).update(
+                    "Each column needs a name and SQL type."
+                )
+            self.creation_scene_ready = True
+
+        self.set_timer(0.3, configure)
+
     def _open_visual_completion(self) -> None:
-        self.active_workspace.completion_menu.open(
-            ("customer_id", "customer_name", "customer_segment", "customer_status")
+        self._open_completion(
+            self._completion_at_cursor(),
+            ("customer_id", "customer_name", "customer_segment", "customer_status"),
+            accept_single=False,
         )
 
 
@@ -363,7 +449,10 @@ def _write_evidence(
         interrupt = workspace.query_one("#interrupt", Button)
         assertions["stop_spelling"] = str(interrupt.label) == "STOP"
         assertions["interrupt_right_aligned"] = (
-            interrupt.region.right == summary.content_region.right
+            not interrupt.display or interrupt.region.right == summary.content_region.right
+        )
+        assertions["interrupt_visible_only_running"] = interrupt.display == (
+            workspace.query_state in {"running", "cancelling"}
         )
         _assert_changed_controls(app, scene_id, assertions)
 

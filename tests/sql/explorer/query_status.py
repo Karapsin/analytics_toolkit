@@ -255,6 +255,7 @@ def test_running_summary_animates_and_keeps_slow_warning() -> None:
         async with application.run_test() as pilot:
             application.active_workspace.query_state = "running"
             application.busy = True
+            application.active_workspace.query_state = "running"
             application._update_status()
             indicator = application.query_one("#query-running-indicator", CircularSpinner)
             assert indicator.display
@@ -375,11 +376,13 @@ def test_interrupt_stays_disabled_until_query_worker_acknowledges() -> None:
         application = SqlExplorerApp(session)
         async with application.run_test() as pilot:
             application.busy = True
+            application.active_workspace.query_state = "running"
             application._update_status()
             interrupt = application.query_one("#interrupt", Button)
             assert interrupt.disabled is False
 
-            await pilot.click("#interrupt")
+            await pilot.pause()
+            assert await pilot.click("#interrupt")
             await pilot.pause()
             assert session.cancel_calls == 1
             assert application.busy is True

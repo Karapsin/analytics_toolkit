@@ -94,6 +94,9 @@ class StubCoordinator:
     def stop(self) -> None:
         return None
 
+    def remove_owner(self, owner_id: str) -> None:
+        del owner_id
+
     def known_catalogs(self) -> tuple[str, ...] | None:
         return self.catalogs
 
@@ -297,7 +300,7 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
             editor.text = "SEL"
             editor.cursor_location = (0, 3)
 
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             menu = application.query_one(CompletionMenu)
             assert menu.is_open is False
             assert editor.text == "select"
@@ -305,7 +308,7 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert menu.is_open is True
             assert menu.suggestions == ("left join", "limit")
             assert application.focused is editor
@@ -320,15 +323,15 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             await pilot.press("escape")
             assert menu.is_open is False
             assert application.focused is editor
 
             editor.text = "select 1"
             editor.cursor_location = (0, 0)
-            await pilot.press("tab")
-            assert editor.text.startswith("    ")
+            await pilot.press("ctrl+space")
+            assert editor.text == "select 1"
 
     asyncio.run(exercise())
 
@@ -458,7 +461,7 @@ def test_app_table_lookup_uses_initial_six_chars_and_rejects_stale_result() -> N
             editor.text = "SELECT * FROM sampletable"
             editor.cursor_location = (0, len(editor.text))
 
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             _wait_for(lambda: len(provider.table_calls) == 1)
             await pilot.pause()
             assert provider.table_calls[0][0] == "sample"
@@ -475,7 +478,7 @@ def test_app_table_lookup_uses_initial_six_chars_and_rejects_stale_result() -> N
     asyncio.run(exercise())
 
 
-def test_inflight_result_filters_latest_prefix_and_cache_handles_backspace() -> None:
+def test_cursor_change_cancels_inflight_and_fresh_cache_handles_backspace() -> None:
     started = Event()
     release = Event()
 
@@ -496,31 +499,35 @@ def test_inflight_result_filters_latest_prefix_and_cache_handles_backspace() -> 
             editor = application.query_one(SqlEditor)
             editor.text = "SELECT * FROM sample"
             editor.cursor_location = (0, len(editor.text))
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert started.wait(2)
 
             cursor = editor.cursor_location
             edit = editor.replace("_o", cursor, cursor, maintain_selection_offset=False)
             editor.cursor_location = edit.end_location
+            await pilot.pause()
             release.set()
             _wait_for(lambda: len(provider.table_calls) == 1)
             await pilot.pause()
             menu = application.query_one(CompletionMenu)
             assert menu.is_open is False
+            assert editor.text == "SELECT * FROM sample_o"
+            await pilot.press("ctrl+space")
+            await pilot.pause()
             assert editor.text == "SELECT * FROM sample_one"
 
             menu.action_close()
             editor.text = "SELECT * FROM sampl"
             editor.cursor_location = (0, len(editor.text))
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert set(menu.suggestions) == {"sample_one", "sample_two"}
-            assert len(provider.table_calls) == 1
+            assert len(provider.table_calls) == 2
 
             menu.action_close()
             editor.text = "SELECT * FROM sample JOIN sample"
             editor.cursor_location = (0, len(editor.text))
-            await pilot.press("tab")
-            _wait_for(lambda: len(provider.table_calls) == 2)
+            await pilot.press("ctrl+space")
+            _wait_for(lambda: len(provider.table_calls) == 3)
 
     asyncio.run(exercise())
 
@@ -551,7 +558,7 @@ def test_app_completion_request_defensive_paths() -> None:
 
             editor.text = "SEL"
             editor.cursor_location = (0, 3)
-            await pilot.press("tab")
+            await pilot.press("ctrl+space")
             assert menu.is_open is False
             assert editor.text == "select"
             await pilot.pause()

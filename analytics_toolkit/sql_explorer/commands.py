@@ -9,8 +9,11 @@ from .errors import SqlExplorerConfigurationError
 from .formatting import format_editor
 
 HELP_TEXT = """Commands
+  exit! / q!                  exit without the save dialog
+  wq                          save changed tabs and exit
   run                         execute the editor
   format                      format selections or the complete SQL editor
+  create_table                create a table from columns or source SQL
   open                        open remote-host SQL file navigation
   save                        save the opened SQL file
   cancel                      cancel the active explorer query
@@ -27,14 +30,14 @@ HELP_TEXT = """Commands
   to_excel                    save the current result as an Excel workbook
   to_csv                      save the current result as CSV
   help                        show this help
-  exit | quit                 close the explorer
+  exit | quit | q             close the explorer
 
 Keys
   Ctrl+O                      open remote-host SQL file navigation
   Ctrl+S                      save, creating a file for an untitled buffer
   Ctrl+N                      name and create a blank SQL file
   Ctrl+T / Ctrl+W             create / close a workspace tab
-  Ctrl+Tab                    select the next tab (Shift reverses)
+  Ctrl+PageDown / PageUp      select the next / previous tab
   Cmd/Fn-like modifiers       share Ctrl shortcuts when forwarded by the terminal
   Up / Down                   cross pane boundaries or navigate Find/Replace
   Left / Right                choose a visible confirmation action
@@ -48,7 +51,8 @@ Keys
   Escape                      close overlays, collapse cursors, or toggle editor/command
   STOP                        request cancellation of the active query
   Ctrl+C                      copy editor or result selection
-  Tab                         complete SQL or indent when unavailable
+  Shift+Tab                   request columns with an empty prefix, else unindent
+  Tab / Ctrl+Space            complete SQL or commands (Tab falls back to indent)
 """
 
 

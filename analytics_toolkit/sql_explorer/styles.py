@@ -156,7 +156,7 @@ Screen {
     border: none;
     padding: 0 1;
 }
-#completion-menu {
+#completion-menu, #command-completion {
     display: none;
     layer: overlay;
     width: 32;
@@ -172,6 +172,35 @@ Screen {
     margin-top: 1;
     border: solid $panel-lighten-2;
 }
+#command-completion {
+    overlay: screen;
+}
+.results-header {
+    dock: top;
+    align-horizontal: right;
+    height: 2;
+    background: $panel-lighten-1;
+    border-bottom: solid $panel-lighten-2;
+}
+#result-title {
+    width: 1fr;
+    height: 1;
+    padding-left: 1;
+    color: $text-muted;
+}
+.close-results {
+    width: 5;
+    min-width: 5;
+    height: 1;
+    min-height: 1;
+    border: none;
+    padding: 0;
+    background: $panel-lighten-2;
+    color: $text;
+}
+.close-results:hover { background: $error; color: $text; }
+.close-results:focus { background: $accent; color: $background; }
+
 .result-pane:focus-within {
     border: solid $accent;
     background: $panel-lighten-1;
@@ -190,7 +219,7 @@ Screen {
     background: $panel-lighten-1;
 }
 .command-panel {
-    height: 7;
+    height: 6;
     margin-top: 1;
     border: solid $panel-lighten-2;
     background: $panel;
@@ -258,7 +287,10 @@ Screen {
     text-style: none;
 }
 #notice {
-    height: 1;
+    width: 1fr;
+    min-width: 0;
+    height: 3;
+    content-align: left middle;
     padding: 0 1;
 }
 #command-row {

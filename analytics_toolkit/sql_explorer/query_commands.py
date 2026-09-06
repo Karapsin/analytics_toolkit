@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from textual import work
 
+from .create_table import CreateTablePlan
+from .errors import SqlExplorerConfigurationError
 from .runtime import DatabaseSelection
 from .tabs import SaveChangesScreen
 from .widgets import ConfirmMutationScreen
@@ -153,6 +155,16 @@ class SqlExplorerQueryCommandsMixin:
         app = cast("Any", self)
         if app._query_scheduler.complete(job.job_id) is None:
             return
+        if isinstance(job.plan, CreateTablePlan):
+            coordinator = app._completion_pool.coordinator_for(job.database.connection_key)
+            if coordinator is not None:
+                coordinator.invalidate_tables()
+            for owner in app._workspaces.values():
+                if owner.session.database.connection_key == job.database.connection_key:
+                    app._cancel_completion_request(owner)
+                    owner.completion_context = None
+                    owner.completion_candidates = ()
+                    owner.completion_menu.styles.display = "none"
         workspace = app._workspaces.get(job.tab_id)
         if workspace is not None:
             workspace.reset_query_state()
@@ -175,6 +187,7 @@ class SqlExplorerQueryCommandsMixin:
         app._set_notice(None, workspace)
         if result.dataframe is None:
             app.close_results(focus_editor=False, workspace=workspace)
+            app._set_notice(result.status, workspace)
         else:
             app.show_dataframe(result.dataframe, workspace)
         app._update_status(workspace)
@@ -209,9 +222,28 @@ class SqlExplorerQueryCommandsMixin:
         app = cast("Any", self)
         app._finish_cancel_error_for(app._active_tab_id, exc)
 
-    def _request_exit(self) -> None:
+    def _command_exit_force(self, arguments: list[str]) -> None:
+        app = cast("Any", self)
+        if arguments:
+            app.show_error(SqlExplorerConfigurationError("Usage: exit! or q!"))
+            return
+        app._request_exit(mode="discard")
+
+    def _command_write_quit(self, arguments: list[str]) -> None:
+        app = cast("Any", self)
+        if arguments:
+            app.show_error(SqlExplorerConfigurationError("Usage: wq"))
+            return
+        app._request_exit(mode="save")
+
+    def _request_exit(self, *, mode: str = "ask") -> None:
         app = cast("Any", self)
         if len(app.screen_stack) > 1 or app._exit_requested:
+            return
+        app._exit_save_all = mode == "save"
+        if mode == "discard":
+            app._exit_dirty_tabs.clear()
+            app._begin_exit_shutdown()
             return
         app._exit_dirty_tabs = [
             tab_id for tab_id in app._tab_order if app._workspaces[tab_id].is_dirty
@@ -231,6 +263,9 @@ class SqlExplorerQueryCommandsMixin:
                 app._exit_dirty_tabs.pop(0)
                 continue
             app._activate_tab(tab_id)
+            if app._exit_save_all:
+                app._exit_dirty_decision(tab_id, "save")
+                return
             app.push_screen(
                 SaveChangesScreen(workspace.file_label),
                 lambda decision, owner=tab_id: app._exit_dirty_decision(owner, decision),

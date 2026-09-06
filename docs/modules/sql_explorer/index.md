@@ -23,6 +23,7 @@ pip install 'analytics-toolkit[tui]'
 - [Results and clipboard](#results-and-clipboard)
 - [Query status and cancellation](#query-status-and-cancellation)
 - [Commands](#commands)
+- [Creating tables](#creating-tables)
 
 ## Launch and execution
 
@@ -70,8 +71,8 @@ Each tab is an independent SQL workspace with its own editor, command line,
 database selection, result or error pane, completion UI, file, and focus
 position. Labels use `[db] file.sql`; unsaved work adds `*`, and a new tab uses
 `[db] Untitled N`. Click the trailing `+` or press `Ctrl+T` to create a tab.
-Click its `×` or press `Ctrl+W` to close it. `Ctrl+Tab` moves forward and
-`Ctrl+Shift+Tab` moves backward with wraparound. The final tab remains open.
+Click its `×` or press `Ctrl+W` to close it. `Ctrl+PageDown` moves forward and
+`Ctrl+PageUp` moves backward with wraparound. The final tab remains open.
 
 Closing a changed file or a non-empty untitled tab asks whether to Save, Don't
 Save, or Cancel. Closing a running tab first applies that decision, then targets
@@ -157,13 +158,21 @@ and export or SQL filenames, supports Shift selection, word selection,
 the same portable Ctrl behavior. Typing, pasting, or deleting replaces the
 active selection, and pasted values remain single-line.
 
-Tab is conditional:
+Tab is reserved for completion and indentation. Shift+Tab requests columns in
+a SELECT projection even with a blank prefix; elsewhere it unindents. Neither
+key moves focus. Ctrl+Space also requests completion without indentation.
+With multiple editor cursors, completion is disabled and Tab only indents.
+
+In the editor, Tab is conditional:
 
 1. If the completion menu is open, Tab accepts its highlighted suggestion.
 2. If the cursor has one matching suggestion, Tab inserts it immediately.
 3. If the cursor has multiple matches, Tab opens the suggestion menu.
 4. If metadata is needed, Tab requests it and applies the same one-or-many rule.
 5. Otherwise, Tab performs normal indentation.
+
+Completion menus shrink to their remaining matching rows. Catalog, schema,
+table, keyword, and column suggestions all filter locally as the prefix changes.
 
 The editor keeps keyboard focus while the menu is open, so continued typing or
 backspacing filters the visible options. A typed prefix that narrows the menu to
@@ -174,7 +183,10 @@ Trino catalogs, schemas, and tables; Greenplum schemas and tables; and ClickHous
 databases and tables. Trino catalog discovery starts when the Explorer opens,
 then schema discovery is queued for each catalog. Same-request lookups from
 multiple tabs fan out from one metadata operation. Closing a tab removes its
-queued callbacks without affecting other subscribers. Metadata never replaces
+queued callbacks without affecting other subscribers. Every cursor-position or
+text change cancels that tab’s pending metadata request; the server query is
+cancelled when no other subscriber still needs it. Dismissed requests cannot
+reopen the menu, including after the cursor returns to its old position. Metadata never replaces
 the visible user-query status.
 
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
@@ -183,6 +195,20 @@ The prefix must contain at least six characters. The first Tab request calls
 catalog/database/schema context. Results are cached; longer prefixes and
 backspacing filter those candidates locally without another metadata query. A
 catalog, database, schema, or SQL-clause context change permits a new lookup.
+
+Column completion is available in SELECT projections when the source tables are
+present after FROM/JOIN. A non-keyword identifier prefix must touch the cursor
+on its left on the same line, and the character cell immediately on its right
+must be whitespace or the end of the line. Blank prefixes, keywords, and positions
+inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
+left-hand prefix, while keeping the right-hand whitespace and single-cursor rules.
+It resolves aliases, joined tables, nested SELECTs,
+derived tables, and CTE output names, including explicit column lists and stars.
+Type a prefix after `alias.` to restrict suggestions to that source; ambiguous unqualified
+columns are offered with their source qualifier. Tab requests columns through
+[`sql.table_info`](../sql/functions/table_info.md) without counting rows or
+executing the editor SQL. Results share the database metadata queue/cache.
+Unresolvable SQL and recursive outputs without determinable names are omitted.
 
 ## Navigation mode
 
@@ -204,7 +230,7 @@ Symlinks that resolve outside the navigation root are omitted.
 
 Normal typing goes into the path field and filters the current path segment.
 Tab completes a sole match or cycles through multiple visible candidates;
-Shift+Tab, Up, and Down move through those candidates. Enter or click descends
+Up and Down move through those candidates. Enter or click descends
 into a directory. On a file, Enter or click opens it only when its suffix is
 `.sql` (case-insensitive); other files remain visible but cannot be opened.
 The current SQL file path appears in the tab tooltip. File browsing never
@@ -220,6 +246,9 @@ performs its normal move. The ordinary open-file browser still closes on its
 first Escape.
 
 ## Results and clipboard
+
+Click the top-right `×` in the results/error pane to dismiss output and return
+to the editor. Closing output preserves SQL text and query outcome/timing.
 
 At most 200 result rows are displayed, with the result grid's vertical
 scrollbar on the right. The query, result, and command panes use square borders
@@ -268,14 +297,15 @@ known. Durations adapt from sub-second values such as `0.128s` to values such as
 
 The outlined red **STOP** button is the rightmost control in the same
 status strip. It is enabled only while a query can be interrupted. Operational
-notices and the command input remain directly below the strip.
+system notices share the status-button row; the command input sits below it.
 
 The `STOP` button and `cancel` command use the same targeted cancellation
 path. They identify only the active Explorer user-query label through
 `sql.show_queries(...)` and call `sql.cancel_queries(...)` for matching IDs.
-Metadata completion queries are independent and are never interruption targets.
-The button remains disabled while no user SQL runs or while cancellation is
-pending; the interface remains busy until the SQL worker acknowledges completion
+Metadata queries are cancelled independently when their cursor context becomes
+irrelevant; STOP targets only user operations.
+The STOP button is visible only for running user SQL, and remains visible but
+disabled while cancellation is pending; the interface remains busy until the SQL worker acknowledges completion
 or cancellation.
 
 Escape toggles between the editor and command panel. From a visible result/error
@@ -285,9 +315,16 @@ first; Find/Replace and completion overlays close before focus navigation.
 
 ## Commands
 
+In the command line, Tab or Ctrl+Space completes command names and supported
+argument choices. `db ` completes configured database keys using configuration
+validation only, without connecting to databases. Continued typing filters the
+menu; Up/Down selects, Tab/Enter accepts, and Escape dismisses it. Accepting a
+suggestion does not execute the command: press Enter again to submit.
+
 Enter commands in the lower panel, with or without a leading colon:
 
 - `run` - run the selection or complete editor buffer
+- `create_table` - open the table creation form for the current tab
 - `format` - format selections or the complete editor using the active SQL dialect
 - `open` - enter remote-host SQL file navigation mode
 - `save` - save edits to the opened SQL file
@@ -304,8 +341,12 @@ Enter commands in the lower panel, with or without a leading colon:
 - `to_excel` - choose a project directory and save the current result as `.xlsx`
 - `to_csv` - choose a project directory and save the current result as `.csv`
 - `help` - open the in-app command reference
-- `exit` or `quit` - close the Explorer, requesting targeted cancellation first
-  when user SQL is running
+- `exit`, `quit`, or `q` - close the Explorer, asking about unsaved changes
+- `exit!` or `q!` - close without the Save/Don’t Save dialog, discarding unsaved edits
+- `wq` - save every changed tab and exit; untitled tabs request a filename and
+  directory. A cancelled or failed save keeps the Explorer open.
+
+All exit commands cancel running user queries and wait for their workers to stop.
 
 The confirmation choice and primary run shortcut are saved
 in the user's config directory. SQL text is not persisted. The export commands first ask for one
@@ -316,5 +357,35 @@ existing destination requires replacement confirmation. If a result has more tha
 In every two-choice confirmation dialog, Left selects the affirmative action and
 Right selects cancellation; Enter activates the focused choice. The existing Y,
 N, Escape, and mouse controls remain available.
+
+## Creating tables
+
+`create_table` opens a form that calls
+[`sql.create_table`](../sql/functions/create_table.md). The database is fixed to
+the originating tab's connection key. Enter `table_name` and choose one source:
+`table_schema` provides add/remove column-name and SQL-type rows; `from_sql`
+provides a multiline query field and maps to the function's `sql` argument.
+Type fields offer backend-specific suggestions using Up/Down and Enter,
+while accepting custom type expressions.
+
+The basic form always shows `insert_data`, `skip_if_exists`, and
+`drop_if_exists`, initially False. `insert_data` is enabled only with source SQL.
+`skip_if_exists` maps to `if_not_exists`; selecting skip clears drop and vice versa.
+Advanced expands source database, partition/order, and backend-specific creation
+settings. Retry controls are omitted; creation uses the function’s retry defaults. Blank advanced settings retain the function defaults;
+structured mapping fields accept JSON objects.
+
+Navigate the form with Up/Down and Enter; Tab and Shift+Tab do not move between
+controls. Left/Right changes choices or moves the text caret. Enter accepts type
+suggestions, opens/accepts choices, toggles checkboxes and Advanced, or activates
+buttons. In multiline SQL, Up/Down moves through lines and leaves the field at
+the first/last line; Enter inserts a newline. Escape first dismisses an open
+choice/type menu, then cancels the form.
+
+**Cancel** or Escape closes the form without executing SQL. **Create** validates
+and queues the operation; the button is its execution confirmation. Creation
+shares the user-operation queue and status/cancellation handling. Results and
+errors belong to the originating tab, and reopening the form retains the last
+submitted values for correction. Table and column caches refresh after creation.
 
 [All module docs](../README.md)

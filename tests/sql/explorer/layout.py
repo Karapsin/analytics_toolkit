@@ -72,7 +72,17 @@ def test_editor_position_active_tab_and_summary_control_alignment() -> None:
 
             summary = workspace.query_one("#query-summary")
             interrupt = workspace.query_one("#interrupt")
+            assert not interrupt.display
+            workspace.query_state = "running"
+            workspace.busy = True
+            application._update_status(workspace)
+            await pilot.pause()
+            assert interrupt.display
             assert interrupt.region.right == summary.content_region.right
+            for state in ("queued", "ready"):
+                workspace.query_state = state
+                application._update_status(workspace)
+                assert not interrupt.display
 
             colors = application.get_css_variables()
             assert colors["background"] == "#0E1113"

@@ -19,6 +19,8 @@ from .clipboard import TerminalClipboard
 from .commands import HELP_TEXT, SqlExplorerCursorCommandsMixin
 from .completion import CompletionContext, CompletionCoordinator, CompletionCoordinatorPool
 from .completion_commands import SqlExplorerCompletionCommandsMixin
+from .create_table import creation_plan
+from .create_table_screen import CreateTableScreen
 from .editor import SqlEditor
 from .errors import SqlExplorerConfigurationError
 from .exports import SqlExplorerExportCommandsMixin
@@ -83,9 +85,9 @@ class SqlExplorerApp(
         Binding("ctrl+n", "new_sql_file", "New SQL file", show=False, priority=True),
         Binding("ctrl+t", "new_tab", "New tab", show=False, priority=True),
         Binding("ctrl+w", "close_tab", "Close tab", show=False, priority=True),
-        Binding("ctrl+tab", "next_tab", "Next tab", show=False, priority=True),
+        Binding("ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
         Binding(
-            "ctrl+shift+tab",
+            "ctrl+pageup",
             "previous_tab",
             "Previous tab",
             show=False,
@@ -105,8 +107,16 @@ class SqlExplorerApp(
             show=False,
             priority=True,
         ),
-        Binding("tab", "plain_tab", "Indent", show=False, priority=True),
+        Binding("ctrl+space", "complete", "Complete", show=False, priority=True),
+        Binding("tab", "plain_tab", "Complete or indent", show=False, priority=True),
         Binding("shift+tab", "plain_shift_tab", "Unindent", show=False, priority=True),
+        Binding(
+            "ctrl+tab,ctrl+shift+tab",
+            "ignore_tab",
+            "Disabled",
+            show=False,
+            priority=True,
+        ),
         Binding("ctrl+c", "copy_focused", "Copy", show=False, priority=True),
         Binding("ctrl+f", "open_find", "Find", show=False, priority=True),
         Binding("escape", "escape", "Toggle editor/command", show=False),
@@ -124,6 +134,7 @@ class SqlExplorerApp(
         self._completion_pool = CompletionCoordinatorPool()
         self._exit_requested = False
         self._exit_dirty_tabs: list[str] = []
+        self._exit_save_all = False
         self._primary_binding: str | None = None
         self._clipboard = ""
         self._terminal_clipboard = TerminalClipboard()
@@ -205,6 +216,14 @@ class SqlExplorerApp(
         self.active_workspace.exit_after_cancel = bool(value)
 
     async def on_event(self, event: events.Event) -> None:
+        if (
+            isinstance(event, events.Key)
+            and event.key.split("+")[-1] == "tab"
+            and event.key not in {"tab", "shift+tab"}
+        ):
+            event.stop()
+            event.prevent_default()
+            return
         if isinstance(event, events.Key) and not event.is_forwarded:
             compatible = control_compatible_key(event.key)
             if compatible != event.key:
@@ -249,6 +268,10 @@ class SqlExplorerApp(
         if len(self.screen_stack) > 1:
             return
         workspace = self.active_workspace
+        command_input = workspace.command_input
+        if isinstance(command_input, CommandInput) and command_input.completion_menu.display:
+            command_input.close_completion()
+            return
         bar = workspace.find_bar
         if bar.styles.display != "none":
             bar.action_close()
@@ -257,6 +280,7 @@ class SqlExplorerApp(
         if menu.is_open:
             menu.action_close()
             return
+        self._cancel_completion_request(workspace)
         editor = workspace.editor
         if editor.cursor_count > 1:
             editor.collapse_to_active()
@@ -266,25 +290,51 @@ class SqlExplorerApp(
             return
         editor.focus()
 
+    def action_ignore_tab(self) -> None:
+        """Tab-key actions are intentionally disabled throughout Explorer."""
+
     def action_plain_tab(self) -> None:
+        if isinstance(self.screen, CreateTableScreen):
+            if not self.screen.accept_type() and isinstance(self.focused, TextArea):
+                self.screen.action_form_indent(1)
+            return
         if isinstance(self.screen, FileNavigationScreen):
             self.screen.action_complete_path()
             return
-        menu = self.active_workspace.completion_menu
-        if menu.is_open:
-            self._accept_completion()
+        if len(self.screen_stack) > 1:
             return
-        focused = self.focused
-        if isinstance(focused, SqlEditor) and not self._request_completion():
-            focused.action_indent()
+        if isinstance(self.focused, CommandInput):
+            self.focused.request_completion()
+            return
+        if self.active_workspace.completion_menu.is_open:
+            self._accept_completion()
+        elif isinstance(self.focused, SqlEditor) and not self._request_completion():
+            self.focused.action_indent()
 
     def action_plain_shift_tab(self) -> None:
-        if isinstance(self.screen, FileNavigationScreen):
-            self.screen.action_previous_match()
+        if isinstance(self.screen, CreateTableScreen):
+            self.screen.action_form_indent(-1)
             return
-        focused = self.focused
-        if isinstance(focused, SqlEditor):
-            focused.action_unindent()
+        if (
+            len(self.screen_stack) == 1
+            and isinstance(self.focused, SqlEditor)
+            and not self._request_completion(columns_only=True)
+        ):
+            self.focused.action_unindent()
+
+    def action_complete(self) -> None:
+        if isinstance(self.screen, FileNavigationScreen):
+            self.screen.action_complete_path()
+            return
+        if len(self.screen_stack) > 1:
+            return
+        if isinstance(self.focused, CommandInput):
+            self.focused.request_completion()
+            return
+        if self.active_workspace.completion_menu.is_open:
+            self._accept_completion()
+        elif isinstance(self.focused, SqlEditor):
+            self._request_completion()
 
     def action_copy_focused(self) -> None:
         focused = self.focused
@@ -483,6 +533,7 @@ class SqlExplorerApp(
     def on_text_area_selection_changed(self, event: TextArea.SelectionChanged) -> None:
         if isinstance(event.text_area, SqlEditor):
             self._update_editor_status(workspace_for(event.text_area))
+            self._refresh_open_completion(workspace_for(event.text_area))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if isinstance(event.option_list, CompletionMenu):
@@ -552,10 +603,12 @@ class SqlExplorerApp(
         command = command.lower()
         handlers = {
             "cancel": self._command_cancel,
+            "create_table": self._command_create_table,
             "clear": self._command_clear,
             "confirm": self._command_confirmation,
             "db": self._command_database,
             "exit": self._command_exit,
+            "exit!": self._command_exit_force,
             "format": self._command_format,
             "help": self._command_help,
             "mode": self._command_mode,
@@ -565,6 +618,9 @@ class SqlExplorerApp(
             "cp": self._command_copy,
             "pst": self._command_paste,
             "quit": self._command_exit,
+            "q": self._command_exit,
+            "q!": self._command_exit_force,
+            "wq": self._command_write_quit,
             "run": self._command_run,
             "save": self._command_save,
             "shortcut": self._command_shortcut,
@@ -582,6 +638,28 @@ class SqlExplorerApp(
             self.show_error(SqlExplorerConfigurationError("Usage: run"))
             return
         self.action_run_query()
+
+    def _command_create_table(self, arguments: list[str]) -> None:
+        if arguments:
+            self.show_error(SqlExplorerConfigurationError("Usage: create_table"))
+            return
+        workspace = self.active_workspace
+        if workspace.busy or self._query_scheduler.job_for_tab(workspace.tab_id) is not None:
+            self._set_notice("This tab already has a queued or running query.", workspace)
+            return
+        database = workspace.session.database
+
+        def submit(options: dict[str, Any] | None) -> None:
+            if options is not None and workspace.tab_id in self._workspaces:
+                self._enqueue_query(workspace, creation_plan(options), database)
+            workspace.command_input.focus()
+
+        self.push_screen(
+            CreateTableScreen(
+                database.connection_key, database.backend, workspace.create_table_draft
+            ),
+            submit,
+        )
 
     def _command_open(self, arguments: list[str]) -> None:
         if arguments:
@@ -625,6 +703,8 @@ class SqlExplorerApp(
             self._request_close_tab(event.button.tab_id)
         elif isinstance(event.button, NewTabButton):
             self.action_new_tab()
+        elif event.button.id == "close-results":
+            self.close_results(workspace=workspace_for(event.button))
         elif event.button.has_class("interrupt"):
             self._request_cancel(
                 workspace=workspace_for(event.button),
@@ -749,6 +829,7 @@ class SqlExplorerApp(
             return
         summary.update_presentation(query_summary_for(workspace))
         interrupt.disabled = not workspace.busy or workspace.cancelling
+        interrupt.display = workspace.query_state in {"running", "cancelling"}
         self._refresh_tab(workspace)
 
     def _update_editor_status(self, workspace: SqlExplorerWorkspace | None = None) -> None:
@@ -770,8 +851,12 @@ class SqlExplorerApp(
     ) -> None:
         if self.screen_stack:
             workspace = workspace or self.active_workspace
+            if message != workspace.completion_loading_notice:
+                workspace.completion_loading_notice = None
             with suppress(NoMatches):
-                workspace.query_one("#notice", Static).update(message or "")
+                notice = workspace.query_one("#notice", Static)
+                notice.update(Text(message or "", no_wrap=True, overflow="ellipsis"))
+                notice.tooltip = message
 
 
 __all__ = [

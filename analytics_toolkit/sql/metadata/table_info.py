@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.execution.metadata_cancellation import cancellable_metadata_connection
 
 from ..backends import get_backend_adapter
 from ..connection.config import get_connection_config
@@ -102,7 +103,7 @@ def table_info(
     shard_table = get_backend_adapter(config.backend).companion_table_name(table_name)
     inspection_table = resolved_table or table_name
 
-    connection = get_sql_connection(config.connection_key)
+    connection = cancellable_metadata_connection(get_sql_connection(config.connection_key))
     try:
         exists = table_exists(
             config.backend,

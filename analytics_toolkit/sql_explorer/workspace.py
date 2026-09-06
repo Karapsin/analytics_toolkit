@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Input, Static
+from textual.widgets import Button, Input, OptionList, Static
 
 from .editor import SqlEditor
 from .status import QuerySummaryBar
@@ -50,6 +50,13 @@ class SqlExplorerWorkspace(Vertical):
         self.saved_text = ""
         self.completion: CompletionCoordinator | None = None
         self.completion_context: CompletionContext | None = None
+        self.completion_candidates: tuple[str, ...] = ()
+        self.completion_requested_text: str | None = None
+        self.completion_cursor: tuple[int, int] | None = None
+        self.completion_epoch = 0
+        self.completion_loading_notice: str | None = None
+        self.completion_allow_empty_columns = False
+        self.create_table_draft: dict[str, Any] = {}
         self.last_focused: Widget | None = None
         self.closing = False
         self.exit_after_cancel = False
@@ -67,12 +74,17 @@ class SqlExplorerWorkspace(Vertical):
             yield CompletionMenu(id="completion-menu", wrap=False)
             yield Static("SQL  Ln 1, Col 1", id="editor-status", markup=False)
         with Vertical(classes="result-pane"):
+            with Horizontal(classes="results-header"):
+                yield Static("Query output", id="result-title", markup=False)
+                yield Button(
+                    "\u00d7", id="close-results", classes="close-results", tooltip="Close results"
+                )
             yield ResultTable(id="result-table", cursor_type="cell", zebra_stripes=True)
             yield ResultMessage("", id="result-message", markup=False)
         with Vertical(classes="command-panel"):
             yield QuerySummaryBar(id="query-summary")
-            yield Static("", id="notice", markup=False)
             with Horizontal(id="command-row"):
+                yield OptionList(id="command-completion", wrap=False)
                 yield CommandInput(placeholder=": command", id="command-input")
 
     def on_mount(self) -> None:

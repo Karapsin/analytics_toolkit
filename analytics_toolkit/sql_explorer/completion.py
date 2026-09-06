@@ -12,13 +12,22 @@ from uuid import uuid4
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends.utils import sql_literal
 from analytics_toolkit.sql.ddl.identifiers import quote_identifier
+from analytics_toolkit.sql.execution.cancellation import (
+    AsyncSqlCancelled,
+    SqlCancellationScope,
+    activate_cancellation_scope,
+    cancel_scope_queries,
+    raise_if_cancelled,
+)
+
+from .column_completion import column_fragment, projection_context, projection_suggestions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
     import pandas as pd
 
-CompletionKind = Literal["keyword", "table", "catalog", "schema"]
+CompletionKind = Literal["keyword", "table", "catalog", "schema", "column"]
 
 KEYWORDS: Final[tuple[str, ...]] = (
     "select",
@@ -38,6 +47,26 @@ KEYWORDS: Final[tuple[str, ...]] = (
     "create table",
 )
 MIN_TABLE_PREFIX_LENGTH: Final[int] = 6
+_COLUMN_KEYWORDS: Final = frozenset(" ".join(KEYWORDS).split()) | {
+    "distinct",
+    "all",
+    "as",
+    "and",
+    "or",
+    "not",
+    "null",
+    "true",
+    "false",
+    "case",
+    "when",
+    "then",
+    "else",
+    "end",
+    "on",
+    "over",
+    "with",
+    "union",
+}
 _CATALOG_SCHEMA_TABLE_PARTS: Final[int] = 3
 _SCHEMA_TABLE_PARTS: Final[int] = 2
 
@@ -135,6 +164,7 @@ class _CompletionTask:
     request_id: int
     subscribers: list[_CompletionSubscriber]
     bootstrap: bool = False
+    cancellation: SqlCancellationScope = field(default_factory=SqlCancellationScope)
 
 
 def normalize_identifier_prefix(prefix: str) -> str:
@@ -305,6 +335,8 @@ class CompletionCoordinator:
         init=False,
     )
     _catalogs: tuple[str, ...] | None = field(default=None, init=False)
+    _table_columns: dict[str, tuple[str, ...]] = field(default_factory=dict, init=False)
+    _cache_generation: int = field(default=0, init=False)
     _schemas: dict[str | None, tuple[str, ...]] = field(default_factory=dict, init=False)
     _request_seq: int = field(default=0, init=False)
     _in_flight: tuple[object, ...] | None = field(default=None, init=False)
@@ -351,6 +383,8 @@ class CompletionCoordinator:
     def stop(self) -> None:
         with self._lock:
             self._stopping = True
+            for task in self._tasks_by_scope.values():
+                self._cancel_task(task)
             self._queue.clear()
             self._queued_scopes.clear()
             self._tasks_by_scope.clear()
@@ -381,7 +415,7 @@ class CompletionCoordinator:
         subscriber = _CompletionSubscriber(owner_id, request_id, on_success, on_error)
         with self._lock:
             existing = self._tasks_by_scope.get(scope)
-            if existing is not None:
+            if existing is not None and not existing.cancellation.cancelled:
                 existing.subscribers.append(subscriber)
                 return request_id
             self._queued_scopes.add(scope)
@@ -396,7 +430,36 @@ class CompletionCoordinator:
             entry = self._cache.get(request.scope)
         if entry is None:
             return None
+        if request.kind == "column":
+            prefix = normalize_identifier_prefix(request.prefix).casefold()
+            return tuple(
+                value
+                for value in entry.values  # noqa: PD011 -- dataclass tuple, not a dataframe.
+                if value.strip('"`').casefold().startswith(prefix)
+                or value.rsplit(".", 1)[-1].strip('"`').casefold().startswith(prefix)
+            )
         return filter_suggestions(entry.values, request.prefix)
+
+    def invalidate_tables(self) -> None:
+        """Discard table discovery and column snapshots after user DDL."""
+        with self._lock:
+            self._cache.clear()
+            self._table_columns.clear()
+            self._cache_generation += 1
+
+    def _columns_for_table(self, table: str) -> tuple[str, ...]:
+        with self._lock:
+            cached = self._table_columns.get(table)
+            generation = self._cache_generation
+        if cached is None:
+            cached = tuple(
+                sql.table_info(self.connection_key, table, include_row_count=False).columns
+            )
+            raise_if_cancelled()
+            with self._lock:
+                if generation == self._cache_generation:
+                    self._table_columns[table] = cached
+        return cached
 
     def known_catalogs(self) -> tuple[str, ...] | None:
         with self._lock:
@@ -437,9 +500,10 @@ class CompletionCoordinator:
                 task.subscribers = [
                     subscriber for subscriber in task.subscribers if subscriber.owner_id != owner_id
                 ]
-                if task.subscribers or task.bootstrap:
+                if task.subscribers:
                     retained.append(task)
                 else:
+                    self._cancel_task(task)
                     self._queued_scopes.discard(task.request.scope)
                     self._tasks_by_scope.pop(task.request.scope, None)
             self._queue = retained
@@ -450,6 +514,14 @@ class CompletionCoordinator:
                     for subscriber in in_flight.subscribers
                     if subscriber.owner_id != owner_id
                 ]
+                if not in_flight.subscribers:
+                    self._cancel_task(in_flight)
+
+    @staticmethod
+    def _cancel_task(task: _CompletionTask) -> None:
+        if not task.cancellation.cancelled:
+            task.cancellation.request_cancel()
+            Thread(target=cancel_scope_queries, args=(task.cancellation,), daemon=True).start()
 
     def snapshot(self) -> tuple[int, int, bool]:
         with self._lock:
@@ -469,7 +541,19 @@ class CompletionCoordinator:
                     return
                 continue
             try:
-                values = normalize_completion_values(self._run(task.request))
+                with self._lock:
+                    generation = self._cache_generation
+                with activate_cancellation_scope(task.cancellation):
+                    raise_if_cancelled()
+                    raw_values = self._run(task.request)
+                    raise_if_cancelled()
+                values = (
+                    tuple(sorted(set(raw_values), key=str.casefold))
+                    if task.request.kind == "column"
+                    else normalize_completion_values(raw_values)
+                )
+            except AsyncSqlCancelled:
+                continue
             except Exception as exc:  # noqa: BLE001 -- isolated metadata notice.
                 with self._lock:
                     subscribers = tuple(task.subscribers)
@@ -479,26 +563,30 @@ class CompletionCoordinator:
                         exc,
                     )
             else:
-                self._store_result(task.request, values)
                 with self._lock:
-                    subscribers = tuple(task.subscribers)
-                for subscriber in subscribers:
-                    subscriber.on_success(
-                        CompletionResult(task.request, subscriber.request_id, values)
-                    )
-                if task.bootstrap and task.request.kind == "catalog":
-                    for catalog in values:
-                        self.enqueue_schemas(
-                            catalog=catalog,
-                            on_error=self._bootstrap_error,
-                        )
+                    if generation != self._cache_generation or task.cancellation.cancelled:
+                        continue
+                self._publish_result(task, values, generation)
             finally:
                 with self._lock:
                     self._in_flight = None
-                    self._tasks_by_scope.pop(task.request.scope, None)
+                    if self._tasks_by_scope.get(task.request.scope) is task:
+                        self._tasks_by_scope.pop(task.request.scope, None)
                     has_more = bool(self._queue)
                 if has_more:
                     self._wake.set()
+
+    def _publish_result(
+        self, task: _CompletionTask, values: tuple[str, ...], generation: int
+    ) -> None:
+        self._store_result(task.request, values, generation=generation)
+        with self._lock:
+            subscribers = tuple(task.subscribers)
+        for subscriber in subscribers:
+            subscriber.on_success(CompletionResult(task.request, subscriber.request_id, values))
+        if task.bootstrap and task.request.kind == "catalog":
+            for catalog in values:
+                self.enqueue_schemas(catalog=catalog, on_error=self._bootstrap_error)
 
     def _take_task(self) -> _CompletionTask | None:
         with self._lock:
@@ -516,8 +604,12 @@ class CompletionCoordinator:
         self,
         request: CompletionRequest,
         values: tuple[str, ...],
+        *,
+        generation: int | None = None,
     ) -> None:
         with self._lock:
+            if generation is not None and generation != self._cache_generation:
+                return
             self._cache[request.scope] = CompletionCacheEntry(request.kind, values)
             if request.kind == "catalog":
                 self._catalogs = values
@@ -525,6 +617,8 @@ class CompletionCoordinator:
                 self._schemas[request.catalog] = values
 
     def _run(self, request: CompletionRequest) -> tuple[str, ...]:
+        if request.kind == "column":
+            return projection_suggestions(request.context, request.backend, self._columns_for_table)
         provider = self.provider
         if provider is None:  # pragma: no cover - initialized in __post_init__.
             message = "Metadata completion provider is unavailable."
@@ -605,13 +699,14 @@ _TABLE_CONTEXT_RE: Final = re.compile(r"(?is)(?:^|.*\b)(from|join|update|insert\
 _TOKEN_RE: Final = re.compile(r'([A-Za-z0-9_."]+)$')
 
 
-def parse_completion_context(
+def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and completion-mode inputs.
     text: str,
     cursor_offset: int,
     *,
     backend: str,
     connection_key: str = "",
     trino_catalogs: tuple[str, ...] | None = None,
+    allow_empty_column_prefix: bool = False,
 ) -> CompletionContext:
     """Return completion scope and the final identifier fragment to replace."""
     cursor_offset = max(0, min(cursor_offset, len(text)))
@@ -626,6 +721,36 @@ def parse_completion_context(
     before_token = line[: len(line) - len(raw_token)]
     context_match = _TABLE_CONTEXT_RE.match(before_token)
     normalized_backend = backend.casefold()
+
+    column_start, column_end = column_fragment(text, cursor_offset, normalized_backend) or (
+        replacement_start,
+        replacement_end,
+    )
+    column_prefix = text[column_start:cursor_offset].strip('"`')
+    projection = (
+        projection_context(text, column_start, column_end, normalized_backend)
+        if (
+            (allow_empty_column_prefix and not column_prefix)
+            or (
+                column_prefix
+                and column_prefix.casefold() not in _COLUMN_KEYWORDS
+                and cursor_offset > 0
+                and not text[cursor_offset - 1].isspace()
+            )
+        )
+        and (cursor_offset == len(text) or text[cursor_offset].isspace())
+        else None
+    )
+    if projection is not None:
+        final_prefix = text[column_start:cursor_offset].strip('"`')
+        request = CompletionRequest(
+            connection_key,
+            normalized_backend,
+            "column",
+            normalize_identifier_prefix(final_prefix),
+            context=projection,
+        )
+        return CompletionContext(request, column_start, column_end, final_prefix, request.prefix)
 
     if context_match is None:
         request = CompletionRequest(

@@ -14,6 +14,13 @@ from .styles import INTERACTION_CSS, explorer_css_variables
 class DatabasePickerApp(App[Optional[str]]):
     TITLE = "analytics-toolkit SQL explorer"
     BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(
+            "tab,shift+tab,ctrl+tab,ctrl+shift+tab",
+            "ignore_tab",
+            "Disabled",
+            show=False,
+            priority=True,
+        ),
         Binding("escape,q", "cancel", "Cancel", show=False),
     ]
 
@@ -50,6 +57,9 @@ class DatabasePickerApp(App[Optional[str]]):
 
     def get_css_variables(self) -> dict[str, str]:
         return explorer_css_variables()
+
+    def action_ignore_tab(self) -> None:
+        """Keep database selection on arrows and Enter."""
 
     def compose(self) -> ComposeResult:
         with Vertical(id="database-picker"):

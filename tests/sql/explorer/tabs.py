@@ -48,14 +48,14 @@ def test_tabs_keep_complete_workspace_state_and_wrap_keyboard_switching() -> Non
             second.editor.text = "select 2"
             second.command_input.value = "second command"
             application.show_message("second result", second)
-            await pilot.press("ctrl+tab")
+            await pilot.press("ctrl+pagedown")
             assert application.active_workspace is first
             assert first.editor.text == "select 1"
             assert first.command_input.value == "first command"
             assert first.results_open is True
             assert first.result_table.row_count == 1
 
-            await pilot.press("ctrl+shift+tab")
+            await pilot.press("ctrl+pageup")
             assert application.active_workspace is second
             assert second.editor.text == "select 2"
             assert second.command_input.value == "second command"
@@ -181,9 +181,9 @@ def test_forwarded_command_shortcuts_control_tabs() -> None:
             second = application.active_workspace
             assert second is not first
 
-            await pilot.press("meta+shift+tab")
+            await pilot.press("meta+pageup")
             assert application.active_workspace is first
-            await pilot.press("meta+tab")
+            await pilot.press("meta+pagedown")
             assert application.active_workspace is second
             await pilot.press("meta+w")
             await pilot.pause()

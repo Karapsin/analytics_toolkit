@@ -11,63 +11,168 @@
   "scenes": [
     {
       "id": "database-picker",
-      "required_elements": ["#database-picker", "#database-picker-title", "#database-options", "#database-picker-help"]
+      "required_elements": [
+        "#database-picker",
+        "#database-picker-title",
+        "#database-options",
+        "#database-picker-help"
+      ]
     },
     {
       "id": "editor-ready",
-      "required_elements": ["#tab-strip", "#tab-1", "#new-tab", "#workspace-stack", "#query-editor", "#editor-status", "#query-summary", "#notice", "#command-row", "#command-input", "#interrupt"]
+      "required_elements": [
+        "#tab-strip",
+        "#tab-1",
+        "#new-tab",
+        "#workspace-stack",
+        "#query-editor",
+        "#editor-status",
+        "#query-summary",
+        "#notice",
+        "#command-row",
+        "#command-input"
+      ]
     },
     {
       "id": "tabs-overflow",
-      "required_elements": ["#tab-strip", "#tab-1", "#query-editor", "#editor-status"]
+      "required_elements": [
+        "#tab-strip",
+        "#tab-1",
+        "#query-editor",
+        "#editor-status"
+      ]
     },
     {
       "id": "completion",
-      "required_elements": ["#query-editor", "#completion-menu", "#editor-status"]
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu",
+        "#editor-status"
+      ]
     },
     {
       "id": "find-replace",
-      "required_elements": ["#query-editor", "#find-replace-bar", "#find-pattern", "#replace-pattern", "#find-next", "#replace-actions", "#replace-current", "#replace-all", "#notice"]
+      "required_elements": [
+        "#query-editor",
+        "#find-replace-bar",
+        "#find-pattern",
+        "#replace-pattern",
+        "#find-next",
+        "#replace-actions",
+        "#replace-current",
+        "#replace-all",
+        "#notice"
+      ]
     },
     {
       "id": "query-running",
-      "required_elements": ["#query-summary", "#query-running-indicator", "#query-outcome", "#query-elapsed", "#query-warning", "#interrupt", "#command-input"]
+      "required_elements": [
+        "#query-summary",
+        "#query-running-indicator",
+        "#query-outcome",
+        "#query-elapsed",
+        "#query-warning",
+        "#interrupt",
+        "#command-input"
+      ]
     },
     {
       "id": "result-success",
-      "required_elements": ["#query-editor", "#editor-status", "#result-table", "#query-outcome", "#query-rows", "#query-elapsed", "#interrupt"]
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#result-table",
+        "#query-outcome",
+        "#query-rows",
+        "#query-elapsed",
+        "#close-results",
+        "#result-title"
+      ]
     },
     {
       "id": "result-message",
-      "required_elements": ["#query-editor", "#editor-status", "#result-message", "#query-outcome", "#query-elapsed", "#notice"]
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#result-message",
+        "#query-outcome",
+        "#query-elapsed",
+        "#notice",
+        "#close-results",
+        "#result-title"
+      ]
     },
     {
       "id": "file-open",
-      "required_elements": ["#navigation-dialog", "#navigation-title", "#navigation-path", "#navigation-tree", "#navigation-notice", "#navigation-help"]
+      "required_elements": [
+        "#navigation-dialog",
+        "#navigation-title",
+        "#navigation-path",
+        "#navigation-tree",
+        "#navigation-notice",
+        "#navigation-help"
+      ]
     },
     {
       "id": "directory-armed",
-      "required_elements": ["#navigation-dialog", "#navigation-title", "#navigation-path", "#navigation-tree", "#navigation-select-directory", "#navigation-notice", "#navigation-help"]
+      "required_elements": [
+        "#navigation-dialog",
+        "#navigation-title",
+        "#navigation-path",
+        "#navigation-tree",
+        "#navigation-select-directory",
+        "#navigation-notice",
+        "#navigation-help"
+      ]
     },
     {
       "id": "new-file",
-      "required_elements": ["#new-file-dialog", "#new-file-name", "#new-file-notice", "#new-file-actions", "#new-file-confirm", "#new-file-cancel"]
+      "required_elements": [
+        "#new-file-dialog",
+        "#new-file-name",
+        "#new-file-notice",
+        "#new-file-actions",
+        "#new-file-confirm",
+        "#new-file-cancel"
+      ]
     },
     {
       "id": "mutation-confirm",
-      "required_elements": ["#confirmation-dialog", "#confirmation-preview", "#confirmation-buttons", "#confirm-execute", "#confirm-cancel"]
+      "required_elements": [
+        "#confirmation-dialog",
+        "#confirmation-preview",
+        "#confirmation-buttons",
+        "#confirm-execute",
+        "#confirm-cancel"
+      ]
     },
     {
       "id": "discard-confirm",
-      "required_elements": ["#discard-dialog", "#discard-buttons", "#discard-confirm", "#discard-cancel"]
+      "required_elements": [
+        "#discard-dialog",
+        "#discard-buttons",
+        "#discard-confirm",
+        "#discard-cancel"
+      ]
     },
     {
       "id": "save-changes",
-      "required_elements": ["#save-changes-dialog", "#save-changes-buttons", "#save-changes-save", "#save-changes-discard", "#save-changes-cancel"]
+      "required_elements": [
+        "#save-changes-dialog",
+        "#save-changes-buttons",
+        "#save-changes-save",
+        "#save-changes-discard",
+        "#save-changes-cancel"
+      ]
     },
     {
       "id": "export-confirm",
-      "required_elements": ["#export-confirmation-dialog", "#export-confirmation-buttons", "#export-confirm", "#export-cancel"]
+      "required_elements": [
+        "#export-confirmation-dialog",
+        "#export-confirmation-buttons",
+        "#export-confirm",
+        "#export-cancel"
+      ]
     },
     {
       "id": "tab-database-change",
@@ -94,6 +199,126 @@
         "#save-changes-save",
         "#save-changes-discard",
         "#save-changes-cancel"
+      ]
+    },
+    {
+      "id": "completion-narrowed",
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu"
+      ]
+    },
+    {
+      "id": "completion-columns",
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu"
+      ]
+    },
+    {
+      "id": "create-table-schema",
+      "required_elements": [
+        "#create-table-dialog",
+        "#create-table-title",
+        "#create-table-fields",
+        "#create-table-name",
+        "#create-table-source",
+        "#create-basic-flags",
+        "#create-insert_data",
+        "#create-skip_if_exists",
+        "#create-drop_if_exists",
+        "#create-table-actions",
+        "#create-table-cancel",
+        "#create-table-submit",
+        "#create-table-schema",
+        "#create-add-column"
+      ]
+    },
+    {
+      "id": "create-table-sql",
+      "required_elements": [
+        "#create-table-dialog",
+        "#create-table-title",
+        "#create-table-fields",
+        "#create-table-name",
+        "#create-table-source",
+        "#create-basic-flags",
+        "#create-insert_data",
+        "#create-skip_if_exists",
+        "#create-drop_if_exists",
+        "#create-table-actions",
+        "#create-table-cancel",
+        "#create-table-submit",
+        "#create-from-sql"
+      ]
+    },
+    {
+      "id": "create-table-types",
+      "required_elements": [
+        "#create-table-dialog",
+        "#create-table-title",
+        "#create-table-fields",
+        "#create-table-name",
+        "#create-table-source",
+        "#create-basic-flags",
+        "#create-insert_data",
+        "#create-skip_if_exists",
+        "#create-drop_if_exists",
+        "#create-table-actions",
+        "#create-table-cancel",
+        "#create-table-submit",
+        "#create-type-options"
+      ]
+    },
+    {
+      "id": "create-table-invalid",
+      "required_elements": [
+        "#create-table-dialog",
+        "#create-table-title",
+        "#create-table-fields",
+        "#create-table-name",
+        "#create-table-source",
+        "#create-basic-flags",
+        "#create-insert_data",
+        "#create-skip_if_exists",
+        "#create-drop_if_exists",
+        "#create-table-actions",
+        "#create-table-cancel",
+        "#create-table-submit",
+        "#create-table-notice"
+      ]
+    },
+    {
+      "id": "create-table-advanced",
+      "required_elements": [
+        "#create-table-dialog",
+        "#create-table-advanced",
+        "#create-table-cancel",
+        "#create-table-submit"
+      ]
+    },
+    {
+      "id": "command-completion",
+      "required_elements": [
+        "#command-input",
+        "#command-completion",
+        "#query-summary"
+      ]
+    },
+    {
+      "id": "database-completion",
+      "required_elements": [
+        "#command-input",
+        "#command-completion",
+        "#query-summary"
+      ]
+    },
+    {
+      "id": "completion-empty-columns",
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu",
+        "#editor-status"
       ]
     }
   ]

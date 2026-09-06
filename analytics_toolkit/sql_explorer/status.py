@@ -140,6 +140,7 @@ class QuerySummaryBar(Horizontal):
     _OUTCOME_CLASSES = ("running", "success", "error", "cancelled")
 
     def compose(self) -> ComposeResult:
+        yield Static("", id="notice", markup=False)
         yield CircularSpinner(id="query-running-indicator")
         yield Static("", id="query-outcome", classes="query-card", markup=False)
         yield Static("", id="query-rows", classes="query-card", markup=False)

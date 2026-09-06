@@ -34,10 +34,16 @@ the stdio server; arguments continue to invoke its manual JSON CLI.
 
 ### Read-Only Planning Exception
 
-For strictly read-only review or planning work, `prepare_start(...)` is always
-allowed and remains the preferred default startup workflow. Its startup sync,
+Repository policy authorizes `prepare_start(...)` during read-only review or
+planning; it remains the preferred default startup workflow. Its startup sync,
 environment preparation, and local RAG index refresh are permitted preparatory
-workflow, not implementation work. Agents may skip `git switch dev`,
+workflow, not implementation work under repository policy. Do not request
+permission again when startup preparation is already authorized. This policy
+does not override higher-priority session restrictions: if those prohibit
+branch switching or pulling, identify that specific restriction and use an
+explicitly authorized skip or wait for an execution-capable session.
+
+Agents may skip `git switch dev`,
 `git pull --ff-only origin dev`, and
 `prepare_start(...)` only when the user explicitly authorizes skipping startup
 sync. When using this exception, state that findings may be stale because the

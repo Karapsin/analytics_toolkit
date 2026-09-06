@@ -9,6 +9,7 @@ import pandas as pd
 
 from analytics_toolkit import sql
 
+from .create_table import CreateTablePlan
 from .errors import SqlExplorerConfigurationError
 from .settings import (
     DEFAULT_RUN_BINDING,
@@ -134,6 +135,14 @@ class ExplorerSession:
         self._export_state = None
         return self.database
 
+    def database_keys(self) -> tuple[str, ...]:
+        """List valid configured keys without opening database connections."""
+        return tuple(
+            result.connection_key
+            for result in sql.validate_connections(connect=False)
+            if result.valid and result.backend is not None
+        )
+
     def set_run_binding(self, value: str) -> ExplorerSettings:
         binding = (
             DEFAULT_RUN_BINDING
@@ -166,30 +175,8 @@ class ExplorerSession:
         self.active_query = ExplorerQueryState(query_label, plan.route, started_at, None, "running")
         self._active_database = operation_database
         self._cancellation_requested_for = None
-        common_options = {
-            "retry_cnt": 1,
-            "timeout_increment": 0,
-            "query_label": query_label,
-            "return_metadata": True,
-        }
         try:
-            if plan.route is ExecutionRoute.READ:
-                result = sql.read(
-                    operation_database.connection_key,
-                    plan.execution_sql,
-                    **common_options,
-                )
-            elif plan.route is ExecutionRoute.EXECUTE_READ:
-                result = sql.execute_read(
-                    operation_database.connection_key, plan.execution_sql, **common_options
-                )
-            else:
-                result = sql.execute(
-                    operation_database.connection_key,
-                    plan.execution_sql,
-                    retry_policy="safe",
-                    **common_options,
-                )
+            result = self._invoke_operation(plan, operation_database, query_label)
             run_result, export_dataframe = self._build_run_result(plan, result)
         except BaseException:
             final_state: QueryState = (
@@ -224,6 +211,42 @@ class ExplorerSession:
                 operation_database,
             )
         return run_result
+
+    @staticmethod
+    def _invoke_operation(
+        plan: ExplorerExecutionPlan,
+        operation_database: DatabaseSelection,
+        query_label: str,
+    ) -> object:
+        common_options = {
+            "retry_cnt": 1,
+            "timeout_increment": 0,
+            "query_label": query_label,
+            "return_metadata": True,
+        }
+        if isinstance(plan, CreateTablePlan):
+            return sql.create_table(
+                db_key=operation_database.connection_key,
+                **plan.options,
+                query_label=query_label,
+                return_metadata=True,
+            )
+        if plan.route is ExecutionRoute.READ:
+            return sql.read(
+                operation_database.connection_key,
+                plan.execution_sql,
+                **common_options,
+            )
+        if plan.route is ExecutionRoute.EXECUTE_READ:
+            return sql.execute_read(
+                operation_database.connection_key, plan.execution_sql, **common_options
+            )
+        return sql.execute(
+            operation_database.connection_key,
+            plan.execution_sql,
+            retry_policy="safe",
+            **common_options,
+        )
 
     def export_state(self) -> ExplorerExportState:
         if self._export_state is None:
@@ -330,7 +353,11 @@ class ExplorerSession:
                 displayed_rows=0,
                 total_rows=None,
                 truncated=False,
-                status=f"Executed {plan.statement_count} statement(s) successfully.",
+                status=(
+                    f"Table creation completed: {plan.options['table_name']}."
+                    if isinstance(plan, CreateTablePlan)
+                    else f"Executed {plan.statement_count} statement(s) successfully."
+                ),
             ),
             None,
         )
