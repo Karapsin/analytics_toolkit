@@ -149,8 +149,13 @@ deterministic across worker counts and process-to-thread fallback.
 - The default `"non_zero_truncate"` policy computes the cutoff from non-zero
   metric values, then caps values above that cutoff while keeping zeros in the
   metric sample.
+- Nullable-string group columns are supported for large TOTAL comparisons and
+  segments without caller-side dtype conversion. CUPED aligns pre-period values
+  by user id, regardless of row order or dataframe index, without changing inputs.
 - CUPED failures warn and return `NaN` for CUPED outputs after validation has
-  passed.
+  passed. Warnings distinguish insufficient overlapping observations, invalid
+  pre-period covariate variance, non-finite adjusted values, and undefined
+  t-test results or standard errors.
 - `concurrency > 1` is valid only when `df` is a task mapping.
 - Task-level `pre_exp_df` is accepted as an alias for `pre_exp_metrics_df`.
 - Failed tasks return error text when `fail_fast=False`.

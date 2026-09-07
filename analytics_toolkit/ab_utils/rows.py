@@ -181,8 +181,9 @@ def _build_metric_row(
             baseline_group=baseline_group,
             test_group=test_group,
         )
-        baseline_values = metric_values[df[group_column] == baseline_group].dropna()
-        test_values = metric_values[df[group_column] == test_group].dropna()
+        group_values = df[group_column].to_numpy(dtype=object)
+        baseline_values = metric_values.iloc[group_values == baseline_group].dropna()
+        test_values = metric_values.iloc[group_values == test_group].dropna()
         return _build_mean_metric_row(
             metric_name=metric_name,
             metric_key=metric_name,
@@ -220,7 +221,7 @@ def _build_metric_row_from_prepared_context(
     group_masks: dict[str, np.ndarray] | None = None,
 ) -> dict[str, object]:
     if group_masks is None:
-        group_values = df[group_column].to_numpy()
+        group_values = df[group_column].to_numpy(dtype=object)
         group_masks = {
             baseline_group: group_values == baseline_group,
             test_group: group_values == test_group,
@@ -392,6 +393,7 @@ def _build_ratio_metric_row(
     outlier_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     metric_name = metric_key
+    group_values = df[group_column].to_numpy(dtype=object)
     numerator = _get_numeric_metric_series(df, ratio_spec["numerator"])
     denominator = _get_numeric_metric_series(df, ratio_spec["denominator"])
 
@@ -414,8 +416,8 @@ def _build_ratio_metric_row(
             baseline_group=baseline_group,
             test_group=test_group,
         )
-        baseline_values = ratio_values[df[group_column] == baseline_group].dropna()
-        test_values = ratio_values[df[group_column] == test_group].dropna()
+        baseline_values = ratio_values.iloc[group_values == baseline_group].dropna()
+        test_values = ratio_values.iloc[group_values == test_group].dropna()
         return _build_mean_metric_row(
             metric_name=metric_name,
             metric_key=metric_key,
@@ -438,8 +440,8 @@ def _build_ratio_metric_row(
         denominator=denominator,
         level=ratio_spec["level"],
     )
-    baseline_mask = (df[group_column] == baseline_group) & valid_mask
-    test_mask = (df[group_column] == test_group) & valid_mask
+    baseline_mask = (group_values == baseline_group) & valid_mask.to_numpy(dtype=bool)
+    test_mask = (group_values == test_group) & valid_mask.to_numpy(dtype=bool)
     baseline_frame = pd.DataFrame(
         {"numerator": numerator[baseline_mask], "denominator": denominator[baseline_mask]}
     )

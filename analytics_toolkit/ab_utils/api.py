@@ -276,7 +276,7 @@ def _compute_test_metrics_dataframe(
     ratio_specs = _normalize_ratio_metrics(df, ratio_metrics, reserved_columns={group, user_id})
     comparisons = _build_comparisons(group_names, control, test_vs_test=test_vs_test)
     metric_definitions = _build_metric_definitions(metric_columns, ratio_specs)
-    group_values = df[group].to_numpy()
+    group_values = df[group].to_numpy(dtype=object)
     group_masks = {group_name: group_values == group_name for group_name in group_names}
     comparison_frames = {
         (test_group, baseline_group): df.loc[

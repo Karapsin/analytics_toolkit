@@ -27,6 +27,10 @@ and input defaults.
 - [Presentation formatting](presentation-formatting.md)
 - [Interpreting metric output](interpreting-metric-output.md)
 
+[compute_test_metrics](functions/compute-test-metrics.md) supports nullable-string
+group labels for TOTAL and segment CUPED comparisons, including large dataframes.
+Pre-period rows are matched by user id; input dataframes are preserved.
+
 SQL-backed helpers use the supported `from analytics_toolkit import sql` facade.
 
 [All module docs](../README.md)

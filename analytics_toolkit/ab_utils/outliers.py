@@ -188,8 +188,9 @@ def _count_outliers_by_group(
     baseline_group: str,
     test_group: str,
 ) -> tuple[int, int]:
-    baseline_count = int(outlier_mask[group_values == baseline_group].sum())
-    test_count = int(outlier_mask[group_values == test_group].sum())
+    labels = group_values.to_numpy(dtype=object)
+    baseline_count = int(outlier_mask.iloc[labels == baseline_group].sum())
+    test_count = int(outlier_mask.iloc[labels == test_group].sum())
     return baseline_count, test_count
 
 

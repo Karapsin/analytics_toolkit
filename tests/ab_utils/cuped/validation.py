@@ -155,4 +155,4 @@ def test_cuped_nan_standard_error_returns_unavailable_reason(
 
     assert math.isnan(p_value)
     assert math.isnan(standard_error)
-    assert reason == "not enough overlapping observations to run the CUPED t-test"
+    assert reason == "CUPED standard error is not finite"

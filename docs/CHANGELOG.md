@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Preserve nullable numeric metrics during AB validation.
+- Fix large nullable-string CUPED group selection and distinguish unavailable-statistic diagnostics.
 
 ## 1.3.11.19 - 2026-09-07
 

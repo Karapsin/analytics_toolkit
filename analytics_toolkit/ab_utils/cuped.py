@@ -273,22 +273,34 @@ def _compute_cuped_statistics_from_frame(
     baseline_group: str,
     test_group: str,
 ) -> tuple[float, float, str | None]:
+    # Compare object arrays to avoid nullable-string comparison kernels and
+    # select positionally so caller index labels cannot affect group membership.
+    group_values = cuped_frame[group_column].to_numpy(dtype=object)
+    baseline_mask = group_values == baseline_group
+    test_mask = group_values == test_group
+    min_observations = 2
+    if baseline_mask.sum() < min_observations or test_mask.sum() < min_observations:
+        return math.nan, math.nan, "not enough overlapping observations to run the CUPED t-test"
+
     metric_exp = cuped_frame["metric_exp"].astype(float)
     metric_pre = cuped_frame["metric_pre"].astype(float)
     pre_variance = float(metric_pre.var(ddof=1))
-    if math.isnan(pre_variance) or pre_variance <= 0:
-        return math.nan, math.nan, "pre-experiment covariate variance is not positive"
+    if not math.isfinite(pre_variance) or pre_variance <= 0:
+        return math.nan, math.nan, "pre-experiment covariate variance is not positive or finite"
 
-    theta = float(metric_exp.cov(metric_pre) / pre_variance)
-    adjusted = metric_exp - theta * (metric_pre - float(metric_pre.mean()))
-    baseline_values = adjusted[cuped_frame[group_column] == baseline_group]
-    test_values = adjusted[cuped_frame[group_column] == test_group]
+    with np.errstate(invalid="ignore", over="ignore"):
+        theta = float(metric_exp.cov(metric_pre) / pre_variance)
+        adjusted = (metric_exp - theta * (metric_pre - float(metric_pre.mean()))).to_numpy()
+    if not np.isfinite(adjusted).all():
+        return math.nan, math.nan, "CUPED-adjusted metric values are not finite"
+    baseline_values = adjusted[baseline_mask]
+    test_values = adjusted[test_mask]
     _, p_value = _compute_ttest_stat_and_p_value(
         pd.Series(baseline_values),
         pd.Series(test_values),
     )
-    if math.isnan(p_value):
-        return math.nan, math.nan, "not enough overlapping observations to run the CUPED t-test"
+    if not math.isfinite(p_value):
+        return math.nan, math.nan, "CUPED t-test result is undefined"
 
     baseline_series = pd.Series(baseline_values)
     test_series = pd.Series(test_values)
@@ -298,6 +310,6 @@ def _compute_cuped_statistics_from_frame(
         test_variance=_compute_sample_variance(test_series),
         test_n=int(test_series.shape[0]),
     )
-    if math.isnan(standard_error):
-        return math.nan, math.nan, "not enough overlapping observations to run the CUPED t-test"
+    if not math.isfinite(standard_error):
+        return math.nan, math.nan, "CUPED standard error is not finite"
     return p_value, standard_error, None
