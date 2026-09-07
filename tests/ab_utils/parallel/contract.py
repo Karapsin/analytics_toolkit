@@ -41,11 +41,13 @@ def test_metric_entrypoints_match_for_one_dataset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     df = _build_metric_parity_df()
+    df["cohort"] = ["first", "first", "second", "second"] * 2
     ratio_metrics = [
         {"name": "ctr", "numerator": "clicks", "denominator": "views"},
     ]
     expected = ab_utils_module.compute_test_metrics(
         df,
+        segment="cohort",
         ratio_metrics=ratio_metrics,
         test_vs_test=False,
         outliers_quantile=1,
@@ -58,6 +60,7 @@ def test_metric_entrypoints_match_for_one_dataset(
                 "ratio_metrics": ratio_metrics,
                 "test_vs_test": False,
                 "outliers_quantile": 1,
+                "segment": "cohort",
             }
         },
         concurrency=1,
@@ -85,6 +88,7 @@ def test_metric_entrypoints_match_for_one_dataset(
         db_key="analytics",
         ratio_metrics=ratio_metrics,
         outliers_quantile=1,
+        segment="cohort",
         concurrency=1,
         progress=False,
     )
@@ -98,3 +102,24 @@ def test_removed_parallel_metric_names_are_not_exported() -> None:
     assert not hasattr(metrics_module, "parallel_compute_metrics")
     assert not hasattr(ab_utils_module, "parallel_compute_metrics_from_sql")
     assert not hasattr(metrics_module, "parallel_compute_metrics_from_sql")
+
+
+def test_task_segment_default_can_be_disabled_per_task() -> None:
+    df = _build_metric_parity_df()
+    df["cohort"] = "all"
+
+    result = ab_utils_module.compute_test_metrics(
+        {
+            "segmented": {"df": df, "test_vs_test": False},
+            "plain": {
+                "df": df.drop(columns="cohort"),
+                "segment": None,
+                "test_vs_test": False,
+            },
+        },
+        segment="cohort",
+        progress=False,
+    )
+
+    assert "segment" in result["segmented"].columns
+    assert "segment" not in result["plain"].columns

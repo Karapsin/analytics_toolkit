@@ -30,6 +30,24 @@ def test_numeric_metric_validation_and_safe_relative_edges() -> None:
     assert stats_module._safe_relative(4.0, 2.0) == 2.0
 
 
+def test_numeric_metric_validation_preserves_nullable_integer_dtype(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = pd.Series([1, None, 3], dtype="Int64", name="metric")
+    monkeypatch.setattr(
+        stats_module.pd,
+        "to_numeric",
+        lambda *_args, **_kwargs: pytest.fail("numeric dtypes must not be reparsed"),
+    )
+
+    result = stats_module._get_numeric_metric_series(
+        pd.DataFrame({"metric": values}),
+        "metric",
+    )
+
+    pd.testing.assert_series_equal(result, values)
+
+
 def test_changed_metric_defaults_preserves_every_explicit_override() -> None:
     pre_exp = pd.DataFrame({"id": [1]})
     ratio_metrics = [{"name": "ratio", "numerator": "a", "denominator": "b"}]
@@ -50,6 +68,7 @@ def test_changed_metric_defaults_preserves_every_explicit_override() -> None:
         pre_exp_metrics_df=pre_exp,
         outliers_quantile=0.95,
         outliers_policy="truncate",
+        segment="country",
     ) == {
         "group": "arm",
         "control": "baseline",
@@ -66,6 +85,7 @@ def test_changed_metric_defaults_preserves_every_explicit_override() -> None:
         "pre_exp_metrics_df": pre_exp,
         "outliers_quantile": 0.95,
         "outliers_policy": "truncate",
+        "segment": "country",
     }
 
 

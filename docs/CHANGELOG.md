@@ -6,6 +6,10 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Preserve nullable numeric metrics during AB validation.
+
+## 1.3.11.19 - 2026-09-07
+
 - Fix SQL Explorer tab titles, unify hover and control selection colors, add SQL formatting, and show STOP with a full-height snake loop and smooth running timer.
 - Compact the SQL Explorer search panel, add arrow navigation between replace actions, and copy result values without display formatting.
 - Reduce the SQL Explorer search panel to seven rows with single-row fields and actions.
@@ -15,6 +19,7 @@ Generated from package version bumps and recent commit history.
 - Keep SQL Explorer macOS visual captures within the framebuffer and reject oversized terminal geometry.
 - Focus the SQL editor from clicks on its pane border and status strip while preserving the selection.
 - Added atk tui with virtualenv-based connection-file discovery, remembered selection, and safe workspace switching.
+- Add segmented slices to compute_test_metrics.
 
 ## 1.3.11.18 - 2026-09-04
 

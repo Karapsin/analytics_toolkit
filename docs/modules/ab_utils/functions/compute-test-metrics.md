@@ -28,6 +28,7 @@ compute_test_metrics(
     soft_concurrency_cap=None,
     hard_concurrency_cap=5,
     progress=False,
+    segment=None,
 )
 ```
 
@@ -37,6 +38,7 @@ compute_test_metrics(
 - `group` - column containing experiment group labels
 - `control` - label of the control group
 - `user_id` - unique user id column
+- `segment` - optional column used to add total and per-value metric slices
 - `ratio_metrics` - optional ratio metric specifications
 - `test_vs_test` - whether to compare test groups against each other
 - `pre_exp_metrics_df` - optional pre-experiment dataframe for CUPED outputs
@@ -69,16 +71,19 @@ result = compute_test_metrics(
         {"name": "ctr", "numerator": "clicks", "denominator": "views"},
     ],
     test_vs_test=False,
+    segment="country_code",
 )
 ```
 
 Output example:
 
 ```python
-result[["metric_name", "metric_type", "group_1", "group_2", "p-value"]]
-#   metric_name metric_type group_1  group_2  p-value
-# 0      orders        mean  test_1  control    0.041
-# 1         ctr       ratio  test_1  control    0.018
+result[["segment", "metric_name", "metric_type", "group_1", "group_2", "p-value"]]
+#   segment metric_name metric_type group_1  group_2  p-value
+# 0   TOTAL      orders        mean  test_1  control    0.041
+# 1   TOTAL         ctr       ratio  test_1  control    0.018
+# 2      DE      orders        mean  test_1  control    0.052
+# 3      DE         ctr       ratio  test_1  control    0.021
 ```
 
 Task-map usage:
@@ -133,6 +138,13 @@ deterministic across worker counts and process-to-thread fallback.
 
 - All numeric columns not used as `group`, `user_id`, or ratio components are
   treated as mean metrics.
+- When `segment` is provided, the result begins with a literal `segment` column.
+  The `TOTAL` block includes every row and is followed by observed segment values
+  in first-appearance order. Missing segment values and the reserved value
+  `TOTAL` are rejected.
+- Per-segment outlier handling and bootstrap adjustment are independent. CUPED
+  selects segment membership from `df` and matches those users to the complete
+  `pre_exp_metrics_df`, which does not need the segment column.
 - Missing metric values are ignored per metric and group.
 - The default `"non_zero_truncate"` policy computes the cutoff from non-zero
   metric values, then caps values above that cutoff while keeping zeros in the

@@ -5,6 +5,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 from scipy.stats import norm, ttest_ind
 
 from .constants import DEFAULT_ALPHA, DEFAULT_POWER
@@ -12,7 +13,14 @@ from .constants import DEFAULT_ALPHA, DEFAULT_POWER
 
 def _get_numeric_metric_series(df: pd.DataFrame, metric_name: str) -> pd.Series:
     original = df[metric_name]
-    numeric = pd.to_numeric(original, errors="coerce")
+    numeric = (
+        original.copy()
+        if is_numeric_dtype(original.dtype)
+        else pd.to_numeric(
+            original,
+            errors="coerce",
+        )
+    )
 
     if numeric.notna().sum() != original.notna().sum():
         raise TypeError(f"Metric column '{metric_name}' contains non-numeric values.")

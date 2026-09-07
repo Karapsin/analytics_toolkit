@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from itertools import chain
+from typing import Any, cast
 
 import pandas as pd
 
@@ -27,6 +28,9 @@ from .validation import (
     _validate_pre_experiment_dataframe,
 )
 
+_SEGMENT_RESULT_COLUMN = "segment"
+_TOTAL_SEGMENT_LABEL = "TOTAL"
+
 
 def compute_test_metrics(
     df: pd.DataFrame | Mapping[str, Mapping[str, Any]],
@@ -50,10 +54,11 @@ def compute_test_metrics(
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
     progress: bool = False,
+    segment: str | None = None,
 ) -> pd.DataFrame | dict[str, pd.DataFrame | str]:
     """Compute experiment metric statistics for one dataframe or named tasks."""
 
-    metric_kwargs = {
+    metric_kwargs: dict[str, Any] = {
         "group": group,
         "control": control,
         "user_id": user_id,
@@ -68,6 +73,7 @@ def compute_test_metrics(
         "bootstrap_progress": bootstrap_progress,
         "outliers_quantile": outliers_quantile,
         "outliers_policy": outliers_policy,
+        "segment": segment,
     }
     if pre_exp_metrics_df is not None:
         metric_kwargs["pre_exp_metrics_df"] = pre_exp_metrics_df
@@ -96,6 +102,7 @@ def compute_test_metrics(
             pre_exp_metrics_df=pre_exp_metrics_df,
             outliers_quantile=outliers_quantile,
             outliers_policy=outliers_policy,
+            segment=segment,
         )
         return _compute_metric_tasks(
             df,
@@ -127,6 +134,7 @@ def _changed_metric_defaults(
     pre_exp_metrics_df: pd.DataFrame | None,
     outliers_quantile: float,
     outliers_policy: str,
+    segment: str | None = None,
 ) -> dict[str, Any]:
     defaults: dict[str, Any] = {}
     if group != "group_name":
@@ -161,6 +169,8 @@ def _changed_metric_defaults(
         defaults["outliers_quantile"] = outliers_quantile
     if outliers_policy != "non_zero_truncate":
         defaults["outliers_policy"] = outliers_policy
+    if segment is not None:
+        defaults["segment"] = segment
     return defaults
 
 
@@ -181,18 +191,36 @@ def _compute_test_metrics_dataframe(
     pre_exp_metrics_df: pd.DataFrame | None = None,
     outliers_quantile: float = 0.999,
     outliers_policy: str = "non_zero_truncate",
+    segment: str | None = None,
 ) -> pd.DataFrame:
-    """Compute per-metric experiment comparison statistics.
-
-    Notes:
-    - The input must contain exactly one row per user.
-    - All columns except `group` and `user_id` are treated as metric columns.
-    - Missing metric values are ignored independently for each metric/group pair.
-    - `mde_abs` and `mde_relative` use a two-sided normal approximation based
-      on the observed sample variances.
-    - Ratio metrics can be passed through `ratio_metrics`.
-    """
-
+    """Compute per-metric experiment comparison statistics."""
+    if segment is not None:
+        metric_kwargs: dict[str, Any] = {
+            "group": group,
+            "control": control,
+            "user_id": user_id,
+            "mde_alpha": mde_alpha,
+            "mde_power": mde_power,
+            "ratio_metrics": ratio_metrics,
+            "test_vs_test": test_vs_test,
+            "multiple_comparisons_adjustment": multiple_comparisons_adjustment,
+            "multiple_comparisons_adjustment_resamples": (
+                multiple_comparisons_adjustment_resamples
+            ),
+            "bootstrap_random_state": bootstrap_random_state,
+            "bootstrap_n_jobs": bootstrap_n_jobs,
+            "bootstrap_progress": bootstrap_progress,
+            "pre_exp_metrics_df": pre_exp_metrics_df,
+            "outliers_quantile": outliers_quantile,
+            "outliers_policy": outliers_policy,
+        }
+        return _compute_segmented_test_metrics_dataframe(
+            df=df,
+            group=group,
+            user_id=user_id,
+            segment=segment,
+            metric_kwargs=metric_kwargs,
+        )
     initial_metric_column_count = len(
         [column for column in df.columns if column not in {group, user_id}]
     )
@@ -411,3 +439,74 @@ def _compute_test_metrics_dataframe(
     result = pd.DataFrame(rows, columns=columns)
     time_print(f"compute_test_metrics: finish rows={len(result)}")
     return result
+
+
+def _compute_segmented_test_metrics_dataframe(
+    df: pd.DataFrame,
+    *,
+    group: str,
+    user_id: str,
+    segment: str,
+    metric_kwargs: dict[str, Any],
+) -> pd.DataFrame:
+    _validate_segment_column(
+        df,
+        segment=segment,
+        group=group,
+        user_id=user_id,
+    )
+    ratio_metrics = cast("list[dict[str, object]] | None", metric_kwargs["ratio_metrics"])
+    _normalize_ratio_metrics(
+        df,
+        ratio_metrics,
+        reserved_columns={group, user_id, segment},
+    )
+
+    slice_kwargs = dict(metric_kwargs)
+    pre_exp_metrics_df = slice_kwargs.get("pre_exp_metrics_df")
+    if isinstance(pre_exp_metrics_df, pd.DataFrame) and segment in pre_exp_metrics_df.columns:
+        slice_kwargs["pre_exp_metrics_df"] = pre_exp_metrics_df.drop(columns=segment)
+
+    frames: list[pd.DataFrame] = []
+    slices = chain(
+        [(_TOTAL_SEGMENT_LABEL, df)],
+        df.groupby(segment, sort=False, dropna=False, observed=True),
+    )
+    for label, slice_df in slices:
+        result = _compute_test_metrics_dataframe(
+            df=slice_df.drop(columns=segment),
+            **slice_kwargs,
+        )
+        result.insert(0, _SEGMENT_RESULT_COLUMN, label)
+        frames.append(result)
+    return pd.concat(frames, ignore_index=True)
+
+
+def _validate_segment_column(
+    df: pd.DataFrame,
+    *,
+    segment: str,
+    group: str,
+    user_id: str,
+) -> list[object]:
+    if not isinstance(segment, str) or not segment.strip():
+        message = "segment must be a non-empty string or None."
+        raise ValueError(message)
+    if segment not in df.columns:
+        message = f"Missing required column: '{segment}'."
+        raise ValueError(message)
+    if segment in {group, user_id}:
+        message = "segment, group, and user_id must name different columns."
+        raise ValueError(message)
+    if segment != _SEGMENT_RESULT_COLUMN and _SEGMENT_RESULT_COLUMN in df.columns:
+        message = f"Column '{_SEGMENT_RESULT_COLUMN}' conflicts with the segment result column."
+        raise ValueError(message)
+    if df[segment].isna().any():
+        message = f"Column '{segment}' must not contain missing values."
+        raise ValueError(message)
+
+    values: list[object] = df[segment].drop_duplicates().tolist()
+    if any(isinstance(value, str) and value == _TOTAL_SEGMENT_LABEL for value in values):
+        message = f"Segment value '{_TOTAL_SEGMENT_LABEL}' conflicts with the total segment label."
+        raise ValueError(message)
+    return values

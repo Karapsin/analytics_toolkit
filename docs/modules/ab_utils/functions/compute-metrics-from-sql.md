@@ -31,7 +31,7 @@ compute_metrics_from_sql(
 - `progress` - whether to show progress output
 - `metric_defaults` - any non-dataframe `compute_test_metrics` inputs to apply to
   every task, such as `group`, `test_vs_test`, `ratio_metrics`,
-  `bootstrap_progress`, `outliers_quantile`, or `outliers_policy`
+  `bootstrap_progress`, `outliers_quantile`, `outliers_policy`, or `segment`
 
 ## Usage
 
@@ -50,6 +50,7 @@ result = compute_metrics_from_sql(
     concurrency=2,
     outliers_quantile=0.999,
     test_vs_test=False,
+    segment="country_code",
 )
 ```
 
@@ -67,7 +68,8 @@ result["segment_a"][["metric", "group A", "group B", "p-value"]].head()
 ## Notes
 
 - Task-level `start_comment` overrides the top-level value.
-- Task-level metric inputs override `metric_defaults`.
+- Task-level metric inputs override `metric_defaults`; use `segment=None` on a
+  task to disable a top-level segment default.
 - Failures include the metrics task name and related SQL text.
 
 [All AB functions](index.md)
