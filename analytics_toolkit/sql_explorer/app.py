@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 import pyperclip
 from rich.text import Text
@@ -19,6 +19,8 @@ from .clipboard import TerminalClipboard
 from .commands import HELP_TEXT, SqlExplorerCursorCommandsMixin
 from .completion import CompletionContext, CompletionCoordinator, CompletionCoordinatorPool
 from .completion_commands import SqlExplorerCompletionCommandsMixin
+from .connections import ConnectionsRestart
+from .connections_commands import SqlExplorerConnectionsCommandsMixin
 from .create_table import creation_plan
 from .create_table_screen import CreateTableScreen
 from .editor import SqlEditor
@@ -68,13 +70,14 @@ def _remove_dynamic_binding(bindings: Any, key: str) -> None:
 
 
 class SqlExplorerApp(
+    SqlExplorerConnectionsCommandsMixin,
     SqlExplorerCompletionCommandsMixin,
     SqlExplorerQueryCommandsMixin,
     SqlExplorerTabCommandsMixin,
     SqlExplorerCursorCommandsMixin,
     SqlExplorerFileCommandsMixin,
     SqlExplorerExportCommandsMixin,
-    App[None],
+    App[Optional[ConnectionsRestart]],
 ):
     TITLE = "analytics-toolkit SQL explorer"
     CSS = APP_CSS
@@ -126,6 +129,9 @@ class SqlExplorerApp(
         self._query_scheduler = ExplorerQueryScheduler()
         self._completion_pool = CompletionCoordinatorPool()
         self._exit_requested = False
+        self._connections_restart: ConnectionsRestart | None = None
+        self._connections_stop_started: float | None = None
+        self._connections_stop_timer: Any = None
         self._exit_dirty_tabs: list[str] = []
         self._exit_save_all = False
         self._primary_binding: str | None = None
@@ -594,11 +600,15 @@ class SqlExplorerApp(
             return
         command, *arguments = [part.strip() for part in parts]
         command = command.lower()
+        if self._exit_requested and command != "cancel":
+            self._set_notice("Waiting for existing work to stop.")
+            return
         handlers = {
             "cancel": self._command_cancel,
             "create_table": self._command_create_table,
             "clear": self._command_clear,
             "confirm": self._command_confirmation,
+            "connections": self._command_connections,
             "db": self._command_database,
             "exit": self._command_exit,
             "exit!": self._command_exit_force,

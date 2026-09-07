@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Add SQL Explorer RUN and Find close controls, command-pane click focus, clean search notices, and browser-style tab shortcuts.
 - Keep SQL Explorer macOS visual captures within the framebuffer and reject oversized terminal geometry.
 - Focus the SQL editor from clicks on its pane border and status strip while preserving the selection.
+- Added atk tui with virtualenv-based connection-file discovery, remembered selection, and safe workspace switching.
 
 ## 1.3.11.18 - 2026-09-04
 

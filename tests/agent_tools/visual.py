@@ -92,6 +92,15 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
     async def exercise() -> None:
         if scene_id == "database-picker":
             application = sql_explorer_visual_scene.VisualDatabasePickerApp(evidence, manifest)
+        elif scene_id in {
+            "connections-picker",
+            "connections-searching",
+            "connections-empty",
+            "connections-error",
+        }:
+            application = sql_explorer_visual_scene.VisualConnectionsPickerApp(
+                scene_id, evidence, manifest
+            )
         else:
             application = sql_explorer_visual_scene.VisualExplorerApp(
                 scene_id,
@@ -99,6 +108,9 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
                 manifest,
             )
         async with application.run_test(size=(160, 47)) as pilot:
+            if isinstance(application, sql_explorer_visual_scene.VisualConnectionsPickerApp):
+                assert len(application.screen_stack) == 2
+                assert len({id(screen) for screen in application.screen_stack}) == 2
             for _attempt in range(100):
                 await pilot.pause(0.1)
                 if evidence.is_file():

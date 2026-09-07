@@ -30,6 +30,8 @@ class SqlExplorerCompletionCommandsMixin:
         workspace: SqlExplorerWorkspace | None = None,
     ) -> None:
         app = cast("Any", self)
+        if app._exit_requested:
+            return
         workspace = workspace or app.active_workspace
         database = workspace.session.database
         workspace.completion = app._completion_pool.acquire(
@@ -76,7 +78,7 @@ class SqlExplorerCompletionCommandsMixin:
         workspace.completion_allow_empty_columns = columns_only
         context = (
             app._completion_at_cursor(workspace)
-            if editor.cursor_count == 1 and editor.selection.is_empty
+            if not app._exit_requested and editor.cursor_count == 1 and editor.selection.is_empty
             else None
         )
         if context is None or (columns_only and context.request.kind != "column"):

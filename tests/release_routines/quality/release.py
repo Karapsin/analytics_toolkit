@@ -285,7 +285,7 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
         commands.append(normalized)
         stdout = ""
         if normalized[-1] == "--help":
-            stdout = "usage: analytics-toolkit [-h]"
+            stdout = f"usage: {pathlib.Path(normalized[0]).stem} [-h]"
         elif normalized[-2:] == ("sql", "support-matrix"):
             stdout = "Backend Dialect\ngp postgres"
         return subprocess.CompletedProcess(normalized, 0, stdout=stdout, stderr="")
@@ -304,6 +304,8 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
     assert "analytics_toolkit.sql_explorer.app" in command_text
     assert "'atk'" in command_text
     assert "analytics-toolkit --help" in command_text
+    assert "atk --help" in command_text
+    assert "atk tui --help" in command_text
     assert "analytics-toolkit sql support-matrix" in command_text
 
 

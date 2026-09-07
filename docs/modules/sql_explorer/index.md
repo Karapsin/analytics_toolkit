@@ -30,7 +30,7 @@ pip install 'analytics-toolkit[tui]'
 Launch from a shell with a `.connections` key:
 
 ```bash
-analytics-toolkit sql explore gp
+atk tui gp
 ```
 
 Omit the key to choose from valid entries inside the terminal, or launch from a
@@ -41,6 +41,35 @@ from analytics_toolkit import sql_explorer
 
 sql_explorer.run("gp")
 ```
+
+On first launch, Explorer searches all accessible mounted local disks for
+virtual environments identified by `pyvenv.cfg`, then searches from each
+environment upward for the nearest `.connections`. It includes the normal
+calling-directory and current-directory candidates and deduplicates paths.
+Network and pseudo filesystems, inaccessible directories, and directory symlinks
+are skipped. The scan runs in the background and can be cancelled.
+
+When the completed scan finds one file, Explorer selects it automatically.
+Multiple files open a path picker with the database picker's arrow-key and Enter
+navigation. `Ctrl+L` focuses manual path entry; Escape cancels. If discovery
+finds nothing, enter an existing `.connections` path manually.
+
+Explorer remembers the selected absolute path in its per-user settings, shared
+across virtual environments. Later launches reuse it; a missing file triggers
+rediscovery. Invalid files show an error and return to selection. An explicit
+`general.set_connections_path(...)` takes precedence when launching from Python.
+This persistent preference belongs to Explorer; ordinary SQL and Airflow
+configuration discovery retains its existing behavior. The longer command
+`analytics-toolkit sql explore [DB_KEY]` remains supported.
+
+Use `connections` in the command pane to reopen discovery and choose another
+file. Choosing a different file asks Save / Don't Save / Cancel for changed
+tabs, removes queued queries, cancels running queries, and waits for user-query
+and metadata workers before switching sources. Save or cancellation failures
+keep the old source. After switching, choose a database key and start in one
+clean tab; old results and completion caches are discarded. Cancelling file
+selection or a save prompt keeps the existing workspace. Cancelling the new
+database picker exits Explorer, as at initial launch.
 
 The launcher requires an interactive terminal. Notebook kernels and redirected
 standard input or output cannot host the TUI.

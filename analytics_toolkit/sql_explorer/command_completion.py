@@ -6,6 +6,7 @@ COMMAND_NAMES = (
     "cancel",
     "clear",
     "confirm",
+    "connections",
     "cp",
     "create_table",
     "db",

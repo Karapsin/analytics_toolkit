@@ -76,6 +76,7 @@ tui = [
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"
+atk = "analytics_toolkit.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Karapsin/analytics_toolkit"

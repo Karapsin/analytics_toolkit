@@ -10,7 +10,7 @@ run(db_key: 'str | None' = None) -> 'None'
 
 ## Inputs
 
-- `db_key` - optional connection key or alias from the project `.connections`
+- `db_key` - optional connection key or alias from the selected `.connections`
   file; when omitted, a terminal connection picker opens first
 
 ## Usage
@@ -30,6 +30,12 @@ sql_explorer.run()
 ## Notes
 
 - Install `analytics-toolkit[tui]` before launching the interface.
+- The equivalent shell command is `atk tui [DB_KEY]`.
+- First launch discovers `.connections` near virtual environments on local disks.
+  Multiple files open a path picker before database selection; later launches
+  reuse the remembered file. See [launch and discovery](../index.md#launch-and-execution).
+- Use `connections` in the command pane to select another file and start a fresh
+  workspace after save prompts and query shutdown.
 - Run this function from an interactive terminal Python or IPython console, not
   a notebook.
 - Editor and text-input carets remain visible and do not blink. Every

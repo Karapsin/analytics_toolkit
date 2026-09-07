@@ -19,6 +19,12 @@ class _TerminalStream:
         return True
 
 
+@pytest.fixture(autouse=True)
+def prepared_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Source discovery/persistence is tested separately with isolated settings and disks.
+    monkeypatch.setattr(launcher, "_prepare_connections", lambda path=None: True)
+
+
 def test_launcher_rejects_non_terminal_streams() -> None:
     with pytest.raises(SqlExplorerEnvironmentError, match="interactive terminal"):
         launcher._require_terminal(SimpleNamespace(isatty=lambda: False), _TerminalStream())

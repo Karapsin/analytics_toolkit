@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import TextIO
 
 from analytics_toolkit import sql
+from analytics_toolkit.general.connections import get_connections_path_override
 
+from .connections import ConnectionsRestart, activate_connections_file
 from .errors import (
     SqlExplorerConfigurationError,
     SqlExplorerDependencyError,
     SqlExplorerEnvironmentError,
 )
 from .runtime import ExplorerSession
+from .settings import load_settings
 
 
 def run(db_key: str | None = None) -> None:
@@ -30,18 +34,49 @@ def run(db_key: str | None = None) -> None:
                 )
                 raise SqlExplorerDependencyError(message) from exc
             raise
-        if db_key is None:
-            choices = _database_choices()
-            db_key = DatabasePickerApp(choices).run()
-            if db_key is None:
-                return
         from .terminal_keys import install_terminal_key_compatibility  # noqa: PLC0415
 
         install_terminal_key_compatibility()
-        session = ExplorerSession(db_key)
-        SqlExplorerApp(session).run()
+        requested_path: Path | None = None
+        while _prepare_connections(requested_path):
+            if db_key is None:
+                choices = _database_choices()
+                db_key = DatabasePickerApp(choices).run()
+                if db_key is None:
+                    return
+            session = ExplorerSession(db_key)
+            result = SqlExplorerApp(session).run()
+            if not isinstance(result, ConnectionsRestart):
+                return
+            requested_path = result.path
+            db_key = None
     finally:
         sql.set_time_print_sink(previous_sink)
+
+
+def _prepare_connections(requested: Path | None = None) -> bool:
+    from .connections_picker import ConnectionsPickerApp  # noqa: PLC0415
+
+    explicit = get_connections_path_override()
+    if requested is None and explicit is not None and explicit.is_file():
+        return True
+    saved = load_settings().settings.connections_path
+    candidate = requested or (Path(saved) if saved else None)
+    error = ""
+    auto_select = candidate is None or not candidate.is_file()
+    while True:
+        if candidate is not None and candidate.is_file():
+            try:
+                activate_connections_file(candidate)
+            except (OSError, ValueError, RuntimeError) as exc:
+                error = str(exc)
+                auto_select = False
+            else:
+                return True
+        candidate = ConnectionsPickerApp(auto_select=auto_select, error=error).run()
+        if candidate is None:
+            return False
+        auto_select = False
 
 
 def _require_terminal(stdin: TextIO, stdout: TextIO) -> None:

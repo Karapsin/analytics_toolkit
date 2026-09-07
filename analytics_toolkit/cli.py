@@ -46,8 +46,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="analytics-toolkit")
+    program = "atk" if Path(sys.argv[0]).stem == "atk" else "analytics-toolkit"
+    parser = argparse.ArgumentParser(prog=program)
     subparsers = parser.add_subparsers(dest="command")
+
+    tui_parser = subparsers.add_parser("tui", help="Open the optional SQL Explorer.")
+    tui_parser.add_argument("db_key", nargs="?", help="Optional .connections database key.")
+    tui_parser.set_defaults(handler=_handle_sql_explore)
 
     sql_parser = subparsers.add_parser("sql")
     sql_subparsers = sql_parser.add_subparsers(dest="sql_command")

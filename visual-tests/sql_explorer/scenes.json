@@ -19,6 +19,60 @@
       ]
     },
     {
+      "id": "connections-picker",
+      "required_elements": [
+        "#connections-picker",
+        "#connections-picker-title",
+        "#connections-options",
+        "#connections-progress",
+        "#connections-path",
+        "#connections-picker-help"
+      ]
+    },
+    {
+      "id": "connections-searching",
+      "required_elements": [
+        "#connections-picker",
+        "#connections-picker-title",
+        "#connections-options",
+        "#connections-progress",
+        "#connections-path",
+        "#connections-picker-help"
+      ]
+    },
+    {
+      "id": "connections-empty",
+      "required_elements": [
+        "#connections-picker",
+        "#connections-picker-title",
+        "#connections-options",
+        "#connections-progress",
+        "#connections-path",
+        "#connections-picker-help"
+      ]
+    },
+    {
+      "id": "connections-error",
+      "required_elements": [
+        "#connections-picker",
+        "#connections-picker-title",
+        "#connections-options",
+        "#connections-progress",
+        "#connections-path",
+        "#connections-picker-help"
+      ]
+    },
+    {
+      "id": "connections-switch-save",
+      "required_elements": [
+        "#save-changes-dialog",
+        "#save-changes-buttons",
+        "#save-changes-save",
+        "#save-changes-discard",
+        "#save-changes-cancel"
+      ]
+    },
+    {
       "id": "editor-ready",
       "required_elements": [
         "#tab-strip",

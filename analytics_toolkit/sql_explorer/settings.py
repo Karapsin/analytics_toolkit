@@ -11,7 +11,7 @@ from typing import Any
 
 from .errors import SqlExplorerConfigurationError
 
-SETTINGS_VERSION = 2
+SETTINGS_VERSION = 3
 DEFAULT_RUN_BINDING = "ctrl+enter"
 _FUNCTION_KEY_RE = re.compile(r"f(?:[1-9]|1[0-2])\Z")
 _MODIFIED_KEY_RE = re.compile(r"(?:ctrl|alt)\+(?:enter|[a-z])\Z")
@@ -59,6 +59,7 @@ class ExplorerSettings:
     version: int = SETTINGS_VERSION
     run_binding: str = DEFAULT_RUN_BINDING
     confirm_mutations: bool = True
+    connections_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,7 +138,7 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
         message = "settings must contain a JSON object"
         raise TypeError(message)
     version = raw.get("version")
-    if version not in {1, SETTINGS_VERSION}:
+    if version not in {1, 2, SETTINGS_VERSION}:
         message = f"unsupported settings version {raw.get('version')!r}"
         raise ValueError(message)
     confirm_mutations = raw.get("confirm_mutations")
@@ -148,9 +149,14 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
     if not isinstance(run_binding, str):
         message = "run_binding must be a string"
         raise TypeError(message)
+    connections_path = raw.get("connections_path")
+    if connections_path is not None and not isinstance(connections_path, str):
+        message = "connections_path must be a string or null"
+        raise TypeError(message)
     return ExplorerSettings(
         run_binding=normalize_run_binding(run_binding),
         confirm_mutations=confirm_mutations,
+        connections_path=connections_path,
     )
 
 

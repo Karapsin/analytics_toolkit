@@ -17,7 +17,13 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
+from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
+from analytics_toolkit.sql_explorer.connections_picker import (
+    ConnectionsPickerApp,
+    ConnectionsPickerScreen,
+)
 from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
+from analytics_toolkit.sql_explorer.discovery import DiscoveryProgress
 from analytics_toolkit.sql_explorer.exports import ConfirmExportScreen
 from analytics_toolkit.sql_explorer.file_commands import NewSqlFileScreen
 from analytics_toolkit.sql_explorer.picker import DatabasePickerApp
@@ -262,6 +268,8 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         elif scene == "discard-confirm":
             self.push_screen(DiscardChangesScreen(Path("quarterly_report.sql")))
+        elif scene == "connections-switch-save":
+            self._request_exit(restart=ConnectionsRestart(Path("/Users/analyst/new/.connections")))
         elif scene in {"save-changes", "save-changes-cancel"}:
             self.push_screen(SaveChangesScreen("quarterly_report.sql"))
             if scene == "save-changes-cancel":
@@ -367,6 +375,49 @@ class VisualDatabasePickerApp(DatabasePickerApp):
             self.visual_evidence_path,
             self.visual_manifest_path,
         )
+
+
+class VisualConnectionsPickerScreen(ConnectionsPickerScreen):
+    def __init__(self, scene_id: str) -> None:
+        super().__init__()
+        self.scene_id = scene_id
+
+    def _scan(self) -> None:
+        paths = (
+            Path("/Users/analyst/projects/finance/.connections"),
+            Path("/Users/analyst/projects/warehouse/.connections"),
+            Path("/Volumes/Projects/customer-analytics/.connections"),
+        )
+        self._show_progress(
+            DiscoveryProgress(
+                () if self.scene_id == "connections-empty" else paths,
+                14500,
+                complete=self.scene_id != "connections-searching",
+            )
+        )
+        if self.scene_id == "connections-error":
+            self._show_error(
+                "No valid SQL connections in this file. Choose another file or enter a path."
+            )
+        if self.scene_id in {"connections-empty", "connections-error"}:
+            self.action_path()
+
+
+class VisualConnectionsPickerApp(ConnectionsPickerApp):
+    def __init__(self, scene_id: str, evidence_path: Path, manifest_path: Path) -> None:
+        super().__init__()
+        self.picker = VisualConnectionsPickerScreen(scene_id)
+        self.scene_id = scene_id
+        self.evidence_path = evidence_path
+        self.manifest_path = manifest_path
+
+    def on_mount(self) -> None:
+        # Textual dispatches Mount to base handlers too; pushing twice places
+        # the same modal above itself and recursively renders its background.
+        self.set_interval(0.2, self._refresh_visual_evidence)
+
+    def _refresh_visual_evidence(self) -> None:
+        _refresh_evidence_if_mounted(self, self.scene_id, self.evidence_path, self.manifest_path)
 
 
 def _manifest_scene(manifest_path: Path, scene_id: str) -> dict[str, Any]:
@@ -552,6 +603,13 @@ def main() -> int:
     args = _parser().parse_args()
     if args.scene == "database-picker":
         app: App[Any] = VisualDatabasePickerApp(args.evidence, args.manifest)
+    elif args.scene in {
+        "connections-picker",
+        "connections-searching",
+        "connections-empty",
+        "connections-error",
+    }:
+        app = VisualConnectionsPickerApp(args.scene, args.evidence, args.manifest)
     else:
         app = VisualExplorerApp(args.scene, args.evidence, args.manifest)
     app.run(mouse=False)

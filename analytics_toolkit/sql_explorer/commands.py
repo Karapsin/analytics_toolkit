@@ -24,6 +24,7 @@ HELP_TEXT = """Commands
   cp                          copy selections or the editor buffer
   pst                         paste at every editor cursor
   db DB_KEY                   switch the configured connection
+  connections                 choose a .connections file and start a fresh workspace
   shortcut KEY|reset          change the primary run shortcut
   confirm on|off|toggle       control mutation confirmation
   clear query|results|all     clear workspace content

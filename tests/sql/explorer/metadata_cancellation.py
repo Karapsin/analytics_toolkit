@@ -104,3 +104,41 @@ def test_ddl_invalidation_drops_inflight_metadata_result() -> None:
     finally:
         release.set()
         coordinator.stop()
+
+
+def test_pool_shutdown_waits_for_retired_metadata_and_cancellation_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered, release = Event(), Event()
+    cancel_entered, cancel_release = Event(), Event()
+
+    class Provider(FakeProvider):
+        def list_tables(self, **kwargs: object) -> tuple[str, ...]:
+            entered.set()
+            assert release.wait(2)
+            return ("sample_old",)
+
+    def cancel(scope: object) -> None:
+        cancel_entered.set()
+        assert cancel_release.wait(2)
+
+    monkeypatch.setattr(completion, "cancel_scope_queries", cancel)
+    pool = completion.CompletionCoordinatorPool()
+    coordinator = pool.acquire("gp", "gp", "old-tab")
+    coordinator.provider = Provider()
+    try:
+        coordinator.enqueue(CompletionRequest("gp", "gp", "table", "sample"), owner_id="old-tab")
+        assert entered.wait(2)
+        pool.release("old-tab")
+        pool.stop()
+        assert cancel_entered.wait(2)
+        assert not pool.is_stopped
+        release.set()
+        _wait_for(lambda: not coordinator._thread.is_alive())
+        assert not pool.is_stopped
+        cancel_release.set()
+        _wait_for(lambda: pool.is_stopped)
+    finally:
+        release.set()
+        cancel_release.set()
+        pool.stop()

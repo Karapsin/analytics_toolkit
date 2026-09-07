@@ -111,18 +111,41 @@ rows = sql.transfer(
 - `sql.load_df`: load a pandas dataframe into a configured backend table.
 - `sql.transfer`: move rows from a source query to a target table across backends.
 
-## Exploratory SQL TUI
+## SQL Explorer
 
-Install the optional terminal dependencies and open a configured connection by
-its `.connections` key:
+The terminal interface is an optional extra. A plain installation provides the
+`atk` command; install the extra to launch SQL Explorer:
+
+If you use a virtual environment, activate it first (`source /path/to/.venv/bin/activate`
+on macOS/Linux or `.venv\Scripts\Activate.ps1` in Windows PowerShell). Installing
+with a virtual environment's Python does not activate that environment in your
+shell. You can also run `/path/to/.venv/bin/atk tui` directly on macOS/Linux.
 
 ```bash
-pip install 'analytics-toolkit[tui]'
-analytics-toolkit sql explore gp
+python -m pip install 'analytics-toolkit[tui]'
+atk tui
 ```
 
-Run `analytics-toolkit sql explore` without a key to select a valid configured
-connection inside the terminal first.
+To upgrade an existing installation with the extra:
+
+```bash
+python -m pip install --upgrade 'analytics-toolkit[tui]'
+atk tui gp
+```
+
+On first launch, Explorer searches accessible local disks for Python virtual
+environments (`pyvenv.cfg`) and looks for `.connections` in each environment's
+directory and its parents. It also checks the calling and current directories.
+One matching file is selected automatically after the scan; multiple matches
+open a file picker before the database-key picker. You can also enter a file
+path manually. Explorer remembers the selected file for later launches and
+searches again if that file disappears.
+
+Use `connections` in the command pane to choose another file. Explorer asks
+whether to save changed tabs, stops existing queries and metadata work, and
+opens a fresh workspace with a database from the new file. Cancelling the
+switch keeps the current workspace. `analytics-toolkit sql explore [DB_KEY]`
+remains available as the longer launch command.
 
 The same interface can be launched from a terminal Python or IPython console:
 
@@ -162,25 +185,6 @@ separate shared queue per database.
 See the
 [SQL explorer guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_explorer/index.md)
 for navigation, completion, clipboard, and safety details.
-
-## SQL Formatting
-
-[SQL formatting guide](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/modules/sql_format/index.md)
-
-`sql_format.format_sql`, `sql_format.rewrite_with_ctes`, and
-`sql_format.gp_rewrite_to_temp_tables` transform SQL text locally without
-opening database connections. `GROUP BY` and `ORDER BY` clauses use SELECT-list
-ordinals by default, with expression-based formatting available through
-`group_by_format="expressions"` and `order_by_format="expressions"`.
-
-```python
-from analytics_toolkit import sql_format
-
-formatted = sql_format.format_sql(
-    "select user_id, amount from orders where amount > 100",
-    dialect="postgres",
-)
-```
 
 ## AB Metrics
 

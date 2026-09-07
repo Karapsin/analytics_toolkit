@@ -348,6 +348,7 @@ class CompletionCoordinator:
     _wake: Event = field(default_factory=Event, init=False)
     _stopping: bool = field(default=False, init=False)
     _thread: Thread = field(init=False)
+    _cancellation_threads: list[Thread] = field(default_factory=list, init=False)
     _bootstrap_error: Callable[[CompletionResult, Exception], None] | None = field(
         default=None,
         init=False,
@@ -389,6 +390,12 @@ class CompletionCoordinator:
             self._queued_scopes.clear()
             self._tasks_by_scope.clear()
         self._wake.set()
+
+    @property
+    def is_stopped(self) -> bool:
+        with self._lock:
+            threads = tuple(self._cancellation_threads)
+        return not self._thread.is_alive() and not any(thread.is_alive() for thread in threads)
 
     def enqueue(
         self,
@@ -517,11 +524,15 @@ class CompletionCoordinator:
                 if not in_flight.subscribers:
                     self._cancel_task(in_flight)
 
-    @staticmethod
-    def _cancel_task(task: _CompletionTask) -> None:
+    def _cancel_task(self, task: _CompletionTask) -> None:
         if not task.cancellation.cancelled:
             task.cancellation.request_cancel()
-            Thread(target=cancel_scope_queries, args=(task.cancellation,), daemon=True).start()
+            thread = Thread(target=cancel_scope_queries, args=(task.cancellation,), daemon=True)
+            self._cancellation_threads = [
+                previous for previous in self._cancellation_threads if previous.is_alive()
+            ]
+            self._cancellation_threads.append(thread)
+            thread.start()
 
     def snapshot(self) -> tuple[int, int, bool]:
         with self._lock:
@@ -651,6 +662,7 @@ class CompletionCoordinatorPool:
 
     def __init__(self) -> None:
         self._entries: dict[str, _CoordinatorPoolEntry] = {}
+        self._retired: list[CompletionCoordinator] = []
 
     def acquire(
         self,
@@ -680,12 +692,19 @@ class CompletionCoordinatorPool:
             entry.owners.discard(owner_id)
             if not entry.owners:
                 entry.coordinator.stop()
+                self._retired.append(entry.coordinator)
                 self._entries.pop(key, None)
 
     def stop(self) -> None:
         for entry in self._entries.values():
             entry.coordinator.stop()
+            self._retired.append(entry.coordinator)
         self._entries.clear()
+
+    @property
+    def is_stopped(self) -> bool:
+        self._retired = [coordinator for coordinator in self._retired if not coordinator.is_stopped]
+        return not self._entries and not self._retired
 
     def coordinator_for(self, connection_key: str) -> CompletionCoordinator | None:
         entry = self._entries.get(connection_key.casefold())

@@ -158,7 +158,7 @@ class SqlExplorerTabCommandsMixin:
 
     def action_new_tab(self) -> None:
         app = cast("Any", self)
-        if len(app.screen_stack) == 1:
+        if len(app.screen_stack) == 1 and not app._exit_requested:
             app._add_workspace()
 
     def _add_workspace(

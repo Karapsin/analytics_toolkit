@@ -15,6 +15,7 @@ from .tabs import SaveChangesScreen
 from .widgets import ConfirmMutationScreen
 
 if TYPE_CHECKING:
+    from .connections import ConnectionsRestart
     from .runtime import ExplorerCancelResult, ExplorerRunResult, ExplorerSession
     from .scheduling import ExplorerQueryJob
     from .statements import ExplorerExecutionPlan
@@ -26,7 +27,7 @@ class SqlExplorerQueryCommandsMixin:
 
     def action_run_query(self) -> None:
         app = cast("Any", self)
-        if len(app.screen_stack) > 1:
+        if len(app.screen_stack) > 1 or app._exit_requested:
             return
         workspace = app.active_workspace
         if workspace.busy and workspace.running_job_id is None:
@@ -76,6 +77,8 @@ class SqlExplorerQueryCommandsMixin:
         database: DatabaseSelection,
     ) -> None:
         app = cast("Any", self)
+        if app._exit_requested:
+            return
         job = app._query_scheduler.enqueue(workspace.tab_id, plan, database)
         if job is None:
             app._set_notice("This tab already has a queued or running query.", workspace)
@@ -89,6 +92,8 @@ class SqlExplorerQueryCommandsMixin:
 
     def _drain_query_queue(self) -> None:
         app = cast("Any", self)
+        if app._exit_requested:
+            return
         blocked_databases = {
             (workspace.operation_database or workspace.session.database).connection_key
             for workspace in app._workspaces.values()
@@ -199,7 +204,10 @@ class SqlExplorerQueryCommandsMixin:
         workspace.reset_query_state()
         app._update_status(workspace)
         if exit_after:
-            app.exit()
+            if app._exit_requested:
+                app._finish_exit_if_ready()
+            else:
+                app.exit()
             return
         app._render_result(result, workspace)
 
@@ -210,7 +218,10 @@ class SqlExplorerQueryCommandsMixin:
         workspace.reset_query_state()
         app._update_status(workspace)
         if exit_after:
-            app.exit()
+            if app._exit_requested:
+                app._finish_exit_if_ready()
+            else:
+                app.exit()
             return
         app.show_error(exc, workspace)
 
@@ -236,10 +247,13 @@ class SqlExplorerQueryCommandsMixin:
             return
         app._request_exit(mode="save")
 
-    def _request_exit(self, *, mode: str = "ask") -> None:
+    def _request_exit(
+        self, *, mode: str = "ask", restart: ConnectionsRestart | None = None
+    ) -> None:
         app = cast("Any", self)
         if len(app.screen_stack) > 1 or app._exit_requested:
             return
+        app._connections_restart = restart
         app._exit_save_all = mode == "save"
         if mode == "discard":
             app._exit_dirty_tabs.clear()
@@ -280,11 +294,13 @@ class SqlExplorerQueryCommandsMixin:
             app._prompt_next_exit_dirty_tab()
             return
         if decision == "cancel":
+            app._connections_restart = None
             app._exit_dirty_tabs.clear()
             return
         if decision == "save":
             if workspace.current_file is not None:
                 if not app._save_workspace(workspace):
+                    app._connections_restart = None
                     app._exit_dirty_tabs.clear()
                     return
                 app._exit_dirty_tabs.pop(0)
@@ -302,6 +318,7 @@ class SqlExplorerQueryCommandsMixin:
     def _exit_save_finished(self, tab_id: str, created: bool) -> None:
         app = cast("Any", self)
         if not created:
+            app._connections_restart = None
             app._exit_dirty_tabs.clear()
             return
         if app._exit_dirty_tabs and app._exit_dirty_tabs[0] == tab_id:
@@ -326,7 +343,10 @@ class SqlExplorerQueryCommandsMixin:
             and app._query_scheduler.pending_count == 0
             and not any(workspace.busy for workspace in app._workspaces.values())
         ):
-            app.exit()
+            if app._connections_restart is not None:
+                app._finish_connections_shutdown()
+            else:
+                app.exit()
 
     def _request_cancel(
         self,
@@ -393,6 +413,7 @@ class SqlExplorerQueryCommandsMixin:
         workspace.exit_after_cancel = False
         workspace.closing = False
         app._exit_requested = False
+        app._connections_restart = None
         app._update_status(workspace)
         app.show_error(exc, workspace)
 

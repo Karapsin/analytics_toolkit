@@ -105,6 +105,12 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
         cwd=install_root,
     )
     _run([python, "-m", "pip", "check"], cwd=install_root)
+    atk_cli = _venv_executable(venv_dir, "atk")
+    for arguments in (["--help"], ["tui", "--help"]):
+        result = _run([atk_cli, *arguments], cwd=install_root, capture_output=True)
+        if "usage: atk" not in result.stdout:
+            message = "installed atk CLI help output is incomplete"
+            raise ArtifactSmokeError(message)
     _run(
         [python, "-c", "import analytics_toolkit.sql_explorer"],
         cwd=install_root,
