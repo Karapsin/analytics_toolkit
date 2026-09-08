@@ -8,6 +8,8 @@ Generated from package version bumps and recent commit history.
 
 - Preserve nullable numeric metrics during AB validation.
 - Fix large nullable-string CUPED group selection and distinguish unavailable-statistic diagnostics.
+- Support setup scripts in create_table SQL sources with one-time staged insertion and owned-stage cleanup.
+- Drain queued SQL Explorer scene events before visual unit-test teardown.
 
 ## 1.3.11.19 - 2026-09-07
 

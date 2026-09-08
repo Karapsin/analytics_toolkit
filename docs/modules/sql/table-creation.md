@@ -25,6 +25,20 @@ the target is created with [sql.transfer](functions/transfer.md). If Python
 already owns the rows, [sql.load_df](functions/load_df.md) is usually the
 simpler workflow.
 
+The `sql` input also accepts setup statements followed by a final `SELECT`,
+including CTE queries. Setup runs on the source connection before the final
+query's schema is inspected. The default `insert_data=False` creates an empty
+target. With `insert_data=True`, a script materializes its final query once per
+attempt into an owned table in the source connection's `transfer_staging_schema`.
+Schema inspection and insertion both read that stage, including cross-database
+inserts, and the operation removes the stage afterward. The staging setting is
+required for script insertion; single-query inputs retain their existing paths.
+
+Each retry reruns setup and uses a fresh stage, so setup statements should
+tolerate replay. User-created setup tables remain user-owned. A source-stage
+cleanup failure stops retries. `dry_run` and `return_sql` show the ordered steps
+without running setup; `only_generate_sql` rejects multi-statement scripts.
+
 When both source and target are Trino, query-based creation preserves the full
 native type signatures reported by Trino, including arrays, maps, rows, type
 parameters, and nested combinations. Cross-backend creation continues to map

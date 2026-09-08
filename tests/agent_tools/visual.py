@@ -117,6 +117,9 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
                     geometry = json.loads(evidence.read_text(encoding="utf-8"))
                     if geometry["ok"] is True:
                         break
+            # Geometry can arrive before queued editor-change messages. Drain those
+            # messages while their workspace is still mounted, before test teardown.
+            await pilot.pause()
 
     asyncio.run(exercise())
     geometry = json.loads(evidence.read_text(encoding="utf-8"))

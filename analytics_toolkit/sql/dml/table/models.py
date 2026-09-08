@@ -32,6 +32,8 @@ class CreateTableFromSqlOptions:
     query_label: str | None = None
     ddl_properties: Mapping[str, Any] | None = None
     ch_creation_policy: Any = None
+    setup_sqls: tuple[str, ...] = ()
+    source_staging_ch_policy: Any = None
 
 
 @dataclass(frozen=True)

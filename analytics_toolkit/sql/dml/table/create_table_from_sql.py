@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
-import pandas as pd
 import sqlparse
 
 from analytics_toolkit.general import time_print
@@ -13,10 +12,13 @@ from analytics_toolkit.general import time_print
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
-from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
+from analytics_toolkit.sql.dml.ddl_options import (
+    resolve_cluster_routed_source_staging_ch_policy,
+    resolve_operation_ddl,
+)
 
 from ...backends import get_backend_adapter
+from ...backends.source_script import commit_source_setup
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
@@ -24,9 +26,10 @@ from ...connection.errors import (
     annotate_sql_exception,
     sql_preview,
 )
-from ...connection.get_sql_connection import get_sql_connection
+from ...connection.get_sql_connection import (
+    get_sql_connection as get_sql_connection,  # noqa: PLC0414
+)
 from ...ddl.api import (
-    _build_create_table_sqls,
     _create_sql_table_with_connection,
 )
 from ...ddl.schema import (
@@ -40,21 +43,23 @@ from ...execution.operation_runner import (
     tracked_sql_operation,
     validate_retry_options,
 )
-from ...execution.plan_steps import (
-    add_create_table_placeholder_step,
-    add_create_table_steps,
-    add_drop_target_steps,
-    add_insert_query_step,
-    add_inspect_schema_step,
-)
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...execution.validation import validate_optional_positive_int
 from ..transfer.schema import inspect_source_query_schema, map_source_schema_to_target
 from ._basic_ops import (
     insert_from_query,
-    table_exists,
 )
+from ._basic_ops import (
+    table_exists as table_exists,  # noqa: PLC0414
+)
+from .create_from_sql_plan import _build_create_table_from_sql_plan
 from .models import CreateTableFromSqlOptions
+from .source_script import (
+    build_script_plan,
+    execute_script_attempt,
+    normalize_source_script,
+    validate_script_staging,
+)
 from .table_validation import normalize_key_columns, validate_key_columns_in_columns
 
 
@@ -104,10 +109,11 @@ def create_table_from_sql(
         "trino_insert_chunk_size",
     )
     target_table = _normalize_table_name(table_name)
-    source_sql = _normalize_single_query(sql)
+    setup_sqls, source_sql = normalize_source_script(sql)
     source_config = get_connection_config(source_db)
     target_config = source_config if table_db is None else get_connection_config(table_db)
     target_adapter = get_backend_adapter(target_config.backend)
+    validate_script_staging(source_config, setup_sqls, insert_data=insert_data)
     gp_distribution = normalize_key_columns(
         gp_distributed_by_key,
         "gp_distributed_by_key",
@@ -169,6 +175,12 @@ def create_table_from_sql(
         target_backend=target_config.backend,
         target_table=target_table,
         source_sql=source_sql,
+        setup_sqls=setup_sqls,
+        source_staging_ch_policy=(
+            resolve_cluster_routed_source_staging_ch_policy(source_config)
+            if setup_sqls and insert_data
+            else None
+        ),
         table_schema=normalize_table_schema(table_schema),
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
@@ -191,6 +203,8 @@ def create_table_from_sql(
     )
 
     if options.dry_run or options.return_sql:
+        if options.setup_sqls:
+            return build_script_plan(options)
         fast_path_applied, fast_path_result = _call_create_table_from_sql_fast_path(
             target_adapter=target_adapter,
             options=options,
@@ -302,6 +316,8 @@ def _execute_create_table_from_sql_attempt(
     target_adapter: Any,
     attempt: int,
 ) -> object:
+    if options.setup_sqls:
+        return execute_script_attempt(options, target_adapter, attempt)
     if target_adapter.uses_create_table_from_sql_fast_path(
         source_backend=options.source_backend,
         source_key=options.source_key,
@@ -365,8 +381,8 @@ def _execute_generic_create_table_from_sql_attempt(
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     attempt: int,
+    source_connection: Any | None = None,
 ) -> object:
-    source_connection: Any | None = None
     target_connection: Any | None = None
     inserted_rows: int | None = None
     delegate_transfer = False
@@ -386,7 +402,8 @@ def _execute_generic_create_table_from_sql_attempt(
             query_label=options.query_label,
             preview_sql=options.source_sql,
         ):
-            source_connection = get_sql_connection(options.source_key)
+            if source_connection is None:
+                source_connection = get_sql_connection(options.source_key)
             target_connection = (
                 source_connection
                 if options.source_key == options.target_key
@@ -403,6 +420,8 @@ def _execute_generic_create_table_from_sql_attempt(
                 source_connection,
                 apply_query_label(options.source_sql, options.query_label),
             )
+            if options.setup_sqls and not options.insert_data:
+                commit_source_setup(get_backend_adapter(options.source_backend), source_connection)
             source_columns = [column.name for column in source_schema]
             _validate_source_columns(source_columns)
             validate_key_columns_in_columns(options.gp_distributed_by_key, source_columns)
@@ -509,6 +528,8 @@ def _execute_generic_create_table_from_sql_attempt(
                 delegate_transfer = True
     except Exception as exc:
         if not mutation_started:
+            if source_connection is not None:
+                get_backend_adapter(options.source_backend).rollback_quietly(source_connection)
             raise
         if target_owned_by_attempt and _cleanup_attempt_target(
             options=options,
@@ -545,6 +566,8 @@ def _execute_generic_create_table_from_sql_attempt(
             "full_retry_cnt": 1,
             "full_timeout_increment": 0,
         }
+        if options.setup_sqls:
+            transfer_kwargs["ignore_source_staging"] = True
         if options.ch_creation_policy is not None:
             transfer_kwargs.update(
                 {
@@ -660,119 +683,6 @@ def _normalize_table_name(table_name: str) -> str:
     if not normalized:
         raise InvalidSqlInputError("table_name must not be empty.")
     return normalized
-
-
-def _build_create_table_from_sql_plan(
-    *,
-    source_key: str,
-    source_backend: str,
-    target_key: str,
-    target_backend: str,
-    target_table: str,
-    source_sql: str,
-    table_schema: dict[str, str] | None,
-    insert_data: bool,
-    drop_target_if_exists: bool,
-    gp_distributed_by_key: list[str] | None,
-    gp_partitions: Any,
-    partition_by: Sequence[str] | str | None,
-    order_by: Sequence[str] | str | None,
-    ch_engine: str,
-    ch_cluster: str,
-    ch_sharding_key: str,
-    ch_only_shard: bool,
-    query_label: str | None,
-    ddl_properties: dict[str, Any] | None,
-    ch_creation_policy: Any,
-) -> SqlPlan:
-    plan = SqlPlan(
-        operation="create_table_from_sql",
-        source_alias=source_key,
-        target_alias=target_key,
-        source_backend=source_backend,
-        target_backend=target_backend,
-        target_table=target_table,
-        options={
-            "insert_data": insert_data,
-            "drop_target_if_exists": drop_target_if_exists,
-            "table_schema": table_schema,
-            "gp_distributed_by_key": gp_distributed_by_key,
-            "gp_partitions": _gp_partition_plan_option(gp_partitions),
-            "partition_by": partition_by,
-            "order_by": order_by,
-            "ch_only_shard": ch_only_shard,
-            "ch_ddl_wait_policy": (
-                ch_creation_policy.ddl_wait_policy if ch_creation_policy is not None else None
-            ),
-        },
-    )
-    add_inspect_schema_step(
-        plan,
-        alias=source_key,
-        backend=source_backend,
-        source_sql=source_sql,
-        query_label=query_label,
-    )
-    if drop_target_if_exists:
-        add_drop_target_steps(
-            plan,
-            alias=target_key,
-            backend=target_backend,
-            table_name=target_table,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            ch_only_shard=ch_only_shard,
-        )
-    if table_schema is None:
-        add_create_table_placeholder_step(
-            plan,
-            alias=target_key,
-            backend=target_backend,
-            table_name=target_table,
-            query_label=query_label,
-        )
-    else:
-        create_kwargs = get_backend_adapter(
-            target_backend
-        ).build_create_from_sql_target_create_kwargs(
-            gp_distributed_by_key=gp_distributed_by_key,
-            gp_partitions=gp_partitions,
-            partition_by=partition_by,
-            order_by=order_by,
-            ch_engine=ch_engine,
-            ch_cluster=ch_cluster,
-            ch_sharding_key=ch_sharding_key,
-            ch_only_shard=ch_only_shard,
-            drop_target_if_exists=drop_target_if_exists,
-            target_exists_before_drop=False,
-        )
-        add_create_table_steps(
-            plan,
-            _build_create_table_sqls(
-                target_backend,
-                target_table,
-                pd.DataFrame(columns=list(table_schema)),
-                table_schema=table_schema,
-                query_label=query_label,
-                ddl_properties=ddl_properties,
-                ch_creation_policy=ch_creation_policy,
-                **create_kwargs,
-            ),
-            alias=target_key,
-            backend=target_backend,
-            table_name=target_table,
-        )
-    if insert_data:
-        add_insert_query_step(
-            plan,
-            alias=target_key,
-            backend=target_backend,
-            target_table=target_table,
-            source_sql=source_sql,
-            phase="insert_data",
-            query_label=query_label,
-        )
-    return plan
 
 
 def _normalize_single_query(query: str) -> str:

@@ -78,5 +78,5 @@ def test_create_table_from_sql_validates_empty_inputs(monkeypatch) -> None:
     with pytest.raises(create_module.InvalidSqlInputError, match="sql"):
         create_module.create_table_from_sql("gp", "target", " ")
 
-    with pytest.raises(create_module.InvalidSqlInputError, match="exactly one"):
-        create_module.create_table_from_sql("gp", "target", "select 1; select 2")
+    with pytest.raises(create_module.InvalidSqlInputError, match="final statement"):
+        create_module.create_table_from_sql("gp", "target", "select 1; delete from target")

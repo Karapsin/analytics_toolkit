@@ -91,6 +91,10 @@ def create_table(
         sql=sql,
         table_schema=table_schema,
     )
+    if sql is not None and only_generate_sql:
+        from ..dml.table.source_script import validate_generated_source  # noqa: PLC0415, TID252
+
+        validate_generated_source(sql)
     config = get_connection_config(db_key)
     if not (dry_run or return_sql or only_generate_sql):
         existing_result = _handle_existing_create_target(

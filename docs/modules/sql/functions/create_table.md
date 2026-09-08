@@ -16,7 +16,7 @@ create_table(db_key: 'str', table_name: 'str', df: 'pd.DataFrame | None' = None,
 - `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
 - `table_name` - target or source table name, depending on the helper
 - `df` - dataframe whose columns are used to infer table DDL
-- `sql` - source SQL query whose metadata defines the target columns
+- `sql` - source query, or setup statements followed by a final `SELECT`, whose metadata defines the target columns
 - `table_schema` - explicit backend-native column type mapping for created tables
 - `source_db` - source connection key for `sql`; defaults to `db_key`
 - `insert_data` - when `sql` is provided, also insert the query result after creating the table
@@ -104,6 +104,41 @@ ddl
 # 'CREATE TABLE sandbox.scores (...);'
 ```
 
+Setup statements can prepare the source before schema inspection:
+
+```python
+from analytics_toolkit import sql
+
+sql.create_table(
+    "gp",
+    "sandbox.scores",
+    sql="""
+        CREATE TEMP TABLE prepared_scores AS
+        SELECT user_id, score FROM sandbox.source_scores;
+        SELECT user_id, score FROM prepared_scores;
+    """,
+)
+# None: creates an empty target with the final query's columns
+```
+
+Set `insert_data=True` to populate the target. For scripts, the source alias
+must configure `transfer_staging_schema`:
+
+```python
+rows = sql.create_table(
+    "trino",
+    "sandbox.scores",
+    source_db="gp",
+    sql="""
+        CREATE TEMP TABLE prepared_scores AS
+        SELECT user_id, score FROM sandbox.source_scores;
+        SELECT user_id, score FROM prepared_scores;
+    """,
+    insert_data=True,
+)
+# rows is the inserted-row count, for example 42
+```
+
 ## Notes
 
 - The default is a plain `CREATE TABLE`, so an existing target raises a backend
@@ -139,6 +174,19 @@ ddl
   `gp_partitions` applies only when this operation creates the target; use
   `gp_create_partitions` to add later children.
 - `only_generate_sql=True` with `sql` inspects source query metadata but does not create, drop, or insert data.
+- Scripts run setup on the source connection, then use the final `SELECT`
+  (including CTE queries). With `insert_data=False`, only its schema is needed.
+  With `insert_data=True`, the final query is materialized once per attempt in
+  the source's `transfer_staging_schema`; both schema inspection and insertion
+  read that stage. Single-query inputs keep their existing execution paths.
+- Script retries rerun setup on a fresh connection and create a fresh stage.
+  Setup statements should tolerate replay. The operation removes its own source
+  stage on success or failure; it does not remove user-created setup tables.
+  Failure to clean up the stage stops retries and reports an error.
+- `dry_run=True` and `return_sql=True` show ordered script plans without executing
+  setup or inspecting the database. Stage names in these plans are placeholders.
+  `only_generate_sql=True` rejects scripts because schema discovery could require
+  executing setup statements.
 - `retry_cnt` must be a built-in positive integer. `timeout_increment` must be
   a finite non-negative real number; the same validation applies to dry runs
   and generated-SQL paths.
