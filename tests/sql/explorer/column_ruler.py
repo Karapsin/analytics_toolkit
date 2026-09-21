@@ -31,6 +31,31 @@ def test_ruler_labels_are_sparse_and_active_label_wins() -> None:
     assert ruler_labels({0: 100}, 5, 100, "yellow").plain == "100  "
 
 
+def test_all_rows_share_column_range_without_padding_text() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test() as pilot:
+            editor = app.active_workspace.editor
+            ruler = app.active_workspace.query_one(ColumnRuler)
+            editor.text = "x" * 30 + "\ny\n"
+            original = editor.text
+            for row in range(3):
+                editor.cursor_location = (row, 0)
+                await pilot.pause()
+                assert "30" in ruler.render().plain
+                assert "40" not in ruler.render().plain
+                assert editor.text == original
+            move_command(editor, "mv", ["1", "100"])
+            assert editor.document[0] == "x" * 30 + " " * 10
+            assert editor.document.lines[1:] == ["y", ""]
+            editor.cursor_location = (1, 0)
+            await pilot.pause()
+            assert "40" in ruler.render().plain
+            assert editor.document.lines[1:] == ["y", ""]
+
+    asyncio.run(exercise())
+
+
 def test_ruler_grows_with_typing_and_bounded_absolute_movement() -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())

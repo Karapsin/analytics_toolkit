@@ -8,12 +8,18 @@ import sqlparse
 from sqlparse import tokens
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
     from sqlparse.sql import Token
 
 
 def sql_tokens(source: str) -> list[Token]:
-    # sqlparse's flatten method has no annotations in the supported releases.
-    return [token for statement in sqlparse.parse(source) for token in statement.flatten()]  # type: ignore[no-untyped-call]
+    result: list[Token] = []
+    for statement in sqlparse.parse(source):
+        # Older sqlparse releases leave flatten untyped; newer ones annotate it.
+        flatten: Callable[[], Iterable[Token]] = statement.flatten
+        result.extend(flatten())
+    return result
 
 
 def terminal_parts(source: str) -> tuple[str, str, bool]:

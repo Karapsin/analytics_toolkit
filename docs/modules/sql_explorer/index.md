@@ -384,8 +384,9 @@ selected text. It leaves focus in the command pane and supports normal Undo.
 The editor caret stays visible while commands are entered. A column ruler above
 the editor shows one compact row of 1-based logical column labels, spaced every
 10 columns; the main cursor's full column number uses the existing accent color.
-An empty line shows only column 1. The ruler grows with the line's content,
-including its final insertion position, instead of numbering unused screen space.
+An empty document shows only column 1. All rows share the range of the longest
+row, including its final insertion position. Typing or `mv` can grow that range;
+displaying those columns never pads or changes the text on other rows.
 The ruler follows horizontal scrolling and accounts for tabs and wide characters.
 
 Absolute `mv` creates missing rows when its numeric destination is beyond the

@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.12.0 - 2026-09-21
 
 - Preserve nullable numeric metrics during AB validation.
 - Fix large nullable-string CUPED group selection and distinguish unavailable-statistic diagnostics.
@@ -14,6 +14,8 @@ Generated from package version bumps and recent commit history.
 - Add SQL Explorer delete command, persistent editor caret, and an aligned active-column ruler.
 - Allow absolute mv commands to create missing rows with a 100-line limit per invocation.
 - Show a compact content-sized column ruler and let mv add at most 10 missing columns per command.
+- Share column ruler numbering across all rows using the longest line without padding shorter rows.
+- Keep SQL statement tokenization compatible with both typed and untyped sqlparse releases.
 
 ## 1.3.11.19 - 2026-09-07
 

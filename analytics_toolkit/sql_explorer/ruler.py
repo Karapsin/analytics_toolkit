@@ -14,12 +14,15 @@ if TYPE_CHECKING:
 _LABEL_INTERVAL = 10
 
 
-def column_numbers(line: str, offset: int, width: int, tab_width: int) -> dict[int, int]:
-    """Map visible cells through the line's final insertion position."""
+def column_numbers(
+    line: str, offset: int, width: int, tab_width: int, column_count: int | None = None
+) -> dict[int, int]:
+    """Map visible cells through the shared document column range."""
     numbers: dict[int, int] = {}
     cell = 0
     column = 0
-    while cell < offset + width and column <= len(line):
+    count = len(line) + 1 if column_count is None else column_count
+    while cell < offset + width and column < count:
         character = line[column] if column < len(line) else " "
         advance = tab_width - cell % tab_width if character == "\t" else cell_len(character)
         if advance and cell >= offset:
@@ -74,7 +77,11 @@ class ColumnRuler(Static):
             self.size.width - gutter - editor.gutter.right - int(editor.show_vertical_scrollbar),
         )
         numbers = column_numbers(
-            editor.document[row], int(editor.scroll_x), width, editor.indent_width
+            editor.document[row],
+            int(editor.scroll_x),
+            width,
+            editor.indent_width,
+            max(map(len, editor.document.lines)) + 1,
         )
         active_cell = editor.cursor_render_offset[0] - int(editor.scroll_x)
         if 0 <= active_cell < width:
