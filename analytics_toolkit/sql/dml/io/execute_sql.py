@@ -6,9 +6,9 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_co
 from typing import Any, Iterator
 from uuid import uuid4
 
-import sqlparse
 from tqdm import tqdm
 
+from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.dml.io.execute_safety import (
     AmbiguousSqlMutationError,
@@ -533,11 +533,7 @@ def _execute_trino_statement(cursor: Any, query: str) -> None:
 
 
 def _split_sql_statements(query: str) -> list[str]:
-    return [
-        statement.strip().rstrip(";").rstrip()
-        for statement in sqlparse.split(query)
-        if statement.strip()
-    ]
+    return split_statements(query)
 
 
 def _iterate_statements_with_progress(
@@ -562,7 +558,7 @@ def _maybe_print_query(query: str, print_queries: bool, split_preview: bool) -> 
     if print_queries:
         if split_preview:
             statements = _split_sql_statements(query)
-            statement_to_print = statements[0] if statements else query.strip()
+            statement_to_print = statements[0] if statements else ""
         else:
             statement_to_print = query.strip()
         time_print(f"Executing query:\n{statement_to_print}")

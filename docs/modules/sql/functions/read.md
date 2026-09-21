@@ -3,6 +3,8 @@
 # read
 
 Run one SQL query through a configured connection and return the selected output shape.
+Trailing `--` or `/* ... */` comments do not count as additional statements,
+including when they follow a semicolon.
 
 ```python
 read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None) -> 'Any | SqlOperationResult'

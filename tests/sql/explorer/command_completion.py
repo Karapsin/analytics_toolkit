@@ -59,13 +59,13 @@ def test_command_menu_keyboard_filters_and_accepts_without_running() -> None:
             await pilot.press("r")
             assert command.completion_menu.option_count == 1
             await pilot.press("enter")
-            assert command.value == "create_table"
+            assert command.value == "create_table "
             assert not command.completion_menu.display
             assert len(app.screen_stack) == 1
             command.value = "confirm "
             command.cursor_position = len(command.value)
             await pilot.press("tab", "down", "up", "down", "enter")
-            assert command.value == "confirm off"
+            assert command.value == "confirm off "
             assert app.session.settings.confirm_mutations
             command.value = "c"
             command.cursor_position = 1
@@ -96,7 +96,7 @@ def test_db_key_menu_filters_and_preserves_database_until_submit(
             await pilot.press("tab")
             assert command.completion_menu.option_count == 2
             await pilot.press("down", "enter")
-            assert command.value == ":db warehouse_dev"
+            assert command.value == ":db warehouse_dev "
             assert app.session.database.connection_key == "gp"
             await pilot.press("enter")
             assert app.session.database.connection_key == "warehouse_dev"
@@ -119,11 +119,11 @@ def test_command_completion_accepts_tab_and_handles_configuration_failure(
             command = app.query_one("#command-input", CommandInput)
             command.focus()
             await pilot.press("c", "tab", "tab")
-            assert command.value == "cancel"
+            assert command.value == "cancel "
             command.value = "cre"
             command.cursor_position = 3
             await pilot.press("ctrl+space")
-            assert command.value == "create_table"
+            assert command.value == "create_table "
             command.value = "c"
             command.cursor_position = 1
             await pilot.press("tab", "left")

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from rich.text import Text
 from textual.binding import Binding, BindingType
-from textual.widgets import Input, OptionList, Static
+from textual.widgets import Input, OptionList, RichLog
 
 from .command_completion import command_suggestions
+from .editor_actions import completion_text
 from .inputs import EditableInput
 
 if TYPE_CHECKING:
@@ -17,12 +19,33 @@ if TYPE_CHECKING:
     from .app import SqlExplorerApp
 
 
-class ResultMessage(Static, can_focus=True):
+class ResultMessage(RichLog):
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("up", "focus_previous_pane", "Previous pane", show=False),
-        Binding("down", "focus_next_pane", "Next pane", show=False),
+        Binding("up", "scroll_up", "Scroll up", show=False),
+        Binding("down", "scroll_down", "Scroll down", show=False),
         Binding("delete", "close_results", "Close results", show=False),
     ]
+
+    def __init__(self, content: str = "", **kwargs: Any) -> None:
+        super().__init__(wrap=True, min_width=1, auto_scroll=False, **kwargs)
+        self._message = Text(content)
+
+    def update(self, content: str | Text) -> None:
+        self._message = content if isinstance(content, Text) else Text(content)
+        self.call_after_refresh(self._write_content)
+
+    def _write_content(self) -> None:
+        self.clear()
+        if self._message:
+            self.write(self._message)
+
+    def on_resize(self) -> None:
+        # Textual dispatches base-class resize handlers independently; their
+        # signatures differ between supported releases. Write after that dispatch.
+        self.call_after_refresh(self._write_content)
+
+    def render(self) -> Text:
+        return self._message
 
     def action_focus_previous_pane(self) -> None:
         cast("SqlExplorerApp", self.app).action_focus_previous_pane()
@@ -37,9 +60,38 @@ class ResultMessage(Static, can_focus=True):
 class CommandInput(EditableInput):
     database_keys: tuple[str, ...] = ()
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("up", "focus_previous_pane", "Previous pane", show=False),
-        Binding("down", "focus_next_pane", "Next pane", show=False),
+        Binding("up", "history_previous", "Previous command", show=False),
+        Binding("down", "history_next", "Next command", show=False),
     ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._commands: list[str] = []
+        self._history_index = 0
+        self._draft = ("", 0)
+
+    def remember_command(self, value: str) -> None:
+        if value.strip():
+            self._commands.append(value)
+        self._history_index = len(self._commands)
+        self._draft = ("", 0)
+
+    def action_history_previous(self) -> None:
+        if self._history_index == len(self._commands):
+            self._draft = (self.value, self.cursor_position)
+        if self._history_index > 0:
+            self._history_index -= 1
+            self.value = self._commands[self._history_index]
+            self.cursor_position = len(self.value)
+
+    def action_history_next(self) -> None:
+        if self._history_index < len(self._commands):
+            self._history_index += 1
+            if self._history_index == len(self._commands):
+                self.value, self.cursor_position = self._draft
+            else:
+                self.value = self._commands[self._history_index]
+                self.cursor_position = len(self.value)
 
     @property
     def completion_menu(self) -> OptionList:
@@ -83,7 +135,9 @@ class CommandInput(EditableInput):
                 self.value, self.cursor_position, self.database_keys
             )
             if menu.highlighted < len(suggestions):
-                suggestion = suggestions[menu.highlighted]
+                suggestion = completion_text(
+                    suggestions[menu.highlighted], self.value[self.cursor_position :]
+                )
                 self.value = self.value[:start] + suggestion + self.value[self.cursor_position :]
                 self.cursor_position = start + len(suggestion)
         self.close_completion()

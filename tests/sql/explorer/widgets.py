@@ -29,7 +29,13 @@ def test_find_replace_ui_highlights_navigates_and_replaces() -> None:
             await pilot.pause()
             assert editor.search_match_count == 3
             highlighted_line = editor.get_line(0)
-            assert sum(span.style.bgcolor is not None for span in highlighted_line.spans) == 2
+            assert (
+                sum(
+                    span.style.bgcolor is not None and span.end - span.start == len("alpha")
+                    for span in highlighted_line.spans
+                )
+                == 2
+            )
 
             await pilot.press("enter")
             assert editor.selected_text.lower() == "alpha"

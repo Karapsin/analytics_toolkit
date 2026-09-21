@@ -21,6 +21,9 @@ _BINDING_ALIASES = {
     "option+enter": "alt+enter",
 }
 _RESERVED_BINDINGS = {
+    "f6",
+    "shift+f6",
+    "f8",
     "ctrl+space",
     "ctrl+tab",
     "ctrl+shift+tab",

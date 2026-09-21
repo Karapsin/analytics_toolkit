@@ -283,6 +283,25 @@ class VisualExplorerApp(SqlExplorerApp):
                     confirm_label="Save all",
                 )
             )
+        elif scene == "keyboard-multicursor":
+            workspace.editor.cursor_location = (1, 14)
+            workspace.editor.add_cursors(1, -1)
+            workspace.editor.add_cursors(1, 1)
+            self._command_keyboard(["on"])
+        elif scene == "editor-command-caret":
+            workspace.editor.cursor_location = (1, 14)
+            workspace.command_input.value = "mv 2 15"
+            workspace.command_input.focus()
+        elif scene == "column-ruler-scrolled":
+            workspace.editor.text = "select " + "x" * 300
+            workspace.editor.cursor_location = (0, 251)
+        elif scene in {"results-vertical", "results-resized"}:
+            self.show_dataframe(pd.DataFrame({"customer": ["Ada", "Lin"], "revenue": [125, 240]}))
+            self._command_results(["switch"] if scene == "results-vertical" else ["shrink", "4"])
+        elif scene in {"help-shortcuts", "help-movement", "help-movement-end"}:
+            self._command_help(["shortcuts" if scene == "help-shortcuts" else "movement"])
+            if scene == "help-movement-end":
+                self.set_timer(0.5, lambda: workspace.result_message.scroll_end(animate=False))
         elif scene != "editor-ready":
             raise ValueError(f"unsupported SQL Explorer visual scene: {scene}")
 
@@ -454,6 +473,17 @@ def _refresh_evidence_if_mounted(
     return True
 
 
+def _pane_gaps(workspace: Any, panes: list[Any]) -> bool:
+    if workspace.results_open and workspace.results_orientation == "vertical":
+        editor_pane, result_pane, command_pane = panes
+        return (
+            result_pane.region.x - editor_pane.region.right == 1
+            and command_pane.region.y - max(editor_pane.region.bottom, result_pane.region.bottom)
+            == 1
+        )
+    return all(right.region.y - left.region.bottom == 1 for left, right in zip(panes, panes[1:]))
+
+
 def _write_evidence(
     app: App[Any],
     scene_id: str,
@@ -519,9 +549,7 @@ def _write_evidence(
         if workspace.results_open:
             panes.append(workspace.query_one(".result-pane"))
         panes.append(workspace.query_one(".command-panel"))
-        assertions["pane_gaps"] = all(
-            right.region.y - left.region.bottom == 1 for left, right in zip(panes, panes[1:])
-        )
+        assertions["pane_gaps"] = _pane_gaps(workspace, panes)
         table = workspace.query_one(ResultTable)
         for name, widget in (("editor", editor), ("result", table)):
             if widget.show_vertical_scrollbar:
@@ -567,6 +595,18 @@ def _assert_changed_controls(
 ) -> None:
     workspace = app.active_workspace
     editor = workspace.editor
+    ruler = workspace.query_one("#column-ruler")
+    assertions["column_ruler_aligned"] = (
+        ruler.region.bottom == editor.region.y and ruler.region.x == editor.region.x
+    )
+    assertions["column_ruler_single_row"] = ruler.region.height == 1
+    if scene_id == "editor-command-caret":
+        assertions["command_focused_with_editor_caret"] = app.focused is workspace.command_input
+    if scene_id == "column-ruler-scrolled":
+        assertions["ruler_scrolled"] = editor.scroll_x > 0
+    if scene_id == "help-movement-end":
+        message = workspace.result_message
+        assertions["help_scrolled_to_end"] = message.scroll_y == message.max_scroll_y > 0
     if scene_id == "find-replace":
         assertions["find_close_above_input"] = (
             workspace.query_one("#close-find").region.bottom

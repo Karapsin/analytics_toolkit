@@ -34,7 +34,7 @@ def test_session_validates_database_and_persists_preferences(
     session = _session(monkeypatch, tmp_path)
 
     assert session.database.connection_key == "gp"
-    assert session.set_run_binding("F8").run_binding == "f8"
+    assert session.set_run_binding("F9").run_binding == "f9"
     assert session.set_run_binding("reset").run_binding == "ctrl+enter"
     assert session.set_confirmation(enabled=False).confirm_mutations is False
     assert runtime.load_settings(tmp_path / "settings.json").settings == ExplorerSettings(

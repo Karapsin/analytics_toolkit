@@ -6,10 +6,11 @@ import re
 from dataclasses import dataclass
 from typing import cast
 
-import sqlparse
 from sqlglot import Dialect, exp, parse
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.tokens import Tokenizer
+
+from analytics_toolkit._sql_statements import split_statements, terminal_parts
 
 _SUPPORTED_DIALECTS = {"postgres", "trino", "clickhouse"}
 _SUPPORTED_GROUP_ORDER_FORMATS = {"expressions", "ordinal"}
@@ -38,6 +39,7 @@ _CASE_PRESERVED_TOKEN_TYPES = {
 class _SingleStatement:
     sql: str
     has_trailing_semicolon: bool
+    trailing_comments: str = ""
 
 
 @dataclass(frozen=True)
@@ -110,7 +112,10 @@ def format_sql(
         union_blank_lines=normalized_union_blank_lines,
         operation="format_sql",
     )
-    return _with_semicolon_policy(rendered, statement.has_trailing_semicolon)
+    return (
+        _with_semicolon_policy(rendered, statement.has_trailing_semicolon)
+        + statement.trailing_comments
+    )
 
 
 def rewrite_with_ctes(
@@ -227,8 +232,7 @@ def gp_rewrite_to_temp_tables(
     planner.validate_complete_rewrite(expression)
     if not planner.temp_tables:
         raise ValueError(
-            "gp_rewrite_to_temp_tables could not find CTEs or SELECT subqueries "
-            "to materialize."
+            "gp_rewrite_to_temp_tables could not find CTEs or SELECT subqueries to materialize."
         )
 
     rendered_final = _render_expression(
@@ -323,16 +327,12 @@ def _validate_rewrite_strategy(strategy: str) -> None:
 
 def _validate_cte_prefix(cte_prefix: str) -> None:
     if not cte_prefix or not _CTE_PREFIX_RE.match(cte_prefix):
-        raise ValueError(
-            "cte_prefix must be a non-empty unquoted SQL identifier prefix."
-        )
+        raise ValueError("cte_prefix must be a non-empty unquoted SQL identifier prefix.")
 
 
 def _validate_temp_prefix(temp_prefix: str) -> None:
     if not temp_prefix or not _CTE_PREFIX_RE.match(temp_prefix):
-        raise ValueError(
-            "temp_prefix must be a non-empty unquoted SQL identifier prefix."
-        )
+        raise ValueError("temp_prefix must be a non-empty unquoted SQL identifier prefix.")
 
 
 def _validate_temp_table_name(name: str, *, label: str) -> None:
@@ -347,20 +347,12 @@ def _split_one_statement(sql: str, *, operation: str) -> _SingleStatement:
     if not raw_sql:
         raise ValueError(f"{operation} expects a non-empty SQL statement.")
 
-    statements = [
-        statement.strip()
-        for statement in sqlparse.split(raw_sql)
-        if statement.strip().strip(";").strip()
-    ]
+    statements = split_statements(raw_sql)
     if len(statements) != 1:
         raise ValueError(f"{operation} expects exactly one SQL statement.")
-
-    statement = statements[0]
-    has_trailing_semicolon = statement.rstrip().endswith(";")
-    return _SingleStatement(
-        sql=statement.rstrip().rstrip(";").rstrip(),
-        has_trailing_semicolon=has_trailing_semicolon,
-    )
+    body, suffix, terminated = terminal_parts(raw_sql)
+    # A standalone comment fragment may follow a terminated statement.
+    return _SingleStatement(sql=body, has_trailing_semicolon=terminated, trailing_comments=suffix)
 
 
 def _parse_expression(sql: str, *, dialect: str | None, operation: str) -> exp.Expression:
@@ -404,6 +396,7 @@ def _render_expression(
         )
     except SqlglotError as exc:
         raise ValueError(f"{operation} could not render SQL: {exc}") from exc
+    baseline = rendered
     if leading_commas:
         rendered = _normalize_leading_comma_indentation(rendered, indent)
     if where_anchor in {"1=1", "true"}:
@@ -414,7 +407,19 @@ def _render_expression(
     rendered = _normalize_cte_separator_layout(rendered, cte_blank_lines)
     rendered = _normalize_union_separator_layout(rendered, union_blank_lines)
     rendered = _compact_single_star_select_layout(rendered)
-    return _apply_keyword_case(rendered, keyword_case, dialect=dialect)
+    rendered = _apply_keyword_case(rendered, keyword_case, dialect=dialect)
+    # Layout passes must not consume CTE delimiters or alter quoted/comment text.
+    # Compare parsed output to the generator output, after intentional rewrites.
+    try:
+        equivalent = parse(rendered, read=dialect) == parse(baseline, read=dialect)
+    except SqlglotError:
+        equivalent = False
+    if not equivalent:
+        rendered = _apply_keyword_case(baseline, keyword_case, dialect=dialect)
+        if parse(rendered, read=dialect) != parse(baseline, read=dialect):
+            message = f"{operation} could not preserve SQL semantics."
+            raise ValueError(message)
+    return rendered
 
 
 def _prepare_group_order_rendering(
@@ -448,12 +453,12 @@ def _select_ordinal_mapping(
     *,
     dialect: str | None,
 ) -> _SelectOrdinalMapping:
+    if any(projection.is_star for projection in select.expressions):
+        return _SelectOrdinalMapping(expression_positions={}, alias_positions={})
     expression_positions: dict[str, int] = {}
     alias_candidates: dict[str, int | None] = {}
     for position, projection in enumerate(select.expressions, start=1):
-        expression = (
-            projection.this if isinstance(projection, exp.Alias) else projection
-        )
+        expression = projection.this if isinstance(projection, exp.Alias) else projection
         expression_key = _expression_match_key(expression, dialect=dialect)
         if expression_key not in expression_positions:
             expression_positions[expression_key] = position
@@ -482,7 +487,12 @@ def _projection_alias_key(projection: exp.Expression) -> str | None:
     alias = projection.alias
     if not alias:
         return None
-    return alias.casefold()
+    identifier = projection.args.get("alias")
+    return (
+        ("quoted:" + alias)
+        if identifier is not None and identifier.args.get("quoted")
+        else alias.casefold()
+    )
 
 
 def _expression_match_key(
@@ -496,9 +506,7 @@ def _expression_match_key(
             unsupported_level=ErrorLevel.RAISE,
         )
     except SqlglotError as exc:
-        raise ValueError(
-            f"Could not render SQL expression for matching: {exc}"
-        ) from exc
+        raise ValueError(f"Could not render SQL expression for matching: {exc}") from exc
 
 
 def _replace_group_by_items(
@@ -513,11 +521,13 @@ def _replace_group_by_items(
 
     replaced_expressions: list[exp.Expression] = []
     for expression in group.expressions:
-        position = _select_position_for_clause_expression(
-            expression,
-            mapping=mapping,
-            dialect=dialect,
+        # GROUP BY can resolve a bare alias as an input column. Without a
+        # schema, rewriting that name is not provably equivalent.
+        position = mapping.expression_positions.get(
+            _expression_match_key(expression, dialect=dialect)
         )
+        if _is_numeric_ordinal(expression):
+            position = None
         replaced_expressions.append(
             exp.Literal.number(position) if position is not None else expression
         )
@@ -584,9 +594,10 @@ def _is_numeric_ordinal(expression: exp.Expression) -> bool:
 
 def _bare_identifier_key(expression: exp.Expression) -> str | None:
     if isinstance(expression, exp.Column) and not expression.table:
-        return expression.name.casefold()
+        return _bare_identifier_key(expression.this)
     if isinstance(expression, exp.Identifier):
-        return str(expression.this).casefold()
+        name = str(expression.this)
+        return "quoted:" + name if expression.args.get("quoted") else name.casefold()
     return None
 
 
@@ -730,9 +741,7 @@ def _normalize_where_clauses(expression: exp.Expression, where_anchor: str) -> N
             continue
         conditions = _flatten_and(condition)
         real_conditions = [
-            child
-            for child in conditions
-            if not _is_artificial_anchor_condition(child)
+            child for child in conditions if not _is_artificial_anchor_condition(child)
         ]
         if where_anchor == "first_condition":
             if real_conditions:
@@ -796,19 +805,13 @@ def _extract_supported_ctes(
         if isinstance(node, exp.Subquery) and isinstance(node.this, exp.Select)
     ]
     if not select_subqueries:
-        raise ValueError(
-            "rewrite_with_ctes could not find nested SELECT subqueries to extract."
-        )
+        raise ValueError("rewrite_with_ctes could not find nested SELECT subqueries to extract.")
 
     eligible = [
-        subquery
-        for subquery in select_subqueries
-        if _is_supported_derived_subquery(subquery)
+        subquery for subquery in select_subqueries if _is_supported_derived_subquery(subquery)
     ]
     if len(eligible) != len(select_subqueries):
-        raise ValueError(
-            "rewrite_with_ctes only supports SELECT subqueries in FROM or JOIN."
-        )
+        raise ValueError("rewrite_with_ctes only supports SELECT subqueries in FROM or JOIN.")
     _reject_nested_eligible_subqueries(eligible)
 
     used_cte_names = _existing_cte_names(expression)
@@ -836,9 +839,7 @@ def _extract_supported_ctes(
         isinstance(node, exp.Subquery) and isinstance(node.this, exp.Select)
         for node in expression.find_all(exp.Subquery)
     ):
-        raise ValueError(
-            "rewrite_with_ctes could not confidently rewrite all SELECT subqueries."
-        )
+        raise ValueError("rewrite_with_ctes could not confidently rewrite all SELECT subqueries.")
     return ctes
 
 
@@ -858,9 +859,7 @@ def _reject_nested_eligible_subqueries(subqueries: list[exp.Subquery]) -> None:
         parent = subquery.parent
         while parent is not None:
             if id(parent) in subquery_ids:
-                raise ValueError(
-                    "rewrite_with_ctes does not support nested derived subqueries."
-                )
+                raise ValueError("rewrite_with_ctes does not support nested derived subqueries.")
             parent = parent.parent
 
 
@@ -868,11 +867,7 @@ def _existing_cte_names(expression: exp.Expression) -> set[str]:
     with_expression = expression.args.get(_with_arg_name())
     if with_expression is None:
         return set()
-    return {
-        cte.alias_or_name
-        for cte in with_expression.expressions
-        if cte.alias_or_name
-    }
+    return {cte.alias_or_name for cte in with_expression.expressions if cte.alias_or_name}
 
 
 def _next_cte_name(
@@ -965,9 +960,7 @@ class _GpTempTablePlanner:
         temp_names = self._temp_name_keys()
         for select in expression.find_all(exp.Select):
             if select.args.get(_with_arg_name()) is not None:
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables could not remove every WITH clause."
-                )
+                raise ValueError("gp_rewrite_to_temp_tables could not remove every WITH clause.")
             if id(select) != id(expression) and not _is_temp_reference_select(
                 select,
                 temp_names=temp_names,
@@ -1003,20 +996,14 @@ class _GpTempTablePlanner:
         if with_expression is None:
             return
         if with_expression.args.get("recursive"):
-            raise ValueError(
-                "gp_rewrite_to_temp_tables does not support recursive CTEs."
-            )
+            raise ValueError("gp_rewrite_to_temp_tables does not support recursive CTEs.")
 
         for cte in list(with_expression.expressions):
             if not isinstance(cte, exp.CTE) or not isinstance(cte.this, exp.Query):
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables only supports SELECT CTEs."
-                )
+                raise ValueError("gp_rewrite_to_temp_tables only supports SELECT CTEs.")
             alias = cte.args.get("alias")
             if _table_alias_has_columns(alias):
-                raise ValueError(
-                    "gp_rewrite_to_temp_tables does not support CTE column aliases."
-                )
+                raise ValueError("gp_rewrite_to_temp_tables does not support CTE column aliases.")
             name = cte.alias_or_name
             self._reserve_temp_name(name, label="CTE alias")
             cte_query = cte.this.copy()
@@ -1064,8 +1051,7 @@ class _GpTempTablePlanner:
             alias = subquery.args.get("alias")
             if _table_alias_has_columns(alias):
                 raise ValueError(
-                    "gp_rewrite_to_temp_tables does not support derived-table "
-                    "column aliases."
+                    "gp_rewrite_to_temp_tables does not support derived-table column aliases."
                 )
             name = subquery.alias_or_name
             self._reserve_temp_name(name, label="derived-table alias")
@@ -1097,10 +1083,7 @@ class _GpTempTablePlanner:
         _validate_temp_table_name(name, label=label)
         key = name.casefold()
         if key in self._used_temp_names:
-            raise ValueError(
-                "gp_rewrite_to_temp_tables found duplicate temp table name "
-                f"{name!r}."
-            )
+            raise ValueError(f"gp_rewrite_to_temp_tables found duplicate temp table name {name!r}.")
         self._used_temp_names.add(key)
 
     def _next_generated_temp_name(self) -> str:
@@ -1123,8 +1106,7 @@ class _GpTempTablePlanner:
                     continue
                 if qualifier.casefold() not in local_names:
                     raise ValueError(
-                        "gp_rewrite_to_temp_tables does not support correlated "
-                        "subqueries."
+                        "gp_rewrite_to_temp_tables does not support correlated subqueries."
                     )
 
     def _distributed_columns(
@@ -1188,9 +1170,7 @@ class _GpTempTablePlanner:
                 f"({', '.join(distributed_columns)})"
             )
         else:
-            distribution = (
-                f"{self._keyword('distributed')} {self._keyword('randomly')}"
-            )
+            distribution = f"{self._keyword('distributed')} {self._keyword('randomly')}"
         return "\n".join(
             [
                 (
@@ -1336,8 +1316,7 @@ def _column_name_for_temp(
         return column_expression.sql(dialect=dialect)
     except SqlglotError as exc:
         raise ValueError(
-            "gp_rewrite_to_temp_tables could not render distribution column: "
-            f"{exc}"
+            f"gp_rewrite_to_temp_tables could not render distribution column: {exc}"
         ) from exc
 
 
@@ -1351,9 +1330,7 @@ def _apply_keyword_case(sql: str, keyword_case: str, *, dialect: str | None) -> 
         return sql
 
     tokenizer_class = (
-        Dialect.get_or_raise(dialect).tokenizer_class
-        if dialect is not None
-        else Tokenizer
+        Dialect.get_or_raise(dialect).tokenizer_class if dialect is not None else Tokenizer
     )
     parts: list[str] = []
     cursor = 0
@@ -1372,9 +1349,8 @@ def _should_case_token(token: object) -> bool:
     token_type = getattr(token, "token_type", None)
     token_type_name = getattr(token_type, "name", "")
     token_text = getattr(token, "text", "")
-    return (
-        token_type_name not in _CASE_PRESERVED_TOKEN_TYPES
-        and any(character.isalpha() for character in token_text)
+    return token_type_name not in _CASE_PRESERVED_TOKEN_TYPES and any(
+        character.isalpha() for character in token_text
     )
 
 
@@ -1415,16 +1391,12 @@ def _normalize_join_condition_layout(sql: str) -> str:
                 normalized_lines.append(line)
                 continue
 
-            join_prefix = previous_line[
-                : len(previous_line) - len(previous_line.lstrip(" "))
-            ]
+            join_prefix = previous_line[: len(previous_line) - len(previous_line.lstrip(" "))]
             condition_prefix = f"{join_prefix}  "
             and_prefix = f"{join_prefix} "
             for condition_line in _split_join_condition_line(stripped):
                 prefix = (
-                    and_prefix
-                    if _starts_join_and_condition(condition_line)
-                    else condition_prefix
+                    and_prefix if _starts_join_and_condition(condition_line) else condition_prefix
                 )
                 normalized_lines.append(f"{prefix}{condition_line}")
             continue
@@ -1443,9 +1415,7 @@ def _normalize_join_condition_layout(sql: str) -> str:
             normalized_lines.append(line)
             continue
 
-        previous_prefix = previous_line[
-            : len(previous_line) - len(previous_line.lstrip(" "))
-        ]
+        previous_prefix = previous_line[: len(previous_line) - len(previous_line.lstrip(" "))]
         if _starts_join_condition(previous_stripped):
             previous_prefix = previous_prefix[:-1]
         normalized_lines.append(f"{previous_prefix}{stripped}")
@@ -1515,10 +1485,7 @@ def _is_single_star_select_line(line: str) -> bool:
 
 
 def _is_single_star_projection(projection_sql: str) -> bool:
-    return (
-        projection_sql == "*"
-        or re.match(r"^[^\s,()]+\.\*$", projection_sql) is not None
-    )
+    return projection_sql == "*" or re.match(r"^[^\s,()]+\.\*$", projection_sql) is not None
 
 
 def _split_join_condition_line(stripped_line: str) -> list[str]:
@@ -1558,14 +1525,17 @@ def _previous_non_empty_line(lines: list[str], index: int) -> str | None:
 
 
 def _is_join_line(stripped_line: str) -> bool:
-    return re.match(
-        r"^(?:"
-        r"(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?|"
-        r"INNER|CROSS|SEMI|ANTI|ASOF|NATURAL"
-        r")?\s*JOIN\b",
-        stripped_line,
-        flags=re.IGNORECASE,
-    ) is not None
+    return (
+        re.match(
+            r"^(?:"
+            r"(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?|"
+            r"INNER|CROSS|SEMI|ANTI|ASOF|NATURAL"
+            r")?\s*JOIN\b",
+            stripped_line,
+            flags=re.IGNORECASE,
+        )
+        is not None
+    )
 
 
 def _normalize_where_anchor_layout(sql: str, where_anchor: str) -> str:
@@ -1583,9 +1553,7 @@ def _normalize_where_anchor_layout(sql: str, where_anchor: str) -> str:
 
         condition_line = lines[index + 1]
         condition_text = condition_line.strip()
-        if condition_text != anchor_sql and not condition_text.startswith(
-            f"{anchor_sql} AND "
-        ):
+        if condition_text != anchor_sql and not condition_text.startswith(f"{anchor_sql} AND "):
             normalized_lines.append(line)
             index += 1
             continue

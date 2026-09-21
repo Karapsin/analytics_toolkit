@@ -68,10 +68,8 @@ def test_visible_find_replace_panel_owns_vertical_arrows() -> None:
                 assert application.focused.id == control_id
 
             editor.focus()
-            await pilot.press("down")
-            assert application.focused.id == "find-pattern"
-            await pilot.press("up")
-            assert application.focused.id == "close-find"
+            await pilot.press("down", "up")
+            assert application.focused is editor
             await pilot.press("escape")
             application.disable_find_navigation()
             assert application.focused is editor
@@ -175,7 +173,7 @@ def test_escape_toggles_editor_command_and_skips_results() -> None:
             assert application.focused is command
             await pilot.press("escape")
             assert application.focused is editor
-            await pilot.press("down")
+            await pilot.press("f6")
             assert application.focused is table
             await pilot.press("escape")
             assert application.focused is command
@@ -209,7 +207,7 @@ def test_escape_overlays_consume_it_first() -> None:
                 SimpleNamespace(option_list=menu, stop=lambda: stopped.append(True))
             )
             assert stopped == [True]
-            assert editor.text == "left join"
+            assert editor.text == "left join "
 
             editor.text = "L"
             editor.cursor_location = (0, 1)

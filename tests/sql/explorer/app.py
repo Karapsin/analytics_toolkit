@@ -138,7 +138,7 @@ def test_mount_has_no_tab_pane_cycle() -> None:
     asyncio.run(exercise())
 
 
-def test_vertical_arrows_cross_only_workspace_boundaries() -> None:
+def test_vertical_arrows_stay_inside_focused_pane() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test(size=(100, 35)) as pilot:
@@ -147,37 +147,19 @@ def test_vertical_arrows_cross_only_workspace_boundaries() -> None:
             editor.text = "one\ntwo"
             application.show_dataframe(pd.DataFrame({"value": [1, 2]}))
             table = application.query_one(ResultTable)
-
-            assert editor.show_line_numbers is True
             editor.focus()
-            editor.cursor_location = (0, 0)
-            await pilot.press("up")
-            assert application.focused is command
-
-            await pilot.press("up")
-            assert application.focused is table
-            await pilot.press("up")
-            assert table.selected_header == "value"
-            await pilot.press("up")
+            await pilot.press("up", "down", "down", "down")
             assert application.focused is editor
-
-            await pilot.press("down")
             assert editor.cursor_location[0] == 1
-            assert application.focused is editor
-            await pilot.press("up")
-            assert editor.cursor_location[0] == 0
-            await pilot.press("down")
-            await pilot.press("down")
+            await pilot.press("f6")
             assert application.focused is table
-
-            await pilot.press("down")
-            assert table.cursor_row == 1
-            await pilot.press("up")
-            assert table.cursor_row == 0
-            await pilot.press("down")
-            await pilot.press("down")
+            await pilot.press("up", "up", "down", "down", "down")
+            assert application.focused is table
+            await pilot.press("f6")
             assert application.focused is command
-            await pilot.press("down")
+            await pilot.press("up", "down")
+            assert application.focused is command
+            await pilot.press("f6")
             assert application.focused is editor
 
     asyncio.run(exercise())
@@ -632,10 +614,12 @@ def test_remaining_app_navigation_and_command_branches(
             application.show_message("error")
             message = application.query_one(ResultMessage)
             message.focus()
-            await pilot.press("up")
+            await pilot.press("up", "down")
+            assert application.focused is message
+            await pilot.press("shift+f6")
             assert isinstance(application.focused, SqlEditor)
             message.focus()
-            await pilot.press("down")
+            await pilot.press("f6")
             assert application.focused is command
 
     asyncio.run(exercise())

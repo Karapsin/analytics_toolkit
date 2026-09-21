@@ -85,7 +85,8 @@
         "#notice",
         "#run-query",
         "#command-row",
-        "#command-input"
+        "#command-input",
+        "#column-ruler"
       ]
     },
     {
@@ -94,7 +95,8 @@
         "#tab-strip",
         "#tab-1",
         "#query-editor",
-        "#editor-status"
+        "#editor-status",
+        "#column-ruler"
       ]
     },
     {
@@ -102,7 +104,8 @@
       "required_elements": [
         "#query-editor",
         "#completion-menu",
-        "#editor-status"
+        "#editor-status",
+        "#column-ruler"
       ]
     },
     {
@@ -118,7 +121,8 @@
         "#replace-actions",
         "#replace-current",
         "#replace-all",
-        "#notice"
+        "#notice",
+        "#column-ruler"
       ]
     },
     {
@@ -143,7 +147,8 @@
         "#query-rows",
         "#query-elapsed",
         "#close-results",
-        "#result-title"
+        "#result-title",
+        "#column-ruler"
       ]
     },
     {
@@ -156,7 +161,8 @@
         "#query-elapsed",
         "#notice",
         "#close-results",
-        "#result-title"
+        "#result-title",
+        "#column-ruler"
       ]
     },
     {
@@ -237,7 +243,8 @@
         "#tab-strip",
         "#tab-2",
         "#query-editor",
-        "#command-input"
+        "#command-input",
+        "#column-ruler"
       ]
     },
     {
@@ -246,7 +253,8 @@
         "#query-editor",
         "#editor-status",
         "#command-input",
-        "#notice"
+        "#notice",
+        "#column-ruler"
       ]
     },
     {
@@ -262,14 +270,16 @@
       "id": "completion-narrowed",
       "required_elements": [
         "#query-editor",
-        "#completion-menu"
+        "#completion-menu",
+        "#column-ruler"
       ]
     },
     {
       "id": "completion-columns",
       "required_elements": [
         "#query-editor",
-        "#completion-menu"
+        "#completion-menu",
+        "#column-ruler"
       ]
     },
     {
@@ -375,7 +385,85 @@
       "required_elements": [
         "#query-editor",
         "#completion-menu",
-        "#editor-status"
+        "#editor-status",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "keyboard-multicursor",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "results-vertical",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#result-table",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "results-resized",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#result-table",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "help-shortcuts",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#result-message",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "help-movement",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#command-input",
+        "#result-message",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "help-movement-end",
+      "required_elements": [
+        "#query-editor",
+        "#editor-status",
+        "#result-message",
+        "#command-input",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "editor-command-caret",
+      "required_elements": [
+        "#query-editor",
+        "#column-ruler",
+        "#editor-status",
+        "#command-input"
+      ]
+    },
+    {
+      "id": "column-ruler-scrolled",
+      "required_elements": [
+        "#query-editor",
+        "#column-ruler",
+        "#editor-status",
+        "#command-input"
       ]
     }
   ]

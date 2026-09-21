@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 from analytics_toolkit.sql_explorer import app as app_module
-from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplorerApp
+from analytics_toolkit.sql_explorer.app import ResultTable, SqlExplorerApp
 from analytics_toolkit.sql_explorer.cells import copy_cell
 from rich.style import Style
 from textual import events
@@ -112,7 +112,7 @@ def test_keyboard_navigation_selects_and_moves_result_headers() -> None:
             assert table.selected_header is None
             assert table.cursor_coordinate == Coordinate(0, 1)
             await pilot.press("up", "up")
-            assert application.focused is application.query_one(SqlEditor)
+            assert application.focused is table
 
     asyncio.run(exercise())
 
@@ -128,7 +128,7 @@ def test_empty_results_keep_headers_selectable_and_close_results() -> None:
             await pilot.press("up")
             assert table.selected_header == "first"
             await pilot.press("down")
-            assert application.focused is application.query_one("#command-input")
+            assert application.focused is table
 
             table.action_close_results()
             assert application.results_open is False
@@ -136,7 +136,7 @@ def test_empty_results_keep_headers_selectable_and_close_results() -> None:
             application.show_dataframe(pd.DataFrame())
             table.focus()
             await pilot.press("up")
-            assert application.focused is application.query_one(SqlEditor)
+            assert application.focused is table
 
     asyncio.run(exercise())
 

@@ -93,10 +93,8 @@ class ResultTable(DataTable[Any]):
             return
         if self.selected_header is not None:
             self.clear_rectangular_selection()
-            cast("SqlExplorerApp", self.app).action_focus_previous_pane()
             return
         if not self.columns:
-            cast("SqlExplorerApp", self.app).action_focus_previous_pane()
             return
         if self.row_count == 0 or self.cursor_row == 0:
             column = self.cursor_column
@@ -114,10 +112,9 @@ class ResultTable(DataTable[Any]):
             if self.row_count:
                 self.set_cell_selection(0, column)
             else:
-                cast("SqlExplorerApp", self.app).action_focus_next_pane()
+                return
             return
         if self.row_count == 0 or self.cursor_row >= self.row_count - 1:
-            cast("SqlExplorerApp", self.app).action_focus_next_pane()
             return
         self.clear_rectangular_selection()
         super().action_cursor_down()

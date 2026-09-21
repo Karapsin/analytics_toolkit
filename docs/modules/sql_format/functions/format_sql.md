@@ -47,7 +47,9 @@ where 1=1
 ## Notes
 
 - Empty SQL, multi-statement SQL, and SQL that cannot be parsed are rejected with `ValueError`
-- Trailing semicolons are preserved only when the single input statement ends with one
+- Trailing semicolons are preserved before optional trailing line/block comments
+- CTE structure is preserved, including nested and supported recursive CTEs; layout passes are checked against the generated SQL structure
+- GROUP BY aliases that could name input columns remain unchanged; wildcard projections disable ordinal conversion, and quoted ORDER BY aliases retain case-sensitive identity
 - `where_anchor="preserve"` leaves parsed WHERE conditions unchanged instead of adding or removing anchors
 - Existing numeric `GROUP BY` and `ORDER BY` ordinals are preserved
 - Unmatched grouping or sorting items stay as rendered expressions instead of being guessed

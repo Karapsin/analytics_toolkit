@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-import sqlparse
-
+from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
@@ -233,10 +232,10 @@ def _build_read_sql_options(
         raise InvalidSqlInputError(message)
     validate_retry_options(retry_cnt, timeout_increment)
 
-    statements = [statement.strip() for statement in sqlparse.split(sql) if statement.strip()]
+    statements = split_statements(sql)
     if len(statements) != 1:
         raise InvalidSqlInputError("read_sql expects exactly one SQL statement.")
-    sql = apply_query_label(statements[0].rstrip(";").rstrip(), query_label)
+    sql = apply_query_label(statements[0], query_label)
     sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ReadSqlOptions(
         connection_key=connection_key,
@@ -255,7 +254,7 @@ def _build_read_sql_options(
 
 def _maybe_print_query(query: str, print_queries: bool) -> None:
     if print_queries:
-        statements = [statement.strip() for statement in sqlparse.split(query) if statement.strip()]
+        statements = split_statements(query)
         statement_to_print = statements[0] if statements else query.strip()
         time_print(f"Executing query:\n{statement_to_print}")
 

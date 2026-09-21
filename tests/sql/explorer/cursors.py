@@ -34,7 +34,7 @@ def test_move_commands_use_one_based_line_starts_and_clear_extra_cursors() -> No
             assert application.focused is command
 
             editor.cursor_location = (1, 2)
-            command.value = "mvs 1"
+            command.value = "mvs 1 1"
             command.focus()
             await pilot.press("enter")
             assert editor.selection == Selection((1, 2), (0, 0))

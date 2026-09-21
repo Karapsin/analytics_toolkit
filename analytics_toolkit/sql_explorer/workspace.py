@@ -11,6 +11,8 @@ from textual.css.query import NoMatches
 from textual.widgets import Button, Input, OptionList, Static
 
 from .editor import SqlEditor
+from .results_layout import ResultsSeparator, ResultsSplit
+from .ruler import ColumnRuler
 from .status import QuerySummaryBar
 from .widgets import CommandInput, CompletionMenu, FindReplaceBar, ResultMessage, ResultTable
 
@@ -58,6 +60,8 @@ class SqlExplorerWorkspace(Vertical):
         self.busy = False
         self.cancelling = False
         self.results_open = False
+        self.results_orientation = "horizontal"
+        self.result_sizes: dict[str, int | None] = {"horizontal": None, "vertical": None}
         self.query_state: WorkspaceQueryState = "ready"
         self.running_job_id: int | None = None
         self.operation_database: DatabaseSelection | None = None
@@ -80,28 +84,70 @@ class SqlExplorerWorkspace(Vertical):
         self.last_run_result: ExplorerRunResult | None = None
 
     def compose(self) -> ComposeResult:
-        with QueryPane(classes="query-pane"):
-            yield SqlEditor(
-                id="query-editor",
-                show_line_numbers=True,
-                soft_wrap=False,
-            )
-            yield FindReplaceBar(id="find-replace-bar")
-            yield CompletionMenu(id="completion-menu", wrap=False)
-            yield Static("SQL  Ln 1, Col 1", id="editor-status", markup=False)
-        with Vertical(classes="result-pane"):
-            with Horizontal(classes="results-header"):
-                yield Static("Query output", id="result-title", markup=False)
-                yield Button(
-                    "\u00d7", id="close-results", classes="close-results", tooltip="Close results"
+        with ResultsSplit(classes="results-split"):
+            with QueryPane(classes="query-pane"):
+                editor = SqlEditor(
+                    id="query-editor",
+                    show_line_numbers=True,
+                    soft_wrap=False,
                 )
-            yield ResultTable(id="result-table", cursor_type="cell", zebra_stripes=True)
-            yield ResultMessage("", id="result-message", markup=False)
+                yield ColumnRuler(editor)
+                yield editor
+                yield FindReplaceBar(id="find-replace-bar")
+                yield CompletionMenu(id="completion-menu", wrap=False)
+                yield Static("SQL  Ln 1, Col 1", id="editor-status", markup=False)
+            yield ResultsSeparator(classes="results-separator")
+            with Vertical(classes="result-pane"):
+                with Horizontal(classes="results-header"):
+                    yield Static("Query output", id="result-title", markup=False)
+                    yield Button(
+                        "\u00d7",
+                        id="close-results",
+                        classes="close-results",
+                        tooltip="Close results",
+                    )
+                yield ResultTable(id="result-table", cursor_type="cell", zebra_stripes=True)
+                yield ResultMessage("", id="result-message", markup=False)
         with CommandPanel(classes="command-panel"):
             yield QuerySummaryBar(id="query-summary")
             with Horizontal(id="command-row"):
                 yield OptionList(id="command-completion", wrap=False)
                 yield CommandInput(placeholder=": command", id="command-input")
+
+    def apply_results_layout(self) -> None:
+        if not self.is_mounted:
+            return
+        split = self.query_one(ResultsSplit)
+        separator = self.query_one(ResultsSeparator)
+        editor_pane = self.query_one(".query-pane")
+        results = self.query_one(".result-pane")
+        vertical = self.results_orientation == "vertical"
+        split.styles.layout = "horizontal" if vertical else "vertical"
+        separator.display = self.results_open
+        separator.styles.width = 1 if vertical else "1fr"
+        separator.styles.height = "1fr" if vertical else 1
+        editor_pane.styles.width = "1fr"
+        editor_pane.styles.height = "1fr"
+        results.styles.width = "1fr"
+        results.styles.height = "1fr"
+        if not self.results_open:
+            return
+        available = max(0, (split.size.width if vertical else split.size.height) - 1)
+        minimum = min(24 if vertical else 6, available // 2)
+        editor_minimum = (
+            minimum
+            if vertical
+            else min(available - minimum, self.query_one(ColumnRuler).size.height + 6)
+        )
+        requested = self.result_sizes[self.results_orientation]
+        size = max(
+            minimum,
+            min(available - editor_minimum, requested if requested is not None else available // 2),
+        )
+        if vertical:
+            results.styles.width = size
+        else:
+            results.styles.height = size
 
     def on_mount(self) -> None:
         if self.tab_id != "1":

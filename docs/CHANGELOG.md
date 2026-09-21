@@ -10,6 +10,10 @@ Generated from package version bumps and recent commit history.
 - Fix large nullable-string CUPED group selection and distinguish unavailable-statistic diagnostics.
 - Support setup scripts in create_table SQL sources with one-time staged insertion and owned-stage cleanup.
 - Drain queued SQL Explorer scene events before visual unit-test teardown.
+- Improve SQL Explorer keyboard editing, navigation, command history and resizable results; optimize metadata completion and preserve trailing comments and CTE formatting.
+- Add SQL Explorer delete command, persistent editor caret, and an aligned active-column ruler.
+- Allow absolute mv commands to create missing rows with a 100-line limit per invocation.
+- Show a compact content-sized column ruler and let mv add at most 10 missing columns per command.
 
 ## 1.3.11.19 - 2026-09-07
 

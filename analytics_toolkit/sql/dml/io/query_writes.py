@@ -6,6 +6,8 @@ from typing import Any, cast
 
 import sqlparse
 
+from analytics_toolkit._sql_statements import join_statements
+
 from ...backends.utils import extract_row_count
 from ...connection.errors import InvalidSqlInputError
 from ...core.identifiers import TableIdentifier
@@ -246,7 +248,7 @@ def _validate_target_table(table_name: str, backend: str) -> None:
 
 
 def _join_statements(statements: list[str]) -> str:
-    return ";\n".join(statement.rstrip(";") for statement in statements)
+    return join_statements([statement.rstrip(";") for statement in statements])
 
 
 __all__ = ["execute_insert", "insert"]

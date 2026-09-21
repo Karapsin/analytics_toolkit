@@ -5,56 +5,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from .editor_actions import positive_count
 from .errors import SqlExplorerConfigurationError
 from .formatting import format_editor
+from .help_text import HELP_TEXT
+from .movement import move_command
 
-HELP_TEXT = """Commands
-  exit! / q!                  exit without the save dialog
-  wq                          save changed tabs and exit
-  run                         execute the editor
-  format                      format selections or the complete SQL editor
-  create_table                create a table from columns or source SQL
-  open                        open remote-host SQL file navigation
-  save                        save the opened SQL file
-  cancel                      cancel the active explorer query
-  mode [exploratory|navigation]
-                              show or enter a mode
-  mv LINE_NUMBER              move to the one-based line start
-  mvs LINE_NUMBER             select to the one-based line start
-  cp                          copy selections or the editor buffer
-  pst                         paste at every editor cursor
-  db DB_KEY                   switch the configured connection
-  connections                 choose a .connections file and start a fresh workspace
-  shortcut KEY|reset          change the primary run shortcut
-  confirm on|off|toggle       control mutation confirmation
-  clear query|results|all     clear workspace content
-  to_excel                    save the current result as an Excel workbook
-  to_csv                      save the current result as CSV
-  help                        show this help
-  exit | quit | q             close the explorer
-
-Keys
-  Ctrl+O                      open remote-host SQL file navigation
-  Ctrl+S                      save, creating a file for an untitled buffer
-  Ctrl+N                      name and create a blank SQL file
-  Ctrl+T / Ctrl+W             create / close a workspace tab
-  Ctrl+PageDown / PageUp      select the next / previous tab
-  Cmd/Fn-like modifiers       share Ctrl shortcuts when forwarded by the terminal
-  Up / Down                   cross pane boundaries or navigate Find/Replace
-  Left / Right                choose a visible confirmation action
-  Shift+Up / Shift+Down       add or remove editor cursors
-  Ctrl+Enter                  default run shortcut
-  Fn+Enter                    run when reported as keypad Enter
-  Cmd+Enter                   run when forwarded by a macOS terminal
-  F5                          permanent run fallback
-  Ctrl+F                      find and replace in the editor
-  Delete                      close a focused result/error pane
-  Escape                      close overlays, collapse cursors, or toggle editor/command
-  STOP                        request cancellation of the active query
-  Ctrl+C                      copy editor or result selection
-  Shift+Tab                   request columns with an empty prefix, else unindent
-  Tab / Ctrl+Space            complete SQL or commands (Tab falls back to indent)
-"""
+__all__ = ["HELP_TEXT", "SqlExplorerCursorCommandsMixin"]
+_RESULTS_ARGUMENT_COUNT = 2
 
 
 class SqlExplorerCursorCommandsMixin:
@@ -73,37 +31,28 @@ class SqlExplorerCursorCommandsMixin:
             return
         app._set_notice("Formatted SQL." if changed else "SQL unchanged.", workspace)
 
-    def _command_line_number(self, command: str, arguments: list[str]) -> int | None:
+    def _command_navigation(self, command: str, arguments: list[str]) -> None:
+
         app = cast("Any", self)
-        if len(arguments) != 1:
-            app.show_error(SqlExplorerConfigurationError(f"Usage: {command} LINE_NUMBER"))
-            return None
         try:
-            line_number = int(arguments[0])
-        except ValueError:
-            app.show_error(SqlExplorerConfigurationError("Line number must be a positive integer."))
-            return None
-        editor = app.active_workspace.editor
-        if line_number < 1 or line_number > editor.document.line_count:
-            app.show_error(
-                SqlExplorerConfigurationError(
-                    f"Line number must be between 1 and {editor.document.line_count}."
-                )
-            )
-            return None
-        return line_number
+            move_command(app.active_workspace.editor, command, arguments)
+        except ValueError as exc:
+            app.show_error(SqlExplorerConfigurationError(str(exc)))
+            return
+        app._update_editor_status()
 
     def _command_move(self, arguments: list[str]) -> None:
-        app = cast("Any", self)
-        if (line_number := app._command_line_number("mv", arguments)) is not None:
-            app.active_workspace.editor.move_to_line_start(line_number)
-            app._set_notice(f"Moved to line {line_number}.")
+        self._command_navigation("mv", arguments)
 
     def _command_move_select(self, arguments: list[str]) -> None:
+        self._command_navigation("mvs", arguments)
+
+    def _command_delete(self, arguments: list[str]) -> None:
         app = cast("Any", self)
-        if (line_number := app._command_line_number("mvs", arguments)) is not None:
-            app.active_workspace.editor.select_to_line_start(line_number)
-            app._set_notice(f"Selected to line {line_number}.")
+        if arguments:
+            app.show_error(SqlExplorerConfigurationError("Usage: del"))
+            return
+        app.active_workspace.editor.action_delete_right()
 
     def _command_copy(self, arguments: list[str]) -> None:
         app = cast("Any", self)
@@ -128,3 +77,70 @@ class SqlExplorerCursorCommandsMixin:
             app._set_notice(f"Pasted at {editor.cursor_count} cursor(s).")
         else:
             app._set_notice("Clipboard is empty.")
+
+    def action_toggle_keyboard(self) -> None:
+        self._command_keyboard(["toggle"])
+
+    def _command_keyboard(self, arguments: list[str]) -> None:
+        app = cast("Any", self)
+        if arguments not in ([], ["on"], ["off"], ["toggle"]):
+            app.show_error(SqlExplorerConfigurationError("Usage: keyboard [on|off|toggle]"))
+            return
+        if arguments:
+            app.keyboard_mode = (
+                not app.keyboard_mode if arguments == ["toggle"] else arguments == ["on"]
+            )
+            if app.keyboard_mode:
+                app.capture_mouse(None)
+            for workspace in app._workspaces.values():
+                app._update_editor_status(workspace)
+        app._set_notice(f"Keyboard mode: {'on' if app.keyboard_mode else 'off'}.")
+
+    def _command_results(self, arguments: list[str]) -> None:
+
+        app = cast("Any", self)
+
+        workspace = cast("Any", self).active_workspace
+        if arguments == ["switch"]:
+            workspace.results_orientation = (
+                "vertical" if workspace.results_orientation == "horizontal" else "horizontal"
+            )
+        elif len(arguments) == _RESULTS_ARGUMENT_COUNT and arguments[0] in {"expand", "shrink"}:
+            try:
+                count = positive_count(arguments[1])
+            except ValueError as exc:
+                app.show_error(SqlExplorerConfigurationError(str(exc)))
+                return
+            pane = workspace.query_one(".result-pane")
+            size = (
+                pane.region.width
+                if workspace.results_orientation == "vertical"
+                else pane.region.height
+            )
+            base = (
+                size
+                if workspace.results_open
+                else workspace.result_sizes[workspace.results_orientation]
+            )
+            if base is None:
+                split = workspace.query_one(".results-split")
+                base = (
+                    (
+                        split.size.width
+                        if workspace.results_orientation == "vertical"
+                        else split.size.height
+                    )
+                    - 1
+                ) // 2
+            workspace.result_sizes[workspace.results_orientation] = base + count * (
+                1 if arguments[0] == "expand" else -1
+            )
+        else:
+            app.show_error(
+                SqlExplorerConfigurationError(
+                    "Usage: results switch | results expand N | results shrink N"
+                )
+            )
+            return
+        workspace.apply_results_layout()
+        app._set_notice(f"Results layout: {workspace.results_orientation}.")

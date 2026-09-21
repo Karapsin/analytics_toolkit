@@ -17,6 +17,7 @@ from .completion import (
     keyword_suggestions,
     parse_completion_context,
 )
+from .editor_actions import completion_text
 
 if TYPE_CHECKING:
     from .workspace import SqlExplorerWorkspace
@@ -347,6 +348,8 @@ class SqlExplorerCompletionCommandsMixin:
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
         end = app._offset_to_location(editor.text, context.replacement_end)
+
+        suggestion = completion_text(suggestion, editor.text[context.replacement_end :])
         result = editor.replace(suggestion, start, end, maintain_selection_offset=False)
         editor.cursor_location = result.end_location
 

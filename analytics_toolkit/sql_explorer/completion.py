@@ -6,11 +6,19 @@ import re
 from collections import deque
 from dataclasses import dataclass, field
 from threading import Event, Lock, Thread
+from time import monotonic
 from typing import TYPE_CHECKING, Final, Literal, Protocol
 from uuid import uuid4
 
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.metadata import (
+    GP_PARTITION_CAPABILITIES_QUERY,
+    build_ch_completion_query,
+    build_gp_completion_query,
+    build_trino_completion_query,
+)
 from analytics_toolkit.sql.backends.utils import sql_literal
+from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.ddl.identifiers import quote_identifier
 from analytics_toolkit.sql.execution.cancellation import (
     AsyncSqlCancelled,
@@ -47,6 +55,7 @@ KEYWORDS: Final[tuple[str, ...]] = (
     "create table",
 )
 MIN_TABLE_PREFIX_LENGTH: Final[int] = 6
+METADATA_CACHE_SECONDS: Final[int] = 60
 _COLUMN_KEYWORDS: Final = frozenset(" ".join(KEYWORDS).split()) | {
     "distinct",
     "all",
@@ -105,7 +114,7 @@ class CompletionRequest:
     @property
     def scope(
         self,
-    ) -> tuple[str, str, CompletionKind, str | None, str | None, str | None, str]:
+    ) -> tuple[object, ...]:
         """Cache scope; the typed prefix is intentionally filtered locally."""
         return (
             self.connection_key,
@@ -118,9 +127,13 @@ class CompletionRequest:
         )
 
     @property
+    def cache_key(self) -> tuple[object, ...]:
+        return (*self.scope, self.prefix.casefold() if self.kind == "table" else "")
+
+    @property
     def identity(
         self,
-    ) -> tuple[str, str, CompletionKind, str | None, str | None, str | None, str, str]:
+    ) -> tuple[object, ...]:
         return (*self.scope, self.prefix.casefold())
 
 
@@ -148,6 +161,7 @@ class CompletionResult:
 class CompletionCacheEntry:
     kind: CompletionKind
     values: tuple[str, ...]
+    created_at: float = field(default_factory=monotonic)
 
 
 @dataclass(frozen=True)
@@ -214,6 +228,9 @@ def _table_condition(prefix: str) -> str:
 
 
 class GreenplumCompletionProvider:
+    def __init__(self) -> None:
+        self._partition_catalog: str | None = None
+
     def list_tables(
         self,
         *,
@@ -223,12 +240,16 @@ class GreenplumCompletionProvider:
         catalog: str | None = None,
     ) -> tuple[str, ...]:
         del catalog
-        frame = sql.show_tables(
-            connection_key,
-            schema=schema,
-            conditions=_table_condition(prefix),
+        if self._partition_catalog is None:
+            values = _first_column_values(
+                _metadata_frame(connection_key, GP_PARTITION_CAPABILITIES_QUERY)
+            )
+            self._partition_catalog = values[0] if values else "none"
+        return _first_column_values(
+            _metadata_frame(
+                connection_key, build_gp_completion_query(schema, prefix, self._partition_catalog)
+            )
         )
-        return normalize_completion_values(frame["table_name"].tolist())
 
     def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
         del connection_key
@@ -259,12 +280,9 @@ class ClickHouseCompletionProvider:
         catalog: str | None = None,
     ) -> tuple[str, ...]:
         del catalog
-        frame = sql.show_tables(
-            connection_key,
-            schema=schema,
-            conditions=_table_condition(prefix),
+        return _first_column_values(
+            _metadata_frame(connection_key, build_ch_completion_query(schema, prefix))
         )
-        return normalize_completion_values(frame["table_name"].tolist())
 
     def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
         del connection_key
@@ -289,13 +307,16 @@ class TrinoCompletionProvider:
         schema: str | None = None,
         catalog: str | None = None,
     ) -> tuple[str, ...]:
-        frame = sql.show_tables(
-            connection_key,
-            schema=schema,
-            conditions=_table_condition(prefix),
-            trino_catalog=catalog,
+        catalog = catalog or getattr(get_connection_config(connection_key), "catalog", None)
+        if not catalog:
+            message = "Trino table completion requires a catalog."
+            raise ValueError(message)
+        return _first_column_values(
+            _metadata_frame(
+                connection_key,
+                build_trino_completion_query(quote_identifier(catalog, "trino"), schema, prefix),
+            )
         )
-        return normalize_completion_values(frame["table_name"].tolist())
 
     def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
         return _first_column_values(_metadata_frame(connection_key, "SHOW CATALOGS"))
@@ -337,6 +358,7 @@ class CompletionCoordinator:
     _catalogs: tuple[str, ...] | None = field(default=None, init=False)
     _table_columns: dict[str, tuple[str, ...]] = field(default_factory=dict, init=False)
     _cache_generation: int = field(default=0, init=False)
+    _columns_cached_at: dict[str, float] = field(default_factory=dict, init=False)
     _schemas: dict[str | None, tuple[str, ...]] = field(default_factory=dict, init=False)
     _request_seq: int = field(default=0, init=False)
     _in_flight: tuple[object, ...] | None = field(default=None, init=False)
@@ -418,10 +440,21 @@ class CompletionCoordinator:
             on_success(CompletionResult(request, request_id, cached))
             return request_id
 
-        scope = request.scope
+        scope = request.cache_key
         subscriber = _CompletionSubscriber(owner_id, request_id, on_success, on_error)
         with self._lock:
             existing = self._tasks_by_scope.get(scope)
+            if existing is None and request.kind == "table":
+                existing = next(
+                    (
+                        task
+                        for task in self._tasks_by_scope.values()
+                        if task.request.scope == request.scope
+                        and request.prefix.casefold().startswith(task.request.prefix.casefold())
+                        and not task.cancellation.cancelled
+                    ),
+                    None,
+                )
             if existing is not None and not existing.cancellation.cancelled:
                 existing.subscribers.append(subscriber)
                 return request_id
@@ -434,8 +467,19 @@ class CompletionCoordinator:
 
     def cached(self, request: CompletionRequest) -> tuple[str, ...] | None:
         with self._lock:
-            entry = self._cache.get(request.scope)
-        if entry is None:
+            entry = self._cache.get(request.cache_key)
+            if entry is None and request.kind == "table":
+                entry = next(
+                    (
+                        value
+                        for key, value in self._cache.items()
+                        if key[:-1] == request.scope
+                        and request.prefix.casefold().startswith(str(key[-1]))
+                        and monotonic() - value.created_at < METADATA_CACHE_SECONDS
+                    ),
+                    None,
+                )
+        if entry is None or monotonic() - entry.created_at >= METADATA_CACHE_SECONDS:
             return None
         if request.kind == "column":
             prefix = normalize_identifier_prefix(request.prefix).casefold()
@@ -452,11 +496,16 @@ class CompletionCoordinator:
         with self._lock:
             self._cache.clear()
             self._table_columns.clear()
+            self._columns_cached_at.clear()
             self._cache_generation += 1
 
     def _columns_for_table(self, table: str) -> tuple[str, ...]:
         with self._lock:
-            cached = self._table_columns.get(table)
+            cached = (
+                self._table_columns.get(table)
+                if monotonic() - self._columns_cached_at.get(table, 0) < METADATA_CACHE_SECONDS
+                else None
+            )
             generation = self._cache_generation
         if cached is None:
             cached = tuple(
@@ -466,15 +515,26 @@ class CompletionCoordinator:
             with self._lock:
                 if generation == self._cache_generation:
                     self._table_columns[table] = cached
+                    self._columns_cached_at[table] = monotonic()
         return cached
 
     def known_catalogs(self) -> tuple[str, ...] | None:
-        with self._lock:
-            return self._catalogs
+        return self._namespace_values("catalog", None)
 
     def cached_schemas(self, catalog: str | None = None) -> tuple[str, ...] | None:
+        return self._namespace_values("schema", catalog)
+
+    def _namespace_values(self, kind: str, catalog: str | None) -> tuple[str, ...] | None:
+        now = monotonic()
         with self._lock:
-            return self._schemas.get(catalog)
+            for key, entry in self._cache.items():
+                if (
+                    entry.kind == kind
+                    and key[3] == catalog
+                    and now - entry.created_at < METADATA_CACHE_SECONDS
+                ):
+                    return entry.values  # noqa: PD011 -- tuple-valued cache entry, not a dataframe.
+        return None
 
     def enqueue_schemas(
         self,
@@ -511,8 +571,8 @@ class CompletionCoordinator:
                     retained.append(task)
                 else:
                     self._cancel_task(task)
-                    self._queued_scopes.discard(task.request.scope)
-                    self._tasks_by_scope.pop(task.request.scope, None)
+                    self._queued_scopes.discard(task.request.cache_key)
+                    self._tasks_by_scope.pop(task.request.cache_key, None)
             self._queue = retained
             in_flight = self._tasks_by_scope.get(self._in_flight or ())
             if in_flight is not None:
@@ -581,8 +641,8 @@ class CompletionCoordinator:
             finally:
                 with self._lock:
                     self._in_flight = None
-                    if self._tasks_by_scope.get(task.request.scope) is task:
-                        self._tasks_by_scope.pop(task.request.scope, None)
+                    if self._tasks_by_scope.get(task.request.cache_key) is task:
+                        self._tasks_by_scope.pop(task.request.cache_key, None)
                     has_more = bool(self._queue)
                 if has_more:
                     self._wake.set()
@@ -605,8 +665,8 @@ class CompletionCoordinator:
                 self._wake.clear()
                 return None
             task = self._queue.popleft()
-            self._queued_scopes.discard(task.request.scope)
-            self._in_flight = task.request.scope
+            self._queued_scopes.discard(task.request.cache_key)
+            self._in_flight = task.request.cache_key
             if not self._queue:
                 self._wake.clear()
             return task
@@ -621,7 +681,7 @@ class CompletionCoordinator:
         with self._lock:
             if generation is not None and generation != self._cache_generation:
                 return
-            self._cache[request.scope] = CompletionCacheEntry(request.kind, values)
+            self._cache[request.cache_key] = CompletionCacheEntry(request.kind, values)
             if request.kind == "catalog":
                 self._catalogs = values
             elif request.kind == "schema":

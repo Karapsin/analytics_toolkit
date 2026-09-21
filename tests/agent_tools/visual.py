@@ -107,7 +107,7 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
                 evidence,
                 manifest,
             )
-        async with application.run_test(size=(160, 47)) as pilot:
+        async with application.run_test(size=(208, 47)) as pilot:
             if isinstance(application, sql_explorer_visual_scene.VisualConnectionsPickerApp):
                 assert len(application.screen_stack) == 2
                 assert len({id(screen) for screen in application.screen_stack}) == 2

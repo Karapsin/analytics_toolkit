@@ -9,6 +9,13 @@ import sqlglot
 import sqlparse
 from sqlglot import exp
 
+from analytics_toolkit._sql_statements import (
+    has_sql_content,
+    join_statements,
+    split_statements,
+    terminal_parts,
+)
+
 from .errors import SqlExplorerConfigurationError
 
 DISPLAY_ROW_LIMIT = 200
@@ -46,15 +53,11 @@ class ExplorerExecutionPlan:
 
     @property
     def full_execution_sql(self) -> str:
-        return ";\n".join(self.statements)
+        return join_statements(self.statements)
 
 
 def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
-    statements = tuple(
-        _strip_terminal_semicolon(statement)
-        for statement in sqlparse.split(str(sql_text))
-        if _has_sql_content(statement)
-    )
+    statements = tuple(split_statements(str(sql_text)))
     if not statements:
         message = "Enter a SQL statement before running it."
         raise SqlExplorerConfigurationError(message)
@@ -75,7 +78,7 @@ def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
         returns_rows=final_returns_rows,
     )
     execution_statements = (*statements[:-1], bounded_final)
-    execution_sql = ";\n".join(execution_statements)
+    execution_sql = join_statements(execution_statements)
     return ExplorerExecutionPlan(
         statements=statements,
         execution_sql=execution_sql,
@@ -87,6 +90,7 @@ def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
 
 
 def _returns_rows(statement: str, dialect: str | None) -> bool:
+    statement = sqlparse.format(statement, strip_comments=True)
     first_keyword = _first_keyword(statement)
     if first_keyword in _DIRECT_RESULT_KEYWORDS:
         return True
@@ -108,6 +112,7 @@ def _returns_rows(statement: str, dialect: str | None) -> bool:
 
 
 def _is_pure_result_read(statement: str, dialect: str | None) -> bool:
+    statement = sqlparse.format(statement, strip_comments=True)
     if _RETURNING_RE.search(statement):
         return False
     first_keyword = _first_keyword(statement)
@@ -136,10 +141,10 @@ def _bounded_result_statement(
 ) -> tuple[str, bool]:
     if not returns_rows or not _is_wrappable_query(statement, dialect):
         return statement, False
-    stripped = statement.rstrip().rstrip(";").rstrip()
+    stripped = _strip_terminal_semicolon(statement)
     return (
         "SELECT * FROM ("  # noqa: S608 -- bounded wrapper around user-authored SQL.
-        f"{stripped}"
+        f"{stripped}\n"
         ") AS analytics_toolkit_explorer_result\n"
         f"LIMIT {FETCH_ROW_LIMIT}",
         True,
@@ -147,7 +152,7 @@ def _bounded_result_statement(
 
 
 def _is_wrappable_query(statement: str, dialect: str | None) -> bool:
-    if _CLICKHOUSE_FORMAT_RE.search(statement.rstrip().rstrip(";")):
+    if _CLICKHOUSE_FORMAT_RE.search(terminal_parts(statement)[0]):
         return False
     if _first_keyword(statement) not in {"SELECT", "VALUES", "WITH"}:
         return False
@@ -173,13 +178,12 @@ def _first_keyword(statement: str) -> str:
 
 
 def _strip_terminal_semicolon(statement: str) -> str:
-    stripped = statement.strip()
-    return stripped[:-1].rstrip() if stripped.endswith(";") else stripped
+    body, suffix, _ = terminal_parts(statement)
+    return (body + suffix).strip()
 
 
 def _has_sql_content(statement: str) -> bool:
-    without_comments = sqlparse.format(statement, strip_comments=True)
-    return bool(without_comments.strip().strip(";"))
+    return has_sql_content(statement)
 
 
 def _sqlparse_statement_type(parsed: tuple[Any, ...]) -> str:

@@ -178,10 +178,15 @@ Screen {
     border: solid $accent;
     background: $panel;
 }
+.results-split { height: 1fr; }
+#column-ruler { height: auto; layer: base; color: $text-muted; background: $panel; }
+.results-separator { height: 1; background: $panel; display: none; }
+.results-separator:hover { background: $accent; }
+#query-editor .text-area--cursor-gutter { color: $accent; background: $panel; text-style: bold; }
 .result-pane {
     height: 1fr;
     display: none;
-    margin-top: 1;
+    margin-top: 0;
     border: solid $panel-lighten-2;
 }
 #command-completion {
@@ -217,10 +222,11 @@ Screen {
     border: solid $accent;
     background: $panel-lighten-1;
 }
+#result-message { width: 1fr; overflow-y: auto; }
 #result-table, #result-message {
     height: 1fr;
 }
-#result-table {
+#result-table, #result-message {
     scrollbar-size-vertical: 1;
     scrollbar-size-horizontal: 1;
     scrollbar-background: $panel;

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import sqlparse
-
+from analytics_toolkit._sql_statements import terminal_parts
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.source_script import (
     execute_source_setup,
@@ -34,22 +33,7 @@ def normalize_source_script(sql: str) -> tuple[tuple[str, ...], str]:
     if isinstance(sql, str) and not sql.strip():
         msg = "sql must not be empty."
         raise InvalidSqlInputError(msg)
-    statements = []
-    for statement in _normalize_result_statements(sql):
-        tokens = [
-            token for parsed in sqlparse.parse(statement) for token in cast("Any", parsed).flatten()
-        ]
-        while tokens and (
-            tokens[-1].is_whitespace
-            or tokens[-1].ttype in sqlparse.tokens.Comment
-            or tokens[-1].value == ";"
-        ):
-            tokens.pop()
-        if tokens:
-            statements.append("".join(token.value for token in tokens))
-    if not statements:
-        msg = "sql must not be empty."
-        raise InvalidSqlInputError(msg)
+    statements = [terminal_parts(statement)[0] for statement in _normalize_result_statements(sql)]
     if len(statements) > 1:
         _validate_result_query(statements[-1])
     return tuple(statements[:-1]), statements[-1]

@@ -172,7 +172,8 @@ chains cursors across as many logical lines as needed;
 pressing toward an occupied adjacent line removes that cursor, while at least one
 cursor always remains. Each cursor has an independent selection, and editing or
 pasting applies at every cursor. Escape collapses multiple cursors to the active
-one before toggling focus between the editor and command panel. Tab and Shift+Tab indent or
+one before toggling focus between the editor and command panel. F6 and Shift+F6
+cycle panes explicitly; arrows never switch panes. Tab and Shift+Tab indent or
 unindent selected logical lines. Double-clicking selects a complete SQL word such
 as `table_name`.
 
@@ -199,10 +200,16 @@ Tab is reserved for completion and indentation. Shift+Tab requests columns in
 a SELECT projection even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
+Accepting complete SQL or command tokens adds a space unless whitespace or
+closing punctuation already follows; namespace qualification adds no space.
+At a single caret exactly after `select ` at line end, Tab inserts `* ` (including one trailing space).
+After `select * `, Tab inserts a new line and `from ` at the same indentation.
+These two contexts are case-insensitive.
 
 In the editor, Tab is conditional:
 
 1. If the completion menu is open, Tab accepts its highlighted suggestion.
+   Otherwise the two exact SELECT shortcuts above take precedence.
 2. If the cursor has one matching suggestion, Tab inserts it immediately.
 3. If the cursor has multiple matches, Tab opens the suggestion menu.
 4. If metadata is needed, Tab requests it and applies the same one-or-many rule.
@@ -227,11 +234,10 @@ reopen the menu, including after the cursor returns to its old position. Metadat
 the visible user-query status.
 
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
-The prefix must contain at least six characters. The first Tab request calls
-`sql.show_tables(...)` once with that initial six-character prefix and current
-catalog/database/schema context. Results are cached; longer prefixes and
-backspacing filter those candidates locally without another metadata query. A
-catalog, database, schema, or SQL-clause context change permits a new lookup.
+The prefix must contain at least six characters. The first Tab request uses a names-only query with the current prefix and
+catalog/database/schema context. Results are cached for 60 seconds; narrower
+prefixes filter those candidates locally. Backspacing beyond the fetched prefix
+requests a broader result. A catalog, database, or schema change permits a new lookup.
 
 Column completion is available in SELECT projections when the source tables are
 present after FROM/JOIN. A non-keyword identifier prefix must touch the cursor
@@ -352,11 +358,44 @@ disabled while cancellation is pending; the interface remains busy until the SQL
 or cancellation.
 
 Escape toggles between the editor and command panel. From a visible result/error
-pane, Escape moves to the command panel; use Up and Down at pane boundaries to
-enter or leave results/errors. A confirmation or navigation modal consumes Escape
+pane, Escape moves to the command panel; use F6 and Shift+F6 to cycle panes.
+Arrow keys stay within the focused pane. A confirmation or navigation modal consumes Escape
 first; Find/Replace and completion overlays close before focus navigation.
 
+## Metadata efficiency
+
+Completion and namespace browsing use names-only queries, without relation-size
+functions, row counts, or distributed-statistics lookups. Catalog, schema, and
+literal name-prefix filters apply at discovery. Greenplum partition children
+are hidden when their logical parent is accessible; parent tables and views
+remain available. Full `sql.show_tables` calls retain their statistics and
+output shape while explicit schema/table filters narrow their base queries.
+
+Metadata requests share a serialized connection-scoped coordinator. Cached
+results expire after 60 seconds, and a prefix-limited result is reused only
+for that prefix or a narrower one. DDL invalidates table/column snapshots.
+Column discovery keeps row counts disabled. Size/count details are fetched
+only by consumers that request them.
+
 ## Commands
+
+`del` performs forward Delete in the editor at every cursor, including deleting
+selected text. It leaves focus in the command pane and supports normal Undo.
+The editor caret stays visible while commands are entered. A column ruler above
+the editor shows one compact row of 1-based logical column labels, spaced every
+10 columns; the main cursor's full column number uses the existing accent color.
+An empty line shows only column 1. The ruler grows with the line's content,
+including its final insertion position, instead of numbering unused screen space.
+The ruler follows horizontal scrolling and accounts for tabs and wide characters.
+
+Absolute `mv` creates missing rows when its numeric destination is beyond the
+document end. One invocation adds at most 100 lines; larger destinations stop
+at the last row created. For example, `mv 10` in a two-line document adds eight
+newlines and moves to row 10, column 1. A numeric column beyond the line end
+adds at most 10 spaces per invocation, stopping at the last created column.
+For example, `mv 1 100` on an empty line adds 10 spaces and reaches column 11.
+Both extensions form one undoable edit. Relative movement,
+page movement, and selections never extend the document.
 
 In the command line, Tab or Ctrl+Space completes command names and supported
 argument choices. `db ` completes configured database keys using configuration
@@ -373,8 +412,16 @@ Enter commands in the lower panel, with or without a leading colon:
 - `save` - save edits to the opened SQL file
 - `cancel` - request cancellation of the active Explorer user query
 - `mode [exploratory|navigation]` - show the current mode or enter navigation
-- `mv LINE_NUMBER` - move to the start of a one-based editor line
-- `mvs LINE_NUMBER` - select from the active cursor to a one-based line start
+- `mv [ROW [COL]]` - absolute movement; omitted coordinates default to 1
+- `s ROW COL ROW COL` - inclusive absolute selection
+- `mvs ROW COL` - select from the main caret through a destination
+- `mv s|e|n|p` / `mvs s|e|n|p` - line or word movement/selection
+- `d [N]`, `u [N]`, `pd [N]`, `pu [N]` - bounded line/page navigation
+- `start`, `end` - move and scroll to document boundaries
+- `cursor N u|d` - add cursors above/below, retaining the original main cursor
+- `keyboard [on|off|toggle]` - report/change editable keyboard mode (F8 toggles)
+- `results switch` - toggle horizontal/vertical results
+- `results expand N`, `results shrink N` - resize in terminal rows/columns
 - `cp` - copy selections in document order, or the whole editor when unselected
 - `pst` - paste the Explorer clipboard once at every cursor or selection
 - `db DB_KEY` - switch to another valid configured connection
@@ -383,13 +430,48 @@ Enter commands in the lower panel, with or without a leading colon:
 - `clear query|results|all` - clear workspace content
 - `to_excel` - choose a project directory and save the current result as `.xlsx`
 - `to_csv` - choose a project directory and save the current result as `.csv`
-- `help` - open the in-app command reference
+- `help` - concise command groups
+- `help shortcuts` - non-movement shortcuts
+- `help movement` - complete movement/selection reference and examples
 - `exit`, `quit`, or `q` - close the Explorer, asking about unsaved changes
 - `exit!` or `q!` - close without the Save/Don’t Save dialog, discarding unsaved edits
 - `wq` - save every changed tab and exit; untitled tabs request a filename and
   directory. A cancelled or failed save keeps the Explorer open.
 
+Commands are case-sensitive. Coordinates are 1-based: `S` means the first row
+or column, and `E` means the last row or physical line end, including trailing
+spaces. `s` is absolute inclusive selection; `mvs` starts at the main caret.
+The short `mvs S`/`mvs E` aliases select to the current line's start/end.
+Word actions accept an optional positive repeat count. Relative moves affect
+all cursors; absolute moves and selections collapse extras. Absolute `mv` creates
+missing rows, adding at most 100 per invocation and stopping at the last created
+row. Missing columns add at most 10 spaces per `mv` invocation. Absolute
+selection rows must exist; selection columns and relative navigation clamp at
+boundaries. Relative navigation never changes the document.
+
+Left/Right aligns multiple cursors to the main cursor's logical column without
+wrapping across lines. Short lines clamp the visible caret while preserving
+the intended column for later vertical movement. The active line gutter and
+row/column status values follow only the main cursor, using the focus accent.
+
+Up/Down in the command pane browses session history for that tab. Moving beyond
+the newest entry restores the draft and caret. When completion is open,
+Up/Down selects suggestions instead.
+
+Opening parentheses, brackets, braces, and single/double/backtick quotes insert
+matching closers, or wrap selected text. Typing the matching closer skips it;
+Backspace between an empty pair removes both. Paste inserts literal text.
+
+Keyboard mode is session-wide and starts off. It blocks editor mouse placement,
+selection, scrolling, and separator dragging while retaining normal editing
+and shortcuts. `KBD` in the position display indicates the mode. F8 or
+`keyboard off` exits it. Results begin below the editor; drag their separator
+when keyboard mode is off, or use results commands in either mode. Each tab
+remembers independent horizontal and vertical sizes.
+
 All exit commands cancel running user queries and wait for their workers to stop.
+
+F6/Shift+F6 and F8 are reserved for pane switching and keyboard mode.
 
 The confirmation choice and primary run shortcut are saved
 in the user's config directory. SQL text is not persisted. The export commands first ask for one

@@ -189,39 +189,31 @@ def test_table_contexts_and_qualified_prefix_replacement() -> None:
 def test_provider_routing_and_show_tables_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[str, dict[str, object]]] = []
+    calls: list[tuple[str, str]] = []
 
-    def fake_show_tables(db_key: str, **kwargs: object) -> pd.DataFrame:
-        calls.append((db_key, kwargs))
+    def fake_metadata(db_key: str, query: str) -> pd.DataFrame:
+        calls.append((db_key, query))
+        if "partition_catalog" in query:
+            return pd.DataFrame({"partition_catalog": ["legacy"]})
         return pd.DataFrame({"table_name": ["sampletable"]})
 
-    monkeypatch.setattr(completion_module.sql, "show_tables", fake_show_tables)
+    monkeypatch.setattr(completion_module, "_metadata_frame", fake_metadata)
     assert isinstance(provider_for_backend("gp"), GreenplumCompletionProvider)
     assert isinstance(provider_for_backend("clickhouse"), ClickHouseCompletionProvider)
     assert isinstance(provider_for_backend("trino"), TrinoCompletionProvider)
-
-    GreenplumCompletionProvider().list_tables(
-        connection_key="gp",
-        prefix="sample",
-        schema="analytics",
+    for backend in ("gp", "ch", "trino"):
+        values = provider_for_backend(backend).list_tables(
+            connection_key=backend, prefix="sample", schema="analytics", catalog="iceberg"
+        )
+        assert values == ("sampletable",)
+    queries = [query for _, query in calls if "partition_catalog" not in query]
+    assert len(queries) == 3
+    assert all("sample%" in query and "analytics" in query for query in queries)
+    assert all(
+        "pg_total_relation_size" not in query and "row_count" not in query for query in queries
     )
-    ClickHouseCompletionProvider().list_tables(
-        connection_key="ch",
-        prefix="sample",
-        schema="events",
-    )
-    TrinoCompletionProvider().list_tables(
-        connection_key="trino",
-        prefix="sample",
-        schema="sandbox",
-        catalog="iceberg",
-    )
-
-    assert [call[0] for call in calls] == ["gp", "ch", "trino"]
-    assert all("conditions" in options for _, options in calls)
-    assert "sample%" in str(calls[0][1]["conditions"])
-    assert calls[2][1]["trino_catalog"] == "iceberg"
-    assert all("table_name" not in options for _, options in calls)
+    assert "pg_partitions" in queries[0]
+    assert '"iceberg".information_schema.tables' in queries[-1]
 
 
 def test_coordinator_uses_one_lookup_and_filters_extensions_locally() -> None:
@@ -242,16 +234,16 @@ def test_coordinator_uses_one_lookup_and_filters_extensions_locally() -> None:
     longer = replace(request, prefix="sample_o")
     shorter = replace(request, prefix="sam")
     assert coordinator.cached(longer) == ("sample_one",)
-    assert coordinator.cached(shorter) == ("sample_one", "sample_two")
+    assert coordinator.cached(shorter) is None
     coordinator.enqueue(longer)
     coordinator.enqueue(shorter)
-    assert provider.table_calls == [("sample", "analytics", None)]
+    _wait_for(lambda: len(provider.table_calls) == 2)
 
     changed = replace(request, schema="other")
     changed_done = Event()
     coordinator.enqueue(changed, on_success=lambda _result: changed_done.set())
     assert changed_done.wait(2)
-    assert len(provider.table_calls) == 2
+    assert len(provider.table_calls) == 3
     coordinator.stop()
 
 
@@ -303,7 +295,7 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
             await pilot.press("ctrl+space")
             menu = application.query_one(CompletionMenu)
             assert menu.is_open is False
-            assert editor.text == "select"
+            assert editor.text == "select "
             assert application.focused is editor
 
             editor.text = "L"
@@ -319,7 +311,7 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
             assert editor.text == "L"
             assert menu.suggestions == ("left join", "limit")
             await pilot.press("down", "enter")
-            assert editor.text == "limit"
+            assert editor.text == "limit "
 
             editor.text = "L"
             editor.cursor_location = (0, 1)
@@ -514,13 +506,13 @@ def test_cursor_change_cancels_inflight_and_fresh_cache_handles_backspace() -> N
             assert editor.text == "SELECT * FROM sample_o"
             await pilot.press("ctrl+space")
             await pilot.pause()
-            assert editor.text == "SELECT * FROM sample_one"
+            assert editor.text == "SELECT * FROM sample_one "
 
             menu.action_close()
             editor.text = "SELECT * FROM sampl"
             editor.cursor_location = (0, len(editor.text))
             await pilot.press("ctrl+space")
-            assert set(menu.suggestions) == {"sample_one", "sample_two"}
+            assert not menu.is_open
             assert len(provider.table_calls) == 2
 
             menu.action_close()
@@ -560,7 +552,7 @@ def test_app_completion_request_defensive_paths() -> None:
             editor.cursor_location = (0, 3)
             await pilot.press("ctrl+space")
             assert menu.is_open is False
-            assert editor.text == "select"
+            assert editor.text == "select "
             await pilot.pause()
 
             editor.text = "L"
@@ -568,7 +560,7 @@ def test_app_completion_request_defensive_paths() -> None:
             editor.action_completion_or_indent()
             assert menu.suggestions == ("left join", "limit")
             menu.action_accept()
-            assert editor.text == "left join"
+            assert editor.text == "left join "
 
             editor.text = "SELECT * FROM sample"
             editor.selection = Selection((0, 14), (0, 16))
@@ -588,7 +580,7 @@ def test_app_completion_request_defensive_paths() -> None:
 
             stub.schemas[None] = ("sample_schema",)
             assert application._request_completion() is True
-            assert editor.text == "SELECT * FROM sample_schema"
+            assert editor.text == "SELECT * FROM sample_schema "
             assert menu.is_open is False
 
             editor.text = "SELECT * FROM sample"

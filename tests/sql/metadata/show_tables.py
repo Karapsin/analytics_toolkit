@@ -156,7 +156,7 @@ def test_show_tables_greenplum_builds_metadata_sql_and_normalizes_columns(
     assert calls[0][0] == "gp"
     query = _compact(calls[0][1])
     assert "FROM ( SELECT current_database() AS db" in query
-    assert "FROM information_schema.tables AS t" in query
+    assert "FROM (SELECT * FROM information_schema.tables" in query
     assert query.endswith(
         ") AS table_metadata WHERE 1 = 1 AND schema = 'mart' "
         "AND (table_name ILIKE '%collections%') ORDER BY schema, table_name"
@@ -410,7 +410,7 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
 @pytest.mark.parametrize(
     ("db_key", "schema", "inner_source"),
     [
-        ("gp", "public", "FROM information_schema.tables AS t"),
+        ("gp", "public", "FROM (SELECT * FROM information_schema.tables"),
         ("trino", "sandbox", "FROM iceberg.information_schema.tables"),
         ("ch", "analytics", "FROM system.tables"),
     ],

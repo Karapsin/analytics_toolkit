@@ -10,6 +10,7 @@ COMMAND_NAMES = (
     "cp",
     "create_table",
     "db",
+    "del",
     "exit",
     "exit!",
     "format",
@@ -28,8 +29,23 @@ COMMAND_NAMES = (
     "to_csv",
     "to_excel",
     "wq",
+    "s",
+    "d",
+    "u",
+    "pd",
+    "pu",
+    "start",
+    "end",
+    "cursor",
+    "keyboard",
+    "results",
 )
 COMMAND_ARGUMENTS = {
+    "help": ("shortcuts", "movement"),
+    "keyboard": ("on", "off", "toggle"),
+    "results": ("expand", "shrink", "switch"),
+    "mv": ("s", "e", "n", "p", "S", "E"),
+    "mvs": ("s", "e", "n", "p", "S", "E"),
     "mode": ("exploratory", "navigation"),
     "confirm": ("on", "off", "toggle"),
 }
@@ -57,5 +73,5 @@ def command_suggestions(
             if len(parts) == 1
             else ()
         )
-    prefix = value[start:cursor].casefold()
+    prefix = value[start:cursor]
     return start, tuple(choice for choice in choices if choice.startswith(prefix))

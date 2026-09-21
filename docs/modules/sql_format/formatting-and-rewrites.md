@@ -50,4 +50,10 @@ open a database connection or execute the generated script. CTE and subquery
 bodies may contain `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT`; each
 compound body is kept together in one generated temp table.
 
+Formatting preserves trailing line/block comments and semicolons, including
+comments following a terminator. CTE layout is validated against the generated
+SQL structure before returning the result. Ambiguous GROUP BY aliases and
+wildcard-dependent ordinal positions remain unchanged; quoted aliases retain
+their case-sensitive identity.
+
 [Module index](index.md)

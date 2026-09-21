@@ -331,7 +331,7 @@ def test_format_sql_matches_group_by_alias_and_order_by_expression() -> None:
         "    a + 1 as day,\n"
         "    COUNT(*) as n\n"
         "from t\n"
-        "group by 1\n"
+        "group by day\n"
         "order by 1"
     )
 

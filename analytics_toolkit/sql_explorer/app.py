@@ -12,6 +12,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.css.query import NoMatches
+from textual.errors import NoWidget
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
 from .cells import ResultCell
@@ -28,6 +29,7 @@ from .errors import SqlExplorerConfigurationError
 from .exports import SqlExplorerExportCommandsMixin
 from .file_commands import SqlExplorerFileCommandsMixin
 from .filetree import read_sql_file
+from .help_text import MOVEMENT_HELP, SHORTCUTS_HELP
 from .inputs import EditableInput
 from .picker import DatabasePickerApp
 from .query_commands import SqlExplorerQueryCommandsMixin
@@ -79,9 +81,14 @@ class SqlExplorerApp(
     SqlExplorerExportCommandsMixin,
     App[Optional[ConnectionsRestart]],
 ):
+    keyboard_mode = False
+
     TITLE = "analytics-toolkit SQL explorer"
     CSS = APP_CSS
     BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("f6", "focus_next_pane", "Next pane", show=False, priority=True),
+        Binding("shift+f6", "focus_previous_pane", "Previous pane", show=False, priority=True),
+        Binding("f8", "toggle_keyboard", "Keyboard mode", show=False, priority=True),
         Binding("f5", "run_query", "Run", priority=True),
         Binding("ctrl+o", "open_navigation", "Open SQL file", priority=True),
         Binding("ctrl+s", "save_file", "Save SQL file", show=False, priority=True),
@@ -215,6 +222,18 @@ class SqlExplorerApp(
         self.active_workspace.exit_after_cancel = bool(value)
 
     async def on_event(self, event: events.Event) -> None:
+        if self.keyboard_mode and isinstance(event, events.MouseEvent) and not event.is_forwarded:
+            try:
+                widget, _ = self.get_widget_at(event.x, event.y)
+            except NoWidget:
+                widget = None
+            if widget is not None and any(
+                node.has_class("query-pane") or node.has_class("results-separator")
+                for node in (widget, *widget.ancestors)
+            ):
+                event.stop()
+                event.prevent_default()
+                return
         if isinstance(event, events.Key) and not event.is_forwarded:
             compatible = control_compatible_key(event.key)
             if compatible != event.key:
@@ -307,6 +326,8 @@ class SqlExplorerApp(
             return
         if self.active_workspace.completion_menu.is_open:
             self._accept_completion()
+        elif isinstance(self.focused, SqlEditor) and self.focused.select_shortcut():
+            return
         elif isinstance(self.focused, SqlEditor) and not self._request_completion():
             self.focused.action_indent()
 
@@ -378,14 +399,14 @@ class SqlExplorerApp(
             "find_previous_control",
             "Find/Replace previous control",
             show=False,
-            priority=True,
+            priority=False,
         )
         self._bindings.bind(
             "down",
             "find_next_control",
             "Find/Replace next control",
             show=False,
-            priority=True,
+            priority=False,
         )
         self._find_navigation_bound = True
         self.refresh_bindings()
@@ -402,7 +423,7 @@ class SqlExplorerApp(
         if len(self.screen_stack) != 1:
             return
         bar = self.active_workspace.find_bar
-        if bar.is_open:
+        if bar.is_open and self.focused is not None and bar in self.focused.ancestors:
             bar.focus_relative(direction)
 
     def _focus_relative(self, direction: int) -> None:
@@ -481,6 +502,7 @@ class SqlExplorerApp(
         workspace = workspace or self.active_workspace
         workspace.query_one(".result-pane", Vertical).styles.display = "block"
         workspace.results_open = True
+        workspace.apply_results_layout()
 
     def close_results(
         self,
@@ -496,12 +518,15 @@ class SqlExplorerApp(
         table.clear(columns=True)
         workspace.result_message.update("")
         workspace.results_open = False
+        workspace.apply_results_layout()
         if focus_editor:
             workspace.editor.focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "command-input":
             return
+        if isinstance(event.input, CommandInput):
+            event.input.remember_command(event.value)
         command_text = event.value.strip()
         event.input.value = ""
         if not command_text:
@@ -599,9 +624,11 @@ class SqlExplorerApp(
         if not parts:
             return
         command, *arguments = [part.strip() for part in parts]
-        command = command.lower()
         if self._exit_requested and command != "cancel":
             self._set_notice("Waiting for existing work to stop.")
+            return
+        if command in {"s", "d", "u", "pd", "pu", "start", "end", "cursor"}:
+            self._command_navigation(command, arguments)
             return
         handlers = {
             "cancel": self._command_cancel,
@@ -614,7 +641,10 @@ class SqlExplorerApp(
             "exit!": self._command_exit_force,
             "format": self._command_format,
             "help": self._command_help,
+            "del": self._command_delete,
             "mode": self._command_mode,
+            "keyboard": self._command_keyboard,
+            "results": self._command_results,
             "mv": self._command_move,
             "mvs": self._command_move_select,
             "open": self._command_open,
@@ -682,10 +712,17 @@ class SqlExplorerApp(
         )
 
     def _command_help(self, arguments: list[str]) -> None:
-        if arguments:
-            self.show_error(SqlExplorerConfigurationError("Usage: help"))
+
+        if arguments not in ([], ["shortcuts"], ["movement"]):
+            self.show_error(SqlExplorerConfigurationError("Usage: help [shortcuts|movement]"))
             return
-        self.show_message(HELP_TEXT)
+        self.show_message(
+            MOVEMENT_HELP
+            if arguments == ["movement"]
+            else SHORTCUTS_HELP
+            if arguments
+            else HELP_TEXT
+        )
 
     def _command_exit(self, arguments: list[str]) -> None:
         if arguments:
@@ -848,9 +885,15 @@ class SqlExplorerApp(
         workspace = workspace or self.active_workspace
         try:
             row, column = workspace.editor.cursor_location
-            workspace.query_one("#editor-status", Static).update(
-                f"SQL  Ln {row + 1}, Col {column + 1}"
-            )
+            position = Text("SQL  Ln ")
+            accent = self.get_css_variables()["accent"]
+            position.append(str(row + 1), style=accent)
+            position.append(", Col ")
+            position.append(str(column + 1), style=accent)
+            if self.keyboard_mode:
+                position.append("  KBD", style=accent)
+            workspace.query_one("#editor-status", Static).update(position)
+            workspace.query_one("#column-ruler", Static).refresh(layout=True)
         except NoMatches:
             return
 
