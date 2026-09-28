@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - Add query-list concurrency and ordered batch results to insert, execute_insert, execute_create, and execute_read.
 - Fix SQL Explorer set-operation column completion with newer SQLGlot scope APIs while preserving older releases.
 - Run SQL Explorer visual review headlessly on the current Linux, macOS, or Windows host without VM downloads.
+- Speed up SQL Explorer column completion with SELECT-only probes across all backends, preserving empty and computed ClickHouse columns.
 
 ## 1.3.12.0 - 2026-09-21
 

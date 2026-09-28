@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.backends.base import _apply_query_label
+from analytics_toolkit.sql.backends.common_methods import get_table_column_names as read_names
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..utils import sql_string_literal
@@ -15,8 +16,10 @@ if TYPE_CHECKING:
 def get_table_column_names(
     adapter: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> tuple[str, ...]:
-    from ...core.identifiers import TableIdentifier, split_gp_table_name
-    from ..common_methods import get_table_column_names as read_names
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter registry cycle.
+        TableIdentifier,
+        split_gp_table_name,
+    )
 
     parts = split_gp_table_name(table_name)
     table = TableIdentifier(parts, (True, True)).render_quoted("gp")

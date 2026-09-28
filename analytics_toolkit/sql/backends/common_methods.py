@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql._log_context import (
     current_sql_log_context,
     prefix_sql_log_message,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def column_list_sql(self: Any, columns: Sequence[str]) -> str:
@@ -17,16 +19,19 @@ def get_table_column_names(
     self: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> tuple[str, ...]:
     """Read DBAPI column names from one bounded SELECT, including empty results."""
-    from ..core.identifiers import TableIdentifier
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter registry cycle.
+        TableIdentifier,
+    )
 
     resolved = self.resolve_table_info_table_name(table_name, connection_key=connection_key)
     table = TableIdentifier.parse(resolved or table_name, self.backend).render_quoted(self.backend)
     cursor = connection.cursor()
     try:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 1")
+        cursor.execute(f"SELECT * FROM {table} LIMIT 1")  # noqa: S608 -- parsed and quoted table identifier.
         columns = cursor.description
         if columns is None:
-            raise ValueError("Column probe returned no result metadata.")
+            message = "Column probe returned no result metadata."
+            raise ValueError(message)
         names = tuple(str(column[0]) for column in columns)
         cursor.fetchall()  # Consume at most one row; never retain or display its values.
         return names

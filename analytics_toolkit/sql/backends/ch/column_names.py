@@ -9,11 +9,13 @@ from typing import Any
 def get_table_column_names(
     adapter: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> tuple[str, ...]:
-    from ...core.identifiers import TableIdentifier
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter registry cycle.
+        TableIdentifier,
+    )
 
     del connection_key
     table = TableIdentifier.parse(table_name, adapter.backend).render_quoted(adapter.backend)
-    query = f"SELECT * FROM {table} LIMIT 1"
+    query = f"SELECT * FROM {table} LIMIT 1"  # noqa: S608 -- parsed and quoted table identifier.
     settings = {
         "asterisk_include_materialized_columns": 1,
         "asterisk_include_alias_columns": 1,
@@ -26,5 +28,6 @@ def get_table_column_names(
         result = json.loads(connection.raw_query(query, settings=settings, fmt="JSON"))
         names = [column["name"] for column in result["meta"]]
     if not names:
-        raise ValueError("Column probe returned no result metadata.")
+        message = "Column probe returned no result metadata."
+        raise ValueError(message)
     return tuple(str(name) for name in names)

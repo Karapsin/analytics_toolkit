@@ -32,7 +32,7 @@ def test_dbapi_probe_preserves_names_and_closes_resources(
     calls = []
     cursor = SimpleNamespace(
         description=[("ID",), ("display name",)],
-        execute=lambda query: calls.append(query),
+        execute=calls.append,
         fetchall=lambda: [] if empty else [(1, "discard me")],
         close=lambda: calls.append("cursor closed"),
     )
@@ -86,7 +86,8 @@ def test_probe_errors_close_without_retry_or_metadata_fallback(
 
     def fail(query: str, **_kwargs: Any) -> None:
         calls.append(query)
-        raise PermissionError("SELECT denied")
+        message = "SELECT denied"
+        raise PermissionError(message)
 
     cursor = SimpleNamespace(execute=fail, close=lambda: calls.append("cursor closed"))
     connection = SimpleNamespace(
@@ -102,9 +103,7 @@ def test_probe_errors_close_without_retry_or_metadata_fallback(
 
 
 @pytest.mark.parametrize("key", ["gp", "ch"])
-def test_missing_result_metadata_is_an_error(
-    monkeypatch: pytest.MonkeyPatch, key: str
-) -> None:
+def test_missing_result_metadata_is_an_error(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
     closed = []
     cursor = SimpleNamespace(description=None, execute=lambda _: None, close=lambda: None)
     connection = SimpleNamespace(
