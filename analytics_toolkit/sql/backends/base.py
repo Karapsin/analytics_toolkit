@@ -120,6 +120,7 @@ class BackendAdapter:
 
     execute_commands = _common_methods.execute_commands
     read_dataframe = _common_methods.read_dataframe
+    get_table_column_names = _common_methods.get_table_column_names
     _read_dataframe_impl = _common_methods.read_dataframe_impl
 
     def table_exists(
@@ -871,8 +872,7 @@ class BackendAdapter:
         )
         return f"INSERT INTO {target_table} ({target_columns}) SELECT {select_columns} {from_sql}"
 
-    def column_list_sql(self, columns: Sequence[str]) -> str:
-        return ", ".join(self.quote_identifier(column_name) for column_name in columns)
+    column_list_sql = _common_methods.column_list_sql
 
     def cast_select_expression(self, column_name: str, target_type: str) -> str:
         quoted_column = self.quote_identifier(column_name)

@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from analytics_toolkit.sql._log_context import (
     current_sql_log_context,
     prefix_sql_log_message,
 )
+
+
+def column_list_sql(self: Any, columns: Sequence[str]) -> str:
+    return ", ".join(self.quote_identifier(column_name) for column_name in columns)
+
+
+def get_table_column_names(
+    self: Any, connection: Any, table_name: str, *, connection_key: str
+) -> tuple[str, ...]:
+    """Read DBAPI column names from one bounded SELECT, including empty results."""
+    from ..core.identifiers import TableIdentifier
+
+    resolved = self.resolve_table_info_table_name(table_name, connection_key=connection_key)
+    table = TableIdentifier.parse(resolved or table_name, self.backend).render_quoted(self.backend)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(f"SELECT * FROM {table} LIMIT 1")
+        columns = cursor.description
+        if columns is None:
+            raise ValueError("Column probe returned no result metadata.")
+        names = tuple(str(column[0]) for column in columns)
+        cursor.fetchall()  # Consume at most one row; never retain or display its values.
+        return names
+    finally:
+        cursor.close()
 
 
 def execute_commands(self: Any, connection: Any, sqls: list[str]) -> None:

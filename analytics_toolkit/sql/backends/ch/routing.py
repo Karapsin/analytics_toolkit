@@ -301,6 +301,9 @@ class ClusterRoutingClient:
     def query(self, sql: str, **kwargs: Any) -> Any:
         return self._client.query(self.route(sql), **kwargs)
 
+    def raw_query(self, sql: str, **kwargs: Any) -> Any:
+        return self._client.raw_query(self.route(sql), **kwargs)
+
     def query_df(self, sql: str, **kwargs: Any) -> Any:
         return self._client.query_df(self.route(sql), **kwargs)
 

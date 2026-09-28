@@ -4,8 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 import sqlglot
-from analytics_toolkit import sql
-from analytics_toolkit.sql_explorer import column_completion
+from analytics_toolkit.sql_explorer import column_completion, completion
 from analytics_toolkit.sql_explorer.column_completion import (
     _source_columns,
     column_fragment,
@@ -101,17 +100,17 @@ def test_columns_cache_and_ddl_invalidation(monkeypatch: pytest.MonkeyPatch) -> 
 
     calls = []
 
-    def metadata(db_key: str, table: str, *, include_row_count: bool) -> SimpleNamespace:
-        calls.append((db_key, table, include_row_count))
-        return SimpleNamespace(columns={"id": "BIGINT", "name": "TEXT"})
+    def metadata(db_key: str, table: str) -> tuple[str, ...]:
+        calls.append((db_key, table))
+        return ("id", "name")
 
-    monkeypatch.setattr(sql, "table_info", metadata)
+    monkeypatch.setattr(completion, "table_column_names", metadata)
     coordinator = CompletionCoordinator("warehouse", "gp", provider=FakeProvider())
     try:
         request = parse_completion_context("select i from users", 8, backend="gp").request
         assert coordinator._run(request) == ("id", "name")
         assert coordinator._run(request) == ("id", "name")
-        assert calls == [("warehouse", "users", False)]
+        assert calls == [("warehouse", "users")]
         coordinator.invalidate_tables()
         coordinator._run(request)
         assert len(calls) == 2
@@ -164,11 +163,11 @@ def test_column_cache_filters_qualified_names_and_ignores_stale_generation(
         coordinator._store_result(request, ("stale",), generation=-1)
         assert coordinator.cached(request) == ("u.id", "id_number")
 
-        def metadata(*args: object, **kwargs: object) -> SimpleNamespace:
+        def metadata(*args: object, **kwargs: object) -> tuple[str, ...]:
             coordinator.invalidate_tables()
-            return SimpleNamespace(columns={"fresh": "TEXT"})
+            return ("fresh",)
 
-        monkeypatch.setattr(sql, "table_info", metadata)
+        monkeypatch.setattr(completion, "table_column_names", metadata)
         assert coordinator._columns_for_table("users") == ("fresh",)
         assert coordinator._table_columns == {}
     finally:

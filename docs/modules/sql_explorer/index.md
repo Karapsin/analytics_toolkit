@@ -249,8 +249,14 @@ It resolves aliases, joined tables, nested SELECTs,
 derived tables, and CTE output names, including explicit column lists and stars.
 Type a prefix after `alias.` to restrict suggestions to that source; ambiguous unqualified
 columns are offered with their source qualifier. Tab requests columns through
-[`sql.table_info`](../sql/functions/table_info.md) without counting rows or
-executing the editor SQL. Results share the database metadata queue/cache.
+a separate `SELECT * FROM <table> LIMIT 1` probe for each uncached source table,
+without executing the editor SQL. This requires SELECT access and may read one
+row, whose values are discarded. Empty tables still provide column names.
+ClickHouse probes include materialized and alias columns; HTTP connections use
+JSON metadata so empty results retain their names. Suggestions remain sorted
+alphabetically. Failed probes use the existing completion error notice, with no
+catalog-query fallback or automatic retry. Results share the database metadata
+queue/cache and expire after 60 seconds or when DDL invalidates the cache.
 Unresolvable SQL and recursive outputs without determinable names are omitted.
 
 ## Navigation mode

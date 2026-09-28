@@ -20,6 +20,7 @@ from analytics_toolkit.sql.backends.metadata import (
 from analytics_toolkit.sql.backends.utils import sql_literal
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.ddl.identifiers import quote_identifier
+from analytics_toolkit.sql.metadata.column_names import table_column_names
 from analytics_toolkit.sql.execution.cancellation import (
     AsyncSqlCancelled,
     SqlCancellationScope,
@@ -508,9 +509,7 @@ class CompletionCoordinator:
             )
             generation = self._cache_generation
         if cached is None:
-            cached = tuple(
-                sql.table_info(self.connection_key, table, include_row_count=False).columns
-            )
+            cached = table_column_names(self.connection_key, table)
             raise_if_cancelled()
             with self._lock:
                 if generation == self._cache_generation:

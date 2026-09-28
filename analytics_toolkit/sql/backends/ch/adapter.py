@@ -13,6 +13,7 @@ from ..base import (
     _apply_query_label,
 )
 from . import create_table_from_sql as _create_from_sql
+from . import column_names as _column_names
 from . import insert as _insert
 from . import operations as _operations
 from . import queries as _queries
@@ -27,6 +28,7 @@ from .config import AIRFLOW_EXTRA_FIELDS
 
 
 class ClickHouseAdapter(BackendAdapter):
+    get_table_column_names = _column_names.get_table_column_names
     backend: BackendName = "ch"
     display_name = "ClickHouse"
     sqlglot_dialect = "clickhouse"

@@ -25,7 +25,9 @@ def test_direct_metadata_calls_are_tagged_and_stopped() -> None:
         calls.append((statement, args, kwargs))
         return "result"
 
-    raw = SimpleNamespace(execute=execute, query=execute, command=execute, name="connection")
+    raw = SimpleNamespace(
+        execute=execute, query=execute, raw_query=execute, command=execute, name="connection"
+    )
     raw.cursor = lambda: raw
     assert cancellable_metadata_connection(raw) is raw
     with activate_cancellation_scope(scope):
@@ -33,6 +35,7 @@ def test_direct_metadata_calls_are_tagged_and_stopped() -> None:
         assert connection.name == "connection"
         assert connection.cursor().execute("SELECT x", ("parameter",)) == "result"
         assert connection.query("DESCRIBE TABLE x", settings={}) == "result"
+        assert connection.raw_query("SELECT * FROM x LIMIT 1", fmt="JSON") == "result"
         assert connection.command("EXISTS TABLE x") == "result"
         assert all(scope.marker in statement for statement, _, _ in calls)
         scope.request_cancel()
@@ -40,7 +43,9 @@ def test_direct_metadata_calls_are_tagged_and_stopped() -> None:
             connection.cursor()
         with pytest.raises(AsyncSqlCancelled):
             connection.query("SELECT x")
-    assert len(calls) == 3
+        with pytest.raises(AsyncSqlCancelled):
+            connection.raw_query("SELECT x", fmt="JSON")
+    assert len(calls) == 4
 
 
 def test_cancel_last_owner_stops_inflight_and_allows_same_scope_retry(

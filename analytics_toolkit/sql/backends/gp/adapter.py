@@ -52,6 +52,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     supports_create_table_order_by = False
     requires_execute_create_schema_inference = True
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
+    get_table_column_names = _operations.get_table_column_names
 
     def __init__(self) -> None:
         super().__init__(backend="gp", commit_commands=True)

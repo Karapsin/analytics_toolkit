@@ -12,6 +12,17 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
+def get_table_column_names(
+    adapter: Any, connection: Any, table_name: str, *, connection_key: str
+) -> tuple[str, ...]:
+    from ...core.identifiers import TableIdentifier, split_gp_table_name
+    from ..common_methods import get_table_column_names as read_names
+
+    parts = split_gp_table_name(table_name)
+    table = TableIdentifier(parts, (True, True)).render_quoted("gp")
+    return read_names(adapter, connection, table, connection_key=connection_key)
+
+
 def build_execute_create_as_sqls(  # noqa: PLR0913
     adapter: Any,
     *,

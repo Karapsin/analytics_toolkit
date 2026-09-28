@@ -33,6 +33,9 @@ class _MetadataConnection:
     def query(self, statement: str, *args: Any, **kwargs: Any) -> Any:
         return self._run("query", statement, *args, **kwargs)
 
+    def raw_query(self, statement: str, *args: Any, **kwargs: Any) -> Any:
+        return self._run("raw_query", statement, *args, **kwargs)
+
     def command(self, statement: str, *args: Any, **kwargs: Any) -> Any:
         return self._run("command", statement, *args, **kwargs)
 
