@@ -81,17 +81,23 @@ counting parents from an individual test file.
 
 Do not wait for, poll, or extend a turn for advisory integration completion
 before finishing a normal commit. During the push watch, poll required checks
-only; report an advisory integration status or URL if it is already available.
-If a non-green integration result is already known while planning a task,
-include its correction in that plan. Every correction derived from an
+only; report an advisory integration status or URL only if returned incidentally
+by that watch. Follow the authoritative advisory policy in `AGENTS.md`: do not
+query advisory jobs, download logs or artifacts, diagnose, retry, or repair
+them, even while required checks run. Explicit user investigation scope or
+release readiness is required. Record known advisory failures as deferred
+follow-ups using existing evidence; they do not expand the current task.
+Every correction derived from an
 integration failure must include a fast non-integration regression test using
 fakes, configuration inspection, or a bounded simulation of the failure mode.
 
 ## Fresh-Agent Sequence
 
-1. Run `prepare_start(...)`, including during planning when session rules allow
-   startup preparation. Existing startup authorization persists; do not ask
-   again solely because work is a plan. Follow the root read-only exception
+1. Run `prepare_start(...)`, including during planning on a clean checkout.
+   Repository policy authorizes switching to `dev` and fast-forward pulling
+   without additional confirmation. Startup rejects local changes and unfinished
+   Git operations before synchronization; never stash or discard to bypass it.
+   Follow the root read-only exception
    when the user explicitly skips sync, disclose staleness, and revalidate after
    normal startup before edits or tests. Repository policy cannot override
    higher-priority session restrictions.

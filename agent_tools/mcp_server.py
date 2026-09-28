@@ -311,15 +311,10 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
         "ensure_project_env": ensure_project_env,
         "detail": detail,
     }
-    if detail not in DETAIL_LEVELS:
-        return _tool_output(
-            "prepare_start",
-            input_summary,
-            ok=False,
-            summary="Unsupported output detail.",
-            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
-        )
     command_results: list[dict[str, Any]] = []
+    startup_failure = _validate_startup(root_path, input_summary, command_results)
+    if startup_failure is not None:
+        return startup_failure
 
     for phase, command in _prepare_sync_commands(root_path):
         result = _run_command(root_path, command)
@@ -2222,6 +2217,74 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     return parser
 
 
+def _validate_startup(
+    root_path: Path, input_summary: dict[str, Any], command_results: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    detail = input_summary["detail"]
+    if detail not in DETAIL_LEVELS:
+        return _tool_output(
+            "prepare_start",
+            input_summary,
+            ok=False,
+            summary="Unsupported output detail.",
+            blockers=[{"phase": "validate", "message": _detail_error(detail)}],
+        )
+    startup_blocker = _startup_preflight(root_path, command_results)
+    if startup_blocker is not None:
+        return _tool_output(
+            "prepare_start",
+            input_summary,
+            ok=False,
+            summary="Startup requires a clean checkout with no unfinished Git operation.",
+            result={"phase": "startup_preflight"},
+            command_results=command_results,
+            blockers=[startup_blocker],
+            next_actions=[
+                "Report the blocker; do not stash, discard, or commit work to bypass it."
+            ],
+        )
+
+    return None
+
+
+def _startup_preflight(root: Path, command_results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Fail closed before fetching, switching, or pulling a user's checkout."""
+    status = _run_git(
+        root,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"],
+    )
+    command_results.append(status)
+    if not status["ok"]:
+        return _command_blocker("startup_preflight", status)
+    if status["stdout"]:
+        return {
+            "phase": "startup_preflight",
+            "message": "Checkout has staged, unstaged, untracked, or conflicted files.",
+            "status_short": status["stdout"].split("\0")[:20],
+        }
+    git_dir = _run_git(root, ["rev-parse", "--absolute-git-dir"])
+    command_results.append(git_dir)
+    if not git_dir["ok"]:
+        return _command_blocker("startup_preflight", git_dir)
+    markers = (
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "rebase-merge",
+        "rebase-apply",
+        "sequencer",
+        "BISECT_LOG",
+    )
+    pending = [name for name in markers if (Path(git_dir["stdout"].strip()) / name).exists()]
+    if pending:
+        return {
+            "phase": "startup_preflight",
+            "message": "Checkout has an unfinished Git operation.",
+            "operations": pending,
+        }
+    return None
+
+
 def _prepare_sync_commands(_root: Path) -> list[tuple[str, dict[str, Any]]]:
     return [
         (
@@ -4044,6 +4107,7 @@ def _watch_github_checks(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - bo
             repository,
             sha,
             command_runner=command_runner,
+            required_workflow_names={entry["name"] for entry in expected},
         )
         command_results.extend(snapshot.pop("command_results"))
         if snapshot.get("error"):
@@ -4154,6 +4218,7 @@ def _github_check_snapshot(
     sha: str,
     *,
     command_runner: Any = None,
+    required_workflow_names: set[str] | None = None,
 ) -> dict[str, Any]:
     command_runner = command_runner or _run_command
     endpoints = {
@@ -4190,6 +4255,8 @@ def _github_check_snapshot(
     runs = payloads["runs"].get("workflow_runs", [])
     jobs: list[dict[str, Any]] = []
     for run in runs:
+        if required_workflow_names is not None and run.get("name") not in required_workflow_names:
+            continue
         endpoint = f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100"
         result = command_runner(
             root,
@@ -4485,6 +4552,8 @@ def _classify_github_snapshot(  # noqa: C901, PLR0912, PLR0915 - checks multiple
             job = next(
                 (candidate for candidate in run_jobs if candidate.get("name") == job_name), None
             )
+            if job is None:
+                continue  # Advisory job details are optional; never fetch them for a watch.
             item["jobs"].append(
                 {
                     "name": job_name,

@@ -61,6 +61,14 @@ Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
 unchanged. Dependency installation is quiet when the fingerprint changes.
 
+Under the authoritative `AGENTS.md` policy, `prepare-start` is authorized during
+planning on a clean checkout, including switching to `dev` and fast-forward
+pulling, without another confirmation. Before synchronization it rejects staged
+or unstaged changes, non-ignored untracked files, conflicts, and unfinished Git
+operations; it never stashes or discards work. Ignored caches are allowed.
+Higher-priority session restrictions still apply: repository authorization
+cannot override a Plan Mode rule that prohibits branch switching or pulling.
+
 `change-impact` is a read-only preflight for implementation work. For SQL public
 symbols it reports the live signature, exact integration-manifest JSON pointers,
 signature drift, documentation paths, focused checks, changelog action, and SQL
@@ -161,14 +169,20 @@ Successful `git-workflow commit` and `push` operations automatically watch the
 immutable SHA captured immediately before the push. The watcher discovers every
 entry in `.github/required-workflows.json`, waits only for `required_push`
 workflows, and reports `advisory_push` workflow status without blocking. It polls
-Actions jobs plus commit check-runs and statuses and returns run/job URLs and
+Actions jobs only for required workflows, plus shared commit check-runs and
+statuses, and returns run/job URLs and
 conclusions. It fails when a required check is cancelled, superseded, missing,
 failed, or timed out, or when API/authentication fails. Only conditional skips
 declared in the manifest are accepted.
-When a run fails, it waits for terminal state and returns failed steps plus a
+When a required run fails, it waits for terminal state and returns failed steps plus a
 bounded `gh run view --log-failed` excerpt. Rerun only for demonstrated
 infrastructure failure. When resuming after interruption, use
 `git-workflow checks --sha ...`; do not inspect the latest branch run instead.
+Advisory status returned incidentally is report-only. Do not query advisory jobs,
+download their logs or artifacts, diagnose, retry, or repair them during normal
+completion, even while required checks run. Record a deferred follow-up using
+existing evidence. Investigation requires explicit user scope or release
+readiness; observing a failure alone is not authorization.
 Each watch call waits for a bounded interval (60 seconds by default), persists
 the repository, exact-SHA deadline, and last reported workflow/job/check states
 below `.rag_index/`, and returns changed states plus remaining required checks

@@ -40,7 +40,11 @@ investigation.
   exact-pushed-SHA required-check watch. Advisory core/auth integration starts
   on push, but agents must not poll it, wait for it, or extend the turn for it.
   Report its status or URL only if already available from the required-check
-  watch.
+  watch. Under the authoritative `AGENTS.md` policy, do not query advisory jobs,
+  download logs or artifacts, diagnose, retry, or repair them, even while required
+  checks are running. An incidentally observed failure becomes a deferred
+  follow-up using existing evidence; it does not expand the task. Investigation
+  requires explicit user scope or release readiness.
 - Release readiness is the exception: it must complete the exhaustive `all`
   integration profile with both ClickHouse transports.
 

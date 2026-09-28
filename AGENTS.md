@@ -16,8 +16,10 @@ or edits. `prepare_start` switches to `dev`, pulls `origin dev`, prepares the lo
 and project environment, refreshes `.rag_index/`, returns repo health, and
 reports the instruction files that must be read next.
 
-If MCP is not available, run only the mandatory `git switch dev` and
-`git pull --ff-only origin dev` first,
+If MCP is not available, first perform read-only Git status and operation-state
+inspection using the clean-start rules below. Stop if the checkout is dirty or
+an operation is unfinished. Then run the mandatory `git switch dev` and
+`git pull --ff-only origin dev`,
 then set up the local agent-only MCP environment with Python 3.10 or newer and
 call `prepare_start` before continuing:
 
@@ -32,16 +34,23 @@ startup, so restart Codex or reopen the workspace after bootstrapping or
 changing the configuration. `agent_tools/mcp_tool.sh` with no arguments starts
 the stdio server; arguments continue to invoke its manual JSON CLI.
 
-### Read-Only Planning Exception
+### Clean Startup During Planning
 
-Repository policy authorizes `prepare_start(...)` during read-only review or
-planning; it remains the preferred default startup workflow. Its startup sync,
-environment preparation, and local RAG index refresh are permitted preparatory
-workflow, not implementation work under repository policy. Do not request
-permission again when startup preparation is already authorized. This policy
+Repository policy explicitly authorizes `prepare_start(...)` during planning
+and read-only review when the checkout is clean, including `git switch dev`
+and `git pull --ff-only origin dev`. No additional user confirmation is needed.
+Before synchronization, startup must reject staged or unstaged changes,
+non-ignored untracked files, conflicts, and unfinished Git operations. Ignored
+agent caches and virtual environments do not make the checkout dirty. Never
+stash, reset, discard, or commit local work to bypass this check.
+
+Startup sync, environment preparation, and local RAG index refresh are permitted
+preparatory workflow under repository policy, not implementation work. This policy
 does not override higher-priority session restrictions: if those prohibit
 branch switching or pulling, identify that specific restriction and use an
 explicitly authorized skip or wait for an execution-capable session.
+
+### Read-Only Planning Exception
 
 Agents may skip `git switch dev`,
 `git pull --ff-only origin dev`, and
@@ -98,8 +107,11 @@ This read-only watch is the required completion phase after the final repository
 mutation. Advisory SQL integration workflows still run on every push, but their
 completion is not required for a normal commit and agents must not remain active
 solely to wait for them. During the exact-SHA watch, poll required checks only;
-record an advisory integration status or URL if it is already available, but do
-not poll, block on, or extend the turn for advisory integration. A cancelled,
+record an advisory integration status or URL only if already returned by the
+required-check watch. Do not query advisory jobs, download their logs or
+artifacts, diagnose, retry, or repair them during normal completion, even while
+required checks are still running. Do not poll, block on, or extend the turn
+for advisory integration. A cancelled,
 superseded, missing, failed, or timed-out required check is not success. Resume
 an interrupted required-check watch with
 `git_workflow(action="checks", sha="<exact-sha>")`; never substitute the newest
@@ -121,8 +133,11 @@ only the run-owned temporary checkout. The receipt records the host and binds
 to the full reviewed content. `git_workflow` blocks SQL Explorer commits and
 pushes when this receipt is missing, stale, partial, or non-green. Treat reference images as design guidance, not pixel baselines.
 
-When planning any repository task, include a corrective work item for every
-known non-green integration result rather than treating it as unrelated debt.
+Advisory integration investigation requires an explicit user request or release
+readiness scope. An incidentally observed failure does not expand the current
+task: record a deferred follow-up using only the evidence already available.
+This boundary takes precedence over general instructions to investigate or
+correct known failures. Do not fetch additional evidence to describe a follow-up.
 Whenever an integration failure leads to a code, configuration, test-harness,
 or workflow fix, add or strengthen a non-integration regression test that can
 detect the same failure mode quickly without starting external services.

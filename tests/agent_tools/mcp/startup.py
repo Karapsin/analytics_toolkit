@@ -15,6 +15,7 @@ def test_prepare_start_fails_when_branch_verification_fails(
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(mcp_server, "_startup_preflight", lambda root, results: None)
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
         return {
@@ -45,6 +46,7 @@ def test_prepare_start_reuses_matching_environment(
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(mcp_server, "_startup_preflight", lambda root, results: None)
     (root / "agent_tools").mkdir()
     (root / "agent_tools" / "requirements-mcp.txt").write_text("mcp>=1\n", encoding="utf-8")
     (root / "tox.ini").write_text("[tox]\n", encoding="utf-8")
@@ -102,6 +104,7 @@ def test_prepare_start_sequences_environment_and_index(
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(mcp_server, "_startup_preflight", lambda root, results: None)
     commands: list[str] = []
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
@@ -161,6 +164,7 @@ def test_prepare_start_stops_on_failed_step(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setattr(mcp_server, "_startup_preflight", lambda root, results: None)
     calls: list[str] = []
 
     def fake_run_command(root_path: Path, command: dict[str, object]) -> dict[str, object]:
