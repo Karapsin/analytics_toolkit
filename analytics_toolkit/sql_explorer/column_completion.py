@@ -119,10 +119,10 @@ def _source_columns(
     visiting = visiting | {id(source)}
     expression = source.expression
     if isinstance(expression, exp.SetOperation):
+        # SQLGlot 30.20 renamed union_scopes to cover all set operations.
+        children = getattr(source, "set_operation_scopes", getattr(source, "union_scopes", ()))
         return (
-            _source_columns(source.union_scopes[0], visiting, dialect, columns_for_table)
-            if source.union_scopes
-            else ()
+            _source_columns(children[0], visiting, dialect, columns_for_table) if children else ()
         )
     names: list[str] = []
     for projection in expression.expressions:

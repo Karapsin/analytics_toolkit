@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 import sqlglot
 from analytics_toolkit import sql
+from analytics_toolkit.sql_explorer import column_completion
 from analytics_toolkit.sql_explorer.column_completion import (
     _source_columns,
     column_fragment,
@@ -192,3 +193,32 @@ def test_explicit_empty_column_completion_keeps_other_context_guards(
         query.replace("|", ""), query.index("|"), backend="gp", allow_empty_column_prefix=True
     )
     assert (context.request.kind == "column") is expected
+
+
+@pytest.mark.parametrize("operator", ["UNION ALL", "INTERSECT", "EXCEPT"])
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_set_operations_use_left_projection_names(operator: str, backend: str) -> None:
+    statement = (
+        f"WITH c AS (SELECT id AS left_id FROM t {operator} "
+        "SELECT id AS right_id FROM u) SELECT __explorer_cursor_column__ FROM c"
+    )
+    assert projection_suggestions(statement, backend, lambda _: ("id",)) == ("left_id",)
+
+
+@pytest.mark.parametrize("attribute", ["union_scopes", "set_operation_scopes"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_set_operation_scope_api_compatibility(
+    monkeypatch: pytest.MonkeyPatch, attribute: str, empty: bool
+) -> None:
+    # Model both APIs even when the installed SQLGlot exposes only one of them.
+    monkeypatch.setattr(column_completion, "Scope", SimpleNamespace)
+    left = SimpleNamespace(expression=exp.select("id"), outer_columns=[])
+    right = SimpleNamespace(expression=exp.select("other"), outer_columns=[])
+    source = SimpleNamespace(
+        expression=exp.Union(),
+        outer_columns=[],
+        **{attribute: [] if empty else [left, right]},
+    )
+    assert _source_columns(source, frozenset(), "postgres", lambda _: ()) == (
+        () if empty else ("id",)
+    )

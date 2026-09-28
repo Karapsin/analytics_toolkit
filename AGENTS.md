@@ -69,7 +69,7 @@ Use these MCP tools for the corresponding agent workflow steps:
   `workflow_status`.
 - Version, README version, and changelog updates: `version_bump`.
 - Focused, pre-commit, and release validation checks: `run_checks`.
-- Fresh-macOS SQL Explorer capture and review: `visual_workflow` and
+- Headless current-host SQL Explorer capture and review: `visual_workflow` and
   `visual_review`.
 - Stage/commit and push workflow: `git_workflow`.
 - Release readiness and PyPI publishing entrypoint: `release_workflow`.
@@ -111,14 +111,15 @@ publishing from `main`.
 
 Any change under `analytics_toolkit/sql_explorer/`, its visual harness, or its
 scene manifest requires the full SQL Explorer visual review before commit or
-push. Use `visual_workflow` to create a new clone from the pinned macOS OCI
-digest for that review; never reuse, start, stop, or delete an existing VM.
-Capture every manifest scene through headless VNC at 1280x800, open every full
-PNG, and record an individual `pass` verdict with `visual_review`. Completion
-requires every automated geometry check and agent verdict to pass, then shuts
-down and deletes only the run-owned VM. `git_workflow` blocks SQL Explorer
-commits and pushes when this content-bound receipt is missing, stale, partial,
-or non-green. Treat reference images as design guidance, not pixel baselines.
+push. Use `visual_workflow` to capture the application headlessly on the current
+Linux, macOS, or Windows host. No VM, OS image download, desktop session, or VNC
+server is required. Render every manifest scene with Textual's headless driver
+at a fixed 208x47 terminal grid and export full 1280x800 PNGs. Open every full
+PNG and record an individual `pass` verdict with `visual_review`. Completion
+requires every automated geometry check and agent verdict to pass, and removes
+only the run-owned temporary checkout. The receipt records the host and binds
+to the full reviewed content. `git_workflow` blocks SQL Explorer commits and
+pushes when this receipt is missing, stale, partial, or non-green. Treat reference images as design guidance, not pixel baselines.
 
 When planning any repository task, include a corrective work item for every
 known non-green integration result rather than treating it as unrelated debt.

@@ -2,10 +2,12 @@
   "schema_version": 1,
   "review_batch_size": 5,
   "viewport": {
-    "platform": "macos",
+    "platform": "current-host",
     "width": 1280,
     "height": 800,
-    "terminal_profile": "SQL Explorer Visual Review"
+    "renderer": "textual-headless",
+    "columns": 208,
+    "rows": 47
   },
   "style_contract": "Dark charcoal, square hard edges, sparse amber accents: brutal, but polished.",
   "scenes": [

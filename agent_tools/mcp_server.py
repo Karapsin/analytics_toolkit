@@ -3382,7 +3382,7 @@ def _missing_mandatory_actions(
         visual = sql_explorer_visual.verify_visual_receipt(root)
         if not visual["ok"]:
             missing.append(
-                "Complete the full fresh-macOS-VM SQL Explorer visual review before commit."
+                "Complete the full headless current-host SQL Explorer visual review before commit."
             )
     return missing
 

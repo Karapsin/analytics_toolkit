@@ -47,27 +47,28 @@ investigation.
 ## SQL Explorer Visual Review
 
 - Every production SQL Explorer change and every change to its visual harness
-  or scene manifest requires a complete agent-reviewed macOS capture before
+  or scene manifest requires a complete agent-reviewed headless capture before
   `git_workflow` commit or push.
 - Start with `visual_workflow(action="start")`, then capture with its returned
-  review ID. Capture always makes a uniquely named clone of the pinned macOS
-  OCI digest. It refuses any name collision and must never inspect, run, stop,
-  or delete a pre-existing VM.
-- The guest runs at 1280x800 without a Tart display window. Headless VNC captures
-  the full framebuffer. The workflow shuts down and deletes only its run-owned
-  clone after the scene set, including on failure.
+  review ID. Capture runs on the current Linux, macOS, or Windows host using the
+  project Python environment and Textual's headless driver. It needs no VM,
+  downloaded OS image, desktop session, display server, or VNC connection.
+- Each scene runs in a separate process against a temporary checkout containing
+  the reviewed files and fake database fixtures. Do not read `.connections` or
+  connect to real databases. Clean up only that run's temporary checkout.
+- Capture the complete application at 208x47 terminal cells and render its SVG
+  to a full 1280x800 PNG using the agent-only renderer and host monospace fonts.
+  These are application captures; they do not include native OS window chrome.
 - The manifest must cover every literal SQL Explorer widget ID. Each scene must
   publish valid geometry, all required controls must be visible, panes and
   status layers must not overlap, and scrollbars must remain on the right.
-- Open every full-resolution PNG returned by visual status, normally in the
-  reported batches, and call `visual_review(...)` for every scene. Use `pass`
-  only when the UI is coherent, unclipped, and follows the dark square-edged
-  "brutal, but polished" design. `product_defect` and
-  `infrastructure_failure` require notes and block completion.
+- Open every full-resolution PNG returned by visual status and call
+  `visual_review(...)` for every scene. Use `pass` only when the UI is coherent,
+  unclipped, and follows the dark square-edged "brutal, but polished" design.
+  `product_defect` and `infrastructure_failure` require notes and block completion.
 - `visual_workflow(action="complete")` writes a private receipt below
-  `.rag_index/`. It hashes the full reviewable content rather than the current
-  commit SHA, so the same receipt remains valid across the immediately
-  following local commit but becomes stale after any content change.
+  `.rag_index/` with the capture method and host platform. It hashes the full
+  reviewed content and becomes stale after any content change.
 - Reference screenshots are directional only; do not add or compare pixel
   baselines for this gate.
 

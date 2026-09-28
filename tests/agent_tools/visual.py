@@ -3,17 +3,21 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
+from xml.etree import ElementTree as ET
 
 import pytest
 from textual.app import ScreenStackError
 
-from agent_tools import mcp_server, sql_explorer_visual, sql_explorer_visual_scene
+from agent_tools import (
+    mcp_server,
+    sql_explorer_visual,
+    sql_explorer_visual_capture,
+    sql_explorer_visual_scene,
+)
 from tests.agent_tools._support.mcp import _init_git_repo, _write_minimal_repo_files
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _write_visual_repo(root: Path) -> None:
@@ -42,7 +46,7 @@ def _complete_fake_capture(root: Path, review_id: str) -> None:
     geometry = evidence / "editor-ready.json"
     screenshot.write_bytes(b"png")
     geometry.write_text("{}", encoding="utf-8")
-    session["capture"] = {"status": "pass", "vm_name": "fresh-vm", "vm_deleted": True}
+    session["capture"] = {"status": "pass", "workspace_removed": True}
     session["scenes"]["editor-ready"].update(
         {
             "capture": "pass",
@@ -74,10 +78,12 @@ def test_visual_manifest_covers_every_literal_sql_explorer_element() -> None:
         scene["id"] for scene in manifest["scenes"]
     }
     assert manifest["viewport"] == {
-        "platform": "macos",
+        "platform": "current-host",
         "width": 1280,
         "height": 800,
-        "terminal_profile": "SQL Explorer Visual Review",
+        "renderer": "textual-headless",
+        "columns": 208,
+        "rows": 47,
     }
 
 
@@ -222,46 +228,6 @@ def test_non_pass_review_requires_notes_and_blocks_completion(tmp_path: Path) ->
         sql_explorer_visual.complete_review(root, session["review_id"])
 
 
-def test_capture_refuses_any_preexisting_vm(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    root = _write_minimal_repo_files(tmp_path / "project")
-    _write_visual_repo(root)
-    _init_git_repo(root)
-    session = sql_explorer_visual.start_review(root, "review-collision")
-    fingerprint = session["content_fingerprint"]
-    monkeypatch.setattr(sql_explorer_visual.shutil, "which", lambda _name: "/opt/homebrew/bin/tart")
-    monkeypatch.setattr(sql_explorer_visual, "content_fingerprint", lambda _root: fingerprint)
-    monkeypatch.setattr(
-        sql_explorer_visual,
-        "_run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
-    )
-
-    with pytest.raises(sql_explorer_visual.VisualReviewError, match="pre-existing"):
-        sql_explorer_visual.capture_review(root, session["review_id"])
-
-
-def test_guest_environment_includes_eager_sql_imports(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: list[str] = []
-    monkeypatch.setattr(
-        sql_explorer_visual,
-        "_guest_shell",
-        lambda _root, _vm_name, script, **_kwargs: captured.append(script),
-    )
-
-    sql_explorer_visual._prepare_guest(
-        mcp_server.REPO_ROOT,
-        "fresh-vm",
-        "/Volumes/My Shared Files/review/checkout",
-        "review-runtime",
-    )
-
-    assert len(captured) == 1
-    assert "tqdm>=4.65,<5" in captured[0]
-
-
 def test_geometry_waits_for_the_scene_final_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -285,53 +251,6 @@ def test_geometry_rejects_terminal_grid_that_would_be_clipped(
     geometry.write_text(json.dumps({"ok": True, "screen": screen}), encoding="utf-8")
     with pytest.raises(sql_explorer_visual.VisualReviewError, match="capture viewport"):
         sql_explorer_visual._wait_geometry(geometry)
-
-
-def test_terminal_scene_keeps_textual_output_attached(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list[str] = []
-    monkeypatch.setattr(
-        sql_explorer_visual,
-        "_guest_shell",
-        lambda _root, _vm_name, script, **_kwargs: captured.append(script),
-    )
-
-    sql_explorer_visual._open_terminal_scene(
-        mcp_server.REPO_ROOT,
-        "fresh-vm",
-        scene_id="editor-ready",
-        guest_root="/Volumes/My Shared Files/review/checkout",
-        guest_output="/Volumes/My Shared Files/review/output",
-        venv="/tmp/review-venv",
-    )
-
-    assert len(captured) == 1
-    assert "open -na Terminal" in captured[0]
-    assert "2>" not in captured[0]
-    assert "\\033[3;0;24t\\033[8;47;208t" in captured[0]
-    assert "TEXTUAL_COLOR_SYSTEM=256" in captured[0]
-    assert "SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256=1" in captured[0]
-    assert "unset COLORTERM" in captured[0]
-
-
-def test_guest_visual_profile_is_opaque_and_hides_the_dock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list[str] = []
-    monkeypatch.setattr(
-        sql_explorer_visual,
-        "_guest_shell",
-        lambda _root, _vm_name, script, **_kwargs: captured.append(script),
-    )
-
-    sql_explorer_visual._configure_guest_ui(mcp_server.REPO_ROOT, "fresh-vm")
-
-    assert len(captured) == 1
-    assert "Window Settings.Pro.BackgroundColor" in captured[0]
-    assert sql_explorer_visual.OPAQUE_BLACK_NS_COLOR in captured[0]
-    assert "-string Pro" in captured[0]
-    assert "com.apple.dock autohide -bool true" in captured[0]
 
 
 def test_git_workflow_blocks_visual_change_without_current_receipt(tmp_path: Path) -> None:
@@ -377,3 +296,103 @@ def test_visual_cli_parsers_route_review_arguments(monkeypatch: pytest.MonkeyPat
     assert args.handler(args) == {"ok": True}
     assert captured["scene_id"] == "editor-ready"
     assert captured["verdict"] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("host_os", "folder", "executable"),
+    [("posix", "bin", "python"), ("nt", "Scripts", "python.exe")],
+)
+def test_host_interpreter_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, host_os: str, folder: str, executable: str
+) -> None:
+    interpreter = tmp_path / ".venv" / folder / executable
+    interpreter.parent.mkdir(parents=True)
+    interpreter.touch()
+    with monkeypatch.context() as patch:
+        patch.setattr(sql_explorer_visual.os, "name", host_os)
+        selected = sql_explorer_visual._host_python(tmp_path)
+    assert selected == str(interpreter)
+    interpreter.unlink()
+    assert sql_explorer_visual._host_python(tmp_path) == sql_explorer_visual.sys.executable
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_host_capture_isolated_process_and_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fail: bool
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    _write_visual_repo(root)
+    _init_git_repo(root)
+    (root / ".connections").write_text("{}", encoding="utf-8")
+    session = sql_explorer_visual.start_review(root, "review-host-capture")
+    workspaces = []
+    commands = []
+    original_run = sql_explorer_visual._run
+
+    def run(command: list[str], *, cwd: Path, **_kwargs: Any) -> Any:
+        if command[0] == "git":
+            return original_run(command, cwd=cwd, **_kwargs)
+        commands.append(command)
+        workspaces.append(cwd.parent)
+        assert cwd != root
+        assert (cwd / sql_explorer_visual.MANIFEST).is_file()
+        assert not (cwd / ".connections").exists()
+        if fail:
+            message = "scene failed"
+            raise sql_explorer_visual.VisualReviewError(message)
+        evidence = command[command.index("--evidence") + 1]
+        screenshot = command[command.index("--screenshot") + 1]
+        Path(evidence).write_text(
+            json.dumps(
+                {"ok": True, "scene_id": "editor-ready", "screen": {"width": 208, "height": 47}}
+            )
+        )
+        Path(screenshot).write_bytes(b"fake-png")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(sql_explorer_visual, "_run", run)
+    monkeypatch.setattr(sql_explorer_visual, "_validate_png", lambda _path: None)
+    if fail:
+        with pytest.raises(sql_explorer_visual.VisualReviewError, match="scene failed"):
+            sql_explorer_visual.capture_review(root, session["review_id"])
+    else:
+        status = sql_explorer_visual.capture_review(root, session["review_id"])
+        assert status["pending_review_count"] == 1
+    assert commands[0][1:3] == ["-m", "agent_tools.sql_explorer_visual_capture"]
+    assert all(not path.exists() for path in workspaces)
+    saved = sql_explorer_visual._load_session(root, session["review_id"])
+    assert saved["capture"]["workspace_removed"] is True
+    assert saved["capture"]["status"] == ("failed" if fail else "pass")
+    with pytest.raises(sql_explorer_visual.VisualReviewError, match="already attempted"):
+        sql_explorer_visual.capture_review(root, session["review_id"])
+
+
+def test_headless_capture_exports_real_application_frame(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    rendered = []
+    monkeypatch.setattr(
+        sql_explorer_visual_capture, "_write_png", lambda svg, path: rendered.append((svg, path))
+    )
+    evidence = tmp_path / "geometry.json"
+    png = tmp_path / "scene.png"
+    asyncio.run(
+        sql_explorer_visual_capture.capture_scene(
+            "editor-ready", evidence, mcp_server.REPO_ROOT / sql_explorer_visual.MANIFEST, png
+        )
+    )
+    assert json.loads(evidence.read_text())["ok"] is True
+    assert len(rendered) == 1
+    assert "SELECT" in "".join(ET.fromstring(rendered[0][0]).itertext())
+    assert rendered[0][1] == png
+
+
+@pytest.mark.parametrize("view_box", ["0 0 2556 1196.8", "0 0 600 1200"])
+def test_headless_frame_keeps_fixed_viewport_without_cropping(view_box: str) -> None:
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}"><text>SQL</text></svg>'
+    frame = ET.fromstring(sql_explorer_visual_capture._frame_svg(svg))
+    assert (frame.attrib["width"], frame.attrib["height"]) == ("1280", "800")
+    screen = list(frame)[1]
+    assert screen.attrib["viewBox"] == view_box
+    assert screen.attrib["preserveAspectRatio"] == "xMidYMid meet"
+    assert "SQL" in "".join(screen.itertext())

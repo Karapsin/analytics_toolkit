@@ -1,43 +1,32 @@
 #!/usr/bin/env python3
-"""Fresh-macOS-VM capture and agent review gate for SQL Explorer UI changes."""
+"""Headless current-host capture and agent review gate for SQL Explorer UI changes."""
 
-# ruff: noqa: EM101, EM102, PLR0911, PLR0913, S108, TRY003, TRY301
+# ruff: noqa: EM101, EM102, PLR0911, TRY003, TRY301
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import platform
 import re
-import select
-import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
 MANIFEST = Path("visual-tests/sql_explorer/scenes.json")
 STATE_ROOT = Path(".rag_index/sql-explorer-visual")
 RECEIPT = STATE_ROOT / "receipt.json"
 SESSIONS = STATE_ROOT / "sessions"
-MACOS_IMAGE = (
-    "ghcr.io/cirruslabs/macos-sequoia-base@"
-    "sha256:fdd8b72a6ee46fc8ad35dc1b9f3b1f162b6607b82a584947d20bb28d3dcb99ed"
-)
+CAPTURE_MODE = "textual-headless"
 VIEWPORT = (1280, 800)
 TERMINAL_COLUMNS = 208
 TERMINAL_ROWS = 47
-OPAQUE_BLACK_NS_COLOR = (
-    "YnBsaXN0MDDUAQIDBAUGBwpYJHZlcnNpb25ZJGFyY2hpdmVyVCR0b3BYJG9iamVjdHMSAAGGoF8Q"
-    "D05TS2V5ZWRBcmNoaXZlctEICVRyb290gAGjCwwTVSRudWxs0w0ODxAREldOU1doaXRlXE5TQ29s"
-    "b3JTcGFjZVYkY2xhc3NEMCAxABADgALSFBUWF1okY2xhc3NuYW1lWCRjbGFzc2VzV05TQ29sb3Ki"
-    "FhhYTlNPYmplY3QIERokKTI3SUxRU1ddZGx5gIWHiY6ZoqqtAAAAAAAAAQEAAAAAAAAAGQAAAAAA"
-    "AAAAAAAAAAAAALY="
-)
 VERDICTS = {"pass", "product_defect", "infrastructure_failure"}
 VISUAL_PATH_PREFIXES = (
     "analytics_toolkit/sql_explorer/",
@@ -195,7 +184,7 @@ def verify_visual_receipt(
         return {
             "ok": False,
             "required": True,
-            "message": "No complete SQL Explorer macOS visual-review receipt exists.",
+            "message": "No complete SQL Explorer headless visual-review receipt exists.",
         }
     try:
         receipt = _read_json(receipt_path)
@@ -203,6 +192,12 @@ def verify_visual_receipt(
         manifest_hash = _sha256(root / MANIFEST)
     except (OSError, json.JSONDecodeError, VisualReviewError) as exc:
         return {"ok": False, "required": True, "message": f"Visual receipt is unreadable: {exc}"}
+    if receipt.get("capture_mode") != CAPTURE_MODE:
+        return {
+            "ok": False,
+            "required": True,
+            "message": "Visual receipt uses an obsolete capture method.",
+        }
     if receipt.get("content_fingerprint") != fingerprint:
         return {
             "ok": False,
@@ -263,10 +258,11 @@ def start_review(root: Path, review_id: str | None = None) -> dict[str, Any]:
         "review_id": selected_id,
         "content_fingerprint": content_fingerprint(root),
         "manifest_sha256": _sha256(root / MANIFEST),
-        "image": MACOS_IMAGE,
+        "capture_mode": CAPTURE_MODE,
+        "host": {"system": platform.system(), "python": platform.python_version()},
         "viewport": list(VIEWPORT),
         "created_at_epoch": int(time.time()),
-        "capture": {"status": "pending", "vm_name": "", "vm_deleted": False},
+        "capture": {"status": "pending", "workspace_removed": False},
         "scenes": {
             scene["id"]: {
                 "capture": "pending",
@@ -345,14 +341,17 @@ def complete_review(root: Path, review_id: str) -> dict[str, Any]:
         raise VisualReviewError(
             "visual review has incomplete/non-pass scenes: " + ", ".join(incomplete)
         )
-    if session["capture"].get("vm_deleted") is not True:
-        raise VisualReviewError("fresh visual-review VM was not deleted after capture")
+    if session["capture"].get("status") != "pass":
+        raise VisualReviewError("headless visual capture did not complete")
+    if session["capture"].get("workspace_removed") is not True:
+        raise VisualReviewError("temporary visual-review workspace was not removed")
     receipt = {
         "schema_version": 1,
         "review_id": review_id,
         "content_fingerprint": session["content_fingerprint"],
         "manifest_sha256": session["manifest_sha256"],
-        "image": session["image"],
+        "capture_mode": session["capture_mode"],
+        "host": session["host"],
         "viewport": session["viewport"],
         "completed_at_epoch": int(time.time()),
         "scenes": {
@@ -378,131 +377,6 @@ def _copy_review_tree(root: Path, destination: Path) -> None:
             target.symlink_to(os.readlink(source))
         elif source.is_file():
             shutil.copy2(source, target)
-
-
-def _wait_for_vnc_url(
-    process: subprocess.Popen[str], timeout: float = 120.0
-) -> tuple[str, int, str]:
-    if process.stdout is None:
-        raise VisualReviewError("Tart VNC process has no output stream")
-    deadline = time.monotonic() + timeout
-    transcript: list[str] = []
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise VisualReviewError(
-                "Tart VM exited before VNC became ready: " + "".join(transcript)
-            )
-        readable, _, _ = select.select([process.stdout], [], [], 1.0)
-        if not readable:
-            continue
-        line = process.stdout.readline()
-        transcript.append(line)
-        match = re.search(r"vnc://[^\s]+", line)
-        if not match:
-            continue
-        parsed = urlsplit(match.group(0))
-        if not parsed.hostname or not parsed.port:
-            raise VisualReviewError("Tart returned an invalid VNC URL")
-        return parsed.hostname, parsed.port, unquote(parsed.password or "")
-    raise VisualReviewError("timed out waiting for Tart experimental VNC URL")
-
-
-def _wait_guest(root: Path, vm_name: str, timeout: float = 180.0) -> None:
-    deadline = time.monotonic() + timeout
-    failures: list[str] = []
-    while time.monotonic() < deadline:
-        result = _run(["tart", "exec", vm_name, "/usr/bin/true"], cwd=root, check=False)
-        if result.returncode == 0:
-            return
-        failures.append(result.stderr.strip() or result.stdout.strip())
-        time.sleep(2)
-    raise VisualReviewError(
-        "fresh macOS VM guest agent did not become ready: " + "; ".join(failures[-3:])
-    )
-
-
-def _guest_shell(root: Path, vm_name: str, script: str, timeout: int = 900) -> None:
-    _run(["tart", "exec", vm_name, "/bin/zsh", "-lc", script], cwd=root, timeout=timeout)
-
-
-def _prepare_guest(root: Path, vm_name: str, guest_root: str, review_id: str) -> str:
-    venv = f"/tmp/analytics-toolkit-visual-{review_id}"
-    dependencies = " ".join(
-        shlex.quote(value)
-        for value in (
-            "numpy>=1.24,<2",
-            "pandas>=1.4.4,<3",
-            "pyperclip>=1.11,<2",
-            "sqlglot>=26.33,<31",
-            "sqlparse>=0.4.3,<1",
-            "textual>=0.73,<0.74; python_version < '3.13'",
-            "textual[syntax]>=0.89.1,<0.90; python_version >= '3.13'",
-            "tqdm>=4.65,<5",
-            "tree-sitter>=0.20.1,<0.21.0; python_version < '3.13'",
-            "tree-sitter-languages==1.10.2; python_version < '3.13'",
-            "tree-sitter>=0.23,<0.24; python_version >= '3.13'",
-            "tree-sitter-sql>=0.3,<0.3.8; python_version >= '3.13'",
-            "typing-extensions>=4.8",
-        )
-    )
-    script = (
-        "set -e; "
-        "python3 -c 'import sys; assert sys.version_info >= (3, 10), sys.version'; "
-        f"python3 -m venv {shlex.quote(venv)}; "
-        f"{shlex.quote(venv)}/bin/python -m pip install --quiet --disable-pip-version-check "
-        f"{dependencies}; "
-        f"test -f {shlex.quote(guest_root)}/agent_tools/sql_explorer_visual_scene.py"
-    )
-    _guest_shell(root, vm_name, script, timeout=20 * 60)
-    return venv
-
-
-def _configure_guest_ui(root: Path, vm_name: str) -> None:
-    terminal_preferences = "/tmp/sql-explorer-visual-terminal.plist"
-    _guest_shell(
-        root,
-        vm_name,
-        f"defaults export com.apple.Terminal {terminal_preferences} >/dev/null; "
-        f"plutil -replace 'Window Settings.Pro.BackgroundColor' -data "
-        f"{OPAQUE_BLACK_NS_COLOR} {terminal_preferences}; "
-        f"defaults import com.apple.Terminal {terminal_preferences} >/dev/null; "
-        "defaults write com.apple.Terminal 'Default Window Settings' -string Pro; "
-        "defaults write com.apple.Terminal 'Startup Window Settings' -string Pro; "
-        "defaults write com.apple.dock autohide -bool true; "
-        "killall Dock >/dev/null 2>&1 || true; "
-        "killall Terminal >/dev/null 2>&1 || true",
-        timeout=60,
-    )
-
-
-def _open_terminal_scene(
-    root: Path,
-    vm_name: str,
-    *,
-    scene_id: str,
-    guest_root: str,
-    guest_output: str,
-    venv: str,
-) -> None:
-    # Pro uses 14-pixel rows; 47 rows leave room for macOS and Terminal chrome.
-    command = (
-        f"printf '\\033[3;0;24t\\033[8;{TERMINAL_ROWS};{TERMINAL_COLUMNS}t'; sleep 1; "
-        f"cd {shlex.quote(guest_root)} && "
-        "export TERM=xterm-256color TEXTUAL_COLOR_SYSTEM=256 "
-        "SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256=1; unset COLORTERM; "
-        f"exec {shlex.quote(venv)}/bin/python -m agent_tools.sql_explorer_visual_scene "
-        f"--scene {shlex.quote(scene_id)} "
-        f"--evidence {shlex.quote(guest_output + '/' + scene_id + '.json')} "
-        f"--manifest {shlex.quote(guest_root + '/' + MANIFEST.as_posix())}"
-    )
-    launcher = f"/tmp/sql-explorer-visual-{scene_id}.command"
-    launcher_content = "#!/bin/zsh\n" + command
-    script = (
-        f"printf '%s\\n' {shlex.quote(launcher_content)} > {shlex.quote(launcher)}; "
-        f"chmod 700 {shlex.quote(launcher)}; "
-        f"open -na Terminal {shlex.quote(launcher)}"
-    )
-    _guest_shell(root, vm_name, script, timeout=60)
 
 
 def _wait_geometry(path: Path, timeout: float = 30.0) -> dict[str, Any]:
@@ -531,155 +405,82 @@ def _validate_png(path: Path) -> None:
     with Image.open(path) as image:
         image.load()
         if image.size != VIEWPORT:
-            raise VisualReviewError(f"VNC screenshot must be 1280x800, got {image.size}")
+            raise VisualReviewError(f"Headless screenshot must be 1280x800, got {image.size}")
         extrema = ImageStat.Stat(image.convert("RGB")).extrema
         if all(low == high for low, high in extrema):
-            raise VisualReviewError("VNC screenshot is blank")
+            raise VisualReviewError("Headless screenshot is blank")
 
 
-def _capture_frame(root: Path, server: str, port: int, password: str, output: Path) -> None:
-    client = root / ".venv/bin/vncdo"
-    if not client.is_file():
-        raise VisualReviewError(".venv/bin/vncdo is required; install agent requirements")
-    _run(
-        [
-            str(client),
-            "-s",
-            f"{server}::{port}",
-            "-p",
-            password,
-            "--nocursor",
-            "capture",
-            str(output),
-        ],
-        cwd=root,
-        timeout=60,
-    )
-    _validate_png(output)
+def _host_python(root: Path) -> str:
+    """Prefer the checkout environment using each platform's venv layout."""
+    folder, executable = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+    candidate = root / ".venv" / folder / executable
+    return str(candidate) if candidate.is_file() else sys.executable
 
 
-def _record_capture_failure(
-    session: dict[str, Any], evidence_root: Path, guest_output_host: Path, exc: Exception
-) -> None:
-    session["capture"]["status"] = "failed"
-    session["capture"]["error"] = str(exc)
-    diagnostic_root = evidence_root / "diagnostics"
-    if guest_output_host.is_dir():
-        shutil.copytree(guest_output_host, diagnostic_root, dirs_exist_ok=True)
-
-
-def capture_review(root: Path, review_id: str) -> dict[str, Any]:  # noqa: PLR0915
+def capture_review(root: Path, review_id: str) -> dict[str, Any]:
     session = _load_session(root, review_id)
     if session["content_fingerprint"] != content_fingerprint(root):
         raise VisualReviewError("visual-review content changed after the session started")
-    if shutil.which("tart") is None:
-        raise VisualReviewError("Tart is required for SQL Explorer macOS visual review")
-    vm_name = f"analytics-toolkit-sql-explorer-visual-{review_id}"
-    collision = _run(["tart", "get", vm_name], cwd=root, check=False)
-    if collision.returncode == 0:
-        raise VisualReviewError(f"refusing to use pre-existing Tart VM: {vm_name}")
-
+    if session.get("capture_mode") != CAPTURE_MODE:
+        raise VisualReviewError("start a new headless visual-review session")
+    if session["capture"]["status"] != "pending":
+        raise VisualReviewError("capture already attempted; start a new review")
     evidence_root = root / STATE_ROOT / review_id
     screenshots = evidence_root / "screenshots"
     geometry_root = evidence_root / "geometry"
     screenshots.mkdir(parents=True, exist_ok=True)
     geometry_root.mkdir(parents=True, exist_ok=True)
-    share = Path(tempfile.mkdtemp(prefix=f"sql-explorer-visual-{review_id}-"))
-    checkout = share / "checkout"
-    guest_output_host = share / "output"
-    checkout.mkdir()
-    guest_output_host.mkdir()
-    _copy_review_tree(root, checkout)
-    guest_root = "/Volumes/My Shared Files/review/checkout"
-    guest_output = "/Volumes/My Shared Files/review/output"
-    process: subprocess.Popen[str] | None = None
-    owned = True
-    session["capture"] = {"status": "running", "vm_name": vm_name, "vm_deleted": False}
+    python = _host_python(root)
+    session["capture"] = {"status": "running", "workspace_removed": False}
     _write_json(session_path(root, review_id), session)
+    workspace: Path | None = None
     try:
-        _run(["tart", "clone", MACOS_IMAGE, vm_name], cwd=root, timeout=30 * 60)
-        _run(
-            ["tart", "set", vm_name, "--display", "1280x800px", "--no-display-refit"],
-            cwd=root,
-        )
-        process = subprocess.Popen(
-            [
-                "tart",
-                "run",
-                "--vnc-experimental",
-                "--no-graphics",
-                "--no-audio",
-                "--no-clipboard",
-                f"--dir=review:{share}",
-                vm_name,
-            ],
-            cwd=root,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        server, port, password = _wait_for_vnc_url(process)
-        _wait_guest(root, vm_name)
-        _configure_guest_ui(root, vm_name)
-        venv = _prepare_guest(root, vm_name, guest_root, review_id)
-
-        for scene_id, scene in session["scenes"].items():
-            _guest_shell(
-                root,
-                vm_name,
-                "pkill -f '[a]gent_tools.sql_explorer_visual_scene' >/dev/null 2>&1 || true; "
-                "killall Terminal >/dev/null 2>&1 || true",
-                timeout=30,
-            )
-            geometry_shared = guest_output_host / f"{scene_id}.json"
-            geometry_shared.unlink(missing_ok=True)
-            _open_terminal_scene(
-                root,
-                vm_name,
-                scene_id=scene_id,
-                guest_root=guest_root,
-                guest_output=guest_output,
-                venv=venv,
-            )
-            geometry = _wait_geometry(geometry_shared, timeout=45)
-            if geometry.get("scene_id") != scene_id or geometry.get("ok") is not True:
-                failed = [
-                    name for name, passed in geometry.get("assertions", {}).items() if not passed
-                ]
-                raise VisualReviewError(
-                    f"scene {scene_id} failed geometry checks: {', '.join(failed)}"
+        with tempfile.TemporaryDirectory(prefix=f"sql-explorer-visual-{review_id}-") as folder:
+            workspace = Path(folder)
+            checkout = workspace / "checkout"
+            checkout.mkdir()
+            _copy_review_tree(root, checkout)
+            for scene_id, scene in session["scenes"].items():
+                screenshot = screenshots / f"{scene_id}.png"
+                geometry = geometry_root / f"{scene_id}.json"
+                _run(
+                    [
+                        python,
+                        "-m",
+                        "agent_tools.sql_explorer_visual_capture",
+                        "--scene",
+                        scene_id,
+                        "--evidence",
+                        str(geometry),
+                        "--manifest",
+                        str(checkout / MANIFEST),
+                        "--screenshot",
+                        str(screenshot),
+                    ],
+                    cwd=checkout,
+                    timeout=60,
                 )
-            screenshot_path = screenshots / f"{scene_id}.png"
-            _capture_frame(root, server, port, password, screenshot_path)
-            geometry_path = geometry_root / f"{scene_id}.json"
-            shutil.copy2(geometry_shared, geometry_path)
-            scene.update(
-                {
-                    "capture": "pass",
-                    "screenshot": str(screenshot_path),
-                    "screenshot_sha256": _sha256(screenshot_path),
-                    "geometry": str(geometry_path),
-                    "geometry_sha256": _sha256(geometry_path),
-                }
-            )
-            session["updated_at_epoch"] = int(time.time())
-            _write_json(session_path(root, review_id), session)
+                payload = _wait_geometry(geometry, timeout=1)
+                if payload.get("scene_id") != scene_id or payload.get("ok") is not True:
+                    raise VisualReviewError(f"scene {scene_id} failed geometry checks")
+                _validate_png(screenshot)
+                scene.update(
+                    capture="pass",
+                    screenshot=str(screenshot),
+                    screenshot_sha256=_sha256(screenshot),
+                    geometry=str(geometry),
+                    geometry_sha256=_sha256(geometry),
+                )
+                session["updated_at_epoch"] = int(time.time())
+                _write_json(session_path(root, review_id), session)
         session["capture"]["status"] = "pass"
     except Exception as exc:
-        _record_capture_failure(session, evidence_root, guest_output_host, exc)
+        session["capture"]["status"] = "failed"
+        session["capture"]["error"] = str(exc)
         raise
     finally:
-        if process is not None and process.poll() is None:
-            _run(["tart", "stop", vm_name], cwd=root, timeout=120, check=False)
-            try:
-                process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-        if owned:
-            deleted = _run(["tart", "delete", vm_name], cwd=root, timeout=120, check=False)
-            session["capture"]["vm_deleted"] = deleted.returncode == 0
-        shutil.rmtree(share, ignore_errors=True)
-        session["capture"]["vm_name"] = vm_name
+        session["capture"]["workspace_removed"] = workspace is None or not workspace.exists()
         session["updated_at_epoch"] = int(time.time())
         _write_json(session_path(root, review_id), session)
     return review_status(root, review_id)
@@ -731,7 +532,7 @@ def visual_review(
 
 
 __all__ = [
-    "MACOS_IMAGE",
+    "CAPTURE_MODE",
     "MANIFEST",
     "RECEIPT",
     "VisualReviewError",

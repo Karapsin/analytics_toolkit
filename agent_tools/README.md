@@ -77,12 +77,32 @@ profile with HTTP and native ClickHouse and records its success in the
 exact-tree release receipt.
 
 SQL Explorer production or visual-harness changes also require the private
-visual receipt created by `visual-workflow`. A review creates a fresh clone of
-the pinned macOS OCI image, runs it headlessly at 1280x800, captures every scene
-over VNC, and destroys only that run-owned clone. `visual-workflow status`
-returns the next PNG batch; the agent must open every image and record one
-scene verdict through `visual-review`. Only an all-pass, current-content receipt
-allows `git-workflow` to commit or push the Explorer change.
+visual receipt created by `visual-workflow`. The capture runs headlessly on the
+current Linux, macOS, or Windows host, using the checkout's Python environment.
+It starts each scene in a separate process with Textual's headless driver and
+fake database fixtures, exports the complete application screen, and rasterizes
+it to a 1280x800 PNG with `resvg-py`. The terminal grid is 208x47 cells. A host
+monospace font must be installed (for example Menlo, Consolas, or Liberation
+Mono). No VM, OS image download, desktop session, or VNC server is needed.
+
+Install `agent_tools/requirements-mcp.txt` in the agent environment for the PNG
+renderer. On Windows, the workflow finds `.venv/Scripts/python.exe`; on Linux
+and macOS it uses `.venv/bin/python`, falling back to the running interpreter.
+The shell-free CLI equivalent on every platform is:
+
+```text
+python agent_tools/mcp_server.py call visual-workflow start
+python agent_tools/mcp_server.py call visual-workflow capture --review-id <review-id>
+```
+
+Capture copies only reviewable checkout files to a temporary workspace and
+removes that workspace afterward. Screenshots contain the application's UI,
+not native window decorations. `visual-workflow status` returns the next PNG
+batch; the agent must open every full image and record a verdict through
+`visual-review`. Geometry checks and every agent verdict must pass before
+completion. The receipt records the host and capture method and is bound to
+the complete reviewed content; only a current all-pass receipt allows commit
+or push. Failed or interrupted captures require a new review session.
 
 Normal `version-bump` calls add the supplied summary under `## Unreleased` and
 roll the section into a new version when it reaches ten bullets. For an explicit

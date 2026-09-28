@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render deterministic SQL Explorer scenes for the macOS visual-review guest."""
+"""Render deterministic SQL Explorer scenes for headless current-host visual review."""
 
 # ruff: noqa: EM102, FLY002, PLR0915, PLR2004, TRY003
 
@@ -383,7 +383,7 @@ class VisualDatabasePickerApp(DatabasePickerApp):
 
     def on_mount(self) -> None:
         super().on_mount()
-        self.query_one(OptionList)._mouse_hovering_over = 1  # noqa: SLF001 - freeze hover for VNC.
+        self.query_one(OptionList)._mouse_hovering_over = 1  # noqa: SLF001 - freeze hover for capture.
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
 
@@ -639,19 +639,24 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = _parser().parse_args()
-    if args.scene == "database-picker":
-        app: App[Any] = VisualDatabasePickerApp(args.evidence, args.manifest)
-    elif args.scene in {
+def create_scene(scene: str, evidence: Path, manifest: Path) -> App[Any]:
+    if scene == "database-picker":
+        app: App[Any] = VisualDatabasePickerApp(evidence, manifest)
+    elif scene in {
         "connections-picker",
         "connections-searching",
         "connections-empty",
         "connections-error",
     }:
-        app = VisualConnectionsPickerApp(args.scene, args.evidence, args.manifest)
+        app = VisualConnectionsPickerApp(scene, evidence, manifest)
     else:
-        app = VisualExplorerApp(args.scene, args.evidence, args.manifest)
+        app = VisualExplorerApp(scene, evidence, manifest)
+    return app
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    app = create_scene(args.scene, args.evidence, args.manifest)
     app.run(mouse=False)
     return 0
 
