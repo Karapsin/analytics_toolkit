@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: BLE001, C901, PLR0912, TRY300
 import contextvars
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from tqdm import tqdm
@@ -214,9 +214,11 @@ def _execute_sql_batch(
     options_list: list[ExecuteSqlOptions],
     *,
     concurrency: int,
+    execute_item: Callable[[ExecuteSqlOptions], Any] | None = None,
 ) -> list[Any]:
+    execute_item = execute_item or _execute_sql_options
     if concurrency == 1:
-        return _execute_sql_batch_sequential(options_list)
+        return _execute_sql_batch_sequential(options_list, execute_item=execute_item)
 
     executor = ThreadPoolExecutor(
         max_workers=min(concurrency, len(options_list)),
@@ -231,7 +233,7 @@ def _execute_sql_batch(
     try:
         for index, options in enumerate(options_list):
             context = contextvars.copy_context()
-            future = executor.submit(context.run, _execute_sql_options, options)
+            future = executor.submit(context.run, execute_item, options)
             future_to_index[future] = index
 
         results: list[Any] = [None] * len(options_list)
@@ -275,12 +277,17 @@ def _execute_sql_batch(
             shutdown_executor(executor, wait=True, cancel_futures=False)
 
 
-def _execute_sql_batch_sequential(options_list: list[ExecuteSqlOptions]) -> list[Any]:
+def _execute_sql_batch_sequential(
+    options_list: list[ExecuteSqlOptions],
+    *,
+    execute_item: Callable[[ExecuteSqlOptions], Any] | None = None,
+) -> list[Any]:
+    execute_item = execute_item or _execute_sql_options
     results: list[Any] = []
     outcomes: list[SqlBatchItemResult] = []
     for index, options in enumerate(options_list):
         try:
-            value = _execute_sql_options(options)
+            value = execute_item(options)
         except Exception as exc:
             outcomes.append(_batch_failed_item(index, options, exc))
             outcomes.extend(

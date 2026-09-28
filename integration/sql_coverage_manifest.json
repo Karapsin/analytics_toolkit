@@ -2936,6 +2936,69 @@
               ]
             }
           ]
+        },
+        "concurrency": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_invalid_caps"
+              ]
+            }
+          ]
         }
       }
     },
@@ -7536,6 +7599,69 @@
               ]
             }
           ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_invalid_caps"
+              ]
+            }
+          ]
         }
       }
     },
@@ -7808,6 +7934,69 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_invalid_caps"
               ]
             }
           ]
@@ -8440,6 +8629,69 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
+              ]
+            }
+          ]
+        },
+        "concurrency": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "1",
+          "states": [
+            {
+              "state": "default",
+              "value": "1",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "soft_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_parallel_helpers_preserve_order_connections_and_context"
+              ]
+            }
+          ]
+        },
+        "hard_concurrency_cap": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "5",
+          "states": [
+            {
+              "state": "default",
+              "value": "5",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_sequential_failure_reports_partial_results"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/query_batches.py::test_invalid_caps"
               ]
             }
           ]

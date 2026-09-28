@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Add query-list concurrency and ordered batch results to insert, execute_insert, execute_create, and execute_read.
+
 ## 1.3.12.0 - 2026-09-21
 
 - Preserve nullable numeric metrics during AB validation.

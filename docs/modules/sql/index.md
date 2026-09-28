@@ -26,6 +26,13 @@ and input defaults.
 
 - [All SQL functions](functions/index.md)
 
+[execute_insert](functions/execute_insert.md), [insert](functions/insert.md),
+[execute_create](functions/execute_create.md), and
+[execute_read](functions/execute_read.md) accept independent query lists with
+`concurrency`, `soft_concurrency_cap`, and `hard_concurrency_cap`, like
+[execute](functions/execute.md). Results keep input order; each item uses a
+separate connection while its statements remain sequential.
+
 ## Workflow Guides
 
 - [Configuration](configuration.md)

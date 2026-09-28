@@ -2,7 +2,8 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, PLR0913, PYI041, TID252, TRY003
 from dataclasses import replace
-from typing import Any, cast
+from functools import partial
+from typing import Any, Callable, cast
 
 import sqlparse
 
@@ -26,13 +27,14 @@ from .execute_sql import (
     _split_sql_statements,
     build_execute_sql_plan,
 )
+from .query_batch import run_query_batch
 
 
 @timed_public_sql_function
 def insert(
     db_key: str,
-    table_name: str,
-    query: str,
+    table_name: str | list[str],
+    query: str | list[str],
     *,
     print_queries: bool = False,
     retry_cnt: int = 5,
@@ -42,38 +44,56 @@ def insert(
     return_sql: bool = False,
     return_metadata: bool = False,
     retry_policy: ExecuteRetryPolicy = "safe",
-) -> int | SqlPlan | SqlOperationResult:
+    concurrency: int = 1,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
+) -> int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]:
     """Insert one query result into an existing table by column position."""
-    statements = _normalize_result_statements(query)
-    if len(statements) != 1:
-        raise InvalidSqlInputError(
-            "sql.insert accepts exactly one result query; use sql.execute_insert "
-            "when setup statements are required."
+
+    def prepare(
+        sql: str, target: str | None, attempts: list[int]
+    ) -> Callable[[], int | SqlPlan | SqlOperationResult]:
+        statements = _normalize_result_statements(sql)
+        if len(statements) != 1:
+            raise InvalidSqlInputError(
+                "sql.insert accepts exactly one result query; use sql.execute_insert "
+                "when setup statements are required."
+            )
+        return _prepare_query_insert(
+            operation="insert",
+            db_key=db_key,
+            table_name=cast("str", target),
+            statements=statements,
+            print_queries=print_queries,
+            gp_break_query=False,
+            gp_commit_each_statement=False,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+            dry_run=dry_run,
+            return_sql=return_sql,
+            return_metadata=return_metadata,
+            progress=False,
+            retry_policy=retry_policy,
+            attempt_numbers=attempts,
         )
-    return _run_query_insert(
-        operation="insert",
-        db_key=db_key,
+
+    return run_query_batch(
+        query=query,
         table_name=table_name,
-        statements=statements,
-        print_queries=print_queries,
-        gp_break_query=False,
-        gp_commit_each_statement=False,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-        dry_run=dry_run,
-        return_sql=return_sql,
-        return_metadata=return_metadata,
-        progress=False,
-        retry_policy=retry_policy,
+        prepare=prepare,
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+        plan_only=dry_run or return_sql,
     )
 
 
 @timed_public_sql_function
 def execute_insert(
     db_key: str,
-    table_name: str,
-    query: str,
+    table_name: str | list[str],
+    query: str | list[str],
     *,
     print_queries: bool = False,
     gp_break_query: bool = False,
@@ -86,28 +106,47 @@ def execute_insert(
     return_metadata: bool = False,
     progress: bool = False,
     retry_policy: ExecuteRetryPolicy = "safe",
-) -> int | SqlPlan | SqlOperationResult:
+    concurrency: int = 1,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
+) -> int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]:
     """Execute setup SQL and insert the final query result into an existing table."""
-    return _run_query_insert(
-        operation="execute_insert",
-        db_key=db_key,
+
+    def prepare(
+        sql: str, target: str | None, attempts: list[int]
+    ) -> Callable[[], int | SqlPlan | SqlOperationResult]:
+        statements = _normalize_result_statements(sql)
+        return _prepare_query_insert(
+            operation="execute_insert",
+            db_key=db_key,
+            table_name=cast("str", target),
+            statements=statements,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+            dry_run=dry_run,
+            return_sql=return_sql,
+            return_metadata=return_metadata,
+            progress=progress,
+            retry_policy=retry_policy,
+            attempt_numbers=attempts,
+        )
+
+    return run_query_batch(
+        query=query,
         table_name=table_name,
-        statements=_normalize_result_statements(query),
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-        dry_run=dry_run,
-        return_sql=return_sql,
-        return_metadata=return_metadata,
-        progress=progress,
-        retry_policy=retry_policy,
+        prepare=prepare,
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+        plan_only=dry_run or return_sql,
     )
 
 
-def _run_query_insert(
+def _prepare_query_insert(
     *,
     operation: str,
     db_key: str,
@@ -124,7 +163,8 @@ def _run_query_insert(
     return_metadata: bool,
     progress: bool,
     retry_policy: ExecuteRetryPolicy,
-) -> int | SqlPlan | SqlOperationResult:
+    attempt_numbers: list[int],
+) -> Callable[[], int | SqlPlan | SqlOperationResult]:
     resolved_retry_policy = validate_execute_retry_policy(retry_policy)
     target_table = _normalize_target_table(table_name)
     final_query = statements[-1]
@@ -151,7 +191,7 @@ def _run_query_insert(
         progress=progress,
         retry_policy=resolved_retry_policy,
     )
-    options = replace(options, query_label=query_label)
+    options = replace(options, query_label=query_label, attempt_numbers=attempt_numbers)
     _validate_target_table(target_table, options.backend)
     plan = _build_query_insert_plan(
         operation=operation,
@@ -160,8 +200,13 @@ def _run_query_insert(
         execute_plan=build_execute_sql_plan(options),
     )
     if dry_run or return_sql:
-        return plan
+        return lambda: plan
+    return partial(_finish_query_insert, options, plan, return_metadata=return_metadata)
 
+
+def _finish_query_insert(
+    options: Any, plan: SqlPlan, *, return_metadata: bool
+) -> int | SqlOperationResult:
     result = _execute_sql_options(options)
     affected_rows = extract_row_count(result)
     if return_metadata:

@@ -3,7 +3,8 @@ from __future__ import annotations
 # ruff: noqa: ARG001, BLE001, EM101, EM102, PLR0913, PYI041, TC003, TID252, TRY003
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from functools import partial
+from typing import Any, Callable, cast
 
 import pandas as pd
 
@@ -43,6 +44,7 @@ from .execute_sql import (
     _rollback_confirmed,
     _validate_progress,
 )
+from .query_batch import run_query_batch
 from .query_writes import (
     _join_statements,
     _normalize_result_statements,
@@ -85,8 +87,8 @@ class _ExecuteCreateOptions:
 @timed_public_sql_function
 def execute_create(
     db_key: str,
-    table_name: str,
-    query: str,
+    table_name: str | list[str],
+    query: str | list[str],
     *,
     drop_if_exists: bool = False,
     if_not_exists: bool = False,
@@ -116,43 +118,60 @@ def execute_create(
     return_metadata: bool = False,
     progress: bool = False,
     retry_policy: ExecuteRetryPolicy = "safe",
-) -> int | SqlPlan | SqlOperationResult:
+    concurrency: int = 1,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
+) -> int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]:
     """Execute setup SQL and create a table from the final query on one connection."""
-    options = _build_execute_create_options(
-        db_key=db_key,
-        table_name=table_name,
+
+    def prepare(
+        sql: str, target: str | None, attempts: list[int]
+    ) -> Callable[[], int | SqlPlan | SqlOperationResult]:
+        options = _build_execute_create_options(
+            db_key=db_key,
+            table_name=target,
+            query=sql,
+            drop_if_exists=drop_if_exists,
+            if_not_exists=if_not_exists,
+            gp_distributed_by_key=gp_distributed_by_key,
+            gp_partitions=gp_partitions,
+            partition_by=partition_by,
+            order_by=order_by,
+            ch_engine=ch_engine,
+            ch_cluster=ch_cluster,
+            ch_sharding_key=ch_sharding_key,
+            ch_distributed_table=ch_distributed_table,
+            ch_distributed_engine_template=ch_distributed_engine_template,
+            ch_distributed_cluster=ch_distributed_cluster,
+            ch_shard_on_cluster=ch_shard_on_cluster,
+            ch_distributed_on_cluster=ch_distributed_on_cluster,
+            ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
+            ch_ddl_wait_policy=ch_ddl_wait_policy,
+            ch_only_shard=ch_only_shard,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+            return_metadata=return_metadata,
+            progress=progress,
+            retry_policy=retry_policy,
+        )
+        plan = _build_execute_create_plan(options)
+        if dry_run or return_sql:
+            return lambda: plan
+        return partial(_execute_create_options, options, plan, attempt_numbers=attempts)
+
+    return run_query_batch(
         query=query,
-        drop_if_exists=drop_if_exists,
-        if_not_exists=if_not_exists,
-        gp_distributed_by_key=gp_distributed_by_key,
-        gp_partitions=gp_partitions,
-        partition_by=partition_by,
-        order_by=order_by,
-        ch_engine=ch_engine,
-        ch_cluster=ch_cluster,
-        ch_sharding_key=ch_sharding_key,
-        ch_distributed_table=ch_distributed_table,
-        ch_distributed_engine_template=ch_distributed_engine_template,
-        ch_distributed_cluster=ch_distributed_cluster,
-        ch_shard_on_cluster=ch_shard_on_cluster,
-        ch_distributed_on_cluster=ch_distributed_on_cluster,
-        ch_ddl_ready_timeout_seconds=ch_ddl_ready_timeout_seconds,
-        ch_ddl_wait_policy=ch_ddl_wait_policy,
-        ch_only_shard=ch_only_shard,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-        return_metadata=return_metadata,
-        progress=progress,
-        retry_policy=retry_policy,
+        table_name=table_name,
+        prepare=prepare,
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+        plan_only=dry_run or return_sql,
     )
-    plan = _build_execute_create_plan(options)
-    if dry_run or return_sql:
-        return plan
-    return _execute_create_options(options, plan)
 
 
 def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
@@ -347,11 +366,15 @@ def _build_execute_create_plan(options: _ExecuteCreateOptions) -> SqlPlan:
 def _execute_create_options(
     options: _ExecuteCreateOptions,
     plan: SqlPlan,
+    *,
+    attempt_numbers: list[int] | None = None,
 ) -> int | SqlOperationResult:
+    attempt_numbers = [] if attempt_numbers is None else attempt_numbers
     metadata = plan.metadata
     adapter = get_backend_adapter(options.backend)
 
     def operation(attempt: int) -> int:
+        attempt_numbers.append(attempt)
         connection: Any | None = None
         state = ExecuteAttemptState()
         try:

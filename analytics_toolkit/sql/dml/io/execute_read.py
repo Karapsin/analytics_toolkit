@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List
+from functools import partial
+from typing import TYPE_CHECKING, Any, Callable, List
 
 from analytics_toolkit.general import time_print
 
@@ -29,6 +30,7 @@ from .execute_sql import (
     _validate_progress,
 )
 from .models import ExecuteReadOptions
+from .query_batch import run_query_batch
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
 @timed_public_sql_function
 def execute_read(
     db_key: str,
-    query: str,
+    query: str | list[str],
     print_queries: bool = False,
     gp_break_query: bool = False,
     gp_commit_each_statement: bool = False,
@@ -46,19 +48,40 @@ def execute_read(
     query_label: str | None = None,
     return_metadata: bool = False,
     progress: bool = False,
-) -> pd.DataFrame | SqlOperationResult:
-    options = _build_execute_read_options(
-        db_key=db_key,
+    concurrency: int = 1,
+    soft_concurrency_cap: int | None = None,
+    hard_concurrency_cap: int = 5,
+) -> pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]:
+    def prepare(
+        sql: str, _target: str | None, attempts: list[int]
+    ) -> Callable[[], pd.DataFrame | SqlOperationResult]:
+        options = _build_execute_read_options(
+            db_key=db_key,
+            query=sql,
+            print_queries=print_queries,
+            gp_break_query=gp_break_query,
+            gp_commit_each_statement=gp_commit_each_statement,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            query_label=query_label,
+            return_metadata=return_metadata,
+            progress=progress,
+        )
+        return partial(_execute_read_options, options, attempt_numbers=attempts)
+
+    return run_query_batch(
         query=query,
-        print_queries=print_queries,
-        gp_break_query=gp_break_query,
-        gp_commit_each_statement=gp_commit_each_statement,
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        query_label=query_label,
-        return_metadata=return_metadata,
-        progress=progress,
+        table_name=None,
+        prepare=prepare,
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
     )
+
+
+def _execute_read_options(
+    options: ExecuteReadOptions, *, attempt_numbers: list[int]
+) -> pd.DataFrame | SqlOperationResult:
     metadata = SqlOperationMetadata(
         statement_count=len(options.statements),
         query_label=options.query_label,
@@ -98,6 +121,10 @@ def execute_read(
             sql_preview=sql_preview(options.statements[-1]),
         )
 
+    def open_connection(key: str) -> Any:
+        attempt_numbers.append(len(attempt_numbers) + 1)
+        return get_sql_connection(key)
+
     result = run_connection_operation(
         operation_name=(
             f"executing SQL and reading final query on {options.connection_key} ({options.backend})"
@@ -106,7 +133,7 @@ def execute_read(
         backend=options.backend,
         retry_cnt=options.retry_cnt,
         timeout_increment=options.timeout_increment,
-        open_connection=get_sql_connection,
+        open_connection=open_connection,
         operation=operation,
         context_factory=context,
     )
