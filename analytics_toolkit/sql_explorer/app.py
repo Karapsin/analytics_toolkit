@@ -134,7 +134,10 @@ class SqlExplorerApp(
         self._workspaces: dict[str, SqlExplorerWorkspace] = {"1": initial}
         self._tab_order: list[str] = ["1"]
         self._query_scheduler = ExplorerQueryScheduler()
-        self._completion_pool = CompletionCoordinatorPool()
+        self._completion_pool = CompletionCoordinatorPool(
+            state_directory=getattr(session, "explorer_state_dir", None)
+        )
+        self.keyboard_mode = session.settings.keyboard_mode
         self._exit_requested = False
         self._connections_restart: ConnectionsRestart | None = None
         self._connections_stop_started: float | None = None

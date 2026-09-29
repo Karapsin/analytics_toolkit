@@ -27,7 +27,7 @@ def test_missing_settings_use_safe_defaults(tmp_path: Path) -> None:
     assert loaded.warning is None
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("version", [1, 2, 3])
 def test_old_settings_migrate_to_current_version(tmp_path: Path, version: int) -> None:
     path = tmp_path / "settings.json"
     path.write_text(
@@ -38,7 +38,7 @@ def test_old_settings_migrate_to_current_version(tmp_path: Path, version: int) -
     loaded = load_settings(path)
 
     assert loaded.warning is None
-    assert loaded.settings.version == 3
+    assert loaded.settings.version == 4
     assert loaded.settings.connections_path is None
 
 
@@ -48,7 +48,7 @@ def test_settings_round_trip_atomically_with_private_permissions(tmp_path: Path)
 
     assert save_settings(expected, path) == path
     assert load_settings(path).settings == expected
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 3
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 4
     if os.name != "nt":
         assert path.stat().st_mode & 0o777 == 0o600
 

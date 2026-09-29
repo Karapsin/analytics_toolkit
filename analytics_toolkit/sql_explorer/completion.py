@@ -29,10 +29,12 @@ from analytics_toolkit.sql.execution.cancellation import (
 )
 from analytics_toolkit.sql.metadata.column_names import table_column_names
 
+from .background_metadata import BackgroundMetadata, persistent_discovery
 from .column_completion import column_fragment, projection_context, projection_suggestions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+    from pathlib import Path
 
     import pandas as pd
 
@@ -55,7 +57,7 @@ KEYWORDS: Final[tuple[str, ...]] = (
     "delete from",
     "create table",
 )
-MIN_TABLE_PREFIX_LENGTH: Final[int] = 6
+MIN_TABLE_PREFIX_LENGTH: Final[int] = 0
 METADATA_CACHE_SECONDS: Final[int] = 60
 _COLUMN_KEYWORDS: Final = frozenset(" ".join(KEYWORDS).split()) | {
     "distinct",
@@ -128,8 +130,12 @@ class CompletionRequest:
         )
 
     @property
+    def metadata_scope(self) -> tuple[object, ...]:
+        return self.scope[:-1] if self.kind == "table" else self.scope
+
+    @property
     def cache_key(self) -> tuple[object, ...]:
-        return (*self.scope, self.prefix.casefold() if self.kind == "table" else "")
+        return (*self.metadata_scope, self.prefix.casefold() if self.kind == "table" else "")
 
     @property
     def identity(
@@ -167,6 +173,7 @@ class CompletionCacheEntry:
 
 @dataclass(frozen=True)
 class _CompletionSubscriber:
+    request: CompletionRequest
     owner_id: str | None
     request_id: int
     on_success: Callable[[CompletionResult], None]
@@ -350,6 +357,7 @@ class CompletionCoordinator:
     connection_key: str
     backend: str
     provider: MetadataProvider | None = None
+    discovery: BackgroundMetadata | None = None
     _queue: deque[_CompletionTask] = field(default_factory=deque, init=False)
     _queued_scopes: set[tuple[object, ...]] = field(default_factory=set, init=False)
     _cache: dict[tuple[object, ...], CompletionCacheEntry] = field(
@@ -405,6 +413,8 @@ class CompletionCoordinator:
         )
 
     def stop(self) -> None:
+        if self.discovery is not None:
+            self.discovery.stop()
         with self._lock:
             self._stopping = True
             for task in self._tasks_by_scope.values():
@@ -418,7 +428,11 @@ class CompletionCoordinator:
     def is_stopped(self) -> bool:
         with self._lock:
             threads = tuple(self._cancellation_threads)
-        return not self._thread.is_alive() and not any(thread.is_alive() for thread in threads)
+        return (
+            not self._thread.is_alive()
+            and not any(thread.is_alive() for thread in threads)
+            and (self.discovery is None or self.discovery.is_stopped)
+        )
 
     def enqueue(
         self,
@@ -442,7 +456,7 @@ class CompletionCoordinator:
             return request_id
 
         scope = request.cache_key
-        subscriber = _CompletionSubscriber(owner_id, request_id, on_success, on_error)
+        subscriber = _CompletionSubscriber(request, owner_id, request_id, on_success, on_error)
         with self._lock:
             existing = self._tasks_by_scope.get(scope)
             if existing is None and request.kind == "table":
@@ -450,7 +464,7 @@ class CompletionCoordinator:
                     (
                         task
                         for task in self._tasks_by_scope.values()
-                        if task.request.scope == request.scope
+                        if task.request.metadata_scope == request.metadata_scope
                         and request.prefix.casefold().startswith(task.request.prefix.casefold())
                         and not task.cancellation.cancelled
                     ),
@@ -467,6 +481,10 @@ class CompletionCoordinator:
         return request_id
 
     def cached(self, request: CompletionRequest) -> tuple[str, ...] | None:
+        if self.discovery is not None and request.kind != "column":
+            values = self.discovery.cached(request.kind, request.catalog, request.schema)
+            if values is not None:
+                return filter_suggestions(values, request.prefix)
         with self._lock:
             entry = self._cache.get(request.cache_key)
             if entry is None and request.kind == "table":
@@ -474,7 +492,7 @@ class CompletionCoordinator:
                     (
                         value
                         for key, value in self._cache.items()
-                        if key[:-1] == request.scope
+                        if key[:-1] == request.metadata_scope
                         and request.prefix.casefold().startswith(str(key[-1]))
                         and monotonic() - value.created_at < METADATA_CACHE_SECONDS
                     ),
@@ -499,6 +517,8 @@ class CompletionCoordinator:
             self._table_columns.clear()
             self._columns_cached_at.clear()
             self._cache_generation += 1
+        if self.discovery is not None:
+            self.discovery.invalidate()
 
     def _columns_for_table(self, table: str) -> tuple[str, ...]:
         with self._lock:
@@ -524,6 +544,10 @@ class CompletionCoordinator:
         return self._namespace_values("schema", catalog)
 
     def _namespace_values(self, kind: str, catalog: str | None) -> tuple[str, ...] | None:
+        if self.discovery is not None:
+            values = self.discovery.cached(kind, catalog)
+            if values is not None:
+                return values
         now = monotonic()
         with self._lock:
             for key, entry in self._cache.items():
@@ -629,7 +653,7 @@ class CompletionCoordinator:
                     subscribers = tuple(task.subscribers)
                 for subscriber in subscribers:
                     subscriber.on_error(
-                        CompletionResult(task.request, subscriber.request_id, ()),
+                        CompletionResult(subscriber.request, subscriber.request_id, ()),
                         exc,
                     )
             else:
@@ -653,7 +677,9 @@ class CompletionCoordinator:
         with self._lock:
             subscribers = tuple(task.subscribers)
         for subscriber in subscribers:
-            subscriber.on_success(CompletionResult(task.request, subscriber.request_id, values))
+            subscriber.on_success(
+                CompletionResult(subscriber.request, subscriber.request_id, values)
+            )
         if task.bootstrap and task.request.kind == "catalog":
             for catalog in values:
                 self.enqueue_schemas(catalog=catalog, on_error=self._bootstrap_error)
@@ -719,7 +745,8 @@ class _CoordinatorPoolEntry:
 class CompletionCoordinatorPool:
     """Share one serialized metadata coordinator for each connection key."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, state_directory: Path | None = None) -> None:
+        self._state_directory = state_directory
         self._entries: dict[str, _CoordinatorPoolEntry] = {}
         self._retired: list[CompletionCoordinator] = []
 
@@ -735,7 +762,30 @@ class CompletionCoordinatorPool:
         entry = self._entries.get(normalized_key)
         if entry is None:
             coordinator = CompletionCoordinator(connection_key, backend)
-            coordinator.start_bootstrap(on_error=on_error)
+            if self._state_directory is None:
+                coordinator.start_bootstrap(on_error=on_error)
+            else:
+
+                def report(exc: Exception) -> None:
+                    if on_error is not None:
+                        on_error(
+                            CompletionResult(
+                                CompletionRequest(connection_key, backend, "catalog", ""), 0, ()
+                            ),
+                            exc,
+                        )
+
+                try:
+                    coordinator.discovery = persistent_discovery(
+                        self._state_directory,
+                        connection_key,
+                        backend,
+                        provider_for_backend(backend),
+                        report,
+                    )
+                    coordinator.discovery.start()
+                except Exception as exc:  # noqa: BLE001 -- interactive discovery remains available.
+                    report(exc)
             entry = _CoordinatorPoolEntry(coordinator)
             self._entries[normalized_key] = entry
         entry.owners.add(owner_id)

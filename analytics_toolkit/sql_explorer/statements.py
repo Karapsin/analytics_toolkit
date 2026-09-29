@@ -55,6 +55,15 @@ class ExplorerExecutionPlan:
     def full_execution_sql(self) -> str:
         return join_statements(self.statements)
 
+    @property
+    def changes_metadata(self) -> bool:
+        return any(
+            _first_keyword(sqlparse.format(statement, strip_comments=True))
+            in {"CREATE", "ALTER", "DROP", "RENAME", "GRANT", "REVOKE"}
+            or bool(_SELECT_INTO_RE.search(statement))
+            for statement in self.statements
+        )
+
 
 def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
     statements = tuple(split_statements(str(sql_text)))

@@ -82,6 +82,8 @@ class SqlExplorerCursorCommandsMixin:
         self._command_keyboard(["toggle"])
 
     def _command_keyboard(self, arguments: list[str]) -> None:
+        from .preferences import save_preferences  # noqa: PLC0415 -- app type cycle.
+
         app = cast("Any", self)
         if arguments not in ([], ["on"], ["off"], ["toggle"]):
             app.show_error(SqlExplorerConfigurationError("Usage: keyboard [on|off|toggle]"))
@@ -95,8 +97,11 @@ class SqlExplorerCursorCommandsMixin:
             for workspace in app._workspaces.values():
                 app._update_editor_status(workspace)
         app._set_notice(f"Keyboard mode: {'on' if app.keyboard_mode else 'off'}.")
+        if arguments:
+            save_preferences(app, app.active_workspace, keyboard_only=True)
 
     def _command_results(self, arguments: list[str]) -> None:
+        from .preferences import save_preferences  # noqa: PLC0415 -- app type cycle.
 
         app = cast("Any", self)
 
@@ -144,3 +149,4 @@ class SqlExplorerCursorCommandsMixin:
             return
         workspace.apply_results_layout()
         app._set_notice(f"Results layout: {workspace.results_orientation}.")
+        save_preferences(app, workspace)

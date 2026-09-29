@@ -4,6 +4,7 @@ __pycache__/
 *.so
 .env
 .connections
+.sql_explorer/
 .secrets
 .certs/
 .pytest_cache/

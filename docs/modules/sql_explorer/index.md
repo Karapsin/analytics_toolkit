@@ -121,9 +121,9 @@ User queries enter a shared FIFO queue for their selected database. At most one
 user query runs on each database across all tabs, while queries for different
 databases may run in parallel. Each tab may have only one queued or active
 query, and the SQL plus database are captured when Run is pressed. Metadata
-completion uses separate FIFO queues: tabs on the same database alias share one
-queue and cache, while different aliases have independent queues that may run
-in parallel with user SQL.
+completion uses a separate interactive FIFO worker per database alias. Tabs share
+its cache and a second worker for background names discovery. Background scans
+therefore do not hold up interactive metadata requests or user SQL.
 
 ## Editor and completion
 
@@ -224,8 +224,9 @@ one option remains editable until Tab or Enter accepts it. Up and Down move the
 highlight, and Escape closes the menu. Local keyword completion uses lower-case
 SQL keywords and does not query a database. Backend metadata completion supports
 Trino catalogs, schemas, and tables; Greenplum schemas and tables; and ClickHouse
-databases and tables. Trino catalog discovery starts when the Explorer opens,
-then schema discovery is queued for each catalog. Same-request lookups from
+databases and tables. On every launch, background discovery refreshes catalogs,
+schemas, and table names for the selected connection while saved names remain
+available. Same-request lookups from
 multiple tabs fan out from one metadata operation. Closing a tab removes its
 queued callbacks without affecting other subscribers. Every cursor-position or
 text change cancels that tab’s pending metadata request; the server query is
@@ -234,10 +235,13 @@ reopen the menu, including after the cursor returns to its old position. Metadat
 the visible user-query status.
 
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
-The prefix must contain at least six characters. The first Tab request uses a names-only query with the current prefix and
-catalog/database/schema context. Results are cached for 60 seconds; narrower
-prefixes filter those candidates locally. Backspacing beyond the fetched prefix
-requests a broader result. A catalog, database, or schema change permits a new lookup.
+There is no minimum table-name prefix length. Saved snapshots are filtered
+locally; without a snapshot, Tab requests names using the complete typed prefix
+in the current catalog/database/schema. An empty prefix lists all names in that
+scope. Live-query results are cached for 60 seconds; narrower prefixes filter
+locally, and backspacing beyond the fetched prefix requests a broader result. A catalog,
+database, or schema change permits a new lookup; changing the SQL clause or
+cursor position reuses matching cached names.
 
 Column completion is available in SELECT projections when the source tables are
 present after FROM/JOIN. A non-keyword identifier prefix must touch the cursor
@@ -377,11 +381,27 @@ are hidden when their logical parent is accessible; parent tables and views
 remain available. Full `sql.show_tables` calls retain their statistics and
 output shape while explicit schema/table filters narrow their base queries.
 
-Metadata requests share a serialized connection-scoped coordinator. Cached
-results expire after 60 seconds, and a prefix-limited result is reused only
-for that prefix or a narrower one. DDL invalidates table/column snapshots.
-Column discovery keeps row counts disabled. Size/count details are fetched
-only by consumers that request them.
+Every launch loads saved names immediately and starts background discovery for
+the active connection. Selecting another connection starts its discovery. The
+background worker discovers visible catalogs, schemas, and table names, one
+schema at a time. Each successful schema refresh replaces its previous names,
+including dropped tables; failed refreshes retain saved names and show a notice.
+
+Names and refresh timestamps are stored transactionally in
+`.sql_explorer/metadata.sqlite3`, beside the selected `.connections` file.
+Snapshots are isolated by connection configuration and namespace; changing the
+connection configuration prevents reuse of its old snapshots. Credentials, SQL
+text, and query results are not stored. Unavailable or corrupt storage produces
+a notice while Explorer continues with in-memory metadata.
+
+Complete schema snapshots support local completion for any prefix. Namespaces
+without a snapshot use a live names-only query with the complete typed prefix,
+including an empty prefix. Prefix-limited and column caches still expire after 60 seconds;
+narrower prefixes reuse the fetched names across SQL clauses and tabs. Saved
+schema snapshots remain usable until refreshed. Successful DDL invalidates the
+connection's metadata and starts rediscovery. Full scans otherwise run once per
+connection activation, rather than on a timer. Column discovery keeps row counts
+disabled. Size/count details are fetched only by consumers that request them.
 
 ## Commands
 
@@ -469,19 +489,27 @@ Opening parentheses, brackets, braces, and single/double/backtick quotes insert
 matching closers, or wrap selected text. Typing the matching closer skips it;
 Backspace between an empty pair removes both. Paste inserts literal text.
 
-Keyboard mode is session-wide and starts off. It blocks editor mouse placement,
+Keyboard mode is session-wide and starts off until a different preference is
+saved. It blocks editor mouse placement,
 selection, scrolling, and separator dragging while retaining normal editing
 and shortcuts. `KBD` in the position display indicates the mode. F8 or
 `keyboard off` exits it. Results begin below the editor; drag their separator
 when keyboard mode is off, or use results commands in either mode. Each tab
-remembers independent horizontal and vertical sizes.
+remembers independent horizontal and vertical sizes. Results orientation, both
+split sizes, and keyboard mode are saved in `.sql_explorer/settings.json` beside
+`.connections`. Commands and completed separator drags update the defaults for
+new tabs and future launches; existing tabs retain their layouts. Restored sizes
+are clamped to the terminal. Query results and their open/closed state remain
+session-only.
 
 All exit commands cancel running user queries and wait for their workers to stop.
 
 F6/Shift+F6 and F8 are reserved for pane switching and keyboard mode.
 
-The confirmation choice and primary run shortcut are saved
-in the user's config directory. SQL text is not persisted. The export commands first ask for one
+The confirmation choice and primary run shortcut are saved with those local
+preferences. A new local settings store imports the existing user preferences;
+the user config directory continues to remember the selected `.connections`
+path. SQL text is not persisted. The export commands first ask for one
 filename with the required suffix, then reuse the project directory browser. An
 existing destination requires replacement confirmation. If a result has more than
 200 rows, confirm saving all rows before the Explorer reruns a capped query.

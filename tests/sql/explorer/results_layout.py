@@ -6,6 +6,7 @@ from inspect import signature
 import pandas as pd
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.results_layout import ResultsSeparator
+from analytics_toolkit.sql_explorer.settings import load_settings
 from textual import events
 from textual.widgets import Input
 
@@ -76,9 +77,11 @@ def test_keyboard_mode_and_scrollable_specialized_help() -> None:
     asyncio.run(exercise())
 
 
-def test_separator_drag_and_mode_guards() -> None:
+def test_separator_drag_and_mode_guards(tmp_path) -> None:
     async def exercise() -> None:
-        app = SqlExplorerApp(FakeSession())
+        session = FakeSession()
+        session.settings_path = tmp_path / "settings.json"
+        app = SqlExplorerApp(session)
         async with app.run_test(size=(120, 40)) as pilot:
             app.show_dataframe(pd.DataFrame({"x": [1]}))
             await pilot.pause()
@@ -92,6 +95,8 @@ def test_separator_drag_and_mode_guards() -> None:
                 return kind(*arguments, screen_x=x, screen_y=y)
 
             separator.on_mouse_move(mouse(events.MouseMove))
+            separator.on_mouse_up(mouse(events.MouseUp))
+            assert not session.settings_path.exists()
             separator.on_mouse_down(mouse(events.MouseDown, button=2))
             assert separator._drag_origin is None
             for orientation in ("horizontal", "vertical"):
@@ -106,6 +111,9 @@ def test_separator_drag_and_mode_guards() -> None:
                 separator.on_mouse_move(mouse(events.MouseMove, x=1, y=16))
                 assert workspace.result_sizes[orientation] == original + 2
                 separator.on_mouse_up(mouse(events.MouseUp))
+                saved = load_settings(session.settings_path).settings
+                assert saved.results_orientation == orientation
+                assert getattr(saved, f"{orientation}_size") == original + 2
                 separator.on_mouse_down(mouse(events.MouseDown))
                 assert separator._drag_origin is None
                 app.keyboard_mode = False

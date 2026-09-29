@@ -160,7 +160,7 @@ class SqlExplorerQueryCommandsMixin:
         app = cast("Any", self)
         if app._query_scheduler.complete(job.job_id) is None:
             return
-        if isinstance(job.plan, CreateTablePlan):
+        if error is None and (isinstance(job.plan, CreateTablePlan) or job.plan.changes_metadata):
             coordinator = app._completion_pool.coordinator_for(job.database.connection_key)
             if coordinator is not None:
                 coordinator.invalidate_tables()

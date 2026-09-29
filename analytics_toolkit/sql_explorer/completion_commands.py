@@ -10,7 +10,6 @@ from threading import get_ident
 from typing import TYPE_CHECKING, Any, cast
 
 from .completion import (
-    MIN_TABLE_PREFIX_LENGTH,
     CompletionContext,
     CompletionResult,
     filter_suggestions,
@@ -100,27 +99,14 @@ class SqlExplorerCompletionCommandsMixin:
         if coordinator is None:
             return False
         workspace.completion_context = context
-        opened = (
+        if context.request.kind == "table":
             app._open_namespace_completion(context, workspace)
-            if context.request.kind == "table"
-            else False
-        )
         cached = coordinator.cached(context.request)
         if cached is not None:
             if cached:
                 workspace.completion_candidates = ()
                 app._open_completion(context, cached, workspace=workspace)
             return True
-        if (
-            context.request.kind == "table"
-            and len(context.request.prefix) < MIN_TABLE_PREFIX_LENGTH
-        ):
-            if not opened:
-                app._set_notice(
-                    f"Type at least {MIN_TABLE_PREFIX_LENGTH} table-name characters.",
-                    workspace,
-                )
-            return bool(opened)
         tab_id = workspace.tab_id
         epoch = workspace.completion_epoch
         notice = f"Loading matching {context.request.kind} names..."
@@ -129,9 +115,7 @@ class SqlExplorerCompletionCommandsMixin:
         coordinator.enqueue(
             replace(
                 context.request,
-                prefix=context.request.prefix[:MIN_TABLE_PREFIX_LENGTH]
-                if context.request.kind == "table"
-                else "",
+                prefix=context.request.prefix if context.request.kind == "table" else "",
             ),
             on_success=lambda result: app._completion_from_thread(tab_id, result, epoch),
             on_error=lambda result, exc: app._metadata_error_from_thread(

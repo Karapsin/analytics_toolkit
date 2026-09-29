@@ -328,7 +328,7 @@ def test_conditional_tab_completion_navigation_acceptance_and_escape() -> None:
     asyncio.run(exercise())
 
 
-def test_catalog_database_schema_and_clause_changes_create_new_scopes() -> None:
+def test_namespace_changes_fetch_again_but_clause_changes_reuse_names() -> None:
     provider = FakeProvider()
     coordinator = CompletionCoordinator("trino", "trino", provider=provider)
     base = CompletionRequest(
@@ -355,7 +355,7 @@ def test_catalog_database_schema_and_clause_changes_create_new_scopes() -> None:
             on_success=lambda _result, completed=completed: completed.set(),
         )
         assert completed.wait(2)
-        assert len(provider.table_calls) == expected_count
+        assert len(provider.table_calls) == min(expected_count, 4)
     coordinator.stop()
 
 
@@ -439,13 +439,13 @@ def test_backend_qualified_completion_context_variants() -> None:
     assert clickhouse.request.database == "events"
 
 
-def test_app_table_lookup_uses_initial_six_chars_and_rejects_stale_result() -> None:
+def test_app_table_lookup_uses_full_prefix_and_rejects_stale_result() -> None:
     provider = FakeProvider()
 
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
-            assert MIN_TABLE_PREFIX_LENGTH == 6
+            assert MIN_TABLE_PREFIX_LENGTH == 0
             assert application._completion is not None
             application._completion.stop()
             application._completion = CompletionCoordinator("gp", "gp", provider=provider)
@@ -456,7 +456,7 @@ def test_app_table_lookup_uses_initial_six_chars_and_rejects_stale_result() -> N
             await pilot.press("ctrl+space")
             _wait_for(lambda: len(provider.table_calls) == 1)
             await pilot.pause()
-            assert provider.table_calls[0][0] == "sample"
+            assert provider.table_calls[0][0] == "sampletable"
 
             application.query_one(CompletionMenu).action_close()
             editor.text = "SELECT * FROM other_context"
@@ -506,20 +506,23 @@ def test_cursor_change_cancels_inflight_and_fresh_cache_handles_backspace() -> N
             assert editor.text == "SELECT * FROM sample_o"
             await pilot.press("ctrl+space")
             await pilot.pause()
-            assert editor.text == "SELECT * FROM sample_one "
+            assert editor.text == "SELECT * FROM sample_o"
+            assert menu.is_open
 
             menu.action_close()
             editor.text = "SELECT * FROM sampl"
             editor.cursor_location = (0, len(editor.text))
             await pilot.press("ctrl+space")
-            assert not menu.is_open
-            assert len(provider.table_calls) == 2
+            _wait_for(lambda: len(provider.table_calls) == 3)
+            await pilot.pause()
+            assert menu.is_open
 
             menu.action_close()
             editor.text = "SELECT * FROM sample JOIN sample"
             editor.cursor_location = (0, len(editor.text))
             await pilot.press("ctrl+space")
-            _wait_for(lambda: len(provider.table_calls) == 3)
+            await pilot.pause()
+            assert len(provider.table_calls) == 3
 
     asyncio.run(exercise())
 
@@ -575,8 +578,11 @@ def test_app_completion_request_defensive_paths() -> None:
 
             editor.text = "SELECT * FROM sam"
             editor.cursor_location = (0, len(editor.text))
-            assert application._request_completion() is False
-            assert "at least 6" in str(application.query_one("#notice").render())
+            assert application._request_completion() is True
+            assert (
+                application.active_workspace.completion_loading_notice
+                == "Loading matching table names..."
+            )
 
             stub.schemas[None] = ("sample_schema",)
             assert application._request_completion() is True

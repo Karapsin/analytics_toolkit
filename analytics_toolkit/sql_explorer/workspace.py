@@ -60,8 +60,11 @@ class SqlExplorerWorkspace(Vertical):
         self.busy = False
         self.cancelling = False
         self.results_open = False
-        self.results_orientation = "horizontal"
-        self.result_sizes: dict[str, int | None] = {"horizontal": None, "vertical": None}
+        self.results_orientation = session.settings.results_orientation
+        self.result_sizes: dict[str, int | None] = {
+            "horizontal": session.settings.horizontal_size,
+            "vertical": session.settings.vertical_size,
+        }
         self.query_state: WorkspaceQueryState = "ready"
         self.running_job_id: int | None = None
         self.operation_database: DatabaseSelection | None = None

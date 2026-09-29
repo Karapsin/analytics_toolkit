@@ -42,6 +42,11 @@ class ResultsSeparator(Static):
         event.stop()
 
     def on_mouse_up(self, event: events.MouseUp) -> None:
+        from .preferences import save_preferences  # noqa: PLC0415 -- workspace/widget cycle.
+        from .workspace import workspace_for  # noqa: PLC0415 -- workspace/widget cycle.
+
+        if self._drag_origin is not None:
+            save_preferences(cast("Any", self.app), workspace_for(self))
         self._drag_origin = None
         self.release_mouse()
         event.stop()

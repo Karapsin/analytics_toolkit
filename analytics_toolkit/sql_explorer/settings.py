@@ -11,7 +11,7 @@ from typing import Any
 
 from .errors import SqlExplorerConfigurationError
 
-SETTINGS_VERSION = 3
+SETTINGS_VERSION = 4
 DEFAULT_RUN_BINDING = "ctrl+enter"
 _FUNCTION_KEY_RE = re.compile(r"f(?:[1-9]|1[0-2])\Z")
 _MODIFIED_KEY_RE = re.compile(r"(?:ctrl|alt)\+(?:enter|[a-z])\Z")
@@ -63,6 +63,10 @@ class ExplorerSettings:
     run_binding: str = DEFAULT_RUN_BINDING
     confirm_mutations: bool = True
     connections_path: str | None = None
+    results_orientation: str = "horizontal"
+    horizontal_size: int | None = None
+    vertical_size: int | None = None
+    keyboard_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,18 @@ def load_settings(path: Path | None = None) -> SettingsLoadResult:
         )
 
 
+def load_local_settings(path: Path) -> SettingsLoadResult:
+    """Seed a new connection-local store from the existing user preferences."""
+    if path.exists():
+        return load_settings(path)
+    loaded = load_settings()
+    try:
+        save_settings(loaded.settings, path)
+    except OSError as exc:
+        return SettingsLoadResult(loaded.settings, f"Could not save Explorer preferences: {exc}")
+    return loaded
+
+
 def save_settings(settings: ExplorerSettings, path: Path | None = None) -> Path:
     settings_path = path or explorer_settings_path()
     settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +157,7 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
         message = "settings must contain a JSON object"
         raise TypeError(message)
     version = raw.get("version")
-    if version not in {1, 2, SETTINGS_VERSION}:
+    if version not in {1, 2, 3, SETTINGS_VERSION}:
         message = f"unsupported settings version {raw.get('version')!r}"
         raise ValueError(message)
     confirm_mutations = raw.get("confirm_mutations")
@@ -156,10 +172,26 @@ def _settings_from_mapping(raw: Any) -> ExplorerSettings:
     if connections_path is not None and not isinstance(connections_path, str):
         message = "connections_path must be a string or null"
         raise TypeError(message)
+    orientation = raw.get("results_orientation", "horizontal")
+    if orientation not in {"horizontal", "vertical"}:
+        message = "results_orientation must be horizontal or vertical"
+        raise ValueError(message)
+    sizes = [raw.get("horizontal_size"), raw.get("vertical_size")]
+    if any(value is not None and (type(value) is not int or value < 0) for value in sizes):
+        message = "result sizes must be nonnegative integers or null"
+        raise ValueError(message)
+    keyboard_mode = raw.get("keyboard_mode", False)
+    if not isinstance(keyboard_mode, bool):
+        message = "keyboard_mode must be a boolean"
+        raise TypeError(message)
     return ExplorerSettings(
         run_binding=normalize_run_binding(run_binding),
         confirm_mutations=confirm_mutations,
         connections_path=connections_path,
+        results_orientation=orientation,
+        horizontal_size=sizes[0],
+        vertical_size=sizes[1],
+        keyboard_mode=keyboard_mode,
     )
 
 

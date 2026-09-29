@@ -11,6 +11,8 @@ Generated from package version bumps and recent commit history.
 - Run SQL Explorer visual review headlessly on the current Linux, macOS, or Windows host without VM downloads.
 - Speed up SQL Explorer column completion with SELECT-only probes across all backends, preserving empty and computed ClickHouse columns.
 - Reject dirty or unfinished Git checkouts before agent startup synchronization; authorize clean planning startup and restrict job polling to required workflows.
+- Persist SQL Explorer table names and UI preferences beside .connections, refreshing names in an independent background worker.
+- Remove the SQL Explorer table autocomplete prefix minimum and query the complete typed prefix.
 
 ## 1.3.12.0 - 2026-09-21
 

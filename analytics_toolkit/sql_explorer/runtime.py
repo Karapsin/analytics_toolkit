@@ -8,12 +8,14 @@ from uuid import uuid4
 import pandas as pd
 
 from analytics_toolkit import sql
+from analytics_toolkit.sql.connection.config import get_connections_file_path
 
 from .create_table import CreateTablePlan
 from .errors import SqlExplorerConfigurationError
 from .settings import (
     DEFAULT_RUN_BINDING,
     ExplorerSettings,
+    load_local_settings,
     load_settings,
     normalize_run_binding,
     save_settings,
@@ -101,11 +103,16 @@ def format_duration(seconds: float) -> str:
 
 class ExplorerSession:
     def __init__(self, db_key: str, *, settings_path: Path | None = None) -> None:
-        loaded = load_settings(settings_path)
+        self.database = validate_database(db_key)
+        self.explorer_state_dir = get_connections_file_path().parent / ".sql_explorer"
+        loaded = (
+            load_settings(settings_path)
+            if settings_path is not None
+            else load_local_settings(self.explorer_state_dir / "settings.json")
+        )
         self.settings = loaded.settings
         self.settings_warning = loaded.warning
-        self.settings_path = settings_path
-        self.database = validate_database(db_key)
+        self.settings_path = settings_path or self.explorer_state_dir / "settings.json"
         self.active_query_label: str | None = None
         self.active_query: ExplorerQueryState | None = None
         self.last_query: ExplorerQueryState | None = None
@@ -120,6 +127,7 @@ class ExplorerSession:
             settings=self.settings,
             settings_warning=None,
             settings_path=self.settings_path,
+            explorer_state_dir=self.explorer_state_dir,
             database=self.database,
             active_query_label=None,
             active_query=None,
