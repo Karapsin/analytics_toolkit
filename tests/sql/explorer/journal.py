@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends.ch.native_client import NativeClickHouseClient
 from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting, wrap_client
+from analytics_toolkit.sql.backends.row_limits import apply_row_limit
 from analytics_toolkit.sql.execution.cancellation import AsyncSqlCancelled, SqlCancellationScope
 from analytics_toolkit.sql.execution.observation import observe_sql, observed_connection
 from analytics_toolkit.sql_explorer.journal import JournalAction, QueryJournal, safe_component
@@ -238,6 +239,7 @@ def test_runtime_journal_keeps_original_and_export_snapshot(
     session.journal = QueryJournal(tmp_path)
 
     def read(alias: str, query: str, **kwargs: Any) -> pd.DataFrame:
+        query, _ = apply_row_limit(query, kwargs.get("row_limit"), dialect="postgres")
         observed_connection(Driver()).execute(query)
         return pd.DataFrame({"value": range(202)})
 

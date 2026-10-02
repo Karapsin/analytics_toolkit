@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.models import ReadColumnResult
+from analytics_toolkit.sql.backends.row_limits import apply_row_limit
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -67,6 +68,7 @@ def read_sql(
     output_type: ReadOutputType = "df",
     to_excel: str | None = None,
     to_csv: str | None = None,
+    row_limit: int | None = None,
 ) -> Any | SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -79,6 +81,7 @@ def read_sql(
         output_type=output_type,
         to_excel=to_excel,
         to_csv=to_csv,
+        row_limit=row_limit,
     )
 
 
@@ -92,6 +95,7 @@ def read_sql_with_metadata(
     output_type: ReadOutputType = "df",
     to_excel: str | None = None,
     to_csv: str | None = None,
+    row_limit: int | None = None,
 ) -> SqlOperationResult:
     return _read_sql_impl(
         db_key=db_key,
@@ -104,6 +108,7 @@ def read_sql_with_metadata(
         output_type=output_type,
         to_excel=to_excel,
         to_csv=to_csv,
+        row_limit=row_limit,
     )
 
 
@@ -119,6 +124,7 @@ def _read_sql_impl(
     output_type: ReadOutputType,
     to_excel: str | None = None,
     to_csv: str | None = None,
+    row_limit: int | None = None,
 ) -> Any | SqlOperationResult:
     options = _build_read_sql_options(
         db_key=db_key,
@@ -131,6 +137,7 @@ def _read_sql_impl(
         output_type=output_type,
         to_excel=to_excel,
         to_csv=to_csv,
+        row_limit=row_limit,
     )
     metadata = SqlOperationMetadata(
         statement_count=1,
@@ -209,6 +216,7 @@ def _build_read_sql_options(
     output_type: ReadOutputType,
     to_excel: str | None = None,
     to_csv: str | None = None,
+    row_limit: int | None = None,
 ) -> ReadSqlOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -235,7 +243,10 @@ def _build_read_sql_options(
     statements = split_statements(sql)
     if len(statements) != 1:
         raise InvalidSqlInputError("read_sql expects exactly one SQL statement.")
-    sql = apply_query_label(statements[0], query_label)
+    sql, _ = apply_row_limit(
+        statements[0], row_limit, dialect=get_backend_adapter(backend).sqlglot_dialect
+    )
+    sql = apply_query_label(sql, query_label)
     sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ReadSqlOptions(
         connection_key=connection_key,

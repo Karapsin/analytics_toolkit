@@ -13,8 +13,8 @@ from analytics_toolkit._sql_statements import (
     has_sql_content,
     join_statements,
     split_statements,
-    terminal_parts,
 )
+from analytics_toolkit.sql.backends.row_limits import apply_row_limit
 
 from .errors import SqlExplorerConfigurationError
 
@@ -25,7 +25,6 @@ _RESULT_KEYWORDS = {"DESC", "DESCRIBE", "EXPLAIN", "SELECT", "SHOW", "TABLE", "V
 _DIRECT_RESULT_KEYWORDS = _RESULT_KEYWORDS - {"SELECT"}
 _RETURNING_RE = re.compile(r"\bRETURNING\b", flags=re.IGNORECASE)
 _SELECT_INTO_RE = re.compile(r"\bSELECT\b[\s\S]*?\bINTO\b", flags=re.IGNORECASE)
-_CLICKHOUSE_FORMAT_RE = re.compile(r"\bFORMAT\s+[A-Za-z0-9_]+\s*\Z", flags=re.IGNORECASE)
 _EXPLAIN_MUTATION_RE = re.compile(
     r"\bANALY[ZS]E\b[\s\S]*\b(?:DELETE|INSERT|MERGE|UPDATE)\b",
     flags=re.IGNORECASE,
@@ -83,10 +82,10 @@ def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
     requires_confirmation = any(
         not _is_pure_result_read(statement, dialect) for statement in statements
     )
-    bounded_final, server_limited = _bounded_result_statement(
+    bounded_final, server_limited = apply_row_limit(
         statements[-1],
-        dialect,
-        returns_rows=final_returns_rows,
+        FETCH_ROW_LIMIT if final_returns_rows else None,
+        dialect=dialect,
     )
     execution_statements = (*statements[:-1], bounded_final)
     execution_sql = join_statements(execution_statements)
@@ -145,37 +144,6 @@ def _is_pure_result_read(statement: str, dialect: str | None) -> bool:
     )
 
 
-def _bounded_result_statement(
-    statement: str,
-    dialect: str | None,
-    *,
-    returns_rows: bool,
-) -> tuple[str, bool]:
-    if not returns_rows or not _is_wrappable_query(statement, dialect):
-        return statement, False
-    stripped = _strip_terminal_semicolon(statement)
-    return (
-        "SELECT * FROM ("  # noqa: S608 -- bounded wrapper around user-authored SQL.
-        f"{stripped}\n"
-        ") AS analytics_toolkit_explorer_result\n"
-        f"LIMIT {FETCH_ROW_LIMIT}",
-        True,
-    )
-
-
-def _is_wrappable_query(statement: str, dialect: str | None) -> bool:
-    if _CLICKHOUSE_FORMAT_RE.search(terminal_parts(statement)[0]):
-        return False
-    if _first_keyword(statement) not in {"SELECT", "VALUES", "WITH"}:
-        return False
-    expression = _parse_expression(statement, dialect)
-    if expression is not None:
-        return isinstance(expression, exp.Query) or expression.__class__.__name__ == "Values"
-    parsed = sqlparse.parse(statement)
-    statement_type = _sqlparse_statement_type(parsed)
-    return statement_type == "SELECT" or _first_keyword(statement) == "VALUES"
-
-
 def _parse_expression(statement: str, dialect: str | None) -> Any | None:
     try:
         return sqlglot.parse_one(statement, read=dialect)
@@ -187,11 +155,6 @@ def _first_keyword(statement: str) -> str:
     without_comments = sqlparse.format(statement, strip_comments=True).lstrip()
     match = re.match(r"([A-Za-z]+)", without_comments)
     return match.group(1).upper() if match else ""
-
-
-def _strip_terminal_semicolon(statement: str) -> str:
-    body, suffix, _ = terminal_parts(statement)
-    return (body + suffix).strip()
 
 
 def _has_sql_content(statement: str) -> bool:

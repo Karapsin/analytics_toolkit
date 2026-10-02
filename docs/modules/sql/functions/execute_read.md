@@ -5,7 +5,7 @@
 Run setup SQL statements, then read the final SQL statement into a dataframe on the same connection.
 
 ```python
-execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]'
+execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, row_limit: 'int | None' = None) -> 'pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]'
 ```
 
 ## Inputs
@@ -13,6 +13,7 @@ execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = Fa
 ### General Inputs
 
 - `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
+- `row_limit` - optional positive integer cap on supported outer result queries; defaults to `None`; unsupported statements run unchanged
 - `query` - text of SQL to execute or read; a non-empty list runs independent query strings and returns a list in input order
 - `concurrency` - requested workers for list input; defaults to `1` and has no effect on string input
 - `soft_concurrency_cap` - optional lower ceiling on requested list workers
@@ -53,6 +54,30 @@ result.head()
 # 0  2026-06-01    1204
 # 1  2026-06-02    1187
 ```
+
+
+### Limit returned rows
+
+```python
+from analytics_toolkit import sql
+
+preview = sql.execute_read("gp", "select order_id from sandbox.orders", row_limit=200)
+len(preview)  # at most 200 rows for this SELECT
+```
+
+`row_limit` adds an outer SQL limit or reduces an existing larger literal limit.
+Smaller limits, offsets, ordering, and inner limits are preserved. For
+`execute_read`, only the final statement of each script is limited, including
+when the input is a list of independent scripts. The returned data, exports,
+and row-count metadata describe the limited result.
+
+This option does not limit cursor fetching. Commands such as `SHOW`, `EXPLAIN`,
+and mutations with `RETURNING` run unchanged without a warning. SQL that cannot
+be safely parsed or rewritten also runs unchanged, including nonliteral limits,
+`WITH TIES`, ClickHouse `LIMIT BY`, ClickHouse unions that require a wrapper
+for a global limit, and explicit `FORMAT` queries. Omit
+`row_limit` to retain the original SQL behavior. Booleans, zero, negative values,
+and non-integers are rejected.
 
 ## Notes
 

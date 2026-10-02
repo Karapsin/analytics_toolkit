@@ -7,12 +7,13 @@ Trailing `--` or `/* ... */` comments do not count as additional statements,
 including when they follow a semicolon.
 
 ```python
-read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None) -> 'Any | SqlOperationResult'
+read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None, row_limit: 'int | None' = None) -> 'Any | SqlOperationResult'
 ```
 
 ## Inputs
 
 - `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
+- `row_limit` - optional positive integer cap on supported outer result queries; defaults to `None`; unsupported statements run unchanged
 - `query` - text of SQL to execute or read
 - `output_type` - output shape: `df`, `scalar`, `list`, or `dict`; defaults to `df`
 - `to_excel` - optional `.xlsx` output filename; writes the dataframe without its index and requires `output_type="df"`
@@ -93,6 +94,30 @@ orders_by_column = sql.read(
 )
 # {"order_id": [1001, 1002], "amount": [19.90, 35.00]}
 ```
+
+
+### Limit returned rows
+
+```python
+from analytics_toolkit import sql
+
+preview = sql.read("gp", "select order_id from sandbox.orders", row_limit=200)
+len(preview)  # at most 200 rows for this SELECT
+```
+
+`row_limit` adds an outer SQL limit or reduces an existing larger literal limit.
+Smaller limits, offsets, ordering, and inner limits are preserved. For
+`execute_read`, only the final statement of each script is limited, including
+when the input is a list of independent scripts. The returned data, exports,
+and row-count metadata describe the limited result.
+
+This option does not limit cursor fetching. Commands such as `SHOW`, `EXPLAIN`,
+and mutations with `RETURNING` run unchanged without a warning. SQL that cannot
+be safely parsed or rewritten also runs unchanged, including nonliteral limits,
+`WITH TIES`, ClickHouse `LIMIT BY`, ClickHouse unions that require a wrapper
+for a global limit, and explicit `FORMAT` queries. Omit
+`row_limit` to retain the original SQL behavior. Booleans, zero, negative values,
+and non-integers are rejected.
 
 ## Notes
 

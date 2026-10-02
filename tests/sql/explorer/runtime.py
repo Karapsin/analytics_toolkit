@@ -114,7 +114,8 @@ def test_read_execution_displays_only_two_hundred_rows(
     assert len(result.dataframe) == 200
     assert result.status == "Showing the first 200 rows; more rows are available."
     assert calls[0][0] == "gp"
-    assert "LIMIT 201" in calls[0][1]
+    assert calls[0][1] == "select value from sample"
+    assert calls[0][2]["row_limit"] == 201
     assert calls[0][2]["retry_cnt"] == 1
     assert calls[0][2]["return_metadata"] is True
     assert calls[0][2]["query_label"].startswith("sql_explorer run=")
@@ -140,10 +141,10 @@ def test_export_replays_capped_query_without_display_limit(
     tmp_path: Path,
 ) -> None:
     session = _session(monkeypatch, tmp_path)
-    calls: list[str] = []
+    calls: list[tuple[str, dict[str, Any]]] = []
 
     def fake_read(_db_key: str, query: str, **_kwargs: Any) -> pd.DataFrame:
-        calls.append(query)
+        calls.append((query, _kwargs))
         return pd.DataFrame({"value": range(201 if len(calls) == 1 else 205)})
 
     monkeypatch.setattr(runtime.sql, "read", fake_read)
@@ -153,9 +154,9 @@ def test_export_replays_capped_query_without_display_limit(
     assert state.truncated is True
     assert state.dataframe is None
     assert len(session.export_dataframe()) == 205
-    assert "LIMIT 201" in calls[0]
-    assert "LIMIT 201" not in calls[1]
-    assert calls[1] == "select value from sample"
+    assert calls[0][0] == calls[1][0] == "select value from sample"
+    assert calls[0][1]["row_limit"] == 201
+    assert "row_limit" not in calls[1][1]
 
 
 def test_export_clears_its_matching_cancellation_marker(
@@ -214,6 +215,7 @@ def test_export_requires_results_and_replays_execute_read_results(
 
     assert session.export_dataframe().to_dict(orient="list") == {"value": [1, 2]}
     assert calls[0][0] == plan.full_execution_sql
+    assert "row_limit" not in calls[0][1]
     assert calls[0][1]["query_label"].startswith("sql_explorer export=")
     assert session.active_query_label == "another query"
 
@@ -274,6 +276,8 @@ def test_execute_read_and_execute_are_dispatched(
     assert execute_result.dataframe is None
     assert execute_result.status == "Executed 1 statement(s) successfully."
     assert execute_read_calls[0]["return_metadata"] is True
+    assert execute_read_calls[0]["row_limit"] == 201
+    assert "row_limit" not in execute_calls[0]
     assert execute_calls[0]["retry_policy"] == "safe"
 
 
@@ -392,3 +396,23 @@ def test_invalid_database_is_rejected(
 
     with pytest.raises(SqlExplorerConfigurationError, match=message):
         runtime.validate_database("missing")
+
+
+@pytest.mark.parametrize("row_count", [0, 199, 200])
+def test_results_up_to_display_limit_are_complete_and_cached(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, row_count: int
+) -> None:
+    session = _session(monkeypatch, tmp_path)
+    calls: list[dict[str, Any]] = []
+
+    def read(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        calls.append(kwargs)
+        return pd.DataFrame({"value": range(row_count)})
+
+    monkeypatch.setattr(runtime.sql, "read", read)
+    result = session.execute(build_execution_plan("select value from orders", "gp"))
+    assert result.total_rows == result.displayed_rows == row_count
+    assert not result.truncated
+    assert len(session.export_dataframe()) == row_count
+    assert len(calls) == 1
+    assert calls[0]["row_limit"] == 201

@@ -13,6 +13,10 @@ Dataframes returned by `sql.read` and `sql.execute_read` infer modern pandas
 nullable dtypes from raw backend values. Nullable integers remain exact instead
 of being coerced through floating point when a result also contains `NULL`.
 
+[`read`](functions/read.md) and [`execute_read`](functions/execute_read.md)
+accept `row_limit` to cap supported outer result queries without a subquery
+wrapper. Unsupported commands run unchanged; the default is no added limit.
+
 ClickHouse aliases with `cluster_routing` automatically use a fully deployed
 managed physical shard for named reads and writes, with a safe local
 Distributed-facade fallback when full routing-cluster coverage cannot be

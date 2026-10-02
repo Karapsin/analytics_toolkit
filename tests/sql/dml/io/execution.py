@@ -106,6 +106,7 @@ def test_read_sql_with_metadata_delegates_to_shared_implementation(
             "output_type": "df",
             "to_excel": None,
             "to_csv": "metadata.csv",
+            "row_limit": None,
         }
     ]
 

@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Persist SQL Explorer table names and UI preferences beside .connections, refreshing names in an independent background worker.
 - Remove the SQL Explorer table autocomplete prefix minimum and query the complete typed prefix.
 - Added per-connection SQLite query journals with structured execution metadata, SQL/JSON exports, and searchable Ctrl/Cmd/Fn+H history.
+- Add optional row limits to SQL reads and replace SQL Explorer subquery wrapping with outer limits.
 
 ## 1.3.12.0 - 2026-09-21
 

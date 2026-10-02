@@ -307,9 +307,13 @@ to the editor. Closing output preserves SQL text and query outcome/timing.
 At most 200 result rows are displayed, with the result grid's vertical
 scrollbar on the right. The query, result, and command panes use square borders
 with a one-row separation so their focus treatments never overlap.
-Query-shaped final statements use a
-201-row server-side limit so the Explorer can indicate when more rows exist
-without fetching an unbounded result. Finite Decimal cells display without
+Supported final queries use `row_limit=201` through `sql.read` or
+`sql.execute_read`, adding or tightening the outer SQL limit without a subquery
+wrapper. This lets the Explorer indicate when more than 200 rows exist. Smaller
+existing limits are preserved. Commands such as `SHOW`, `EXPLAIN`, and mutations
+with `RETURNING`, plus queries that cannot safely be rewritten, run unchanged;
+their full result is fetched before the display cap is applied. Full exports
+rerun capped queries without Explorer’s added limit. Finite Decimal cells display without
 insignificant trailing zeros. Integers, decimals, and floating-point values use
 comma thousands separators. Nulls display as `NULL`, and embedded tabs or line
 breaks are escaped visibly.

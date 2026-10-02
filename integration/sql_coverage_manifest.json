@@ -2999,6 +2999,27 @@
               ]
             }
           ]
+        },
+        "row_limit": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/row_limits.py::test_execute_read_limit_applies_only_to_final_statement_of_each_batch_item"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/row_limits.py::test_execute_read_limit_applies_only_to_final_statement_of_each_batch_item"
+              ]
+            }
+          ]
         }
       }
     },
@@ -4799,6 +4820,27 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/read/outputs.py::test_read_exports_dataframe_to_csv"
+              ]
+            }
+          ]
+        },
+        "row_limit": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "default",
+              "value": "None",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/row_limits.py::test_default_read_preserves_sql"
+              ]
+            },
+            {
+              "state": "supported-non-default",
+              "status": "covered",
+              "tests": [
+                "tests/sql/dml/io/row_limits.py::test_read_limit_reaches_driver_and_preserves_outputs"
               ]
             }
           ]

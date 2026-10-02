@@ -4,6 +4,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, List
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.row_limits import apply_row_limit
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -51,6 +52,7 @@ def execute_read(
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
+    row_limit: int | None = None,
 ) -> pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]:
     def prepare(
         sql: str, _target: str | None, attempts: list[int]
@@ -66,6 +68,7 @@ def execute_read(
             query_label=query_label,
             return_metadata=return_metadata,
             progress=progress,
+            row_limit=row_limit,
         )
         return partial(_execute_read_options, options, attempt_numbers=attempts)
 
@@ -158,6 +161,7 @@ def _build_execute_read_options(
     query_label: str | None,
     return_metadata: bool,
     progress: bool,
+    row_limit: int | None = None,
 ) -> ExecuteReadOptions:
     config = get_connection_config(db_key)
     connection_key = config.connection_key
@@ -172,6 +176,9 @@ def _build_execute_read_options(
     statements = _split_sql_statements(sql)
     if not statements:
         raise InvalidSqlInputError("Query string must not be empty.")
+    statements[-1], _ = apply_row_limit(
+        statements[-1], row_limit, dialect=get_backend_adapter(backend).sqlglot_dialect
+    )
     if query_label is not None:
         statements = [apply_query_label(statement, query_label) for statement in statements]
     statements = [

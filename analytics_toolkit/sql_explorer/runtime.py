@@ -23,6 +23,7 @@ from .settings import (
 )
 from .statements import (
     DISPLAY_ROW_LIMIT,
+    FETCH_ROW_LIMIT,
     ExecutionRoute,
     ExplorerExecutionPlan,
     build_execution_plan,
@@ -268,12 +269,16 @@ class ExplorerSession:
         if plan.route is ExecutionRoute.READ:
             return sql.read(
                 operation_database.connection_key,
-                plan.execution_sql,
+                plan.full_execution_sql,
+                row_limit=FETCH_ROW_LIMIT,
                 **common_options,
             )
         if plan.route is ExecutionRoute.EXECUTE_READ:
             return sql.execute_read(
-                operation_database.connection_key, plan.execution_sql, **common_options
+                operation_database.connection_key,
+                plan.full_execution_sql,
+                row_limit=FETCH_ROW_LIMIT,
+                **common_options,
             )
         return sql.execute(
             operation_database.connection_key,

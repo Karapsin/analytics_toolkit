@@ -17,10 +17,10 @@ def test_single_query_uses_read_and_fetches_one_extra_row() -> None:
     assert plan.returns_rows is True
     assert plan.requires_confirmation is False
     assert plan.server_limited is True
-    assert "LIMIT 201" in plan.execution_sql
+    assert plan.execution_sql.strip() == "select value from metrics\nLIMIT 201"
 
 
-def test_result_wrapper_preserves_editor_line_numbers() -> None:
+def test_unparseable_query_preserves_editor_line_numbers() -> None:
     plan = build_execution_plan("select 1\nas select 1", "gp")
 
     assert plan.execution_sql.splitlines()[1].startswith("as select 1")
@@ -84,7 +84,7 @@ def test_empty_editor_is_rejected() -> None:
         build_execution_plan("  ; -- nothing\n", "gp")
 
 
-def test_parser_fallback_classifies_and_wraps_select(
+def test_routing_fallback_still_uses_shared_limit_helper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(statements_module, "_parse_expression", lambda statement, dialect: None)
@@ -106,7 +106,9 @@ def test_parser_fallback_handles_returning_and_values(
 
     assert returning.returns_rows is True
     assert returning.requires_confirmation is True
-    assert values.server_limited is True
+    assert values.returns_rows is True
+    assert values.route is ExecutionRoute.READ
+    assert values.execution_sql.startswith("values (1)")
 
 
 def test_parse_error_and_empty_sqlparse_result_use_fallbacks(
