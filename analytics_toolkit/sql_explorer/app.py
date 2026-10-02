@@ -31,6 +31,8 @@ from .file_commands import SqlExplorerFileCommandsMixin
 from .filetree import read_sql_file
 from .help_text import MOVEMENT_HELP, SHORTCUTS_HELP
 from .inputs import EditableInput
+from .journal_commands import SqlExplorerJournalCommandsMixin
+from .journal_screen import JournalScreen
 from .picker import DatabasePickerApp
 from .query_commands import SqlExplorerQueryCommandsMixin
 from .scheduling import ExplorerQueryScheduler
@@ -72,6 +74,7 @@ def _remove_dynamic_binding(bindings: Any, key: str) -> None:
 
 
 class SqlExplorerApp(
+    SqlExplorerJournalCommandsMixin,
     SqlExplorerConnectionsCommandsMixin,
     SqlExplorerCompletionCommandsMixin,
     SqlExplorerQueryCommandsMixin,
@@ -90,6 +93,7 @@ class SqlExplorerApp(
         Binding("shift+f6", "focus_previous_pane", "Previous pane", show=False, priority=True),
         Binding("f8", "toggle_keyboard", "Keyboard mode", show=False, priority=True),
         Binding("f5", "run_query", "Run", priority=True),
+        Binding("ctrl+h", "open_journal", "Query journal", show=False, priority=True),
         Binding("ctrl+o", "open_navigation", "Open SQL file", priority=True),
         Binding("ctrl+s", "save_file", "Save SQL file", show=False, priority=True),
         Binding("ctrl+n", "new_sql_file", "New SQL file", show=False, priority=True),
@@ -135,7 +139,8 @@ class SqlExplorerApp(
         self._tab_order: list[str] = ["1"]
         self._query_scheduler = ExplorerQueryScheduler()
         self._completion_pool = CompletionCoordinatorPool(
-            state_directory=getattr(session, "explorer_state_dir", None)
+            state_directory=getattr(session, "explorer_state_dir", None),
+            journal=getattr(session, "journal", None),
         )
         self.keyboard_mode = session.settings.keyboard_mode
         self._exit_requested = False
@@ -375,6 +380,9 @@ class SqlExplorerApp(
                 self._set_notice("Copied selection.")
 
     def action_open_find(self) -> None:
+        if isinstance(self.screen, JournalScreen):
+            self.screen.action_search()
+            return
         workspace = self.active_workspace
         workspace.editor.collapse_to_active()
         workspace.find_bar.open()
@@ -644,6 +652,7 @@ class SqlExplorerApp(
             "exit!": self._command_exit_force,
             "format": self._command_format,
             "help": self._command_help,
+            "journal": self._command_journal,
             "del": self._command_delete,
             "mode": self._command_mode,
             "keyboard": self._command_keyboard,
@@ -869,6 +878,11 @@ class SqlExplorerApp(
         if not self.screen_stack:
             return
         workspace = workspace or self.active_workspace
+        journal = getattr(workspace.session, "journal", None)
+        if journal is not None:
+            warning = journal.take_warning()
+            if warning:
+                self.notify(warning, severity="warning", timeout=10)
         try:
             summary = workspace.query_one(QuerySummaryBar)
             interrupt = workspace.query_one(".interrupt", Button)

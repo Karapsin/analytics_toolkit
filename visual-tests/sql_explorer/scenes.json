@@ -467,6 +467,84 @@
         "#editor-status",
         "#command-input"
       ]
+    },
+    {
+      "id": "journal-populated",
+      "required_elements": [
+        "#journal-dialog",
+        "#journal-title",
+        "#journal-search-row",
+        "#journal-search",
+        "#journal-filter",
+        "#journal-body",
+        "#journal-list",
+        "#journal-detail-pane",
+        "#journal-details",
+        "#journal-next-sql",
+        "#journal-sql",
+        "#journal-status",
+        "#journal-buttons",
+        "#journal-open",
+        "#journal-more",
+        "#journal-refresh",
+        "#journal-close",
+        "#journal-help",
+        "#journal-previous",
+        "#journal-export-sql",
+        "#journal-export-json"
+      ]
+    },
+    {
+      "id": "journal-empty",
+      "required_elements": [
+        "#journal-dialog",
+        "#journal-title",
+        "#journal-search-row",
+        "#journal-search",
+        "#journal-filter",
+        "#journal-body",
+        "#journal-list",
+        "#journal-detail-pane",
+        "#journal-details",
+        "#journal-next-sql",
+        "#journal-sql",
+        "#journal-status",
+        "#journal-buttons",
+        "#journal-open",
+        "#journal-more",
+        "#journal-refresh",
+        "#journal-close",
+        "#journal-help",
+        "#journal-previous",
+        "#journal-export-sql",
+        "#journal-export-json"
+      ]
+    },
+    {
+      "id": "journal-error",
+      "required_elements": [
+        "#journal-dialog",
+        "#journal-title",
+        "#journal-search-row",
+        "#journal-search",
+        "#journal-filter",
+        "#journal-body",
+        "#journal-list",
+        "#journal-detail-pane",
+        "#journal-details",
+        "#journal-next-sql",
+        "#journal-sql",
+        "#journal-status",
+        "#journal-buttons",
+        "#journal-open",
+        "#journal-more",
+        "#journal-refresh",
+        "#journal-close",
+        "#journal-help",
+        "#journal-previous",
+        "#journal-export-sql",
+        "#journal-export-json"
+      ]
     }
   ]
 }

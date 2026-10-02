@@ -141,7 +141,9 @@ def cancel_scope_queries(
         thread_name_prefix="async-sql-cancel",
     )
     futures: dict[Future[tuple[str, tuple[int | str, ...], str | None]], str] = {
-        executor.submit(_cancel_alias_until_clear, alias, scope.marker, deadline): alias
+        executor.submit(
+            contextvars.copy_context().run, _cancel_alias_until_clear, alias, scope.marker, deadline
+        ): alias
         for alias in aliases
     }
     done, pending = wait(futures, timeout=max(0.0, deadline - time.monotonic()))

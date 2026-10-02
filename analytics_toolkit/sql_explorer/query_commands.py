@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 from textual import work
@@ -39,6 +40,9 @@ class SqlExplorerQueryCommandsMixin:
         sql_text = workspace.editor.execution_text()
         try:
             plan = workspace.session.plan(sql_text)
+            plan = replace(
+                plan, source_file=str(workspace.current_file) if workspace.current_file else None
+            )
         except Exception as exc:  # noqa: BLE001 -- errors are rendered in the TUI.
             app.show_error(exc, workspace)
             return

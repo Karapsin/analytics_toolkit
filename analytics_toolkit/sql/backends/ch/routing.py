@@ -158,6 +158,9 @@ def route_sql(
 
 
 def wrap_client(client: Any, config: Any) -> Any:
+    from analytics_toolkit.sql.execution.observation import observed_connection  # noqa: PLC0415
+
+    client = observed_connection(client)
     routing = getattr(config, "cluster_routing", None)
     if routing is None:
         return client

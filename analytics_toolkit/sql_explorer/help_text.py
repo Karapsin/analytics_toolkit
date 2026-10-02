@@ -3,6 +3,7 @@
 HELP_TEXT = """SQL Explorer commands
   Query: run, cancel, format, create_table, clear query|results|all
   Files/tabs: open, save, connections, db KEY, to_csv, to_excel
+  History: journal (Ctrl/Cmd/Fn+H)
   Editing: cp, pst, del; help movement for navigation and selection
   Layout: results switch, results expand N, results shrink N
   Keyboard: keyboard on|off|toggle (F8); F6 switches panes
@@ -31,6 +32,7 @@ SHORTCUTS_HELP = """Non-movement shortcuts
   Shift+Tab                 SELECT columns or unindent
   select + Space + Tab      insert * followed by one space
   select * + Space + Tab    insert newline and from, retaining indentation
+  Ctrl+H                   query journal (Command/Fn equivalents supported)
   Up/Down in commands       command history; newest restores your draft
   Up/Down in completion     choose suggestion; Tab/Enter accepts, Escape closes
   ( [ { ' \" `               paired insertion; wrap selections

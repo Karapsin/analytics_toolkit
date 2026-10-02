@@ -26,6 +26,8 @@ from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.discovery import DiscoveryProgress
 from analytics_toolkit.sql_explorer.exports import ConfirmExportScreen
 from analytics_toolkit.sql_explorer.file_commands import NewSqlFileScreen
+from analytics_toolkit.sql_explorer.journal import QueryJournal
+from analytics_toolkit.sql_explorer.journal_screen import JournalScreen
 from analytics_toolkit.sql_explorer.picker import DatabasePickerApp
 from analytics_toolkit.sql_explorer.runtime import (
     ExplorerCancelResult,
@@ -104,7 +106,7 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_evidence_path = evidence_path
         self.visual_manifest_path = manifest_path
         self.creation_scene_ready = not (
-            scene_id.startswith("create-table")
+            scene_id.startswith(("create-table", "journal-"))
             or scene_id in {"command-completion", "database-completion"}
         )
         super().__init__(VisualSession())
@@ -123,7 +125,24 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         )
         scene = self.visual_scene_id
-        if scene.startswith("create-table"):
+        if scene.startswith("journal-"):
+            journal = QueryJournal(self.visual_evidence_path.parent / scene)
+            if scene == "journal-populated":
+                with journal.action(
+                    "gp",
+                    "gp",
+                    "user",
+                    user_sql=workspace.editor.text,
+                    source_file="daily_orders.sql",
+                ) as action, action.submission(workspace.editor.text + "\nLIMIT 201"):
+                    pass
+            elif scene == "journal-error":
+                path = journal.store("gp").path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"invalid SQLite database")
+            self.push_screen(JournalScreen(journal, "gp"))
+            self.set_timer(0.6, self._mark_scene_ready)
+        elif scene.startswith("create-table"):
             self._open_creation_scene(scene)
         elif scene == "completion-narrowed":
             workspace.editor.text = "SELECT customer_na FROM analytics.daily_orders"

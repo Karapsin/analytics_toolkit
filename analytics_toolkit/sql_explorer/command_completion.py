@@ -15,6 +15,7 @@ COMMAND_NAMES = (
     "exit!",
     "format",
     "help",
+    "journal",
     "mode",
     "mv",
     "mvs",

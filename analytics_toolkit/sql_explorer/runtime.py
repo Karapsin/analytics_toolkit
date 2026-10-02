@@ -12,6 +12,7 @@ from analytics_toolkit.sql.connection.config import get_connections_file_path
 
 from .create_table import CreateTablePlan
 from .errors import SqlExplorerConfigurationError
+from .journal import QueryJournal
 from .settings import (
     DEFAULT_RUN_BINDING,
     ExplorerSettings,
@@ -105,6 +106,7 @@ class ExplorerSession:
     def __init__(self, db_key: str, *, settings_path: Path | None = None) -> None:
         self.database = validate_database(db_key)
         self.explorer_state_dir = get_connections_file_path().parent / ".sql_explorer"
+        self.journal = QueryJournal(self.explorer_state_dir)
         loaded = (
             load_settings(settings_path)
             if settings_path is not None
@@ -128,6 +130,7 @@ class ExplorerSession:
             settings_warning=None,
             settings_path=self.settings_path,
             explorer_state_dir=self.explorer_state_dir,
+            journal=self.journal,
             database=self.database,
             active_query_label=None,
             active_query=None,
@@ -170,6 +173,29 @@ class ExplorerSession:
         return build_execution_plan(sql_text, self.database.backend)
 
     def execute(
+        self,
+        plan: ExplorerExecutionPlan,
+        *,
+        database: DatabaseSelection | None = None,
+    ) -> ExplorerRunResult:
+        selected = database or self.database
+        with self.journal.action(
+            selected.connection_key,
+            selected.backend,
+            "create_table" if isinstance(plan, CreateTablePlan) else "user",
+            user_sql=plan.user_sql,
+            source_file=plan.source_file,
+            context=plan.options if isinstance(plan, CreateTablePlan) else None,
+        ) as action:
+            try:
+                return self._execute(plan, database=selected)
+            except BaseException:
+                if self.last_query is not None and self.last_query.state == "cancelled":
+                    # The driver may signal cancellation with its ordinary error type.
+                    action.record["cancelled"] = True
+                raise
+
+    def _execute(
         self,
         plan: ExplorerExecutionPlan,
         *,
@@ -265,6 +291,23 @@ class ExplorerSession:
         state = self.export_state()
         if state.dataframe is not None:
             return state.dataframe.copy()
+        selected = state.database or self.database
+        with self.journal.action(
+            selected.connection_key,
+            selected.backend,
+            "export",
+            user_sql=state.plan.user_sql,
+            source_file=state.plan.source_file,
+        ) as action:
+            try:
+                return self._export_dataframe()
+            except BaseException:
+                if self.last_query is not None and self.last_query.state == "cancelled":
+                    action.record["cancelled"] = True
+                raise
+
+    def _export_dataframe(self) -> pd.DataFrame:
+        state = self.export_state()
 
         plan = state.plan
         operation_database = state.database or self.database
@@ -371,9 +414,14 @@ class ExplorerSession:
         )
 
     def cancel_active(self) -> ExplorerCancelResult:
-        query_label = self.active_query_label
-        if query_label is None:
+        selected = self._active_database or self.database
+        if self.active_query_label is None:
             return ExplorerCancelResult(0, 0, "No active explorer query was found.")
+        with self.journal.action(selected.connection_key, selected.backend, "cancel"):
+            return self._cancel_active()
+
+    def _cancel_active(self) -> ExplorerCancelResult:
+        query_label = self.active_query_label
         if self.active_query is not None and self.active_query.label == query_label:
             self.active_query = replace(self.active_query, state="cancelling")
 

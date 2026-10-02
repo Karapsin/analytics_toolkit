@@ -22,6 +22,7 @@ pip install 'analytics-toolkit[tui]'
 - [Navigation mode](#navigation-mode)
 - [Results and clipboard](#results-and-clipboard)
 - [Query status and cancellation](#query-status-and-cancellation)
+- [Query journal](#query-journal)
 - [Commands](#commands)
 - [Creating tables](#creating-tables)
 
@@ -547,5 +548,81 @@ and queues the operation; the button is its execution confirmation. Creation
 shares the user-operation queue and status/cancellation handling. Results and
 errors belong to the originating tab, and reopening the form retains the last
 submitted values for correction. Table and column caches refresh after creation.
+
+## Query journal
+
+Press `Ctrl+H` or run `journal` to browse the active connection's query history.
+Terminal-forwarded Command and Fn-like modifiers share the same shortcut,
+including closing the journal. The dialog starts with user actions, newest first;
+select **All actions** to include background metadata and cancellation SQL.
+Search matches SQL, source filenames and catalog/schema/table names as literal,
+case-insensitive substrings. Select an entry to inspect it; **Next SQL** cycles
+through user-visible SQL and actual database submissions. **Previous/Next**
+replace the current page of up to 100 summaries; query details load only for the
+selected action. **Refresh** reloads history. `Ctrl+F` focuses search; Escape closes.
+
+**Open in new tab** copies the user-visible query into a new unsaved tab on its
+original connection. For an internal action it copies the selected submission.
+Opening history does not execute SQL or change an existing tab or journal entry.
+**Export SQL** saves only the user-visible query and is disabled for internal
+actions. **Export JSON** saves the complete selected action, including actual
+submissions and metadata. Both use the filename and destination-directory dialogs
+and refuse to overwrite existing files.
+
+Explorer stores history beside the selected `.connections` file:
+
+```text
+.sql_explorer/query_journal/<safe_alias>_<alias_hash>/journal.sqlite3
+```
+
+All journal data lives in SQLite; SQL/JSON files are created only on export.
+Alias folders use safe characters and a stable hash suffix so distinct aliases
+remain separate on case-insensitive filesystems.
+History is kept until manually removed. The private local databases contain query
+text and literals, but no result datasets or connection configuration. SQLite
+uses WAL mode and may create adjacent `-wal` and `-shm` files. Short transactions
+and a bounded busy timeout allow independent Explorer workers to share an alias's
+history. Database failures produce a deduplicated warning without blocking SQL or
+replacing query errors. Unsupported or damaged databases are reported, not reset.
+
+User-visible SQL preserves exactly the selected fragments joined by Explorer, or
+the submitted full buffer, including comments. Generated row limits, tracking
+comments, retries and helper statements are stored separately as submissions.
+Form-based table creation records its options and actual SQL, without inventing
+user-visible SQL. Exports that rerun SQL create another action with the original
+query; exports using cached results create no entry. Declined confirmations and
+queued work cancelled before starting create no entry.
+
+SQLite stores actions, submissions and object references separately, with indexes
+for history ordering, user/internal filtering, outcomes and object names. Text
+search uses an FTS5 trigram index where available; short search strings and builds
+without trigram support use substring matching with the same results. Older
+file-based prototype journals are left untouched and are not automatically imported.
+
+### Structured export version 1
+
+- `schema_version`, `action_id`, `connection_alias`, `backend`, `origin` identify
+  the record. Origins are `user`, `create_table`, `export`, `metadata`,
+  `background` and `cancel`.
+- `user_sql` and `source_file` preserve the user input and its source; absent
+  values are `null`. `context` describes metadata scope or table-creation options.
+- `started_at` and `finished_at` are UTC ISO timestamps; `elapsed_seconds` is
+  measured with a monotonic clock. `outcome` is `running`, `completed`, `failed`
+  or `cancelled`. `error` contains a type and message when an action fails.
+- `statements` describes user SQL. Each item has `action`, `parsed` and `objects`.
+  Object entries contain `kind`, `catalog`, `schema` and `name`. Explicit SQL
+  qualification is preserved; unresolved qualifiers remain `null`. CTE names
+  and table aliases are excluded from physical table references.
+- `submissions` contains actual application-issued SQL in submission order,
+  including helper queries and retries. Each item has `index`, `sql`, timing,
+  outcome, error and statement metadata. Driver protocol traffic and implicit
+  server operations are outside the journal; submission timing measures the
+  driver call, while action timing includes result fetching and processing.
+
+Metadata extraction is best effort and never determines whether SQL may run.
+Unsupported SQL is retained with partial or unknown metadata. Background requests
+record their requested catalog/schema separately from the system tables referenced
+by their SQL. Cached metadata requires no SQL submission. A process that exits
+unexpectedly may leave a `running` record without a finish time.
 
 [All module docs](../README.md)

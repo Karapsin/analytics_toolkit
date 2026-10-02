@@ -46,6 +46,8 @@ class ExplorerExecutionPlan:
     returns_rows: bool
     requires_confirmation: bool
     server_limited: bool
+    user_sql: str | None = None
+    source_file: str | None = None
 
     @property
     def statement_count(self) -> int:
@@ -95,6 +97,7 @@ def build_execution_plan(sql_text: str, backend: str) -> ExplorerExecutionPlan:
         returns_rows=final_returns_rows,
         requires_confirmation=requires_confirmation,
         server_limited=server_limited,
+        user_sql=str(sql_text),
     )
 
 

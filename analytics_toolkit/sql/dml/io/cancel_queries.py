@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence as SequenceABC
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from contextvars import copy_context
 from numbers import Integral
 from typing import Any, Sequence, Union
 
@@ -13,7 +14,6 @@ from ...connection.config import get_connection_config
 from ...execution.operation_runner import timed_public_sql_function, validate_retry_options
 from ...metadata.show_queries import show_queries
 from .read_sql import read_sql
-
 
 QueryIdInput = Union[int, str, Sequence[Union[int, str]]]
 
@@ -89,8 +89,13 @@ def cancel_queries(
     if concurrency == 1:
         results = [cancel_query(query_id) for query_id in ids]
     else:
+        context = copy_context()
+
+        def cancel_with_context(query_id: int | str) -> dict[str, Any]:
+            return context.copy().run(cancel_query, query_id)
+
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            results = list(executor.map(cancel_query, ids))
+            results = list(executor.map(cancel_with_context, ids))
 
     return pd.DataFrame(results, columns=_CANCEL_RESULT_COLUMNS)
 

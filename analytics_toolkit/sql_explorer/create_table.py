@@ -85,7 +85,7 @@ BACKEND_OPTIONS = {
 
 @dataclass(frozen=True)
 class CreateTablePlan(ExplorerExecutionPlan):
-    options_json: str
+    options_json: str = "{}"
 
     @property
     def options(self) -> dict[str, Any]:

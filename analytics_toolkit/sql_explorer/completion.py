@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import deque
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from threading import Event, Lock, Thread
 from time import monotonic
@@ -31,12 +32,15 @@ from analytics_toolkit.sql.metadata.column_names import table_column_names
 
 from .background_metadata import BackgroundMetadata, persistent_discovery
 from .column_completion import column_fragment, projection_context, projection_suggestions
+from .journal_workers import JournalMetadataProvider, cancel_metadata
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
     import pandas as pd
+
+    from .journal import QueryJournal
 
 CompletionKind = Literal["keyword", "table", "catalog", "schema", "column"]
 
@@ -357,6 +361,7 @@ class CompletionCoordinator:
     connection_key: str
     backend: str
     provider: MetadataProvider | None = None
+    journal: QueryJournal | None = None
     discovery: BackgroundMetadata | None = None
     _queue: deque[_CompletionTask] = field(default_factory=deque, init=False)
     _queued_scopes: set[tuple[object, ...]] = field(default_factory=set, init=False)
@@ -529,7 +534,17 @@ class CompletionCoordinator:
             )
             generation = self._cache_generation
         if cached is None:
-            cached = table_column_names(self.connection_key, table)
+            with (
+                self.journal.action(
+                    self.connection_key,
+                    self.backend,
+                    "metadata",
+                    context={"kind": "column", "table": table},
+                )
+                if self.journal
+                else nullcontext()
+            ):
+                cached = table_column_names(self.connection_key, table)
             raise_if_cancelled()
             with self._lock:
                 if generation == self._cache_generation:
@@ -610,7 +625,17 @@ class CompletionCoordinator:
     def _cancel_task(self, task: _CompletionTask) -> None:
         if not task.cancellation.cancelled:
             task.cancellation.request_cancel()
-            thread = Thread(target=cancel_scope_queries, args=(task.cancellation,), daemon=True)
+            thread = Thread(
+                target=cancel_metadata,
+                args=(
+                    task.cancellation,
+                    self.journal,
+                    self.connection_key,
+                    self.backend,
+                    cancel_scope_queries,
+                ),
+                daemon=True,
+            )
             self._cancellation_threads = [
                 previous for previous in self._cancellation_threads if previous.is_alive()
             ]
@@ -745,8 +770,11 @@ class _CoordinatorPoolEntry:
 class CompletionCoordinatorPool:
     """Share one serialized metadata coordinator for each connection key."""
 
-    def __init__(self, *, state_directory: Path | None = None) -> None:
+    def __init__(
+        self, *, state_directory: Path | None = None, journal: QueryJournal | None = None
+    ) -> None:
         self._state_directory = state_directory
+        self.journal = journal
         self._entries: dict[str, _CoordinatorPoolEntry] = {}
         self._retired: list[CompletionCoordinator] = []
 
@@ -761,7 +789,12 @@ class CompletionCoordinatorPool:
         normalized_key = connection_key.casefold()
         entry = self._entries.get(normalized_key)
         if entry is None:
-            coordinator = CompletionCoordinator(connection_key, backend)
+            provider = provider_for_backend(backend)
+            if self.journal is not None:
+                provider = JournalMetadataProvider(provider, self.journal, backend, "metadata")
+            coordinator = CompletionCoordinator(
+                connection_key, backend, provider=provider, journal=self.journal
+            )
             if self._state_directory is None:
                 coordinator.start_bootstrap(on_error=on_error)
             else:
@@ -780,8 +813,15 @@ class CompletionCoordinatorPool:
                         self._state_directory,
                         connection_key,
                         backend,
-                        provider_for_backend(backend),
+                        (
+                            JournalMetadataProvider(
+                                provider_for_backend(backend), self.journal, backend, "background"
+                            )
+                            if self.journal
+                            else provider_for_backend(backend)
+                        ),
                         report,
+                        journal=self.journal,
                     )
                     coordinator.discovery.start()
                 except Exception as exc:  # noqa: BLE001 -- interactive discovery remains available.

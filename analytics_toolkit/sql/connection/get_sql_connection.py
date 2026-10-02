@@ -4,15 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .config import ChConfig, get_connection_config, get_connections_file_path
-from .errors import SqlConfigError, UnsupportedConnectionTypeError
-from ..backends import get_backend
+from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.execution.cancellation import (
     raise_if_cancelled,
     register_connection_alias,
 )
+
+from ..backends import get_backend
+from analytics_toolkit.sql.execution.observation import observed_connection
 from ..execution.operation_runner import timed_public_sql_function
-from analytics_toolkit.general import time_print
+from .config import ChConfig, get_connection_config, get_connections_file_path
+from .errors import SqlConfigError, UnsupportedConnectionTypeError
 
 
 @timed_public_sql_function
@@ -39,7 +41,7 @@ def get_sql_connection(db_key: str) -> Any:
     except BaseException:
         connection.close()
         raise
-    return connection
+    return observed_connection(connection)
 
 
 def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
@@ -71,7 +73,7 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
     except BaseException:
         connection.close()
         raise
-    return connection
+    return observed_connection(connection)
 
 
 def _resolve_ch_ca_certs(config: ChConfig) -> str | None:

@@ -17,6 +17,7 @@ from analytics_toolkit.sql.execution.cancellation import (
     raise_if_cancelled,
 )
 
+from .journal_workers import cancel_metadata
 from .metadata_store import MetadataStore, SnapshotKey, Snapshots
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .completion import MetadataProvider
+    from .journal import QueryJournal
 
 
 class BackgroundMetadata:
@@ -35,9 +37,11 @@ class BackgroundMetadata:
         store: MetadataStore | None,
         *,
         default_catalog: str | None = None,
+        journal: QueryJournal | None = None,
         on_error: Callable[[Exception], None],
     ) -> None:
         self.connection_key = connection_key
+        self.journal = journal
         self.backend = backend
         self.provider = provider
         self.store = store
@@ -104,7 +108,17 @@ class BackgroundMetadata:
 
     def _cancel(self) -> None:
         self._scope.request_cancel()
-        thread = Thread(target=cancel_scope_queries, args=(self._scope,), daemon=True)
+        thread = Thread(
+            target=cancel_metadata,
+            args=(
+                self._scope,
+                self.journal,
+                self.connection_key,
+                self.backend,
+                cancel_scope_queries,
+            ),
+            daemon=True,
+        )
         self._cancellations = [t for t in self._cancellations if t.is_alive()]
         self._cancellations.append(thread)
         thread.start()
@@ -206,12 +220,14 @@ class BackgroundMetadata:
                     self.on_error(exc)
 
 
-def persistent_discovery(
+def persistent_discovery(  # noqa: PLR0913 -- provider, cache and journal dependencies.
     directory: Path,
     connection_key: str,
     backend: str,
     provider: MetadataProvider,
     on_error: Callable[[Exception], None],
+    *,
+    journal: QueryJournal | None = None,
 ) -> BackgroundMetadata:
     """Bind snapshots to resolved configuration without writing credentials."""
     config = get_connection_config(connection_key)
@@ -224,4 +240,5 @@ def persistent_discovery(
         MetadataStore(directory, identity),
         default_catalog=getattr(config, "catalog", None),
         on_error=on_error,
+        journal=journal,
     )

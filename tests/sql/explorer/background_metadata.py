@@ -153,7 +153,12 @@ def test_complete_namespace_removes_dropped_schemas_and_catalogs(tmp_path: Path)
     )
     discovery.start()
     try:
-        _wait_for(lambda: discovery.cached("table", "hive", "empty") == ())
+        _wait_for(
+            lambda: (
+                discovery.cached("table", "hive", "empty") == ()
+                and discovery.cached("table") == provider.names
+            )
+        )
         snapshots = store.load()
         assert ("table", "deleted", "public") not in snapshots
         assert ("table", "iceberg", "deleted") not in snapshots
