@@ -221,6 +221,13 @@ In the editor, Tab is conditional:
 Completion menus shrink to their remaining matching rows. Catalog, schema,
 table, keyword, and column suggestions all filter locally as the prefix changes.
 
+Schema suggestions, including ClickHouse database names, hide generated names
+with the structure `hex-ID__hex-ID__suffix`: both hexadecimal IDs must contain
+at least 16 characters, followed by a nonempty suffix. Matching ignores case
+and applies to saved and freshly fetched names. These schemas remain in metadata
+and can still be typed explicitly; catalog, table, and column suggestions are
+unaffected.
+
 The editor keeps keyboard focus while the menu is open, so continued typing or
 backspacing filters the visible options. A typed prefix that narrows the menu to
 one option remains editable until Tab or Enter accepts it. Up and Down move the

@@ -15,6 +15,7 @@ from .completion import (
     filter_suggestions,
     keyword_suggestions,
     parse_completion_context,
+    schema_completion_values,
 )
 from .editor_actions import completion_text
 
@@ -145,9 +146,9 @@ class SqlExplorerCompletionCommandsMixin:
         if request.backend == "trino" and request.catalog is None:
             values = coordinator.known_catalogs()
         elif request.backend == "trino" and request.schema is None:
-            values = coordinator.cached_schemas(request.catalog)
+            values = schema_completion_values(coordinator.cached_schemas(request.catalog))
         elif request.schema is None:
-            values = coordinator.cached_schemas(None)
+            values = schema_completion_values(coordinator.cached_schemas(None))
             if values is None:
                 tab_id = workspace.tab_id
                 epoch = workspace.completion_epoch

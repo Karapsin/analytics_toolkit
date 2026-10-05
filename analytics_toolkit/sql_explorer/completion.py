@@ -221,6 +221,18 @@ def filter_suggestions(values: Sequence[str], prefix: str) -> tuple[str, ...]:
     return tuple(value for value in values if value.casefold().startswith(normalized))
 
 
+def schema_completion_values(values: Sequence[str] | None) -> tuple[str, ...] | None:
+    """Hide generated schemas in suggestions while retaining complete metadata."""
+    if values is None:
+        return None
+    return tuple(
+        value
+        for value in values
+        if re.fullmatch(r"[0-9a-f]{16,}__[0-9a-f]{16,}__.+", value, re.IGNORECASE | re.DOTALL)
+        is None
+    )
+
+
 def keyword_suggestions(prefix: str) -> tuple[str, ...]:
     return filter_suggestions(KEYWORDS, prefix)
 
