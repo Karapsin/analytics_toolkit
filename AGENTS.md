@@ -203,6 +203,18 @@ Keep public APIs stable unless the user explicitly asks for a breaking change.
 Many tests import underscore helpers through package re-export modules, so treat
 exported internals as compatibility surface too.
 
+## Toolkit Helpers In Consumer Code
+
+When writing scripts, notebooks, usage examples, or reporting code that consumes
+this package, use matching public `analytics_toolkit` helpers before implementing
+equivalent pandas or stdlib utilities. Read the
+[analytics-toolkit skill](.agents/skills/analytics-toolkit/SKILL.md) for helper
+selection, public imports, and date/timestamp semantics. Explicit user choices
+and requirements outside the helper contracts take precedence. Prefer
+`from atk import *` where appropriate and use its bare aliases such as `dt`,
+`dttm`, `sql`, and `ab`. Internal code implementing the toolkit's helpers follows
+module contracts and may use the underlying pandas or stdlib primitives.
+
 ## Required Context Routing
 
 Root `AGENTS.md` is the auto-discovered instruction file. The files under
@@ -224,8 +236,10 @@ files before normal repository inspection, tests, or edits:
 If multiple categories apply, read all relevant files before editing. Keep
 retrieved and opened context focused on the task.
 
-For SQL work, user-facing imports should use `from analytics_toolkit import sql`
-or `import analytics_toolkit.sql as sql`. Do not restore removed root implementation paths.
+For SQL consumer code, prefer `from atk import *` when appropriate and use its
+`sql` alias. When explicit imports are needed, use
+`from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`.
+Do not restore removed root implementation paths.
 
 ## Agent-Only RAG Context Workflow
 

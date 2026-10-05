@@ -8,7 +8,7 @@ investigation.
 - Public SQL APIs accept configured DB keys from `.connections`; callers should not need to pass raw backend names or open connection objects.
 - Single-DB public SQL functions should name that argument `db_key`.
 - Multi-DB public SQL functions may use directional key names such as `from_db`, `to_db`, `source_db`, and `table_db`.
-- User-facing SQL imports should use `from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`. Deep imports under `analytics_toolkit.sql.*` are internal and may change. Do not restore removed root implementation paths.
+- For SQL consumer code, prefer `from atk import *` where appropriate and use its `sql` alias. When explicit imports are needed, use `from analytics_toolkit import sql` or `import analytics_toolkit.sql as sql`. Deep imports under `analytics_toolkit.sql.*` are internal and may change. Do not restore removed root implementation paths.
 - Public SQL input names that work only for one backend must use the backend prefix: `gp_`, `trino_`, or `ch_`. Do not keep unprefixed compatibility aliases for those backend-only inputs unless the user explicitly asks for compatibility.
 - Each `.connections` value must include `type` as `gp`, `trino`, or `ch`. Backend dispatch comes from this `type`, while reconnect/retry/log messages keep using the alias key.
 - Env-based SQL config such as `SQL_CONNECTIONS`, `GP_HOST`, `TRINO_HOST`, `CH_HOST`, `TRINO_INSERT_CHUNK_SIZE`, and config-file override env vars is intentionally unsupported. Do not restore fallback support.
