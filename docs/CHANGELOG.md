@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - SQL Explorer completes namespaces with a trailing dot, adds iceberg to Trino SELECT shortcuts, and suppresses automatic closers before non-whitespace text.
+- Stabilize SQL Explorer journal UI tests when exclusive background workers replace earlier selections.
 
 ## 1.3.12.1 - 2026-10-05
 

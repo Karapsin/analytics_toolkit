@@ -14,6 +14,7 @@ from analytics_toolkit.sql_explorer.journal_reader import JournalPage
 from analytics_toolkit.sql_explorer.journal_screen import JournalScreen
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
+from tests.sql._support.ui_workers import wait_for_ui_workers
 from tests.sql.explorer.app import FakeSession
 from tests.sql.explorer.journal import Driver
 
@@ -65,26 +66,20 @@ def test_journal_filter_search_preview_and_open_preserve_editor(tmp_path: Path) 
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 1
             assert screen.query_one("#journal-sql", TextArea).text == "select * from public.orders"
             await pilot.click("#journal-next-sql")
             assert "LIMIT 201" in screen.query_one("#journal-sql", TextArea).text
             await pilot.click("#journal-filter")
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 2
             search = screen.query_one("#journal-search", Input)
             search.value = "orders"
             await pilot.pause()
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 1
             screen._receive_page(-1, JournalPage((), None, "stale"))
@@ -113,7 +108,7 @@ def test_empty_journal_command_and_internal_open(tmp_path: Path) -> None:
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             assert screen.query_one("#journal-open", Button).disabled
             assert screen.query_one("#journal-more", Button).disabled
             await pilot.press("ctrl+f")
@@ -122,9 +117,7 @@ def test_empty_journal_command_and_internal_open(tmp_path: Path) -> None:
                 observed_connection(Driver()).execute("SHOW SCHEMAS")
             await pilot.click("#journal-filter")
             await pilot.pause()
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             screen.query_one("#journal-list", OptionList).focus()
             await pilot.press("enter")
@@ -148,23 +141,19 @@ def test_pages_replace_previous_records_and_export_opens_save_dialog(tmp_path: P
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             first_ids = {record["action_id"] for record in screen.records}
             assert len(first_ids) == 100
             await pilot.click("#journal-more")
             await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 5
             assert not first_ids & {record["action_id"] for record in screen.records}
             assert screen.query_one("#journal-more", Button).disabled
             await pilot.click("#journal-previous")
             await pilot.pause()
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             assert {record["action_id"] for record in screen.records} == first_ids
             await pilot.click("#journal-export-sql")
             assert isinstance(application.screen, NewFileScreen)
@@ -176,7 +165,7 @@ def test_pages_replace_previous_records_and_export_opens_save_dialog(tmp_path: P
             await pilot.press("escape")
             await pilot.click("#journal-refresh")
             await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             assert len(screen.records) == 100
             await pilot.click("#journal-close")
             assert not isinstance(application.screen, JournalScreen)
@@ -212,9 +201,7 @@ def test_journal_notices_missing_details_and_busy_modal_guards(tmp_path: Path) -
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            await screen.workers.wait_for_complete()
-            await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             assert screen.query_one("#journal-export-sql", Button).disabled
             assert not screen.query_one("#journal-export-json", Button).disabled
             screen._open()
@@ -223,7 +210,7 @@ def test_journal_notices_missing_details_and_busy_modal_guards(tmp_path: Path) -
             assert screen._record is not None
             screen._select_record("deleted")
             await pilot.pause()
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert screen._record is None
             assert screen.query_one("#journal-export-json", Button).disabled
@@ -241,7 +228,7 @@ def test_journal_ignores_nested_dialog_events_and_stale_exports(tmp_path: Path) 
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            await screen.workers.wait_for_complete()
+            await wait_for_ui_workers(pilot, screen.workers)
             generation = screen._generation
             screen.on_input_changed(Input.Changed(Input(id="new-file-name"), "export.sql"))
             screen.on_option_list_option_highlighted(
