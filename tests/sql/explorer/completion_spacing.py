@@ -78,6 +78,21 @@ def test_namespace_completion_leaves_caret_ready_for_qualification(
     asyncio.run(exercise())
 
 
+def test_star_shortcut_accepts_missing_or_extra_trailing_whitespace() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test() as pilot:
+            _install_stub(app)
+            editor = app.active_workspace.editor
+            for suffix in ("", " ", "  \t"):
+                editor.text = "\tselect *" + suffix
+                editor.cursor_location = (0, len(editor.text))
+                await pilot.press("tab")
+                assert editor.text == "\tselect *\n\tfrom "
+
+    asyncio.run(exercise())
+
+
 def test_table_results_replace_namespace_spacing_and_keywords_keep_spaces() -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -141,7 +156,11 @@ def test_namespace_completion_reuses_existing_dot_and_preserves_following_table(
 
 
 @pytest.mark.parametrize("backend", ["gp", "ch", "trino"])
-def test_select_star_shortcut_uses_trino_catalog_and_preserves_indentation(backend: str) -> None:
+@pytest.mark.parametrize("prefix", ["", "select *\n\n\n"])
+@pytest.mark.parametrize("trailing", ["", " ", "  \t"])
+def test_select_star_shortcut_uses_trino_catalog_and_preserves_indentation(
+    backend: str, prefix: str, trailing: str
+) -> None:
     async def exercise() -> None:
         session = FakeSession()
         session.database.backend = backend
@@ -149,13 +168,16 @@ def test_select_star_shortcut_uses_trino_catalog_and_preserves_indentation(backe
         async with app.run_test() as pilot:
             _install_stub(app)
             editor = app.active_workspace.editor
-            editor.text = "  SELECT "
-            editor.cursor_location = (0, len(editor.text))
+            editor.text = prefix + "  SELECT" + trailing
+            row = prefix.count("\n")
+            editor.cursor_location = (row, len("  SELECT" + trailing))
             await pilot.press("tab", "tab")
-            expected = "  SELECT *\n  from " + ("iceberg." if backend == "trino" else "")
+            expected = prefix + "  SELECT *\n  from " + ("iceberg." if backend == "trino" else "")
             assert editor.text == expected
-            assert editor.cursor_location == (1, len(expected.splitlines()[1]))
+            assert editor.cursor_location == (row + 1, len(expected.splitlines()[row + 1]))
             editor.action_undo()
-            assert editor.text == "  SELECT * "
+            assert editor.text == prefix + "  SELECT * "
+            editor.action_undo()
+            assert editor.text == prefix + "  SELECT" + trailing
 
     asyncio.run(exercise())

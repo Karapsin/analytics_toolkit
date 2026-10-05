@@ -36,6 +36,7 @@ from analytics_toolkit.sql.metadata.column_names import table_column_names
 
 from .background_metadata import BackgroundMetadata, persistent_discovery
 from .column_completion import column_fragment, projection_context, projection_suggestions
+from .completion_scope import relation_position
 from .journal_workers import JournalMetadataProvider, cancel_metadata
 from .metadata_usage import column_in_scopes
 
@@ -161,6 +162,7 @@ class CompletionContext:
     raw_prefix: str
     normalized_prefix: str
     namespace: bool = False
+    local_relations: tuple[str, ...] = ()
 
     @property
     def table_context(self) -> bool:
@@ -941,7 +943,6 @@ class CompletionCoordinatorPool:
         return {key: entry.coordinator.snapshot() for key, entry in self._entries.items()}
 
 
-_TABLE_CONTEXT_RE: Final = re.compile(r"(?is)(?:^|.*\b)(from|join|update|insert\s+into|into)\s*$")
 _TOKEN_RE: Final = re.compile(r'([A-Za-z0-9_."]+)$')
 
 
@@ -964,8 +965,6 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
     final_prefix = raw_token.rsplit(".", 1)[-1]
     replacement_end = cursor_offset
     replacement_start = cursor_offset - len(final_prefix)
-    before_token = line[: len(line) - len(raw_token)]
-    context_match = _TABLE_CONTEXT_RE.match(before_token)
     normalized_backend = backend.casefold()
 
     column_start, column_end = column_fragment(text, cursor_offset, normalized_backend) or (
@@ -977,6 +976,7 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
         projection_context(text, column_start, column_end, normalized_backend)
         if (
             (allow_empty_column_prefix and not column_prefix)
+            or (not column_prefix and before.endswith("."))
             or (
                 column_prefix
                 and column_prefix.casefold() not in _COLUMN_KEYWORDS
@@ -998,7 +998,8 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
         )
         return CompletionContext(request, column_start, column_end, final_prefix, request.prefix)
 
-    if context_match is None:
+    relation = relation_position(text, cursor_offset, normalized_backend)
+    if relation is None:
         request = CompletionRequest(
             connection_key,
             normalized_backend,
@@ -1014,10 +1015,9 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
             request.prefix,
         )
 
-    clause = " ".join(context_match.group(1).casefold().split())
-    context = f"{clause}:{line_start + context_match.start(1)}"
-    token = normalize_identifier_prefix(raw_token).replace('"', "")
-    parts = token.split(".") if token else [""]
+    parts = relation.parts
+    replacement_start = relation.start
+    final_prefix = text[replacement_start:cursor_offset]
     catalog: str | None = None
     schema: str | None = None
     database: str | None = None
@@ -1044,7 +1044,7 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
         schema=schema,
         catalog=catalog,
         database=database,
-        context=context,
+        context=relation.context,
     )
     return CompletionContext(
         request,
@@ -1052,6 +1052,7 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
         replacement_end,
         final_prefix,
         prefix,
+        local_relations=relation.ctes,
     )
 
 

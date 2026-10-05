@@ -198,14 +198,16 @@ the same portable Ctrl behavior. Typing, pasting, or deleting replaces the
 active selection, and pasted values remain single-line.
 
 Tab is reserved for completion and indentation. Shift+Tab requests columns in
-a SELECT projection even with a blank prefix; elsewhere it unindents. Neither
+a SELECT projection or WHERE expression even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
 Accepting complete SQL or command tokens adds a space unless whitespace or
 closing punctuation already follows. Catalog, schema, and ClickHouse database
 completion inserts a trailing dot with no space, ready to continue qualification.
-At a single caret exactly after `select ` at line end, Tab inserts `* ` (including one trailing space).
-After `select * `, Tab inserts a new line and `from ` at the same indentation.
+At a single caret after `select` at line end, Tab completes the line to `select * `
+(including one trailing space). The next Tab inserts a new line and `from ` at
+the same indentation. Both shortcuts accept absent or existing trailing whitespace,
+including when the current SELECT follows unfinished SQL elsewhere in the editor.
 For Trino, this shortcut inserts `from iceberg.` instead, ready for a schema name.
 These two contexts are case-insensitive.
 
@@ -253,15 +255,26 @@ locally, and backspacing beyond the fetched prefix requests a broader result. A 
 database, or schema change permits a new lookup; changing the SQL clause or
 cursor position reuses matching cached names.
 
-Column completion is available in SELECT projections when the source tables are
-present after FROM/JOIN. A non-keyword identifier prefix must touch the cursor
+After unqualified FROM or JOIN, completion also includes CTE names visible in
+the current query, even when the name is on the next line. CTE names are available
+locally while database metadata loads and remain available if that lookup fails.
+They share the menu with matching tables and namespaces; namespace entries in
+this mixed menu end in a dot. CTEs from another statement or an unrelated nested
+query are excluded. Schema-qualified names continue to use database metadata.
+
+Column completion is available in SELECT projections and WHERE expressions,
+including operands after AND/OR, when the source tables are present after FROM/JOIN.
+A non-keyword identifier prefix must touch the cursor
 on its left on the same line, and the character cell immediately on its right
 must be whitespace or the end of the line. Blank prefixes, keywords, and positions
 inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
 left-hand prefix, while keeping the right-hand whitespace and single-cursor rules.
 It resolves aliases, joined tables, nested SELECTs,
 derived tables, and CTE output names, including explicit column lists and stars.
-Type a prefix after `alias.` to restrict suggestions to that source; ambiguous unqualified
+Press Tab or Ctrl+Space immediately after `alias.` to list all columns from that
+source; typing the dot alone does not open the menu. A prefix after the dot filters
+the suggestions. Aliases with or without AS work for physical tables and CTEs.
+Ambiguous unqualified
 columns are offered with their source qualifier. Tab requests columns through
 a separate `SELECT * FROM <table> LIMIT 1` probe for each uncached source table,
 without executing the editor SQL. This requires SELECT access and may read one
@@ -272,6 +285,20 @@ alphabetically. Failed probes use the existing completion error notice, with no
 catalog-query fallback or automatic retry. Results share the database metadata
 queue/cache and expire after 60 seconds or when DDL invalidates the cache.
 Unresolvable SQL and recursive outputs without determinable names are omitted.
+
+For example, `|` marks the caret before requesting completion:
+
+```sql
+select t1.| from analytics.customers as t1
+-- offers the columns of analytics.customers
+
+select * from analytics.customers t1 where t1.na|
+-- offers matching column names, such as name
+
+with recent as (select id as customer_id from analytics.customers)
+select * from rec|
+-- offers recent; after FROM recent r, r. offers customer_id
+```
 
 ## Navigation mode
 

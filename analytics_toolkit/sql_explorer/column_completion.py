@@ -1,4 +1,4 @@
-"""Resolve projection columns without executing the editor's SQL."""
+"""Resolve SELECT and WHERE columns without executing the editor's SQL."""
 
 from __future__ import annotations
 
@@ -8,13 +8,16 @@ from typing import TYPE_CHECKING, cast
 import sqlglot
 from sqlglot import TokenType, exp
 from sqlglot.errors import SqlglotError
+from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlglot.optimizer.scope import Scope, traverse_scope
+
+from .completion_scope import DIALECTS, marked_statement
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 _MARKER = "__explorer_cursor_column__"
-_DIALECTS = {"gp": "postgres", "ch": "clickhouse", "trino": "trino"}
+_DIALECTS = DIALECTS
 
 
 def column_fragment(text: str, cursor: int, backend: str) -> tuple[int, int] | None:
@@ -40,7 +43,7 @@ def column_fragment(text: str, cursor: int, backend: str) -> tuple[int, int] | N
 def projection_context(text: str, start: int, end: int, backend: str) -> str | None:
     """Return a stable parseable scope with the editable fragment replaced."""
     dialect = _DIALECTS.get(backend, backend)
-    candidate = text[:start] + _MARKER + text[end:]
+    candidate = marked_statement(text, start, end, _MARKER)
     try:
         statements = sqlglot.parse(candidate, read=dialect)
         for statement in statements:
@@ -52,12 +55,12 @@ def projection_context(text: str, start: int, end: int, backend: str) -> str | N
                 select = column.find_ancestor(exp.Select)
                 if select is None:
                     continue
-                # A marker inside a predicate, alias or nested statement must
-                # never borrow the enclosing SELECT's sources.
+                # Resolve only expressions belonging to this SELECT's projection
+                # or WHERE, never aliases or an enclosing query's sources.
                 node: exp.Expression = column
                 while node.parent is not select and node.parent is not None:
                     node = cast("exp.Expression", node.parent)
-                if node not in select.expressions:
+                if node not in select.expressions and node is not select.args.get("where"):
                     continue
                 if not (select.args.get("from_") or select.args.get("from")):
                     continue
@@ -74,7 +77,7 @@ def projection_suggestions(
 ) -> tuple[str, ...]:
     """Resolve aliases, CTE output names and stars in the cursor's scope."""
     dialect = _DIALECTS.get(backend, backend)
-    root = sqlglot.parse_one(statement, read=dialect)
+    root = normalize_identifiers(sqlglot.parse_one(statement, read=dialect), dialect=dialect)
     scopes = traverse_scope(root)
     target = next(
         (scope for scope in scopes if any(c.name == _MARKER for c in scope.columns)),

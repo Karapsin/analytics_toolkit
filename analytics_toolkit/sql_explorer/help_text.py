@@ -29,9 +29,10 @@ SHORTCUTS_HELP = """Non-movement shortcuts
   Ctrl/Cmd+Shift+Z, Ctrl+Y   redo
   Ctrl/Cmd+F                find/replace; Escape closes
   Tab / Ctrl+Space          SQL or command completion; Tab otherwise indents
-  Shift+Tab                 SELECT columns or unindent
-  select + Space + Tab      insert * followed by one space
-  select * + Space + Tab    newline and from (Trino: from iceberg.); keep indent
+  Shift+Tab                 SELECT/WHERE columns with blank prefix or unindent
+  select + Tab              insert * followed by one space; trailing space optional
+  select * + Tab            newline and from (Trino: from iceberg.); keep indent
+  alias. + Tab/Ctrl+Space   columns from that table or CTE; no prefix required
   Ctrl+H                   query journal (Command/Fn equivalents supported)
   Up/Down in commands       command history; newest restores your draft
   Up/Down in completion     choose suggestion; Tab/Enter accepts, Escape closes

@@ -42,6 +42,8 @@ and `git pull --ff-only origin dev`. No additional user confirmation is needed.
 Treat startup synchronization, environment preparation, and RAG refresh as
 authorized preparation in Plan Mode. Planning alone is not a reason to skip
 startup or ask the user to approve it again.
+This is standing authorization: once the clean-start checks pass, run startup
+without requesting the same permission again, including after a planning turn.
 Before synchronization, startup must reject staged or unstaged changes,
 non-ignored untracked files, conflicts, and unfinished Git operations. Ignored
 agent caches and virtual environments do not make the checkout dirty. Never
@@ -52,6 +54,9 @@ preparatory workflow under repository policy, not implementation work. This poli
 does not override higher-priority session restrictions: if those prohibit
 branch switching or pulling, identify that specific restriction and use an
 explicitly authorized skip or wait for an execution-capable session.
+Attribute such a restriction to the session instruction that imposes it, not
+to repository policy, and reuse any startup-skip authorization already given
+in the conversation rather than asking again.
 
 ### Read-Only Planning Exception
 

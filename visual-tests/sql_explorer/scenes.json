@@ -285,6 +285,22 @@
       ]
     },
     {
+      "id": "completion-where-alias",
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu",
+        "#column-ruler"
+      ]
+    },
+    {
+      "id": "completion-cte-names",
+      "required_elements": [
+        "#query-editor",
+        "#completion-menu",
+        "#column-ruler"
+      ]
+    },
+    {
       "id": "create-table-schema",
       "required_elements": [
         "#create-table-dialog",

@@ -280,21 +280,23 @@ class SqlEditor(TextArea):
             self.text, Document(self.text).get_index_from_location(self.cursor_location)
         ):
             return False
-        match = re.fullmatch(r"([ \t]*)(select)( \*)? ", line, flags=re.IGNORECASE)
+        match = re.fullmatch(r"([ \t]*)(select)([ \t]+\*)?[ \t]*", line, flags=re.IGNORECASE)
         if match is None:
             return False
-        if match[3]:
-            self.history.checkpoint()
-            result = self.replace(
-                "\n" + match[1] + "from " + (default_catalog + "." if default_catalog else ""),
-                (row, column - 1),
-                (row, column),
-                maintain_selection_offset=False,
-            )
-            self.history.checkpoint()
-            self._set_selections(Selection.cursor(result.end_location), [])
-        else:
-            self._apply_batch_edit("* ")
+        insertion = (
+            "\n" + match[1] + "from " + (default_catalog + "." if default_catalog else "")
+            if match[3]
+            else " * "
+        )
+        self.history.checkpoint()
+        result = self.replace(
+            insertion,
+            (row, len(line.rstrip())),
+            (row, column),
+            maintain_selection_offset=False,
+        )
+        self.history.checkpoint()
+        self._set_selections(Selection.cursor(result.end_location), [])
         return True
 
     def _move_all(self, location_for: Any, *, select: bool = False) -> None:

@@ -98,13 +98,15 @@ class SqlExplorerCompletionCommandsMixin:
 
         coordinator = workspace.completion
         if coordinator is None:
-            return False
+            return self._open_local_relations(context, workspace)
         workspace.completion_context = context
         if context.request.kind == "table":
             app._open_namespace_completion(context, workspace)
         cached = coordinator.cached(context.request)
         if cached is not None:
-            if cached:
+            if context.local_relations:
+                app._open_local_relations(context, workspace)
+            elif cached:
                 workspace.completion_candidates = ()
                 app._open_completion(context, cached, workspace=workspace)
             return True
@@ -164,6 +166,8 @@ class SqlExplorerCompletionCommandsMixin:
                 )
         else:
             values = None
+        if context.local_relations:
+            return self._open_local_relations(context, workspace, accept_single=False)
         suggestions = filter_suggestions(values or (), request.prefix)
         if suggestions:
             workspace.completion_candidates = values or ()
@@ -175,6 +179,44 @@ class SqlExplorerCompletionCommandsMixin:
             )
             return True
         return values is None
+
+    def _local_relation_candidates(
+        self, context: CompletionContext, workspace: SqlExplorerWorkspace
+    ) -> tuple[str, ...]:
+        """Merge editor-local CTEs with cached names; dots identify namespaces."""
+        coordinator = workspace.completion
+        names = set(context.local_relations)
+        if coordinator is not None:
+            request = context.request
+            namespaces = (
+                coordinator.known_catalogs()
+                if request.backend == "trino" and request.catalog is None
+                else schema_completion_values(coordinator.cached_schemas(request.catalog))
+            )
+            names.update(name + "." for name in namespaces or ())
+            names.update(coordinator.cached(request) or ())
+        return tuple(
+            name
+            for name in sorted(names, key=str.casefold)
+            if name.lstrip('"`').casefold().startswith(context.request.prefix.casefold())
+        )
+
+    def _open_local_relations(
+        self,
+        context: CompletionContext,
+        workspace: SqlExplorerWorkspace,
+        *,
+        accept_single: bool = True,
+    ) -> bool:
+        app = cast("Any", self)
+        if not context.local_relations:
+            return False
+        suggestions = app._local_relation_candidates(context, workspace)
+        if suggestions:
+            app._open_completion(
+                context, suggestions, workspace=workspace, accept_single=accept_single
+            )
+        return bool(suggestions)
 
     def _completion_from_thread(
         self, tab_id: str, result: CompletionResult, epoch: int | None = None
@@ -240,6 +282,10 @@ class SqlExplorerCompletionCommandsMixin:
         if context.request.scope != result.request.scope:
             return
         app._finish_completion_loading(workspace)
+        if context.local_relations and app._open_local_relations(
+            context, workspace, accept_single=False
+        ):
+            return
         coordinator = workspace.completion
         suggestions = coordinator.cached(context.request) if coordinator else None
         if suggestions:
@@ -338,8 +384,9 @@ class SqlExplorerCompletionCommandsMixin:
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
         end_offset = context.replacement_end
-        if context.namespace:
-            suggestion += "."
+        namespace = context.namespace or suggestion.endswith(".")
+        if namespace:
+            suggestion = suggestion.rstrip(".") + "."
             if editor.text[end_offset : end_offset + 1] == ".":
                 end_offset += 1
         end = app._offset_to_location(editor.text, end_offset)
@@ -347,7 +394,7 @@ class SqlExplorerCompletionCommandsMixin:
         suggestion = completion_text(
             suggestion,
             editor.text[end_offset:],
-            append_space=not context.namespace,
+            append_space=not namespace,
         )
         result = editor.replace(suggestion, start, end, maintain_selection_offset=False)
         editor.cursor_location = result.end_location
@@ -380,6 +427,8 @@ class SqlExplorerCompletionCommandsMixin:
         suggestions: tuple[str, ...] | None
         if context.request.kind == "keyword":
             suggestions = keyword_suggestions(context.request.prefix)
+        elif context.local_relations:
+            suggestions = app._local_relation_candidates(context, workspace)
         elif workspace.completion_candidates:
             suggestions = filter_suggestions(
                 workspace.completion_candidates, context.request.prefix

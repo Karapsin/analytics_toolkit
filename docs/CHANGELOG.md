@@ -9,6 +9,7 @@ Generated from package version bumps and recent commit history.
 - SQL Explorer completes namespaces with a trailing dot, adds iceberg to Trino SELECT shortcuts, and suppresses automatic closers before non-whitespace text.
 - Stabilize SQL Explorer journal UI tests when exclusive background workers replace earlier selections.
 - Hide generated hex-ID schemas from SQL Explorer autocomplete while preserving metadata and explicitly typed references.
+- Fix SQL Explorer SELECT shortcuts and add WHERE, alias-dot, and scoped CTE autocomplete.
 
 ## 1.3.12.1 - 2026-10-05
 

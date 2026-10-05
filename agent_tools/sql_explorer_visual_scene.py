@@ -165,12 +165,30 @@ class VisualExplorerApp(SqlExplorerApp):
                 self.call_after_refresh(self._mark_scene_ready)
 
             self.set_timer(0.3, show_commands)
-        elif scene in {"completion-columns", "completion-empty-columns"}:
+        elif scene == "completion-cte-names":
+            workspace.editor.text = (
+                "WITH recent_orders AS (SELECT order_id FROM analytics.orders),\n"
+                "     recent_customers AS (SELECT customer_id FROM analytics.customers)\n"
+                "SELECT *\nFROM recent_"
+            )
+            workspace.editor.cursor_location = (3, len("FROM recent_"))
+            self.set_timer(
+                0.3,
+                lambda: self._open_completion(
+                    self._completion_at_cursor(),
+                    self._completion_at_cursor().local_relations,
+                    accept_single=False,
+                ),
+            )
+        elif scene in {"completion-columns", "completion-empty-columns", "completion-where-alias"}:
             workspace.editor.text = (
                 "SELECT c.c FROM analytics.customers c "
                 "JOIN analytics.orders o ON c.id = o.customer_id"
             )
-            if scene == "completion-empty-columns":
+            if scene == "completion-where-alias":
+                workspace.editor.text = "SELECT *\nFROM analytics.customers AS c\nWHERE c."
+                workspace.editor.cursor_location = (2, len("WHERE c."))
+            elif scene == "completion-empty-columns":
                 workspace.editor.text = "SELECT  FROM analytics.customers"
                 workspace.editor.cursor_location = (0, 7)
                 workspace.completion_allow_empty_columns = True

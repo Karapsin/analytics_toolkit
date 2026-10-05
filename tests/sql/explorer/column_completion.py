@@ -26,6 +26,19 @@ from tests.sql.explorer.completion import FakeProvider
     [
         ("select i| from public.users", ("id", "name")),
         ("select u.i| from public.users u", ("id", "name")),
+        ("select u.| from public.users as u", ("id", "name")),
+        ("select U.| from public.users as u", ("id", "name")),
+        ("select * from public.users as u where u.|", ("id", "name")),
+        ("select *\nfrom public.users\nwhere na|", ("id", "name")),
+        ("select * from public.users where id > 0 and na|", ("id", "name")),
+        ("select * from public.users where id = na|", ("id", "name")),
+        ("select * from public.users where id > 0 or na|", ("id", "name")),
+        ("select * from public.users where id in (select i| from orders)", ("amount", "id")),
+        (
+            "select * from public.users where exists (select * from orders where i| )",
+            ("amount", "id"),
+        ),
+        ("select ( invalid; select i| from orders", ("amount", "id")),
         (
             "select i| from public.users u join orders o on u.id=o.id",
             ("amount", "name", "o.id", "u.id"),
@@ -35,10 +48,21 @@ from tests.sql.explorer.completion import FakeProvider
             ("name", "user_id"),
         ),
         ("with c as (select * from public.users) select i| from c", ("id", "name")),
+        ("with c as (select * from public.users) select c.| from c", ("id", "name")),
+        ("with c as (select * from public.users) select * from c t1 where t1.|", ("id", "name")),
+        (
+            "with c(x) as (select id from public.users), d as (select x from c) select d.| from d",
+            ("x",),
+        ),
         ("select i| from (select id as user_id from public.users) c", ("user_id",)),
         ("with c(user_id) as (select id from public.users) select i| from c", ("user_id",)),
         ("select id from public.users; select i| from orders", ("amount", "id")),
         ("select (select i| from orders) from public.users", ("amount", "id")),
+        (
+            "with c as (select id from public.users) select * from "
+            "(with c as (select amount from orders) select * from c where c.| ) s",
+            ("amount",),
+        ),
     ],
 )
 def test_projection_scope(query: str, expected: tuple[str, ...]) -> None:
@@ -136,7 +160,7 @@ def test_derived_projection_outputs(statement: str) -> None:
 def test_malformed_or_non_projection_context_is_ignored() -> None:
 
     assert column_fragment("select 'unclosed", 10, "gp") is None
-    assert projection_context("select id from t where na", 23, 25, "gp") is None
+    assert projection_context("select id from t having na", 24, 26, "gp") is None
     assert projection_context("select na", 7, 9, "gp") is None
     assert projection_context("update t set id = na", 18, 20, "gp") is None
 
@@ -150,6 +174,21 @@ def test_recursive_source_terminates_without_metadata_recursion() -> None:
     scope = Scope(exp.select("id"))
     assert _source_columns(scope, frozenset({id(scope)}), "postgres", fetch) == ()
     assert _source_columns(Scope(exp.Union()), frozenset(), "postgres", fetch) == ()
+
+
+@pytest.mark.parametrize("backend", ["gp", "ch", "trino"])
+def test_where_cte_star_fetches_only_the_physical_source(backend: str) -> None:
+    query = "with c as (select * from public.users) select * from c as t1 where t1."
+    context = parse_completion_context(query, len(query), backend=backend)
+    calls = []
+
+    def fetch(table: str) -> tuple[str, ...]:
+        calls.append(table)
+        return ("id", "name")
+
+    assert context.request.kind == "column"
+    assert projection_suggestions(context.request.context, backend, fetch) == ("id", "name")
+    assert calls == ["public.users"]
 
 
 def test_column_cache_filters_qualified_names_and_ignores_stale_generation(
@@ -182,7 +221,7 @@ def test_column_cache_filters_qualified_names_and_ignores_stale_generation(
         ("select id, | from users", True),
         ("select |name from users", False),
         ("select |", False),
-        ("select id from users where |", False),
+        ("select id from users where |", True),
     ],
 )
 def test_explicit_empty_column_completion_keeps_other_context_guards(

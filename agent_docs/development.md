@@ -104,6 +104,9 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
    when the user explicitly skips sync, disclose staleness, and revalidate after
    normal startup before edits or tests. Repository policy cannot override
    higher-priority session restrictions.
+   Clean-start permission is standing authorization and persists across turns;
+   do not ask for it again. Attribute any contrary restriction to its actual
+   session instruction and reuse an already authorized read-only exception.
 2. Read `instruction_routing.read_next`; do not reread auto-discovered `AGENTS.md`.
 3. Run `change_impact(...)` for consolidated focused RAG, contract, architecture,
    documentation, and check planning.
