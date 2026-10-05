@@ -559,7 +559,7 @@ class SqlExplorerApp(
             workspace.command_input.focus()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
-        if isinstance(event.text_area, SqlEditor):
+        if isinstance(event.text_area, SqlEditor) and event.text_area.is_attached:
             workspace = workspace_for(event.text_area)
             event.text_area.refresh_search_matches()
             self._refresh_tab(workspace)
@@ -570,9 +570,10 @@ class SqlExplorerApp(
             self._update_status(workspace)
 
     def on_text_area_selection_changed(self, event: TextArea.SelectionChanged) -> None:
-        if isinstance(event.text_area, SqlEditor):
-            self._update_editor_status(workspace_for(event.text_area))
-            self._refresh_open_completion(workspace_for(event.text_area))
+        if isinstance(event.text_area, SqlEditor) and event.text_area.is_attached:
+            workspace = workspace_for(event.text_area)
+            self._update_editor_status(workspace)
+            self._refresh_open_completion(workspace)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if isinstance(event.option_list, CompletionMenu):

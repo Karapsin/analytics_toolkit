@@ -5,11 +5,36 @@ from typing import TYPE_CHECKING
 
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.runtime import DatabaseSelection, ExplorerCancelResult
+from textual.widgets import TextArea
 
 from tests.sql.explorer.app import FakeSession
 
 if TYPE_CHECKING:
     import pytest
+
+
+def test_delayed_editor_events_are_ignored_after_their_tab_is_removed() -> None:
+    async def exercise() -> None:
+        application = SqlExplorerApp(FakeSession())
+        async with application.run_test() as pilot:
+            first = application.active_workspace
+            first.editor.text = "select 1"
+            application.action_new_tab()
+            await pilot.pause()
+            second = application.active_workspace
+            editor = second.editor
+            application._remove_workspace(second.tab_id)
+            await pilot.pause()
+            assert editor.parent is None
+
+            application.post_message(TextArea.Changed(editor))
+            application.post_message(TextArea.SelectionChanged(editor.selection, editor))
+            await pilot.pause()
+
+            assert application.active_workspace is first
+            assert first.editor.text == "select 1"
+
+    asyncio.run(exercise())
 
 
 def test_cancel_pending_idle_running_and_closed_workspace_paths(

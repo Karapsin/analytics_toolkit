@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Stabilize SQL Explorer journal UI tests when exclusive background workers replace earlier selections.
 - Hide generated hex-ID schemas from SQL Explorer autocomplete while preserving metadata and explicitly typed references.
 - Fix SQL Explorer SELECT shortcuts and add WHERE, alias-dot, and scoped CTE autocomplete.
+- Ignore delayed SQL Explorer editor events after a tab closes or the app shuts down.
 
 ## 1.3.12.1 - 2026-10-05
 
