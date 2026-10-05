@@ -202,9 +202,11 @@ a SELECT projection even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
 Accepting complete SQL or command tokens adds a space unless whitespace or
-closing punctuation already follows; namespace qualification adds no space.
+closing punctuation already follows. Catalog, schema, and ClickHouse database
+completion inserts a trailing dot with no space, ready to continue qualification.
 At a single caret exactly after `select ` at line end, Tab inserts `* ` (including one trailing space).
 After `select * `, Tab inserts a new line and `from ` at the same indentation.
+For Trino, this shortcut inserts `from iceberg.` instead, ready for a schema name.
 These two contexts are case-insensitive.
 
 In the editor, Tab is conditional:
@@ -510,8 +512,10 @@ the newest entry restores the draft and caret. When completion is open,
 Up/Down selects suggestions instead.
 
 Opening parentheses, brackets, braces, and single/double/backtick quotes insert
-matching closers, or wrap selected text. Typing the matching closer skips it;
-Backspace between an empty pair removes both. Paste inserts literal text.
+matching closers only before whitespace or at the end of the text. A character
+other than whitespace immediately to the right suppresses the closer. Selected
+text is always wrapped, even when another character follows it. Typing the
+matching closer skips it; Backspace between an empty pair removes both. Paste inserts literal text.
 
 Keyboard mode is session-wide and starts off until a different preference is
 saved. It blocks editor mouse placement,

@@ -31,11 +31,11 @@ SHORTCUTS_HELP = """Non-movement shortcuts
   Tab / Ctrl+Space          SQL or command completion; Tab otherwise indents
   Shift+Tab                 SELECT columns or unindent
   select + Space + Tab      insert * followed by one space
-  select * + Space + Tab    insert newline and from, retaining indentation
+  select * + Space + Tab    newline and from (Trino: from iceberg.); keep indent
   Ctrl+H                   query journal (Command/Fn equivalents supported)
   Up/Down in commands       command history; newest restores your draft
   Up/Down in completion     choose suggestion; Tab/Enter accepts, Escape closes
-  ( [ { ' \" `               paired insertion; wrap selections
+  ( [ { ' \" `               pair before whitespace/end; wrap selections
   Closing character         skip matching closer; Backspace deletes an empty pair
   Ctrl/Cmd+O / S / N         open / save / new SQL file
   Ctrl/Cmd+T / W             new / close workspace tab

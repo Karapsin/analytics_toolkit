@@ -586,7 +586,7 @@ def test_app_completion_request_defensive_paths() -> None:
 
             stub.schemas[None] = ("sample_schema",)
             assert application._request_completion() is True
-            assert editor.text == "SELECT * FROM sample_schema "
+            assert editor.text == "SELECT * FROM sample_schema."
             assert menu.is_open is False
 
             editor.text = "SELECT * FROM sample"

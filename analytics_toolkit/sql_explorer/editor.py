@@ -271,7 +271,7 @@ class SqlEditor(TextArea):
         self._preferred_column = column
         self._preferred_location = self.cursor_location
 
-    def select_shortcut(self) -> bool:
+    def select_shortcut(self, *, default_catalog: str | None = None) -> bool:
         if self.cursor_count != 1 or not self.selection.is_empty:
             return False
         row, column = self.cursor_location
@@ -286,7 +286,7 @@ class SqlEditor(TextArea):
         if match[3]:
             self.history.checkpoint()
             result = self.replace(
-                "\n" + match[1] + "from ",
+                "\n" + match[1] + "from " + (default_catalog + "." if default_catalog else ""),
                 (row, column - 1),
                 (row, column),
                 maintain_selection_offset=False,

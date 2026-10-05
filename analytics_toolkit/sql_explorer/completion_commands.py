@@ -167,7 +167,10 @@ class SqlExplorerCompletionCommandsMixin:
         if suggestions:
             workspace.completion_candidates = values or ()
             app._open_completion(
-                context, suggestions, workspace=workspace, accept_single=accept_single
+                replace(context, namespace=True),
+                suggestions,
+                workspace=workspace,
+                accept_single=accept_single,
             )
             return True
         return values is None
@@ -318,6 +321,8 @@ class SqlExplorerCompletionCommandsMixin:
             menu.action_close()
             return
         context = app._completion_at_cursor(workspace)
+        if workspace.completion_context is not None:
+            context = replace(context, namespace=workspace.completion_context.namespace)
         app._insert_completion(context, suggestion, workspace)
         menu.action_close()
 
@@ -331,9 +336,18 @@ class SqlExplorerCompletionCommandsMixin:
         workspace = workspace or app.active_workspace
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
-        end = app._offset_to_location(editor.text, context.replacement_end)
+        end_offset = context.replacement_end
+        if context.namespace:
+            suggestion += "."
+            if editor.text[end_offset : end_offset + 1] == ".":
+                end_offset += 1
+        end = app._offset_to_location(editor.text, end_offset)
 
-        suggestion = completion_text(suggestion, editor.text[context.replacement_end :])
+        suggestion = completion_text(
+            suggestion,
+            editor.text[end_offset:],
+            append_space=not context.namespace,
+        )
         result = editor.replace(suggestion, start, end, maintain_selection_offset=False)
         editor.cursor_location = result.end_location
 
@@ -361,6 +375,7 @@ class SqlExplorerCompletionCommandsMixin:
         if previous is None or previous.request.scope != context.request.scope:
             menu.action_close()
             return
+        context = replace(context, namespace=previous.namespace)
         suggestions: tuple[str, ...] | None
         if context.request.kind == "keyword":
             suggestions = keyword_suggestions(context.request.prefix)

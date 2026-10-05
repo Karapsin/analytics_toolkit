@@ -334,7 +334,11 @@ class SqlExplorerApp(
             return
         if self.active_workspace.completion_menu.is_open:
             self._accept_completion()
-        elif isinstance(self.focused, SqlEditor) and self.focused.select_shortcut():
+        elif isinstance(self.focused, SqlEditor) and self.focused.select_shortcut(
+            default_catalog=(
+                "iceberg" if self.active_workspace.session.database.backend == "trino" else None
+            )
+        ):
             return
         elif isinstance(self.focused, SqlEditor) and not self._request_completion():
             self.focused.action_indent()

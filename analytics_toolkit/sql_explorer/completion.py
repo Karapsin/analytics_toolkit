@@ -160,6 +160,7 @@ class CompletionContext:
     replacement_end: int
     raw_prefix: str
     normalized_prefix: str
+    namespace: bool = False
 
     @property
     def table_context(self) -> bool:

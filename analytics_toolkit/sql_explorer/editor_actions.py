@@ -27,9 +27,11 @@ def code_context(text: str, offset: int) -> bool:
     return True
 
 
-def completion_text(suggestion: str, suffix: str) -> str:
-    if suggestion.endswith((".", " ")) or (
-        suffix and (suffix[0].isspace() or suffix[0] in ",);.([]}")
+def completion_text(suggestion: str, suffix: str, *, append_space: bool = True) -> str:
+    if (
+        not append_space
+        or suggestion.endswith((".", " "))
+        or (suffix and (suffix[0].isspace() or suffix[0] in ",);.([]}"))
     ):
         return suggestion
     return suggestion + " "
@@ -83,6 +85,10 @@ def cursor_edit(
     elif action == "paired":
         if insert in PAIRS.values() and text[end : end + 1] == insert:
             end += 1
-        elif insert in PAIRS and code_context(text, start):
+        elif (
+            insert in PAIRS
+            and (not text[end : end + 1] or text[end].isspace())
+            and code_context(text, start)
+        ):
             value, caret = insert + PAIRS[insert], 1
     return start, end, value, caret

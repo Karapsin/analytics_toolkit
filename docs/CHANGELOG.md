@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- SQL Explorer completes namespaces with a trailing dot, adds iceberg to Trino SELECT shortcuts, and suppresses automatic closers before non-whitespace text.
+
 ## 1.3.12.1 - 2026-10-05
 
 - Add query-list concurrency and ordered batch results to insert, execute_insert, execute_create, and execute_read.
