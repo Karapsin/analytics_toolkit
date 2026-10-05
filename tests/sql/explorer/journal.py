@@ -119,6 +119,9 @@ def test_failures_cancellations_and_unfinished_records(tmp_path: Path) -> None:
 
 def test_concurrent_writers_aliases_and_read_pages(tmp_path: Path) -> None:
     journal = QueryJournal(tmp_path)
+    # Exercise successful concurrent writes independently of CI scheduling delays.
+    # The short production busy-timeout path has separate contention coverage.
+    journal.store("gp").timeout = 5.0
 
     def write(index: int) -> None:
         with journal.action("gp", "gp", "user", user_sql=f"select {index}"):
@@ -126,6 +129,7 @@ def test_concurrent_writers_aliases_and_read_pages(tmp_path: Path) -> None:
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         list(executor.map(write, range(8)))
+    assert journal.take_warning() is None
     with journal.action("other", "gp", "user", user_sql="select 999"):
         pass
     first = read_page(journal, "gp", limit=3)

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+from multiprocessing import get_context
+
 from tests.ab_utils._support.metrics import (
     _build_sample_metrics_df,
     _manual_centered_bootstrap_adjustment,
@@ -246,6 +250,12 @@ def test_compute_test_metrics_bootstrap_is_deterministic_across_executors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     df = _build_sample_metrics_df()
+    # Other tests and native libraries may leave threads running in this process.
+    monkeypatch.setattr(
+        bootstrap_module,
+        "ProcessPoolExecutor",
+        partial(ProcessPoolExecutor, mp_context=get_context("spawn")),
+    )
 
     serial = compute_test_metrics(
         df,
