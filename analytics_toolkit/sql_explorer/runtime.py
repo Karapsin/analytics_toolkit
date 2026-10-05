@@ -13,6 +13,7 @@ from analytics_toolkit.sql.connection.config import get_connections_file_path
 from .create_table import CreateTablePlan
 from .errors import SqlExplorerConfigurationError
 from .journal import QueryJournal
+from .metadata_context import journal_context
 from .settings import (
     DEFAULT_RUN_BINDING,
     ExplorerSettings,
@@ -186,7 +187,10 @@ class ExplorerSession:
             "create_table" if isinstance(plan, CreateTablePlan) else "user",
             user_sql=plan.user_sql,
             source_file=plan.source_file,
-            context=plan.options if isinstance(plan, CreateTablePlan) else None,
+            context={
+                **(plan.options if isinstance(plan, CreateTablePlan) else {}),
+                "metadata": journal_context(selected.connection_key),
+            },
         ) as action:
             try:
                 return self._execute(plan, database=selected)
@@ -303,6 +307,7 @@ class ExplorerSession:
             "export",
             user_sql=state.plan.user_sql,
             source_file=state.plan.source_file,
+            context={"metadata": journal_context(selected.connection_key)},
         ) as action:
             try:
                 return self._export_dataframe()

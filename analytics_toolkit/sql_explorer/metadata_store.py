@@ -20,6 +20,10 @@ class MetadataStore:
         self.path = directory / "metadata.sqlite3"
         self.identity = identity
 
+    def connect(self) -> sqlite3.Connection:
+        """Open storage for a short transaction shared with the scan ledger."""
+        return self._connect()
+
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=1)
@@ -68,30 +72,36 @@ class MetadataStore:
     def update(self, key: SnapshotKey, names: tuple[str, ...]) -> None:
         """Commit one schema without rewriting every other schema's table names."""
         with closing(self._connect()) as connection, connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO snapshots VALUES (?, ?, ?, ?, ?, ?)",
-                (self.identity, *key, json.dumps(names), time()),
+            self.write_snapshot(connection, key, names, time())
+
+    def write_snapshot(
+        self, connection: sqlite3.Connection, key: SnapshotKey, names: tuple[str, ...], now: float
+    ) -> None:
+        """Write names in the caller's ledger transaction."""
+        connection.execute(
+            "INSERT OR REPLACE INTO snapshots VALUES (?, ?, ?, ?, ?, ?)",
+            (self.identity, *key, json.dumps(names), now),
+        )
+        kind, catalog, _schema = key
+        if kind == "table":
+            return
+        keys = connection.execute(
+            "SELECT kind, catalog, schema_name FROM snapshots WHERE identity = ?",
+            (self.identity,),
+        ).fetchall()
+        removed = [
+            (self.identity, *candidate)
+            for candidate in keys
+            if (kind == "catalog" and candidate[0] != "catalog" and candidate[1] not in names)
+            or (
+                kind == "schema"
+                and candidate[0] == "table"
+                and candidate[1] == catalog
+                and candidate[2] not in names
             )
-            kind, catalog, _schema = key
-            if kind == "table":
-                return
-            keys = connection.execute(
-                "SELECT kind, catalog, schema_name FROM snapshots WHERE identity = ?",
-                (self.identity,),
-            ).fetchall()
-            removed = [
-                (self.identity, *candidate)
-                for candidate in keys
-                if (kind == "catalog" and candidate[0] != "catalog" and candidate[1] not in names)
-                or (
-                    kind == "schema"
-                    and candidate[0] == "table"
-                    and candidate[1] == catalog
-                    and candidate[2] not in names
-                )
-            ]
-            connection.executemany(
-                "DELETE FROM snapshots WHERE identity = ? AND kind = ? "
-                "AND catalog = ? AND schema_name = ?",
-                removed,
-            )
+        ]
+        connection.executemany(
+            "DELETE FROM snapshots WHERE identity = ? AND kind = ? "
+            "AND catalog = ? AND schema_name = ?",
+            removed,
+        )

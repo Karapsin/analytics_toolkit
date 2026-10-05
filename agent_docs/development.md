@@ -94,6 +94,9 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 ## Fresh-Agent Sequence
 
 1. Run `prepare_start(...)`, including during planning on a clean checkout.
+   Plan Mode does not require an extra repository-level approval for startup:
+   synchronization, environment preparation, and RAG refresh are authorized
+   preparation, separate from implementing the planned changes.
    Repository policy authorizes switching to `dev` and fast-forward pulling
    without additional confirmation. Startup rejects local changes and unfinished
    Git operations before synchronization; never stash or discard to bypass it.

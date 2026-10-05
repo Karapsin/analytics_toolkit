@@ -166,7 +166,7 @@ class SqlExplorerQueryCommandsMixin:
             return
         if error is None and (isinstance(job.plan, CreateTablePlan) or job.plan.changes_metadata):
             coordinator = app._completion_pool.coordinator_for(job.database.connection_key)
-            if coordinator is not None:
+            if coordinator is not None and getattr(coordinator, "discovery", None) is None:
                 coordinator.invalidate_tables()
             for owner in app._workspaces.values():
                 if owner.session.database.connection_key == job.database.connection_key:

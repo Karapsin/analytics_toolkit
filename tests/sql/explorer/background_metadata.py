@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from threading import Event
+from time import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -45,40 +46,17 @@ class Provider(FakeProvider):
         return self.names if kwargs["schema"] == "public" else ()
 
 
-def test_relaunch_reuses_names_then_replaces_snapshots(tmp_path: Path) -> None:
+def test_relaunch_reuses_completed_snapshots_without_rescanning(tmp_path: Path) -> None:
     store = MetadataStore(tmp_path, "gp")
     store.save({("schema", "", ""): ("public",), ("table", "", "public"): ("old",)})
     provider = Provider()
     errors: list[Exception] = []
-    discovery = BackgroundMetadata("gp", "gp", provider, store, on_error=errors.append)
-    coordinator = CompletionCoordinator("gp", "gp", provider=FakeProvider(), discovery=discovery)
-    discovery.start()
-    try:
-        assert provider.started.wait(2)
-        request = CompletionRequest("gp", "gp", "table", "o", schema="public")
-        assert coordinator.cached(request) == ("old",)
-        provider.release.set()
-        _wait_for(lambda: discovery.cached("table", schema="empty") == ())
-        assert coordinator.cached(request) == ("orders", "orders_old")
-        assert discovery.cached("table") == ("orders", "orders_old")
-        assert errors == []
-        assert store.load()[("table", "", "public")] == provider.names
-    finally:
-        provider.release.set()
-        coordinator.stop()
-        _wait_for(lambda: coordinator.is_stopped)
-
-    provider = Provider()
-    provider.names = ("orders_new",)
-    again = BackgroundMetadata("gp", "gp", provider, store, on_error=errors.append)
-    assert again.cached("table", schema="public") == ("orders", "orders_old")
-    again.start()
-    provider.release.set()
-    try:
-        _wait_for(lambda: again.cached("table", schema="public") == ("orders_new",))
-    finally:
-        again.stop()
-        _wait_for(lambda: again.is_stopped)
+    for _ in range(2):
+        discovery = BackgroundMetadata("gp", "gp", provider, store, on_error=errors.append)
+        assert discovery.cached("table", schema="public") == ("old",)
+        assert discovery._discover(0) is False
+        assert not provider.started.is_set()
+    assert errors == []
 
 
 def test_interactive_worker_runs_while_background_is_blocked(tmp_path: Path) -> None:
@@ -101,38 +79,25 @@ def test_interactive_worker_runs_while_background_is_blocked(tmp_path: Path) -> 
         _wait_for(lambda: coordinator.is_stopped)
 
 
-def test_failed_refresh_retains_names_and_invalidation_discards_late_results(
-    tmp_path: Path,
-) -> None:
+def test_failed_refresh_and_invalidation_retain_saved_names(tmp_path: Path) -> None:
     store = MetadataStore(tmp_path, "gp")
-    store.save({("table", "", "public"): ("saved",)})
+    store.save({("schema", "", ""): ("public",), ("table", "", "public"): ("saved",)})
     provider = Provider()
+    provider.fail = True
+    provider.release.set()
     errors: list[Exception] = []
     discovery = BackgroundMetadata("gp", "gp", provider, store, on_error=errors.append)
-    coordinator = CompletionCoordinator("gp", "gp", provider=FakeProvider(), discovery=discovery)
+    discovery.ledger.consume(1, time() + 1, {("table", "", "public"): "ddl"}, [])
     discovery.start()
     try:
-        assert provider.started.wait(2)
-        coordinator.invalidate_tables()
-        assert discovery.cached("table", schema="public") is None
-        assert store.load() == {}
-        provider.fail = True
-        provider.release.set()
-        _wait_for(lambda: len(errors) == 2)
-        assert discovery.cached("table", schema="public") is None
+        _wait_for(lambda: len(errors) == 1)
+        discovery.invalidate()
+        assert discovery.cached("table", schema="public") == ("saved",)
+        assert store.load()[("table", "", "public")] == ("saved",)
+        assert discovery._discover(0) is False
     finally:
-        coordinator.stop()
-        _wait_for(lambda: coordinator.is_stopped)
-
-    store.save({("table", "", "public"): ("saved",)})
-    failed = BackgroundMetadata("gp", "gp", provider, store, on_error=errors.append)
-    failed.start()
-    try:
-        _wait_for(lambda: len(errors) == 4)
-        assert failed.cached("table", schema="public") == ("saved",)
-    finally:
-        failed.stop()
-        _wait_for(lambda: failed.is_stopped)
+        discovery.stop()
+        _wait_for(lambda: discovery.is_stopped)
 
 
 def test_complete_namespace_removes_dropped_schemas_and_catalogs(tmp_path: Path) -> None:
@@ -185,15 +150,10 @@ def test_partial_namespace_does_not_mask_live_fallback_and_stale_publish_is_igno
         assert coordinator.known_catalogs() is None
         assert discovery.cached("table") is None
 
-        def fail_save(snapshots):
-            message = "read only"
-            raise OSError(message)
-
-        monkeypatch.setattr(store, "save", fail_save)
-        coordinator.invalidate_tables()
+        discovery._generation += 1
         discovery._publish(("table", "", "public"), ("late",), 0)
         assert discovery.cached("table", schema="public") is None
-        assert len(errors) == 1
+        assert not errors
     finally:
         coordinator.stop()
         _wait_for(lambda: coordinator.is_stopped)
@@ -215,6 +175,7 @@ def test_failed_schema_listing_retains_snapshot_and_continues_other_catalogs(
     store.save({("schema", "hive", ""): ("saved",)})
     errors: list[Exception] = []
     discovery = BackgroundMetadata("trino", "trino", provider, store, on_error=errors.append)
+    discovery.ledger.consume(1, time() + 1, {("schema", "hive", ""): "ddl"}, [])
     discovery.start()
     try:
         _wait_for(
@@ -384,9 +345,14 @@ def test_corrupt_store_and_unwritable_save_keep_in_memory_discovery(
     monkeypatch.setattr(store, "update", fail_save)
     discovery.start()
     try:
-        _wait_for(lambda: discovery.cached("table", schema="empty") == ())
+        _wait_for(
+            lambda: (
+                discovery.cached("table", schema="empty") == ()
+                and discovery.cached("table", schema="public") == provider.names
+            )
+        )
         assert discovery.cached("table", schema="public") == provider.names
-        assert any("read only" in str(error) for error in errors)
+        assert discovery.store is None
     finally:
         discovery.stop()
         _wait_for(lambda: discovery.is_stopped)

@@ -41,6 +41,27 @@ _FTS = (
     "INSERT INTO search_fts(rowid, body) VALUES (new.id, new.body); END",
 )
 USER_ORIGINS = frozenset({"user", "create_table", "export"})
+STORAGE_VERSION = 2
+
+
+def migrate_completion_events(connection: sqlite3.Connection) -> None:
+    """Upgrade v1 in place; export versions are independent of storage versions."""
+    connection.execute(
+        "CREATE TABLE completion_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "action_id TEXT NOT NULL UNIQUE REFERENCES actions(action_id), "
+        "historical INTEGER NOT NULL DEFAULT 0)"
+    )
+    connection.execute(
+        "INSERT INTO completion_events(action_id,historical) SELECT action_id,1 FROM actions "
+        "WHERE is_user=1 AND outcome='completed' ORDER BY finished_at, action_id"
+    )
+    connection.execute("PRAGMA user_version=2")
+
+
+def require_storage_version(version: int) -> None:
+    if version != STORAGE_VERSION:
+        message = f"Unsupported query journal schema version: {version}"
+        raise ValueError(message)
 
 
 def encode(value: Any) -> str:
@@ -68,23 +89,25 @@ class JournalStore:
             new = not self.path.exists()
             with closing(sqlite3.connect(str(self.path), timeout=self.timeout)) as connection:
                 self.path.chmod(0o600)
-                version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version == 0 and new:
+                if new:
                     connection.execute("PRAGMA journal_mode=WAL")
-                    connection.execute("BEGIN IMMEDIATE")
-                    try:
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                    if version == 0 and new:
                         for statement in _SCHEMA:
                             connection.execute(statement)
                         if self.use_fts:
                             self._create_fts(connection)
-                        connection.execute("PRAGMA user_version=1")
-                        connection.commit()
-                    except BaseException:
-                        connection.rollback()
-                        raise
-                elif version != 1:
-                    message = f"Unsupported query journal schema version: {version}"
-                    raise ValueError(message)
+                        version = 1
+                    if version == 1:
+                        migrate_completion_events(connection)
+                    else:
+                        require_storage_version(version)
+                    connection.commit()
+                except BaseException:
+                    connection.rollback()
+                    raise
                 self._ready = True
 
     @staticmethod
@@ -123,14 +146,14 @@ class JournalStore:
 
     @contextmanager
     def _open(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
-        if write:
+        if write or self.path.exists():
             self._initialize()
         uri = self.path.resolve().as_uri() + ("?mode=rw" if write else "?mode=ro")
         with closing(sqlite3.connect(uri, uri=True, timeout=self.timeout)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA cache_size=-512")
-            if connection.execute("PRAGMA user_version").fetchone()[0] != 1:
+            if connection.execute("PRAGMA user_version").fetchone()[0] != STORAGE_VERSION:
                 message = "Unsupported query journal schema version."
                 raise ValueError(message)
             with connection:
@@ -219,6 +242,41 @@ class JournalStore:
                     "WHERE action_id=? AND outcome='failed'",
                     (record["action_id"],),
                 )
+            if record["outcome"] == "completed" and record["origin"] in USER_ORIGINS:
+                connection.execute(
+                    "INSERT OR IGNORE INTO completion_events(action_id) VALUES (?)",
+                    (record["action_id"],),
+                )
+
+    def completed_since(self, sequence: int, limit: int = 100) -> list[dict[str, Any]]:
+        """Read bounded metadata-only events in commit order, without loading SQL."""
+        if not self.path.exists():
+            return []
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT e.sequence, e.historical, a.action_id, a.backend, a.origin, a.finished_at, "
+                "a.context_json, a.statements_json FROM completion_events e "
+                "JOIN actions a USING(action_id) WHERE e.sequence>? ORDER BY e.sequence LIMIT ?",
+                (sequence, limit),
+            ).fetchall()
+            result = []
+            for row in rows:
+                event = dict(row)
+                event["context"] = json.loads(event.pop("context_json"))
+                event["statements"] = json.loads(event.pop("statements_json"))
+                if event["origin"] == "create_table":
+                    event["statements"] = [
+                        statement
+                        for submission in connection.execute(
+                            "SELECT statements_json FROM submissions WHERE action_id=? "
+                            "AND outcome='completed' ORDER BY submission_index",
+                            (event["action_id"],),
+                        )
+                        for statement in json.loads(submission[0])
+                        if statement["action"] in {"create", "alter", "drop", "rename", "insert"}
+                    ]
+                result.append(event)
+            return result
 
     def start_submission(self, action_id: str, item: dict[str, Any]) -> None:
         with self.connect(write=True) as connection:

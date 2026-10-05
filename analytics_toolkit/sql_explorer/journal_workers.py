@@ -29,6 +29,25 @@ class JournalMetadataProvider:
         self.backend = backend
         self.origin = origin
 
+    def resolve_reference(
+        self,
+        connection_key: str,
+        name: str,
+        *,
+        search_path: list[str] | None = None,
+        candidates: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, str] | None:
+        resolver = getattr(self.provider, "resolve_reference", None)
+        if resolver is None:
+            return None
+        with self.journal.action(
+            connection_key, self.backend, self.origin, context={"kind": "resolve", "table": name}
+        ):
+            result: tuple[str, str] | None = resolver(
+                connection_key, name, search_path=search_path, candidates=candidates
+            )
+            return result
+
     def _run(self, kind: str, **options: Any) -> tuple[str, ...]:
         with self.journal.action(
             options["connection_key"],

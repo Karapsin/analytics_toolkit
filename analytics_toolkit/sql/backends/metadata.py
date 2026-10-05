@@ -168,6 +168,49 @@ def build_ch_completion_query(schema: str | None, prefix: str) -> str:
     return "SELECT name FROM system.tables WHERE " + " AND ".join(filters) + " ORDER BY name"
 
 
+def build_gp_reference_query(name: str, search_path: list[str] | None = None) -> str:
+    """Resolve one unqualified physical relation using the backend search path."""
+    quoted = '"' + name.replace('"', '""') + '"'
+    if search_path:
+        path = (
+            "ARRAY["
+            + ",".join(
+                "current_user" if schema == "$user" else sql_string_literal(schema)
+                for schema in search_path
+            )
+            + "]"
+        )
+        return (
+            "SELECT n.nspname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE c.relname="
+            + sql_string_literal(name)
+            + " AND n.nspname=ANY("
+            + path
+            + ") ORDER BY array_position("
+            + path
+            + ",n.nspname) LIMIT 1"
+        )
+    return (
+        "SELECT n.nspname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+        "ON n.oid=c.relnamespace WHERE c.oid=pg_catalog.to_regclass("
+        + sql_string_literal(quoted)
+        + ")"
+    )
+
+
+CH_CURRENT_DATABASE_QUERY = "SELECT currentDatabase()"
+TRINO_CURRENT_NAMESPACE_QUERY = "SELECT current_catalog, current_schema"
+
+
+def build_gp_search_path_query(search_path: list[str] | None = None) -> str:
+    if not search_path:
+        return "SELECT unnest(current_schemas(true))"
+    values = ",".join(
+        "current_user" if name == "$user" else sql_string_literal(name) for name in search_path
+    )
+    return "SELECT unnest(ARRAY[" + values + "])"
+
+
 def build_trino_completion_query(catalog: str, schema: str | None, prefix: str) -> str:
     filters = [completion_prefix_filter("table_name", prefix)]
     if schema is not None:

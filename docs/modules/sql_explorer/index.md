@@ -386,26 +386,45 @@ are hidden when their logical parent is accessible; parent tables and views
 remain available. Full `sql.show_tables` calls retain their statistics and
 output shape while explicit schema/table filters narrow their base queries.
 
-Every launch loads saved names immediately and starts background discovery for
-the active connection. Selecting another connection starts its discovery. The
-background worker discovers visible catalogs, schemas, and table names, one
-schema at a time. Each successful schema refresh replaces its previous names,
-including dropped tables; failed refreshes retain saved names and show a notice.
+Every launch loads saved names immediately. On first activation, a connection's
+background worker discovers visible catalogs, schemas/databases, and table names,
+one namespace at a time. Each successful listing, including an empty listing, is
+marked scanned. Relaunching, reopening tabs, or switching back to a connection
+resumes incomplete discovery without rescanning completed namespaces.
 
-Names and refresh timestamps are stored transactionally in
+Successful user queries update a separate metadata ledger using the query
+journal's object references. A previously scanned namespace is refreshed only
+when it has new query activity and at least 24 hours have passed since its last
+successful scan. Table use also marks its parent schema/database and catalog as
+used. Refreshing a catalog's schema names does not rescan unused schemas; newly
+discovered namespaces receive their initial scan. Due refreshes run while the
+connection remains active and resume on its next activation.
+
+References missing from saved metadata receive immediate, targeted discovery.
+Successful CREATE, DROP, RENAME, ALTER, and SELECT INTO also refresh affected
+namespaces immediately and invalidate affected column caches, bypassing the
+24-hour wait. Failed, cancelled, and internal metadata queries do not count as
+usage. Form-based creation and exports that rerun SQL do count. Unsupported or
+ambiguous references never trigger a speculative full scan.
+
+Names, scan state, query-use times, and journal replay checkpoints are stored transactionally in
 `.sql_explorer/metadata.sqlite3`, beside the selected `.connections` file.
-Snapshots are isolated by connection configuration and namespace; changing the
+Snapshots and scan state are isolated by connection configuration and namespace; changing the
 connection configuration prevents reuse of its old snapshots. Credentials, SQL
 text, and query results are not stored. Unavailable or corrupt storage produces
 a notice while Explorer continues with in-memory metadata.
+
+Existing snapshots retain their completed status and saved refresh timestamps
+when upgraded. Successful refreshes replace names, including dropped objects;
+failed refreshes retain saved names, show a notice, and retry with increasing
+delays from one minute up to one hour. Concurrent workers share scan claims.
+Query activity arriving during a scan is retained for subsequent refresh.
 
 Complete schema snapshots support local completion for any prefix. Namespaces
 without a snapshot use a live names-only query with the complete typed prefix,
 including an empty prefix. Prefix-limited and column caches still expire after 60 seconds;
 narrower prefixes reuse the fetched names across SQL clauses and tabs. Saved
-schema snapshots remain usable until refreshed. Successful DDL invalidates the
-connection's metadata and starts rediscovery. Full scans otherwise run once per
-connection activation, rather than on a timer. Column discovery keeps row counts
+schema snapshots remain usable until refreshed. Column discovery keeps row counts
 disabled. Size/count details are fetched only by consumers that request them.
 
 ## Commands
@@ -583,7 +602,15 @@ All journal data lives in SQLite; SQL/JSON files are created only on export.
 Alias folders use safe characters and a stable hash suffix so distinct aliases
 remain separate on case-insensitive filesystems.
 History is kept until manually removed. The private local databases contain query
-text and literals, but no result datasets or connection configuration. SQLite
+text and literals, but no result datasets, credentials, or full connection configuration.
+Package updates reuse the same version-independent paths. Supported storage
+upgrades migrate in place transactionally, preserving actions, submissions,
+search, and exports; the SQLite storage version is independent of export version 1.
+Successful actions include an opaque connection fingerprint and namespace defaults
+for metadata refresh scheduling. An ordered completion feed supports incremental
+replay after a restart without repeatedly loading historical SQL text. Legacy
+records without sufficient namespace context contribute only unambiguous object
+references. SQLite
 uses WAL mode and may create adjacent `-wal` and `-shm` files. Short transactions
 and a bounded busy timeout allow independent Explorer workers to share an alias's
 history. Database failures produce a deduplicated warning without blocking SQL or

@@ -39,6 +39,9 @@ the stdio server; arguments continue to invoke its manual JSON CLI.
 Repository policy explicitly authorizes `prepare_start(...)` during planning
 and read-only review when the checkout is clean, including `git switch dev`
 and `git pull --ff-only origin dev`. No additional user confirmation is needed.
+Treat startup synchronization, environment preparation, and RAG refresh as
+authorized preparation in Plan Mode. Planning alone is not a reason to skip
+startup or ask the user to approve it again.
 Before synchronization, startup must reject staged or unstaged changes,
 non-ignored untracked files, conflicts, and unfinished Git operations. Ignored
 agent caches and virtual environments do not make the checkout dirty. Never

@@ -13,9 +13,13 @@ from uuid import uuid4
 
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends.metadata import (
+    CH_CURRENT_DATABASE_QUERY,
     GP_PARTITION_CAPABILITIES_QUERY,
+    TRINO_CURRENT_NAMESPACE_QUERY,
     build_ch_completion_query,
     build_gp_completion_query,
+    build_gp_reference_query,
+    build_gp_search_path_query,
     build_trino_completion_query,
 )
 from analytics_toolkit.sql.backends.utils import sql_literal
@@ -33,6 +37,7 @@ from analytics_toolkit.sql.metadata.column_names import table_column_names
 from .background_metadata import BackgroundMetadata, persistent_discovery
 from .column_completion import column_fragment, projection_context, projection_suggestions
 from .journal_workers import JournalMetadataProvider, cancel_metadata
+from .metadata_usage import column_in_scopes
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -243,6 +248,24 @@ class GreenplumCompletionProvider:
     def __init__(self) -> None:
         self._partition_catalog: str | None = None
 
+    def resolve_reference(
+        self,
+        connection_key: str,
+        name: str,
+        *,
+        search_path: list[str] | None = None,
+        candidates: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, str] | None:
+        if candidates:
+            frame = _metadata_frame(connection_key, build_gp_search_path_query(search_path))
+            # Search-path order is semantic; completion normalization sorts names.
+            path = tuple(str(row[0]) for row in frame.itertuples(index=False, name=None))
+            return next((("", schema) for schema in path if ("", schema) in candidates), None)
+        values = _first_column_values(
+            _metadata_frame(connection_key, build_gp_reference_query(name, search_path))
+        )
+        return ("", values[0]) if values else None
+
     def list_tables(
         self,
         *,
@@ -283,6 +306,18 @@ class GreenplumCompletionProvider:
 
 
 class ClickHouseCompletionProvider:
+    def resolve_reference(
+        self,
+        connection_key: str,
+        name: str,
+        *,
+        search_path: list[str] | None = None,
+        candidates: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, str] | None:
+        del name, search_path, candidates
+        values = _first_column_values(_metadata_frame(connection_key, CH_CURRENT_DATABASE_QUERY))
+        return ("", values[0]) if values else None
+
     def list_tables(
         self,
         *,
@@ -311,6 +346,20 @@ class ClickHouseCompletionProvider:
 
 
 class TrinoCompletionProvider:
+    def resolve_reference(
+        self,
+        connection_key: str,
+        name: str,
+        *,
+        search_path: list[str] | None = None,
+        candidates: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, str] | None:
+        del name, search_path, candidates
+        frame = _metadata_frame(connection_key, TRINO_CURRENT_NAMESPACE_QUERY)
+        if frame.empty or frame.iloc[0].isna().any():
+            return None
+        return str(frame.iloc[0, 0]), str(frame.iloc[0, 1])
+
     def list_tables(
         self,
         *,
@@ -515,15 +564,30 @@ class CompletionCoordinator:
             )
         return filter_suggestions(entry.values, request.prefix)
 
-    def invalidate_tables(self) -> None:
+    def invalidate_tables(self, *, rediscover: bool = True) -> None:
         """Discard table discovery and column snapshots after user DDL."""
         with self._lock:
             self._cache.clear()
             self._table_columns.clear()
             self._columns_cached_at.clear()
             self._cache_generation += 1
-        if self.discovery is not None:
+        if rediscover and self.discovery is not None:
             self.discovery.invalidate()
+
+    def invalidate_scopes(self, scopes: dict[tuple[str, str, str], str]) -> None:
+        """Invalidate only namespaces and columns affected by successful DDL."""
+        affected = {key for key, reason in scopes.items() if reason == "ddl"}
+        with self._lock:
+            self._cache = {
+                key: value
+                for key, value in self._cache.items()
+                if key[2] != "column" and (key[2], key[3] or "", key[5] or "") not in affected
+            }
+            for table in tuple(self._table_columns):
+                if column_in_scopes(table, self.backend, affected):
+                    self._table_columns.pop(table, None)
+                    self._columns_cached_at.pop(table, None)
+            self._cache_generation += 1
 
     def _columns_for_table(self, table: str) -> tuple[str, ...]:
         with self._lock:
@@ -823,6 +887,7 @@ class CompletionCoordinatorPool:
                         report,
                         journal=self.journal,
                     )
+                    coordinator.discovery.on_ddl = coordinator.invalidate_scopes
                     coordinator.discovery.start()
                 except Exception as exc:  # noqa: BLE001 -- interactive discovery remains available.
                     report(exc)

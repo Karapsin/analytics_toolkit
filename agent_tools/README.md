@@ -66,6 +66,8 @@ planning on a clean checkout, including switching to `dev` and fast-forward
 pulling, without another confirmation. Before synchronization it rejects staged
 or unstaged changes, non-ignored untracked files, conflicts, and unfinished Git
 operations; it never stashes or discards work. Ignored caches are allowed.
+Plan Mode alone is not a reason to skip startup or request another approval:
+sync, environment preparation, and RAG refresh are authorized preparation.
 Higher-priority session restrictions still apply: repository authorization
 cannot override a Plan Mode rule that prohibits branch switching or pulling.
 

@@ -15,7 +15,7 @@ from analytics_toolkit.sql.execution.cancellation import AsyncSqlCancelled
 from analytics_toolkit.sql.execution.observation import observe_sql
 
 from .journal_metadata import describe_sql
-from .journal_store import JournalStore
+from .journal_store import USER_ORIGINS, JournalStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -41,6 +41,27 @@ class QueryJournal:
         self._warning: str | None = None
         self._warned = False
         self._stores: dict[str, JournalStore] = {}
+        self._listeners: dict[str, set[Callable[[], None]]] = {}
+
+    def subscribe(self, alias: str, callback: Callable[[], None]) -> None:
+        with self._lock:
+            self._listeners.setdefault(alias.casefold(), set()).add(callback)
+
+    def unsubscribe(self, alias: str, callback: Callable[[], None]) -> None:
+        with self._lock:
+            self._listeners.get(alias.casefold(), set()).discard(callback)
+
+    def completed(self, alias: str) -> None:
+        with self._lock:
+            callbacks = tuple(self._listeners.get(alias.casefold(), ()))
+        for callback in callbacks:
+            self._notify(callback)
+
+    def _notify(self, callback: Callable[[], None]) -> None:
+        try:
+            callback()
+        except Exception as exc:  # noqa: BLE001 -- optional observers cannot break SQL.
+            self.warn(exc)
 
     def alias_directory(self, alias: str) -> Path:
         return self.directory / safe_component(alias)
@@ -151,6 +172,8 @@ class JournalAction:
                 error={"type": type(error).__name__, "message": str(error)} if error else None,
             )
             self._save(self.store.finish_action, self.record)
+            if outcome == "completed" and self.record["origin"] in USER_ORIGINS:
+                self.journal.completed(self.record["connection_alias"])
 
     @contextmanager
     def submission(self, sql: str) -> Iterator[None]:

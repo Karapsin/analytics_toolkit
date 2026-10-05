@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.12.1 - 2026-10-05
 
 - Add query-list concurrency and ordered batch results to insert, execute_insert, execute_create, and execute_read.
 - Fix SQL Explorer set-operation column completion with newer SQLGlot scope APIs while preserving older releases.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Remove the SQL Explorer table autocomplete prefix minimum and query the complete typed prefix.
 - Added per-connection SQLite query journals with structured execution metadata, SQL/JSON exports, and searchable Ctrl/Cmd/Fn+H history.
 - Add optional row limits to SQL reads and replace SQL Explorer subquery wrapping with outer limits.
+- Persist SQL Explorer scan state and query history across updates, with successful-query-driven daily refresh and immediate targeted discovery.
 
 ## 1.3.12.0 - 2026-09-21
 
