@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Stabilize concurrent journal and bootstrap executor tests under CI contention.
 - Added an agent skill that prefers public analytics-toolkit helpers and from atk import * in consumer code.
 - Cache SQL .connections entries until Python restart or explicit path reset, and include the source path in SQL failure diagnostics.
+- Updated the analytics consumer skill to prefer simple scripts, toolkit Excel/path helpers, and unchanged analysis defaults and native validation.
 
 ## 1.3.12.1 - 2026-10-05
 

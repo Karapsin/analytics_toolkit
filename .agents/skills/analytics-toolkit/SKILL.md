@@ -9,6 +9,24 @@ Use the public `analytics_toolkit` APIs for the capabilities they already cover.
 Apply this preference to consumer code, including scripts, notebooks, and usage
 examples. Explicit user choices take precedence.
 
+## Consumer script preferences
+
+These preferences apply to this user's analytics consumer code; they do not
+change the toolkit's implementation contracts.
+
+- Keep one-off scripts as direct top-level steps. Avoid `main()` wrappers,
+  `if __name__ == "__main__":` guards, and CLI scaffolding unless requested or
+  required by the existing project. Add functions only for useful reuse or a
+  calculation that benefits from a separate function.
+- Preserve toolkit parameter defaults unless the user requests different
+  settings, including settings specified by a requested reference report.
+  Do not change outlier treatment, comparison modes, or other analysis options
+  based on an unsolicited judgment.
+- Do not add custom defensive checks that raise `ValueError` unless requested.
+  Preserve the toolkit's built-in validation and exceptions; do not remove,
+  replace, or suppress them unless the user requests that change.
+- Use the toolkit's file and path helpers instead of `pathlib` in consumer code.
+
 ## Select a helper before implementing the operation
 
 1. Check the target project's dependency declarations and Python environment for

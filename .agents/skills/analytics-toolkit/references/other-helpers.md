@@ -52,20 +52,13 @@ computation or segmented reports.
 ```python
 from atk import *
 
-metrics = ab.compute_test_metrics(
-    df=user_metrics,
-    group="group",
-    control="control",
-    user_id="user_id",
-    outliers_quantile=1,
-)
+metrics = ab.compute_test_metrics(df=user_metrics)
 # metrics is a dataframe of experiment comparisons
 ```
 
 Here `user_metrics` has one row per user, a unique non-null `user_id`, a non-null
-`group`, and numeric metric columns. Ratio metrics need explicit specifications.
-Select outlier treatment, comparison groups, and bootstrap settings for the
-analysis; the example leaves the maximum value unmodified. See the
+`group_name`, and numeric metric columns. Ratio metrics need explicit
+specifications. The example preserves the toolkit's analysis defaults. See the
 [AB reference](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/ab_utils/functions/index.md).
 
 ## Excel
@@ -73,6 +66,12 @@ analysis; the example leaves the maximum value unmodified. See the
 Choose `excel.pivot_and_break_table` for pivoted reports or `excel.break_table`
 when the dataframe already has the desired table shape. Both support grouping
 into sheets and table blocks, including multiple dataframes placed side by side.
+
+Use the public `excel` module for exports and the formatting it supports in
+Python consumer scripts. Avoid an extra workbook-generation layer or manual
+`openpyxl`, `xlsxwriter`, or pandas writer postprocessing for routine report
+output. Use another engine only for a user-requested feature the toolkit cannot
+provide.
 
 ```python
 from atk import *
@@ -87,8 +86,7 @@ tables = excel.break_table(
 ```
 
 Here `report_df` includes `segment` and `report_date` columns. For a plain
-dataframe export without the toolkit's report behavior, an existing pandas export
-can still fit the task. See the
+dataframe export, omit `break_by` and `sheet_by`. See the
 [Excel reference](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/excel/functions/index.md).
 
 ## Files and logging
@@ -114,5 +112,6 @@ time_print("Loaded report query")
 # query contains the SQL file's text; the message includes a timestamp
 ```
 
-Verify path resolution against the task's execution context. Use ordinary path
-or logging APIs when requirements extend beyond these helper contracts.
+Verify path resolution against the task's execution context. For filesystem
+operations these helpers do not cover, use `os`. Ordinary logging APIs remain
+appropriate when requirements extend beyond the logging helpers' contracts.
