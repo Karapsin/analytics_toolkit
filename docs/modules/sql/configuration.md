@@ -10,14 +10,18 @@ parents, then searches from the current working directory upward. Public SQL
 functions accept a key from that file; backend behavior is selected from the
 key's `type`.
 
-The successful path is remembered for later calls. If that file disappears,
-for example after an Airflow worker or DAG path rotation, recovery searches the
-remembered file's directory and parents first, then the calling-script and
+The first successfully parsed file's entries and absolute path are cached in
+memory for the lifetime of the Python process. Later SQL helpers reuse that
+snapshot without checking or reading the file again, even if it is edited,
+removed, or the working directory changes. Restart Python to load updated file
+entries, or explicitly select or reset the source as described below.
+
+Before a snapshot has been cached, a missing remembered file triggers recovery
+from its directory and parents, then the calling-script and
 current-working-directory chains. If a selected file disappears between path
-discovery and reading, the package repeats that recovery search up to five
-times. Only a missing file triggers recovery; a found file with invalid JSON,
-invalid connection settings, a permissions failure, or another I/O error raises
-its normal error.
+discovery and reading, recovery retries up to five times. Failed reads or
+parsing do not populate the cache. Other I/O errors and invalid files raise
+their normal errors.
 
 When runtime code cannot rely on the current working directory, set the file
 explicitly before calling SQL helpers:
@@ -29,11 +33,26 @@ general.set_connections_path("/opt/airflow/dags/project/.connections")
 df = sql.read("trino", "select 1")
 ```
 
-The path must point to an existing `.connections` file. Its directory is used
-for relative certificate paths. If it later disappears, the first recovered
-file becomes the new explicit path. Call `general.set_connections_path(None)`
-to clear the explicit and remembered paths and restart default discovery from
-the calling script and current working directory.
+The path must point to an existing `.connections` file. Selecting it discards
+the previous snapshot; the next lookup loads and caches the selected file.
+Selecting the same path explicitly also reloads its settings on the next
+lookup. Switching back to a previously selected file reads it anew.
+
+Call `general.set_connections_path(None)` to clear the snapshot, explicit path,
+and remembered path and restart default discovery on the next lookup. Invalid
+path selections leave the current snapshot intact. Relative certificate paths
+and the sibling `.secrets` file stay anchored to the cached source directory,
+including after `.connections` is removed.
+
+Configuration errors include the full source path, for example:
+
+```text
+Unknown SQL connection key: missing. Available keys: gp [SQL connections file: /opt/project/.connections]
+```
+
+Other SQL failures retain their original exception types and include that path
+in traceback notes and SQL failure diagnostics. Fileless Airflow mode does not
+report an unrelated cached file. See [Logging and Observability](logging-and-observability.md).
 
 Call [sql.generate_dummy_connections](functions/generate_dummy_connections.md)()
 to write a starter direct `./.connections` file in the current working
@@ -187,8 +206,9 @@ The generated entries include `export`, so a trusted file can also be loaded
 into zsh with `source /path/to/.secrets`. The toolkit resolves the file
 directly, so sourcing it is not required for SQL helpers.
 
-References are resolved in memory on each configuration lookup and are never
-written back to `.connections` or cached by the toolkit. Missing sources,
+The cached entries preserve reference declarations. References are resolved in
+memory on each configuration lookup; their resolved values are never written
+back to `.connections` or cached by the toolkit. Missing sources,
 malformed JSON, and missing paths raise a connection-specific `SqlConfigError`
 without including the resolved value. Airflow imports remain lazy: ordinary
 literal, `.secrets`, and environment-based configurations do not require

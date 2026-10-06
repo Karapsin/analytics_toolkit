@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Ignore delayed SQL Explorer editor events after a tab closes or the app shuts down.
 - Stabilize concurrent journal and bootstrap executor tests under CI contention.
 - Added an agent skill that prefers public analytics-toolkit helpers and from atk import * in consumer code.
+- Cache SQL .connections entries until Python restart or explicit path reset, and include the source path in SQL failure diagnostics.
 
 ## 1.3.12.1 - 2026-10-05
 

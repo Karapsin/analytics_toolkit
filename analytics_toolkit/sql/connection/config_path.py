@@ -6,10 +6,14 @@ from typing import TYPE_CHECKING, cast
 
 from analytics_toolkit.general.connections import (
     CONNECTIONS_FILE_NAME,
+    connections_path_lock,
     get_connections_path_override,
     get_last_connections_path,
     remember_connections_path,
 )
+
+from .config_cache import get_cached_connections_path
+from .config_diagnostics import remember_error_source
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -17,6 +21,15 @@ if TYPE_CHECKING:
 
 def find_connections_file_path() -> Path | None:
     """Find `.connections` using remembered, caller, then working directories."""
+    with connections_path_lock():
+        return _find_connections_file_path()
+
+
+def _find_connections_file_path() -> Path | None:
+    cached_path = get_cached_connections_path()
+    if cached_path is not None:
+        remember_error_source(cached_path)
+        return cached_path
     previous_path = get_connections_path_override() or get_last_connections_path()
     search_roots: list[Path] = []
     if previous_path is not None:
@@ -30,7 +43,9 @@ def find_connections_file_path() -> Path | None:
     for directory in _iter_search_directories(search_roots):
         connections_path = directory / CONNECTIONS_FILE_NAME
         if connections_path.is_file():
-            return remember_connections_path(connections_path)
+            selected = remember_connections_path(connections_path)
+            remember_error_source(selected)
+            return selected
     return None
 
 

@@ -7,6 +7,10 @@ from typing import Any, Callable, Dict, TypeVar, cast
 
 from analytics_toolkit.general import time_print, time_print_context
 from analytics_toolkit.sql._log_context import current_sql_log_context
+from analytics_toolkit.sql.connection.config_diagnostics import (
+    annotate_connections_exception,
+    sql_error_source_scope,
+)
 
 from ..connection.errors import SqlOperationContext, annotate_sql_exception
 from .cancellation import raise_if_cancelled
@@ -25,9 +29,12 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
     @wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> T:
         started_at = time.perf_counter()
-        with time_print_context(operation=function.__name__):
+        with sql_error_source_scope(), time_print_context(operation=function.__name__):
             try:
                 return function(*args, **kwargs)
+            except Exception as exc:
+                annotate_connections_exception(exc)
+                raise
             finally:
                 elapsed_seconds = time.perf_counter() - started_at
                 time_print(

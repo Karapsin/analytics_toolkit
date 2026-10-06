@@ -75,11 +75,16 @@ Put an Airflow-source `.connections` file in a directory visible from the task
 or DAG script, usually the DAG project root. On the first lookup,
 `analytics_toolkit` searches from the calling Python script through its parent
 directories, then searches from the current working directory through its
-parents. It remembers the successful path. If that file later disappears after
-a worker or DAG path rotation, it searches the old directory and its parents
-before retrying the script and working-directory chains. If rotation removes a
-selected file between discovery and reading, it repeats recovery up to five
-times:
+parents. The first successfully parsed file's entries and absolute path are
+cached for the lifetime of the Python process. Later helper calls reuse the
+snapshot even if the file is edited or removed by a worker or DAG path rotation.
+Restart Python or explicitly select/reset the path to load updated entries.
+Airflow credentials and runtime references still resolve on each lookup.
+
+Before a successful parse, a missing remembered file triggers a search of its
+old directory and parents before the script and working-directory chains. If
+rotation removes a selected file between discovery and reading, recovery
+retries up to five times:
 
 ```json
 {
@@ -175,9 +180,9 @@ and `extra` resolvers:
 
 Without `path`, the named source supplies one scalar value. With `path`, the
 source must contain JSON and the array selects nested object keys. Use an empty
-array to select the whole parsed JSON object. Values are resolved in memory for
-each configuration lookup; the toolkit does not write credentials into
-`.connections` or cache them. Literal routing fields such as `type` and
+array to select the whole parsed JSON object. Referenced values are resolved in
+memory for each configuration lookup; the toolkit does not write those resolved
+credentials into `.connections` or cache them. Literal routing fields such as `type` and
 `connection_id` cannot use references.
 
 The same `env` syntax works in direct `.connections` files outside Airflow.
@@ -215,10 +220,13 @@ df = sql.read("airflow_trino", query)
 ```
 
 The path must point to an existing `.connections` file. Its directory is also
-used for relative certificate paths such as `.certs/trino-ca.pem`. If it later
-disappears, the recovered file becomes the new explicit path. Call
-`set_connections_path(None)` to clear both the explicit and remembered paths
-and restart automatic script/CWD discovery. `from_here(".connections", 1)` is
+used for relative certificate paths such as `.certs/trino-ca.pem` and the sibling
+`.secrets` file, even after the cached `.connections` file disappears. Explicit
+selection clears the previous settings snapshot, including when selecting the
+same path; the next helper call loads and caches the selected file. Call
+`set_connections_path(None)` to clear the snapshot, explicit path, and remembered
+path and restart automatic script/CWD discovery on the next lookup.
+`from_here(".connections", 1)` is
 useful when DAG task code lives one directory below the DAG project root and
 `.connections` is stored in that parent directory; `levels_up=0` means the same
 base as `here()`, and `levels_up=1` means one parent directory.

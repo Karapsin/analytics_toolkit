@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit import general
+
 from tests.sql._support.load_table import (
     Any,
     _write_trino_connections,
@@ -83,6 +85,7 @@ def test_load_option_requirements_and_remaining_upsert_plan_branches(
             }
         }
     )
+    general.set_connections_path(None)
     with pytest.raises(ValueError, match="drop_sql_template"):
         load_df_module._build_load_options(
             "trino_no_template",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from getpass import getpass
 
 from .config import _iter_file_connection_values
+from .config_diagnostics import connection_config_diagnostics
 from .references import (
     is_connection_value_reference,
     parse_connection_value_reference,
@@ -15,6 +16,7 @@ from .secret_file import (
 )
 
 
+@connection_config_diagnostics
 def set_missing_secrets() -> list[str]:
     """Prompt for missing ``.secrets`` values referenced by ``.connections``."""
     referenced_names = _find_referenced_secret_names()

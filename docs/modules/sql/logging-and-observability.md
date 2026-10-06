@@ -29,6 +29,25 @@ The timing sink can be routed through Python logging, which is usually a better
 fit for Airflow task logs than direct printing. Logging records omit the
 toolkit datetime prefix so logging handlers can render a single timestamp.
 
+## Error Source Paths
+
+For file-backed configuration, SQL failure diagnostics identify the full
+absolute `.connections` path used by the operation. Configuration errors such
+as an unknown connection key include it directly in the error message. Driver
+and operation errors retain their original exception types and receive a
+traceback note plus an error-level message through the timing sink:
+
+```text
+SQL connections file: /opt/project/.connections
+```
+
+On Python versions before 3.11, use the error-level message for displayed path
+context; traceback notes remain available through the exception's `__notes__`.
+Nested helpers avoid repeating the same diagnostic. The added diagnostic
+contains the path only, and fileless Airflow operations omit unrelated file
+paths. The path belongs to the [cached configuration source](configuration.md),
+even if the file was removed after loading.
+
 ## Progress and Metadata
 
 Progress bars are opt-in and best suited for interactive or long-running

@@ -18,6 +18,12 @@ from ..backends.registry import (
     normalize_backend_name as _registry_normalize_backend_name,
 )
 from ..execution.operation_runner import timed_public_sql_function
+from .config_cache import load_cached_connections_source
+from .config_diagnostics import (
+    connection_config_diagnostics,
+    fileless_connection_source,
+    remember_error_source,
+)
 from .config_path import find_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 from .references import (
@@ -153,6 +159,7 @@ class ConnectionValidationResult:
     error: str | None = None
 
 
+@connection_config_diagnostics
 def get_connection_config(connection_key: str) -> ConnectionConfig:
     source = _AIRFLOW_CONNECTION_SOURCE.get()
     resolved_key = (
@@ -202,7 +209,8 @@ def use_airflow_connections(
     )
     token = _AIRFLOW_CONNECTION_SOURCE.set(source)
     try:
-        yield
+        with fileless_connection_source():
+            yield
     finally:
         _AIRFLOW_CONNECTION_SOURCE.reset(token)
 
@@ -440,6 +448,7 @@ def normalize_connection_key(connection_key: str) -> str:
     return normalized
 
 
+@connection_config_diagnostics
 def load_sql_connections() -> dict[str, dict[str, Any]]:
     source = _AIRFLOW_CONNECTION_SOURCE.get()
     if source is not None:
@@ -473,8 +482,18 @@ def _load_file_sql_connections() -> dict[str, dict[str, Any]]:
     return connections_source
 
 
+@connection_config_diagnostics
 def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConnectionSource:
+    path, source = load_cached_connections_source(_read_file_connections_source)
+    remember_error_source(path)
+    return source
+
+
+def _read_file_connections_source() -> tuple[
+    Path, dict[str, dict[str, Any]] | _AirflowConnectionSource
+]:
     connections_path, connections_text = _read_connections_file_text()
+    remember_error_source(connections_path)
 
     try:
         parsed = json.loads(connections_text)
@@ -485,9 +504,9 @@ def _load_file_connections_source() -> dict[str, dict[str, Any]] | _AirflowConne
         raise SqlConfigError(f"{connections_path} must contain a JSON object.")
 
     if _is_airflow_connections_file(parsed, connections_path):
-        return _parse_airflow_connections_file(parsed, connections_path)
+        return connections_path, _parse_airflow_connections_file(parsed, connections_path)
 
-    return _parse_direct_connections_file(parsed, connections_path)
+    return connections_path, _parse_direct_connections_file(parsed, connections_path)
 
 
 def _iter_file_connection_values() -> Iterator[tuple[str, dict[str, Any]]]:
@@ -513,6 +532,7 @@ def _read_connections_file_path(
     *,
     retries_remaining: int,
 ) -> tuple[Path, str]:
+    remember_error_source(connections_path)
     try:
         return connections_path, connections_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
