@@ -1,0 +1,28 @@
+{
+  "key": "js_selector",
+  "family": "editor",
+  "type": "selector",
+  "name": "JS - all controls - attempt 5",
+  "title": "JavaScript selectors · all control types",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Dataset-backed options and all eight Editor control kinds, with independent interval/snapshot receivers, table filters, annotation, preset, and reset.",
+  "control_types": [
+    "input",
+    "textarea",
+    "datepicker",
+    "range-datepicker",
+    "select",
+    "checkbox",
+    "line-break",
+    "button"
+  ],
+  "scripts": {
+    "sources": "assets/js/js_selector/sources.js",
+    "params": "assets/js/js_selector/params.js",
+    "controls": "assets/js/js_selector/controls.js"
+  },
+  "id": "9entwfthxr5os"
+}

@@ -1,0 +1,46 @@
+{
+  "key": "ql_treemap",
+  "family": "ql",
+  "type": "treemap",
+  "name": "QL - revenue portfolio - attempt 5",
+  "title": "QL · revenue portfolio",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_treemap.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Region": "string",
+    "Category": "string",
+    "Revenue": "integer"
+  },
+  "fields": {
+    "dimensions": [
+      "Region",
+      "Category"
+    ],
+    "measures": [
+      "Revenue"
+    ],
+    "colors": [
+      "Region"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "ty7caa799sqkc"
+}

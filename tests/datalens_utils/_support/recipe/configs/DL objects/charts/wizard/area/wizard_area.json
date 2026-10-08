@@ -1,0 +1,38 @@
+{
+  "key": "wizard_area",
+  "family": "wizard",
+  "type": "area",
+  "name": "Acquisition by stage - attempt 5",
+  "title": "Acquisition by stage",
+  "dataset": "acquisition",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Acquisitions"
+    ]
+  },
+  "sort": [
+    [
+      "Date",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Acquisitions": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Stage"
+    },
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "id": "hmv0z879arf40"
+}

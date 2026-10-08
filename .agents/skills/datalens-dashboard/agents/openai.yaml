@@ -1,0 +1,4 @@
+interface:
+  display_name: "DataLens Dashboard Projects"
+  short_description: "Build reusable DataLens dashboard projects"
+  default_prompt: "Use $datalens-dashboard to create a configuration-driven dashboard project."

@@ -1,0 +1,33 @@
+{
+  "key": "wizard_indicator",
+  "family": "wizard",
+  "type": "indicator",
+  "name": "Snapshot revenue - attempt 5",
+  "title": "Snapshot revenue",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "font_size": {
+      "size": "l"
+    },
+    "font_color": {
+      "color": "#0FA08D"
+    },
+    "measure_title_mode": {
+      "mode": "by-field"
+    }
+  },
+  "id": "38hnppvqfvgwm"
+}

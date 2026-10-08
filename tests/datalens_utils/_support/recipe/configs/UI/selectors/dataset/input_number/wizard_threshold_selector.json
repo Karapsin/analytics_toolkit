@@ -1,0 +1,16 @@
+{
+  "key": "wizard_threshold_selector",
+  "tab": "wizard",
+  "title": "Minimum threshold · scatter",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Threshold"
+  },
+  "control": {
+    "element": "input",
+    "title_placement": "top",
+    "default_value": "0",
+    "operation": "GTE"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "wizard": {
+    "wizard_intro": {
+      "text": "**Fictional data · July–September 2026.** Region and date filters reach all three datasets through field aliases. The snapshot date controls only the indicator. Channel controls the column chart; category and priority control the table; threshold controls the scatter plot. Simple and compound calculations, LOD, running totals, and ranking are stored in editable definitions."
+    }
+  },
+  "ql": {
+    "ql_intro": {
+      "text": "**SQL over the same fictional tables.** Region and interval are QL parameters. The snapshot indicator ignores the interval; auxiliary controls target specific receivers. Query files demonstrate simple SUM, compound expressions, conditional aggregation, and NULL/zero handling. Selectors emit parameter names, not display titles."
+    }
+  },
+  "editor": {
+    "editor_intro": {
+      "text": "**JavaScript Editor gallery.** One external selector demonstrates input, textarea, datepicker, range-datepicker, select, checkbox, line break, and button. Region/channel reach all charts; interval reaches trends and snapshot date reaches Advanced. Search, minimum revenue, and priority reach the table. Textarea annotation reaches Markdown. Reset restores the fictional scenario."
+    }
+  }
+}

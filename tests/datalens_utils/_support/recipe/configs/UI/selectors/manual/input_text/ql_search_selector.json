@@ -1,0 +1,14 @@
+{
+  "key": "ql_search_selector",
+  "tab": "ql",
+  "title": "Category contains · table only",
+  "source": {
+    "kind": "manual",
+    "param_name": "search"
+  },
+  "control": {
+    "element": "input",
+    "title_placement": "top",
+    "default_value": ""
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "wizard": {
+    "title": "Dataset revenue",
+    "hidden": false
+  },
+  "ql": {
+    "title": "SQL revenue",
+    "hidden": false
+  },
+  "editor": {
+    "title": "Editor revenue",
+    "hidden": false
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "key": "ql_bar_100p",
+  "family": "ql",
+  "type": "bar_100p",
+  "name": "QL - delivery channel share - attempt 5",
+  "title": "QL · delivery channel share",
+  "dataset": "delivery",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_bar_100p.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Region": "string",
+    "Deliveries": "integer",
+    "Channel": "string"
+  },
+  "fields": {
+    "y": [
+      "Region"
+    ],
+    "x": [
+      "Deliveries"
+    ],
+    "colors": [
+      "Channel"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "ty7c8zqsfy38c"
+}

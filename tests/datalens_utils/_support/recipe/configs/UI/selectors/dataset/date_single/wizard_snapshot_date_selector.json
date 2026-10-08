@@ -1,0 +1,16 @@
+{
+  "key": "wizard_snapshot_date_selector",
+  "tab": "wizard",
+  "title": "Snapshot date · indicator only",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Date"
+  },
+  "control": {
+    "element": "date",
+    "title_placement": "top",
+    "default_value": "2026-09-30",
+    "operation": "EQ"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "key": "wizard_priority_selector",
+  "tab": "wizard",
+  "title": "Priority · checked=true, unchecked=false",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Priority"
+  },
+  "control": {
+    "element": "checkbox",
+    "title_placement": "top",
+    "default_value": false,
+    "operation": "EQ"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "wizard": {
+    "title": "Wizard · datasets & formulas",
+    "hidden": false
+  },
+  "ql": {
+    "title": "QL · parameterized SQL",
+    "hidden": false
+  },
+  "editor": {
+    "title": "JavaScript · Editor gallery",
+    "hidden": false
+  }
+}

@@ -1,0 +1,452 @@
+{
+  "wizard": {
+    "wizard_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "wizard_intro": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "wizard_primary_filters": [
+      0,
+      6,
+      36,
+      4
+    ],
+    "wizard_snapshot_date_selector_control": [
+      0,
+      10,
+      9,
+      4
+    ],
+    "wizard_channel_selector_control": [
+      9,
+      10,
+      9,
+      4
+    ],
+    "wizard_search_selector_control": [
+      18,
+      10,
+      18,
+      4
+    ],
+    "wizard_threshold_selector_control": [
+      0,
+      14,
+      18,
+      4
+    ],
+    "wizard_priority_selector_control": [
+      18,
+      14,
+      18,
+      4
+    ],
+    "wizard_gallery_heading": [
+      0,
+      18,
+      36,
+      2
+    ],
+    "wizard_line": [
+      0,
+      20,
+      18,
+      14
+    ],
+    "wizard_area": [
+      18,
+      20,
+      18,
+      14
+    ],
+    "wizard_area_100p": [
+      0,
+      34,
+      18,
+      14
+    ],
+    "wizard_column": [
+      18,
+      34,
+      18,
+      14
+    ],
+    "wizard_column_100p": [
+      0,
+      48,
+      18,
+      14
+    ],
+    "wizard_bar": [
+      18,
+      48,
+      18,
+      14
+    ],
+    "wizard_bar_100p": [
+      0,
+      62,
+      18,
+      14
+    ],
+    "wizard_pie": [
+      18,
+      62,
+      18,
+      14
+    ],
+    "wizard_donut": [
+      0,
+      76,
+      18,
+      14
+    ],
+    "wizard_treemap": [
+      18,
+      76,
+      18,
+      14
+    ],
+    "wizard_scatter": [
+      0,
+      90,
+      18,
+      14
+    ],
+    "wizard_indicator": [
+      18,
+      90,
+      18,
+      14
+    ],
+    "wizard_funnel": [
+      0,
+      104,
+      18,
+      14
+    ],
+    "wizard_combined_chart": [
+      18,
+      104,
+      18,
+      14
+    ],
+    "wizard_flat_table": [
+      0,
+      118,
+      36,
+      16
+    ],
+    "wizard_pivot_table": [
+      0,
+      134,
+      36,
+      16
+    ],
+    "wizard_map_points": [
+      0,
+      150,
+      36,
+      16
+    ],
+    "wizard_map_clusters": [
+      0,
+      166,
+      36,
+      16
+    ],
+    "wizard_map_heatmap": [
+      0,
+      182,
+      36,
+      16
+    ],
+    "wizard_map_polygons": [
+      0,
+      198,
+      36,
+      16
+    ],
+    "wizard_map_routes": [
+      0,
+      214,
+      36,
+      16
+    ]
+  },
+  "ql": {
+    "ql_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "ql_intro": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "ql_primary_filters": [
+      0,
+      6,
+      36,
+      4
+    ],
+    "ql_snapshot_date_selector_control": [
+      0,
+      10,
+      9,
+      4
+    ],
+    "ql_channel_selector_control": [
+      9,
+      10,
+      9,
+      4
+    ],
+    "ql_search_selector_control": [
+      18,
+      10,
+      18,
+      4
+    ],
+    "ql_threshold_selector_control": [
+      0,
+      14,
+      18,
+      4
+    ],
+    "ql_priority_selector_control": [
+      18,
+      14,
+      18,
+      4
+    ],
+    "ql_gallery_heading": [
+      0,
+      18,
+      36,
+      2
+    ],
+    "ql_line": [
+      0,
+      20,
+      18,
+      14
+    ],
+    "ql_area": [
+      18,
+      20,
+      18,
+      14
+    ],
+    "ql_area_100p": [
+      0,
+      34,
+      18,
+      14
+    ],
+    "ql_column": [
+      18,
+      34,
+      18,
+      14
+    ],
+    "ql_column_100p": [
+      0,
+      48,
+      18,
+      14
+    ],
+    "ql_bar": [
+      18,
+      48,
+      18,
+      14
+    ],
+    "ql_bar_100p": [
+      0,
+      62,
+      18,
+      14
+    ],
+    "ql_pie": [
+      18,
+      62,
+      18,
+      14
+    ],
+    "ql_donut": [
+      0,
+      76,
+      18,
+      14
+    ],
+    "ql_treemap": [
+      18,
+      76,
+      18,
+      14
+    ],
+    "ql_scatter": [
+      0,
+      90,
+      18,
+      14
+    ],
+    "ql_indicator": [
+      18,
+      90,
+      18,
+      14
+    ],
+    "ql_flat_table": [
+      0,
+      104,
+      36,
+      16
+    ]
+  },
+  "editor": {
+    "editor_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "editor_intro": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "js_selector_widget": [
+      0,
+      6,
+      36,
+      12
+    ],
+    "editor_gallery_heading": [
+      0,
+      18,
+      36,
+      2
+    ],
+    "js_line": [
+      0,
+      20,
+      18,
+      14
+    ],
+    "js_area": [
+      18,
+      20,
+      18,
+      14
+    ],
+    "js_area_range": [
+      0,
+      34,
+      18,
+      14
+    ],
+    "js_bar_x": [
+      18,
+      34,
+      18,
+      14
+    ],
+    "js_bar_y": [
+      0,
+      48,
+      18,
+      14
+    ],
+    "js_pie": [
+      18,
+      48,
+      18,
+      14
+    ],
+    "js_donut": [
+      0,
+      62,
+      18,
+      14
+    ],
+    "js_scatter": [
+      18,
+      62,
+      18,
+      14
+    ],
+    "js_treemap": [
+      0,
+      76,
+      18,
+      14
+    ],
+    "js_waterfall": [
+      18,
+      76,
+      18,
+      14
+    ],
+    "js_funnel": [
+      0,
+      90,
+      18,
+      14
+    ],
+    "js_heatmap": [
+      18,
+      90,
+      18,
+      14
+    ],
+    "js_radar": [
+      0,
+      104,
+      18,
+      14
+    ],
+    "js_x_range": [
+      18,
+      104,
+      18,
+      14
+    ],
+    "js_advanced": [
+      0,
+      134,
+      36,
+      14
+    ],
+    "js_markdown": [
+      0,
+      148,
+      36,
+      12
+    ],
+    "js_table": [
+      0,
+      160,
+      36,
+      16
+    ],
+    "js_sankey": [
+      0,
+      118,
+      36,
+      16
+    ]
+  }
+}

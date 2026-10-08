@@ -1,0 +1,438 @@
+{
+  "ql_line": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_area": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_area_100p": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_column": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z",
+    "channel": "All"
+  },
+  "ql_column_100p": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_bar": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_bar_100p": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_pie": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_donut": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_treemap": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z"
+  },
+  "ql_scatter": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z",
+    "min_revenue": "0"
+  },
+  "ql_indicator": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "snapshot_date": "2026-09-30"
+  },
+  "ql_flat_table": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "interval": "__interval_2026-07-01T00:00:00.000Z_2026-09-30T23:59:59.999Z",
+    "search": "",
+    "only_priority": false
+  },
+  "js_line": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_area": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_area_range": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_bar_x": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_bar_y": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_pie": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_donut": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_scatter": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_treemap": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_waterfall": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_funnel": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_heatmap": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_radar": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_x_range": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  },
+  "js_advanced": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "snapshot_date": [
+      "2026-09-30"
+    ]
+  },
+  "js_markdown": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ],
+    "annotation": [
+      "Fictional retail gallery"
+    ]
+  },
+  "js_table": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ],
+    "search": [
+      ""
+    ],
+    "min_revenue": [
+      "0"
+    ],
+    "only_priority": [
+      "false"
+    ]
+  },
+  "js_sankey": {
+    "region": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "channel": [
+      "All"
+    ],
+    "interval_from": [
+      "2026-07-01"
+    ],
+    "interval_to": [
+      "2026-09-30"
+    ]
+  }
+}

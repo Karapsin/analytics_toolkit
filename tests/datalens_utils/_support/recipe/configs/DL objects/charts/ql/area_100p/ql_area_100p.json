@@ -1,0 +1,45 @@
+{
+  "key": "ql_area_100p",
+  "family": "ql",
+  "type": "area_100p",
+  "name": "QL - acquisition channel mix - attempt 5",
+  "title": "QL · acquisition channel mix",
+  "dataset": "acquisition",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_area_100p.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Date": "genericdatetime",
+    "Acquisitions": "integer",
+    "Channel": "string"
+  },
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Acquisitions"
+    ],
+    "colors": [
+      "Channel"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "ot273b0jhzje7"
+}

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 PUBLIC_MODULES = (
     "analytics_toolkit",
     "analytics_toolkit.ab_utils",
+    "analytics_toolkit.datalens_utils",
     "analytics_toolkit.dates",
     "analytics_toolkit.datetime",
     "analytics_toolkit.excel",
@@ -105,6 +106,16 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
         cwd=install_root,
     )
     _run([python, "-m", "pip", "check"], cwd=install_root)
+    _run(
+        [
+            python,
+            "-c",
+            "import importlib.util; "
+            "from analytics_toolkit.datalens_utils import DataLensProject; "
+            "assert importlib.util.find_spec('datalens_sdk') is None",
+        ],
+        cwd=install_root,
+    )
     atk_cli = _venv_executable(venv_dir, "atk")
     for arguments in (["--help"], ["tui", "--help"]):
         result = _run([atk_cli, *arguments], cwd=install_root, capture_output=True)
@@ -132,6 +143,22 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
     )
     _run(
         [python, "-c", "import analytics_toolkit.sql_explorer.app, pyperclip, textual"],
+        cwd=install_root,
+    )
+
+    _run([python, "-m", "pip", "install", f"{artifact}[datalens]"], cwd=install_root)
+    _run([python, "-m", "pip", "check"], cwd=install_root)
+    _run(
+        [
+            python,
+            "-c",
+            "from importlib.metadata import version; "
+            "from pathlib import Path; import analytics_toolkit.datalens_utils.bootstrap as b; "
+            "assert version('datalens-sdk') == '3.1.0'; "
+            "assets = Path(b.__file__).parent / 'bootstrap_assets'; "
+            "assert (assets / 'bootstrap.sh').is_file(); "
+            "assert (assets / 'bootstrap.ps1').is_file()",
+        ],
         cwd=install_root,
     )
 

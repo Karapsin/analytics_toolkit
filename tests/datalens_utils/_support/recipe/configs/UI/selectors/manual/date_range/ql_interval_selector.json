@@ -1,0 +1,19 @@
+{
+  "key": "ql_interval_selector",
+  "tab": "ql",
+  "title": "Date interval",
+  "source": {
+    "kind": "manual",
+    "param_name": "interval"
+  },
+  "control": {
+    "element": "date",
+    "title_placement": "top",
+    "is_range": true,
+    "default_value": {
+      "from": "2026-07-01",
+      "to": "2026-09-30"
+    }
+  },
+  "group": "ql_primary_filters"
+}

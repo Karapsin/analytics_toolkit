@@ -1,0 +1,53 @@
+{
+  "key": "wizard_scatter",
+  "family": "wizard",
+  "type": "scatter",
+  "name": "Orders, revenue, and profit - attempt 5",
+  "title": "Orders, revenue, and profit",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Orders"
+    ],
+    "y": [
+      "Revenue"
+    ],
+    "points": [
+      "Category"
+    ],
+    "size": [
+      "Profit"
+    ]
+  },
+  "sort": [
+    [
+      "Revenue",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Orders": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Profit": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Region"
+    },
+    "point_size_range": {
+      "min_radius": 4.5,
+      "max_radius": 12
+    }
+  },
+  "id": "qv4adesy04469"
+}

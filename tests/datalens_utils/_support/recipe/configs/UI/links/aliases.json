@@ -1,0 +1,34 @@
+{
+  "wizard": [
+    [
+      {
+        "dataset": "retail",
+        "field": "Region"
+      },
+      {
+        "dataset": "acquisition",
+        "field": "Region"
+      },
+      {
+        "dataset": "delivery",
+        "field": "Region"
+      }
+    ],
+    [
+      {
+        "dataset": "retail",
+        "field": "Date"
+      },
+      {
+        "dataset": "acquisition",
+        "field": "Date"
+      },
+      {
+        "dataset": "delivery",
+        "field": "Date"
+      }
+    ]
+  ],
+  "ql": [],
+  "editor": []
+}

@@ -1,0 +1,103 @@
+{
+  "key": "wizard_flat_table",
+  "family": "wizard",
+  "type": "flat_table",
+  "name": "Retail detail - attempt 5",
+  "title": "Retail detail",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers. Compound Score is an educational arithmetic example, not a business KPI.",
+  "fields": {
+    "columns": [
+      "Region",
+      "Category",
+      "Channel",
+      "Priority",
+      "Orders",
+      "Revenue",
+      "Profit",
+      "Margin",
+      "Average Order Value",
+      "Priority Revenue",
+      "Net Contribution",
+      "Region Revenue Share",
+      "Revenue Rank",
+      "Compound Score"
+    ]
+  },
+  "sort": [
+    [
+      "Revenue",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Orders": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Profit": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Margin": {
+      "format": "percent",
+      "precision": 1
+    },
+    "Region Revenue Share": {
+      "format": "percent",
+      "precision": 1
+    },
+    "Average Order Value": {
+      "precision": 2
+    },
+    "Priority Revenue": {
+      "precision": 0
+    },
+    "Net Contribution": {
+      "precision": 0
+    },
+    "Revenue Rank": {
+      "precision": 0
+    },
+    "Compound Score": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "column_bars": {
+      "field": "Revenue",
+      "color_type": "one-color",
+      "color": "#4DA2F1",
+      "show_labels": true
+    },
+    "totals": {
+      "enabled": true
+    },
+    "pagination": {
+      "enabled": true,
+      "limit": 25
+    },
+    "freeze_columns": {
+      "count": 2
+    },
+    "table_size": {
+      "size": "m"
+    }
+  },
+  "local_fields": [
+    {
+      "guid": "8b024f22-9bb6-565a-bad0-338bdd227877",
+      "title": "Revenue Rank",
+      "formula": "RANK_DENSE(SUM([Revenue Raw]), \"desc\" WITHIN [Region])",
+      "cast": "integer",
+      "kind": "MEASURE",
+      "aggregation": "none"
+    }
+  ],
+  "id": "chqww580mjimv"
+}

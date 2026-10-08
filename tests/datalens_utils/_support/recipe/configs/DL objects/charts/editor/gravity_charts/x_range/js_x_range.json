@@ -1,0 +1,30 @@
+{
+  "key": "js_x_range",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - X-range - latest delivery task intervals - attempt 5",
+  "title": "JS · X-range · latest delivery task intervals",
+  "dataset": "delivery",
+  "links": {
+    "delivery": "delivery"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "x-range",
+  "coverage": {
+    "series": "x-range"
+  },
+  "scripts": {
+    "sources": "assets/js/common/delivery_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_x_range/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "16fkfnd7z3igk"
+}

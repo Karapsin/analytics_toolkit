@@ -1,0 +1,14 @@
+{
+  "key": "ql_snapshot_date_selector",
+  "tab": "ql",
+  "title": "Snapshot date · indicator only",
+  "source": {
+    "kind": "manual",
+    "param_name": "snapshot_date"
+  },
+  "control": {
+    "element": "date",
+    "title_placement": "top",
+    "default_value": "2026-09-30"
+  }
+}

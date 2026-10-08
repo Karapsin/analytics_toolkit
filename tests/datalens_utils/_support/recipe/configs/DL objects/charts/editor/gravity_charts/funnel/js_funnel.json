@@ -1,0 +1,30 @@
+{
+  "key": "js_funnel",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Funnel - customer acquisition stages - attempt 5",
+  "title": "JS · Funnel · customer acquisition stages",
+  "dataset": "acquisition",
+  "links": {
+    "acquisition": "acquisition"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "funnel",
+  "coverage": {
+    "series": "funnel"
+  },
+  "scripts": {
+    "sources": "assets/js/common/acquisition_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_funnel/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "kpy3vvdpq1s23"
+}

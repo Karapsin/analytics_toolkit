@@ -2,6 +2,7 @@
 
 __all__ = [
     "ab_utils",
+    "datalens_utils",
     "dates",
     "datetime",
     "excel",

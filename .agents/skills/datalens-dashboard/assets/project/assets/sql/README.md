@@ -1,0 +1,1 @@
+Projections explicitly expose event_date, region and revenue. Adapt these physical columns and dataset definitions together. Deployed source tokens are resolved by the engine. Independent SQL under sql_tests contains real table names.

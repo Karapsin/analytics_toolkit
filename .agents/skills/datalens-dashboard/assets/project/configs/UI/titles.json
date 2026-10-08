@@ -1,0 +1,20 @@
+{
+  "wizard": {
+    "wizard_heading": {
+      "text": "Revenue by date",
+      "size": "m"
+    }
+  },
+  "ql": {
+    "ql_heading": {
+      "text": "Revenue by date",
+      "size": "m"
+    }
+  },
+  "editor": {
+    "editor_heading": {
+      "text": "Revenue by date",
+      "size": "m"
+    }
+  }
+}

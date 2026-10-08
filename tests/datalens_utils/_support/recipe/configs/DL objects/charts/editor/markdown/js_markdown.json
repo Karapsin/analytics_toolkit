@@ -1,0 +1,26 @@
+{
+  "key": "js_markdown",
+  "family": "editor",
+  "type": "markdown",
+  "name": "JS - Markdown - selection summary - attempt 5",
+  "title": "JS · Markdown · selection summary",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Fictional linked dataset. Source filters are separate from visualization transformation.",
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "prepare": "assets/js/js_markdown/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date",
+    "annotation": "presentation"
+  },
+  "id": "05ejewnsce1ij"
+}

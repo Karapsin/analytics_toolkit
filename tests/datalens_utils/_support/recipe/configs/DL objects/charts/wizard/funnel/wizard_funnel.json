@@ -1,0 +1,44 @@
+{
+  "key": "wizard_funnel",
+  "family": "wizard",
+  "type": "funnel",
+  "name": "Customer acquisition funnel - attempt 5",
+  "title": "Customer acquisition funnel",
+  "dataset": "acquisition",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Stage Label"
+    ],
+    "y": [
+      "Acquisitions"
+    ]
+  },
+  "sort": [
+    [
+      "Stage Order",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Acquisitions": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Stage Label"
+    },
+    "tooltip_percentage_base": {
+      "mode": "previous"
+    },
+    "labels_position": {
+      "mode": "outside"
+    }
+  },
+  "labels": [
+    "Acquisitions"
+  ],
+  "id": "mr066ptetr6y5"
+}

@@ -1,0 +1,20 @@
+{
+  "key": "ql_channel_selector",
+  "tab": "ql",
+  "title": "Channel · column only",
+  "source": {
+    "kind": "manual",
+    "param_name": "channel"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "default_value": "All",
+    "options": [
+      "All",
+      "Online",
+      "Store",
+      "Partner"
+    ]
+  }
+}

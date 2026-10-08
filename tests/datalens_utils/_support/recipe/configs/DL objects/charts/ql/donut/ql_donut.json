@@ -1,0 +1,44 @@
+{
+  "key": "ql_donut",
+  "family": "ql",
+  "type": "donut",
+  "name": "QL - acquired customers - attempt 5",
+  "title": "QL · acquired customers",
+  "dataset": "acquisition",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_donut.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Channel": "string",
+    "Acquisitions": "integer"
+  },
+  "fields": {
+    "dimensions": [
+      "Channel"
+    ],
+    "measures": [
+      "Acquisitions"
+    ],
+    "colors": [
+      "Channel"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "lqz41jf9dhpw4"
+}

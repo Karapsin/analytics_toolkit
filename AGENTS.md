@@ -190,7 +190,7 @@ repository safety rules and must not access databases or read `.connections`.
 
 ## Project Overview
 
-`analytics_toolkit` is a Python `>=3.8,<3.15` utility package with five public
+`analytics_toolkit` is a Python `>=3.8,<3.15` utility package with six public
 areas:
 
 - `analytics_toolkit.ab_utils`: AB-test metric comparison helpers.
@@ -198,6 +198,7 @@ areas:
 - `analytics_toolkit.excel`: long-format dataframe to Excel report helpers.
 - `analytics_toolkit.dates`: date and period helpers.
 - `analytics_toolkit.general`: shared logging and file path helpers.
+- `analytics_toolkit.datalens_utils`: configuration-driven DataLens dashboards.
 
 Keep public APIs stable unless the user explicitly asks for a breaking change.
 Many tests import underscore helpers through package re-export modules, so treat
@@ -231,6 +232,7 @@ files before normal repository inspection, tests, or edits:
 - Excel helper work: `agent_docs/excel.md`.
 - Date helper work: `agent_docs/dates.md`.
 - General helper work: `agent_docs/general.md`.
+- DataLens module work: `agent_docs/datalens_utils.md`.
 - Instruction maintenance for this file or `agent_docs/`: read this file and the specific instruction files being edited.
 
 If multiple categories apply, read all relevant files before editing. Keep

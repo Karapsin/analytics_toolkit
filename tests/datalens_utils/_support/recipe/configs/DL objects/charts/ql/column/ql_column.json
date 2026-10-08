@@ -1,0 +1,50 @@
+{
+  "key": "ql_column",
+  "family": "ql",
+  "type": "column",
+  "name": "QL - category revenue - attempt 5",
+  "title": "QL · category revenue",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_column.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    },
+    {
+      "name": "channel",
+      "type": "string",
+      "default": "All"
+    }
+  ],
+  "columns": {
+    "Category": "string",
+    "Revenue": "integer",
+    "Channel": "string"
+  },
+  "fields": {
+    "x": [
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ],
+    "colors": [
+      "Channel"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "kpy3zzszjtkm3"
+}

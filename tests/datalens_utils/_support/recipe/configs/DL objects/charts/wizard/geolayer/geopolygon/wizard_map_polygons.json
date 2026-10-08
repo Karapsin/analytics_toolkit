@@ -1,0 +1,41 @@
+{
+  "key": "wizard_map_polygons",
+  "family": "wizard",
+  "type": "geolayer",
+  "name": "Fictional delivery zones - attempt 5",
+  "title": "Fictional delivery zones",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {},
+  "sort": [],
+  "formats": {
+    "Deliveries": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "geopolygon",
+      "polygon": "Zone",
+      "color": "Deliveries",
+      "color_mode": "2-point",
+      "color_palette": "blue",
+      "tooltips": [
+        "Region",
+        "Deliveries"
+      ]
+    }
+  ],
+  "map_center": {
+    "lat": 55.75,
+    "lon": 37.62,
+    "zoom": 8
+  },
+  "id": "pu39ajoypgn08"
+}

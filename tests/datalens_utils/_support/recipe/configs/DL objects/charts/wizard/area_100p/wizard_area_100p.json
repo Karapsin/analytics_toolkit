@@ -1,0 +1,38 @@
+{
+  "key": "wizard_area_100p",
+  "family": "wizard",
+  "type": "area_100p",
+  "name": "Daily channel mix - attempt 5",
+  "title": "Daily channel mix",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Date",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Channel"
+    },
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "id": "fktyxff4o1h0y"
+}

@@ -1,0 +1,44 @@
+{
+  "key": "wizard_column",
+  "family": "wizard",
+  "type": "column",
+  "name": "Revenue by category - attempt 5",
+  "title": "Revenue by category",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Revenue",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Channel"
+    },
+    "legend": {
+      "mode": "show"
+    },
+    "labels_position": {
+      "mode": "outside"
+    }
+  },
+  "labels": [
+    "Revenue"
+  ],
+  "id": "38hnmvwrnxbwm"
+}

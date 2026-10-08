@@ -1,0 +1,30 @@
+{
+  "key": "js_scatter",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Scatter - daily average order value and margin - attempt 5",
+  "title": "JS · Scatter · daily average order value and margin",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "scatter",
+  "coverage": {
+    "series": "scatter"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_scatter/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "gluztayf54jqz"
+}

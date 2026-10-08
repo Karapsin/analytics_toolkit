@@ -1,0 +1,41 @@
+{
+  "key": "ql_bar",
+  "family": "ql",
+  "type": "bar",
+  "name": "QL - route ranking - attempt 5",
+  "title": "QL · route ranking",
+  "dataset": "delivery",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_bar.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Route": "string",
+    "Deliveries": "integer"
+  },
+  "fields": {
+    "y": [
+      "Route"
+    ],
+    "x": [
+      "Deliveries"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "inw1xf7mma2e1"
+}

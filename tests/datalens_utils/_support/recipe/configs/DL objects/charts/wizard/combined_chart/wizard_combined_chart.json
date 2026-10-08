@@ -1,0 +1,48 @@
+{
+  "key": "wizard_combined_chart",
+  "family": "wizard",
+  "type": "combined_chart",
+  "name": "Revenue and profit together - attempt 5",
+  "title": "Revenue and profit together",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Date"
+    ]
+  },
+  "sort": [
+    [
+      "Date",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Profit": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "column",
+      "y": "Revenue",
+      "name": "Revenue"
+    },
+    {
+      "type": "line",
+      "y2": "Profit",
+      "name": "Profit"
+    }
+  ],
+  "id": "kpy43uwxzaay3"
+}

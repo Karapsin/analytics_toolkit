@@ -104,7 +104,7 @@ def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
 def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
-    assert workflow.count("-e '.[tui]'") == 2
+    assert workflow.count("-e '.[tui,datalens]'") == 2
 
 
 def test_auth_integration_jobs_keep_mcp_out_of_airflow_environment() -> None:
@@ -301,6 +301,9 @@ def test_verify_installed_artifact_checks_imports_pip_and_cli(
     assert "analytics_toolkit.ab_utils" in command_text
     assert "analytics_toolkit.sql_explorer" in command_text
     assert "package.whl[tui]" in command_text
+    assert "package.whl[datalens]" in command_text
+    assert "datalens_sdk" in command_text
+    assert "bootstrap.ps1" in command_text
     assert "analytics_toolkit.sql_explorer.app" in command_text
     assert "'atk'" in command_text
     assert "analytics-toolkit --help" in command_text

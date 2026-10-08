@@ -1,0 +1,131 @@
+{
+  "entry": {
+    "version": 1,
+    "entryId": "nssvkgsgfbhw6",
+    "key": "Offline/Fixtures/Revenue by date",
+    "createdAt": "2026-10-07T07:02:36.123Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:36.123Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "w114tp1undf2f",
+    "savedId": "w114tp1undf2f",
+    "publishedId": "w114tp1undf2f",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "scope": "widget",
+    "type": "d3_wizard_node",
+    "meta": {},
+    "annotation": null,
+    "data": {
+      "sources": {
+        "datasetsIds": [
+          "w114tluhtu52f"
+        ]
+      },
+      "visualization": {
+        "type": "line",
+        "chartSettings": {
+          "title": "Revenue by date",
+          "titleMode": "show"
+        },
+        "x": {
+          "items": [
+            {
+              "guid": "sale_date_y0f7",
+              "datasetId": "w114tluhtu52f"
+            }
+          ],
+          "settings": {
+            "title": "off",
+            "titleValue": "",
+            "type": "linear",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisFormatMode": "auto",
+            "axisVisibility": "show",
+            "holidays": "off",
+            "axisModeMap": {
+              "sale_date_y0f7": "continuous"
+            }
+          }
+        },
+        "y": {
+          "items": [
+            {
+              "formatting": {
+                "showRankDelimiter": true,
+                "precision": 0
+              },
+              "guid": "revenue_zdhs",
+              "datasetId": "w114tluhtu52f"
+            }
+          ],
+          "settings": {
+            "title": "manual",
+            "titleValue": "Revenue",
+            "type": "linear",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisFormatMode": "auto",
+            "axisVisibility": "show",
+            "scale": "auto",
+            "scaleValue": "min-max",
+            "nulls": "connect"
+          }
+        },
+        "y2": {
+          "items": [],
+          "settings": {
+            "title": "off",
+            "titleValue": "",
+            "type": "linear",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisFormatMode": "auto",
+            "axisVisibility": "show",
+            "scale": "auto",
+            "scaleValue": "min-max",
+            "nulls": "connect"
+          }
+        },
+        "colors": {
+          "items": [],
+          "settings": {}
+        },
+        "shapes": {
+          "items": [],
+          "settings": {}
+        },
+        "labels": {
+          "items": []
+        },
+        "sort": {
+          "items": [
+            {
+              "direction": "ASC",
+              "guid": "sale_date_y0f7",
+              "datasetId": "w114tluhtu52f"
+            }
+          ]
+        },
+        "segments": {
+          "items": []
+        }
+      }
+    }
+  }
+}

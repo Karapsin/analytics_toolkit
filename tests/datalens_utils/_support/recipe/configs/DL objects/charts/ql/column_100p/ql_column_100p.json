@@ -1,0 +1,45 @@
+{
+  "key": "ql_column_100p",
+  "family": "ql",
+  "type": "column_100p",
+  "name": "QL - category channel share - attempt 5",
+  "title": "QL · category channel share",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_column_100p.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Category": "string",
+    "Revenue": "integer",
+    "Channel": "string"
+  },
+  "fields": {
+    "x": [
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ],
+    "colors": [
+      "Channel"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "sx6b8g8ha8rmb"
+}

@@ -1,0 +1,126 @@
+{
+  "wizard_priority_selector": [
+    "wizard_flat_table"
+  ],
+  "wizard_interval_selector": [
+    "wizard_line",
+    "wizard_area",
+    "wizard_area_100p",
+    "wizard_column",
+    "wizard_column_100p",
+    "wizard_bar",
+    "wizard_bar_100p",
+    "wizard_pie",
+    "wizard_donut",
+    "wizard_treemap",
+    "wizard_scatter",
+    "wizard_funnel",
+    "wizard_combined_chart",
+    "wizard_flat_table",
+    "wizard_pivot_table",
+    "wizard_map_points",
+    "wizard_map_clusters",
+    "wizard_map_heatmap",
+    "wizard_map_polygons",
+    "wizard_map_routes"
+  ],
+  "wizard_snapshot_date_selector": [
+    "wizard_indicator"
+  ],
+  "wizard_threshold_selector": [
+    "wizard_scatter"
+  ],
+  "wizard_search_selector": [
+    "wizard_flat_table"
+  ],
+  "wizard_region_selector": [
+    "wizard_line",
+    "wizard_area",
+    "wizard_area_100p",
+    "wizard_column",
+    "wizard_column_100p",
+    "wizard_bar",
+    "wizard_bar_100p",
+    "wizard_pie",
+    "wizard_donut",
+    "wizard_treemap",
+    "wizard_scatter",
+    "wizard_indicator",
+    "wizard_funnel",
+    "wizard_combined_chart",
+    "wizard_flat_table",
+    "wizard_pivot_table",
+    "wizard_map_points",
+    "wizard_map_clusters",
+    "wizard_map_heatmap",
+    "wizard_map_polygons",
+    "wizard_map_routes"
+  ],
+  "wizard_channel_selector": [
+    "wizard_column"
+  ],
+  "js_selector_widget": [
+    "js_line",
+    "js_area",
+    "js_area_range",
+    "js_bar_x",
+    "js_bar_y",
+    "js_pie",
+    "js_donut",
+    "js_scatter",
+    "js_treemap",
+    "js_waterfall",
+    "js_funnel",
+    "js_heatmap",
+    "js_radar",
+    "js_x_range",
+    "js_sankey",
+    "js_advanced",
+    "js_markdown",
+    "js_table"
+  ],
+  "ql_priority_selector": [
+    "ql_flat_table"
+  ],
+  "ql_interval_selector": [
+    "ql_line",
+    "ql_area",
+    "ql_area_100p",
+    "ql_column",
+    "ql_column_100p",
+    "ql_bar",
+    "ql_bar_100p",
+    "ql_pie",
+    "ql_donut",
+    "ql_treemap",
+    "ql_scatter",
+    "ql_flat_table"
+  ],
+  "ql_snapshot_date_selector": [
+    "ql_indicator"
+  ],
+  "ql_threshold_selector": [
+    "ql_scatter"
+  ],
+  "ql_search_selector": [
+    "ql_flat_table"
+  ],
+  "ql_region_selector": [
+    "ql_line",
+    "ql_area",
+    "ql_area_100p",
+    "ql_column",
+    "ql_column_100p",
+    "ql_bar",
+    "ql_bar_100p",
+    "ql_pie",
+    "ql_donut",
+    "ql_treemap",
+    "ql_scatter",
+    "ql_indicator",
+    "ql_flat_table"
+  ],
+  "ql_channel_selector": [
+    "ql_column"
+  ]
+}

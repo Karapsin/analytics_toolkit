@@ -1,0 +1,27 @@
+{
+  "key": "ql_region_selector",
+  "tab": "ql",
+  "title": "Region · QL parameter",
+  "source": {
+    "kind": "manual",
+    "param_name": "region"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": true,
+    "default_value": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "options": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ]
+  },
+  "group": "ql_primary_filters"
+}

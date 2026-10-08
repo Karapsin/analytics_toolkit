@@ -1,0 +1,33 @@
+{
+  "key": "wizard_map_routes",
+  "family": "wizard",
+  "type": "geolayer",
+  "name": "Ordered delivery routes - attempt 5",
+  "title": "Ordered delivery routes",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {},
+  "sort": [],
+  "formats": {},
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "polyline",
+      "polyline": "Coordinates",
+      "grouping": "Route",
+      "sort_by": "Point Order",
+      "sort_direction": "asc",
+      "color": "Region"
+    }
+  ],
+  "map_center": {
+    "lat": 55.75,
+    "lon": 37.62,
+    "zoom": 8
+  },
+  "id": "16flmfnpb0ewk"
+}

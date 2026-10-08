@@ -1,0 +1,30 @@
+{
+  "key": "js_sankey",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Sankey - acquisition progression - attempt 5",
+  "title": "JS · Sankey · acquisition progression",
+  "dataset": "acquisition",
+  "links": {
+    "acquisition": "acquisition"
+  },
+  "description": "Linked fictional acquisition cohorts. Ordered stage counts conserve progression plus drop-off. Uses the current upstream Gravity Sankey schema; deployed renderer support must be verified in a browser.",
+  "series_type": "sankey",
+  "coverage": {
+    "series": "sankey"
+  },
+  "scripts": {
+    "sources": "assets/js/common/acquisition_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_sankey/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "z4dick7f8p10i"
+}

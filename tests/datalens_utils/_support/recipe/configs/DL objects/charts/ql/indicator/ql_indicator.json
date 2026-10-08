@@ -1,0 +1,34 @@
+{
+  "key": "ql_indicator",
+  "family": "ql",
+  "type": "indicator",
+  "name": "QL - snapshot revenue - attempt 5",
+  "title": "QL · snapshot revenue",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_indicator.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "snapshot_date",
+      "type": "string",
+      "default": "2026-09-30"
+    }
+  ],
+  "columns": {
+    "Revenue": "integer"
+  },
+  "fields": {
+    "measures": [
+      "Revenue"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "v09ebc546icce"
+}

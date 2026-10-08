@@ -1,0 +1,65 @@
+{
+  "key": "ql_flat_table",
+  "family": "ql",
+  "type": "flat_table",
+  "name": "QL - retail detail - attempt 5",
+  "title": "QL · retail detail",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings. Compound Score is an educational arithmetic example, not a business KPI. Fractional table values are rounded text; SQL ranks rows by the numeric revenue aggregate.",
+  "query_file": "assets/sql/ql_flat_table.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    },
+    {
+      "name": "search",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "only_priority",
+      "type": "string",
+      "default": "false"
+    }
+  ],
+  "columns": {
+    "Region": "string",
+    "Category": "string",
+    "Channel": "string",
+    "Orders": "integer",
+    "Revenue": "string",
+    "Profit": "string",
+    "Margin": "string",
+    "Average Order Value": "string",
+    "Priority Revenue": "string",
+    "Compound Score": "string"
+  },
+  "fields": {
+    "flat_table_columns": [
+      "Region",
+      "Category",
+      "Channel",
+      "Orders",
+      "Revenue",
+      "Profit",
+      "Margin",
+      "Average Order Value",
+      "Priority Revenue",
+      "Compound Score"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "dirwtkhijsdww"
+}

@@ -1,0 +1,41 @@
+{
+  "key": "wizard_map_points",
+  "family": "wizard",
+  "type": "geolayer",
+  "name": "Delivery locations - attempt 5",
+  "title": "Delivery locations",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {},
+  "sort": [],
+  "formats": {
+    "Deliveries": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "geopoint",
+      "geopoint": "Coordinates",
+      "size": "Deliveries",
+      "color": "Region",
+      "tooltips": [
+        "Region",
+        "Route",
+        "Deliveries"
+      ]
+    }
+  ],
+  "map_center": {
+    "lat": 55.75,
+    "lon": 37.62,
+    "zoom": 8
+  },
+  "id": "rw5bb26gxuz8a"
+}

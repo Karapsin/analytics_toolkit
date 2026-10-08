@@ -1,0 +1,40 @@
+{
+  "key": "wizard_map_clusters",
+  "family": "wizard",
+  "type": "geolayer",
+  "name": "Clustered delivery locations - attempt 5",
+  "title": "Clustered delivery locations",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {},
+  "sort": [],
+  "formats": {
+    "Deliveries": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "geopoint-with-cluster",
+      "geopoint": "Coordinates",
+      "size": "Deliveries",
+      "color": "Region",
+      "tooltips": [
+        "Region",
+        "Deliveries"
+      ]
+    }
+  ],
+  "map_center": {
+    "lat": 55.75,
+    "lon": 37.62,
+    "zoom": 8
+  },
+  "id": "v09fghp9r6dke"
+}

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "analytics-toolkit"
 version = "1.3.12.2"
-description = "Shared Python utilities for SQL, Excel, and date helpers."
+description = "Shared Python utilities for SQL, Excel, dates, and DataLens dashboards."
 readme = "README.md"
 requires-python = ">=3.8,<3.15"
 license = { file = "LICENSE" }
@@ -73,6 +73,20 @@ tui = [
   "tree-sitter-languages==1.10.2; python_version < '3.13'",
   "tree-sitter-sql>=0.3,<0.3.8; python_version >= '3.13'",
 ]
+datalens = ["datalens-sdk==3.1.0; python_version >= '3.10'"]
+all = [
+  "apache-airflow>=2.4,<3",
+  "clickhouse-driver>=0.2.9,<0.2.10; python_version == '3.8'",
+  "clickhouse-driver>=0.2.10,<1; python_version >= '3.9'",
+  "pyperclip>=1.11,<2",
+  "textual>=0.73,<0.74; python_version < '3.13'",
+  "textual[syntax]>=0.89.1,<0.90; python_version >= '3.13'",
+  "tree-sitter>=0.20.1,<0.21.0; python_version < '3.13'",
+  "tree-sitter>=0.23,<0.24; python_version >= '3.13'",
+  "tree-sitter-languages==1.10.2; python_version < '3.13'",
+  "tree-sitter-sql>=0.3,<0.3.8; python_version >= '3.13'",
+  "datalens-sdk==3.1.0; python_version >= '3.10'",
+]
 
 [project.scripts]
 analytics-toolkit = "analytics_toolkit.cli:main"
@@ -89,6 +103,9 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["analytics_toolkit*", "atk"]
+
+[tool.setuptools.package-data]
+"analytics_toolkit.datalens_utils" = ["bootstrap_assets/*.sh", "bootstrap_assets/*.ps1"]
 
 [tool.ruff]
 target-version = "py38"
@@ -120,6 +137,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "analytics_toolkit/cli.py" = ["T201"]
+# These explicit command-line adapters intentionally report to stdout/stderr.
+"analytics_toolkit/datalens_utils/cli.py" = ["T201"]
+"analytics_toolkit/datalens_utils/bootstrap.py" = ["T201"]
 "agent_tools/**/*.py" = ["S603", "S607", "T201"]
 "release_routines/**/*.py" = ["S603", "S607", "T201"]
 "tests/**/*.py" = ["ARG", "FBT", "PLR2004", "S", "SLF001"]
@@ -154,6 +174,12 @@ module = [
   "trino.*",
   "zstandard.*",
 ]
+ignore_missing_imports = true
+
+# The optional SDK requires Python 3.10; mypy checks our public Python 3.8 floor.
+[[tool.mypy.overrides]]
+module = ["datalens_sdk.*"]
+follow_imports = "skip"
 ignore_missing_imports = true
 
 [tool.coverage.run]

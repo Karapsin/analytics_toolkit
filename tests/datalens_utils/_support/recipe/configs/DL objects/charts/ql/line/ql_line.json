@@ -1,0 +1,45 @@
+{
+  "key": "ql_line",
+  "family": "ql",
+  "type": "line",
+  "name": "QL - revenue trend - attempt 5",
+  "title": "QL · revenue trend",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_line.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Date": "genericdatetime",
+    "Revenue": "integer",
+    "Profit": "integer"
+  },
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Revenue"
+    ],
+    "y2": [
+      "Profit"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "pu386fcvr0rc8"
+}

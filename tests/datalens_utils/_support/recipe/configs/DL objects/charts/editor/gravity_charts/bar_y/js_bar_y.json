@@ -1,0 +1,30 @@
+{
+  "key": "js_bar_y",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Bars - profit by region - attempt 5",
+  "title": "JS · Bars · profit by region",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "bar-y",
+  "coverage": {
+    "series": "bar-y"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_bar_y/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "fktyq8ty4dy8y"
+}

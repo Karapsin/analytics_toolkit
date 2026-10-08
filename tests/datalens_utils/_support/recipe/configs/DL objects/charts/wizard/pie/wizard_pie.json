@@ -1,0 +1,44 @@
+{
+  "key": "wizard_pie",
+  "family": "wizard",
+  "type": "pie",
+  "name": "Revenue composition - attempt 5",
+  "title": "Revenue composition",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Revenue",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Category"
+    },
+    "legend": {
+      "mode": "show"
+    },
+    "label_mode": {
+      "mode": "percent"
+    }
+  },
+  "labels": [
+    "Revenue"
+  ],
+  "id": "27gmo7hznvzul"
+}

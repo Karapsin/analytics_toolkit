@@ -7,6 +7,7 @@ import pathlib
 
 MODULES = {
     "ab_utils": "analytics_toolkit.ab_utils",
+    "datalens_utils": "analytics_toolkit.datalens_utils",
     "dates": "analytics_toolkit.dates",
     "excel": "analytics_toolkit.excel",
     "sql": "analytics_toolkit.sql",

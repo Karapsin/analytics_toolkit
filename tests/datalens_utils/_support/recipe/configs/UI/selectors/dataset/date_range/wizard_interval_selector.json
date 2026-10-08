@@ -1,0 +1,21 @@
+{
+  "key": "wizard_interval_selector",
+  "tab": "wizard",
+  "title": "Date interval",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Date"
+  },
+  "control": {
+    "element": "date",
+    "title_placement": "top",
+    "is_range": true,
+    "default_value": {
+      "from": "2026-07-01",
+      "to": "2026-09-30"
+    },
+    "operation": "BETWEEN"
+  },
+  "group": "wizard_primary_filters"
+}

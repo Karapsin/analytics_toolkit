@@ -1,0 +1,258 @@
+{
+  "entry": {
+    "version": 2,
+    "data": {
+      "salt": "0.13371337",
+      "tabs": [
+        {
+          "id": "overview",
+          "items": [
+            {
+              "id": "sales_heading",
+              "data": {
+                "size": "m",
+                "text": "Sample sales · September 2026",
+                "showInTOC": false,
+                "autoHeight": true
+              },
+              "type": "title",
+              "namespace": "default"
+            },
+            {
+              "id": "sales_note",
+              "data": {
+                "text": "Synthetic demo data · 30 days · 3 regions · 3 categories",
+                "autoHeight": true,
+                "backgroundSettings": {
+                  "color": {
+                    "dark": "#343535",
+                    "light": "#FFFFFF"
+                  }
+                }
+              },
+              "type": "text",
+              "namespace": "default"
+            },
+            {
+              "id": "el_1",
+              "data": {
+                "group": [
+                  {
+                    "id": "region_filter",
+                    "title": "Region",
+                    "width": "",
+                    "source": {
+                      "required": false,
+                      "showHint": false,
+                      "datasetId": "w114tluhtu52f",
+                      "fieldType": "string",
+                      "showTitle": true,
+                      "elementType": "select",
+                      "datasetFieldId": "region_fxsk",
+                      "titlePlacement": "left",
+                      "multiselectable": true,
+                      "datasetFieldType": "DIMENSION"
+                    },
+                    "defaults": {
+                      "region_fxsk": []
+                    },
+                    "namespace": "default",
+                    "sourceType": "dataset",
+                    "placementMode": "auto"
+                  }
+                ],
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": false,
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "type": "group_control",
+              "namespace": "default"
+            },
+            {
+              "id": "el_2",
+              "data": {
+                "group": [
+                  {
+                    "id": "category_filter",
+                    "title": "Category",
+                    "width": "",
+                    "source": {
+                      "required": false,
+                      "showHint": false,
+                      "datasetId": "w114tluhtu52f",
+                      "fieldType": "string",
+                      "showTitle": true,
+                      "elementType": "select",
+                      "datasetFieldId": "category_ib07",
+                      "titlePlacement": "left",
+                      "multiselectable": true,
+                      "datasetFieldType": "DIMENSION"
+                    },
+                    "defaults": {
+                      "category_ib07": []
+                    },
+                    "namespace": "default",
+                    "sourceType": "dataset",
+                    "placementMode": "auto"
+                  }
+                ],
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": false,
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "type": "group_control",
+              "namespace": "default"
+            },
+            {
+              "id": "revenue_by_date",
+              "data": {
+                "tabs": [
+                  {
+                    "id": "wt_1",
+                    "title": "Revenue by date",
+                    "params": {},
+                    "chartId": "nssvkgsgfbhw6",
+                    "isDefault": true,
+                    "autoHeight": false
+                  }
+                ],
+                "hideTitle": false
+              },
+              "type": "widget",
+              "namespace": "default"
+            },
+            {
+              "id": "revenue_by_region",
+              "data": {
+                "tabs": [
+                  {
+                    "id": "wt_2",
+                    "title": "Revenue by region",
+                    "params": {},
+                    "chartId": "5aad21ebcdzgo",
+                    "isDefault": true,
+                    "autoHeight": false
+                  }
+                ],
+                "hideTitle": false
+              },
+              "type": "widget",
+              "namespace": "default"
+            },
+            {
+              "id": "sales_by_category",
+              "data": {
+                "tabs": [
+                  {
+                    "id": "wt_3",
+                    "title": "Sales by category",
+                    "params": {},
+                    "chartId": "tyy1qr065bh0c",
+                    "isDefault": true,
+                    "autoHeight": false
+                  }
+                ],
+                "hideTitle": false
+              },
+              "type": "widget",
+              "namespace": "default"
+            }
+          ],
+          "title": "Overview",
+          "layout": [
+            {
+              "h": 2,
+              "i": "sales_heading",
+              "w": 36,
+              "x": 0,
+              "y": 0
+            },
+            {
+              "h": 2,
+              "i": "sales_note",
+              "w": 36,
+              "x": 0,
+              "y": 2
+            },
+            {
+              "h": 2,
+              "i": "el_1",
+              "w": 18,
+              "x": 0,
+              "y": 4
+            },
+            {
+              "h": 2,
+              "i": "el_2",
+              "w": 18,
+              "x": 18,
+              "y": 4
+            },
+            {
+              "h": 14,
+              "i": "revenue_by_date",
+              "w": 24,
+              "x": 0,
+              "y": 6
+            },
+            {
+              "h": 14,
+              "i": "revenue_by_region",
+              "w": 12,
+              "x": 24,
+              "y": 6
+            },
+            {
+              "h": 10,
+              "i": "sales_by_category",
+              "w": 36,
+              "x": 0,
+              "y": 20
+            }
+          ],
+          "aliases": {
+            "default": []
+          },
+          "connections": []
+        }
+      ],
+      "counter": 5,
+      "settings": {
+        "hideTabs": true,
+        "expandTOC": false,
+        "globalParams": {},
+        "hideDashTitle": false,
+        "silentLoading": false,
+        "autoupdateInterval": null,
+        "dependentSelectors": true,
+        "maxConcurrentRequests": null
+      }
+    },
+    "meta": null,
+    "scope": "dash",
+    "type": "",
+    "entryId": "rwwzor1m28pca",
+    "key": "Offline/Fixtures/Fixture sales",
+    "createdAt": "2026-10-07T07:02:38.269Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:38.269Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revUpdatedAt": "2026-10-07T07:02:38.269Z",
+    "revUpdatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "499c14fted72n",
+    "savedId": "499c14fted72n",
+    "publishedId": "499c14fted72n",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "annotation": {
+      "description": "Synthetic sales dashboard created with the DataLens Python SDK."
+    }
+  },
+  "isFavorite": false
+}

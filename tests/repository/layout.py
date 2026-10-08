@@ -10,6 +10,7 @@ ALLOWED_AREAS = {
     "ab_utils",
     "agent_tools",
     "atk",
+    "datalens_utils",
     "dates",
     "datetime",
     "excel",

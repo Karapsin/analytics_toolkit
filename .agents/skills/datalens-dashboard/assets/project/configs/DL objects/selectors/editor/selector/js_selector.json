@@ -1,0 +1,20 @@
+{
+  "key": "js_selector",
+  "family": "editor",
+  "type": "selector",
+  "name": "JS - regions",
+  "title": "Editor regions",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "control_types": [
+    "select"
+  ],
+  "scripts": {
+    "params": "assets/js/common/params.js",
+    "sources": "assets/js/js_selector/sources.js",
+    "controls": "assets/js/js_selector/controls.js"
+  },
+  "id": null
+}

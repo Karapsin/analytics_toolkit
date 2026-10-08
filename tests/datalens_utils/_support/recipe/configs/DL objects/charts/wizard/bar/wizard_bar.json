@@ -1,0 +1,38 @@
+{
+  "key": "wizard_bar",
+  "family": "wizard",
+  "type": "bar",
+  "name": "Delivery volume by route - attempt 5",
+  "title": "Delivery volume by route",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "y": [
+      "Route"
+    ],
+    "x": [
+      "Deliveries"
+    ]
+  },
+  "sort": [
+    [
+      "Deliveries",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Deliveries": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "labels_position": {
+      "mode": "outside"
+    }
+  },
+  "labels": [
+    "Deliveries"
+  ],
+  "id": "chqvulmjzh9av"
+}

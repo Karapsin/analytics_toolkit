@@ -1,0 +1,41 @@
+{
+  "key": "wizard_donut",
+  "family": "wizard",
+  "type": "donut",
+  "name": "Order composition - attempt 5",
+  "title": "Order composition",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Channel"
+    ],
+    "y": [
+      "Orders"
+    ]
+  },
+  "sort": [
+    [
+      "Orders",
+      "desc"
+    ]
+  ],
+  "formats": {
+    "Orders": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Channel"
+    },
+    "legend": {
+      "mode": "show"
+    },
+    "totals": {
+      "enabled": true
+    }
+  },
+  "id": "8dmsssw70ud2r"
+}

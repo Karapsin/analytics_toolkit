@@ -1,0 +1,14 @@
+{
+  "key": "ql_threshold_selector",
+  "tab": "ql",
+  "title": "Minimum revenue · scatter",
+  "source": {
+    "kind": "manual",
+    "param_name": "min_revenue"
+  },
+  "control": {
+    "element": "input",
+    "title_placement": "top",
+    "default_value": "0"
+  }
+}

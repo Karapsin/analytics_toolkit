@@ -1,0 +1,29 @@
+{
+  "key": "js_table",
+  "family": "editor",
+  "type": "table",
+  "name": "JS - Table - filtered retail facts - attempt 5",
+  "title": "JS · Table · filtered retail facts",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Fictional linked dataset. Source filters are separate from visualization transformation.",
+  "scripts": {
+    "sources": "assets/js/common/table_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "prepare": "assets/js/js_table/prepare.js",
+    "config": "assets/js/js_table/config.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date",
+    "search": "Category",
+    "min_revenue": "Revenue",
+    "only_priority": "Priority"
+  },
+  "id": "49ini90fwg7qn"
+}

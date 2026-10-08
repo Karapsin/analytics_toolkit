@@ -1,0 +1,38 @@
+{
+  "key": "wizard_bar_100p",
+  "family": "wizard",
+  "type": "bar_100p",
+  "name": "Regional category share - attempt 5",
+  "title": "Regional category share",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "y": [
+      "Region"
+    ],
+    "x": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Region",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Category"
+    },
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "id": "ot2878a264iu7"
+}

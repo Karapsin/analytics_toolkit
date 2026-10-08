@@ -1,0 +1,54 @@
+{
+  "key": "ql_scatter",
+  "family": "ql",
+  "type": "scatter",
+  "name": "QL - orders and revenue - attempt 5",
+  "title": "QL · orders and revenue",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_scatter.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    },
+    {
+      "name": "min_revenue",
+      "type": "number",
+      "default": "0"
+    }
+  ],
+  "columns": {
+    "Orders": "integer",
+    "Revenue": "integer",
+    "Profit": "integer",
+    "Segment": "string"
+  },
+  "fields": {
+    "x": [
+      "Orders"
+    ],
+    "y": [
+      "Revenue"
+    ],
+    "size": [
+      "Profit"
+    ],
+    "points": [
+      "Segment"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "fktywomxv0i8y"
+}

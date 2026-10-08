@@ -1,0 +1,1 @@
+Complete Editor tabs use public libs/dataset/v2. Meta links are generated from logical dataset roles. Raw source data is never embedded in production scripts. Run node assets/js/verify.mjs for synthetic protocol checks; browser behavior is outside these checks.

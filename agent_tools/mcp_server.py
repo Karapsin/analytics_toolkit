@@ -107,6 +107,7 @@ UNRELEASED_HEADING_RE = re.compile(r"^##\s+Unreleased\s*$", flags=re.IGNORECASE 
 DEPENDENCY_RE = re.compile(r'"([^"]+)"')
 
 MODULE_DOCS = {
+    "datalens_utils": "agent_docs/datalens_utils.md",
     "ab_utils": "agent_docs/ab_utils.md",
     "ab": "agent_docs/ab_utils.md",
     "agent_tool": "agent_tools/README.md",
@@ -142,6 +143,12 @@ TASK_DOCS = {
 }
 
 TEST_COMMANDS = {
+    "datalens_utils": [
+        {
+            "display": "pytest -q tests/datalens_utils",
+            "args": ["pytest", "-q", "tests/datalens_utils"],
+        }
+    ],
     "ab_utils": [
         {
             "display": "PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/ab_utils",

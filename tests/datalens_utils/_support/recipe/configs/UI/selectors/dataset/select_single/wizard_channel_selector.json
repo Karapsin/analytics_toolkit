@@ -1,0 +1,15 @@
+{
+  "key": "wizard_channel_selector",
+  "tab": "wizard",
+  "title": "Channel · column only",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Channel"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "default_value": null
+  }
+}

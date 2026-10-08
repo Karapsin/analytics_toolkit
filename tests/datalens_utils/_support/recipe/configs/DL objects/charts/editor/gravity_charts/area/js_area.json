@@ -1,0 +1,30 @@
+{
+  "key": "js_area",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Area - revenue by channel - attempt 5",
+  "title": "JS · Area · revenue by channel",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "area",
+  "coverage": {
+    "series": "area"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_area/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "ot27yq893t7i7"
+}

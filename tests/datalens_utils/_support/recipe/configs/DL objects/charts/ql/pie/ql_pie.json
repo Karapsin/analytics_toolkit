@@ -1,0 +1,44 @@
+{
+  "key": "ql_pie",
+  "family": "ql",
+  "type": "pie",
+  "name": "QL - revenue composition - attempt 5",
+  "title": "QL · revenue composition",
+  "dataset": "retail",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_pie.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Category": "string",
+    "Revenue": "integer"
+  },
+  "fields": {
+    "dimensions": [
+      "Category"
+    ],
+    "measures": [
+      "Revenue"
+    ],
+    "colors": [
+      "Category"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "27glj22qz9eil"
+}

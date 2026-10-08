@@ -1,0 +1,47 @@
+{
+  "key": "wizard_pivot_table",
+  "family": "wizard",
+  "type": "pivot_table",
+  "name": "Region by category heatmap - attempt 5",
+  "title": "Region × category heatmap",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "rows": [
+      "Region"
+    ],
+    "columns": [
+      "Category"
+    ],
+    "measures": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Region",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "column_background": {
+      "field": "Revenue",
+      "mode": "2-point",
+      "palette": "blue"
+    },
+    "subtotals": {
+      "field": "Region",
+      "enabled": true
+    },
+    "freeze_columns": {
+      "count": 1
+    }
+  },
+  "id": "ejsy0t2efr9ix"
+}

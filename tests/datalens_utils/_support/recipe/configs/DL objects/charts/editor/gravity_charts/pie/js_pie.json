@@ -1,0 +1,30 @@
+{
+  "key": "js_pie",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Pie - orders by channel - attempt 5",
+  "title": "JS · Pie · orders by channel",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "pie",
+  "coverage": {
+    "series": "pie"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_pie/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "bgpune3ik34su"
+}

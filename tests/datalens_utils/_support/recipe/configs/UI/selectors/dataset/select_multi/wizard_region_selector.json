@@ -1,0 +1,23 @@
+{
+  "key": "wizard_region_selector",
+  "tab": "wizard",
+  "title": "Region · all datasets",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Region"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": true,
+    "default_value": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "operation": "IN"
+  },
+  "group": "wizard_primary_filters"
+}

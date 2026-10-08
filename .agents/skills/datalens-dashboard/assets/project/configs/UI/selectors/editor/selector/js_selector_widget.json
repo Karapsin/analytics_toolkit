@@ -1,0 +1,9 @@
+{
+  "key": "js_selector_widget",
+  "tab": "editor",
+  "title": "Regions",
+  "source": {
+    "kind": "editor",
+    "chart": "js_selector"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "key": "js_treemap",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Treemap - category and channel revenue - attempt 5",
+  "title": "JS · Treemap · category and channel revenue",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "treemap",
+  "coverage": {
+    "series": "treemap"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_treemap/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "y3chb2ob47jeh"
+}

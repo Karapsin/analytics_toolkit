@@ -1,0 +1,14 @@
+.connections
+.secrets
+.env
+.venv/
+.tools/
+.cache/
+__pycache__/
+artifacts/
+resources.json
+.resources-*.json
+.DS_Store
+deployment.json
+edit-state.json
+sql-test-results.json

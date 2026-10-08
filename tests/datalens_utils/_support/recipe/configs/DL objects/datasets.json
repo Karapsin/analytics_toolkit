@@ -1,0 +1,1291 @@
+{
+  "retail": {
+    "name": "Retail Sales - attempt 5",
+    "description": "Fictional daily retail facts, July–September 2026. Grain: date × region × category × channel. No real customers or transactions. Compound Score demonstrates arithmetic with three SUM calls and parentheses; it is not a production KPI.",
+    "fields": {
+      "row_id": {
+        "title": "Row ID",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "row_id"
+      },
+      "event_date": {
+        "title": "Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "event_date"
+      },
+      "region": {
+        "title": "Region",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "region"
+      },
+      "channel": {
+        "title": "Channel",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "channel"
+      },
+      "scenario_version": {
+        "title": "Scenario Version",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "scenario_version"
+      },
+      "category": {
+        "title": "Category",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "category"
+      },
+      "orders": {
+        "title": "Orders Raw",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "orders"
+      },
+      "revenue": {
+        "title": "Revenue Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "revenue"
+      },
+      "profit": {
+        "title": "Profit Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "profit"
+      },
+      "target_low": {
+        "title": "Target Low Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "target_low"
+      },
+      "target_high": {
+        "title": "Target High Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "target_high"
+      },
+      "threshold": {
+        "title": "Threshold",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "threshold"
+      },
+      "priority": {
+        "title": "Priority",
+        "cast": "boolean",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "priority"
+      },
+      "type_int8": {
+        "title": "Type Int8",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int8",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_int8_native_type": {
+        "title": "Type Int8 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int8"
+      },
+      "type_int16": {
+        "title": "Type Int16",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int16",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_int16_native_type": {
+        "title": "Type Int16 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int16"
+      },
+      "type_int32": {
+        "title": "Type Int32",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int32",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_int32_native_type": {
+        "title": "Type Int32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int32"
+      },
+      "type_int64": {
+        "title": "Type Int64",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int64",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_int64_native_type": {
+        "title": "Type Int64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int64"
+      },
+      "type_int128": {
+        "title": "Type Int128",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int128",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_int128_native_type": {
+        "title": "Type Int128 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int128"
+      },
+      "type_int256": {
+        "title": "Type Int256",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int256",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_int256_native_type": {
+        "title": "Type Int256 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_int256"
+      },
+      "type_uint8": {
+        "title": "Type UInt8",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint8",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_uint8_native_type": {
+        "title": "Type UInt8 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint8"
+      },
+      "type_uint16": {
+        "title": "Type UInt16",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint16",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_uint16_native_type": {
+        "title": "Type UInt16 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint16"
+      },
+      "type_uint32": {
+        "title": "Type UInt32",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint32",
+        "conversion_note": "Lossless Int64 projection for this bounded integer width."
+      },
+      "type_uint32_native_type": {
+        "title": "Type UInt32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint32"
+      },
+      "type_uint64": {
+        "title": "Type UInt64",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint64",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_uint64_native_type": {
+        "title": "Type UInt64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint64"
+      },
+      "type_uint128": {
+        "title": "Type UInt128",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint128",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_uint128_native_type": {
+        "title": "Type UInt128 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint128"
+      },
+      "type_uint256": {
+        "title": "Type UInt256",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint256",
+        "conversion_note": "Exact decimal text preserves values beyond browser and DataLens numeric precision."
+      },
+      "type_uint256_native_type": {
+        "title": "Type UInt256 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uint256"
+      },
+      "type_float32": {
+        "title": "Type Float32",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_float32",
+        "conversion_note": "Floating-point values are intentionally finite; BFloat16 demonstrates reduced precision."
+      },
+      "type_float32_native_type": {
+        "title": "Type Float32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_float32"
+      },
+      "type_float64": {
+        "title": "Type Float64",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_float64",
+        "conversion_note": "Floating-point values are intentionally finite; BFloat16 demonstrates reduced precision."
+      },
+      "type_float64_native_type": {
+        "title": "Type Float64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_float64"
+      },
+      "type_bfloat16": {
+        "title": "Type BFloat16",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_bfloat16",
+        "conversion_note": "Floating-point values are intentionally finite; BFloat16 demonstrates reduced precision."
+      },
+      "type_bfloat16_native_type": {
+        "title": "Type BFloat16 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_bfloat16"
+      },
+      "type_bool": {
+        "title": "Type Bool",
+        "cast": "boolean",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_bool",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_bool_native_type": {
+        "title": "Type Bool Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_bool"
+      },
+      "type_decimal32": {
+        "title": "Type Decimal32",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal32",
+        "conversion_note": "Exact decimal text keeps precision and scale; numeric conversion is unnecessary for the gallery."
+      },
+      "type_decimal32_native_type": {
+        "title": "Type Decimal32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal32"
+      },
+      "type_decimal64": {
+        "title": "Type Decimal64",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal64",
+        "conversion_note": "Exact decimal text keeps precision and scale; numeric conversion is unnecessary for the gallery."
+      },
+      "type_decimal64_native_type": {
+        "title": "Type Decimal64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal64"
+      },
+      "type_decimal128": {
+        "title": "Type Decimal128",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal128",
+        "conversion_note": "Exact decimal text keeps precision and scale; numeric conversion is unnecessary for the gallery."
+      },
+      "type_decimal128_native_type": {
+        "title": "Type Decimal128 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal128"
+      },
+      "type_decimal256": {
+        "title": "Type Decimal256",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal256",
+        "conversion_note": "Exact decimal text keeps precision and scale; numeric conversion is unnecessary for the gallery."
+      },
+      "type_decimal256_native_type": {
+        "title": "Type Decimal256 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal256"
+      },
+      "type_decimal": {
+        "title": "Type Decimal",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal",
+        "conversion_note": "Exact decimal text keeps precision and scale; numeric conversion is unnecessary for the gallery."
+      },
+      "type_decimal_native_type": {
+        "title": "Type Decimal Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_decimal"
+      },
+      "type_aggregatefunction": {
+        "title": "Type AggregateFunction",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_aggregatefunction",
+        "conversion_note": "Finalize the stored sum state before exposing its bounded numeric result."
+      },
+      "type_aggregatefunction_native_type": {
+        "title": "Type AggregateFunction Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_aggregatefunction"
+      },
+      "type_simpleaggregatefunction": {
+        "title": "Type SimpleAggregateFunction",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_simpleaggregatefunction",
+        "conversion_note": "The stored simple sum value is already scalar and bounded by the synthetic row count."
+      },
+      "type_simpleaggregatefunction_native_type": {
+        "title": "Type SimpleAggregateFunction Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_simpleaggregatefunction"
+      }
+    },
+    "calculations": {
+      "Orders": {
+        "formula": "SUM([Orders Raw])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Revenue": {
+        "formula": "SUM([Revenue Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Profit": {
+        "formula": "SUM([Profit Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Target Low": {
+        "formula": "SUM([Target Low Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Target High": {
+        "formula": "SUM([Target High Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Month": {
+        "formula": "DATETRUNC([Date], \"month\")",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Margin": {
+        "formula": "FDIV_SAFE(SUM(IFNULL([Profit Raw], 0)), SUM(IFNULL([Revenue Raw], 0)), 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Average Order Value": {
+        "formula": "FDIV_SAFE(SUM([Revenue Raw]), SUM([Orders Raw]), 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Priority Revenue": {
+        "formula": "SUM_IF(IFNULL([Revenue Raw], 0), [Priority])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Net Contribution": {
+        "formula": "SUM([Profit Raw]) - 0.02 * SUM([Revenue Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Region Revenue Share": {
+        "formula": "FDIV_SAFE(SUM([Revenue Raw]), SUM([Revenue Raw] FIXED [Region]), 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Category Label": {
+        "formula": "CONCAT(UPPER([Category]), \" · \", [Channel])",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Compound Score": {
+        "formula": "SUM([Revenue Raw]) + SUM([Profit Raw]) * (SUM([Orders Raw]))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      }
+    },
+    "source": "ch_subselect",
+    "projection_file": "assets/sql/projections/retail.sql",
+    "table": "example.retail",
+    "id": "ejsxl21r76j2x"
+  },
+  "acquisition": {
+    "name": "Customer Acquisition - attempt 5",
+    "description": "Fictional daily acquisition funnel facts, July–September 2026. Grain: date × region × channel × funnel stage. Stage counts are not additive across stages.",
+    "fields": {
+      "row_id": {
+        "title": "Row ID",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "row_id"
+      },
+      "event_date": {
+        "title": "Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "event_date"
+      },
+      "region": {
+        "title": "Region",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "region"
+      },
+      "channel": {
+        "title": "Channel",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "channel"
+      },
+      "scenario_version": {
+        "title": "Scenario Version",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "scenario_version"
+      },
+      "stage": {
+        "title": "Stage",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "stage"
+      },
+      "stage_order": {
+        "title": "Stage Order",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "stage_order"
+      },
+      "acquisitions": {
+        "title": "Acquisitions Raw",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "acquisitions"
+      },
+      "cost": {
+        "title": "Cost Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "cost"
+      },
+      "type_date": {
+        "title": "Type Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_date",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_date_native_type": {
+        "title": "Type Date Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_date"
+      },
+      "type_date32": {
+        "title": "Type Date32",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_date32",
+        "conversion_note": "Date32 deliberately demonstrates pre-1970 dates as exact ISO text."
+      },
+      "type_date32_native_type": {
+        "title": "Type Date32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_date32"
+      },
+      "type_datetime": {
+        "title": "Type DateTime",
+        "cast": "datetime",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_datetime_native_type": {
+        "title": "Type DateTime Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime"
+      },
+      "type_datetime32": {
+        "title": "Type DateTime32",
+        "cast": "datetime",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime32",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_datetime32_native_type": {
+        "title": "Type DateTime32 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime32"
+      },
+      "type_datetime64": {
+        "title": "Type DateTime64",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime64",
+        "conversion_note": "Text retains the millisecond component without a DataLens datetime precision loss."
+      },
+      "type_datetime64_native_type": {
+        "title": "Type DateTime64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_datetime64"
+      },
+      "type_time": {
+        "title": "Type Time",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_time",
+        "conversion_note": "Plain text DEFAULT relies on assignment to the declared Time column; preparation enables the experimental type locally."
+      },
+      "type_time_native_type": {
+        "title": "Type Time Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_time"
+      },
+      "type_time64": {
+        "title": "Type Time64",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_time64",
+        "conversion_note": "Exact clock text preserves milliseconds; preparation enables the experimental type locally."
+      },
+      "type_time64_native_type": {
+        "title": "Type Time64 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_time64"
+      },
+      "type_enum8": {
+        "title": "Type Enum8",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum8",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_enum8_native_type": {
+        "title": "Type Enum8 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum8"
+      },
+      "type_enum16": {
+        "title": "Type Enum16",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum16",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_enum16_native_type": {
+        "title": "Type Enum16 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum16"
+      },
+      "type_enum": {
+        "title": "Type Enum",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_enum_native_type": {
+        "title": "Type Enum Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_enum"
+      },
+      "type_string": {
+        "title": "Type String",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_string",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_string_native_type": {
+        "title": "Type String Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_string"
+      },
+      "type_fixedstring": {
+        "title": "Type FixedString",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_fixedstring",
+        "conversion_note": "All values use exactly sixteen printable bytes, avoiding zero padding in the DataLens text output."
+      },
+      "type_fixedstring_native_type": {
+        "title": "Type FixedString Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_fixedstring"
+      },
+      "type_uuid": {
+        "title": "Type UUID",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uuid",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_uuid_native_type": {
+        "title": "Type UUID Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uuid"
+      },
+      "type_ipv4": {
+        "title": "Type IPv4",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ipv4",
+        "conversion_note": "Addresses are in the documentation-only 192.0.2.0/24 range."
+      },
+      "type_ipv4_native_type": {
+        "title": "Type IPv4 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ipv4"
+      },
+      "type_ipv6": {
+        "title": "Type IPv6",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ipv6",
+        "conversion_note": "Addresses are in the documentation-only 2001:db8::/32 range."
+      },
+      "type_ipv6_native_type": {
+        "title": "Type IPv6 Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ipv6"
+      },
+      "type_array": {
+        "title": "Type Array",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_array",
+        "conversion_note": "JSON text covers both nonempty arrays and the deliberate every-fifth-row empty array."
+      },
+      "type_array_native_type": {
+        "title": "Type Array Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_array"
+      },
+      "type_tuple": {
+        "title": "Type Tuple",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_tuple",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_tuple_native_type": {
+        "title": "Type Tuple Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_tuple"
+      },
+      "type_map": {
+        "title": "Type Map",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_map",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_map_native_type": {
+        "title": "Type Map Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_map"
+      },
+      "type_nested": {
+        "title": "Type Nested",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_nested",
+        "conversion_note": "Native Nested values are serialized as JSON text; the physical schema retains Nested(label String, amount UInt32)."
+      },
+      "type_nested_native_type": {
+        "title": "Type Nested Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_nested"
+      },
+      "type_nullable": {
+        "title": "Type Nullable",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_nullable",
+        "conversion_note": "Every seventh row is NULL; all other rows contain a bounded integer."
+      },
+      "type_nullable_native_type": {
+        "title": "Type Nullable Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_nullable"
+      },
+      "type_lowcardinality": {
+        "title": "Type LowCardinality",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_lowcardinality",
+        "conversion_note": "Four repeated labels exercise dictionary encoding; projection removes the storage wrapper."
+      },
+      "type_lowcardinality_native_type": {
+        "title": "Type LowCardinality Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_lowcardinality"
+      },
+      "array_int": {
+        "title": "Integer Array",
+        "cast": "array_int",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_array"
+      },
+      "array_float": {
+        "title": "Float Array",
+        "cast": "array_float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_array"
+      },
+      "array_str": {
+        "title": "String Array",
+        "cast": "array_str",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_array"
+      },
+      "uuid_value": {
+        "title": "UUID Value",
+        "cast": "uuid",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_uuid"
+      }
+    },
+    "calculations": {
+      "Acquisitions": {
+        "formula": "SUM([Acquisitions Raw])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Cost": {
+        "formula": "SUM([Cost Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Month": {
+        "formula": "DATETRUNC([Date], \"month\")",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Purchased Customers": {
+        "formula": "SUM_IF([Acquisitions Raw], [Stage Order] = 4)",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Cost per Acquisition": {
+        "formula": "FDIV_SAFE(SUM_IF([Cost Raw], [Stage Order] = 4), SUM_IF([Acquisitions Raw], [Stage Order] = 4), 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Stage Label": {
+        "formula": "CONCAT(STR([Stage Order]), \" · \", [Stage])",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      }
+    },
+    "source": "ch_subselect",
+    "projection_file": "assets/sql/projections/acquisition.sql",
+    "table": "example.customers",
+    "id": "gluzo6df99siz"
+  },
+  "delivery": {
+    "name": "Delivery Operations - attempt 5",
+    "description": "Fictional route-point observations, July–September 2026. Grain: date × region × route × point order. Deliveries are point-level counts; route points are ordered by Point Order.",
+    "fields": {
+      "row_id": {
+        "title": "Row ID",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "row_id"
+      },
+      "event_date": {
+        "title": "Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "event_date"
+      },
+      "region": {
+        "title": "Region",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "region"
+      },
+      "channel": {
+        "title": "Channel",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "channel"
+      },
+      "scenario_version": {
+        "title": "Scenario Version",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "scenario_version"
+      },
+      "route": {
+        "title": "Route",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "route"
+      },
+      "point_order": {
+        "title": "Point Order",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "point_order"
+      },
+      "latitude": {
+        "title": "Latitude",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "latitude"
+      },
+      "longitude": {
+        "title": "Longitude",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "longitude"
+      },
+      "polygon_json": {
+        "title": "Polygon",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "polygon_json"
+      },
+      "deliveries": {
+        "title": "Deliveries Raw",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "deliveries"
+      },
+      "duration_minutes": {
+        "title": "Duration Minutes Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "duration_minutes"
+      },
+      "priority": {
+        "title": "Priority",
+        "cast": "boolean",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "priority"
+      },
+      "start_time": {
+        "title": "Start Time",
+        "cast": "datetime",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "start_time"
+      },
+      "end_time": {
+        "title": "End Time",
+        "cast": "datetime",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "end_time"
+      },
+      "type_point": {
+        "title": "Type Point",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_point",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_point_native_type": {
+        "title": "Type Point Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_point"
+      },
+      "type_ring": {
+        "title": "Type Ring",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ring",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_ring_native_type": {
+        "title": "Type Ring Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_ring"
+      },
+      "type_linestring": {
+        "title": "Type LineString",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_linestring",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_linestring_native_type": {
+        "title": "Type LineString Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_linestring"
+      },
+      "type_polygon": {
+        "title": "Type Polygon",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_polygon",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_polygon_native_type": {
+        "title": "Type Polygon Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_polygon"
+      },
+      "type_multilinestring": {
+        "title": "Type MultiLineString",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_multilinestring",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_multilinestring_native_type": {
+        "title": "Type MultiLineString Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_multilinestring"
+      },
+      "type_multipolygon": {
+        "title": "Type MultiPolygon",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_multipolygon",
+        "conversion_note": "ClickHouse native geometry uses [longitude, latitude]; the existing core geographic fields provide separate DataLens [latitude, longitude] geometry."
+      },
+      "type_multipolygon_native_type": {
+        "title": "Type MultiPolygon Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_multipolygon"
+      },
+      "type_json": {
+        "title": "Type JSON",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_json",
+        "conversion_note": "Native value projected to a supported DataLens scalar."
+      },
+      "type_json_native_type": {
+        "title": "Type JSON Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_json"
+      },
+      "type_dynamic": {
+        "title": "Type Dynamic",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_dynamic",
+        "conversion_note": "Odd rows hold String and even rows UInt64; text permits both values in one DataLens field."
+      },
+      "type_dynamic_native_type": {
+        "title": "Type Dynamic Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_dynamic"
+      },
+      "type_variant": {
+        "title": "Type Variant",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_variant",
+        "conversion_note": "The two declared alternatives are exercised on alternate rows; projection is exact text."
+      },
+      "type_variant_native_type": {
+        "title": "Type Variant Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_variant"
+      },
+      "type_object": {
+        "title": "Type Object",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_object",
+        "conversion_note": "Legacy Object JSON is demonstrated separately from the modern JSON type; preparation enables it locally."
+      },
+      "type_object_native_type": {
+        "title": "Type Object Native Type",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "native_column": "type_object"
+      }
+    },
+    "calculations": {
+      "Coordinates": {
+        "formula": "GEOPOINT([Latitude], [Longitude])",
+        "cast": "geopoint",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Zone": {
+        "formula": "GEOPOLYGON([Polygon])",
+        "cast": "geopolygon",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Deliveries": {
+        "formula": "SUM([Deliveries Raw])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Duration Minutes": {
+        "formula": "AVG([Duration Minutes Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Month": {
+        "formula": "DATETRUNC([Date], \"month\")",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Delivery Efficiency": {
+        "formula": "FDIV_SAFE(SUM([Deliveries Raw]), SUM([Duration Minutes Raw]), 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Route Label": {
+        "formula": "CONCAT([Region], \" · \", [Route])",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      }
+    },
+    "source": "ch_subselect",
+    "projection_file": "assets/sql/projections/delivery.sql",
+    "table": "example.delivery",
+    "id": "x2bg6pc3d6b8g"
+  }
+}

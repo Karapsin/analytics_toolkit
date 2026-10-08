@@ -1,0 +1,32 @@
+{
+  "wizard": {
+    "wizard_heading": {
+      "text": "Dataset-backed Wizard charts",
+      "size": "l"
+    },
+    "wizard_gallery_heading": {
+      "text": "21 charts · 17 factories · 5 map variants",
+      "size": "m"
+    }
+  },
+  "ql": {
+    "ql_heading": {
+      "text": "Parameterized QL charts",
+      "size": "l"
+    },
+    "ql_gallery_heading": {
+      "text": "13 charts · all QL factories",
+      "size": "m"
+    }
+  },
+  "editor": {
+    "editor_heading": {
+      "text": "JavaScript charts and custom selectors",
+      "size": "l"
+    },
+    "editor_gallery_heading": {
+      "text": "18 visual charts · all Gravity series and Editor renderers",
+      "size": "m"
+    }
+  }
+}

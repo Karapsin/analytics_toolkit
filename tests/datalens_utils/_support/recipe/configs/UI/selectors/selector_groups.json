@@ -1,0 +1,24 @@
+{
+  "wizard_primary_filters": {
+    "tab": "wizard",
+    "members": [
+      "wizard_region_selector",
+      "wizard_interval_selector"
+    ],
+    "apply_button": true,
+    "reset_button": true,
+    "update_on_change": false,
+    "auto_height": false
+  },
+  "ql_primary_filters": {
+    "tab": "ql",
+    "members": [
+      "ql_region_selector",
+      "ql_interval_selector"
+    ],
+    "apply_button": true,
+    "reset_button": true,
+    "update_on_change": false,
+    "auto_height": false
+  }
+}

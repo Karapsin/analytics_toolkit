@@ -1,0 +1,16 @@
+{
+  "key": "wizard_search_selector",
+  "tab": "wizard",
+  "title": "Category contains · table only",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Category"
+  },
+  "control": {
+    "element": "input",
+    "title_placement": "top",
+    "operation": "ICONTAINS",
+    "hint": "Blank means no category filter. Enter text to match category names."
+  }
+}

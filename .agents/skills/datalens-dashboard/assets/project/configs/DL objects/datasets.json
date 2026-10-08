@@ -1,0 +1,38 @@
+{
+  "retail": {
+    "name": "Sales facts",
+    "description": "Existing source; date and region dimensions with revenue aggregated at the requested grain.",
+    "table": "@TABLE@",
+    "source": "ch_subselect",
+    "projection_file": "assets/sql/projections/retail.sql",
+    "fields": {
+      "event_date": {
+        "title": "Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "region": {
+        "title": "Region",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue": {
+        "title": "Revenue Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      }
+    },
+    "calculations": {
+      "Revenue": {
+        "formula": "SUM([Revenue Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      }
+    },
+    "id": null
+  }
+}

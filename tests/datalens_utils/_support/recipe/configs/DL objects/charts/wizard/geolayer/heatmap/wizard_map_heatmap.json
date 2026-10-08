@@ -1,0 +1,37 @@
+{
+  "key": "wizard_map_heatmap",
+  "family": "wizard",
+  "type": "geolayer",
+  "name": "Delivery density - attempt 5",
+  "title": "Delivery density",
+  "dataset": "delivery",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {},
+  "sort": [],
+  "formats": {
+    "Deliveries": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "layers": [
+    {
+      "type": "heatmap",
+      "geopoint": "Coordinates",
+      "color": "Deliveries",
+      "color_mode": "2-point",
+      "color_palette": "blue"
+    }
+  ],
+  "map_center": {
+    "lat": 55.75,
+    "lon": 37.62,
+    "zoom": 8
+  },
+  "id": "ejsyzhmbvb8ex"
+}

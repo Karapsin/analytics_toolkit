@@ -1,0 +1,25 @@
+{
+  "key": "wizard_revenue",
+  "family": "wizard",
+  "type": "line",
+  "name": "Revenue by date",
+  "title": "Revenue by date",
+  "dataset": "retail",
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Date",
+      "asc"
+    ]
+  ],
+  "formats": {},
+  "settings": {},
+  "id": null
+}

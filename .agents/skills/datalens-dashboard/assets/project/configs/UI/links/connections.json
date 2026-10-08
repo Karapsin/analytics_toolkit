@@ -1,0 +1,11 @@
+{
+  "wizard_region": [
+    "wizard_revenue"
+  ],
+  "ql_region": [
+    "ql_revenue"
+  ],
+  "js_selector_widget": [
+    "js_revenue"
+  ]
+}

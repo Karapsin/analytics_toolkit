@@ -1,0 +1,30 @@
+{
+  "key": "js_line",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - Line - weighted profit margin - attempt 5",
+  "title": "JS · Line · weighted profit margin",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Linked fictional dataset; real parameter filters and server-side aggregation. Rendering must be verified separately from persistence.",
+  "series_type": "line",
+  "coverage": {
+    "series": "line"
+  },
+  "scripts": {
+    "sources": "assets/js/common/retail_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "prepare": "assets/js/js_line/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "interval_from": "Date",
+    "interval_to": "Date"
+  },
+  "id": "5ajoh0jz8pkoo"
+}

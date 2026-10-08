@@ -1,0 +1,31 @@
+{
+  "key": "wizard_treemap",
+  "family": "wizard",
+  "type": "treemap",
+  "name": "Revenue portfolio - attempt 5",
+  "title": "Revenue portfolio",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Region",
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Region"
+    }
+  },
+  "id": "fktz2bmdtgloy"
+}

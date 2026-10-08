@@ -1,0 +1,38 @@
+{
+  "key": "wizard_column_100p",
+  "family": "wizard",
+  "type": "column_100p",
+  "name": "Category channel share - attempt 5",
+  "title": "Category channel share",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Category"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Category",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "color_by_dimension": {
+      "field": "Channel"
+    },
+    "legend": {
+      "mode": "show"
+    }
+  },
+  "id": "hmv10ij8hvno0"
+}

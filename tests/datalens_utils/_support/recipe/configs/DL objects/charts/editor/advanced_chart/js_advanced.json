@@ -1,0 +1,24 @@
+{
+  "key": "js_advanced",
+  "family": "editor",
+  "type": "advanced_chart",
+  "name": "JS - Advanced - region snapshot cards - attempt 5",
+  "title": "JS · Advanced · region snapshot cards",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "description": "Fictional linked dataset. Source filters are separate from visualization transformation.",
+  "scripts": {
+    "sources": "assets/js/common/snapshot_sources.js",
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "prepare": "assets/js/js_advanced/prepare.js"
+  },
+  "parameter_bindings": {
+    "region": "Region",
+    "channel": "Channel",
+    "snapshot_date": "Date"
+  },
+  "id": "y3ch8q8myqd2h"
+}

@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Integrate DataLens dashboard utilities as a separate module, add the preinstalled-environment dashboard skill, and provide an all optional-dependencies extra.
+
 ## 1.3.12.2 - 2026-10-08
 
 - SQL Explorer completes namespaces with a trailing dot, adds iceberg to Trino SELECT shortcuts, and suppresses automatic closers before non-whitespace text.

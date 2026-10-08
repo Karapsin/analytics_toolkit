@@ -1,0 +1,68 @@
+{
+  "key": "wizard_line",
+  "family": "wizard",
+  "type": "line",
+  "name": "Revenue trend - attempt 5",
+  "title": "Revenue trend",
+  "dataset": "retail",
+  "description": "Synthetic gallery example. Adapt configuration before changing reusable Python helpers.",
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Revenue",
+      "Moving Average Revenue"
+    ],
+    "y2": [
+      "Cumulative Revenue"
+    ]
+  },
+  "sort": [
+    [
+      "Date",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Moving Average Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Cumulative Revenue": {
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    }
+  },
+  "local_fields": [
+    {
+      "guid": "10c33d02-d7b2-5b81-bddf-a04e4d3148f5",
+      "title": "Moving Average Revenue",
+      "formula": "MAVG(SUM([Revenue Raw]), 6 TOTAL ORDER BY [Date])",
+      "cast": "float",
+      "kind": "MEASURE",
+      "aggregation": "none"
+    },
+    {
+      "guid": "9de2a632-a9f8-5098-a97b-9ed4c4fb5dcb",
+      "title": "Cumulative Revenue",
+      "formula": "RSUM(SUM([Revenue Raw]) ORDER BY [Date])",
+      "cast": "float",
+      "kind": "MEASURE",
+      "aggregation": "none"
+    }
+  ],
+  "id": "5ajpr07fv924o"
+}

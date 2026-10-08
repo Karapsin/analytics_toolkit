@@ -1,0 +1,9 @@
+{
+  "description": "Revenue by date with explicit regional filters.",
+  "hide_tabs": false,
+  "folders": {
+    "charts": "charts",
+    "datasets": "datasets"
+  },
+  "id": null
+}

@@ -1,0 +1,45 @@
+{
+  "key": "ql_area",
+  "family": "ql",
+  "type": "area",
+  "name": "QL - acquisition stages - attempt 5",
+  "title": "QL · acquisition stages",
+  "dataset": "acquisition",
+  "description": "Synthetic, parameterized ClickHouse query. Table identity is resolved from deployment settings.",
+  "query_file": "assets/sql/ql_area.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    },
+    {
+      "name": "interval",
+      "type": "date-interval",
+      "default": {
+        "from": "2026-07-01",
+        "to": "2026-09-30"
+      }
+    }
+  ],
+  "columns": {
+    "Date": "genericdatetime",
+    "Acquisitions": "integer",
+    "Stage": "string"
+  },
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Acquisitions"
+    ],
+    "colors": [
+      "Stage"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": "x2bgbbzubwowg"
+}

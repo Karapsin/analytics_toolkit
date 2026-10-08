@@ -1,0 +1,14 @@
+{
+  "key": "ql_priority_selector",
+  "tab": "ql",
+  "title": "Priority only · table",
+  "source": {
+    "kind": "manual",
+    "param_name": "only_priority"
+  },
+  "control": {
+    "element": "checkbox",
+    "title_placement": "top",
+    "default_value": false
+  }
+}
