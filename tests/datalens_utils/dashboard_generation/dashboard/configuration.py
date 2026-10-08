@@ -147,7 +147,7 @@ def files():
         "duplicate item",
     ],
 )
-def test_combined_ui_rejects_inconsistent_declarations(problem):  # noqa: C901 - Scenario dispatch.
+def test_combined_ui_rejects_inconsistent_declarations(session_state, problem):  # noqa: C901 - Scenario dispatch.
     values = copy.deepcopy(files())
     charts = {key: value for key, value in inputs()["charts"].items() if key != "external"}
     selectors = {"filter": selector(group="filters")}

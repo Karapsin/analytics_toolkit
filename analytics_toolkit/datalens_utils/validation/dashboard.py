@@ -46,6 +46,12 @@ def definition_items(content: Any, charts: Any, chart_definitions: Any) -> Any:
             "at": at,
             "params": content.get("chart_params", {}).get(key, {}),
         }
+    for key, group in content.get("chart_groups", {}).items():
+        items[key] = {
+            "kind": "chart_group",
+            **group,
+            "tabs": [{**member, "chart": charts[member["key"]]} for member in group["charts"]],
+        }
     return items
 
 
@@ -78,8 +84,8 @@ def selector_default(value: Any) -> Any:
 
 
 def _member_issues(member: Any, definition: Any, datasets: Any) -> Any:  # noqa: C901, PLR0912
-    expected_source, control = definition["source"], definition["control"]
-    source, raw = member.source, member.source.raw
+    expected_source, control = (definition["source"], definition["control"])
+    source, raw = (member.source, member.source.raw)
     issues = []
     if member.title != definition["title"] or member.source_type != expected_source["kind"]:
         issues.append("selector identity or title")
@@ -101,12 +107,11 @@ def _member_issues(member: Any, definition: Any, datasets: Any) -> Any:  # noqa:
         (raw.get("innerTitle"), control.get("inner_title")),
         (raw.get("hint"), control.get("hint")),
     )
-    if any(actual != expected for actual, expected in checks):
+    if any((actual != expected for actual, expected in checks)):
         issues.append("selector control settings")
     actual_default = source.default_value
     expected_default = selector_default(control.get("default_value"))
     if control["element"] == "select":
-        # V2 normalizes even single-select scalar defaults into singleton lists.
         actual_default = [actual_default] if isinstance(actual_default, str) else actual_default
         expected_default = (
             [expected_default] if isinstance(expected_default, str) else expected_default
@@ -126,7 +131,7 @@ def _member_issues(member: Any, definition: Any, datasets: Any) -> Any:  # noqa:
             (option.get("value"), option.get("title")) for option in source.acceptable_values
         ] != options:
             issues.append("selector options")
-    if member.impact_type is not None:
+    if member.impact_type not in (None, "asGroup"):
         issues.append("unexpected selector influence scope")
     return issues
 
@@ -137,7 +142,7 @@ def item_issues(tab: Any, item_id: Any, definition: Any, datasets: Any) -> Any: 
     item = items.get(item_id)
     if item is None:
         return ["item missing"]
-    issues, kind = [], definition["kind"]
+    issues, kind = ([], definition["kind"])
     if kind == "selector_group":
         matching = [control for control in tab.controls if control.id == item_id]
         if len(matching) != 1 or item.item_type != "group_control":
@@ -160,9 +165,11 @@ def item_issues(tab: Any, item_id: Any, definition: Any, datasets: Any) -> Any: 
             "showGroupName": definition.get("show_group_name", False),
             "autoHeight": definition.get("auto_height", False),
         }
-        if any(
-            item.data.get(key, False) != value for key, value in expected.items()
-        ) or item.data.get("impactType"):
+        if (
+            any((item.data.get(key, False) != value for key, value in expected.items()))
+            or item.data.get("impactType") not in (None, "currentTab")
+            or item.data.get("impactTabsIds", [tab.id]) != [tab.id]
+        ):
             issues.append("selector group settings")
     elif kind == "external_selector":
         controls = [control for control in tab.controls if control.id == item_id]
@@ -175,6 +182,21 @@ def item_issues(tab: Any, item_id: Any, definition: Any, datasets: Any) -> Any: 
             or member.title != definition["title"]
         ):
             issues.append("external selector settings")
+    elif kind == "chart_group":
+        actual = item.data.get("tabs", [])
+        if item.item_type != "widget" or len(actual) != len(definition["tabs"]):
+            return ["chart group tabs"]
+        for widget, wanted in zip(actual, definition["tabs"]):
+            if (
+                widget.get("chartId") != wanted["chart"].id
+                or widget.get("title") != wanted["title"]
+                or widget.get("isDefault", False) != wanted.get("default", False)
+                or (
+                    normalize_params(widget.get("params", {}))
+                    != normalize_params(wanted.get("params", {}))
+                )
+            ):
+                issues.append("chart group reference, title, default or parameters")
     elif kind == "chart":
         widget_tabs = item.data.get("tabs", [])
         if item.item_type != "widget" or len(widget_tabs) != 1:
@@ -207,15 +229,17 @@ def selector_bindings(content: Any) -> Any:
 
 
 def expected_edges(content: Any) -> Any:
-    widgets = set(content.get("charts", {}))
+    widgets = set(content.get("charts", {})) | set(content.get("chart_groups", {}))
+    bindings = selector_bindings(content)
+    receivers = widgets | set(bindings)
     return {
-        (widget, selector)
-        for selector, recipients in selector_bindings(content).items()
-        for widget in widgets - recipients
+        (receiver, selector)
+        for selector, recipients in bindings.items()
+        for receiver in receivers - recipients - {selector}
     }
 
 
-def normalized_edges(tab: Any) -> Any:
+def normalized_edges(tab: Any, *, all_routes: bool = False) -> Any:
     """Return logical endpoints and retain wire IDs needed by remove_connection."""
     logical = {}
     for item in (*tab.items, *tab.global_items):
@@ -225,18 +249,22 @@ def normalized_edges(tab: Any) -> Any:
     for control in tab.controls:
         for member in control.members:
             logical[member.id] = member.id
-    return {
-        (
-            logical.get(edge.get("from"), edge.get("from")),
-            logical.get(edge.get("to"), edge.get("to")),
-        ): (edge.get("from"), edge.get("to"))
-        for edge in tab.connections
-    }
+    edges: dict[Any, Any] = {}
+    for edge in tab.connections:
+        source, target = (edge.get("from"), edge.get("to"))
+        key = (logical.get(source, source), logical.get(target, target))
+        edges.setdefault(key, []).append((source, target))
+    return edges if all_routes else {key: routes[-1] for key, routes in edges.items()}
 
 
 def alias_groups(content: Any, datasets: Any) -> Any:
     return {
-        frozenset(datasets[field["dataset"]].fields.by_name(field["field"]).guid for field in group)
+        frozenset(
+            field["parameter"]
+            if "parameter" in field
+            else datasets[field["dataset"]].fields.by_name(field["field"]).guid
+            for field in group
+        )
         for group in content.get("aliases", [])
     }
 
@@ -249,17 +277,27 @@ def actual_alias_groups(tab: Any) -> Any:
     }
 
 
-def managed_edges(tab: Any, content: Any) -> Any:
+def managed_edges(tab: Any, content: Any, *, all_routes: bool = False) -> Any:
     selectors = set(selector_bindings(content))
-    widgets = set(content.get("charts", {}))
+    receivers = set(content.get("charts", {})) | set(content.get("chart_groups", {})) | selectors
     return {
         edge: wire
-        for edge, wire in normalized_edges(tab).items()
-        if edge[0] in widgets and edge[1] in selectors
+        for edge, wire in normalized_edges(tab, all_routes=all_routes).items()
+        if edge[0] in receivers and edge[1] in selectors
     }
 
 
-def dashboard_issues(  # noqa: PLR0913
+def requires_dependent_selectors(contents: Any) -> bool:
+    """Cascading values are needed when a selector receives another selector."""
+    return any(
+        bool(set(recipients) & set(bindings))
+        for content in contents.values()
+        for bindings in [selector_bindings(content)]
+        for recipients in bindings.values()
+    )
+
+
+def dashboard_issues(  # noqa: C901, PLR0913
     dashboard: Any,
     *,
     tab_definitions: Any,
@@ -270,7 +308,14 @@ def dashboard_issues(  # noqa: PLR0913
     description: Any,
     hide_tabs: Any,
 ) -> Any:
-    issues = list(dashboard.validate())
+    issues = [
+        issue
+        for issue in dashboard.validate()
+        if not (
+            issue.kind in ("overlap", "layout_reflow")
+            and tab_definitions.get(issue.tab_id, {}).get("preserve_layout", False)
+        )
+    ]
     tabs = {tab.id: tab for tab in dashboard.tabs}
     unexpected = [
         tab.id for tab in dashboard.tabs if not tab.hidden and tab.id not in tab_definitions
@@ -279,6 +324,10 @@ def dashboard_issues(  # noqa: PLR0913
         issues.append(f"unexpected visible tabs: {unexpected}")
     if dashboard.data.get("settings", {}).get("hideTabs", False) != hide_tabs:
         issues.append("dashboard tab visibility")
+    if requires_dependent_selectors(contents) and not dashboard.data.get("settings", {}).get(
+        "dependentSelectors", False
+    ):
+        issues.append("dependent selectors disabled")
     if (dashboard.raw.get("annotation") or {}).get("description", "") != description:
         issues.append("dashboard description")
     for role, definition in tab_definitions.items():

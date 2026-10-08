@@ -1,0 +1,31 @@
+{
+  "month_filters": {
+    "tab": "month",
+    "members": [
+      "period_type_selector",
+      "month_experiment_selector",
+      "month_start_selector",
+      "month_end_selector",
+      "alpha_selector"
+    ],
+    "apply_button": false,
+    "reset_button": true,
+    "update_on_change": false,
+    "show_group_name": false,
+    "auto_height": false
+  },
+  "dynamics_filters": {
+    "tab": "dynamics",
+    "members": [
+      "dynamics_experiment_selector",
+      "dynamics_period_selector",
+      "dynamics_conversion_selector",
+      "dynamics_money_selector",
+      "dynamics_date_selector"
+    ],
+    "apply_button": false,
+    "reset_button": true,
+    "update_on_change": true,
+    "auto_height": false
+  }
+}

@@ -42,3 +42,15 @@ def session_state(tmp_path):
     )
     with bind_session(state):
         yield state
+
+
+@pytest.fixture
+def financial_case():
+    from tests.datalens_utils._support.financial import FinancialCase  # noqa: PLC0415
+
+    case = FinancialCase()
+    case.setUp()
+    try:
+        yield case
+    finally:
+        case.doCleanups()

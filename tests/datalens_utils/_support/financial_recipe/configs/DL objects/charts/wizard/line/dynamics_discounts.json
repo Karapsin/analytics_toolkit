@@ -1,0 +1,49 @@
+{
+  "key": "dynamics_discounts",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Скидки",
+  "title": "Скидки",
+  "dataset": "dynamics",
+  "description": "Предоставленные скидки по дате события. Сумма в рублях или на участника Тест.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Скидки"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Скидки": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false
+}

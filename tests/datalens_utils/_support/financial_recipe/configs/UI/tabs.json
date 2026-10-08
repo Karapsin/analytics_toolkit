@@ -1,0 +1,11 @@
+{
+  "month": {
+    "title": "Финансовый отчёт",
+    "hidden": false,
+    "preserve_layout": true
+  },
+  "dynamics": {
+    "title": "Динамика",
+    "hidden": false
+  }
+}

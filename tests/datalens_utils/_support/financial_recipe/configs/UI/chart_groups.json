@@ -1,0 +1,57 @@
+{
+  "dynamics_costs": {
+    "tab": "dynamics",
+    "charts": [
+      {
+        "key": "dynamics_cost_overview",
+        "title": "Обзор",
+        "default": true
+      },
+      {
+        "key": "dynamics_bonus_accrued",
+        "title": "Начисления",
+        "default": false
+      },
+      {
+        "key": "dynamics_bonus_spent",
+        "title": "Списания",
+        "default": false
+      },
+      {
+        "key": "dynamics_discounts",
+        "title": "Скидки",
+        "default": false
+      },
+      {
+        "key": "dynamics_recipients",
+        "title": "Получатели",
+        "default": false
+      }
+    ]
+  },
+  "dynamics_financial": {
+    "tab": "dynamics",
+    "charts": [
+      {
+        "key": "dynamics_revenue",
+        "title": "РТО с НДС",
+        "default": true
+      },
+      {
+        "key": "dynamics_revenue_net",
+        "title": "РТО без НДС",
+        "default": false
+      },
+      {
+        "key": "dynamics_margin",
+        "title": "Гросс-маржа, руб.",
+        "default": false
+      },
+      {
+        "key": "dynamics_margin_pct",
+        "title": "Гросс-маржа, %",
+        "default": false
+      }
+    ]
+  }
+}

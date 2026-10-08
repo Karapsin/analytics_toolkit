@@ -115,29 +115,37 @@ def validate_definition(context: Any, role: Any, definition: Any) -> Any:
         raise DataLensUtilsError(message)
 
 
-def _direct_field(dataset: Any, physical: Any) -> Any:
+def _direct_field(dataset: Any, physical: Any, *, missing_ok: Any = False) -> Any:
     matches = [
         field
         for field in dataset.fields
         if field.calc_mode == "direct" and field.source == physical
     ]
+    if missing_ok and (not matches):
+        return None
     if len(matches) != 1:
         message = (
-            "Expected one dataset field backed by source column "
-            f"{physical!r}"
-            "; found "
-            f"{len(matches)}"
-            "."
+            f"Expected one dataset field backed by source column {physical!r}; found "
+            f"{len(matches)}."
         )
         raise DataLensUtilsError(message)
     return matches[0]
 
 
-def dataset_issues(dataset: Any, definition: Any) -> Any:  # noqa: C901
+def dataset_issues(dataset: Any, definition: Any) -> Any:  # noqa: C901, PLR0912
     """Check actual persisted fields, including formulas and field kinds."""
     issues = []
+    for name, expected in definition.get("parameters", {}).items():
+        field = dataset.find_field(name)
+        if field is None or field.calc_mode != "parameter":
+            issues.append(f"{name} parameter")
+        elif field.cast != expected["type"] or field.default_value != expected["default"]:
+            issues.append(f"{name} parameter default/type")
     for physical, expected in definition.get("fields", {}).items():
-        field = _direct_field(dataset, physical)
+        field = _direct_field(dataset, physical, missing_ok=True)
+        if field is None:
+            issues.append(f"{physical} missing")
+            continue
         if field.title != expected.get("title", physical):
             issues.append(f"{physical} title")
         if expected.get("cast") and field.cast != expected["cast"]:
@@ -152,13 +160,12 @@ def dataset_issues(dataset: Any, definition: Any) -> Any:  # noqa: C901
         if field is None or field.calc_mode != "formula":
             issues.append(f"{name} calculation")
             continue
-        for attribute in ("formula", "cast", "kind", "aggregation"):
-            if (
-                attribute in expected
-                and getattr(field, "type" if attribute == "kind" else attribute)
-                != expected[attribute]
-            ):
-                issues.append(f"{name} {attribute}")  # noqa: PERF401
+        issues.extend(
+            f"{name} {attribute}"
+            for attribute in ("formula", "cast", "kind", "aggregation")
+            if attribute in expected
+            and getattr(field, "type" if attribute == "kind" else attribute) != expected[attribute]
+        )
     for name, aggregation in definition.get("aggregations", {}).items():
         if dataset.fields.by_name(name).aggregation != aggregation:
             issues.append(f"{name} aggregation")
@@ -168,13 +175,40 @@ def dataset_issues(dataset: Any, definition: Any) -> Any:  # noqa: C901
 
 
 def _configure_fields(update: Any, dataset: Any, definition: Any) -> Any:  # noqa: C901, PLR0912
+    for name, expected in definition.get("parameters", {}).items():
+        field = dataset.find_field(name)
+        if field is None:
+            update.add_parameter(name=name, **expected)
+        elif field.calc_mode != "parameter":
+            message = f"Parameter {name!r} conflicts with an existing field."
+            raise DataLensUtilsError(message)
+        elif field.cast != expected["type"] or field.default_value != expected["default"]:
+            update.update_parameter(field=field, **expected)
     for physical, expected in definition.get("fields", {}).items():
-        field = _direct_field(dataset, physical)
+        field = _direct_field(dataset, physical, missing_ok=True)
         aggregation = expected.get("aggregation", "none")
         kind = expected.get("kind", "DIMENSION" if aggregation == "none" else "MEASURE")
         if kind != ("DIMENSION" if aggregation == "none" else "MEASURE"):
             message = f"Direct field {physical!r} kind must match its declared aggregation."
             raise DataLensUtilsError(message)
+        if field is None:
+            avatars = [
+                avatar
+                for avatar in dataset.source_avatars
+                if avatar.get("source_id") in {source.id for source in dataset.sources}
+            ]
+            if len(avatars) != 1:
+                message = f"New source column {physical!r} needs one unambiguous source avatar."
+                raise DataLensUtilsError(message)
+            update.add_field(
+                title=expected.get("title", physical),
+                source=physical,
+                kind=kind,
+                aggregation=aggregation,
+                cast=expected.get("cast"),
+                avatar_id=avatars[0]["id"],
+            )
+            continue
         if field.aggregation != aggregation or field.type != kind:
             update.change_field_aggregation(field=field, to=aggregation)
         changes = {}
@@ -209,14 +243,14 @@ def _configure_fields(update: Any, dataset: Any, definition: Any) -> Any:  # noq
     return update
 
 
-def create_datasets(*, context: Any, definitions: Any) -> Any:
-    client, resources = context.client, context.resources
+def create_datasets(*, context: Any, definitions: Any) -> Any:  # noqa: C901, PLR0912
+    client, resources = (context.client, context.resources)
     folder = resources.folder_for("dataset")
     datasets = {}
     for role, definition in definitions.items():
         validate_definition(context, role, definition)
     for role, definition in definitions.items():
-        key, name = f"dataset:{role}", definition["name"]
+        key, name = (f"dataset:{role}", definition["name"])
         source_kind = definition.get("source", "ch_table")
         if source_kind == "ch_subselect":
             query = source_query(context, definition)
@@ -241,12 +275,7 @@ def create_datasets(*, context: Any, definitions: Any) -> Any:
             dataset = resources.create(key, name, builder, client.get.dataset, scope="dataset")
         if len(dataset.sources) != 1 or any(
             source.connection_id != context.connection.id
-            or (
-                source_kind == "ch_subselect"
-                and (
-                    source.source_type != "CH_SUBSELECT" or source.parameters.get("subsql") != query
-                )
-            )
+            or (source_kind == "ch_subselect" and source.source_type != "CH_SUBSELECT")
             or (
                 source_kind == "ch_table"
                 and (
@@ -258,6 +287,12 @@ def create_datasets(*, context: Any, definitions: Any) -> Any:
         ):
             message = f"Dataset {name!r} uses a different connection or source table."
             raise DataLensUtilsError(message)
+        (source,) = dataset.sources
+        if source_kind == "ch_subselect" and source.parameters.get("subsql") != query:
+            update = dataset.update.update_source(
+                source_id=source.id, parameters={**source.parameters, "subsql": query}
+            )
+            dataset = resources.persisted(key, update.mode("publish").execute(), client.get.dataset)
         issues = dataset_issues(dataset, definition)
         dataset = resources.rename(key, dataset, name, client.get.dataset)
         if issues:
@@ -272,6 +307,38 @@ def create_datasets(*, context: Any, definitions: Any) -> Any:
                 .execute(),
                 client.get.dataset,
             )
+        for expected in definition.get("default_filters", []):
+            field = dataset.fields.by_name(expected["field"])
+            existing = next(
+                (
+                    value
+                    for value in dataset.default_filters
+                    if value.get("field_guid") == field.guid
+                ),
+                None,
+            )
+            rules = [
+                {
+                    "column": field.guid,
+                    "operation": expected["operator"],
+                    "values": expected["values"],
+                }
+            ]
+            if existing is None or existing.get("default_filters") != rules:
+                update = dataset.update
+                if existing is None:
+                    update.add_default_filter(
+                        field=field, operator=expected["operator"], values=expected["values"]
+                    )
+                else:
+                    update.update_default_filter(
+                        filter_id=existing["id"],
+                        operator=expected["operator"],
+                        values=expected["values"],
+                    )
+                dataset = resources.persisted(
+                    key, update.mode("publish").execute(), client.get.dataset
+                )
         issues = dataset_issues(dataset, definition)
         if issues:
             message = f"Dataset {name!r} does not match its recipe: {', '.join(issues)}."

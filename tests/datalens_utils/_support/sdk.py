@@ -64,6 +64,20 @@ def configured_datasets(definitions):
                     "valid": True,
                 }
             )
+        for name, parameter in definition.get("parameters", {}).items():
+            schema.append(
+                {
+                    "guid": f"{role}_parameter_{name}",
+                    "title": name,
+                    "cast": parameter["type"],
+                    "data_type": parameter["type"],
+                    "aggregation": "none",
+                    "type": "DIMENSION",
+                    "calc_mode": "parameter",
+                    "default_value": parameter["default"],
+                    "valid": True,
+                }
+            )
         result[role] = Dataset(
             id=f"offline-{role}",
             name=definition["name"],

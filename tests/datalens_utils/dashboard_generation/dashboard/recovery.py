@@ -30,6 +30,7 @@ def tab(identity="main", **options):
 def test_recovery_rejects_ambiguous_ownership_before_any_write(problem):
     value = dashboard([tab("foreign")] if problem == "extra tab" else [])
     context = Mock()
+    context.resources.state = {"resources": {"dashboard": {}}}
     context.client.get.dashboard.return_value = value
     definitions = {"main": {}, "second": {}} if problem == "duplicate identity" else {"main": {}}
     with patch.object(
@@ -56,6 +57,7 @@ def test_recovery_stages_removals_and_restores_managed_content(scenario):
     main = tab()
     second = tab("second")
     second.hidden = True
+    second.global_items = [SimpleNamespace(id="foreign", item_type="text", data={})]
     wrapper = SimpleNamespace(id="owned", item_type="text", data={})
     main.items = [wrapper]
     if scenario == "moved":
@@ -127,7 +129,9 @@ def test_wiring_replaces_only_known_aliases_and_managed_edges():
         "actual_alias_groups",
         return_value={frozenset({"a", "b"}), frozenset({"external"})},
     ):
-        assert populate._reconcile_wiring(update, value, {"main": {}}, datasets)
+        assert populate._reconcile_wiring(
+            update, value, {"main": {}}, datasets, {"main": [["a", "b"]]}
+        )
     update.remove_connection.assert_called_once_with(from_item="chart", to_item="old", tab="main")
     update.remove_alias.assert_called_once_with("a", "b", tab="main")
     update.add_alias.assert_called_once_with("c", "d", tab="main")
@@ -182,3 +186,29 @@ def test_point_updates_apply_only_when_all_differences_are_supported(problem):  
         assert update.update_selector.call_args.kwargs["operation"] == "IN"
     if not result:
         assert update.mock_calls == []
+
+
+def test_reconciliation_enables_required_dependent_selectors():
+    value = dashboard([])
+    context = Mock()
+    context.client.get.dashboard.return_value = value
+    context.resources.state = {"resources": {"dashboard": {}}}
+    context.resources.persisted.return_value = value
+    with patch.object(populate, "requires_dependent_selectors", return_value=True), patch.object(
+        populate, "dashboard_issues", return_value=[]
+    ):
+        assert (
+            populate.populate_dashboard(
+                context=context,
+                dashboard=value,
+                datasets={},
+                charts={},
+                tab_definitions={},
+                contents={},
+                chart_definitions={},
+                description="",
+                hide_tabs=False,
+            )
+            is value
+        )
+    value.update.settings.assert_called_once_with(dependent_selectors=True)

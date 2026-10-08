@@ -1,0 +1,17 @@
+{
+  "key": "month_start_selector",
+  "tab": "month",
+  "title": "Начало периода",
+  "source": {
+    "kind": "dataset",
+    "dataset": "month",
+    "field": "Начало периода"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": false,
+    "default_value": null
+  },
+  "group": "month_filters"
+}

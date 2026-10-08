@@ -16,7 +16,7 @@ from analytics_toolkit.datalens_utils.session import current_session as session
 
 
 class ResourceStore:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         folder: Any,
         target: Any,
@@ -24,6 +24,7 @@ class ResourceStore:
         path: Any = None,
         allow_folder_move: Any = False,
         entries: Any = None,
+        dataset_ids: Any = None,
     ) -> None:
         self.folder = folder
         self.desired_target = target
@@ -42,14 +43,37 @@ class ResourceStore:
             }
         )
         previous = self.state.get("target", {})
+        previous_sources = previous.get("source_tables", {})
+        desired_sources = target.get("source_tables", {})
+        changed_roles = {
+            role for role, table in previous_sources.items() if table != desired_sources.get(role)
+        }
+        same_sources = set(previous_sources.values()) == set(desired_sources.values())
+        expanding_sources = previous_sources.items() <= desired_sources.items()
+        owned_source_update = (
+            previous_sources.keys() == desired_sources.keys()
+            and bool(changed_roles)
+            and all(
+                (dataset_ids or {}).get(role)
+                == self.state["resources"].get("dataset:" + role, {}).get("id")
+                and (dataset_ids or {}).get(role) is not None
+                for role in changed_roles
+            )
+        )
+        identity_keys = {"folder_path", "source_tables"}
+        same_scope = (same_sources or expanding_sources or owned_source_update) and {
+            key: value for key, value in previous.items() if key not in identity_keys
+        } == {key: value for key, value in target.items() if key not in identity_keys}
         folder_change = (
             allow_folder_move
             and "folder_path" in previous
             and "folder_path" in target
-            and {key: value for key, value in previous.items() if key != "folder_path"}
-            == {key: value for key, value in target.items() if key != "folder_path"}
+            and same_scope
         )
-        if self.state.get("version") != 1 or (previous != target and not folder_change):
+        compatible_target = same_scope and previous.get("folder_path") == target.get("folder_path")
+        if self.state.get("version") != 1 or (
+            previous != target and not folder_change and not compatible_target
+        ):
             message = (
                 "resources.json belongs to another organization, folder, or "
                 "source. Keep it with its original recipe."
@@ -142,7 +166,13 @@ class ResourceStore:
             self._save()
 
     def phase(
-        self, key: Any, phase: Any, *, pending_items: Any = None, managed_items: Any = None
+        self,
+        key: Any,
+        phase: Any,
+        *,
+        pending_items: Any = None,
+        managed_items: Any = None,
+        managed_aliases: Any = None,
     ) -> Any:
         entry = self.state["resources"][key]
         entry["phase"] = phase
@@ -150,6 +180,8 @@ class ResourceStore:
             entry["pending_items"] = list(pending_items)
         if managed_items is not None:
             entry["managed_items"] = list(managed_items)
+        if managed_aliases is not None:
+            entry["managed_aliases"] = managed_aliases
         self._save()
 
     def verify_location(self, entity: Any, name: Any = None, *, scope: Any = None) -> Any:

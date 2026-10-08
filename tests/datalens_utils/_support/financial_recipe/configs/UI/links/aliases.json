@@ -1,0 +1,24 @@
+{
+  "month": [
+    [
+      {
+        "parameter": "report_period"
+      },
+      {
+        "dataset": "month",
+        "field": "Тип периода"
+      }
+    ]
+  ],
+  "dynamics": [
+    [
+      {
+        "parameter": "dynamics_period"
+      },
+      {
+        "dataset": "dynamics",
+        "field": "Тип периода динамики"
+      }
+    ]
+  ]
+}

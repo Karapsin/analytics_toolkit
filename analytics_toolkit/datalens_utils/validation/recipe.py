@@ -55,10 +55,17 @@ def _named_calculations(definition: Any, *, local: Any = False) -> Any:
 
 
 def _dataset_fields(definition: Any) -> Any:
-    return {
-        value.get("title", physical): value
-        for physical, value in definition.get("fields", {}).items()
-    } | _named_calculations(definition)
+    return (
+        {
+            value.get("title", physical): value
+            for physical, value in definition.get("fields", {}).items()
+        }
+        | _named_calculations(definition)
+        | {
+            name: {"cast": value["type"]}
+            for name, value in definition.get("parameters", {}).items()
+        }
+    )
 
 
 def _formula_references(formula: Any) -> Any:
@@ -109,6 +116,8 @@ def _check_wizard_fields(key: Any, definition: Any, datasets: Any) -> Any:  # no
         fields(names)
     for name, _ in definition.get("sort", []):
         fields(name)
+    for rule in definition.get("filters", []):
+        fields(rule["field"])
     fields(definition.get("labels", []))
     union = set(primary)
     for layer in definition.get("layers", []):
@@ -164,8 +173,8 @@ def _selectors(contents: Any) -> Any:
     return definitions
 
 
-def _native_variant(definition: Any, datasets: Any, charts: Any) -> Any:
-    control, source = definition["control"], definition["source"]
+def _native_variant(definition: Any, datasets: Any, charts: Any, contents: Any = None) -> Any:
+    control, source = (definition["control"], definition["source"])
     element = control["element"]
     if element == "select":
         return "multiselect" if control.get("multiselect") else "single_select"
@@ -176,12 +185,32 @@ def _native_variant(definition: Any, datasets: Any, charts: Any) -> Any:
     if source["kind"] == "dataset":
         casts = {_dataset_fields(datasets[source["dataset"]])[source["field"]].get("cast")}
     else:
-        casts = {
-            parameter.get("type")
-            for key in definition["recipients"]
-            for parameter in charts[key].get("params", [])
-            if parameter.get("name") == source["param_name"]
+        casts = set()
+        groups = {
+            key: group
+            for content in (contents or {}).values()
+            for key, group in content.get("chart_groups", {}).items()
         }
+        recipients = [
+            member["key"]
+            for key in definition["recipients"]
+            for member in groups.get(key, {"charts": [{"key": key}]})["charts"]
+        ]
+        for key in recipients:
+            chart = charts.get(key)
+            if chart is None:
+                continue
+            if chart["family"] == "wizard":
+                parameter = (
+                    datasets[chart["dataset"]].get("parameters", {}).get(source["param_name"], {})
+                )
+                casts.add(parameter.get("type"))
+            else:
+                casts.update(
+                    parameter.get("type")
+                    for parameter in chart.get("params", [])
+                    if parameter.get("name") == source["param_name"]
+                )
     return "numeric_input" if casts & NUMERIC_TYPES else "text_input"
 
 
@@ -201,13 +230,14 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
     external = {
         key: definition for key, definition in charts.items() if definition["type"] == "selector"
     }
-    for name, count in (
+    actual: Any
+    for name, actual in (
         ("object_count", len(charts)),
         ("visual_chart_count", len(visual)),
         ("external_selector_count", len(external)),
     ):
         _require(
-            manifest.get(name) == count, f"{name} expects {manifest.get(name)}, found {count}."
+            manifest.get(name) == actual, f"{name} expects {manifest.get(name)}, found {actual}."
         )
     families = manifest.get("families", {})
     _require(
@@ -254,6 +284,12 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
             "Editor renderers differ from the coverage manifest.",
         )
     placements = Counter(key for content in contents.values() for key in content.get("charts", {}))
+    placements.update(
+        member["key"]
+        for content in contents.values()
+        for group in content.get("chart_groups", {}).values()
+        for member in group["charts"]
+    )
     _require(
         set(placements) == set(visual) and all(count == 1 for count in placements.values()),
         "every visual chart must be placed exactly once.",
@@ -271,19 +307,19 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
     )
     selector_coverage = manifest.get("selector_coverage", {})
     for source, expected in selector_coverage.get("native", {}).items():
-        native = [value for value in selectors.values() if value["source"]["kind"] == source]
+        actual = [value for value in selectors.values() if value["source"]["kind"] == source]
         _require(
-            len(native) == expected["count"]
+            len(actual) == expected["count"]
             and set(expected["variants"])
-            == {_native_variant(value, datasets, charts) for value in native},
+            == {_native_variant(value, datasets, charts, contents) for value in actual},
             f"{source} native selector coverage differs from the manifest.",
         )
     expected = selector_coverage.get("editor")
     if expected:
         definition = external.get(expected["key"], {})
-        _require(bool(definition), "the declared Editor selector object is missing.")
+        _require(definition is not None, "the declared Editor selector object is missing.")
         source = asset_path(definition["scripts"]["controls"]).read_text(encoding="utf-8")
-        controls = set(re.findall(r"\btype\s*:\s*['\"]([^'\"]+)['\"]", source))
+        controls = set(re.findall("\\btype\\s*:\\s*['\\\"]([^'\\\"]+)['\\\"]", source))
         _require(
             set(expected["control_types"]) == set(definition.get("control_types", [])) == controls,
             "Editor selector control coverage differs from the manifest/source.",
@@ -291,12 +327,13 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
         for variant in expected.get("select_variants", []):
             value = "true" if variant == "multiple" else "false"
             _require(
-                re.search(rf"\bmultiselect\s*:\s*{value}\b", source) is not None,
+                re.search(f"\\bmultiselect\\s*:\\s*{value}\\b", source) is not None,
                 f"Editor selector lacks the {variant} select variant.",
             )
         for action in expected.get("actions", []):
             _require(
-                re.search(rf"\baction\s*:\s*['\"]{re.escape(action)}['\"]", source) is not None,
+                re.search(f"""\\baction\\s*:\\s*['\\"]{re.escape(action)}['\\"]""", source)
+                is not None,
                 f"Editor selector lacks the {action} action.",
             )
     for expected in manifest.get("formulas", []):
@@ -308,7 +345,7 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
             if family == "chart"
             else None
         )
-        _require(bool(definition), f"formula owner {expected['owner']} is missing.")
+        _require(definition is not None, f"formula owner {expected['owner']} is missing.")
         formulas = _named_calculations(definition, local=family == "chart")
         _require(
             formulas.get(expected["field"], {}).get("formula") == expected["formula"],
@@ -335,7 +372,7 @@ def _coverage(manifest: Any, datasets: Any, charts: Any, tabs: Any, contents: An
         for value in examples:
             definition = datasets.get(value["dataset"])
             _require(
-                bool(definition),
+                definition is not None,
                 f"ClickHouse type {value['family']} references an unknown dataset.",
             )
             fields = _dataset_fields(definition)

@@ -89,3 +89,15 @@ DataLensUtilsError, DataLensConfigurationError, DataLensDependencyError.
 
 Offline tests use temporary recipes and public SDK clients with MockTransport.
 They do not authenticate or access cloud dashboards or databases.
+
+Charts support explicit business `tab` keys, defaulting to their family.
+`configs/UI/chart_groups.json` places ordered chart tabs within one widget,
+including per-chart defaults and parameters. Wizard `show_title` preserves
+hidden title settings through configuration and import. Dataset `parameters`
+use `type` and `default`; `default_filters` configure selector value queries.
+Manual Wizard selectors can drive these parameters and explicit parameter/field
+aliases. Selector recipients may include other selectors; the engine enables
+dependent selectors when needed. Managed alias checkpoints preserve user aliases.
+Only previously managed obsolete tabs are retired; existing `preserve_layout`
+tabs tolerate their current warnings. Source updates preserve owned dataset and
+field identities and require configured IDs to match checkpoint ownership.

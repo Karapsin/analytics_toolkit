@@ -1,0 +1,31 @@
+{
+  "key": "dynamics_period_selector",
+  "tab": "dynamics",
+  "title": "Детализация",
+  "source": {
+    "kind": "manual",
+    "param_name": "dynamics_period"
+  },
+  "control": {
+    "title_placement": "top",
+    "element": "select",
+    "multiselect": false,
+    "required": true,
+    "default_value": "day",
+    "options": [
+      {
+        "value": "day",
+        "title": "День"
+      },
+      {
+        "value": "week",
+        "title": "Неделя"
+      },
+      {
+        "value": "month",
+        "title": "Месяц"
+      }
+    ]
+  },
+  "group": "dynamics_filters"
+}

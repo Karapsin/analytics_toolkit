@@ -1,0 +1,254 @@
+{
+  "key": "month_funnel",
+  "family": "wizard",
+  "type": "flat_table",
+  "tab": "month",
+  "name": "Финансовая статистика экспериментов",
+  "title": "Финансовая статистика экспериментов",
+  "dataset": "month",
+  "description": "Финансовая статистика: Тест и Контроль. Доп. РТО учитывается при p-value < alpha. Тип периода, эксперимент, группа и даты задаются селекторами.",
+  "fields": {
+    "columns": [
+      "Эксперимент",
+      "Группа ЦА",
+      "Начало периода",
+      "Конец периода",
+      "Клиенты ЦА",
+      "Клиенты КГ",
+      "Маржа / РТО без НДС ЦА, %",
+      "Маржа / РТО без НДС КГ, %",
+      "p-value CUPED числом",
+      "Uplift ARPU CUPED, %",
+      "Доп. РТО, руб.",
+      "Акцепт / ЦА",
+      "Начисление / ЦА",
+      "Списание бонусов, %",
+      "ARPU CUPED ЦА, руб.",
+      "ARPU CUPED КГ, руб.",
+      "Скидки, руб.",
+      "Начислено бонусов, руб.",
+      "Списано бонусов, руб.",
+      "Затраты, руб.",
+      "Валовая маржа ЦА, руб.",
+      "Валовая маржа КГ, руб.",
+      "РТО без НДС ЦА, руб.",
+      "РТО без НДС КГ, руб.",
+      "Получатели бонусов",
+      "Получатели скидок",
+      "Получатели бонуса или скидки",
+      "Получатели бонуса и скидки"
+    ]
+  },
+  "sort": [
+    [
+      "Эксперимент",
+      "asc"
+    ],
+    [
+      "Группа ЦА",
+      "asc"
+    ],
+    [
+      "Начало периода",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Клиенты ЦА": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Клиенты КГ": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Маржа / РТО без НДС ЦА, %": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "Маржа / РТО без НДС КГ, %": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "p-value CUPED числом": {
+      "show_rank_delimiter": false,
+      "precision": 6
+    },
+    "Uplift ARPU CUPED, %": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "Акцепт / ЦА": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "Начисление / ЦА": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "Списание бонусов, %": {
+      "format": "percent",
+      "show_rank_delimiter": false,
+      "precision": 2
+    },
+    "ARPU CUPED ЦА, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "ARPU CUPED КГ, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Скидки, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Начислено бонусов, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Списано бонусов, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Затраты, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Валовая маржа ЦА, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Валовая маржа КГ, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "РТО без НДС ЦА, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "РТО без НДС КГ, руб.": {
+      "show_rank_delimiter": true,
+      "precision": 2
+    },
+    "Получатели бонусов": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Получатели скидок": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Получатели бонуса или скидки": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Получатели бонуса и скидки": {
+      "show_rank_delimiter": true,
+      "precision": 0
+    },
+    "Доп. РТО, руб.": {
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "totals": {
+      "enabled": false
+    },
+    "pagination": {
+      "enabled": true,
+      "limit": 25
+    },
+    "freeze_columns": {
+      "count": 4
+    },
+    "table_size": {
+      "size": "m"
+    },
+    "column_title": [
+      {
+        "field": "Группа ЦА",
+        "title": "Группа Тест"
+      },
+      {
+        "field": "Клиенты ЦА",
+        "title": "Клиенты Тест"
+      },
+      {
+        "field": "Клиенты КГ",
+        "title": "Клиенты Контроль"
+      },
+      {
+        "field": "Маржа / РТО без НДС ЦА, %",
+        "title": "Маржа / РТО без НДС Тест, %"
+      },
+      {
+        "field": "Маржа / РТО без НДС КГ, %",
+        "title": "Маржа / РТО без НДС Контроль, %"
+      },
+      {
+        "field": "p-value CUPED числом",
+        "title": "p-value ARPU"
+      },
+      {
+        "field": "Uplift ARPU CUPED, %",
+        "title": "Uplift ARPU, %"
+      },
+      {
+        "field": "Акцепт / ЦА",
+        "title": "Акцепт / Тест"
+      },
+      {
+        "field": "Начисление / ЦА",
+        "title": "Утиль / Тест"
+      },
+      {
+        "field": "ARPU CUPED ЦА, руб.",
+        "title": "ARPU Тест, руб."
+      },
+      {
+        "field": "ARPU CUPED КГ, руб.",
+        "title": "ARPU Контроль, руб."
+      },
+      {
+        "field": "Валовая маржа ЦА, руб.",
+        "title": "Валовая маржа Тест, руб."
+      },
+      {
+        "field": "Валовая маржа КГ, руб.",
+        "title": "Валовая маржа Контроль, руб."
+      },
+      {
+        "field": "РТО без НДС ЦА, руб.",
+        "title": "РТО без НДС Тест, руб."
+      },
+      {
+        "field": "РТО без НДС КГ, руб.",
+        "title": "РТО без НДС Контроль, руб."
+      }
+    ]
+  },
+  "filters": [
+    {
+      "field": "Выбранный период",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    },
+    {
+      "field": "ARPU ЦА, руб.",
+      "operation": "GT",
+      "values": [
+        "0"
+      ]
+    }
+  ],
+  "show_title": false
+}

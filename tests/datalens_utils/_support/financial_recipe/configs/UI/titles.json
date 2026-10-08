@@ -1,0 +1,22 @@
+{
+  "month": {
+    "month_heading": {
+      "text": "Дейли оффер: фин. отчёт",
+      "size": "l"
+    }
+  },
+  "dynamics": {
+    "dynamics_heading": {
+      "text": "Динамика дейли оффера",
+      "size": "m"
+    },
+    "dynamics_costs_heading": {
+      "text": "Бонусы и скидки",
+      "size": "s"
+    },
+    "dynamics_financial_heading": {
+      "text": "Финансовый результат: Тест и Контроль",
+      "size": "s"
+    }
+  }
+}

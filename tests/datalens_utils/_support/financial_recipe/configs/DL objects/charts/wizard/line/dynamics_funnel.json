@@ -1,0 +1,82 @@
+{
+  "key": "dynamics_funnel",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Воронка",
+  "title": "Воронка",
+  "dataset": "dynamics",
+  "description": "Уникальные клиенты с акцептом и утилем: конверсии за выбранный период или накопительно. Акцепт → Утиль = клиенты с утилем / клиенты с акцептом.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Акцепт",
+      "Утиль",
+      "Акцепт → Утиль"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Акцепт → Утиль": {
+      "format": "percent",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Акцепт": {
+      "format": "percent",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Утиль": {
+      "format": "percent",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "Акцепт → Утиль": "#228833",
+        "Акцепт": "#4477AA",
+        "Утиль": "#EE6677"
+      }
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "local_fields": {
+    "Акцепт": {
+      "guid": "dynamics_funnel_accept_label",
+      "formula": "[Акцепт / Тест]",
+      "cast": "float",
+      "aggregation": "none"
+    },
+    "Утиль": {
+      "guid": "dynamics_funnel_util_label",
+      "formula": "[Утиль / Тест]",
+      "cast": "float",
+      "aggregation": "none"
+    }
+  },
+  "show_title": false
+}

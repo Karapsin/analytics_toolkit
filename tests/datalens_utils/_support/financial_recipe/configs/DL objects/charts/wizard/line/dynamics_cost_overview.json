@@ -1,0 +1,127 @@
+{
+  "key": "dynamics_cost_overview",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Обзор",
+  "title": "Обзор",
+  "dataset": "dynamics",
+  "description": "Начисления, фактические списания и скидки. Затраты = списания + скидки; начисления не прибавляются к списаниям. Получатели бонусов и скидок показаны по второй оси в клиентах. «Общие расходы» — отдельная денежная линия: скидки + списанные бонусы, с учётом выбранного режима и масштаба.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Начислено бонусов",
+      "Списано бонусов",
+      "Скидки",
+      "Общие расходы"
+    ],
+    "y2": [
+      "Клиенты с бонусами",
+      "Клиенты со скидками"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Начислено бонусов": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Списано бонусов": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Скидки": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Клиенты с бонусами": {
+      "format": "number",
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Клиенты со скидками": {
+      "format": "number",
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Общие расходы": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "Начислено бонусов": "#4477AA",
+        "Списано бонусов": "#999999",
+        "Скидки": "#228833",
+        "Клиенты с бонусами": "#AA4499",
+        "Клиенты со скидками": "#EE7733",
+        "Общие расходы": "#66CCEE"
+      }
+    },
+    "axis_title": [
+      {
+        "slot_name": "y",
+        "mode": "manual",
+        "text": "Рубли"
+      },
+      {
+        "slot_name": "y2",
+        "mode": "manual",
+        "text": "Клиенты"
+      }
+    ],
+    "axis_scale": [
+      {
+        "slot_name": "y",
+        "scale": "linear",
+        "mode": "manual",
+        "min": "0",
+        "max": "auto"
+      },
+      {
+        "slot_name": "y2",
+        "scale": "linear",
+        "mode": "manual",
+        "min": "0",
+        "max": "auto"
+      }
+    ]
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false,
+  "local_fields": {
+    "Общие расходы": {
+      "guid": "dynamics_cost_overview_total_costs",
+      "formula": "[Скидки] + [Списано бонусов]",
+      "cast": "float",
+      "aggregation": "none"
+    }
+  }
+}

@@ -353,7 +353,7 @@ class GalleryTests(ProjectTestCase):
             assert set(managed_edges(tab, contents[tab.id])) == expected_edges(contents[tab.id])
             # SDK connections express ignored influence: receiver -> selector.
             for receiver, selector in expected_edges(contents[tab.id]):
-                assert receiver in contents[tab.id]["charts"]
+                assert receiver in (set(contents[tab.id]["charts"]) | set(bindings))
                 assert receiver not in bindings[selector]
         writes = len(self.backend.writes)
         again = populate_dashboard(

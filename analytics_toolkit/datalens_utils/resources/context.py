@@ -75,6 +75,7 @@ def dashboard_context(  # noqa: PLR0913
                 "source_tables": source_tables,
             },
             allow_folder_move=True,
+            dataset_ids={role: value.get("id") for role, value in dataset_definitions.items()},
         )
         resources.set_folders(
             ensure_resource_folders(client=client, parent=folder, names=resource_folders)

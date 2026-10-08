@@ -1,0 +1,19 @@
+{
+  "key": "dynamics_experiment_selector",
+  "tab": "dynamics",
+  "title": "Эксперимент",
+  "source": {
+    "kind": "dataset",
+    "dataset": "dynamics",
+    "field": "Эксперимент"
+  },
+  "control": {
+    "title_placement": "top",
+    "element": "select",
+    "multiselect": true,
+    "required": false,
+    "default_value": [],
+    "operation": "IN"
+  },
+  "group": "dynamics_filters"
+}

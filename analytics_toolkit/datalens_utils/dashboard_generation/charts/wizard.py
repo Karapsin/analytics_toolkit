@@ -239,7 +239,9 @@ def configure(  # noqa: C901, PLR0912
             values=rule.get("values", ()),
         )
     if definition["type"] != "indicator":
-        builder.chart_title(text=definition["title"])
+        builder.chart_title(
+            text=definition["title"], mode="show" if definition.get("show_title", True) else "hide"
+        )
     if "description" in definition:
         builder.description(definition["description"])
     for axis, title in definition.get("axis_titles", {}).items():

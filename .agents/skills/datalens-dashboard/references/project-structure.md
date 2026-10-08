@@ -16,10 +16,13 @@ copied engine or project-local `utils`.
 | `sql_tests/`, `tests/` | Independent runnable SQL/scenarios and offline checks |
 | `AGENTS.md`, `VERIFICATION.md` | Local rules and dated evidence |
 
-The current compiler assigns visual charts to the tab matching their family:
-`wizard`, `ql`, `editor`. Change visible titles while preserving these keys.
-Arbitrary business-tab routing needs an adapter extension; a new `tab` field
-alone does not change placement.
+Charts can set an explicit `tab` business key; without it the family key
+(`wizard`, `ql`, `editor`) remains the default. Multiple business tabs can use
+the same chart family. `UI/chart_groups.json` defines ordered charts within a
+single widget: set each member's `key`, `title`, optional `params`, and exactly
+one `default: true`; position the group key in layout. Every chart is placed
+once, either directly or inside a group. `show_title: false` hides the internal
+Wizard title while retaining its text during import.
 
 Runtime defaults to sibling `.local/<project-name-without-spaces>/`, overridden
 by `DATALENS_RUNTIME_DIR`. It must remain external, including through symlinks.
@@ -45,8 +48,15 @@ Persistent names reject `·`, `×` and `/`, even though presentation titles can
 use them. Validate the pinned United Storage grammar before writes; do not
 silently sanitize names.
 
-Dataset selectors bind fields; cross-dataset aliases are explicit. Manual QL
-selectors bind declared parameters. Editor uses array-of-string parameters and
+Dataset selectors bind fields; cross-dataset aliases are explicit. Manual selectors bind declared QL/Editor parameters or Wizard dataset
+`parameters` (each has `type` and `default`). Dataset `default_filters` configure
+field-value queries; explicit chart filters still govern chart results.
+Selectors may receive other selectors, enabling dependent date choices.
+Use explicit aliases with `{parameter: name}` or `{dataset: role, field: title}`
+for parameter-to-field binding. Checkpoints track managed aliases so user
+aliases remain intact. Only previously managed obsolete tabs are retired.
+`preserve_layout: true` on an existing business tab tolerates its current
+layout warnings; new layouts still require non-overlapping geometry. Editor uses array-of-string parameters and
 actual Sources conditions. Matching labels do not bind these mechanisms.
 `UI/links/connections.json` is a receiver allowlist; the compiler writes ignore
 edges for its complement. SDK `add_connection(from_item=receiver,

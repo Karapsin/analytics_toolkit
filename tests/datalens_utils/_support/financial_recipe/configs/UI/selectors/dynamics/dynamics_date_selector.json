@@ -1,0 +1,18 @@
+{
+  "key": "dynamics_date_selector",
+  "tab": "dynamics",
+  "title": "Диапазон дат",
+  "source": {
+    "kind": "dataset",
+    "dataset": "dynamics",
+    "field": "Дата"
+  },
+  "control": {
+    "title_placement": "top",
+    "element": "date",
+    "is_range": true,
+    "default_value": null,
+    "operation": "BETWEEN"
+  },
+  "group": "dynamics_filters"
+}

@@ -1,0 +1,31 @@
+{
+  "key": "period_type_selector",
+  "tab": "month",
+  "title": "Период расчёта",
+  "source": {
+    "kind": "manual",
+    "param_name": "report_period"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": false,
+    "required": true,
+    "default_value": "month",
+    "options": [
+      {
+        "value": "month",
+        "title": "Месяц"
+      },
+      {
+        "value": "week",
+        "title": "Неделя"
+      },
+      {
+        "value": "total",
+        "title": "Всё время"
+      }
+    ]
+  },
+  "group": "month_filters"
+}

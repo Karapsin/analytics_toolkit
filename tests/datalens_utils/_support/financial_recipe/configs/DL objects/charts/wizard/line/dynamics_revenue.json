@@ -1,0 +1,85 @@
+{
+  "key": "dynamics_revenue",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика РТО с НДС",
+  "title": "РТО с НДС",
+  "dataset": "dynamics",
+  "description": "Тест и Контроль по выбранному режиму. Доп. РТО по правой оси: (среднее на клиента Тест − среднее на клиента Контроль) × клиентов Тест, руб. Без Контроля — пусто. Эффект остаётся суммой при выборе «На клиента». Для недель и месяцев: при p-value ARPU выше alpha эффект периода равен 0. Накопительно — сумма эффектов периодов. Для дней эффект скрыт.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "РТО с НДС: Тест",
+      "РТО с НДС: Контроль"
+    ],
+    "y2": [
+      "Доп. РТО"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "РТО с НДС: Тест": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "РТО с НДС: Контроль": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Доп. РТО": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "РТО с НДС: Тест": "#4477AA",
+        "РТО с НДС: Контроль": "#999999",
+        "Доп. РТО": "#EE7733"
+      }
+    },
+    "axis_title": [
+      {
+        "slot_name": "y2",
+        "mode": "manual",
+        "text": "Доп. РТО, руб."
+      }
+    ]
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false,
+  "local_fields": {
+    "Доп. РТО": {
+      "guid": "dynamics_revenue_additional_rto",
+      "formula": "[РТО с НДС: Дифф]",
+      "cast": "float",
+      "aggregation": "none"
+    }
+  }
+}

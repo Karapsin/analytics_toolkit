@@ -1,0 +1,61 @@
+{
+  "key": "dynamics_recipients",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Получатели",
+  "title": "Получатели",
+  "dataset": "dynamics",
+  "description": "Уникальные клиенты с положительной суммой бонусов или скидок за период. Недельные и месячные значения не складываются из дневных численностей.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Клиенты с бонусами",
+      "Клиенты со скидками"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Клиенты с бонусами": {
+      "format": "number",
+      "precision": 0,
+      "show_rank_delimiter": true
+    },
+    "Клиенты со скидками": {
+      "format": "number",
+      "precision": 0,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "Клиенты с бонусами": "#4477AA",
+        "Клиенты со скидками": "#999999"
+      }
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false
+}

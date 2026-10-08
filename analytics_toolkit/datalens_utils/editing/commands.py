@@ -110,6 +110,7 @@ def context_for(
         folder,
         target,
         allow_folder_move=True,
+        dataset_ids={role: value.get("id") for role, value in dataset_definitions.items()},
         entries=[entry for entry in entries.values() if entry is not None],
     )
     resources.set_folders(

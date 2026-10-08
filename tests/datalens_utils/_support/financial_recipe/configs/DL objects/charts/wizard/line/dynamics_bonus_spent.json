@@ -1,0 +1,49 @@
+{
+  "key": "dynamics_bonus_spent",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Списания",
+  "title": "Списания",
+  "dataset": "dynamics",
+  "description": "Списанные бонусы по фактической дате списания, без ограничения возраста бонуса. Сумма в рублях или на участника Тест.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Списано бонусов"
+    ]
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Списано бонусов": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false
+}

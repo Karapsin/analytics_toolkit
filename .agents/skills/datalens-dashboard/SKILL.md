@@ -44,6 +44,18 @@ chart definitions, recipients and layout before writes. Keep semantic keys and
 local field GUIDs stable during edits. A new deployment needs separate runtime
 state and deliberate persistent-ID reset.
 
+For an existing dashboard migration, preserve IDs, deployment constants, SQL
+and all recipe JSONs. Bind helper calls through the new project's session.
+Compare public SDK exports from the previous and shared engines using offline
+fixtures and deterministic generated IDs before publishing. Model existing
+layout through a saved snapshot when it contains tolerated warnings. Document
+any normalization and keep business IDs, fields, ordering, filters and parameters
+in the comparison. Update every project Markdown file, including `AGENTS.md`
+and dated verification evidence. Reuse the existing CLI; do not copy tools.
+
+Business tabs, chart groups, dataset parameters, selector dependencies and
+managed aliases are described in [project structure](references/project-structure.md).
+
 ## Runtime and SDK
 
 Pass project root, external runtime and `Deployment` explicitly to

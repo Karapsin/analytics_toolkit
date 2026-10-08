@@ -1,0 +1,46 @@
+{
+  "month": {
+    "month_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "month_filters": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "month_intro": [
+      0,
+      9,
+      36,
+      5
+    ],
+    "month_funnel": [
+      0,
+      32,
+      36,
+      40
+    ],
+    "month_notes": [
+      0,
+      72,
+      36,
+      8
+    ],
+    "month_summary": [
+      0,
+      14,
+      36,
+      18
+    ],
+    "month_group_selector_control": [
+      0,
+      6,
+      36,
+      3
+    ]
+  }
+}

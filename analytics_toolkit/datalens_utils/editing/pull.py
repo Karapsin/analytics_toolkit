@@ -70,6 +70,8 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
     settings = visualization.get("chartSettings", {})
     if definition["type"] != "indicator" and "title" in settings:
         result["title"] = settings["title"]
+        if "show_title" in result or settings.get("titleMode", "show") == "hide":
+            result["show_title"] = settings.get("titleMode", "show") != "hide"
     if definition["type"] in {"combined_chart", "geolayer"}:
         # Layer topology has no typed update in SDK 3.1. Never invent a recipe
         # that the incremental publisher cannot safely apply.
@@ -226,10 +228,12 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
         description=(dashboard.raw.get("annotation") or {}).get("description", ""),
         hide_tabs=dashboard.data.get("settings", {}).get("hideTabs", False),
     )
-    layouts, tabs = result["configs/UI/layout.json"], result["configs/UI/tabs.json"]
+    layouts, tabs = (result["configs/UI/layout.json"], result["configs/UI/tabs.json"])
     params = result["configs/UI/links/chart_params.json"]
     connections = result["configs/UI/links/connections.json"]
+    chart_groups = result.get("configs/UI/chart_groups.json", {})
     aliases = result["configs/UI/links/aliases.json"]
+    selector_groups = result["configs/UI/selectors/selector_groups.json"]
     fields = {
         field.guid: {"dataset": role, "field": field.title}
         for role, dataset in datasets.items()
@@ -256,9 +260,8 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
         for key in layouts[tab.id]:
             if key not in positions:
                 message = (
-                    "Managed dashboard item "
-                    f"{key!r}"
-                    " is missing; structural imports need explicit configuration."
+                    f"Managed dashboard item {key!r} is missing; structural imports need "
+                    f"explicit configuration."
                 )
                 raise DataLensUtilsError(message)
             layouts[tab.id][key] = positions[key]
@@ -273,6 +276,28 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
                 values = widget[0].get("params", {})
                 if values or item.id in params:
                     params[item.id] = values
+            if item.id in chart_groups and item.item_type == "widget":
+                configured = {member["key"]: member for member in chart_groups[item.id]["charts"]}
+                identifiers = {chart_definitions[key]["id"]: key for key in configured}
+                incoming = []
+                for widget in item.data.get("tabs", []):
+                    key = identifiers.get(widget.get("chartId"))
+                    if key is None:
+                        message = f"Chart group {item.id!r} has an unknown chart binding."
+                        raise DataLensUtilsError(message)
+                    member = copy.deepcopy(configured[key])
+                    member.update(
+                        title=widget.get("title", ""), default=widget.get("isDefault", False)
+                    )
+                    if widget.get("params") or "params" in member:
+                        member["params"] = widget.get("params", {})
+                    incoming.append(member)
+                if len(incoming) != len(configured) or len(
+                    {member["key"] for member in incoming}
+                ) != len(configured):
+                    message = f"Chart group {item.id!r} changed its members."
+                    raise DataLensUtilsError(message)
+                chart_groups[item.id]["charts"] = incoming
             for kind in ("titles", "texts"):
                 path = f"configs/UI/{kind}.json"
                 values = result[path].get(tab.id, {})
@@ -281,6 +306,21 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
                     if kind == "titles":
                         values[item.id]["size"] = item.data.get("size", "m")
         for control in tab.controls:
+            if getattr(control, "id", None) in selector_groups:
+                item = next(
+                    item for item in (*tab.items, *tab.global_items) if item.id == control.id
+                )
+                group = selector_groups[control.id]
+                for public, wire, default in (
+                    ("apply_button", "buttonApply", False),
+                    ("reset_button", "buttonReset", False),
+                    ("update_on_change", "updateControlsOnChange", True),
+                    ("show_group_name", "showGroupName", False),
+                    ("auto_height", "autoHeight", False),
+                ):
+                    value = item.data.get(wire, default)
+                    if public in group or value != default:
+                        group[public] = value
             for member in control.members:
                 if member.id not in selector_files:
                     continue
@@ -308,6 +348,8 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
                     expected["default_value"] = default
                 if actual.operation is not None:
                     expected["operation"] = actual.operation
+                else:
+                    expected.pop("operation", None)
                 for public, wire in (
                     ("show_title", "showTitle"),
                     ("title_placement", "titlePlacement"),
@@ -332,7 +374,7 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
                         message = f"Selector {member.id!r} has an unknown dataset field."
                         raise DataLensUtilsError(message)
                     definition["source"].update(binding)
-                receivers = set(chart_definitions)
+                receivers = set(chart_definitions) | set(chart_groups)
                 receivers = {key for key in receivers if key in layouts[tab.id]}
                 receivers.update(
                     key
@@ -344,11 +386,11 @@ def pull_ui(dashboard: Any, files: Any, datasets: Any, chart_definitions: Any) -
                 connections[member.id] = [
                     key for key in previous if key in wanted_receivers
                 ] + sorted(wanted_receivers - set(previous))
-        groups = []
-        for group in tab.aliases.get("default", []):
-            groups.append([fields.get(value, {"parameter": value}) for value in group])  # noqa: PERF401
+        groups = [
+            [fields.get(value, {"parameter": value}) for value in group]
+            for group in tab.aliases.get("default", [])
+        ]
 
-        # Alias member order is cosmetic; retain the readable local order.
         def signature(group: Any) -> Any:
             return frozenset(tuple(sorted(value.items())) for value in group)
 

@@ -1,0 +1,108 @@
+{
+  "month": {
+    "month_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "month_filters": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "month_intro": [
+      0,
+      10,
+      36,
+      5
+    ],
+    "month_funnel": [
+      0,
+      23,
+      36,
+      40
+    ],
+    "month_notes": [
+      0,
+      63,
+      36,
+      8
+    ],
+    "month_summary": [
+      0,
+      12,
+      36,
+      11
+    ],
+    "month_group_selector_control": [
+      0,
+      6,
+      8,
+      4
+    ]
+  },
+  "dynamics": {
+    "dynamics_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "dynamics_filters": [
+      0,
+      2,
+      36,
+      6
+    ],
+    "dynamics_funnel": [
+      0,
+      11,
+      36,
+      18
+    ],
+    "dynamics_costs": [
+      0,
+      31,
+      36,
+      18
+    ],
+    "dynamics_financial": [
+      0,
+      52,
+      36,
+      18
+    ],
+    "dynamics_notes": [
+      0,
+      70,
+      36,
+      7
+    ],
+    "dynamics_costs_heading": [
+      0,
+      29,
+      36,
+      2
+    ],
+    "dynamics_financial_heading": [
+      0,
+      49,
+      29,
+      3
+    ],
+    "dynamics_group_selector_control": [
+      0,
+      8,
+      7,
+      3
+    ],
+    "dynamics_alpha_selector_control": [
+      29,
+      49,
+      7,
+      3
+    ]
+  }
+}

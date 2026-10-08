@@ -1,0 +1,62 @@
+{
+  "key": "dynamics_margin_pct",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика Гросс-маржа проценты",
+  "title": "Гросс-маржа, %",
+  "dataset": "dynamics",
+  "description": "Гросс-маржа / РТО без НДС отдельно для Тест и Контроль, за период или накопительно.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "Гросс-маржа, %: Тест",
+      "Гросс-маржа, %: Контроль"
+    ],
+    "y2": []
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "Гросс-маржа, %: Тест": {
+      "format": "percent",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "Гросс-маржа, %: Контроль": {
+      "format": "percent",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "Гросс-маржа, %: Тест": "#4477AA",
+        "Гросс-маржа, %: Контроль": "#999999"
+      }
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false
+}

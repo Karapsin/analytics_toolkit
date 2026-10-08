@@ -1,0 +1,65 @@
+{
+  "month_experiment_selector": [
+    "month_funnel",
+    "month_summary"
+  ],
+  "month_group_selector": [
+    "month_funnel",
+    "month_summary"
+  ],
+  "period_type_selector": [
+    "month_funnel",
+    "month_start_selector",
+    "month_end_selector",
+    "month_summary"
+  ],
+  "month_start_selector": [
+    "month_funnel",
+    "month_summary"
+  ],
+  "month_end_selector": [
+    "month_funnel",
+    "month_summary"
+  ],
+  "alpha_selector": [
+    "month_funnel",
+    "month_summary"
+  ],
+  "dynamics_experiment_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial",
+    "dynamics_group_selector",
+    "dynamics_date_selector"
+  ],
+  "dynamics_group_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial"
+  ],
+  "dynamics_period_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial",
+    "dynamics_group_selector",
+    "dynamics_date_selector"
+  ],
+  "dynamics_conversion_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial"
+  ],
+  "dynamics_money_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial"
+  ],
+  "dynamics_date_selector": [
+    "dynamics_funnel",
+    "dynamics_costs",
+    "dynamics_financial"
+  ],
+  "dynamics_alpha_selector": [
+    "dynamics_financial"
+  ]
+}

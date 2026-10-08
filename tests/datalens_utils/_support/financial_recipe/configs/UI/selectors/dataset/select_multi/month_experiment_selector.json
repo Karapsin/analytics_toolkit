@@ -1,0 +1,18 @@
+{
+  "key": "month_experiment_selector",
+  "tab": "month",
+  "title": "Эксперимент",
+  "source": {
+    "kind": "dataset",
+    "dataset": "month",
+    "field": "Эксперимент"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": true,
+    "default_value": null,
+    "operation": "IN"
+  },
+  "group": "month_filters"
+}

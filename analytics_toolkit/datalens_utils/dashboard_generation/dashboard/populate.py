@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from datalens_sdk import DashboardTab
+from datalens_sdk import DashboardChartTab, DashboardTab
 
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.validation.dashboard import (
@@ -17,6 +17,7 @@ from analytics_toolkit.datalens_utils.validation.dashboard import (
     managed_edges,
     managed_ids,
     normalize_params,
+    requires_dependent_selectors,
     selector_default,
 )
 
@@ -47,9 +48,23 @@ def add_item(builder: Any, *, tab: Any, item_id: Any, definition: Any, datasets:
             **options,
             **scope,
         )
+    elif kind == "chart_group":
+        builder.add_chart_group(
+            [
+                DashboardChartTab(
+                    chart=value["chart"].id,
+                    title=value["title"],
+                    default=value.get("default", False),
+                    params=normalize_params(value.get("params", {})),
+                )
+                for value in definition["tabs"]
+            ],
+            **options,
+            **scope,
+        )
     elif kind == "external_selector":
         builder.add_selector(
-            chart=definition["chart"].id, title=definition["title"], **options, **scope
+            chart=definition["chart"], title=definition["title"], **options, **scope
         )
     elif kind == "selector_group":
         for member_id in definition["members"]:
@@ -95,27 +110,45 @@ def _item_location(dashboard: Any, item_id: Any) -> Any:
     return list(dict.fromkeys(matches))
 
 
-def _reconcile_wiring(update: Any, dashboard: Any, contents: Any, datasets: Any) -> Any:
+def _reconcile_wiring(  # noqa: C901
+    update: Any, dashboard: Any, contents: Any, datasets: Any, previous_aliases: Any = None
+) -> Any:
     changed = False
-    known_fields = {field.guid for dataset in datasets.values() for field in dataset.fields}
+    previous_aliases = previous_aliases or {}
     for tab in dashboard.tabs:
         if tab.id not in contents:
             continue
         content = contents[tab.id]
-        expected, actual = expected_edges(content), managed_edges(tab, content)
+        expected, actual = (expected_edges(content), managed_edges(tab, content, all_routes=True))
         for logical in set(actual) - expected:
-            source, target = actual[logical]
-            update.remove_connection(from_item=source, to_item=target, tab=tab.id)
+            routes = actual[logical]
+            for source, target in routes if isinstance(routes, list) else [routes]:
+                update.remove_connection(from_item=source, to_item=target, tab=tab.id)
             changed = True
         for source, target in expected - set(actual):
             update.add_connection(from_item=source, to_item=target, tab=tab.id)
             changed = True
         wanted_aliases = alias_groups(content, datasets)
         existing_aliases = actual_alias_groups(tab)
-        for group in existing_aliases - wanted_aliases:
-            if group.issubset(known_fields):
-                update.remove_alias(*sorted(group), tab=tab.id)
-                changed = True
+        owned_aliases = {frozenset(group) for group in previous_aliases.get(tab.id, [])}
+        definitions = list(content.get("selectors", {}).values())
+        definitions.extend(
+            value
+            for group in content.get("selector_groups", {}).values()
+            for value in group["definitions"].values()
+        )
+        for definition in definitions:
+            source = definition["source"]
+            if source["kind"] != "manual":
+                continue
+            name = source["param_name"]
+            for dataset in datasets.values():
+                field = dataset.find_field(name)
+                if field is not None and field.calc_mode == "parameter":
+                    owned_aliases.add(frozenset((name, field.guid)))
+        for group in (existing_aliases & owned_aliases) - wanted_aliases:
+            update.remove_alias(*sorted(group), tab=tab.id)
+            changed = True
         for group in wanted_aliases - existing_aliases:
             update.add_alias(*sorted(group), tab=tab.id)
             changed = True
@@ -198,7 +231,7 @@ def patch_item(update: Any, tab: Any, item_id: Any, definition: Any, datasets: A
     return bool(actions)
 
 
-def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def populate_dashboard(  # noqa: C901, PLR0913, PLR0912, PLR0915
     *,
     context: Any,
     dashboard: Any,
@@ -210,18 +243,36 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
     description: Any,
     hide_tabs: Any,
 ) -> Any:
-    client, resources = context.client, context.resources
+    client, resources = (context.client, context.resources)
     dashboard = client.get.dashboard(by_id=dashboard.id, branch="saved")
+    state = resources.state["resources"]["dashboard"]
+    previous_managed = set(state.get("managed_items", ()))
+    retired = [
+        tab.id
+        for tab in dashboard.tabs
+        if tab.id not in tab_definitions
+        and tab.items
+        and (not tab.global_items)
+        and {item.id for item in tab.items}.issubset(previous_managed)
+    ]
     unexpected = [
-        tab.id for tab in dashboard.tabs if not tab.hidden and tab.id not in tab_definitions
+        tab.id
+        for tab in dashboard.tabs
+        if not tab.hidden and tab.id not in tab_definitions and (tab.id not in retired)
     ]
     if unexpected:
         message = (
-            "Unexpected visible tabs are preserved; reconcile them explicitly "
-            "before applying the three-tab gallery: "
-            f"{unexpected}"
+            f"Unexpected visible tabs are preserved; reconcile them explicitly before "
+            f"applying the dashboard recipe: {unexpected}"
         )
         raise DataLensUtilsError(message)
+    if retired:
+        update = dashboard.update
+        for tab in retired:
+            update.remove_tab(tab)
+        dashboard = resources.persisted(
+            "dashboard", update.mode("save").execute(), client.get.dashboard, branch="saved"
+        )
     expected = {
         role: definition_items(contents.get(role, {}), charts, chart_definitions)
         for role in tab_definitions
@@ -230,8 +281,6 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if sum(len(managed_ids(items)) for items in expected.values()) != len(managed):
         message = "Dashboard item, wrapper, and member keys must be unique across tabs."
         raise DataLensUtilsError(message)
-    state = resources.state["resources"]["dashboard"]
-    previous_managed = set(state.get("managed_items", ()))
     pending = set(state.get("pending_items", ()))
     tabs = {tab.id: tab for tab in dashboard.tabs}
     remove_ids: set[str] = set()
@@ -252,12 +301,12 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 and patch_item(dashboard.update, tabs[role], item_id, definition, datasets)
             )
             if locations and (
-                len(locations) != 1 or locations[0][0] != role or (problems and not point_update)
+                len(locations) != 1 or locations[0][0] != role or (problems and (not point_update))
             ):
-                remove_ids.update(wrapper for _, wrapper in locations)
+                remove_ids.update((wrapper for _, wrapper in locations))
                 pending.update(managed_ids({item_id: definition}))
     for item_id in previous_managed - managed:
-        remove_ids.update(wrapper for _, wrapper in _item_location(dashboard, item_id))
+        remove_ids.update((wrapper for _, wrapper in _item_location(dashboard, item_id)))
     if remove_ids:
         resources.phase(
             "dashboard",
@@ -265,8 +314,6 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
             pending_items=sorted(pending),
             managed_items=sorted(previous_managed | managed),
         )
-        # Removed reserved IDs cannot be reused in the same update. Save the
-        # removal as a draft, re-fetch it, then restore the stable item/member IDs.
         dashboard = client.get.dashboard(by_id=dashboard.id, branch="saved")
         update = dashboard.update
         for item_id in sorted(remove_ids):
@@ -274,11 +321,10 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
         dashboard = resources.persisted(
             "dashboard", update.mode("save").execute(), client.get.dashboard, branch="saved"
         )
-
     if remove_ids:
         dashboard = client.get.dashboard(by_id=dashboard.id, branch="saved")
     tabs = {tab.id: tab for tab in dashboard.tabs}
-    update, changed = dashboard.update, False
+    update, changed = (dashboard.update, False)
     for role, definition in tab_definitions.items():
         tab = tabs.get(role)
         if tab is None:
@@ -301,11 +347,17 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     changed = True
                 elif item_issues(tab, item_id, item, datasets):
                     changed = patch_item(update, tab, item_id, item, datasets) or changed
-    # Existing tabs' added widgets/members are immediately addressable by the
-    # public update builder; wires can be created in this same save transaction.
-    changed = _reconcile_wiring(update, dashboard, contents, datasets) or changed
+    changed = (
+        _reconcile_wiring(update, dashboard, contents, datasets, state.get("managed_aliases", {}))
+        or changed
+    )
     if dashboard.data.get("settings", {}).get("hideTabs", False) != hide_tabs:
         update.settings(hide_tabs=hide_tabs)
+        changed = True
+    if requires_dependent_selectors(contents) and not dashboard.data.get("settings", {}).get(
+        "dependentSelectors", False
+    ):
+        update.settings(dependent_selectors=True)
         changed = True
     if (dashboard.raw.get("annotation") or {}).get("description", "") != description:
         update.description(description)
@@ -317,7 +369,14 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
             pending_items=sorted(pending),
             managed_items=sorted(previous_managed | managed),
         )
-        mode = "save" if remove_ids or layout_changed else "publish"
+        mode = (
+            "save"
+            if remove_ids
+            or layout_changed
+            or retired
+            or any(role not in tabs for role in tab_definitions)
+            else "publish"
+        )
         dashboard = resources.persisted(
             "dashboard",
             update.mode(mode).execute(),
@@ -341,5 +400,19 @@ def populate_dashboard(  # noqa: C901, PLR0912, PLR0913, PLR0915
         dashboard = resources.persisted(
             "dashboard", dashboard.publish_revision(), client.get.dashboard
         )
-    resources.phase("dashboard", "published", pending_items=[], managed_items=sorted(managed))
+    resources.phase(
+        "dashboard",
+        "published",
+        pending_items=[],
+        managed_items=sorted(managed),
+        managed_aliases={
+            tab: [
+                sorted(group)
+                for group in sorted(
+                    alias_groups(content, datasets), key=lambda group: tuple(sorted(group))
+                )
+            ]
+            for tab, content in contents.items()
+        },
+    )
     return dashboard

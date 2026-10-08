@@ -201,7 +201,9 @@ def test_wrong_source_and_failed_postwrite_verification_are_rejected(session_sta
     )
     with patch.object(create, "validate_definition"), patch.object(
         create, "dataset_issues", side_effect=[[], ["bad title"]]
-    ), pytest.raises(DataLensUtilsError):
+    ), pytest.raises(
+        DataLensUtilsError, match="does not match" if problem == "postwrite" else None
+    ):
         create.create_datasets(context=context, definitions={"sales": config})
 
 

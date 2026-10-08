@@ -1,0 +1,62 @@
+{
+  "key": "dynamics_revenue_net",
+  "family": "wizard",
+  "type": "line",
+  "tab": "dynamics",
+  "name": "Динамика РТО без НДС",
+  "title": "РТО без НДС",
+  "dataset": "dynamics",
+  "description": "Тест и Контроль по выбранному режиму расчёта и масштабу денежных показателей.",
+  "fields": {
+    "x": [
+      "Дата"
+    ],
+    "y": [
+      "РТО без НДС: Тест",
+      "РТО без НДС: Контроль"
+    ],
+    "y2": []
+  },
+  "sort": [
+    [
+      "Дата",
+      "asc"
+    ]
+  ],
+  "formats": {
+    "РТО без НДС: Тест": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    },
+    "РТО без НДС: Контроль": {
+      "format": "number",
+      "precision": 2,
+      "show_rank_delimiter": true
+    }
+  },
+  "settings": {
+    "legend": {
+      "mode": "show"
+    },
+    "navigator": {
+      "mode": "show"
+    },
+    "color_by_measure_name": {
+      "colors_map": {
+        "РТО без НДС: Тест": "#4477AA",
+        "РТО без НДС: Контроль": "#999999"
+      }
+    }
+  },
+  "filters": [
+    {
+      "field": "Выбранная детализация",
+      "operation": "EQ",
+      "values": [
+        "True"
+      ]
+    }
+  ],
+  "show_title": false
+}

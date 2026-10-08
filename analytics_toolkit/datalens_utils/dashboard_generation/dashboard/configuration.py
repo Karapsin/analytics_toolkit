@@ -49,13 +49,34 @@ def _validate_positions(tab: Any, positions: Any, *, allow_overlaps: Any = False
         occupied.append((key, at))
 
 
+_MIN_ALIAS_MEMBERS = 2
+
+
 def _declared_fields(dataset: Any) -> Any:
-    return {value.get("title", key) for key, value in dataset.get("fields", {}).items()} | set(
-        dataset.get("calculations", {})
+    return (
+        {value.get("title", key) for key, value in dataset.get("fields", {}).items()}
+        | set(dataset.get("calculations", {}))
+        | set(dataset.get("parameters", {}))
     )
 
 
-def _validate_selector(key: Any, definition: Any, *, tabs: Any, charts: Any, datasets: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
+def _parameter_names(chart: Any, datasets: Any) -> Any:
+    if chart["family"] == "wizard":
+        return set(datasets[chart["dataset"]].get("parameters", {}))
+    return {value["name"] for value in chart.get("params", [])}
+
+
+def _validate_selector(  # noqa: C901, PLR0913, PLR0912, PLR0915
+    key: Any,
+    definition: Any,
+    *,
+    tabs: Any,
+    charts: Any,
+    datasets: Any,
+    selectors: Any = None,
+    chart_groups: Any = None,
+) -> Any:
+    selectors = {} if selectors is None else selectors
     tab = definition.get("tab")
     if tab not in tabs:
         message = f"Selector {key} refers to unknown tab {tab!r}."
@@ -86,21 +107,49 @@ def _validate_selector(key: Any, definition: Any, *, tabs: Any, charts: Any, dat
         message = f"Selector {key} needs a unique recipients list."
         raise DataLensUtilsError(message)
     for recipient in recipients:
+        group = (chart_groups or {}).get(recipient)
+        if group is not None:
+            if group["tab"] != tab:
+                message = f"Selector {key} has a cross-tab chart group: {recipient}"
+                raise DataLensUtilsError(message)
+            if kind == "manual":
+                for chart_tab in group["charts"]:
+                    chart = charts[chart_tab["key"]]
+                    if source["param_name"] not in _parameter_names(chart, datasets):
+                        message = (
+                            f"Parameter {source['param_name']} is not declared by "
+                            f"{chart_tab['key']}."
+                        )
+                        raise DataLensUtilsError(message)
+            continue
         receiver = charts.get(recipient)
-        if receiver is None or receiver.get("type") == "selector" or receiver.get("family") != tab:
+        if receiver is None and kind in ("manual", "dataset"):
+            receiver = selectors.get(recipient)
+            if (
+                receiver is not None
+                and receiver["source"]["kind"] == "dataset"
+                and (receiver["tab"] == tab)
+            ):
+                if kind == "manual" and source["param_name"] not in datasets[
+                    receiver["source"]["dataset"]
+                ].get("parameters", {}):
+                    message = f"Selector {key} parameter is not declared by {recipient}."
+                    raise DataLensUtilsError(message)
+                continue
+            receiver = None
+        if (
+            receiver is None
+            or receiver.get("type") == "selector"
+            or receiver.get("tab", receiver.get("family")) != tab
+        ):
             message = f"Selector {key} has an unknown or cross-tab recipient: {recipient}"
             raise DataLensUtilsError(message)
         if kind == "manual":
-            names = {value["name"] for value in receiver.get("params", [])}
+            names = _parameter_names(receiver, datasets)
             if source["param_name"] not in names:
                 message = (
-                    "Selector "
-                    f"{key}"
-                    " parameter "
-                    f"{source['param_name']!r}"
-                    " is not declared by "
-                    f"{recipient}"
-                    "."
+                    f"Selector {key} parameter {source['param_name']!r} is not declared by "
+                    f"{recipient}."
                 )
                 raise DataLensUtilsError(message)
     if kind != "editor":
@@ -159,6 +208,33 @@ def read_contents(*, allow_overlaps: Any = False) -> Any:  # noqa: C901, PLR0912
     groups = read_config("UI/selectors/selector_groups.json")
     aliases = read_config("UI/links/aliases.json")
     chart_params = read_config("UI/links/chart_params.json")
+    chart_groups = (
+        read_config("UI/chart_groups.json")
+        if (session().paths.project_root / "configs/UI/chart_groups.json").exists()
+        else {}
+    )
+    grouped_charts = {
+        member["key"] for group in chart_groups.values() for member in group["charts"]
+    }
+    if sum(len(group["charts"]) for group in chart_groups.values()) != len(grouped_charts):
+        message = "A chart can belong to only one chart group."
+        raise DataLensUtilsError(message)
+    for key, group in chart_groups.items():
+        if (
+            group["tab"] not in tabs
+            or not group["charts"]
+            or sum(member.get("default", False) for member in group["charts"]) != 1
+        ):
+            message = f"Chart group {key} needs a known tab and one default chart."
+            raise DataLensUtilsError(message)
+        for member in group["charts"]:
+            if (
+                member["key"] not in charts
+                or charts[member["key"]].get("tab", charts[member["key"]].get("family"))
+                != group["tab"]
+            ):
+                message = f"Chart group {key} has an unknown or cross-tab chart."
+                raise DataLensUtilsError(message)
     connections = read_config("UI/links/connections.json")
     if set(connections) != set(selectors):
         message = "UI links must declare recipients for every selector exactly once."
@@ -171,7 +247,15 @@ def read_contents(*, allow_overlaps: Any = False) -> Any:  # noqa: C901, PLR0912
         message = "UI titles, texts, or aliases refer to unknown tabs."
         raise DataLensUtilsError(message)
     for key, definition in selectors.items():
-        _validate_selector(key, definition, tabs=tabs, charts=charts, datasets=datasets)
+        _validate_selector(
+            key,
+            definition,
+            tabs=tabs,
+            charts=charts,
+            datasets=datasets,
+            selectors=selectors,
+            chart_groups=chart_groups,
+        )
     grouped = Counter(member for group in groups.values() for member in group.get("members", []))
     if any(count != 1 for count in grouped.values()):
         message = "Each grouped selector can belong to exactly one group."
@@ -207,15 +291,15 @@ def read_contents(*, allow_overlaps: Any = False) -> Any:  # noqa: C901, PLR0912
         )
         if chart["family"] in {"ql", "editor"} and set(defaults) - names:
             message = (
-                "Widget "
-                f"{key}"
-                " defaults refer to undeclared parameters: "
+                f"Widget {key} defaults refer to undeclared parameters: "
                 f"{sorted(set(defaults) - names)}"
             )
             raise DataLensUtilsError(message)
-    contents, all_ids = {}, []
+    contents, all_ids = ({}, [])
     for tab, layout in layouts.items():
-        _validate_positions(tab, layout, allow_overlaps=allow_overlaps)
+        _validate_positions(
+            tab, layout, allow_overlaps=allow_overlaps or tabs[tab].get("preserve_layout", False)
+        )
         content = {
             "titles": {
                 key: {**value, "at": layout.get(key)} for key, value in titles.get(tab, {}).items()
@@ -226,11 +310,16 @@ def read_contents(*, allow_overlaps: Any = False) -> Any:  # noqa: C901, PLR0912
             "selectors": {},
             "selector_groups": {},
             "charts": {},
+            "chart_groups": {
+                key: {**group, "at": layout.get(key)}
+                for key, group in chart_groups.items()
+                if group["tab"] == tab
+            },
             "aliases": aliases.get(tab, []),
             "chart_params": {},
         }
         for key, definition in selectors.items():
-            if definition["tab"] == tab and not definition.get("group"):
+            if definition["tab"] == tab and (not definition.get("group")):
                 wrapper = key if definition["source"]["kind"] == "editor" else f"{key}_control"
                 content["selectors"][wrapper] = {**definition, "at": layout.get(wrapper)}
                 if wrapper != key:
@@ -244,37 +333,54 @@ def read_contents(*, allow_overlaps: Any = False) -> Any:  # noqa: C901, PLR0912
                 }
                 all_ids.extend(group["members"])
         for key, chart in charts.items():
-            if chart.get("family") == tab and chart.get("type") != "selector":
+            if (
+                chart.get("tab", chart.get("family")) == tab
+                and chart.get("type") != "selector"
+                and (key not in grouped_charts)
+            ):
                 content["charts"][key] = layout.get(key)
                 content["chart_params"][key] = chart_params.get(key, {})
         declared = [
             key
-            for kind in ("titles", "texts", "selectors", "selector_groups", "charts")
+            for kind in (
+                "titles",
+                "texts",
+                "selectors",
+                "selector_groups",
+                "charts",
+                "chart_groups",
+            )
             for key in content[kind]
         ]
         if len(declared) != len(set(declared)) or set(declared) != set(layout):
             message = (
-                "UI layout "
-                f"{tab}"
-                " must position each declared item exactly once; missing="
-                f"{sorted(set(declared) - set(layout))}"
-                ", unknown="
-                f"{sorted(set(layout) - set(declared))}"
+                f"UI layout {tab} must position each declared item exactly once; "
+                f"missing={sorted(set(declared) - set(layout))}, "
+                f"unknown={sorted(set(layout) - set(declared))}"
             )
             raise DataLensUtilsError(message)
         for group in content["aliases"]:
-            if len(group) < 2 or len(  # noqa: PLR2004
-                {(member["dataset"], member["field"]) for member in group}
+            if len(group) < _MIN_ALIAS_MEMBERS or len(
+                {
+                    (member.get("dataset"), member.get("field"), member.get("parameter"))
+                    for member in group
+                }
             ) != len(group):
-                message = f"Alias group {tab} requires at least two distinct dataset fields."
+                message = f"Alias group {tab} requires at least two distinct fields or parameters."
                 raise DataLensUtilsError(message)
-            if any(
-                member.get("dataset") not in datasets
-                or member.get("field") not in _declared_fields(datasets[member["dataset"]])
-                for member in group
-            ):
-                message = f"Alias group {tab} refers to an unknown dataset field."
-                raise DataLensUtilsError(message)
+            for member in group:
+                if "parameter" in member:
+                    if not any(
+                        value["source"].get("param_name") == member["parameter"]
+                        for value in selectors.values()
+                    ):
+                        message = f"Alias group {tab} refers to an unknown manual parameter."
+                        raise DataLensUtilsError(message)
+                elif member.get("dataset") not in datasets or member.get(
+                    "field"
+                ) not in _declared_fields(datasets[member["dataset"]]):
+                    message = f"Alias group {tab} refers to an unknown dataset field."
+                    raise DataLensUtilsError(message)
         contents[tab] = content
         all_ids.extend(declared)
     if len(all_ids) != len(set(all_ids)):

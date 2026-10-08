@@ -1,0 +1,17 @@
+{
+  "key": "month_end_selector",
+  "tab": "month",
+  "title": "Конец периода",
+  "source": {
+    "kind": "dataset",
+    "dataset": "month",
+    "field": "Конец периода"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": false,
+    "default_value": null
+  },
+  "group": "month_filters"
+}

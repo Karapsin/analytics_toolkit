@@ -1,0 +1,18 @@
+{
+  "key": "dynamics_group_selector",
+  "tab": "dynamics",
+  "title": "Группа Тест",
+  "source": {
+    "kind": "dataset",
+    "dataset": "dynamics",
+    "field": "Группа Тест"
+  },
+  "control": {
+    "title_placement": "top",
+    "element": "select",
+    "multiselect": false,
+    "required": true,
+    "default_value": "Все тестовые группы",
+    "operation": "EQ"
+  }
+}

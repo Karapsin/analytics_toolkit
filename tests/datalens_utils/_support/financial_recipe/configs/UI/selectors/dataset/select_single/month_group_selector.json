@@ -1,0 +1,17 @@
+{
+  "key": "month_group_selector",
+  "tab": "month",
+  "title": "Группа Тест",
+  "source": {
+    "kind": "dataset",
+    "dataset": "month",
+    "field": "Группа ЦА"
+  },
+  "control": {
+    "element": "select",
+    "title_placement": "top",
+    "multiselect": true,
+    "default_value": "Все тестовые группы",
+    "required": true
+  }
+}

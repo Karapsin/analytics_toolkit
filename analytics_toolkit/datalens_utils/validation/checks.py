@@ -31,7 +31,8 @@ def _declared_manual_bindings(contents: Any, definitions: Any) -> Any:
             source = selector["source"]
             if source["kind"] != "manual":
                 continue
-            parameter, receivers = source["param_name"], selector["recipients"]
+            parameter = source["param_name"]
+            receivers = [key for key in selector["recipients"] if key in definitions]
             if receivers and all(
                 parameter in {p["name"] for p in definitions[key].get("params", [])}
                 and definitions[key]["family"] == "ql"
