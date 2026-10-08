@@ -18,10 +18,19 @@ change the toolkit's implementation contracts.
   `if __name__ == "__main__":` guards, and CLI scaffolding unless requested or
   required by the existing project. Add functions only for useful reuse or a
   calculation that benefits from a separate function.
+- Avoid `try/finally` unless failure would leave a resource or external state
+  that requires cleanup or restoration. Keep ordinary analytics steps
+  sequential and straightforward.
+- Prefer `DataFrame.query(...)` for row filtering over boolean masks,
+  `.eq(...)`, or other comparison-based indexing. For example, use
+  `data.query("period_type == 'exp'")`. Reference Python variables with `@name`.
 - Preserve toolkit parameter defaults unless the user requests different
   settings, including settings specified by a requested reference report.
   Do not change outlier treatment, comparison modes, or other analysis options
   based on an unsolicited judgment.
+- Rely on automatic `.connections` discovery when it finds the intended file.
+  Use `set_connections_path(...)` only when discovery is insufficient or an
+  explicit path is requested.
 - Do not add custom defensive checks that raise `ValueError` unless requested.
   Preserve the toolkit's built-in validation and exceptions; do not remove,
   replace, or suppress them unless the user requests that change.

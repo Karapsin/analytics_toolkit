@@ -1,0 +1,3 @@
+interface:
+  display_name: "DAG Writer"
+  short_description: "Write Airflow DAGs with analytics_toolkit helpers"

@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.12.2 - 2026-10-08
 
 - SQL Explorer completes namespaces with a trailing dot, adds iceberg to Trino SELECT shortcuts, and suppresses automatic closers before non-whitespace text.
 - Stabilize SQL Explorer journal UI tests when exclusive background workers replace earlier selections.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Added an agent skill that prefers public analytics-toolkit helpers and from atk import * in consumer code.
 - Cache SQL .connections entries until Python restart or explicit path reset, and include the source path in SQL failure diagnostics.
 - Updated the analytics consumer skill to prefer simple scripts, toolkit Excel/path helpers, and unchanged analysis defaults and native validation.
+- Add DAG Writer skill and refine analytics consumer filtering, cleanup, and connection-discovery defaults.
 
 ## 1.3.12.1 - 2026-10-05
 
