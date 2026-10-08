@@ -14,7 +14,7 @@ __pycache__/
 .integration-artifacts/
 .tox/
 .coverage
-coverage.json
+/coverage.json
 htmlcov/
 build/
 dist/

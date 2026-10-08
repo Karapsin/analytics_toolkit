@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "description": "Финансовая вкладка с двумя таблицами и вкладка динамики с дневными, недельными и месячными графиками.",
+  "dataset_roles": [
+    "month",
+    "dynamics"
+  ],
+  "tab_keys": [
+    "month",
+    "dynamics"
+  ],
+  "object_count": 12,
+  "visual_chart_count": 12,
+  "external_selector_count": 0,
+  "families": {
+    "wizard": {
+      "count": 12,
+      "keys": [
+        "dynamics_bonus_accrued",
+        "dynamics_bonus_spent",
+        "dynamics_cost_overview",
+        "dynamics_discounts",
+        "dynamics_funnel",
+        "dynamics_margin",
+        "dynamics_margin_pct",
+        "dynamics_recipients",
+        "dynamics_revenue",
+        "dynamics_revenue_net",
+        "month_funnel",
+        "month_summary"
+      ],
+      "types": [
+        "flat_table",
+        "line"
+      ]
+    }
+  },
+  "selector_coverage": {
+    "native": {
+      "dataset": {
+        "count": 7,
+        "variants": [
+          "single_select",
+          "multiselect",
+          "date_range"
+        ]
+      },
+      "manual": {
+        "count": 6,
+        "variants": [
+          "single_select",
+          "numeric_input"
+        ]
+      }
+    }
+  },
+  "formulas": [
+    {
+      "category": "published_statistic",
+      "owner": "dataset:month",
+      "field": "Uplift ARPU CUPED, %",
+      "formula": "MAX([Uplift ARPU CUPED, % (исходное)])"
+    },
+    {
+      "category": "period_parameter",
+      "owner": "dataset:month",
+      "field": "Выбранный период",
+      "formula": "[Тип периода] = [report_period]"
+    },
+    {
+      "category": "significant_revenue",
+      "owner": "dataset:month",
+      "field": "Доп. РТО, руб.",
+      "formula": "IF([p-value CUPED числом] < [alpha], [Доп. РТО CUPED, руб.], 0)"
+    },
+    {
+      "category": "summary_significant_revenue",
+      "owner": "dataset:month",
+      "field": "Сводка: Доп. РТО, руб.",
+      "formula": "SUM(IF([p-value CUPED числом (исходное)] < [alpha], [Доп. РТО CUPED, руб. (исходное)], 0))"
+    }
+  ]
+}

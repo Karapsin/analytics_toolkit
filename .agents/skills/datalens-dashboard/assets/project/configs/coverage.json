@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "dataset_roles": [
+    "retail"
+  ],
+  "tab_keys": [
+    "wizard",
+    "ql",
+    "editor"
+  ],
+  "object_count": 4,
+  "visual_chart_count": 3,
+  "external_selector_count": 1,
+  "families": {
+    "wizard": {
+      "count": 1,
+      "keys": [
+        "wizard_revenue"
+      ],
+      "types": [
+        "line"
+      ]
+    },
+    "ql": {
+      "count": 1,
+      "keys": [
+        "ql_revenue"
+      ],
+      "types": [
+        "line"
+      ]
+    },
+    "editor": {
+      "count": 1,
+      "keys": [
+        "js_revenue"
+      ],
+      "types": [
+        "gravity_charts"
+      ]
+    }
+  },
+  "selector_coverage": {
+    "native": {
+      "dataset": {
+        "count": 1,
+        "variants": [
+          "multiselect"
+        ]
+      },
+      "manual": {
+        "count": 1,
+        "variants": [
+          "multiselect"
+        ]
+      }
+    }
+  }
+}

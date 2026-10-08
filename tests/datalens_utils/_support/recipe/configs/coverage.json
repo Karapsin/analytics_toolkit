@@ -1,0 +1,854 @@
+{
+  "version": 1,
+  "description": "Coverage contract for the company-shareable attempt 5 example. This finite manifest is authoritative; runtime renderer support is checked separately.",
+  "dataset_roles": [
+    "retail",
+    "acquisition",
+    "delivery"
+  ],
+  "tab_keys": [
+    "wizard",
+    "ql",
+    "editor"
+  ],
+  "object_count": 53,
+  "visual_chart_count": 52,
+  "external_selector_count": 1,
+  "families": {
+    "wizard": {
+      "count": 21,
+      "keys": [
+        "wizard_area",
+        "wizard_area_100p",
+        "wizard_bar",
+        "wizard_bar_100p",
+        "wizard_column",
+        "wizard_column_100p",
+        "wizard_combined_chart",
+        "wizard_donut",
+        "wizard_flat_table",
+        "wizard_funnel",
+        "wizard_indicator",
+        "wizard_line",
+        "wizard_map_clusters",
+        "wizard_map_heatmap",
+        "wizard_map_points",
+        "wizard_map_polygons",
+        "wizard_map_routes",
+        "wizard_pie",
+        "wizard_pivot_table",
+        "wizard_scatter",
+        "wizard_treemap"
+      ],
+      "types": [
+        "area",
+        "area_100p",
+        "bar",
+        "bar_100p",
+        "column",
+        "column_100p",
+        "combined_chart",
+        "donut",
+        "flat_table",
+        "funnel",
+        "geolayer",
+        "indicator",
+        "line",
+        "pie",
+        "pivot_table",
+        "scatter",
+        "treemap"
+      ]
+    },
+    "ql": {
+      "count": 13,
+      "keys": [
+        "ql_area",
+        "ql_area_100p",
+        "ql_bar",
+        "ql_bar_100p",
+        "ql_column",
+        "ql_column_100p",
+        "ql_donut",
+        "ql_flat_table",
+        "ql_indicator",
+        "ql_line",
+        "ql_pie",
+        "ql_scatter",
+        "ql_treemap"
+      ],
+      "types": [
+        "area",
+        "area_100p",
+        "bar",
+        "bar_100p",
+        "column",
+        "column_100p",
+        "donut",
+        "flat_table",
+        "indicator",
+        "line",
+        "pie",
+        "scatter",
+        "treemap"
+      ]
+    },
+    "editor": {
+      "count": 18,
+      "keys": [
+        "js_advanced",
+        "js_area",
+        "js_area_range",
+        "js_bar_x",
+        "js_bar_y",
+        "js_donut",
+        "js_funnel",
+        "js_heatmap",
+        "js_line",
+        "js_markdown",
+        "js_pie",
+        "js_radar",
+        "js_sankey",
+        "js_scatter",
+        "js_table",
+        "js_treemap",
+        "js_waterfall",
+        "js_x_range"
+      ],
+      "types": [
+        "advanced_chart",
+        "gravity_charts",
+        "markdown",
+        "table"
+      ]
+    }
+  },
+  "wizard_geo_layers": {
+    "wizard_map_points": "geopoint",
+    "wizard_map_clusters": "geopoint-with-cluster",
+    "wizard_map_heatmap": "heatmap",
+    "wizard_map_polygons": "geopolygon",
+    "wizard_map_routes": "polyline"
+  },
+  "editor_series": {
+    "js_heatmap": "heatmap",
+    "js_donut": "pie",
+    "js_area_range": "area-range",
+    "js_bar_x": "bar-x",
+    "js_bar_y": "bar-y",
+    "js_x_range": "x-range",
+    "js_scatter": "scatter",
+    "js_waterfall": "waterfall",
+    "js_radar": "radar",
+    "js_area": "area",
+    "js_pie": "pie",
+    "js_line": "line",
+    "js_treemap": "treemap",
+    "js_funnel": "funnel",
+    "js_sankey": "sankey"
+  },
+  "editor_variants": {
+    "js_donut": "donut"
+  },
+  "editor_renderers": [
+    "gravity_charts",
+    "advanced_chart",
+    "markdown",
+    "table",
+    "selector"
+  ],
+  "selector_coverage": {
+    "native": {
+      "dataset": {
+        "count": 7,
+        "variants": [
+          "single_select",
+          "multiselect",
+          "single_date",
+          "date_range",
+          "text_input",
+          "numeric_input",
+          "checkbox"
+        ]
+      },
+      "manual": {
+        "count": 7,
+        "variants": [
+          "single_select",
+          "multiselect",
+          "single_date",
+          "date_range",
+          "text_input",
+          "numeric_input",
+          "checkbox"
+        ]
+      }
+    },
+    "editor": {
+      "key": "js_selector",
+      "control_types": [
+        "input",
+        "textarea",
+        "datepicker",
+        "range-datepicker",
+        "select",
+        "checkbox",
+        "line-break",
+        "button"
+      ],
+      "select_variants": [
+        "single",
+        "multiple"
+      ],
+      "actions": [
+        "setParams",
+        "setInitialParams"
+      ]
+    }
+  },
+  "formulas": [
+    {
+      "category": "simple_aggregation",
+      "owner": "dataset:retail",
+      "field": "Revenue",
+      "formula": "SUM([Revenue Raw])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/SUM"
+    },
+    {
+      "category": "compound_aggregate_arithmetic",
+      "owner": "dataset:retail",
+      "field": "Net Contribution",
+      "formula": "SUM([Profit Raw]) - 0.02 * SUM([Revenue Raw])",
+      "reference": "https://yandex.cloud/en/docs/datalens/concepts/calculations/formula-syntax"
+    },
+    {
+      "category": "conditional_aggregation",
+      "owner": "dataset:retail",
+      "field": "Priority Revenue",
+      "formula": "SUM_IF(IFNULL([Revenue Raw], 0), [Priority])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/SUM_IF"
+    },
+    {
+      "category": "null_safe_ratio",
+      "owner": "dataset:retail",
+      "field": "Margin",
+      "formula": "FDIV_SAFE(SUM(IFNULL([Profit Raw], 0)), SUM(IFNULL([Revenue Raw], 0)), 0)",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/FDIV_SAFE"
+    },
+    {
+      "category": "date",
+      "owner": "dataset:retail",
+      "field": "Month",
+      "formula": "DATETRUNC([Date], \"month\")",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/DATETRUNC"
+    },
+    {
+      "category": "string",
+      "owner": "dataset:retail",
+      "field": "Category Label",
+      "formula": "CONCAT(UPPER([Category]), \" · \", [Channel])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/CONCAT"
+    },
+    {
+      "category": "geopoint",
+      "owner": "dataset:delivery",
+      "field": "Coordinates",
+      "formula": "GEOPOINT([Latitude], [Longitude])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/GEOPOINT"
+    },
+    {
+      "category": "geopolygon",
+      "owner": "dataset:delivery",
+      "field": "Zone",
+      "formula": "GEOPOLYGON([Polygon])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/GEOPOLYGON"
+    },
+    {
+      "category": "level_of_detail",
+      "owner": "dataset:retail",
+      "field": "Region Revenue Share",
+      "formula": "FDIV_SAFE(SUM([Revenue Raw]), SUM([Revenue Raw] FIXED [Region]), 0)",
+      "reference": "https://yandex.cloud/en/docs/datalens/concepts/lod-aggregation"
+    },
+    {
+      "category": "moving_window",
+      "owner": "chart:wizard_line",
+      "field": "Moving Average Revenue",
+      "formula": "MAVG(SUM([Revenue Raw]), 6 TOTAL ORDER BY [Date])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/MAVG"
+    },
+    {
+      "category": "running_window",
+      "owner": "chart:wizard_line",
+      "field": "Cumulative Revenue",
+      "formula": "RSUM(SUM([Revenue Raw]) ORDER BY [Date])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/RSUM"
+    },
+    {
+      "category": "ranking_window",
+      "owner": "chart:wizard_flat_table",
+      "field": "Revenue Rank",
+      "formula": "RANK_DENSE(SUM([Revenue Raw]), \"desc\" WITHIN [Region])",
+      "reference": "https://yandex.cloud/en/docs/datalens/function-ref/RANK_DENSE"
+    },
+    {
+      "category": "compound_three_aggregates",
+      "owner": "dataset:retail",
+      "field": "Compound Score",
+      "formula": "SUM([Revenue Raw]) + SUM([Profit Raw]) * (SUM([Orders Raw]))",
+      "reference": "https://yandex.cloud/en/docs/datalens/concepts/calculations/formula-syntax",
+      "educational_only": true
+    }
+  ],
+  "sql_formulas": {
+    "ql_flat_table": [
+      "null_safe_margin",
+      "null_safe_average_order_value",
+      "conditional_priority_revenue",
+      "compound_three_aggregates"
+    ]
+  },
+  "js_formulas": {
+    "js_advanced": [
+      "weighted_margin",
+      "average_order_value"
+    ],
+    "js_radar": [
+      "category_revenue_share"
+    ],
+    "js_markdown": [
+      "compound_three_aggregates"
+    ]
+  },
+  "references": {
+    "gravity": "https://gravity-ui.github.io/charts/pages/overview.html",
+    "controls": "https://yandex.cloud/en/docs/datalens/charts/editor/widgets/controls",
+    "types": "https://yandex.cloud/en/docs/datalens/dataset/data-types"
+  },
+  "clickhouse_types": {
+    "target_server_series": "25.8",
+    "persisted_family_examples": 54,
+    "required_preparation_settings": {
+      "allow_experimental_time_time64_type": 1,
+      "allow_experimental_object_type": 1,
+      "flatten_nested": 0
+    },
+    "query_only_families": [
+      "IntervalNanosecond",
+      "IntervalMicrosecond",
+      "IntervalMillisecond",
+      "IntervalSecond",
+      "IntervalMinute",
+      "IntervalHour",
+      "IntervalDay",
+      "IntervalWeek",
+      "IntervalMonth",
+      "IntervalQuarter",
+      "IntervalYear"
+    ],
+    "unavailable_on_target": {
+      "QBit": "Absent from the observed ClickHouse25.8 data_type_families registry; no server upgrade."
+    },
+    "alias_policy": "DateTime32 normalizes to DateTime, Enum chooses Enum8 here, decimal widths normalize to Decimal(P, S), and Nested and geo domains retain their declared names on this target.",
+    "settings_scope": "Attached to each applicable preparation request through the public toolkit connection protocol; no global or external configuration changes.",
+    "special_context_families": {
+      "Nothing": "No non-null values; usable only in NULL and empty-container expression contexts."
+    },
+    "persisted_examples": [
+      {
+        "dataset": "retail",
+        "physical_column": "type_int8",
+        "family": "Int8",
+        "expected_native_type": "Int8",
+        "value_field": "Type Int8",
+        "type_field": "Type Int8 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_int16",
+        "family": "Int16",
+        "expected_native_type": "Int16",
+        "value_field": "Type Int16",
+        "type_field": "Type Int16 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_int32",
+        "family": "Int32",
+        "expected_native_type": "Int32",
+        "value_field": "Type Int32",
+        "type_field": "Type Int32 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_int64",
+        "family": "Int64",
+        "expected_native_type": "Int64",
+        "value_field": "Type Int64",
+        "type_field": "Type Int64 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_int128",
+        "family": "Int128",
+        "expected_native_type": "Int128",
+        "value_field": "Type Int128",
+        "type_field": "Type Int128 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_int256",
+        "family": "Int256",
+        "expected_native_type": "Int256",
+        "value_field": "Type Int256",
+        "type_field": "Type Int256 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint8",
+        "family": "UInt8",
+        "expected_native_type": "UInt8",
+        "value_field": "Type UInt8",
+        "type_field": "Type UInt8 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint16",
+        "family": "UInt16",
+        "expected_native_type": "UInt16",
+        "value_field": "Type UInt16",
+        "type_field": "Type UInt16 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint32",
+        "family": "UInt32",
+        "expected_native_type": "UInt32",
+        "value_field": "Type UInt32",
+        "type_field": "Type UInt32 Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint64",
+        "family": "UInt64",
+        "expected_native_type": "UInt64",
+        "value_field": "Type UInt64",
+        "type_field": "Type UInt64 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint128",
+        "family": "UInt128",
+        "expected_native_type": "UInt128",
+        "value_field": "Type UInt128",
+        "type_field": "Type UInt128 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_uint256",
+        "family": "UInt256",
+        "expected_native_type": "UInt256",
+        "value_field": "Type UInt256",
+        "type_field": "Type UInt256 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_float32",
+        "family": "Float32",
+        "expected_native_type": "Float32",
+        "value_field": "Type Float32",
+        "type_field": "Type Float32 Native Type",
+        "dataset_cast": "float"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_float64",
+        "family": "Float64",
+        "expected_native_type": "Float64",
+        "value_field": "Type Float64",
+        "type_field": "Type Float64 Native Type",
+        "dataset_cast": "float"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_bfloat16",
+        "family": "BFloat16",
+        "expected_native_type": "BFloat16",
+        "value_field": "Type BFloat16",
+        "type_field": "Type BFloat16 Native Type",
+        "dataset_cast": "float"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_bool",
+        "family": "Bool",
+        "expected_native_type": "Bool",
+        "value_field": "Type Bool",
+        "type_field": "Type Bool Native Type",
+        "dataset_cast": "boolean"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_decimal32",
+        "family": "Decimal32",
+        "expected_native_type": "Decimal(9, 2)",
+        "value_field": "Type Decimal32",
+        "type_field": "Type Decimal32 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_decimal64",
+        "family": "Decimal64",
+        "expected_native_type": "Decimal(18, 4)",
+        "value_field": "Type Decimal64",
+        "type_field": "Type Decimal64 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_decimal128",
+        "family": "Decimal128",
+        "expected_native_type": "Decimal(38, 6)",
+        "value_field": "Type Decimal128",
+        "type_field": "Type Decimal128 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_decimal256",
+        "family": "Decimal256",
+        "expected_native_type": "Decimal(76, 8)",
+        "value_field": "Type Decimal256",
+        "type_field": "Type Decimal256 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_decimal",
+        "family": "Decimal",
+        "expected_native_type": "Decimal(18, 3)",
+        "value_field": "Type Decimal",
+        "type_field": "Type Decimal Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_aggregatefunction",
+        "family": "AggregateFunction",
+        "expected_native_type": "AggregateFunction(sum, UInt64)",
+        "value_field": "Type AggregateFunction",
+        "type_field": "Type AggregateFunction Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "retail",
+        "physical_column": "type_simpleaggregatefunction",
+        "family": "SimpleAggregateFunction",
+        "expected_native_type": "SimpleAggregateFunction(sum, UInt64)",
+        "value_field": "Type SimpleAggregateFunction",
+        "type_field": "Type SimpleAggregateFunction Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_date",
+        "family": "Date",
+        "expected_native_type": "Date",
+        "value_field": "Type Date",
+        "type_field": "Type Date Native Type",
+        "dataset_cast": "date"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_date32",
+        "family": "Date32",
+        "expected_native_type": "Date32",
+        "value_field": "Type Date32",
+        "type_field": "Type Date32 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_datetime",
+        "family": "DateTime",
+        "expected_native_type": "DateTime",
+        "value_field": "Type DateTime",
+        "type_field": "Type DateTime Native Type",
+        "dataset_cast": "datetime"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_datetime32",
+        "family": "DateTime32",
+        "expected_native_type": "DateTime",
+        "value_field": "Type DateTime32",
+        "type_field": "Type DateTime32 Native Type",
+        "dataset_cast": "datetime"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_datetime64",
+        "family": "DateTime64",
+        "expected_native_type": "DateTime64(3)",
+        "value_field": "Type DateTime64",
+        "type_field": "Type DateTime64 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_time",
+        "family": "Time",
+        "expected_native_type": "Time",
+        "value_field": "Type Time",
+        "type_field": "Type Time Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_time64",
+        "family": "Time64",
+        "expected_native_type": "Time64(3)",
+        "value_field": "Type Time64",
+        "type_field": "Type Time64 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_enum8",
+        "family": "Enum8",
+        "expected_native_type": "Enum8('bronze' = 1, 'silver' = 2, 'gold' = 3)",
+        "value_field": "Type Enum8",
+        "type_field": "Type Enum8 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_enum16",
+        "family": "Enum16",
+        "expected_native_type": "Enum16('bronze' = 100, 'silver' = 200, 'gold' = 300)",
+        "value_field": "Type Enum16",
+        "type_field": "Type Enum16 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_enum",
+        "family": "Enum",
+        "expected_native_type": "Enum8('bronze' = 1, 'silver' = 2, 'gold' = 3)",
+        "value_field": "Type Enum",
+        "type_field": "Type Enum Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_string",
+        "family": "String",
+        "expected_native_type": "String",
+        "value_field": "Type String",
+        "type_field": "Type String Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_fixedstring",
+        "family": "FixedString",
+        "expected_native_type": "FixedString(16)",
+        "value_field": "Type FixedString",
+        "type_field": "Type FixedString Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_uuid",
+        "family": "UUID",
+        "expected_native_type": "UUID",
+        "value_field": "Type UUID",
+        "type_field": "Type UUID Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_ipv4",
+        "family": "IPv4",
+        "expected_native_type": "IPv4",
+        "value_field": "Type IPv4",
+        "type_field": "Type IPv4 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_ipv6",
+        "family": "IPv6",
+        "expected_native_type": "IPv6",
+        "value_field": "Type IPv6",
+        "type_field": "Type IPv6 Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_array",
+        "family": "Array",
+        "expected_native_type": "Array(UInt32)",
+        "value_field": "Type Array",
+        "type_field": "Type Array Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_tuple",
+        "family": "Tuple",
+        "expected_native_type": "Tuple(label String, amount Float64)",
+        "value_field": "Type Tuple",
+        "type_field": "Type Tuple Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_map",
+        "family": "Map",
+        "expected_native_type": "Map(String, UInt32)",
+        "value_field": "Type Map",
+        "type_field": "Type Map Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_nested",
+        "family": "Nested",
+        "expected_native_type": "Nested(label String, amount UInt32)",
+        "value_field": "Type Nested",
+        "type_field": "Type Nested Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_nullable",
+        "family": "Nullable",
+        "expected_native_type": "Nullable(Int32)",
+        "value_field": "Type Nullable",
+        "type_field": "Type Nullable Native Type",
+        "dataset_cast": "integer"
+      },
+      {
+        "dataset": "acquisition",
+        "physical_column": "type_lowcardinality",
+        "family": "LowCardinality",
+        "expected_native_type": "LowCardinality(String)",
+        "value_field": "Type LowCardinality",
+        "type_field": "Type LowCardinality Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_point",
+        "family": "Point",
+        "expected_native_type": "Point",
+        "value_field": "Type Point",
+        "type_field": "Type Point Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_ring",
+        "family": "Ring",
+        "expected_native_type": "Ring",
+        "value_field": "Type Ring",
+        "type_field": "Type Ring Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_linestring",
+        "family": "LineString",
+        "expected_native_type": "LineString",
+        "value_field": "Type LineString",
+        "type_field": "Type LineString Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_polygon",
+        "family": "Polygon",
+        "expected_native_type": "Polygon",
+        "value_field": "Type Polygon",
+        "type_field": "Type Polygon Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_multilinestring",
+        "family": "MultiLineString",
+        "expected_native_type": "MultiLineString",
+        "value_field": "Type MultiLineString",
+        "type_field": "Type MultiLineString Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_multipolygon",
+        "family": "MultiPolygon",
+        "expected_native_type": "MultiPolygon",
+        "value_field": "Type MultiPolygon",
+        "type_field": "Type MultiPolygon Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_json",
+        "family": "JSON",
+        "expected_native_type": "JSON",
+        "value_field": "Type JSON",
+        "type_field": "Type JSON Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_dynamic",
+        "family": "Dynamic",
+        "expected_native_type": "Dynamic",
+        "value_field": "Type Dynamic",
+        "type_field": "Type Dynamic Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_variant",
+        "family": "Variant",
+        "expected_native_type": "Variant(String, UInt64)",
+        "value_field": "Type Variant",
+        "type_field": "Type Variant Native Type",
+        "dataset_cast": "string"
+      },
+      {
+        "dataset": "delivery",
+        "physical_column": "type_object",
+        "family": "Object",
+        "expected_native_type": "Object('json')",
+        "value_field": "Type Object",
+        "type_field": "Type Object Native Type",
+        "dataset_cast": "string"
+      }
+    ],
+    "native_companions": {
+      "acquisition": {
+        "Integer Array": "array_int",
+        "Float Array": "array_float",
+        "String Array": "array_str",
+        "UUID Value": "uuid"
+      }
+    }
+  }
+}

@@ -25,6 +25,24 @@ from tests._support.paths import REPO_ROOT
 SKILL = REPO_ROOT / ".agents/skills/datalens-dashboard"
 
 
+def test_recipe_manifests_are_not_ignored_as_runtime_coverage_reports():
+    manifests = [
+        ".agents/skills/datalens-dashboard/assets/project/configs/coverage.json",
+        "tests/datalens_utils/_support/recipe/configs/coverage.json",
+        "tests/datalens_utils/_support/financial_recipe/configs/coverage.json",
+    ]
+    result = subprocess.run(
+        ["git", "check-ignore", "--no-index", "coverage.json", *manifests],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["coverage.json"]
+    assert all((REPO_ROOT / path).is_file() for path in manifests)
+
+
 def test_base_import_and_constructor_do_not_load_sdk(tmp_path):
     code = """
 import importlib.abc, sys
