@@ -4431,10 +4431,23 @@ def _github_check_snapshot(
                 "error": {"phase": "github_jobs", "message": str(exc)},
             }
         jobs.extend({**job, "workflow_run_id": run["id"]} for job in run_jobs)
+    check_runs = payloads["check_runs"].get("check_runs", [])
+    if required_workflow_names is not None:
+        required_ids = {
+            str(run["id"]) for run in runs if run.get("name") in required_workflow_names
+        }
+        # Manual/issue-comment jobs on the same SHA are not required push CI.
+        check_runs = [
+            check
+            for check in check_runs
+            if check.get("app", {}).get("slug") != "github-actions"
+            or not (match := re.search(r"/actions/runs/(\d+)(?:/|$)", check.get("html_url", "")))
+            or match.group(1) in required_ids
+        ]
     return {
         "runs": runs,
         "jobs": jobs,
-        "check_runs": payloads["check_runs"].get("check_runs", []),
+        "check_runs": check_runs,
         "statuses": payloads["statuses"].get("statuses", []),
         "command_results": [],
     }

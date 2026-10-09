@@ -26,7 +26,10 @@ def validated(event, slug):
         if not isinstance(task['value'], str) or not re.fullmatch('[0-9a-f]{40}', task['value']):
             raise ValueError('Visual candidate must be an immutable SHA')
     elif task['operation'] == 'integration':
-        if task['value'] != 'all':
+        value = task['value']
+        if value != 'all' and not (isinstance(value, dict) and set(value) == {'candidate', 'number'}
+                and isinstance(value['candidate'], str) and re.fullmatch('[0-9a-f]{40}', value['candidate'])
+                and isinstance(value['number'], int) and value['number'] > 0):
             raise ValueError('Only exhaustive integration may be requested')
     elif task['operation'] == 'rerun':
         if not isinstance(task['value'], int) or task['value'] < 1:
@@ -50,7 +53,14 @@ def main():
         data = {'ref': 'main', 'inputs': {'candidate': task['value']}}
     else:
         path = 'actions/workflows/sql-integration.yml/dispatches'
-        data = {'ref': 'dev', 'inputs': {'profile': 'all'}}
+        inputs = {'profile': 'all'}
+        if isinstance(task['value'], dict):
+            value = task['value']
+            pr = json.loads(subprocess.check_output(['gh', 'api', prefix + 'pulls/' + str(value['number'])]))
+            if pr['base']['ref'] != 'dev' or pr['head']['sha'] != value['candidate']:
+                raise ValueError('PR candidate changed before dispatch')
+            inputs.update(candidate=value['candidate'], pull_number=str(value['number']))
+        data = {'ref': 'dev', 'inputs': inputs}
     subprocess.run(['gh', 'api', prefix + path, '--method', 'POST', '--input', '-'],
                    input=json.dumps(data), text=True, check=True)
 

@@ -116,7 +116,10 @@ pending shared synchronization without discarding work. Reenter native Plan
 mode before another task. Explicit resume preserves the existing clone/branch.
 
 Local agents do not investigate or wait for advisory integration. The GitHub
-agent owns post-merge monitoring through completion and repair PRs until green.
+agent queues integration on each final reviewed PR head before merge, reruns
+changed heads after conflicts or repairs, and owns post-merge monitoring through
+completion and repair PRs until green. Routine push and nightly integration
+triggers are disabled; manual release validation remains available.
 Integration success does not gate dev merges. Its review/conflict/repair jobs
 use trusted default-branch controller prompts rather than local-session startup
 or MCP branch mutations. Controller jobs never execute PR code with write
@@ -301,9 +304,10 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
 - Managed pre-commit validation runs ordered static, coverage, artifact, and Python-version matrix stages. Coverage is the canonical Python 3.11 test run; a stage failure stops downstream work, and only exact-tree, exact-toolchain successful-stage receipts may be reused. The final successful run must pass every stage.
 - SQL integration `all` is the exhaustive local profile and includes the
-  destructive database, staging, and authentication fault groups. Push CI runs
-  advisory core and auth jobs with zero skipped manifest scenarios on x86_64;
-  fault groups run only nightly or by manual dispatch. Integration completion is
+  destructive database, staging, and authentication fault groups. The GitHub
+  agent queues advisory candidate validation before merge with zero skipped
+  manifest scenarios on x86_64; profiles remain available by manual dispatch.
+  Integration completion is
   mandatory only during release readiness, which must pass the exhaustive `all`
   profile with both ClickHouse transports. Integration cleanup must remove
   project containers, networks, volumes, labelled queries, tables, and MinIO objects.
