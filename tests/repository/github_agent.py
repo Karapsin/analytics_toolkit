@@ -362,3 +362,55 @@ def test_integration_workflow_has_only_explicit_candidate_or_manual_triggers() -
     assert "  schedule:" not in text
     assert "inputs.candidate || github.sha" in text
     assert "workflow_dispatch:" in text
+
+
+def test_conflict_policy_diff_excludes_changes_already_in_dev(tmp_path: Path) -> None:
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()
+
+    git("init")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.test")
+    (tmp_path / ".github/agent").mkdir(parents=True)
+    (tmp_path / ".github/agent/controller.py").write_text("old policy")
+    git("add", ".")
+    git("commit", "-m", "Base")
+    initial = git("rev-parse", "HEAD")
+    (tmp_path / "guide.md").write_text("Feature guide")
+    git("add", ".")
+    git("commit", "-m", "Feature")
+    head = git("rev-parse", "HEAD")
+    git("checkout", "--detach", initial)
+    (tmp_path / ".github/agent/controller.py").write_text("approved dev policy")
+    git("add", ".")
+    git("commit", "-m", "Dev policy")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "--detach", head)
+    git("merge", "--no-commit", "--no-ff", base)
+    assert ".github/agent/controller.py" in git("diff", "--cached", "--name-only", head)
+    assert git("diff", "--cached", "--name-only", base) == "guide.md"
+
+
+def test_unmerged_candidate_green_does_not_clear_dev_failure() -> None:
+    class GitHub:
+        def api(self, path: str) -> dict[str, str]:
+            return {"status": "ahead"}
+
+    state = {
+        "runs": {
+            "1": {"sha": "a", "status": "completed", "updated": "2026-10-01", "needs": ["HTTP"]},
+            "2": {
+                "sha": "b",
+                "status": "completed",
+                "updated": "2026-10-02",
+                "green": ["HTTP"],
+                "merged": False,
+                "url": "candidate",
+            },
+        }
+    }
+    controller._resolve_runs(GitHub(), state)
+    assert state["runs"]["1"]["needs"] == ["HTTP"]
+    state["runs"]["2"]["merged"] = True
+    controller._resolve_runs(GitHub(), state)
+    assert state["runs"]["1"]["needs"] == []
