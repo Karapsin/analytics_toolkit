@@ -1,0 +1,1 @@
+- Run both SQL integration transports after a failure while preserving the first error, and expose captured startup diagnostics in GitHub job logs with fast service-free regression coverage.
