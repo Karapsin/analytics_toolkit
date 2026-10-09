@@ -470,6 +470,7 @@ def run(
     selected = ("core", "auth", "fault", "stress") if profile == "all" else (profile,)
     drivers = ("http", "native") if clickhouse_driver == "both" else (clickhouse_driver,)
     for selected_profile in selected:
+        first_failure = 0
         for selected_driver in drivers:
             result = run_profile(
                 profile=selected_profile,
@@ -477,8 +478,10 @@ def run(
                 fault_group=fault_group,
                 clickhouse_driver=selected_driver,
             )
-            if result != 0:
-                return result
+            if result != 0 and first_failure == 0:
+                first_failure = result
+        if first_failure != 0:
+            return first_failure
         if clickhouse_driver == "both":
             parity_result = _assert_transport_scenario_parity(profile=selected_profile)
             if parity_result != 0:
