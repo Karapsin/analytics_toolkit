@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Queue advisory integration on final PR candidates and avoid duplicate feature push matrices.
 - Compare conflict fixes against current dev when enforcing protected paths.
 - Verify integration repairs on PR candidates instead of launching extra dev matrices.
+- Preserved ClickHouse integer rand during cluster routing without SQLGlot function-name metadata
 
 ## 1.3.12.3 - 2026-10-09
 
