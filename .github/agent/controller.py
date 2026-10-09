@@ -282,15 +282,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     current = [r for r in state["runs"].values() if r["sha"] == base]
     if any(r["status"] != "completed" for r in current):
         return []
-    missing = {name for key, r in state["runs"].items() if int(key) in failures
-               for name in r.get("needs", [])}
-    covered = {name for r in current for name in r.get("green", []) + r.get("needs", [])}
-    if missing - covered and state.get("dispatched_base") != base:
-        dispatch(gh, "integration", "all")
-        state["dispatched_base"] = base
-        return []
-    if missing - covered:
-        return []  # Wait for the dispatched run to appear; never treat absence as green.
+    # Historical failures are evidence for a repair PR, not a reason to run
+    # another matrix on every new dev SHA. The final repair candidate is tested
+    # before its merge by the same path as ordinary PRs.
     return [{"kind": "repair", "number": 0, "head": base, "base": base,
              "branch": REPAIR_BRANCH + base[:12], "runs": failures}]
 
