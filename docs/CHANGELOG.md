@@ -11,6 +11,10 @@ Generated from package version bumps and recent commit history.
 - Include DataLens recipe manifests in clean checkouts and downloaded skills.
 - Expand public-SDK DataLens BI recipes, capability reporting, scoped reconciliation, semantic verification, and tab/dashboard import.
 - Accept the measured overall coverage baseline for the expanded DataLens SDK support while preserving module-specific coverage floors.
+- Added isolated Codex feature sessions and GitHub review, merge, and post-merge integration repair automation.
+- Stabilize DataLens selector wiring exports across Python versions and hash seeds.
+- Require owner PRs signed by enrolled machines and exact-head owner approval for policy changes.
+- Record explicit per-commit user validation waivers without marking checks successful.
 
 ## 1.3.12.2 - 2026-10-08
 

@@ -61,30 +61,58 @@ Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
 unchanged. Dependency installation is quiet when the fingerprint changes.
 
-Under the authoritative `AGENTS.md` policy, `prepare-start` is authorized during
-planning on a clean checkout, including switching to `dev` and fast-forward
-pulling, without another confirmation. Before synchronization it rejects staged
-or unstaged changes, non-ignored untracked files, conflicts, and unfinished Git
-operations; it never stashes or discards work. Ignored caches are allowed.
-Plan Mode alone is not a reason to skip startup or request another approval:
-sync, environment preparation, and RAG refresh are authorized preparation.
-Higher-priority session restrictions still apply: repository authorization
-cannot override a Plan Mode rule that prohibits branch switching or pulling.
+Bare `codex` from the canonical repository creates a private clone on `dev`,
+pulls before launch, prepares the repository MCP, and selects native Plan mode
+before accepting task input. Install this launcher with
+`python -m agent_tools.install_sessions` from the prepared project environment.
+Other directories and Codex commands continue to use the existing CLI.
+
+Automatic handling accepts only the repository owner's PRs whose heads are SSH
+signed by an enrolled machine, plus this App's signed repair commits. The launcher
+creates a device key outside clones; its public key must be enrolled in the
+reviewer host's private allowed-signers file. An unknown or revoked key fails
+closed, independently of the model verdict.
+
+Instruction, skill, agent-tool, release-tool, and GitHub workflow changes also
+require an owner comment `/agent approve-policy <current-head-sha>`. Approval
+expires when the head changes. Local agents must never write this owner approval
+comment themselves. PR files cannot enroll signing keys or change this gate.
+
+After planning, use `git_workflow(action="start")` to pull dev again before a
+unique feature branch is created. A changed base requires plan reassessment;
+acknowledge only after reviewing the changed plan. Independent clones prevent
+concurrent sessions from sharing an index, branch, or working tree.
+
+Feature sessions commit focused and pre-commit checked changes to their own
+branch and open a PR to dev. Use `git_workflow(action="feedback")` until reviewed
+and merged, `refresh` before corrections when the bot has written commits, and
+`sync` after merge to refresh the session and clean canonical dev checkout.
+A writer lease prevents simultaneous bot/local branch edits. Dirty canonical
+work is preserved and reported as pending synchronization.
+
+The private subscription worker is maintained in self_hosting's
+`self_host/services/github_agent`. Airflow calls its Unix socket every minute
+and updates the underlying Codex executable Sunday at 04:00 Europe/Moscow.
+The Pi performs bounded source operations only; GitHub runs tests and renders
+visual scenes. Up to five jobs run concurrently with serialized merge decisions.
+Fast checks and the App's exact-head/base review gate merges. Integration runs
+are monitored after merge and repaired through reviewed PRs until matching
+scenario groups and transports are green. No OpenAI API key is used.
 
 `change-impact` is a read-only preflight for implementation work. For SQL public
 symbols it reports the live signature, exact integration-manifest JSON pointers,
 signature drift, documentation paths, focused checks, changelog action, and SQL
 module line-budget headroom before editing begins.
 
-Use `git-workflow commit` only when the current batch is ready to commit and
-push to `origin/dev`, and pass explicit `--path` values so unrelated local
-changes are not staged. The commit workflow runs the dev push automatically;
-use standalone `git-workflow push` only to retry a failed post-commit push. Use
-`release-workflow --action merge-dev` to fast-forward `main` from `origin/dev`
-before a PyPI release. Use `release-workflow --action publish` only when release
-readiness is clean. Release status runs the exhaustive SQL integration `all`
-profile with HTTP and native ClickHouse and records its success in the
-exact-tree release receipt.
+Use `git-workflow commit` only for a coherent checked batch with explicit paths.
+In a feature session it pushes the feature and opens a PR; the current checkout's
+legacy dev route remains available for bootstrap. `release-workflow` retains
+its explicit main-only release process.
+
+Only an explicit user waiver for the current batch permits
+`git-workflow commit --validation-waiver "user-authorized reason"`. This records
+the reason in the commit without creating a successful validation receipt; it
+does not bypass path safety, signatures, writer leases, or GitHub merge gates.
 
 SQL Explorer production or visual-harness changes also require the private
 visual receipt created by `visual-workflow`. The capture runs headlessly on the

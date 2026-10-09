@@ -22,6 +22,7 @@ docs_assistant = importlib.import_module(
 sql_explorer_visual = importlib.import_module(
     f"{__package__}.sql_explorer_visual" if __package__ else "sql_explorer_visual"
 )
+sessions = importlib.import_module(f"{__package__}.sessions" if __package__ else "sessions")
 
 try:  # pragma: no cover - exercised only when the agent-only MCP dependency exists.
     from mcp.server import MCPServer
@@ -300,6 +301,28 @@ class _FingerprintError(RuntimeError):
         }
 
 
+def _feature_startup_failure(
+    root_path: Path,
+    input_summary: dict[str, Any],
+    command_results: list[dict[str, Any]],
+    *,
+    resume_feature: bool,
+) -> dict[str, Any] | None:
+    if not resume_feature:
+        return _validate_startup(root_path, input_summary, command_results)
+    try:
+        sessions.operation_free(root_path)
+    except RuntimeError as exc:
+        return _tool_output(
+            "prepare_start",
+            input_summary,
+            ok=False,
+            summary="Feature startup blocked by an unfinished Git operation.",
+            blockers=[{"phase": "startup", "message": str(exc)}],
+        )
+    return None
+
+
 def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     task: str,
     module: str | None = None,
@@ -319,11 +342,23 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
         "detail": detail,
     }
     command_results: list[dict[str, Any]] = []
-    startup_failure = _validate_startup(root_path, input_summary, command_results)
+    session = sessions.load(root_path)
+    session_phase = session.get("phase")
+    resume_feature = session_phase == "feature"
+    startup_failure = _feature_startup_failure(
+        root_path, input_summary, command_results, resume_feature=resume_feature
+    )
     if startup_failure is not None:
         return startup_failure
 
-    for phase, command in _prepare_sync_commands(root_path):
+    # The launcher synced before entering Plan mode. Resuming a feature must not
+    # switch branches or discard its unfinished work.
+    sync_commands = (
+        []
+        if session_phase in {"planning", "revalidate", "feature"}
+        else _prepare_sync_commands(root_path)
+    )
+    for phase, command in sync_commands:
         result = _run_command(root_path, command)
         command_results.append(result)
         if not result["ok"]:
@@ -368,7 +403,8 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
         )
 
     health = repo_health(root=str(root_path))
-    if health["branch"] != WORK_BRANCH:
+    expected_branch = session.get("branch", WORK_BRANCH)
+    if health["branch"] != expected_branch:
         return _tool_output(
             "prepare_start",
             input_summary,
@@ -966,7 +1002,7 @@ def _version_bump_validation_error(
     return None
 
 
-def version_bump(  # noqa: C901 - this function coordinates the atomic metadata workflow.
+def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata and session fragments.
     summary: str | None = None,
     change_type: str = "implementation",
     dry_run: bool = False,  # noqa: FBT001, FBT002 - named MCP/CLI option.
@@ -1000,6 +1036,24 @@ def version_bump(  # noqa: C901 - this function coordinates the atomic metadata 
             result={"decision": "no_bump", "planned_version": None, "changelog_entry": None},
             next_actions=["Do not edit package metadata for ordinary documentation-only changes."],
         )
+
+    if sessions.load(root_path).get("phase") == "feature" and not force_release:
+        try:
+            planned = sessions.fragment(root_path, summary or "", dry_run=dry_run)
+            return _tool_output(
+                "version_bump",
+                input_summary,
+                summary="Feature changelog fragment prepared.",
+                result=planned,
+            )
+        except RuntimeError as exc:
+            return _tool_output(
+                "version_bump",
+                input_summary,
+                ok=False,
+                summary="Feature changelog blocked.",
+                blockers=[{"phase": "fragment", "message": str(exc)}],
+            )
 
     current_version = _package_version(root_path)
     changelog = root_path / CHANGELOG_PATH
@@ -1401,6 +1455,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
     wait_seconds: int = GITHUB_CHECK_WAIT_SECONDS,
     root: str = ".",
     detail: str = "summary",
+    validation_waiver: str | None = None,
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
     root_path = _resolve_root(root)
@@ -1413,6 +1468,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         "wait_seconds": wait_seconds,
         "root": str(root_path),
         "detail": detail,
+        "validation_waiver": validation_waiver,
     }
     if detail not in DETAIL_LEVELS:
         return _tool_output(
@@ -1430,6 +1486,27 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             summary="Invalid GitHub check wait interval.",
             blockers=[{"phase": "validate", "message": "wait_seconds must be positive"}],
         )
+    if action in {"start", "feedback", "refresh", "sync"}:
+        try:
+            if action == "start":
+                result = sessions.start(root_path, sha)
+            elif action == "feedback":
+                result = sessions.feedback(root_path, sha)
+            elif action == "refresh":
+                result = sessions.refresh(root_path)
+            else:
+                result = sessions.synchronize(root_path)
+            return _tool_output(
+                "git_workflow", input_summary, summary="Session workflow completed.", result=result
+            )
+        except (RuntimeError, OSError, ValueError, KeyError) as exc:
+            return _tool_output(
+                "git_workflow",
+                input_summary,
+                ok=False,
+                summary="Session workflow blocked.",
+                blockers=[{"phase": action, "message": str(exc)}],
+            )
     if action not in {"checks", "commit", "push"}:
         return _tool_output(
             "git_workflow",
@@ -1439,7 +1516,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[
                 {
                     "phase": "validate",
-                    "message": "action must be 'checks', 'commit', or 'push'",
+                    "message": "action must be checks, commit, push, start, feedback, refresh, or sync",
                 }
             ],
         )
@@ -1453,6 +1530,8 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 summary="Commit SHA is required to resume GitHub checks.",
                 blockers=[{"phase": "validate", "message": "sha is required for checks"}],
             )
+        if sessions.load(root_path).get("phase") == "feature":
+            return git_workflow(action="feedback", sha=sha, root=str(root_path), detail=detail)
         return _github_checks_workflow(
             root_path,
             input_summary,
@@ -1477,6 +1556,19 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             summary="Commit message is required.",
             blockers=[{"phase": "validate", "message": "message is required for commit"}],
         )
+    commit_options: list[str] = []
+    if sessions.load(root_path):
+        try:
+            sessions.writable(root_path)
+            commit_options = sessions.commit_options(root_path)
+        except RuntimeError as exc:
+            return _tool_output(
+                "git_workflow",
+                input_summary,
+                ok=False,
+                summary="Feature commit blocked.",
+                blockers=[{"phase": "ownership", "message": str(exc)}],
+            )
     path_validation = _validated_commit_paths(root_path, paths)
     commit_paths = path_validation["paths"]
     if path_validation["blockers"]:
@@ -1545,7 +1637,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             ],
         )
     verification = _verify_precommit_success(root_path)
-    if not verification["ok"]:
+    if not verification["ok"] and not validation_waiver:
         return _tool_output(
             "git_workflow",
             input_summary,
@@ -1577,7 +1669,14 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         root_path,
         {
             "display": f"git commit -m {message!r}",
-            "args": ["git", "commit", "-m", message],
+            "args": [
+                "git",
+                *commit_options,
+                "commit",
+                "-m",
+                message
+                + ("\n\nValidation-Waiver: " + validation_waiver if validation_waiver else ""),
+            ],
             "env": {},
         },
     )
@@ -2183,10 +2282,16 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     )
 
     git_parser = subparsers.add_parser("git-workflow")
-    git_parser.add_argument("action", choices=["checks", "commit", "push"])
+    git_parser.add_argument(
+        "action", choices=["checks", "commit", "push", "start", "feedback", "refresh", "sync"]
+    )
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
     git_parser.add_argument("--sha")
+    git_parser.add_argument(
+        "--validation-waiver",
+        help="Explicit user-authorized reason; never records checks as passed",
+    )
     git_parser.add_argument(
         "--check-timeout-seconds",
         type=int,
@@ -2205,6 +2310,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             message=args.message,
             paths=args.paths,
             sha=args.sha,
+            validation_waiver=args.validation_waiver,
             check_timeout_seconds=args.check_timeout_seconds,
             wait_seconds=args.wait_seconds,
             root=args.root,
@@ -3569,10 +3675,13 @@ def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dic
     )
     unreleased_count = 0
     required_paths: set[str] = {CHANGELOG_PATH}
+    session = sessions.load(root)
+    if session.get("phase") == "feature":
+        required_paths = {f"agent_tools/changelog/{session['id']}.md"}
     changelog_path = root / CHANGELOG_PATH
     if changelog_path.exists():
         unreleased_count = _count_unreleased_changelog_bullets(_read_text(changelog_path))
-    if unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD:
+    if not session and unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD:
         required_paths = set(REQUIRED_VERSION_PATHS)
     missing = sorted(
         path for path in required_paths if path not in changed_paths or path not in selected_paths
@@ -3851,6 +3960,28 @@ def _push_readiness(root: Path) -> dict[str, Any]:
 
 
 def _push_dev_result(root: Path) -> dict[str, Any]:
+    if sessions.load(root):
+        visual = sql_explorer_visual.verify_visual_receipt(root, for_push=True)
+        if not visual["ok"]:
+            return {
+                "readiness": {},
+                "command_results": [],
+                "blockers": [{"phase": "visual_review", "message": visual["message"]}],
+            }
+        try:
+            result = sessions.push(root)
+            return {
+                **result,
+                "readiness": {"feature_pr": result["pr"]},
+                "command_results": [],
+                "blockers": [],
+            }
+        except RuntimeError as exc:
+            return {
+                "readiness": {},
+                "command_results": [],
+                "blockers": [{"phase": "feature_push", "message": str(exc)}],
+            }
     readiness = _push_readiness(root)
     public_readiness = {key: value for key, value in readiness.items() if key != "command_results"}
     if readiness["blockers"]:
@@ -4002,6 +4133,18 @@ def _watch_pushed_commit(
     detail: str = "summary",
 ) -> dict[str, Any]:
     """Watch the immutable SHA captured immediately before the push."""
+    if sessions.load(root).get("phase") == "feature":
+        try:
+            result = sessions.feedback(root, sha)
+            result["status"] = "success" if result["status"] == "merged" else "pending"
+        except RuntimeError as exc:
+            return {
+                "result": {},
+                "command_results": [],
+                "blockers": [{"phase": "pr_feedback", "message": str(exc)}],
+            }
+        else:
+            return {"result": result, "command_results": [], "blockers": []}
     return _watch_github_checks(
         root,
         sha=sha,
@@ -4821,7 +4964,10 @@ def _remote_branch_status(root: Path, *, branch: str, require_equal: bool) -> di
         blockers.append(
             {
                 "phase": f"remote_{branch}",
-                "message": f"Local HEAD does not contain {remote_ref}; pull, rebase, or merge before continuing.",
+                "message": (
+                    f"Local HEAD does not contain {remote_ref}; "
+                    "pull, rebase, or merge before continuing."
+                ),
                 "head": head_commit,
                 result_key: origin_commit,
             }

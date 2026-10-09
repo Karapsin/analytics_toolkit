@@ -8,7 +8,9 @@
           "path": ".github/workflows/tests.yml",
           "classification": "required_push",
           "event": "push",
-          "allowed_conclusions": ["success"],
+          "allowed_conclusions": [
+            "success"
+          ],
           "required_jobs": []
         },
         {
@@ -16,34 +18,52 @@
           "path": ".github/workflows/sql-integration.yml",
           "classification": "advisory_push",
           "event": "push",
-          "allowed_conclusions": ["success"],
-          "required_jobs": [
-        {
-          "name": "core SQL integration (HTTP)",
           "allowed_conclusions": [
             "success"
-          ]
-        },
-        {
-          "name": "core SQL integration (native)",
-              "allowed_conclusions": ["success"]
+          ],
+          "required_jobs": [
+            {
+              "name": "core SQL integration (HTTP)",
+              "allowed_conclusions": [
+                "success"
+              ]
+            },
+            {
+              "name": "core SQL integration (native)",
+              "allowed_conclusions": [
+                "success"
+              ]
             },
             {
               "name": "authentication SQL integration (HTTP + native)",
-              "allowed_conclusions": ["success"]
+              "allowed_conclusions": [
+                "success"
+              ]
             }
           ],
           "conditional_jobs": [
             {
               "name": "destructive fault injection (HTTP + native)",
-              "events": ["schedule", "workflow_dispatch"],
-              "allowed_conclusions": ["success", "skipped"],
+              "events": [
+                "schedule",
+                "workflow_dispatch"
+              ],
+              "allowed_conclusions": [
+                "success",
+                "skipped"
+              ],
               "reason": "Destructive fault groups run nightly or by explicit manual dispatch, never on dev pushes."
             },
             {
               "name": "SQL integration stress (HTTP + native)",
-              "events": ["schedule", "workflow_dispatch"],
-              "allowed_conclusions": ["success", "skipped"],
+              "events": [
+                "schedule",
+                "workflow_dispatch"
+              ],
+              "allowed_conclusions": [
+                "success",
+                "skipped"
+              ],
               "reason": "Resource-pressure scenarios run nightly or by explicit manual dispatch, never on dev pushes."
             }
           ]
@@ -53,13 +73,19 @@
         {
           "name": "destructive fault injection (HTTP + native)",
           "kind": "job",
-          "allowed_conclusions": ["neutral", "skipped"],
+          "allowed_conclusions": [
+            "neutral",
+            "skipped"
+          ],
           "reason": "The fault job is intentionally conditional on scheduled and manual events."
         },
         {
           "name": "SQL integration stress (HTTP + native)",
           "kind": "job",
-          "allowed_conclusions": ["neutral", "skipped"],
+          "allowed_conclusions": [
+            "neutral",
+            "skipped"
+          ],
           "reason": "The stress job is intentionally conditional on scheduled and manual events."
         }
       ],
@@ -68,10 +94,50 @@
           "name": "publish",
           "path": ".github/workflows/publish.yml",
           "classification": "release_only",
-          "events": ["workflow_dispatch", "release"],
+          "events": [
+            "workflow_dispatch",
+            "release"
+          ],
           "reason": "Release publishing is intentionally branch, tag, and manual gated."
+        },
+        {
+          "name": "github-agent",
+          "path": ".github/workflows/github-agent.yml",
+          "classification": "agent_controller",
+          "events": [
+            "workflow_dispatch"
+          ],
+          "reason": "Trusted manual workflow encrypts GitHub App credentials for the private subscription worker; no model or API billing runs in Actions."
+        },
+        {
+          "name": "agent-visual",
+          "path": ".github/workflows/agent-visual.yml",
+          "classification": "agent_visual",
+          "events": [
+            "workflow_dispatch"
+          ],
+          "reason": "Temporary immutable candidates render SQL Explorer scenes on GitHub before host review and publication."
+        },
+        {
+          "name": "agent-dispatch",
+          "path": ".github/workflows/agent-dispatch.yml",
+          "classification": "agent_dispatch",
+          "events": [
+            "issue_comment"
+          ],
+          "reason": "The installed App posts fixed requests; a trusted metadata-only workflow dispatches GitHub validation without widening App Actions permissions."
         }
       ]
     }
+  },
+  "feature_pr": {
+    "base": "dev",
+    "required_checks": [
+      "fast-checks",
+      "agent-review"
+    ],
+    "integration_merge_gate": false,
+    "max_parallel_reviews": 5,
+    "serialized_merges": true
   }
 }

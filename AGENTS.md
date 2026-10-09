@@ -34,29 +34,25 @@ startup, so restart Codex or reopen the workspace after bootstrapping or
 changing the configuration. `agent_tools/mcp_tool.sh` with no arguments starts
 the stdio server; arguments continue to invoke its manual JSON CLI.
 
-### Clean Startup During Planning
+### Isolated Sessions and Plan Mode
 
-Repository policy explicitly authorizes `prepare_start(...)` during planning
-and read-only review when the checkout is clean, including `git switch dev`
-and `git pull --ff-only origin dev`. No additional user confirmation is needed.
-Treat startup synchronization, environment preparation, and RAG refresh as
-authorized preparation in Plan Mode. Planning alone is not a reason to skip
-startup or ask the user to approve it again.
-This is standing authorization: once the clean-start checks pass, run startup
-without requesting the same permission again, including after a planning turn.
-Before synchronization, startup must reject staged or unstaged changes,
-non-ignored untracked files, conflicts, and unfinished Git operations. Ignored
-agent caches and virtual environments do not make the checkout dirty. Never
-stash, reset, discard, or commit local work to bypass this check.
+Bare `codex` from this repository launches a separate clone, switches that clone
+to `dev`, pulls `origin/dev` with `--ff-only`, prepares its environment and RAG,
+then enters native Plan mode. The shared checkout is not the feature workspace.
+Each clone owns its Git state and feature branch; never share a feature clone.
 
-Startup sync, environment preparation, and local RAG index refresh are permitted
-preparatory workflow under repository policy, not implementation work. This policy
-does not override higher-priority session restrictions: if those prohibit
-branch switching or pulling, identify that specific restriction and use an
-explicitly authorized skip or wait for an execution-capable session.
-Attribute such a restriction to the session instruction that imposes it, not
-to repository policy, and reuse any startup-skip authorization already given
-in the conversation rather than asking again.
+In launcher sessions, `prepare_start(...)` detects the private session receipt.
+During planning it refreshes context without switching branches or pulling.
+When resuming feature work it preserves the feature branch and unfinished work.
+Before any implementation, leave Plan mode and call
+`git_workflow(action="start")`. This pulls dev before creating a unique branch.
+If it returns `status="revalidate"`, assess the changed paths against the approved
+plan, obtain approval for material revisions, then acknowledge that receipt with
+`git_workflow(action="start", sha="<after-sha>")`. No feature edits before this step.
+
+Ordinary bootstrap/release checkouts without a session receipt still use normal
+clean startup synchronization. Higher-priority session restrictions apply;
+repository policy cannot authorize a pull prohibited by the active Plan mode.
 
 ### Read-Only Planning Exception
 
@@ -105,29 +101,39 @@ into one response; follow citations with narrow searches and line ranges. Act on
 structured check blockers first, and do not rerun an unchanged failure without
 changing the tree.
 
-Normal implementation, documentation, test, commit, and push work is done on
-the `dev` branch and syncs with `origin/dev`. `git_workflow(action="commit")`
-must be the final repository step for a coherent task batch: after pre-commit
-checks pass, it stages the explicit paths, commits, and pushes `HEAD` to
-`origin/dev`. After pushing, the workflow must watch every required GitHub
-workflow and check for the exact pushed commit SHA until all are successful.
-This read-only watch is the required completion phase after the final repository
-mutation. Advisory SQL integration workflows still run on every push, but their
-completion is not required for a normal commit and agents must not remain active
-solely to wait for them. During the exact-SHA watch, poll required checks only;
-record an advisory integration status or URL only if already returned by the
-required-check watch. Do not query advisory jobs, download their logs or
-artifacts, diagnose, retry, or repair them during normal completion, even while
-required checks are still running. Do not poll, block on, or extend the turn
-for advisory integration. A cancelled,
-superseded, missing, failed, or timed-out required check is not success. Resume
-an interrupted required-check watch with
-`git_workflow(action="checks", sha="<exact-sha>")`; never substitute the newest
-branch run for the pushed SHA. This applies to implementation, documentation,
-release, retry, and standalone pushes. Use `main` only for PyPI release preparation and publishing. When
-a PyPI release is requested, merge `dev` into `main` with
-`release_workflow(action="merge-dev")`, then run release readiness and
-publishing from `main`.
+Normal feature work uses the session-owned branch and a PR to `dev`.
+Run local focused and mandatory pre-commit checks, then
+`git_workflow(action="commit", message="...", paths=[...])`. It stages explicit
+paths, commits, pushes the feature branch, and opens its PR. Wait for GitHub
+agent review and fast CI using `git_workflow(action="feedback")` or exact-head
+`git_workflow(action="checks", sha="<sha>")`; fix requested changes until merged.
+Before corrections, check feedback and use `git_workflow(action="refresh")` if
+bot commits advanced the remote branch. Never edit while feedback reports the
+GitHub writer or the PR has the `agent:writing` label.
+After merge, call `git_workflow(action="sync")`; it updates the clone's dev and
+updates shared dev under a lock only when clean and already on dev. Report any
+pending shared synchronization without discarding work. Reenter native Plan
+mode before another task. Explicit resume preserves the existing clone/branch.
+
+Local agents do not investigate or wait for advisory integration. The GitHub
+agent owns post-merge monitoring through completion and repair PRs until green.
+Integration success does not gate dev merges. Its review/conflict/repair jobs
+use trusted default-branch controller prompts rather than local-session startup
+or MCP branch mutations. Controller jobs never execute PR code with write
+credentials. Repair PRs need independent review, fast CI, and fast non-integration
+regression coverage. SQL Explorer fixes retain the visual-review requirement.
+The private host never runs tests or renders scenes. Airflow schedules the host
+worker through its private socket, using ChatGPT subscription authentication.
+For visual repairs only, the controller may publish an isolated temporary
+`agent-visual/<sha>` candidate to obtain GitHub headless captures. Every full PNG
+is reviewed individually before publishing the correction to a feature PR;
+the receipt binds the capture, task and patch, and the temporary ref is removed.
+
+The initial automation bootstrap may use the legacy dev commit workflow before
+PR protection is activated. That workflow watches all required checks for its
+exact pushed SHA. `main` remains the default and release branch; only the
+explicitly authorized controller/workflow automation allowlist may be synced
+there outside a release. Package code reaches main only through releases.
 
 Any change under `analytics_toolkit/sql_explorer/`, its visual harness, or its
 scene manifest requires the full SQL Explorer visual review before commit or
@@ -141,7 +147,7 @@ only the run-owned temporary checkout. The receipt records the host and binds
 to the full reviewed content. `git_workflow` blocks SQL Explorer commits and
 pushes when this receipt is missing, stale, partial, or non-green. Treat reference images as design guidance, not pixel baselines.
 
-Advisory integration investigation requires an explicit user request or release
+Local advisory integration investigation requires an explicit user request or release
 readiness scope. An incidentally observed failure does not expand the current
 task: record a deferred follow-up using only the evidence already available.
 This boundary takes precedence over general instructions to investigate or
@@ -177,7 +183,7 @@ agent_tools/mcp_tool.sh release-workflow --action status
 ```
 
 Use `git-workflow commit` only when the current batch is ready to commit and
-push to `origin/dev`. Use standalone `git-workflow push` only to retry a failed
+push its session-owned feature branch. Use standalone `git-workflow push` only to retry a failed
 post-commit push. Use `release-workflow --action publish` only when release
 readiness is clean.
 
@@ -272,9 +278,15 @@ specific documentation update that would make future RAG retrieval unambiguous.
 
 ## Global Rules
 
+- Automated PR handling is restricted to the repository owner's enrolled-machine
+  signatures and the trusted App's signed repair commits. Policy and automation
+  changes require the owner's exact-head `/agent approve-policy <sha>` comment.
+  Local agents must not post this approval on the owner's behalf. The trusted
+  controller verifies these requirements outside the model and PR checkout.
+
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
-- After every non-documentation repository change, use `version_bump(...)` to update version metadata or the changelog. Non-documentation changes add one concise bullet under `## Unreleased` in `docs/CHANGELOG.md` until there are at least 10 unreleased bullets. While `## Unreleased` has fewer than 10 bullets, do not bump `pyproject.toml` or the root README version. Once `## Unreleased` reaches 10 or more bullets, use `version_bump(...)` to create a new versioned changelog section from all unreleased bullets, bump the package version in `pyproject.toml`, and update the root README version in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
+- After every non-documentation repository change, use `version_bump(...)` to update version metadata or the changelog. Feature sessions record one uniquely owned changelog fragment through `version_bump(...)`; the GitHub agent folds fragments during serialized integration. Bootstrap changes add one concise bullet under `## Unreleased` in `docs/CHANGELOG.md` until there are at least 10 unreleased bullets. While `## Unreleased` has fewer than 10 bullets, do not bump `pyproject.toml` or the root README version. Once `## Unreleased` reaches 10 or more bullets, use `version_bump(...)` to create a new versioned changelog section from all unreleased bullets, bump the package version in `pyproject.toml`, and update the root README version in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
 - Do not run tests against external, shared, or production databases. Unit tests

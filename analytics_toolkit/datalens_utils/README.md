@@ -5,6 +5,9 @@ durable recovery, and metadata verification. The engine
 uses the public DataLens SDK. Dashboard recipes and runtime state belong to the
 calling project.
 
+Managed selector ignore edges use stable source/target ordering across supported
+Python versions and hash seeds.
+
 Install the optional engine dependencies on Python 3.10 or newer:
 
 ```sh

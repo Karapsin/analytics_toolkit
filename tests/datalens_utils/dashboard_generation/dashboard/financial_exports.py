@@ -4,16 +4,19 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from tests._support.paths import REPO_ROOT
 
 
-def test_financial_exports_equal_baseline(tmp_path):
+@pytest.mark.parametrize("hash_seed", ["0", "1"])
+def test_financial_exports_equal_baseline(tmp_path, hash_seed):
     expected = REPO_ROOT / "tests/datalens_utils/_support/fixtures/financial_exports"
     destination = tmp_path / "exports"
     subprocess.run(
         [sys.executable, "-m", "tests.datalens_utils._support.financial_exports", str(destination)],
         cwd=REPO_ROOT,
-        env={**os.environ, "PYTHONHASHSEED": "0"},
+        env={**os.environ, "PYTHONHASHSEED": hash_seed},
         check=True,
         capture_output=True,
     )

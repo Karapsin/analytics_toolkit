@@ -120,12 +120,12 @@ def _reconcile_wiring(  # noqa: C901
             continue
         content = contents[tab.id]
         expected, actual = (expected_edges(content), managed_edges(tab, content, all_routes=True))
-        for logical in set(actual) - expected:
+        for logical in sorted(set(actual) - expected):
             routes = actual[logical]
             for source, target in routes if isinstance(routes, list) else [routes]:
                 update.remove_connection(from_item=source, to_item=target, tab=tab.id)
             changed = True
-        for source, target in expected - set(actual):
+        for source, target in sorted(expected - set(actual)):
             update.add_connection(from_item=source, to_item=target, tab=tab.id)
             changed = True
         wanted_aliases = alias_groups(content, datasets)

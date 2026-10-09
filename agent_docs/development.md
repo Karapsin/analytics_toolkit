@@ -96,36 +96,29 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 
 ## Fresh-Agent Sequence
 
-1. Run `prepare_start(...)`, including during planning on a clean checkout.
-   Plan Mode does not require an extra repository-level approval for startup:
-   synchronization, environment preparation, and RAG refresh are authorized
-   preparation, separate from implementing the planned changes.
-   Repository policy authorizes switching to `dev` and fast-forward pulling
-   without additional confirmation. Startup rejects local changes and unfinished
-   Git operations before synchronization; never stash or discard to bypass it.
-   Follow the root read-only exception
-   when the user explicitly skips sync, disclose staleness, and revalidate after
-   normal startup before edits or tests. Repository policy cannot override
-   higher-priority session restrictions.
-   Clean-start permission is standing authorization and persists across turns;
-   do not ask for it again. Attribute any contrary restriction to its actual
-   session instruction and reuse an already authorized read-only exception.
-2. Read `instruction_routing.read_next`; do not reread auto-discovered `AGENTS.md`.
-3. Run `change_impact(...)` for consolidated focused RAG, contract, architecture,
-   documentation, and check planning.
-4. Run `workflow_status(...)`.
-5. Implement only the requested coherent batch.
-6. Run focused checks.
-7. Run `version_bump(...)` for non-documentation changes.
-8. Run `run_checks(level="precommit")`.
-9. Re-run `workflow_status(...)`.
-10. Commit explicit paths with `git_workflow(action="commit", ...)`.
-11. Wait for every required GitHub check for the exact pushed SHA. Poll required
-    checks only; report but do not poll or wait for advisory integration jobs.
-12. Diagnose required-check failures, fix in-scope defects, and recommit until
-    the new SHA's required checks are green.
-13. Report the final SHA, push target, required conclusions, and advisory
-    integration status or run URL when available.
+1. Launch bare `codex` from the canonical repository. The launcher prepares a
+   separate clone on refreshed dev before entering native Plan mode.
+2. Call `prepare_start(...)` for role-aware context and read its routed files.
+   Planning and feature resume do not switch or pull branches.
+3. Plan the task. After leaving Plan mode, call `git_workflow(action="start")`.
+   Revalidate against any incoming dev changes; acknowledge a revalidation
+   receipt with `sha=<after-sha>` after approving material plan revisions.
+4. Run `change_impact(...)` and `workflow_status(...)`, then implement on the
+   session-owned feature branch.
+5. Run focused checks and `version_bump(...)` (creates a unique fragment).
+6. Run mandatory `run_checks(level="precommit")`, then workflow status.
+7. Commit explicit paths with `git_workflow(action="commit", ...)`, which pushes
+   the feature branch and opens its PR to dev.
+8. Wait for agent review and fast CI with `git_workflow(action="feedback")`.
+   Respect the GitHub writer lease. Refresh after bot commits before corrections.
+9. Fix feedback and repeat checks/commits until merged; do not monitor integration.
+10. Call `git_workflow(action="sync")`; report pending shared sync safely.
+11. Reenter native Plan mode before starting another feature.
+
+The GitHub integration-repair role is explicitly authorized to monitor and fix
+advisory integration after merge. Each repair requires fast regression coverage,
+independent review, and fast CI. Integration never gates a dev feature merge.
+Bootstrap-only legacy pushes retain the exact-SHA required-check watch.
 
 Default direct `docs(...)` calls to `top_k=3`, avoid parallel broad reads, and
 inspect cited line ranges with narrow `rg` queries. On failure, act on the

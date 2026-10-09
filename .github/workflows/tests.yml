@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+  fast-checks:
+    name: fast-checks
+    needs: [tests, sdk-conformance, quality]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every fast validation job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          assert all(job["result"] == "success" for job in json.loads(os.environ["RESULTS"]).values())
+          PY
+
   tests:
     name: ${{ matrix.env_name }}
     runs-on: ubuntu-latest

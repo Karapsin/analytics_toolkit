@@ -26,34 +26,34 @@
           },
           "connections": [
             {
-              "from": "month_end_selector",
+              "from": "alpha_selector",
               "kind": "ignore",
-              "to": "month_start_selector"
+              "to": "month_end_selector"
             },
             {
-              "from": "month_group_selector",
+              "from": "alpha_selector",
               "kind": "ignore",
               "to": "month_experiment_selector"
             },
             {
-              "from": "month_end_selector",
+              "from": "alpha_selector",
               "kind": "ignore",
               "to": "month_group_selector"
             },
             {
               "from": "alpha_selector",
               "kind": "ignore",
-              "to": "month_end_selector"
-            },
-            {
-              "from": "period_type_selector",
-              "kind": "ignore",
               "to": "month_start_selector"
             },
             {
-              "from": "period_type_selector",
+              "from": "alpha_selector",
               "kind": "ignore",
-              "to": "month_experiment_selector"
+              "to": "period_type_selector"
+            },
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
             },
             {
               "from": "month_end_selector",
@@ -61,6 +61,16 @@
               "to": "month_experiment_selector"
             },
             {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
               "from": "month_experiment_selector",
               "kind": "ignore",
               "to": "alpha_selector"
@@ -68,10 +78,10 @@
             {
               "from": "month_experiment_selector",
               "kind": "ignore",
-              "to": "month_group_selector"
+              "to": "month_end_selector"
             },
             {
-              "from": "month_start_selector",
+              "from": "month_experiment_selector",
               "kind": "ignore",
               "to": "month_group_selector"
             },
@@ -79,16 +89,6 @@
               "from": "month_experiment_selector",
               "kind": "ignore",
               "to": "month_start_selector"
-            },
-            {
-              "from": "period_type_selector",
-              "kind": "ignore",
-              "to": "alpha_selector"
-            },
-            {
-              "from": "month_start_selector",
-              "kind": "ignore",
-              "to": "alpha_selector"
             },
             {
               "from": "month_experiment_selector",
@@ -98,57 +98,17 @@
             {
               "from": "month_group_selector",
               "kind": "ignore",
-              "to": "month_end_selector"
-            },
-            {
-              "from": "alpha_selector",
-              "kind": "ignore",
-              "to": "month_group_selector"
-            },
-            {
-              "from": "month_start_selector",
-              "kind": "ignore",
-              "to": "month_experiment_selector"
-            },
-            {
-              "from": "alpha_selector",
-              "kind": "ignore",
-              "to": "month_start_selector"
-            },
-            {
-              "from": "period_type_selector",
-              "kind": "ignore",
-              "to": "month_end_selector"
-            },
-            {
-              "from": "month_group_selector",
-              "kind": "ignore",
-              "to": "period_type_selector"
-            },
-            {
-              "from": "alpha_selector",
-              "kind": "ignore",
-              "to": "month_experiment_selector"
-            },
-            {
-              "from": "month_experiment_selector",
-              "kind": "ignore",
-              "to": "month_end_selector"
-            },
-            {
-              "from": "alpha_selector",
-              "kind": "ignore",
-              "to": "period_type_selector"
-            },
-            {
-              "from": "month_start_selector",
-              "kind": "ignore",
-              "to": "month_end_selector"
-            },
-            {
-              "from": "month_group_selector",
-              "kind": "ignore",
               "to": "alpha_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
             },
             {
               "from": "month_group_selector",
@@ -156,14 +116,54 @@
               "to": "month_start_selector"
             },
             {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "period_type_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
               "from": "period_type_selector",
               "kind": "ignore",
               "to": "month_group_selector"
             },
             {
-              "from": "month_end_selector",
+              "from": "period_type_selector",
               "kind": "ignore",
-              "to": "alpha_selector"
+              "to": "month_start_selector"
             }
           ],
           "id": "month",
@@ -495,19 +495,9 @@
           },
           "connections": [
             {
-              "from": "dynamics_money_selector",
+              "from": "dynamics_alpha_selector",
               "kind": "ignore",
-              "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_money_selector",
-              "kind": "ignore",
-              "to": "dynamics_date_selector"
-            },
-            {
-              "from": "dynamics_period_selector",
-              "kind": "ignore",
-              "to": "dynamics_date_selector"
+              "to": "dynamics_conversion_selector"
             },
             {
               "from": "dynamics_alpha_selector",
@@ -515,69 +505,54 @@
               "to": "dynamics_date_selector"
             },
             {
-              "from": "dynamics_period_selector",
-              "kind": "ignore",
-              "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_experiment_selector",
-              "kind": "ignore",
-              "to": "dynamics_conversion_selector"
-            },
-            {
-              "from": "dynamics_group_selector",
-              "kind": "ignore",
-              "to": "dynamics_date_selector"
-            },
-            {
-              "from": "dynamics_conversion_selector",
-              "kind": "ignore",
-              "to": "dynamics_date_selector"
-            },
-            {
-              "from": "dynamics_money_selector",
+              "from": "dynamics_alpha_selector",
               "kind": "ignore",
               "to": "dynamics_experiment_selector"
             },
             {
-              "from": "dynamics_group_selector",
-              "kind": "ignore",
-              "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_period_selector",
-              "kind": "ignore",
-              "to": "dynamics_experiment_selector"
-            },
-            {
-              "from": "dynamics_conversion_selector",
-              "kind": "ignore",
-              "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_experiment_selector",
+              "from": "dynamics_alpha_selector",
               "kind": "ignore",
               "to": "dynamics_group_selector"
             },
             {
-              "from": "dynamics_money_selector",
+              "from": "dynamics_alpha_selector",
               "kind": "ignore",
-              "to": "dynamics_conversion_selector"
+              "to": "dynamics_money_selector"
             },
             {
               "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
               "kind": "ignore",
               "to": "dynamics_experiment_selector"
             },
             {
-              "from": "dynamics_alpha_selector",
+              "from": "dynamics_conversion_selector",
               "kind": "ignore",
-              "to": "dynamics_conversion_selector"
+              "to": "dynamics_group_selector"
             },
             {
-              "from": "dynamics_period_selector",
+              "from": "dynamics_conversion_selector",
               "kind": "ignore",
-              "to": "dynamics_conversion_selector"
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
             },
             {
               "from": "wt_4",
@@ -605,74 +580,9 @@
               "to": "dynamics_alpha_selector"
             },
             {
-              "from": "dynamics_experiment_selector",
-              "kind": "ignore",
-              "to": "dynamics_money_selector"
-            },
-            {
-              "from": "dynamics_experiment_selector",
-              "kind": "ignore",
-              "to": "dynamics_period_selector"
-            },
-            {
-              "from": "dynamics_money_selector",
-              "kind": "ignore",
-              "to": "dynamics_group_selector"
-            },
-            {
-              "from": "dynamics_conversion_selector",
-              "kind": "ignore",
-              "to": "dynamics_experiment_selector"
-            },
-            {
-              "from": "wt_3",
-              "kind": "ignore",
-              "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_period_selector",
-              "kind": "ignore",
-              "to": "dynamics_group_selector"
-            },
-            {
-              "from": "dynamics_group_selector",
-              "kind": "ignore",
-              "to": "dynamics_conversion_selector"
-            },
-            {
               "from": "dynamics_date_selector",
               "kind": "ignore",
               "to": "dynamics_alpha_selector"
-            },
-            {
-              "from": "dynamics_alpha_selector",
-              "kind": "ignore",
-              "to": "dynamics_group_selector"
-            },
-            {
-              "from": "dynamics_money_selector",
-              "kind": "ignore",
-              "to": "dynamics_period_selector"
-            },
-            {
-              "from": "dynamics_alpha_selector",
-              "kind": "ignore",
-              "to": "dynamics_money_selector"
-            },
-            {
-              "from": "dynamics_period_selector",
-              "kind": "ignore",
-              "to": "dynamics_money_selector"
-            },
-            {
-              "from": "dynamics_alpha_selector",
-              "kind": "ignore",
-              "to": "dynamics_period_selector"
-            },
-            {
-              "from": "dynamics_conversion_selector",
-              "kind": "ignore",
-              "to": "dynamics_group_selector"
             },
             {
               "from": "dynamics_date_selector",
@@ -680,19 +590,24 @@
               "to": "dynamics_conversion_selector"
             },
             {
-              "from": "dynamics_group_selector",
+              "from": "dynamics_date_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_date_selector",
               "kind": "ignore",
               "to": "dynamics_money_selector"
             },
             {
-              "from": "dynamics_conversion_selector",
+              "from": "dynamics_experiment_selector",
               "kind": "ignore",
-              "to": "dynamics_money_selector"
+              "to": "dynamics_alpha_selector"
             },
             {
-              "from": "dynamics_conversion_selector",
+              "from": "dynamics_experiment_selector",
               "kind": "ignore",
-              "to": "dynamics_period_selector"
+              "to": "dynamics_conversion_selector"
             },
             {
               "from": "dynamics_experiment_selector",
@@ -702,15 +617,100 @@
             {
               "from": "dynamics_experiment_selector",
               "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "wt_3",
+              "kind": "ignore",
               "to": "dynamics_alpha_selector"
             },
             {
-              "from": "dynamics_date_selector",
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
               "kind": "ignore",
               "to": "dynamics_group_selector"
             },
             {
-              "from": "dynamics_date_selector",
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
               "kind": "ignore",
               "to": "dynamics_money_selector"
             }

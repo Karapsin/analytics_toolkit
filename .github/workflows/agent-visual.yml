@@ -1,0 +1,54 @@
+name: agent-visual
+run-name: Visual ${{ inputs.candidate }}
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Immutable temporary candidate SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[tui]' -r agent_tools/requirements-mcp.txt
+      - name: Capture every scene headlessly
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          python - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+          from agent_tools.sql_explorer_visual import visual_workflow, session_path
+          root = Path.cwd()
+          result = visual_workflow('start', root=str(root))
+          assert result['ok'], result
+          review = result['review_id']
+          result = visual_workflow('capture', review_id=review, root=str(root))
+          assert result['ok'], result
+          session = json.loads(session_path(root, review).read_text())
+          assert session['capture']['status'] == 'pass'
+          Path('visual-artifact').mkdir()
+          for scene_id, scene in session['scenes'].items():
+              shutil.copyfile(scene['screenshot'], f'visual-artifact/{scene_id}.png')
+              shutil.copyfile(scene['geometry'], f'visual-artifact/{scene_id}.json')
+          session['candidate'] = os.environ['CANDIDATE']
+          Path('visual-artifact/capture.json').write_text(json.dumps(session))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-visual-${{ inputs.candidate }}
+          path: visual-artifact/
+          retention-days: 7
