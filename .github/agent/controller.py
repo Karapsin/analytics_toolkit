@@ -226,12 +226,15 @@ def _record_run(gh: GitHub, state: dict[str, Any], run: dict[str, Any]) -> None:
         previous["pull_number"] = int(candidate.group(2))
         pr = gh.pull(previous["pull_number"])
         previous["merged"] = bool(pr.get("merged"))
+        previous["closed_unmerged"] = pr.get("state") == "closed" and not previous["merged"]
         if previous["merged"]:
             tested_sha = pr["merge_commit_sha"]
     previous.update(sha=tested_sha, status=run["status"], conclusion=run["conclusion"],
                     url=run["html_url"], event=run["event"], attempt=run["run_attempt"],
                     updated=run["updated_at"])
-    if run["status"] == "completed" and not unchanged:
+    if previous.get("closed_unmerged"):
+        previous["needs"] = []
+    if run["status"] == "completed" and not unchanged and not previous.get("closed_unmerged"):
         jobs = gh.pages(f"actions/runs/{run['id']}/jobs?filter=latest&per_page=100", "jobs")
         grouped: dict[str, list[Any]] = {}
         for job in jobs:
@@ -249,7 +252,7 @@ def _resolve_runs(gh: GitHub, state: dict[str, Any]) -> None:
     ancestry: dict[tuple[str, str], bool] = {}
     for failure in state["runs"].values():
         for green in state["runs"].values():
-            if green["status"] != "completed":
+            if green["status"] != "completed" or not green.get("merged", True):
                 continue
             common = set(failure.get("needs", [])) & set(green.get("green", []))
             if not common or green.get("updated", "") < failure.get("updated", ""):
@@ -301,7 +304,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     for run in runs:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
-        if run["status"] != "completed" or run.get("needs") or run.get("pull_number") and not run.get("merged"):
+        if run["status"] != "completed" or run.get("needs") or run.get("pull_number") and not run.get("merged") and not run.get("closed_unmerged"):
             _record_run(gh, state, gh.api(f"actions/runs/{key}"))
     state["cursor"] = next_cursor
     _resolve_runs(gh, state)
@@ -528,7 +531,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> Non
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_text().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
-        paths = command("git", "diff", "--cached", "--name-only", cwd=work).splitlines()
+        paths = command("git", "diff", "--cached", "--name-only", task["base"], cwd=work).splitlines()
         if any(path.startswith((".git/", ".github/agent/")) or path in {".connections", ".env"}
                or path == ".github/workflows/github-agent.yml" for path in paths):
             raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
