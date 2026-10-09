@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Wait for fresh-clone trust input readiness before selecting native Plan mode.
+- Queue advisory integration on final PR candidates and avoid duplicate feature push matrices.
 
 ## 1.3.12.3 - 2026-10-09
 

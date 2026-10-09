@@ -322,3 +322,43 @@ def test_unsigned_unknown_and_revoked_machine_keys_fail_closed(
     assert not controller.signed_head("owner/repo", signed)
     monkeypatch.delenv("AGENT_ALLOWED_SIGNERS")
     assert not controller.signed_head("owner/repo", signed)
+
+
+def test_candidate_failure_is_assigned_to_squash_merge_for_repair() -> None:
+    candidate, merged = "a" * 40, "b" * 40
+
+    class GitHub:
+        def pull(self, number: int) -> dict[str, Any]:
+            assert number == 7
+            return {"merged": True, "merge_commit_sha": merged}
+
+        def pages(self, path: str, key: str) -> list[dict[str, str]]:
+            return [{"name": "HTTP", "conclusion": "failure"}]
+
+    state: dict[str, Any] = {"runs": {}}
+    controller._record_run(
+        GitHub(),
+        state,
+        {
+            "id": 1,
+            "head_sha": "c" * 40,
+            "display_title": f"agent integration {candidate} PR 7",
+            "status": "completed",
+            "conclusion": "failure",
+            "run_attempt": 1,
+            "html_url": "run",
+            "event": "workflow_dispatch",
+            "updated_at": "2026-10-09",
+        },
+    )
+    assert state["runs"]["1"]["candidate"] == candidate
+    assert state["runs"]["1"]["sha"] == merged
+    assert state["runs"]["1"]["needs"] == ["HTTP"]
+
+
+def test_integration_workflow_has_only_explicit_candidate_or_manual_triggers() -> None:
+    text = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text()
+    assert "  push:" not in text
+    assert "  schedule:" not in text
+    assert "inputs.candidate || github.sha" in text
+    assert "workflow_dispatch:" in text

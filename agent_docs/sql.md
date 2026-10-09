@@ -37,8 +37,9 @@ investigation.
   when the user explicitly requests local integration validation or during
   release readiness.
 - Normal completion requires focused checks, pre-commit checks, and the
-  exact-pushed-SHA required-check watch. Advisory core/auth integration starts
-  on push, but agents must not poll it, wait for it, or extend the turn for it.
+  exact-pushed-SHA required-check watch. The GitHub agent queues advisory
+  integration for final reviewed PR heads before merge and after conflict or
+  repair changes. Local agents must not poll it, wait for it, or extend the turn for it.
   Report its status or URL only if already available from the required-check
   watch. Under the authoritative `AGENTS.md` policy, do not query advisory jobs,
   download logs or artifacts, diagnose, retry, or repair them, even while required

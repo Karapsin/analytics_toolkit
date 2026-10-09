@@ -219,7 +219,16 @@ def _record_run(gh: GitHub, state: dict[str, Any], run: dict[str, Any]) -> None:
     previous = state["runs"].setdefault(str(run["id"]), {})
     unchanged = (previous.get("status"), previous.get("conclusion"), previous.get("attempt")) == (
         run["status"], run["conclusion"], run["run_attempt"])
-    previous.update(sha=run["head_sha"], status=run["status"], conclusion=run["conclusion"],
+    candidate = re.fullmatch(r"agent integration ([0-9a-f]{40}) PR (\d+)", run.get("display_title", ""))
+    tested_sha = candidate.group(1) if candidate else run["head_sha"]
+    if candidate:
+        previous["candidate"] = tested_sha
+        previous["pull_number"] = int(candidate.group(2))
+        pr = gh.pull(previous["pull_number"])
+        previous["merged"] = bool(pr.get("merged"))
+        if previous["merged"]:
+            tested_sha = pr["merge_commit_sha"]
+    previous.update(sha=tested_sha, status=run["status"], conclusion=run["conclusion"],
                     url=run["html_url"], event=run["event"], attempt=run["run_attempt"],
                     updated=run["updated_at"])
     if run["status"] == "completed" and not unchanged:
@@ -256,10 +265,13 @@ def _resolve_runs(gh: GitHub, state: dict[str, Any]) -> None:
 
 def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
                        pulls: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    failures = [int(key) for key, run in state["runs"].items() if run.get("needs")]
+    failures = [int(key) for key, run in state["runs"].items()
+                if run.get("needs") and run.get("merged", True)]
     if not failures or any(pr["head"]["ref"].startswith(REPAIR_BRANCH) for pr in pulls):
         return []
     for key, run in state["runs"].items():
+        if int(key) not in failures:
+            continue
         if "workflow completion" in run.get("needs", []) and time.time() >= run.get("retry_after", 0):
             dispatch(gh, "rerun", int(key))
             run["retry_after"] = time.time() + 1800
@@ -267,7 +279,8 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     current = [r for r in state["runs"].values() if r["sha"] == base]
     if any(r["status"] != "completed" for r in current):
         return []
-    missing = {name for r in state["runs"].values() for name in r.get("needs", [])}
+    missing = {name for key, r in state["runs"].items() if int(key) in failures
+               for name in r.get("needs", [])}
     covered = {name for r in current for name in r.get("green", []) + r.get("needs", [])}
     if missing - covered and state.get("dispatched_base") != base:
         dispatch(gh, "integration", "all")
@@ -288,7 +301,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     for run in runs:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
-        if run["status"] != "completed" or run.get("needs"):
+        if run["status"] != "completed" or run.get("needs") or run.get("pull_number") and not run.get("merged"):
             _record_run(gh, state, gh.api(f"actions/runs/{key}"))
     state["cursor"] = next_cursor
     _resolve_runs(gh, state)
@@ -573,6 +586,14 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
             gh.label(pr["number"], acquire=False)
         if gh.base() != base:
             continue
+        # Queue once for the final head, including heads produced by conflict fixes.
+        # Completion and success remain advisory; monitoring continues after merge.
+        _, state = monitor(gh)
+        candidate_key = str(pr["number"]) + ":" + head
+        if candidate_key not in state.setdefault("candidates", {}):
+            dispatch(gh, "integration", {"candidate": head, "number": pr["number"]})
+            state["candidates"][candidate_key] = {"head": head, "base": base}
+            save_monitor(gh, state)
         # GitHub protection also enforces fast checks; expected head rejects races.
         gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
 

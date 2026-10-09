@@ -106,14 +106,17 @@ shared, external, or production database.
 
 ## CI
 
-The `sql-integration` workflow runs advisory core and auth x86_64 jobs in
-parallel on every push to `dev`, each validating HTTP and native ClickHouse
-with transport-specific artifacts. Individual tests have a five-minute timeout
-so blocked client operations fail with diagnostics instead of consuming the
-job-level limit. The destructive
-fault groups (`database`, `staging`, and `authentication`) run nightly and by
-manual dispatch with matrix fail-fast disabled. The stress profile also runs
-nightly or by manual dispatch and is excluded from normal pushes.
+The GitHub agent queues the advisory `sql-integration` workflow once for the
+final reviewed PR head before merge. Conflict resolution and repair fixes create
+new heads and receive fresh validation. The workflow checks out the immutable
+candidate SHA; its run title records that SHA and the PR number. Completion and
+success do not gate dev merges. The worker continues monitoring after merge and
+repairs failures until the affected groups and transports are green.
+
+Routine push and nightly triggers are disabled. Explicit manual dispatch remains
+available for release readiness and individual profiles. Exhaustive candidate
+validation includes core, authentication, destructive fault groups, and stress.
+Individual tests have a five-minute timeout. Matrix fail-fast is disabled.
 Core and auth require zero skipped manifest scenarios on x86_64; ARM runs are
 diagnostic and may report Greenplum as architecture-unavailable. All artifacts
 are uploaded even on failure. The native auth pass uses separate HAProxy TLS
