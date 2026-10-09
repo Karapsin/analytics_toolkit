@@ -6,3 +6,7 @@
 - [Disposable SQL integration tests](INTEGRATION_TESTING.md)
 - [Modules documentation](modules/README.md)
 - [Changelog](CHANGELOG.md)
+
+## Agent workflows
+
+- [Isolated Codex feature sessions](FEATURE_SESSIONS.md)
