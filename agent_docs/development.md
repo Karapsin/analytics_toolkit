@@ -55,8 +55,8 @@ tests are allowed only through `run_checks(area="sql", level="integration")`;
 that workflow owns endpoint validation, temporary configuration, diagnostics,
 and container/network/volume teardown. The `all` profile is exhaustive and
 includes destructive fault groups and resource-intensive stress scenarios;
-normal pushes run advisory core and auth jobs. Fault and stress profiles
-run nightly or by manual dispatch. On x86_64, a skipped core/auth manifest
+the GitHub agent queues advisory validation for final reviewed PR heads.
+Fault and stress profiles run as part of exhaustive candidate or manual validation. On x86_64, a skipped core/auth manifest
 scenario is a failure.
 
 Do not invoke local SQL integration as a normal implementation-completion step,

@@ -432,3 +432,29 @@ def test_unchanged_pending_receipt_omits_repeated_check_names() -> None:
     assert receipt["pending_required_count"] == 2
     assert "pending_required" not in receipt
     assert "missing" not in receipt
+
+
+def test_snapshot_ignores_unrelated_actions_jobs_on_required_sha(tmp_path: Path) -> None:
+    snapshot = _successful_github_snapshot()
+    snapshot["check_runs"] = [
+        {
+            "name": "dispatch",
+            "app": {"slug": "github-actions"},
+            "conclusion": "skipped",
+            "html_url": "https://github.com/o/r/actions/runs/99/job/1",
+        },
+        {
+            "name": "required",
+            "app": {"slug": "github-actions"},
+            "conclusion": "failure",
+            "html_url": "https://github.com/o/r/actions/runs/42/job/2",
+        },
+    ]
+    result = mcp_server._github_check_snapshot(
+        tmp_path,
+        "owner/repository",
+        "a" * 40,
+        command_runner=_FakeGithubRunner("a" * 40, [snapshot]),
+        required_workflow_names={"tests"},
+    )
+    assert [check["name"] for check in result["check_runs"]] == ["required"]
