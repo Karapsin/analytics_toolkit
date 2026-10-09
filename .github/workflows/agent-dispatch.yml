@@ -1,0 +1,20 @@
+name: agent-dispatch
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    if: startsWith(github.event.comment.body, '<!-- github-agent-dispatch') && github.event.sender.login == format('{0}[bot]', vars.AGENT_APP_SLUG)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - run: python .github/agent/dispatch.py
+        env:
+          APP_SLUG: ${{ vars.AGENT_APP_SLUG }}
+          GH_TOKEN: ${{ github.token }}

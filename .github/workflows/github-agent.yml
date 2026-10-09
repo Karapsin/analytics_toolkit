@@ -1,0 +1,37 @@
+name: github-agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipient_certificate:
+        description: Public PEM certificate generated on the private worker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-agent-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Encrypt App credentials for the private worker
+        env:
+          RECIPIENT_CERTIFICATE: ${{ inputs.recipient_certificate }}
+          APP_PRIVATE_KEY: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+        run: |
+          umask 077
+          mkdir sealed
+          printf '%s\n' "$RECIPIENT_CERTIFICATE" > recipient.pem
+          printf '%s\n' "$APP_PRIVATE_KEY" | openssl cms -encrypt -binary -aes-256-gcm -outform DER -out sealed/app.cms recipient.pem
+          rm recipient.pem
+      - uses: actions/upload-artifact@v4
+        with:
+          name: github-agent-sealed-key
+          path: sealed/app.cms
+          retention-days: 1
