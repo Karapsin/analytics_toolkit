@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import re
 import select
@@ -36,7 +35,7 @@ class Bootstrap:
         ):
             # The launcher created and synchronized this private clone itself.
             self.trust_accepted, self.buffer = True, ""
-            return b"\r"
+            return b"\x1b[13u"
         self.intro_ready = self.intro_ready or "Tip:" in text
         if self.stage == "loading" and self.intro_ready and re.search(r"GPT-|context left", text):
             self.stage, self.buffer = "menu", ""
@@ -62,6 +61,7 @@ def _forward_input(master: int, stdin: int, bootstrap: Bootstrap) -> bool:
 
 def _pump(master: int, stdin: int, deadline: float) -> None:
     bootstrap = Bootstrap()
+    next_trust_confirmation = time.monotonic() + 0.5
     while True:
         if bootstrap.stage != "ready" and time.monotonic() > deadline:
             msg = "Could not verify native Plan mode; no task input was forwarded."
@@ -80,6 +80,16 @@ def _pump(master: int, stdin: int, deadline: float) -> None:
                 os.write(master, command)
         if stdin in readable and not _forward_input(master, stdin, bootstrap):
             return
+        if (
+            bootstrap.stage == "loading"
+            and bootstrap.trust_accepted
+            and not bootstrap.intro_ready
+            and time.monotonic() >= next_trust_confirmation
+        ):
+            # Onboarding discards keys queued during its first render. Retry only
+            # the launcher-owned trust confirmation; task input remains held.
+            os.write(master, b"\x1b[13u")
+            next_trust_confirmation = time.monotonic() + 0.5
 
 
 def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
@@ -94,8 +104,6 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
         raise RuntimeError(msg)
     stdin = sys.stdin.fileno()
     previous = termios.tcgetattr(stdin)
-    # Trust the explicitly launched repository clone, without disabling hook trust.
-    project_key = "projects." + json.dumps(str(root)) + '.trust_level="trusted"'
     pid, master = pty.fork()
     if pid == 0:
         os.chdir(root)
@@ -111,8 +119,6 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
                 'model_reasoning_effort="medium"',
                 "-c",
                 'plan_mode_reasoning_effort="medium"',
-                "-c",
-                project_key,
                 "--no-alt-screen",
             ],
         )

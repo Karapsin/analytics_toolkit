@@ -4,6 +4,10 @@
 
 Generated from package version bumps and recent commit history.
 
+## Unreleased
+
+- Wait for fresh-clone trust input readiness before selecting native Plan mode.
+
 ## 1.3.12.3 - 2026-10-09
 
 - Integrate DataLens dashboard utilities as a separate module, add the preinstalled-environment dashboard skill, and provide an all optional-dependencies extra.

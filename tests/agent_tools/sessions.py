@@ -103,7 +103,7 @@ def test_native_plan_bootstrap_waits_for_menu_then_verifies_mode() -> None:
 
 def test_native_plan_bootstrap_accepts_its_own_new_clone_before_plan() -> None:
     bootstrap = Bootstrap()
-    assert bootstrap.feed(b"Folder access: Trust and continue") == b"\r"
+    assert bootstrap.feed(b"Folder access: Trust and continue") == b"\x1b[13u"
     assert bootstrap.stage == "loading"
     assert bootstrap.feed(b"Folder access: Trust and continue") == b""
     assert bootstrap.feed(b"Tip: Startup completed; GPT-6.1-Sol medium") == b"/plan"
