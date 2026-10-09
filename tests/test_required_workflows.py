@@ -34,8 +34,11 @@ def test_dev_workflows_classify_tests_as_required_and_integration_as_advisory() 
 
     assert set(required) == {"tests"}
     assert required["tests"]["classification"] == "required_push"
-    integration = next(entry for entry in manifest["branches"]["dev"]["classified_non_push_workflows"]
-                       if entry["name"] == "sql-integration")
+    integration = next(
+        entry
+        for entry in manifest["branches"]["dev"]["classified_non_push_workflows"]
+        if entry["name"] == "sql-integration"
+    )
     assert integration["events"] == ["workflow_dispatch"]
     assert integration["classification"] == "agent_integration"
     for entry in required.values():
