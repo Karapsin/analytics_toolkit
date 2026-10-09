@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.dialects.clickhouse import ClickHouse
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
@@ -20,6 +21,23 @@ from analytics_toolkit.sql.connection.errors import (
 )
 
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
+
+
+class _RoutingClickHouse(ClickHouse):
+    """Keep integer RAND distinct from SQLGlot's floating-point Rand expression."""
+
+    # SQLGlot exposes this parser dynamically across its module reorganizations.
+    Parser: Any = type(
+        "Parser",
+        (ClickHouse.parser_class,),
+        {
+            "FUNCTIONS": {
+                **ClickHouse.parser_class.FUNCTIONS,
+                "RAND": lambda args: exp.Anonymous(this="rand", expressions=args),
+            },
+        },
+    )
+
 
 DEFAULT_CLUSTER_SHARDING_KEY = "rand()"
 MIN_CLUSTER_TABLE_FUNCTION_ARGS = 3
@@ -112,7 +130,7 @@ def route_sql(
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> str:
     try:
-        parsed = sqlglot.parse(sql, read="clickhouse", error_level=ErrorLevel.RAISE)
+        parsed = sqlglot.parse(sql, read=_RoutingClickHouse, error_level=ErrorLevel.RAISE)
     except SqlglotError as exc:
         message = "ClickHouse cluster routing could not parse the SQL safely."
         raise InvalidSqlInputError(message) from exc
@@ -152,7 +170,6 @@ def route_sql(
             ),
             has_explicit_cluster=explicit_cluster is not None,
         )
-        _preserve_clickhouse_rand(statement)
         routed.append(statement.sql(dialect="clickhouse"))
     return ";\n".join(routed)
 
@@ -467,7 +484,7 @@ def _required_config_string(
 
 def _validate_sharding_key(value: str, connection_key: str) -> None:
     try:
-        parsed = sqlglot.parse(value, read="clickhouse", error_level=ErrorLevel.RAISE)
+        parsed = sqlglot.parse(value, read=_RoutingClickHouse, error_level=ErrorLevel.RAISE)
     except SqlglotError as exc:
         message = (
             f"SQL connection '{connection_key}' field "
@@ -802,18 +819,6 @@ def _is_temporary_create(statement: exp.Create) -> bool:
     return bool(properties and properties.find(exp.TemporaryProperty))
 
 
-def _preserve_clickhouse_rand(statement: exp.Expression) -> None:
-    for function in list(statement.find_all(exp.Rand)):
-        if str(function.meta.get("name", "")).lower() != "rand":
-            continue
-        replacement = exp.Anonymous(
-            this="rand",
-            expressions=[argument.copy() for argument in function.iter_expressions()],
-        )
-        replacement.add_comments(function.comments)
-        function.replace(replacement)
-
-
 def _identifier_value(value: Any) -> str | None:
     if isinstance(value, (exp.Identifier, exp.Literal)):
         normalized = str(value.this).strip()
@@ -823,7 +828,7 @@ def _identifier_value(value: Any) -> str | None:
 
 def _create_target(sql: str) -> tuple[str | None, bool]:
     try:
-        statement = sqlglot.parse_one(sql, read="clickhouse", error_level=ErrorLevel.RAISE)
+        statement = sqlglot.parse_one(sql, read=_RoutingClickHouse, error_level=ErrorLevel.RAISE)
     except SqlglotError:
         return None, False
     if not isinstance(statement, exp.Create):
@@ -840,7 +845,7 @@ def _parse_table_name(table_name: str) -> exp.Table:
     try:
         table = sqlglot.parse_one(
             table_name,
-            read="clickhouse",
+            read=_RoutingClickHouse,
             into=exp.Table,
             error_level=ErrorLevel.RAISE,
         )
