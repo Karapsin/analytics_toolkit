@@ -1,0 +1,8 @@
+{
+  "default": {
+    "mode": "existing",
+    "name": "Existing ClickHouse",
+    "id": "example-connection",
+    "connector": "clickhouse"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "key": "wizard_revenue-cleared",
+      "chart": "wizard_revenue",
+      "regions": [
+        "All"
+      ]
+    },
+    {
+      "key": "wizard_revenue-default",
+      "chart": "wizard_revenue",
+      "regions": [
+        "North"
+      ]
+    },
+    {
+      "key": "wizard_revenue-multiple",
+      "chart": "wizard_revenue",
+      "regions": [
+        "North",
+        "South"
+      ]
+    },
+    {
+      "key": "wizard_revenue-empty-match",
+      "chart": "wizard_revenue",
+      "regions": [
+        "__NO_MATCH__"
+      ]
+    },
+    {
+      "key": "ql_revenue-cleared",
+      "chart": "ql_revenue",
+      "regions": [
+        "All"
+      ]
+    },
+    {
+      "key": "ql_revenue-default",
+      "chart": "ql_revenue",
+      "regions": [
+        "All"
+      ]
+    },
+    {
+      "key": "ql_revenue-multiple",
+      "chart": "ql_revenue",
+      "regions": [
+        "North",
+        "South"
+      ]
+    },
+    {
+      "key": "ql_revenue-empty-match",
+      "chart": "ql_revenue",
+      "regions": [
+        "__NO_MATCH__"
+      ]
+    },
+    {
+      "key": "js_revenue-cleared",
+      "chart": "js_revenue",
+      "regions": [
+        "All"
+      ]
+    },
+    {
+      "key": "js_revenue-default",
+      "chart": "js_revenue",
+      "regions": [
+        "All"
+      ]
+    },
+    {
+      "key": "js_revenue-multiple",
+      "chart": "js_revenue",
+      "regions": [
+        "North",
+        "South"
+      ]
+    },
+    {
+      "key": "js_revenue-empty-match",
+      "chart": "js_revenue",
+      "regions": [
+        "__NO_MATCH__"
+      ]
+    }
+  ]
+}

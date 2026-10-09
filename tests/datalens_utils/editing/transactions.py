@@ -84,6 +84,8 @@ def test_apply_validates_dependencies_and_checkpoints_affected_objects(session_s
         else {"chart:trend"}
     )
     changes = dict.fromkeys(units, "local")
+    if scenario != "dataset":
+        changes["dataset:sales"] = "unchanged"
     definitions = {"trend": {"family": "wizard", "dataset": "sales", "title": "Trend"}}
     state = Mock(
         value={"resources": {"dashboard": {"files": {"chart_titles": {"trend": "Trend"}}}}}

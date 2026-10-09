@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 from contextlib import contextmanager
 from threading import Lock
 from typing import Any, Iterator
 
-from datalens_sdk import DataLensClientYC, StaticYCIAMAuthProvider
+from datalens_sdk import (
+    DataLensClientEnterprise,
+    DataLensClientYC,
+    OAuthAuthProvider,
+    StaticYCIAMAuthProvider,
+)
 
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.session import current_session as session
@@ -33,7 +39,13 @@ def datalens_client() -> Iterator[Any]:
     ):
         message = "runtime.json request_interval_seconds must be between 0 and 60."
         raise DataLensUtilsError(message)
-    organization = state.runtime["organization_id"]
+    installation = state.runtime.get("installation", "yc")
+    base_url = getattr(state.deployment, "base_url", None)
+    organization = (
+        ("yc:" + str(state.runtime["organization_id"]))
+        if installation == "yc"
+        else "enterprise:" + str(base_url).rstrip("/")
+    )
 
     def pace_request(_request: Any) -> Any:
         # Public SDK/httpx hook: do not inspect or log authenticated requests.
@@ -48,8 +60,25 @@ def datalens_client() -> Iterator[Any]:
         with state.client_factory(state) as client:
             yield client
         return
-    auth = StaticYCIAMAuthProvider(
-        org_id=state.runtime["organization_id"], token=extract_credentials()
-    )
-    with DataLensClientYC(auth=auth, event_hooks={"request": [pace_request]}) as client:
+    token_env = getattr(state.deployment, "token_env", None)
+    token = None
+    if token_env is not None:
+        token = os.environ.get(token_env)
+        if not token:
+            raise DataLensUtilsError(
+                "Missing authentication environment reference: " + token_env + "."
+            )
+    kwargs: dict[str, Any] = {"event_hooks": {"request": [pace_request]}}
+    if installation == "enterprise":
+        factory = DataLensClientEnterprise
+        kwargs["base_url"] = base_url
+        if token is not None:
+            kwargs["auth"] = OAuthAuthProvider(token=token)
+    else:
+        factory = DataLensClientYC
+        kwargs["auth"] = StaticYCIAMAuthProvider(
+            org_id=state.runtime["organization_id"],
+            token=token if token is not None else extract_credentials(),
+        )
+    with factory(**kwargs) as client:
         yield client

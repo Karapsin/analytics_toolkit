@@ -210,7 +210,7 @@ def wizard_issues(chart: Any, context: Any, datasets: Any, definition: Any) -> A
             issues.append(f"local field {expected['title']} missing")
             continue
         if any(
-            getattr(actual, property_name) != expected[key]
+            getattr(actual, property_name) != expected.get(key, "" if key == "formula" else None)
             for property_name, key in (
                 ("formula", "formula"),
                 ("cast", "cast"),
@@ -219,6 +219,25 @@ def wizard_issues(chart: Any, context: Any, datasets: Any, definition: Any) -> A
             )
         ):
             issues.append(f"local field {expected['title']} formula/settings")
+    for hierarchy in spec.hierarchies:
+        saved = next(
+            (
+                value
+                for value in chart.data.get("sources", {}).get("hierarchies", ())
+                if value.get("guid") == hierarchy["guid"]
+            ),
+            None,
+        )
+        if (
+            saved is None
+            or saved.get("title") != hierarchy["title"]
+            or [
+                value.get("guid") if isinstance(value, dict) else value
+                for value in saved.get("fields", ())
+            ]
+            != [field.guid for field in hierarchy["fields"]]
+        ):
+            issues.append("hierarchy " + hierarchy["title"])
     color = spec.color_encoding
     if color:
         actual_colors = visualization.get("colors", {})

@@ -8,6 +8,8 @@
 
 ## Workflow Guides
 
+- [BI projects and dashboard import](bi-projects.md)
+
 Use the separate analytics_toolkit.datalens_utils module for configuration-driven
 YC dashboard creation, editing and recovery. See the [module README](../../../analytics_toolkit/datalens_utils/README.md)
 and [dashboard skill](../../../.agents/skills/datalens-dashboard/SKILL.md).

@@ -1,0 +1,2280 @@
+{
+  "id": "offline-month",
+  "definition": {
+    "name": "Финансовый отчёт - все периоды",
+    "description": "Готовые сравнения экспериментов по месяцам, неделям и за всё время. Параметр report_period выбирает тип периода; одна строка на период, эксперимент и группу ЦА.",
+    "table": "synthetic.do_fin_report_dash_results",
+    "source": "ch_subselect",
+    "projection_file": "assets/sql/projections/report.sql",
+    "fields": {
+      "period_type": {
+        "title": "Тип периода",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_start": {
+        "title": "Начало периода",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_last_day": {
+        "title": "Конец периода",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_label": {
+        "title": "Период",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "exp_name": {
+        "title": "Эксперимент",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "comparison_group": {
+        "title": "Группа ЦА",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "test_group": {
+        "title": "Группа в источнике",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "p_value_label": {
+        "title": "p-value ARPU CUPED",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "significant": {
+        "title": "Значимость при 5%",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "updated_label": {
+        "title": "Статистика обновлена, МСК",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "loaded_label": {
+        "title": "Срез загружен, МСК",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_test": {
+        "title": "Клиенты ЦА (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_control": {
+        "title": "Клиенты КГ (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_acceptors": {
+        "title": "Клиенты с акцептом (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_utilizers": {
+        "title": "Клиенты с начислением (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_bonus_recipients": {
+        "title": "Получатели бонусов (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_discount_recipients": {
+        "title": "Получатели скидок (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_reward_recipients": {
+        "title": "Получатели бонуса или скидки (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_both_recipients": {
+        "title": "Получатели бонуса и скидки (исходное)",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "accepts_pct": {
+        "title": "Акцепт / ЦА (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "utils_pct": {
+        "title": "Начисление / ЦА (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "util_accept_rate": {
+        "title": "Начисление / акцепт (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_accrued": {
+        "title": "Начислено бонусов, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_spent": {
+        "title": "Списано бонусов, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "discounts": {
+        "title": "Скидки, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "costs": {
+        "title": "Затраты, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "arpu_test": {
+        "title": "ARPU ЦА, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "arpu_control": {
+        "title": "ARPU КГ, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "arpu_cuped_test": {
+        "title": "ARPU CUPED ЦА, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "arpu_cuped_control": {
+        "title": "ARPU CUPED КГ, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "uplift_raw": {
+        "title": "Uplift ARPU без CUPED, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "uplift_raw_pct": {
+        "title": "Uplift ARPU без CUPED, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "uplift_cuped": {
+        "title": "Uplift ARPU CUPED, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "uplift_cuped_pct": {
+        "title": "Uplift ARPU CUPED, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "p_value_cuped": {
+        "title": "p-value CUPED числом (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "additional_rto_raw": {
+        "title": "Доп. РТО без CUPED, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "additional_rto_cuped": {
+        "title": "Доп. РТО CUPED, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_test": {
+        "title": "РТО ЦА, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_control": {
+        "title": "РТО КГ, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_test": {
+        "title": "РТО без НДС ЦА, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_control": {
+        "title": "РТО без НДС КГ, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_test": {
+        "title": "Валовая маржа ЦА, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_control": {
+        "title": "Валовая маржа КГ, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "margin_test_pct": {
+        "title": "Маржа / РТО ЦА, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "margin_control_pct": {
+        "title": "Маржа / РТО КГ, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "margin_without_nds_test_pct": {
+        "title": "Маржа / РТО без НДС ЦА, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "margin_without_nds_control_pct": {
+        "title": "Маржа / РТО без НДС КГ, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "additional_margin": {
+        "title": "Доп. маржа до затрат, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "additional_margin_net": {
+        "title": "Доп. маржа после затрат, руб. (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "roi": {
+        "title": "ROI, % (исходное)",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "summary_period_label": {
+        "title": "Период сводки",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      }
+    },
+    "calculations": {
+      "Клиенты ЦА": {
+        "formula": "MAX([Клиенты ЦА (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Клиенты КГ": {
+        "formula": "MAX([Клиенты КГ (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Клиенты с акцептом": {
+        "formula": "MAX([Клиенты с акцептом (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Клиенты с начислением": {
+        "formula": "MAX([Клиенты с начислением (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Получатели бонусов": {
+        "formula": "MAX([Получатели бонусов (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Получатели скидок": {
+        "formula": "MAX([Получатели скидок (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Получатели бонуса или скидки": {
+        "formula": "MAX([Получатели бонуса или скидки (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Получатели бонуса и скидки": {
+        "formula": "MAX([Получатели бонуса и скидки (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Акцепт / ЦА": {
+        "formula": "MAX([Акцепт / ЦА (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Начисление / ЦА": {
+        "formula": "MAX([Начисление / ЦА (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Начисление / акцепт": {
+        "formula": "MAX([Начисление / акцепт (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Начислено бонусов, руб.": {
+        "formula": "MAX([Начислено бонусов, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Списано бонусов, руб.": {
+        "formula": "MAX([Списано бонусов, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Скидки, руб.": {
+        "formula": "MAX([Скидки, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Затраты, руб.": {
+        "formula": "MAX([Затраты, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "ARPU ЦА, руб.": {
+        "formula": "MAX([ARPU ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "ARPU КГ, руб.": {
+        "formula": "MAX([ARPU КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "ARPU CUPED ЦА, руб.": {
+        "formula": "MAX([ARPU CUPED ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "ARPU CUPED КГ, руб.": {
+        "formula": "MAX([ARPU CUPED КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Uplift ARPU без CUPED, руб.": {
+        "formula": "MAX([Uplift ARPU без CUPED, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Uplift ARPU без CUPED, %": {
+        "formula": "MAX([Uplift ARPU без CUPED, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Uplift ARPU CUPED, руб.": {
+        "formula": "MAX([Uplift ARPU CUPED, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Uplift ARPU CUPED, %": {
+        "formula": "MAX([Uplift ARPU CUPED, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "p-value CUPED числом": {
+        "formula": "MAX([p-value CUPED числом (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Доп. РТО без CUPED, руб.": {
+        "formula": "MAX([Доп. РТО без CUPED, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Доп. РТО CUPED, руб.": {
+        "formula": "MAX([Доп. РТО CUPED, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО ЦА, руб.": {
+        "formula": "MAX([РТО ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО КГ, руб.": {
+        "formula": "MAX([РТО КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО без НДС ЦА, руб.": {
+        "formula": "MAX([РТО без НДС ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО без НДС КГ, руб.": {
+        "formula": "MAX([РТО без НДС КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Валовая маржа ЦА, руб.": {
+        "formula": "MAX([Валовая маржа ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Валовая маржа КГ, руб.": {
+        "formula": "MAX([Валовая маржа КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Маржа / РТО ЦА, %": {
+        "formula": "MAX([Маржа / РТО ЦА, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Маржа / РТО КГ, %": {
+        "formula": "MAX([Маржа / РТО КГ, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Маржа / РТО без НДС ЦА, %": {
+        "formula": "MAX([Маржа / РТО без НДС ЦА, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Маржа / РТО без НДС КГ, %": {
+        "formula": "MAX([Маржа / РТО без НДС КГ, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Доп. маржа до затрат, руб.": {
+        "formula": "MAX([Доп. маржа до затрат, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Доп. маржа после затрат, руб.": {
+        "formula": "MAX([Доп. маржа после затрат, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "ROI, %": {
+        "formula": "MAX([ROI, % (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Выбранный период": {
+        "formula": "[Тип периода] = [report_period]",
+        "kind": "DIMENSION",
+        "cast": "boolean",
+        "aggregation": "none"
+      },
+      "Списание бонусов, %": {
+        "formula": "FDIV_SAFE([Списано бонусов, руб.], [Начислено бонусов, руб.])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Доп. РТО, руб.": {
+        "formula": "IF([p-value CUPED числом] < [alpha], [Доп. РТО CUPED, руб.], 0)",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Начало периода": {
+        "formula": "MIN([Начало периода])",
+        "cast": "date",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Конец периода": {
+        "formula": "MAX([Конец периода])",
+        "cast": "date",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Клиенты ЦА": {
+        "formula": "SUM([Клиенты ЦА (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Клиенты КГ": {
+        "formula": "SUM([Клиенты КГ (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Клиенты с акцептом": {
+        "formula": "SUM([Клиенты с акцептом (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Клиенты с начислением": {
+        "formula": "SUM([Клиенты с начислением (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Получатели бонусов": {
+        "formula": "SUM([Получатели бонусов (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Получатели скидок": {
+        "formula": "SUM([Получатели скидок (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Получатели бонуса или скидки": {
+        "formula": "SUM([Получатели бонуса или скидки (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Получатели бонуса и скидки": {
+        "formula": "SUM([Получатели бонуса и скидки (исходное)])",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Скидки, руб.": {
+        "formula": "SUM([Скидки, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Начислено бонусов, руб.": {
+        "formula": "SUM([Начислено бонусов, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Списано бонусов, руб.": {
+        "formula": "SUM([Списано бонусов, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Затраты, руб.": {
+        "formula": "SUM([Затраты, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Валовая маржа ЦА, руб.": {
+        "formula": "SUM([Валовая маржа ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Валовая маржа КГ, руб.": {
+        "formula": "SUM([Валовая маржа КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: РТО без НДС ЦА, руб.": {
+        "formula": "SUM([РТО без НДС ЦА, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: РТО без НДС КГ, руб.": {
+        "formula": "SUM([РТО без НДС КГ, руб. (исходное)])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Акцепт / ЦА": {
+        "formula": "FDIV_SAFE([Сводка: Клиенты с акцептом], [Сводка: Клиенты ЦА])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Начисление / ЦА": {
+        "formula": "FDIV_SAFE([Сводка: Клиенты с начислением], [Сводка: Клиенты ЦА])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Списание бонусов, %": {
+        "formula": "FDIV_SAFE([Сводка: Списано бонусов, руб.], [Сводка: Начислено бонусов, руб.])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Маржа / РТО без НДС ЦА, %": {
+        "formula": "FDIV_SAFE([Сводка: Валовая маржа ЦА, руб.], [Сводка: РТО без НДС ЦА, руб.])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Маржа / РТО без НДС КГ, %": {
+        "formula": "FDIV_SAFE([Сводка: Валовая маржа КГ, руб.], [Сводка: РТО без НДС КГ, руб.])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Сводка: Доп. РТО, руб.": {
+        "formula": "SUM(IF([p-value CUPED числом (исходное)] < [alpha], [Доп. РТО CUPED, руб. (исходное)], 0))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      }
+    },
+    "parameters": {
+      "report_period": {
+        "type": "string",
+        "default": "month"
+      },
+      "alpha": {
+        "type": "float",
+        "default": 0.01
+      }
+    },
+    "default_filters": [
+      {
+        "field": "Выбранный период",
+        "operator": "EQ",
+        "values": [
+          "True"
+        ]
+      }
+    ]
+  },
+  "fields": [
+    {
+      "guid": "month_period_type",
+      "title": "Тип периода",
+      "source": "period_type",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_period_start",
+      "title": "Начало периода",
+      "source": "period_start",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_period_last_day",
+      "title": "Конец периода",
+      "source": "period_last_day",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_period_label",
+      "title": "Период",
+      "source": "period_label",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_exp_name",
+      "title": "Эксперимент",
+      "source": "exp_name",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_comparison_group",
+      "title": "Группа ЦА",
+      "source": "comparison_group",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_test_group",
+      "title": "Группа в источнике",
+      "source": "test_group",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_p_value_label",
+      "title": "p-value ARPU CUPED",
+      "source": "p_value_label",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_significant",
+      "title": "Значимость при 5%",
+      "source": "significant",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_updated_label",
+      "title": "Статистика обновлена, МСК",
+      "source": "updated_label",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_loaded_label",
+      "title": "Срез загружен, МСК",
+      "source": "loaded_label",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_test",
+      "title": "Клиенты ЦА (исходное)",
+      "source": "n_test",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_control",
+      "title": "Клиенты КГ (исходное)",
+      "source": "n_control",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_acceptors",
+      "title": "Клиенты с акцептом (исходное)",
+      "source": "n_acceptors",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_utilizers",
+      "title": "Клиенты с начислением (исходное)",
+      "source": "n_utilizers",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_bonus_recipients",
+      "title": "Получатели бонусов (исходное)",
+      "source": "n_bonus_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_discount_recipients",
+      "title": "Получатели скидок (исходное)",
+      "source": "n_discount_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_reward_recipients",
+      "title": "Получатели бонуса или скидки (исходное)",
+      "source": "n_reward_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_n_both_recipients",
+      "title": "Получатели бонуса и скидки (исходное)",
+      "source": "n_both_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_accepts_pct",
+      "title": "Акцепт / ЦА (исходное)",
+      "source": "accepts_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_utils_pct",
+      "title": "Начисление / ЦА (исходное)",
+      "source": "utils_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_util_accept_rate",
+      "title": "Начисление / акцепт (исходное)",
+      "source": "util_accept_rate",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_bonuses_accrued",
+      "title": "Начислено бонусов, руб. (исходное)",
+      "source": "bonuses_accrued",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_bonuses_spent",
+      "title": "Списано бонусов, руб. (исходное)",
+      "source": "bonuses_spent",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_discounts",
+      "title": "Скидки, руб. (исходное)",
+      "source": "discounts",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_costs",
+      "title": "Затраты, руб. (исходное)",
+      "source": "costs",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_arpu_test",
+      "title": "ARPU ЦА, руб. (исходное)",
+      "source": "arpu_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_arpu_control",
+      "title": "ARPU КГ, руб. (исходное)",
+      "source": "arpu_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_arpu_cuped_test",
+      "title": "ARPU CUPED ЦА, руб. (исходное)",
+      "source": "arpu_cuped_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_arpu_cuped_control",
+      "title": "ARPU CUPED КГ, руб. (исходное)",
+      "source": "arpu_cuped_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_uplift_raw",
+      "title": "Uplift ARPU без CUPED, руб. (исходное)",
+      "source": "uplift_raw",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_uplift_raw_pct",
+      "title": "Uplift ARPU без CUPED, % (исходное)",
+      "source": "uplift_raw_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_uplift_cuped",
+      "title": "Uplift ARPU CUPED, руб. (исходное)",
+      "source": "uplift_cuped",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_uplift_cuped_pct",
+      "title": "Uplift ARPU CUPED, % (исходное)",
+      "source": "uplift_cuped_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_p_value_cuped",
+      "title": "p-value CUPED числом (исходное)",
+      "source": "p_value_cuped",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_additional_rto_raw",
+      "title": "Доп. РТО без CUPED, руб. (исходное)",
+      "source": "additional_rto_raw",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_additional_rto_cuped",
+      "title": "Доп. РТО CUPED, руб. (исходное)",
+      "source": "additional_rto_cuped",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_revenue_test",
+      "title": "РТО ЦА, руб. (исходное)",
+      "source": "revenue_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_revenue_control",
+      "title": "РТО КГ, руб. (исходное)",
+      "source": "revenue_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_revenue_without_nds_test",
+      "title": "РТО без НДС ЦА, руб. (исходное)",
+      "source": "revenue_without_nds_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_revenue_without_nds_control",
+      "title": "РТО без НДС КГ, руб. (исходное)",
+      "source": "revenue_without_nds_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_gross_margin_test",
+      "title": "Валовая маржа ЦА, руб. (исходное)",
+      "source": "gross_margin_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_gross_margin_control",
+      "title": "Валовая маржа КГ, руб. (исходное)",
+      "source": "gross_margin_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_margin_test_pct",
+      "title": "Маржа / РТО ЦА, % (исходное)",
+      "source": "margin_test_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_margin_control_pct",
+      "title": "Маржа / РТО КГ, % (исходное)",
+      "source": "margin_control_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_margin_without_nds_test_pct",
+      "title": "Маржа / РТО без НДС ЦА, % (исходное)",
+      "source": "margin_without_nds_test_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_margin_without_nds_control_pct",
+      "title": "Маржа / РТО без НДС КГ, % (исходное)",
+      "source": "margin_without_nds_control_pct",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_additional_margin",
+      "title": "Доп. маржа до затрат, руб. (исходное)",
+      "source": "additional_margin",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_additional_margin_net",
+      "title": "Доп. маржа после затрат, руб. (исходное)",
+      "source": "additional_margin_net",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_roi",
+      "title": "ROI, % (исходное)",
+      "source": "roi",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_summary_period_label",
+      "title": "Период сводки",
+      "source": "summary_period_label",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Клиенты_ЦА",
+      "title": "Клиенты ЦА",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Клиенты ЦА (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Клиенты_КГ",
+      "title": "Клиенты КГ",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Клиенты КГ (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Клиенты_с_акцептом",
+      "title": "Клиенты с акцептом",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Клиенты с акцептом (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Клиенты_с_начислением",
+      "title": "Клиенты с начислением",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Клиенты с начислением (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Получатели_бонусов",
+      "title": "Получатели бонусов",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Получатели бонусов (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Получатели_скидок",
+      "title": "Получатели скидок",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Получатели скидок (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Получатели_бонуса_или_скидки",
+      "title": "Получатели бонуса или скидки",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Получатели бонуса или скидки (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Получатели_бонуса_и_скидки",
+      "title": "Получатели бонуса и скидки",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Получатели бонуса и скидки (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Акцепт_/_ЦА",
+      "title": "Акцепт / ЦА",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Акцепт / ЦА (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Начисление_/_ЦА",
+      "title": "Начисление / ЦА",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Начисление / ЦА (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Начисление_/_акцепт",
+      "title": "Начисление / акцепт",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Начисление / акцепт (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Начислено_бонусов,_руб.",
+      "title": "Начислено бонусов, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Начислено бонусов, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Списано_бонусов,_руб.",
+      "title": "Списано бонусов, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Списано бонусов, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Скидки,_руб.",
+      "title": "Скидки, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Скидки, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Затраты,_руб.",
+      "title": "Затраты, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Затраты, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_ARPU_ЦА,_руб.",
+      "title": "ARPU ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([ARPU ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_ARPU_КГ,_руб.",
+      "title": "ARPU КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([ARPU КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_ARPU_CUPED_ЦА,_руб.",
+      "title": "ARPU CUPED ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([ARPU CUPED ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_ARPU_CUPED_КГ,_руб.",
+      "title": "ARPU CUPED КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([ARPU CUPED КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Uplift_ARPU_без_CUPED,_руб.",
+      "title": "Uplift ARPU без CUPED, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Uplift ARPU без CUPED, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Uplift_ARPU_без_CUPED,_%",
+      "title": "Uplift ARPU без CUPED, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Uplift ARPU без CUPED, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Uplift_ARPU_CUPED,_руб.",
+      "title": "Uplift ARPU CUPED, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Uplift ARPU CUPED, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Uplift_ARPU_CUPED,_%",
+      "title": "Uplift ARPU CUPED, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Uplift ARPU CUPED, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_p-value_CUPED_числом",
+      "title": "p-value CUPED числом",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([p-value CUPED числом (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Доп._РТО_без_CUPED,_руб.",
+      "title": "Доп. РТО без CUPED, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Доп. РТО без CUPED, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Доп._РТО_CUPED,_руб.",
+      "title": "Доп. РТО CUPED, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Доп. РТО CUPED, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_РТО_ЦА,_руб.",
+      "title": "РТО ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([РТО ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_РТО_КГ,_руб.",
+      "title": "РТО КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([РТО КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_РТО_без_НДС_ЦА,_руб.",
+      "title": "РТО без НДС ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([РТО без НДС ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_РТО_без_НДС_КГ,_руб.",
+      "title": "РТО без НДС КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([РТО без НДС КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Валовая_маржа_ЦА,_руб.",
+      "title": "Валовая маржа ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Валовая маржа ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Валовая_маржа_КГ,_руб.",
+      "title": "Валовая маржа КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Валовая маржа КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Маржа_/_РТО_ЦА,_%",
+      "title": "Маржа / РТО ЦА, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Маржа / РТО ЦА, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Маржа_/_РТО_КГ,_%",
+      "title": "Маржа / РТО КГ, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Маржа / РТО КГ, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Маржа_/_РТО_без_НДС_ЦА,_%",
+      "title": "Маржа / РТО без НДС ЦА, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Маржа / РТО без НДС ЦА, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Маржа_/_РТО_без_НДС_КГ,_%",
+      "title": "Маржа / РТО без НДС КГ, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Маржа / РТО без НДС КГ, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Доп._маржа_до_затрат,_руб.",
+      "title": "Доп. маржа до затрат, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Доп. маржа до затрат, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Доп._маржа_после_затрат,_руб.",
+      "title": "Доп. маржа после затрат, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Доп. маржа после затрат, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_ROI,_%",
+      "title": "ROI, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([ROI, % (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Выбранный_период",
+      "title": "Выбранный период",
+      "source": "",
+      "cast": "boolean",
+      "data_type": "boolean",
+      "initial_data_type": "boolean",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "formula",
+      "formula": "[Тип периода] = [report_period]",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Списание_бонусов,_%",
+      "title": "Списание бонусов, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Списано бонусов, руб.], [Начислено бонусов, руб.])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Доп._РТО,_руб.",
+      "title": "Доп. РТО, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([p-value CUPED числом] < [alpha], [Доп. РТО CUPED, руб.], 0)",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Начало_периода",
+      "title": "Сводка: Начало периода",
+      "source": "",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MIN([Начало периода])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Конец_периода",
+      "title": "Сводка: Конец периода",
+      "source": "",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "MAX([Конец периода])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Клиенты_ЦА",
+      "title": "Сводка: Клиенты ЦА",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Клиенты ЦА (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Клиенты_КГ",
+      "title": "Сводка: Клиенты КГ",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Клиенты КГ (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Клиенты_с_акцептом",
+      "title": "Сводка: Клиенты с акцептом",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Клиенты с акцептом (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Клиенты_с_начислением",
+      "title": "Сводка: Клиенты с начислением",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Клиенты с начислением (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Получатели_бонусов",
+      "title": "Сводка: Получатели бонусов",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Получатели бонусов (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Получатели_скидок",
+      "title": "Сводка: Получатели скидок",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Получатели скидок (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Получатели_бонуса_или_скидки",
+      "title": "Сводка: Получатели бонуса или скидки",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Получатели бонуса или скидки (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Получатели_бонуса_и_скидки",
+      "title": "Сводка: Получатели бонуса и скидки",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Получатели бонуса и скидки (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Скидки,_руб.",
+      "title": "Сводка: Скидки, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Скидки, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Начислено_бонусов,_руб.",
+      "title": "Сводка: Начислено бонусов, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Начислено бонусов, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Списано_бонусов,_руб.",
+      "title": "Сводка: Списано бонусов, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Списано бонусов, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Затраты,_руб.",
+      "title": "Сводка: Затраты, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Затраты, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Валовая_маржа_ЦА,_руб.",
+      "title": "Сводка: Валовая маржа ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Валовая маржа ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Валовая_маржа_КГ,_руб.",
+      "title": "Сводка: Валовая маржа КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([Валовая маржа КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_РТО_без_НДС_ЦА,_руб.",
+      "title": "Сводка: РТО без НДС ЦА, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([РТО без НДС ЦА, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_РТО_без_НДС_КГ,_руб.",
+      "title": "Сводка: РТО без НДС КГ, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM([РТО без НДС КГ, руб. (исходное)])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Акцепт_/_ЦА",
+      "title": "Сводка: Акцепт / ЦА",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Сводка: Клиенты с акцептом], [Сводка: Клиенты ЦА])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Начисление_/_ЦА",
+      "title": "Сводка: Начисление / ЦА",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Сводка: Клиенты с начислением], [Сводка: Клиенты ЦА])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Списание_бонусов,_%",
+      "title": "Сводка: Списание бонусов, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Сводка: Списано бонусов, руб.], [Сводка: Начислено бонусов, руб.])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Маржа_/_РТО_без_НДС_ЦА,_%",
+      "title": "Сводка: Маржа / РТО без НДС ЦА, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Сводка: Валовая маржа ЦА, руб.], [Сводка: РТО без НДС ЦА, руб.])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Маржа_/_РТО_без_НДС_КГ,_%",
+      "title": "Сводка: Маржа / РТО без НДС КГ, %",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "FDIV_SAFE([Сводка: Валовая маржа КГ, руб.], [Сводка: РТО без НДС КГ, руб.])",
+      "valid": true
+    },
+    {
+      "guid": "month_calculation_Сводка:_Доп._РТО,_руб.",
+      "title": "Сводка: Доп. РТО, руб.",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM(IF([p-value CUPED числом (исходное)] < [alpha], [Доп. РТО CUPED, руб. (исходное)], 0))",
+      "valid": true
+    },
+    {
+      "guid": "month_parameter_report_period",
+      "title": "report_period",
+      "cast": "string",
+      "data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": "month",
+      "valid": true
+    },
+    {
+      "guid": "month_parameter_alpha",
+      "title": "alpha",
+      "cast": "float",
+      "data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": 0.01,
+      "valid": true
+    }
+  ]
+}

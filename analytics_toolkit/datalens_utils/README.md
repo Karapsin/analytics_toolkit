@@ -13,8 +13,8 @@ pip install 'analytics-toolkit[datalens]'
 
 Base imports support Python 3.8 through 3.14 and do not import the SDK, read a
 recipe, install tools, obtain credentials, or create files. SDK operations are
-pinned to `datalens-sdk==3.1.0`. The caller can supply an existing YC CLI, or
-explicitly use the optional bootstrap helpers for project-owned tools.
+compatible with `datalens-sdk` 3.1.0 and 3.2.0. New installations use 3.2.0.
+Dashboard projects reuse the existing interpreter and tools.
 
 ```python
 from analytics_toolkit.datalens_utils import DataLensProject, Deployment
@@ -101,3 +101,104 @@ dependent selectors when needed. Managed alias checkpoints preserve user aliases
 Only previously managed obsolete tabs are retired; existing `preserve_layout`
 tabs tolerate their current warnings. Source updates preserve owned dataset and
 field identities and require configured IDs to match checkpoint ownership.
+
+## Version-2 BI projects
+
+Version-2 pulls preserve chart-group member routes and action flags. A changed
+direct placement becomes an explicit widget with the same item ID, retaining
+its remote title, parameters and cross-filter recipients; unchanged placements
+keep their existing representation.
+
+SDK operations accept exactly 3.1.0 and 3.2.0; new installations use 3.2.0.
+Use `schema_version: 2` in `configs/runtime.json` for named BI resources.
+The existing recipe format remains supported without implicit file conversion.
+
+```python
+from analytics_toolkit.datalens_utils import (
+    BIProjectDeployment, DataLensProject, TargetLocation, get_capabilities,
+)
+
+identity = BIProjectDeployment(
+    "Sales", TargetLocation.workbook(key="team"),
+    organization_id="your-organization", token_env="DATALENS_TOKEN",
+)
+project = DataLensProject("/project/recipe", "/project/runtime", identity)
+capabilities = get_capabilities(installation="yc")
+preview = project.plan(resource_keys=["chart:trend"])
+# {"actions": [...], "write_scope": [...], "read_dependencies": [...],
+#  "conflicts": [...], "capability_blockers": [...], ...}
+project.apply(resource_keys=["chart:trend"])
+```
+
+`TargetLocation.path(path)` targets a folder; `workbook(by_id=...)` uses an
+existing workbook, while `workbook(key=...)` references its recipe declaration.
+Changing between these storage models is a migration blocker. Enterprise uses
+`installation="enterprise"` and `base_url`; `token_env` optionally names an
+OAuth token. YC retains existing CLI/profile authentication or uses `token_env`.
+Injected client factories remain supported.
+
+Named connections, collections, workbooks and HTML pages live in their respective
+JSON mappings beneath `configs/DL objects/`. Existing connections are read-only
+references. Managed connections declare a connector, nonsecret parameters,
+environment secret references and a nonsecret `credentials_revision` marker.
+Container parents reference collection keys. Root container name adoption is
+unavailable without a retained ID; nested adoption requires an exact unique name.
+
+Dataset sources declare connection keys, public source factories and parameters;
+SQL sources reference contained assets. Direct fields name their source and
+column. Join creation uses explicit sources; ambiguous duplicate-column updates
+and unavailable avatar topology changes fail before persistence. Stable RLS keys
+own field/subject pairs and preserve unrelated rules. RLS verification checks
+persisted metadata; QL queries bypass dataset RLS. Cache modes are SQL, formula
+(with both formula representations), and off; verification executes no queries.
+
+Shared selectors distinguish display (`show_on_tabs`) from influence (`affects`).
+Every displayed tab supplies layout geometry. Wiring retains individual chart
+variants: `group/member` identifies one chart-group member; a group reference
+addresses all its members. Members may declare `chart` separately from their
+stable `key`, allowing repeated parameterized placements of the same chart.
+Optional `configs/UI/widgets.json` provides named direct placements. Direct
+widgets and group members expose `enable_action_params`, defaulting to false.
+Cascading selectors require dependent selectors. Settings preserve omitted
+values; explicit `null` resets supported settings or removes a global parameter.
+
+Wizard local formulas, aggregated measures and hierarchies require stable GUIDs.
+Wizard chart-level `params` are unsupported; use dashboard placement overrides.
+HTML uploads use contained UTF-8 assets and preserve revisions and source
+fingerprints. Getters expose metadata, so remote HTML source pull/import is
+unavailable and remote changes block automatic overwrite.
+
+## Import a dashboard or tab
+
+```python
+preview = project.import_dashboard(dashboard_id="source-dashboard")
+# {"dry_run": True, "written": False, "proposed_files": {...},
+#  "fidelity": [...], "blockers": [...], ...}
+preview = project.import_tab(dashboard_id="source-dashboard", tab_id="business-tab")
+result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False)
+```
+
+Imports merge into the current project and change no cloud resources. Preview is
+the default. Import discovers dependencies, extracts available SQL/JS assets,
+retains IDs and placement parameters, and reports collisions and unsupported
+features. Local writing requires a blocker-free staged recipe; failed
+replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
+Unresolved dynamic Editor dependencies, incompatible locations, unknown item
+forms and unavailable authored source retrieval block writes.
+
+CLI equivalents include `capabilities`, `plan`, `reconcile`, repeatable
+`--resource KIND:KEY` for plan/apply/pull, and `--json` for one structured result.
+Use `import-dashboard --dashboard-id ID` or
+`import-tab --dashboard-id ID --tab-id TAB`; add `--write` for the local merge.
+
+Capability reports separate SDK and adapter support, with reasons, restrictions
+and prerequisites. Reports need typed lifecycle/revision/verification methods;
+PDF needs an export job/result and retrieval contract; mailings need schedules,
+recipients and status; private embedding needs key/embed lifecycle and token
+contracts. General multi-dataset Wizard charts need registration, links and exact
+field resolution. Join topology edits need explicit avatar handling. HTML pull
+needs authored-source retrieval. These features are not implemented through
+HTTP fallbacks or private SDK imports.
+
+See the [advanced BI workflow](../../docs/modules/datalens_utils/bi-projects.md)
+and its portable example for full recipe details.

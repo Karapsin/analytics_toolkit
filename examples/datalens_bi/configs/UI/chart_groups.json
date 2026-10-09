@@ -1,0 +1,28 @@
+{
+  "revenue_variants": {
+    "tab": "wizard",
+    "charts": [
+      {
+        "key": "month",
+        "chart": "wizard_revenue",
+        "title": "Month",
+        "default": true,
+        "params": {
+          "period_type": [
+            "month"
+          ]
+        }
+      },
+      {
+        "key": "year",
+        "chart": "wizard_revenue",
+        "title": "Year",
+        "params": {
+          "period_type": [
+            "year"
+          ]
+        }
+      }
+    ]
+  }
+}

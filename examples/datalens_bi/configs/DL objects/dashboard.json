@@ -1,0 +1,20 @@
+{
+  "description": "Revenue by date with explicit regional filters.",
+  "hide_tabs": false,
+  "folders": {
+    "charts": "charts",
+    "datasets": "datasets"
+  },
+  "id": null,
+  "settings": {
+    "dependent_selectors": true,
+    "hide_dash_title": false,
+    "max_concurrent_requests": 4
+  },
+  "global_parameters": {
+    "period_type": [
+      "month"
+    ]
+  },
+  "support_description": "Example project support"
+}

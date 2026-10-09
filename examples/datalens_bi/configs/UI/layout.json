@@ -1,0 +1,62 @@
+{
+  "wizard": {
+    "wizard_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "wizard_region_control": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "revenue_variants": [
+      0,
+      6,
+      36,
+      14
+    ]
+  },
+  "ql": {
+    "ql_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "ql_region_control": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "ql_revenue": [
+      0,
+      6,
+      36,
+      14
+    ]
+  },
+  "editor": {
+    "editor_heading": [
+      0,
+      0,
+      36,
+      2
+    ],
+    "js_selector_widget": [
+      0,
+      2,
+      36,
+      4
+    ],
+    "js_revenue": [
+      0,
+      6,
+      36,
+      14
+    ]
+  }
+}

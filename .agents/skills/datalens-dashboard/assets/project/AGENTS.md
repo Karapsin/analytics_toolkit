@@ -24,3 +24,8 @@ identical grain/filters, and cache exact repeats. Share pacing across clients in
 one organization when operations lack a public batch method. Concurrency and
 caching are not API batches; do not use private endpoints to bypass SDK limits.
 Record actual results, revisions, tolerances and limitations in VERIFICATION.md.
+
+Version-2 scaffolds also support YC/Enterprise and folder/workbook targets.
+Use capability and plan reports before writes. `import-dashboard` previews all
+tabs; `import-tab` previews one. Resolve fidelity blockers before `--write`.
+Reuse the installed toolkit environment; do not create environments or bootstrap.

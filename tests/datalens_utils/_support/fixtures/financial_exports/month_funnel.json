@@ -1,0 +1,355 @@
+{
+  "entry": {
+    "version": 1,
+    "entryId": "offline-entry-1",
+    "key": "Offline/Variants/charts/Финансовая статистика экспериментов",
+    "createdAt": "2026-10-07T07:02:36.123Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:36.123Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "offline-revision-1",
+    "savedId": "offline-revision-1",
+    "publishedId": "offline-revision-1",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "scope": "widget",
+    "type": "table_wizard_node",
+    "meta": {},
+    "annotation": {
+      "description": "Финансовая статистика: Тест и Контроль. Доп. РТО учитывается при p-value < alpha. Тип периода, эксперимент, группа и даты задаются селекторами."
+    },
+    "data": {
+      "sources": {
+        "datasetsIds": [
+          "offline-month"
+        ],
+        "updates": [
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "month_parameter_report_period",
+              "title": "report_period",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "month",
+              "datasetId": "offline-month"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "month_parameter_alpha",
+              "title": "alpha",
+              "cast": "float",
+              "data_type": "float",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": 0.01,
+              "datasetId": "offline-month"
+            }
+          }
+        ],
+        "filters": [
+          {
+            "guid": "month_calculation_Выбранный_период",
+            "datasetId": "offline-month",
+            "filter": {
+              "operation": {
+                "code": "EQ"
+              },
+              "value": [
+                "True"
+              ]
+            }
+          },
+          {
+            "guid": "month_calculation_ARPU_ЦА,_руб.",
+            "datasetId": "offline-month",
+            "filter": {
+              "operation": {
+                "code": "GT"
+              },
+              "value": [
+                "0"
+              ]
+            }
+          }
+        ]
+      },
+      "visualization": {
+        "type": "flatTable",
+        "colors": {
+          "items": [],
+          "settings": {}
+        },
+        "columns": {
+          "items": [
+            {
+              "guid": "month_exp_name",
+              "datasetId": "offline-month"
+            },
+            {
+              "guid": "month_comparison_group",
+              "datasetId": "offline-month",
+              "fakeTitle": "Группа Тест"
+            },
+            {
+              "guid": "month_period_start",
+              "datasetId": "offline-month"
+            },
+            {
+              "guid": "month_period_last_day",
+              "datasetId": "offline-month"
+            },
+            {
+              "guid": "month_calculation_Клиенты_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Клиенты Тест",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Клиенты_КГ",
+              "datasetId": "offline-month",
+              "fakeTitle": "Клиенты Контроль",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Маржа_/_РТО_без_НДС_ЦА,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Маржа / РТО без НДС Тест, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Маржа_/_РТО_без_НДС_КГ,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Маржа / РТО без НДС Контроль, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_p-value_CUPED_числом",
+              "datasetId": "offline-month",
+              "fakeTitle": "p-value ARPU",
+              "formatting": {
+                "precision": 6,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Uplift_ARPU_CUPED,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Uplift ARPU, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Доп._РТО,_руб.",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Акцепт_/_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Акцепт / Тест",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Начисление_/_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Утиль / Тест",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Списание_бонусов,_%",
+              "datasetId": "offline-month",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_ARPU_CUPED_ЦА,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "ARPU Тест, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_ARPU_CUPED_КГ,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "ARPU Контроль, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Скидки,_руб.",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Начислено_бонусов,_руб.",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Списано_бонусов,_руб.",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Затраты,_руб.",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Валовая_маржа_ЦА,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Валовая маржа Тест, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Валовая_маржа_КГ,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Валовая маржа Контроль, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_РТО_без_НДС_ЦА,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "РТО без НДС Тест, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_РТО_без_НДС_КГ,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "РТО без НДС Контроль, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Получатели_бонусов",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Получатели_скидок",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Получатели_бонуса_или_скидки",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Получатели_бонуса_и_скидки",
+              "datasetId": "offline-month",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            }
+          ]
+        },
+        "sort": {
+          "items": [
+            {
+              "guid": "month_exp_name",
+              "datasetId": "offline-month",
+              "direction": "ASC"
+            },
+            {
+              "guid": "month_comparison_group",
+              "datasetId": "offline-month",
+              "direction": "ASC"
+            },
+            {
+              "guid": "month_period_start",
+              "datasetId": "offline-month",
+              "direction": "ASC"
+            }
+          ]
+        },
+        "chartSettings": {
+          "title": "Финансовая статистика экспериментов",
+          "titleMode": "hide",
+          "totals": "off",
+          "pagination": "on",
+          "limit": 25,
+          "pinnedColumns": 4,
+          "size": "m"
+        }
+      }
+    }
+  }
+}

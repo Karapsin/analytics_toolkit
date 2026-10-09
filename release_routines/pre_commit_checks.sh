@@ -128,7 +128,7 @@ run_matrix_gate() {
     return 2
   fi
   configure_python_matrix
-  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py38-latest,py38-min,py39-latest,py310-latest,py312-latest,py313-latest,py314-latest
+  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py38-latest,py38-min,py39-latest,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest
 }
 
 run_quick_gate() {

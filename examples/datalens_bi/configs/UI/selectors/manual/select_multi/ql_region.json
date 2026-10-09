@@ -1,0 +1,22 @@
+{
+  "key": "ql_region",
+  "tab": "ql",
+  "title": "Regions",
+  "source": {
+    "kind": "manual",
+    "param_name": "region"
+  },
+  "control": {
+    "element": "select",
+    "multiselect": true,
+    "default_value": [
+      "All"
+    ],
+    "options": [
+      "All",
+      "North",
+      "South"
+    ],
+    "title_placement": "top"
+  }
+}

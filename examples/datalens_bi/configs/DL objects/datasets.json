@@ -1,0 +1,92 @@
+{
+  "retail": {
+    "name": "Sales facts",
+    "description": "Existing source; date and region dimensions with revenue aggregated at the requested grain.",
+    "fields": {
+      "event_date": {
+        "title": "Date",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "source": "facts",
+        "column": "event_date",
+        "guid": "0c9ed368-962f-5d9e-a9d3-896b0a377a86"
+      },
+      "region": {
+        "title": "Region",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "source": "facts",
+        "column": "region",
+        "guid": "525c9692-f0d2-5785-8ffe-bfa3fcd1fc3e"
+      },
+      "revenue": {
+        "title": "Revenue Raw",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none",
+        "source": "facts",
+        "column": "revenue",
+        "guid": "79119bb3-ce99-5f3c-a3f5-f8d53ef634b6"
+      }
+    },
+    "calculations": {
+      "Revenue": {
+        "formula": "SUM([Revenue Raw])",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      }
+    },
+    "id": null,
+    "sources": {
+      "facts": {
+        "connection": "default",
+        "factory": "ch_subselect",
+        "parameters": {},
+        "sql_file": "assets/sql/projections/retail.sql"
+      },
+      "calendar": {
+        "connection": "default",
+        "factory": "ch_table",
+        "parameters": {
+          "db_name": "example",
+          "table_name": "calendar"
+        }
+      }
+    },
+    "parameters": {
+      "period_type": {
+        "type": "string",
+        "default": "month"
+      }
+    },
+    "rls": {
+      "north": {
+        "field": "region",
+        "subject_type": "user",
+        "subject_id": "example-user",
+        "allowed_value": "North",
+        "pattern_type": "value"
+      }
+    },
+    "cache_invalidation": {
+      "mode": "off"
+    },
+    "relations": {
+      "calendar": {
+        "left": "facts",
+        "right": "calendar",
+        "type": "left",
+        "conditions": [
+          {
+            "left": "event_date",
+            "right": "event_date",
+            "operator": "eq"
+          }
+        ]
+      }
+    }
+  }
+}

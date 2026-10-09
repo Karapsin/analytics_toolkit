@@ -1,0 +1,32 @@
+{
+  "key": "ql_revenue",
+  "family": "ql",
+  "type": "line",
+  "name": "QL - revenue by date",
+  "title": "SQL revenue by date",
+  "dataset": "retail",
+  "query_file": "assets/sql/ql_revenue.sql",
+  "params": [
+    {
+      "name": "region",
+      "type": "string",
+      "default": "All"
+    }
+  ],
+  "columns": {
+    "Date": "string",
+    "Revenue": "integer"
+  },
+  "fields": {
+    "x": [
+      "Date"
+    ],
+    "y": [
+      "Revenue"
+    ]
+  },
+  "sort": [],
+  "formats": {},
+  "settings": {},
+  "id": null
+}

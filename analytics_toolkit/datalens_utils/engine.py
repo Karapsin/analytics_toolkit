@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .errors import DataLensConfigurationError
+from .session import Deployment
 from .session import current_session as session
 from .settings import read_chart_definitions, read_config, source_tables
 
@@ -23,6 +25,9 @@ def validate() -> Any:
 
 def reconcile() -> Any:
     deployment = session().deployment
+    if not isinstance(deployment, Deployment):
+        message = "Legacy reconciliation requires Deployment."
+        raise DataLensConfigurationError(message)
     from .dashboard_generation import (  # noqa: PLC0415
         create_charts,
         create_dashboard,

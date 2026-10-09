@@ -1,0 +1,304 @@
+{
+  "entry": {
+    "version": 1,
+    "entryId": "offline-entry-5",
+    "key": "Offline/Variants/charts/Динамика Обзор",
+    "createdAt": "2026-10-07T07:02:36.123Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:36.123Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "offline-revision-5",
+    "savedId": "offline-revision-5",
+    "publishedId": "offline-revision-5",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "scope": "widget",
+    "type": "d3_wizard_node",
+    "meta": {},
+    "annotation": {
+      "description": "Начисления, фактические списания и скидки. Затраты = списания + скидки; начисления не прибавляются к списаниям. Получатели бонусов и скидок показаны по второй оси в клиентах. «Общие расходы» — отдельная денежная линия: скидки + списанные бонусы, с учётом выбранного режима и масштаба."
+    },
+    "data": {
+      "sources": {
+        "datasetsIds": [
+          "offline-dynamics"
+        ],
+        "updates": [
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_dynamics_period",
+              "title": "dynamics_period",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "day",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_conversion_mode",
+              "title": "conversion_mode",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "period",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_money_scale",
+              "title": "money_scale",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "total",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_alpha",
+              "title": "alpha",
+              "cast": "float",
+              "data_type": "float",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": 0.01,
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "add_field",
+            "field": {
+              "guid": "dynamics_cost_overview_total_costs",
+              "title": "Общие расходы",
+              "calc_mode": "formula",
+              "formula": "[Скидки] + [Списано бонусов]",
+              "cast": "float",
+              "data_type": "float",
+              "type": "MEASURE",
+              "aggregation": "none",
+              "autoaggregated": false,
+              "aggregation_locked": true,
+              "local": true,
+              "datasetId": "offline-dynamics"
+            }
+          }
+        ],
+        "filters": [
+          {
+            "guid": "dynamics_calculation_Выбранная_детализация",
+            "datasetId": "offline-dynamics",
+            "filter": {
+              "operation": {
+                "code": "EQ"
+              },
+              "value": [
+                "True"
+              ]
+            }
+          }
+        ]
+      },
+      "visualization": {
+        "type": "line",
+        "colors": {
+          "items": [
+            {
+              "title": "Measure Names",
+              "type": "PSEUDO",
+              "data_type": "string"
+            }
+          ],
+          "settings": {
+            "coloredByMeasure": true,
+            "colorMode": "palette",
+            "mountedColors": {
+              "dynamics_calculation_Начислено_бонусов": "#4477AA",
+              "dynamics_calculation_Списано_бонусов": "#999999",
+              "dynamics_calculation_Скидки": "#228833",
+              "dynamics_cost_overview_total_costs": "#66CCEE",
+              "dynamics_calculation_Клиенты_с_бонусами": "#AA4499",
+              "dynamics_calculation_Клиенты_со_скидками": "#EE7733"
+            },
+            "polygonBorders": "show"
+          }
+        },
+        "labels": {
+          "items": []
+        },
+        "segments": {
+          "items": []
+        },
+        "shapes": {
+          "items": [],
+          "settings": {}
+        },
+        "sort": {
+          "items": [
+            {
+              "guid": "dynamics_period_start",
+              "datasetId": "offline-dynamics",
+              "direction": "ASC"
+            }
+          ]
+        },
+        "x": {
+          "items": [
+            {
+              "guid": "dynamics_period_start",
+              "datasetId": "offline-dynamics"
+            }
+          ],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisModeMap": {
+              "dynamics_period_start": "continuous"
+            },
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "holidays": "off",
+            "labelsView": "auto",
+            "title": "off",
+            "titleValue": "",
+            "type": "linear"
+          }
+        },
+        "y": {
+          "items": [
+            {
+              "guid": "dynamics_calculation_Начислено_бонусов",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "dynamics_calculation_Списано_бонусов",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "dynamics_calculation_Скидки",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "dynamics_cost_overview_total_costs",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            }
+          ],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "nulls": "connect",
+            "scale": "manual",
+            "scaleValue": [
+              "0",
+              "auto"
+            ],
+            "title": "manual",
+            "titleValue": "Рубли",
+            "type": "linear"
+          }
+        },
+        "y2": {
+          "items": [
+            {
+              "guid": "dynamics_calculation_Клиенты_с_бонусами",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "dynamics_calculation_Клиенты_со_скидками",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            }
+          ],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "nulls": "connect",
+            "scale": "manual",
+            "scaleValue": [
+              "0",
+              "auto"
+            ],
+            "title": "manual",
+            "titleValue": "Клиенты",
+            "type": "linear"
+          }
+        },
+        "chartSettings": {
+          "title": "Обзор",
+          "titleMode": "hide",
+          "legendMode": "show",
+          "navigatorSettings": {
+            "linesMode": "all",
+            "navigatorMode": "show",
+            "periodSettings": {
+              "period": "year",
+              "type": "genericdatetime",
+              "value": "1"
+            },
+            "selectedLines": []
+          }
+        }
+      }
+    }
+  }
+}

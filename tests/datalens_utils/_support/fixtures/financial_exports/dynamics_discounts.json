@@ -1,0 +1,217 @@
+{
+  "entry": {
+    "version": 1,
+    "entryId": "offline-entry-6",
+    "key": "Offline/Variants/charts/Динамика Скидки",
+    "createdAt": "2026-10-07T07:02:36.123Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:36.123Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "offline-revision-6",
+    "savedId": "offline-revision-6",
+    "publishedId": "offline-revision-6",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "scope": "widget",
+    "type": "d3_wizard_node",
+    "meta": {},
+    "annotation": {
+      "description": "Предоставленные скидки по дате события. Сумма в рублях или на участника Тест."
+    },
+    "data": {
+      "sources": {
+        "datasetsIds": [
+          "offline-dynamics"
+        ],
+        "updates": [
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_dynamics_period",
+              "title": "dynamics_period",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "day",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_conversion_mode",
+              "title": "conversion_mode",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "period",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_money_scale",
+              "title": "money_scale",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "total",
+              "datasetId": "offline-dynamics"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "dynamics_parameter_alpha",
+              "title": "alpha",
+              "cast": "float",
+              "data_type": "float",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": 0.01,
+              "datasetId": "offline-dynamics"
+            }
+          }
+        ],
+        "filters": [
+          {
+            "guid": "dynamics_calculation_Выбранная_детализация",
+            "datasetId": "offline-dynamics",
+            "filter": {
+              "operation": {
+                "code": "EQ"
+              },
+              "value": [
+                "True"
+              ]
+            }
+          }
+        ]
+      },
+      "visualization": {
+        "type": "line",
+        "colors": {
+          "items": [],
+          "settings": {}
+        },
+        "labels": {
+          "items": []
+        },
+        "segments": {
+          "items": []
+        },
+        "shapes": {
+          "items": [],
+          "settings": {}
+        },
+        "sort": {
+          "items": [
+            {
+              "guid": "dynamics_period_start",
+              "datasetId": "offline-dynamics",
+              "direction": "ASC"
+            }
+          ]
+        },
+        "x": {
+          "items": [
+            {
+              "guid": "dynamics_period_start",
+              "datasetId": "offline-dynamics"
+            }
+          ],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisModeMap": {
+              "dynamics_period_start": "continuous"
+            },
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "holidays": "off",
+            "labelsView": "auto",
+            "title": "off",
+            "titleValue": "",
+            "type": "linear"
+          }
+        },
+        "y": {
+          "items": [
+            {
+              "guid": "dynamics_calculation_Скидки",
+              "datasetId": "offline-dynamics",
+              "formatting": {
+                "format": "number",
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            }
+          ],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "nulls": "connect",
+            "scale": "auto",
+            "scaleValue": "min-max",
+            "title": "off",
+            "titleValue": "",
+            "type": "linear"
+          }
+        },
+        "y2": {
+          "items": [],
+          "settings": {
+            "axisFormatMode": "auto",
+            "axisLabelDateFormat": "DD.MM.YYYY",
+            "axisVisibility": "show",
+            "grid": "on",
+            "gridStep": "auto",
+            "gridStepValue": 50,
+            "hideLabels": "no",
+            "labelsView": "auto",
+            "nulls": "connect",
+            "scale": "auto",
+            "scaleValue": "min-max",
+            "title": "off",
+            "titleValue": "",
+            "type": "linear"
+          }
+        },
+        "chartSettings": {
+          "title": "Скидки",
+          "titleMode": "hide",
+          "legendMode": "show",
+          "navigatorSettings": {
+            "linesMode": "all",
+            "navigatorMode": "show",
+            "periodSettings": {
+              "period": "year",
+              "type": "genericdatetime",
+              "value": "1"
+            },
+            "selectedLines": []
+          }
+        }
+      }
+    }
+  }
+}

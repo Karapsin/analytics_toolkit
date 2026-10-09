@@ -1,0 +1,1227 @@
+{
+  "entry": {
+    "version": 2,
+    "data": {
+      "counter": 24,
+      "salt": "0.13371337",
+      "settings": {
+        "autoupdateInterval": null,
+        "dependentSelectors": true,
+        "expandTOC": false,
+        "globalParams": {},
+        "hideDashTitle": false,
+        "hideTabs": true,
+        "maxConcurrentRequests": null,
+        "silentLoading": false
+      },
+      "tabs": [
+        {
+          "aliases": {
+            "default": [
+              [
+                "month_period_type",
+                "report_period"
+              ]
+            ]
+          },
+          "connections": [
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "alpha_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "month_experiment_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "month_experiment_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "month_experiment_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "month_experiment_selector",
+              "kind": "ignore",
+              "to": "period_type_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "alpha_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "alpha_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "period_type_selector"
+            },
+            {
+              "from": "alpha_selector",
+              "kind": "ignore",
+              "to": "month_experiment_selector"
+            },
+            {
+              "from": "month_experiment_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "alpha_selector",
+              "kind": "ignore",
+              "to": "period_type_selector"
+            },
+            {
+              "from": "month_start_selector",
+              "kind": "ignore",
+              "to": "month_end_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            },
+            {
+              "from": "month_group_selector",
+              "kind": "ignore",
+              "to": "month_start_selector"
+            },
+            {
+              "from": "period_type_selector",
+              "kind": "ignore",
+              "to": "month_group_selector"
+            },
+            {
+              "from": "month_end_selector",
+              "kind": "ignore",
+              "to": "alpha_selector"
+            }
+          ],
+          "id": "month",
+          "items": [
+            {
+              "data": {
+                "autoHeight": true,
+                "showInTOC": false,
+                "size": "l",
+                "text": "Дейли оффер: фин. отчёт"
+              },
+              "id": "month_heading",
+              "namespace": "default",
+              "type": "title"
+            },
+            {
+              "data": {
+                "autoHeight": true,
+                "backgroundSettings": {
+                  "color": {
+                    "dark": "#343535",
+                    "light": "#FFFFFF"
+                  }
+                },
+                "text": "**Период расчёта:** «Месяц», «Неделя» или «Всё время». Списки начала и конца периода показывают даты выбранного типа расчёта. Верхняя таблица — сводка по выбранным экспериментам за календарный период, нижняя — отдельные сравнения. «Все тестовые группы» использует готовое общее сравнение каждого эксперимента."
+              },
+              "id": "month_intro",
+              "namespace": "default",
+              "type": "text"
+            },
+            {
+              "data": {
+                "autoHeight": true,
+                "backgroundSettings": {
+                  "color": {
+                    "dark": "#343535",
+                    "light": "#FFFFFF"
+                  }
+                },
+                "text": "**Доп. РТО** = Uplift ARPU в рублях × клиентов Тест, если p-value < alpha; иначе 0. По умолчанию alpha = 0,01. Uplift, p-value и доп. РТО используют скорректированный ARPU. **Затраты = списанные бонусы + скидки.** Списание бонусов, % = списано / начислено. Маржа, % = валовая маржа / РТО без НДС, отдельно для Тест и Контроль.\n\nСписания отнесены к периоду получения бонуса, включая все более поздние списания. Получатели бонусов и скидок показаны также как объединение и пересечение. При нулевом знаменателе оценка пустая. Данные обновляются ручной загрузкой.\n\n**Сводка:** клиенты и суммы складываются между непересекающимися запусками; доли считаются из общих сумм. Доп. РТО — сумма эффектов сравнений с p-value < alpha, включая отрицательные. Для «Всё время» берутся готовые накопительные сравнения. Границы строки сводки показывают фактический диапазон отобранных данных."
+              },
+              "id": "month_notes",
+              "namespace": "default",
+              "type": "text"
+            },
+            {
+              "data": {
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": false,
+                "group": [
+                  {
+                    "defaults": {
+                      "month_comparison_group": [
+                        "Все тестовые группы"
+                      ]
+                    },
+                    "id": "month_group_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "month_comparison_group",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-month",
+                      "defaultValue": [
+                        "Все тестовые группы"
+                      ],
+                      "elementType": "select",
+                      "fieldType": "string",
+                      "multiselectable": true,
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Группа Тест",
+                    "width": ""
+                  }
+                ],
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "id": "month_group_selector_control",
+              "namespace": "default",
+              "type": "group_control"
+            },
+            {
+              "data": {
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": true,
+                "group": [
+                  {
+                    "defaults": {
+                      "report_period": [
+                        "month"
+                      ]
+                    },
+                    "id": "period_type_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "acceptableValues": [
+                        {
+                          "title": "Месяц",
+                          "value": "month"
+                        },
+                        {
+                          "title": "Неделя",
+                          "value": "week"
+                        },
+                        {
+                          "title": "Всё время",
+                          "value": "total"
+                        }
+                      ],
+                      "defaultValue": [
+                        "month"
+                      ],
+                      "elementType": "select",
+                      "fieldName": "report_period",
+                      "multiselectable": false,
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "Период расчёта",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "month_exp_name": []
+                    },
+                    "id": "month_experiment_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "month_exp_name",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-month",
+                      "elementType": "select",
+                      "fieldType": "string",
+                      "multiselectable": true,
+                      "operation": "IN",
+                      "required": false,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Эксперимент",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "month_period_start": []
+                    },
+                    "id": "month_start_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "month_period_start",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-month",
+                      "elementType": "select",
+                      "fieldType": "date",
+                      "multiselectable": false,
+                      "required": false,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Начало периода",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "month_period_last_day": []
+                    },
+                    "id": "month_end_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "month_period_last_day",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-month",
+                      "elementType": "select",
+                      "fieldType": "date",
+                      "multiselectable": false,
+                      "required": false,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Конец периода",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "alpha": "0.01"
+                    },
+                    "id": "alpha_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "defaultValue": "0.01",
+                      "elementType": "input",
+                      "fieldName": "alpha",
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "alpha",
+                    "width": ""
+                  }
+                ],
+                "showGroupName": false,
+                "updateControlsOnChange": false
+              },
+              "id": "month_filters",
+              "namespace": "default",
+              "type": "group_control"
+            },
+            {
+              "data": {
+                "hideTitle": false,
+                "tabs": [
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-1",
+                    "id": "wt_1",
+                    "isDefault": true,
+                    "params": {},
+                    "title": "Финансовая статистика экспериментов"
+                  }
+                ]
+              },
+              "id": "month_funnel",
+              "namespace": "default",
+              "type": "widget"
+            },
+            {
+              "data": {
+                "hideTitle": false,
+                "tabs": [
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-2",
+                    "id": "wt_2",
+                    "isDefault": true,
+                    "params": {},
+                    "title": "Сводная статистика экспериментов"
+                  }
+                ]
+              },
+              "id": "month_summary",
+              "namespace": "default",
+              "type": "widget"
+            }
+          ],
+          "layout": [
+            {
+              "h": 2,
+              "i": "month_heading",
+              "w": 36,
+              "x": 0,
+              "y": 0
+            },
+            {
+              "h": 5,
+              "i": "month_intro",
+              "w": 36,
+              "x": 0,
+              "y": 9
+            },
+            {
+              "h": 8,
+              "i": "month_notes",
+              "w": 36,
+              "x": 0,
+              "y": 72
+            },
+            {
+              "h": 3,
+              "i": "month_group_selector_control",
+              "w": 36,
+              "x": 0,
+              "y": 6
+            },
+            {
+              "h": 4,
+              "i": "month_filters",
+              "w": 36,
+              "x": 0,
+              "y": 2
+            },
+            {
+              "h": 40,
+              "i": "month_funnel",
+              "w": 36,
+              "x": 0,
+              "y": 32
+            },
+            {
+              "h": 18,
+              "i": "month_summary",
+              "w": 36,
+              "x": 0,
+              "y": 14
+            }
+          ],
+          "title": "Финансовый отчёт"
+        },
+        {
+          "aliases": {
+            "default": [
+              [
+                "dynamics_period",
+                "dynamics_period_type"
+              ]
+            ]
+          },
+          "connections": [
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "wt_4",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "wt_5",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "wt_6",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "wt_7",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "wt_8",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_experiment_selector"
+            },
+            {
+              "from": "wt_3",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_date_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_money_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_period_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_alpha_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_date_selector",
+              "kind": "ignore",
+              "to": "dynamics_conversion_selector"
+            },
+            {
+              "from": "dynamics_group_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            },
+            {
+              "from": "dynamics_conversion_selector",
+              "kind": "ignore",
+              "to": "dynamics_period_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_date_selector"
+            },
+            {
+              "from": "dynamics_experiment_selector",
+              "kind": "ignore",
+              "to": "dynamics_alpha_selector"
+            },
+            {
+              "from": "dynamics_date_selector",
+              "kind": "ignore",
+              "to": "dynamics_group_selector"
+            },
+            {
+              "from": "dynamics_date_selector",
+              "kind": "ignore",
+              "to": "dynamics_money_selector"
+            }
+          ],
+          "id": "dynamics",
+          "items": [
+            {
+              "data": {
+                "autoHeight": true,
+                "showInTOC": false,
+                "size": "m",
+                "text": "Динамика дейли оффера"
+              },
+              "id": "dynamics_heading",
+              "namespace": "default",
+              "type": "title"
+            },
+            {
+              "data": {
+                "autoHeight": true,
+                "showInTOC": false,
+                "size": "s",
+                "text": "Бонусы и скидки"
+              },
+              "id": "dynamics_costs_heading",
+              "namespace": "default",
+              "type": "title"
+            },
+            {
+              "data": {
+                "autoHeight": true,
+                "showInTOC": false,
+                "size": "s",
+                "text": "Финансовый результат: Тест и Контроль"
+              },
+              "id": "dynamics_financial_heading",
+              "namespace": "default",
+              "type": "title"
+            },
+            {
+              "data": {
+                "autoHeight": true,
+                "backgroundSettings": {
+                  "color": {
+                    "dark": "#343535",
+                    "light": "#FFFFFF"
+                  }
+                },
+                "text": "**Воронка:** уникальные клиенты с акцептом или утилем / участники Тест; «Акцепт → Утиль» — утиль / акцепт. «Режим расчёта» действует на все графики. Накопительные получатели считаются уникально с начала наблюдения; деньги суммируются, процент маржи пересчитывается по накопленным суммам. **Доп. РТО на графике «РТО с НДС»** = (среднее на клиента Тест − среднее на клиента Контроль) × клиентов Тест, руб. При p-value ARPU выше alpha эффект периода равен 0; без оценки — пусто. Накопительный эффект — сумма эффектов отдельных недель или месяцев. Для дней эффект скрыт. alpha по умолчанию 0,01. Накопление начинается с доступной даты расчёта и не сбрасывается при выборе диапазона. **Списания** показаны по дате списания; финансовый отчёт на первой вкладке относит их к получению бонуса. Начисления не прибавляются к списаниям: фактические затраты — скидки + списания. **Гросс-маржа, %** — маржа / РТО без НДС. Последние неделя и месяц могут быть неполными. «На клиента» помогает сравнивать Тест и Контроль разного размера."
+              },
+              "id": "dynamics_notes",
+              "namespace": "default",
+              "type": "text"
+            },
+            {
+              "data": {
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": false,
+                "group": [
+                  {
+                    "defaults": {
+                      "alpha": "0.01"
+                    },
+                    "id": "dynamics_alpha_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "defaultValue": "0.01",
+                      "elementType": "input",
+                      "fieldName": "alpha",
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "alpha",
+                    "width": ""
+                  }
+                ],
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "id": "dynamics_alpha_selector_control",
+              "namespace": "default",
+              "type": "group_control"
+            },
+            {
+              "data": {
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": false,
+                "group": [
+                  {
+                    "defaults": {
+                      "dynamics_test_group": [
+                        "__eq_Все тестовые группы"
+                      ]
+                    },
+                    "id": "dynamics_group_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "dynamics_test_group",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-dynamics",
+                      "defaultValue": [
+                        "Все тестовые группы"
+                      ],
+                      "elementType": "select",
+                      "fieldType": "string",
+                      "multiselectable": false,
+                      "operation": "EQ",
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Группа Тест",
+                    "width": ""
+                  }
+                ],
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "id": "dynamics_group_selector_control",
+              "namespace": "default",
+              "type": "group_control"
+            },
+            {
+              "data": {
+                "autoHeight": false,
+                "buttonApply": false,
+                "buttonReset": true,
+                "group": [
+                  {
+                    "defaults": {
+                      "dynamics_exp_name": []
+                    },
+                    "id": "dynamics_experiment_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "dynamics_exp_name",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-dynamics",
+                      "defaultValue": [],
+                      "elementType": "select",
+                      "fieldType": "string",
+                      "multiselectable": true,
+                      "operation": "IN",
+                      "required": false,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Эксперимент",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "dynamics_period": [
+                        "day"
+                      ]
+                    },
+                    "id": "dynamics_period_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "acceptableValues": [
+                        {
+                          "title": "День",
+                          "value": "day"
+                        },
+                        {
+                          "title": "Неделя",
+                          "value": "week"
+                        },
+                        {
+                          "title": "Месяц",
+                          "value": "month"
+                        }
+                      ],
+                      "defaultValue": [
+                        "day"
+                      ],
+                      "elementType": "select",
+                      "fieldName": "dynamics_period",
+                      "multiselectable": false,
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "Детализация",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "conversion_mode": [
+                        "period"
+                      ]
+                    },
+                    "id": "dynamics_conversion_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "acceptableValues": [
+                        {
+                          "title": "За период",
+                          "value": "period"
+                        },
+                        {
+                          "title": "Накопительно",
+                          "value": "cumulative"
+                        }
+                      ],
+                      "defaultValue": [
+                        "period"
+                      ],
+                      "elementType": "select",
+                      "fieldName": "conversion_mode",
+                      "multiselectable": false,
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "Режим расчёта",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "money_scale": [
+                        "total"
+                      ]
+                    },
+                    "id": "dynamics_money_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "acceptableValues": [
+                        {
+                          "title": "Сумма",
+                          "value": "total"
+                        },
+                        {
+                          "title": "На клиента",
+                          "value": "per_user"
+                        }
+                      ],
+                      "defaultValue": [
+                        "total"
+                      ],
+                      "elementType": "select",
+                      "fieldName": "money_scale",
+                      "multiselectable": false,
+                      "required": true,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "manual",
+                    "title": "Денежные показатели",
+                    "width": ""
+                  },
+                  {
+                    "defaults": {
+                      "dynamics_period_start": ""
+                    },
+                    "id": "dynamics_date_selector",
+                    "namespace": "default",
+                    "placementMode": "auto",
+                    "source": {
+                      "datasetFieldId": "dynamics_period_start",
+                      "datasetFieldType": "DIMENSION",
+                      "datasetId": "offline-dynamics",
+                      "elementType": "date",
+                      "fieldType": "date",
+                      "isRange": true,
+                      "operation": "BETWEEN",
+                      "required": false,
+                      "showHint": false,
+                      "showTitle": true,
+                      "titlePlacement": "top"
+                    },
+                    "sourceType": "dataset",
+                    "title": "Диапазон дат",
+                    "width": ""
+                  }
+                ],
+                "showGroupName": false,
+                "updateControlsOnChange": true
+              },
+              "id": "dynamics_filters",
+              "namespace": "default",
+              "type": "group_control"
+            },
+            {
+              "data": {
+                "hideTitle": false,
+                "tabs": [
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-7",
+                    "id": "wt_3",
+                    "isDefault": true,
+                    "params": {},
+                    "title": "Воронка"
+                  }
+                ]
+              },
+              "id": "dynamics_funnel",
+              "namespace": "default",
+              "type": "widget"
+            },
+            {
+              "data": {
+                "hideTitle": false,
+                "tabs": [
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-5",
+                    "id": "wt_4",
+                    "isDefault": true,
+                    "params": {},
+                    "title": "Обзор"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-3",
+                    "id": "wt_5",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Начисления"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-4",
+                    "id": "wt_6",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Списания"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-6",
+                    "id": "wt_7",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Скидки"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-10",
+                    "id": "wt_8",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Получатели"
+                  }
+                ]
+              },
+              "id": "dynamics_costs",
+              "namespace": "default",
+              "type": "widget"
+            },
+            {
+              "data": {
+                "hideTitle": false,
+                "tabs": [
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-11",
+                    "id": "wt_9",
+                    "isDefault": true,
+                    "params": {},
+                    "title": "РТО с НДС"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-12",
+                    "id": "wt_10",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "РТО без НДС"
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-8",
+                    "id": "wt_11",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Гросс-маржа, руб."
+                  },
+                  {
+                    "autoHeight": false,
+                    "chartId": "offline-entry-9",
+                    "id": "wt_12",
+                    "isDefault": false,
+                    "params": {},
+                    "title": "Гросс-маржа, %"
+                  }
+                ]
+              },
+              "id": "dynamics_financial",
+              "namespace": "default",
+              "type": "widget"
+            }
+          ],
+          "layout": [
+            {
+              "h": 2,
+              "i": "dynamics_heading",
+              "w": 36,
+              "x": 0,
+              "y": 0
+            },
+            {
+              "h": 2,
+              "i": "dynamics_costs_heading",
+              "w": 36,
+              "x": 0,
+              "y": 29
+            },
+            {
+              "h": 3,
+              "i": "dynamics_financial_heading",
+              "w": 29,
+              "x": 0,
+              "y": 49
+            },
+            {
+              "h": 7,
+              "i": "dynamics_notes",
+              "w": 36,
+              "x": 0,
+              "y": 70
+            },
+            {
+              "h": 3,
+              "i": "dynamics_alpha_selector_control",
+              "w": 7,
+              "x": 29,
+              "y": 49
+            },
+            {
+              "h": 3,
+              "i": "dynamics_group_selector_control",
+              "w": 7,
+              "x": 0,
+              "y": 8
+            },
+            {
+              "h": 6,
+              "i": "dynamics_filters",
+              "w": 36,
+              "x": 0,
+              "y": 2
+            },
+            {
+              "h": 18,
+              "i": "dynamics_funnel",
+              "w": 36,
+              "x": 0,
+              "y": 11
+            },
+            {
+              "h": 18,
+              "i": "dynamics_costs",
+              "w": 36,
+              "x": 0,
+              "y": 31
+            },
+            {
+              "h": 18,
+              "i": "dynamics_financial",
+              "w": 36,
+              "x": 0,
+              "y": 52
+            }
+          ],
+          "title": "Динамика"
+        }
+      ]
+    },
+    "meta": null,
+    "scope": "dash",
+    "type": "",
+    "entryId": "offline-entry-13",
+    "key": "Offline/Variants/Financial report",
+    "createdAt": "2026-10-07T07:02:38.269Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:38.269Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revUpdatedAt": "2026-10-07T07:02:38.269Z",
+    "revUpdatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "offline-revision-14",
+    "savedId": "offline-revision-14",
+    "publishedId": "offline-revision-14",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "annotation": {
+      "description": "Offline financial report"
+    }
+  },
+  "isFavorite": false
+}

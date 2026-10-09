@@ -27,7 +27,7 @@ def arguments():
 def test_context_seeds_ids_and_supplies_explicit_sources(session_state):
     client = Mock()
     client.capabilities = {
-        "dataset_sources": ["CH_SUBSELECT"],
+        "dataset_sources": ["CH_TABLE"],
         "chart_factories": {"wizard": ["line"], "ql": [], "editor": []},
     }
     client.get.connection.return_value = SimpleNamespace(
@@ -51,7 +51,7 @@ def test_context_seeds_ids_and_supplies_explicit_sources(session_state):
 def test_context_rejects_incompatible_installation_before_writes(session_state, problem):
     client = Mock()
     client.capabilities = {
-        "dataset_sources": ["CH_SUBSELECT"],
+        "dataset_sources": ["CH_TABLE"],
         "chart_factories": {"wizard": ["line"], "ql": [], "editor": []},
     }
     connection = SimpleNamespace(
@@ -68,8 +68,12 @@ def test_context_rejects_incompatible_installation_before_writes(session_state, 
         connection.type = "postgres"
     else:
         connection.raw = {}
+    options = arguments()
+    if problem == "level":
+        options["chart_definitions"]["trend"]["family"] = "ql"
+        client.capabilities["chart_factories"]["ql"] = ["line"]
     with patch.object(context, "datalens_client", return_value=nullcontext(client)), patch.object(
         context, "ensure_target_folder"
-    ) as folder, pytest.raises(DataLensUtilsError), context.dashboard_context(**arguments()):
+    ) as folder, pytest.raises(DataLensUtilsError), context.dashboard_context(**options):
         pass
     folder.assert_not_called()

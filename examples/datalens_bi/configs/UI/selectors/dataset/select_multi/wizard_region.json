@@ -1,0 +1,19 @@
+{
+  "key": "wizard_region",
+  "tab": "wizard",
+  "title": "Regions",
+  "source": {
+    "kind": "dataset",
+    "dataset": "retail",
+    "field": "Region"
+  },
+  "control": {
+    "element": "select",
+    "multiselect": true,
+    "default_value": [
+      "North"
+    ],
+    "operation": "IN",
+    "title_placement": "top"
+  }
+}

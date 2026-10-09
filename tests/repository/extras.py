@@ -17,4 +17,4 @@ def test_all_extra_installs_every_optional_module():
     }
     assert set(extras["all"]) == expected
     assert len(extras["all"]) == len(expected)
-    assert extras["datalens"] == ["datalens-sdk==3.1.0; python_version >= '3.10'"]
+    assert extras["datalens"] == ["datalens-sdk==3.2.0; python_version >= '3.10'"]

@@ -154,7 +154,7 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
             "-c",
             "from importlib.metadata import version; "
             "from pathlib import Path; import analytics_toolkit.datalens_utils.bootstrap as b; "
-            "assert version('datalens-sdk') == '3.1.0'; "
+            "assert version('datalens-sdk') == '3.2.0'; "
             "assets = Path(b.__file__).parent / 'bootstrap_assets'; "
             "assert (assets / 'bootstrap.sh').is_file(); "
             "assert (assets / 'bootstrap.ps1').is_file()",

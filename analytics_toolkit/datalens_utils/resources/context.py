@@ -37,7 +37,11 @@ def dashboard_context(  # noqa: PLR0913
 ) -> Iterator[Any]:
     folder_path, _ = dashboard_path.rsplit("/", 1)
     with datalens_client() as client:
-        if "CH_SUBSELECT" not in client.capabilities["dataset_sources"]:
+        requested_sources = {
+            "CH_SUBSELECT" if value.get("source", "ch_table") == "ch_subselect" else "CH_TABLE"
+            for value in dataset_definitions.values()
+        }
+        if requested_sources - set(client.capabilities["dataset_sources"]):
             message = "The installation does not support projected ClickHouse dataset sources."
             raise DataLensUtilsError(message)
         for family in ("wizard", "ql", "editor"):
@@ -60,7 +64,14 @@ def dashboard_context(  # noqa: PLR0913
                 "."
             )
             raise DataLensUtilsError(message)
-        if connection.type != "clickhouse" or connection.raw.get("raw_sql_level") != "dashsql":
+        needs_ql = any(value["family"] == "ql" for value in chart_definitions.values())
+        needs_subselect = "CH_SUBSELECT" in requested_sources
+        sql_level = connection.raw.get("raw_sql_level", "off")
+        if (
+            connection.type != "clickhouse"
+            or (needs_ql and sql_level != "dashsql")
+            or (needs_subselect and sql_level not in {"subselect", "template", "dashsql"})
+        ):
             message = (
                 "The selected ClickHouse connection must already permit SQL-to-read (dashsql)."
             )

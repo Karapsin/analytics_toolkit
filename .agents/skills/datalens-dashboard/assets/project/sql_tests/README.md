@@ -28,3 +28,8 @@ operations with shared pacing across clients using the same organization.
 The default analytics interpreter is the current Python executable with the
 already installed analytics-toolkit[all]. An explicit --analytics-python may
 select another existing environment; never create a project environment.
+
+Version-2 scaffolds also support YC/Enterprise and folder/workbook targets.
+Use capability and plan reports before writes. `import-dashboard` previews all
+tabs; `import-tab` previews one. Resolve fidelity blockers before `--write`.
+Reuse the installed toolkit environment; do not create environments or bootstrap.

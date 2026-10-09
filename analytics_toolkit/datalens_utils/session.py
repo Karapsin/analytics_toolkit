@@ -12,9 +12,14 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from .errors import DataLensConfigurationError
+
+if TYPE_CHECKING:
+    from .deployment import BIProjectDeployment
+
+BI_RECIPE_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -57,7 +62,7 @@ class Deployment:
 @dataclass
 class Session:
     paths: ProjectPaths
-    deployment: Deployment
+    deployment: Deployment | BIProjectDeployment
     runtime: dict[str, Any]
     client_factory: Callable[..., Any] | None = None
     reporter: Callable[..., Any] | None = None
@@ -67,7 +72,7 @@ class Session:
     def load(
         cls,
         paths: ProjectPaths,
-        deployment: Deployment,
+        deployment: Deployment | BIProjectDeployment,
         *,
         client_factory: Callable[..., Any] | None = None,
         reporter: Callable[..., Any] | None = None,
@@ -75,9 +80,20 @@ class Session:
         runtime = json.loads(
             (paths.project_root / "configs/runtime.json").read_text(encoding="utf-8")
         )
-        if runtime.get("installation") != "yc":
-            message = "This engine currently supports the YC installation."
+        installation = getattr(deployment, "installation", "yc")
+        if runtime.get("installation", installation) != installation:
+            message = "Recipe installation must match the YC or Enterprise deployment."
             raise DataLensConfigurationError(message)
+        schema_version = runtime.get("schema_version", 1)
+        if type(schema_version) is not int or schema_version not in {1, 2}:
+            msg = "schema_version must be 1 or 2."
+            raise DataLensConfigurationError(msg)
+        if schema_version == BI_RECIPE_VERSION:
+            from .recipe import (  # noqa: PLC0415 - Session and recipe bind lazily.
+                validate_runtime,
+            )
+
+            validate_runtime(runtime)
         interval = runtime.get("request_interval_seconds", 1.2)
         if (
             isinstance(interval, bool)
@@ -88,6 +104,7 @@ class Session:
             message = "request_interval_seconds must be a finite number between 0 and 60."
             raise DataLensConfigurationError(message)
         runtime.update(
+            installation=installation,
             organization_id=deployment.organization_id,
             yc_profile=deployment.yc_profile,
             _request_count=0,

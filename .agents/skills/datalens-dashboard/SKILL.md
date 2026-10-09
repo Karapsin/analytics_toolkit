@@ -1,6 +1,6 @@
 ---
 name: datalens-dashboard
-description: Create or maintain configuration-driven Yandex DataLens dashboard projects using analytics_toolkit.datalens_utils. Use for scaffolding, recipes, selectors, incremental updates, recovery, and API verification.
+description: Create or maintain configuration-driven DataLens BI projects using analytics_toolkit.datalens_utils. Use for scaffolding, recipes, selectors, incremental updates, recovery, and API verification.
 ---
 
 # DataLens dashboard projects
@@ -55,6 +55,21 @@ and dated verification evidence. Reuse the existing CLI; do not copy tools.
 
 Business tabs, chart groups, dataset parameters, selector dependencies and
 managed aliases are described in [project structure](references/project-structure.md).
+
+## BI projects and existing dashboards
+
+For version-2 recipes, YC/Enterprise, workbook targets or imports, read
+[BI projects](references/bi-projects.md). Use `import_dashboard` to discover a
+whole dashboard, or `import_tab` for one tab; preview the local merge and fidelity
+report before writing. Keep unsupported SDK and adapter operations explicit.
+
+If floating coordinates cannot be represented by the installed public SDK,
+round them automatically to the nearest integer, with halves rounded away from
+zero (`12.5` becomes `13`); no user confirmation is required. Convert
+whole-number floats such as `12.0` to `12` exactly. Record the rounding rule and
+every changed coordinate in the fidelity report, including movement or resizing,
+then validate grid bounds and overlaps before writing. If rounding produces an
+invalid layout, resolve the layout before deployment rather than writing it.
 
 ## Runtime and SDK
 

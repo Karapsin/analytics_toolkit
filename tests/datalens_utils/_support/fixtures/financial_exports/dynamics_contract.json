@@ -1,0 +1,1132 @@
+{
+  "id": "offline-dynamics",
+  "definition": {
+    "name": "Динамика дейли оффера",
+    "description": "Пользовательские события после старта участия. Списания по фактической дате. Конверсии за период или накопительно.",
+    "source": "ch_subselect",
+    "table": "synthetic.do_fin_report_dash_dynamics_results",
+    "projection_file": "assets/sql/projections/dynamics.sql",
+    "fields": {
+      "exp_name": {
+        "title": "Эксперимент",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "test_group": {
+        "title": "Группа Тест",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_type": {
+        "title": "Тип периода динамики",
+        "cast": "string",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_start": {
+        "title": "Дата",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "period_end": {
+        "title": "Конец периода динамики",
+        "cast": "date",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_test": {
+        "title": "Участники Тест",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_control": {
+        "title": "Участники Контроль",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_acceptors": {
+        "title": "Акцепты за период",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_utilizers": {
+        "title": "Утиль за период",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_acceptors_cumulative": {
+        "title": "Акцепты накопительно",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_utilizers_cumulative": {
+        "title": "Утиль накопительно",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_bonus_recipients": {
+        "title": "Получатели бонусов за период",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_discount_recipients": {
+        "title": "Получатели скидок за период",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_accrued": {
+        "title": "Начисления исходные",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_spent": {
+        "title": "Списания исходные",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "discounts": {
+        "title": "Скидки исходные",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_test": {
+        "title": "РТО Тест исходное",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_control": {
+        "title": "РТО Контроль исходное",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_test": {
+        "title": "РТО без НДС Тест исходное",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_control": {
+        "title": "РТО без НДС Контроль исходное",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_test": {
+        "title": "Маржа Тест исходная",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_control": {
+        "title": "Маржа Контроль исходная",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_bonus_recipients_cumulative": {
+        "title": "Получатели бонусов за период накопительно",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "n_discount_recipients_cumulative": {
+        "title": "Получатели скидок за период накопительно",
+        "cast": "integer",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_accrued_cumulative": {
+        "title": "Начисления исходные накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "bonuses_spent_cumulative": {
+        "title": "Списания исходные накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "discounts_cumulative": {
+        "title": "Скидки исходные накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_test_cumulative": {
+        "title": "РТО Тест исходное накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_control_cumulative": {
+        "title": "РТО Контроль исходное накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_test_cumulative": {
+        "title": "РТО без НДС Тест исходное накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "revenue_without_nds_control_cumulative": {
+        "title": "РТО без НДС Контроль исходное накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_test_cumulative": {
+        "title": "Маржа Тест исходная накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "gross_margin_control_cumulative": {
+        "title": "Маржа Контроль исходная накопительно",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "p_value_cuped": {
+        "title": "p-value периода исходное",
+        "cast": "float",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      }
+    },
+    "calculations": {
+      "Выбранная детализация": {
+        "formula": "[Тип периода динамики] = [dynamics_period]",
+        "cast": "boolean",
+        "kind": "DIMENSION",
+        "aggregation": "none"
+      },
+      "Акцепт / Тест": {
+        "formula": "IF([conversion_mode] = 'cumulative', SUM([Акцепты накопительно]), SUM([Акцепты за период])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест]))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Утиль / Тест": {
+        "formula": "IF([conversion_mode] = 'cumulative', SUM([Утиль накопительно]), SUM([Утиль за период])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест]))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Акцепт → Утиль": {
+        "formula": "IF([conversion_mode] = 'cumulative', SUM([Утиль накопительно]) / IF(SUM([Акцепты накопительно]) = 0, NULL, SUM([Акцепты накопительно])), SUM([Утиль за период]) / IF(SUM([Акцепты за период]) = 0, NULL, SUM([Акцепты за период])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Клиенты с бонусами": {
+        "formula": "SUM(IF([conversion_mode] = 'cumulative', [Получатели бонусов за период накопительно], [Получатели бонусов за период]))",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Клиенты со скидками": {
+        "formula": "SUM(IF([conversion_mode] = 'cumulative', [Получатели скидок за период накопительно], [Получатели скидок за период]))",
+        "cast": "integer",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Начислено бонусов": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Начисления исходные накопительно], [Начисления исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Начисления исходные накопительно], [Начисления исходные])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Списано бонусов": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Списания исходные накопительно], [Списания исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Списания исходные накопительно], [Списания исходные])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Скидки": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Скидки исходные накопительно], [Скидки исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Скидки исходные накопительно], [Скидки исходные])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО с НДС: Тест": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО Тест исходное накопительно], [РТО Тест исходное])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [РТО Тест исходное накопительно], [РТО Тест исходное])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО с НДС: Контроль": {
+        "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО Контроль исходное накопительно], [РТО Контроль исходное])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [РТО Контроль исходное накопительно], [РТО Контроль исходное]))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО без НДС: Тест": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО без НДС: Контроль": {
+        "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное]))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа: Тест": {
+        "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа: Контроль": {
+        "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная]))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа, %: Тест": {
+        "formula": "SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])) / IF(SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])) = 0, NULL, SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа, %: Контроль": {
+        "formula": "SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная])) / IF(SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])) = 0, NULL, SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО с НДС: Дифф": {
+        "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "РТО без НДС: Дифф": {
+        "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО без НДС Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО без НДС Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО без НДС Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО без НДС Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа: Дифф": {
+        "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      },
+      "Гросс-маржа, %: Дифф": {
+        "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+        "cast": "float",
+        "kind": "MEASURE",
+        "aggregation": "none"
+      }
+    },
+    "parameters": {
+      "dynamics_period": {
+        "type": "string",
+        "default": "day"
+      },
+      "conversion_mode": {
+        "type": "string",
+        "default": "period"
+      },
+      "money_scale": {
+        "type": "string",
+        "default": "total"
+      },
+      "alpha": {
+        "type": "float",
+        "default": 0.01
+      }
+    },
+    "default_filters": [
+      {
+        "field": "Выбранная детализация",
+        "operator": "EQ",
+        "values": [
+          "True"
+        ]
+      }
+    ]
+  },
+  "fields": [
+    {
+      "guid": "dynamics_exp_name",
+      "title": "Эксперимент",
+      "source": "exp_name",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_test_group",
+      "title": "Группа Тест",
+      "source": "test_group",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_period_type",
+      "title": "Тип периода динамики",
+      "source": "period_type",
+      "cast": "string",
+      "data_type": "string",
+      "initial_data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_period_start",
+      "title": "Дата",
+      "source": "period_start",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_period_end",
+      "title": "Конец периода динамики",
+      "source": "period_end",
+      "cast": "date",
+      "data_type": "date",
+      "initial_data_type": "date",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_test",
+      "title": "Участники Тест",
+      "source": "n_test",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_control",
+      "title": "Участники Контроль",
+      "source": "n_control",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_acceptors",
+      "title": "Акцепты за период",
+      "source": "n_acceptors",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_utilizers",
+      "title": "Утиль за период",
+      "source": "n_utilizers",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_acceptors_cumulative",
+      "title": "Акцепты накопительно",
+      "source": "n_acceptors_cumulative",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_utilizers_cumulative",
+      "title": "Утиль накопительно",
+      "source": "n_utilizers_cumulative",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_bonus_recipients",
+      "title": "Получатели бонусов за период",
+      "source": "n_bonus_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_discount_recipients",
+      "title": "Получатели скидок за период",
+      "source": "n_discount_recipients",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_bonuses_accrued",
+      "title": "Начисления исходные",
+      "source": "bonuses_accrued",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_bonuses_spent",
+      "title": "Списания исходные",
+      "source": "bonuses_spent",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_discounts",
+      "title": "Скидки исходные",
+      "source": "discounts",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_test",
+      "title": "РТО Тест исходное",
+      "source": "revenue_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_control",
+      "title": "РТО Контроль исходное",
+      "source": "revenue_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_without_nds_test",
+      "title": "РТО без НДС Тест исходное",
+      "source": "revenue_without_nds_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_without_nds_control",
+      "title": "РТО без НДС Контроль исходное",
+      "source": "revenue_without_nds_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_gross_margin_test",
+      "title": "Маржа Тест исходная",
+      "source": "gross_margin_test",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_gross_margin_control",
+      "title": "Маржа Контроль исходная",
+      "source": "gross_margin_control",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_bonus_recipients_cumulative",
+      "title": "Получатели бонусов за период накопительно",
+      "source": "n_bonus_recipients_cumulative",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_n_discount_recipients_cumulative",
+      "title": "Получатели скидок за период накопительно",
+      "source": "n_discount_recipients_cumulative",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_bonuses_accrued_cumulative",
+      "title": "Начисления исходные накопительно",
+      "source": "bonuses_accrued_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_bonuses_spent_cumulative",
+      "title": "Списания исходные накопительно",
+      "source": "bonuses_spent_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_discounts_cumulative",
+      "title": "Скидки исходные накопительно",
+      "source": "discounts_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_test_cumulative",
+      "title": "РТО Тест исходное накопительно",
+      "source": "revenue_test_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_control_cumulative",
+      "title": "РТО Контроль исходное накопительно",
+      "source": "revenue_control_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_without_nds_test_cumulative",
+      "title": "РТО без НДС Тест исходное накопительно",
+      "source": "revenue_without_nds_test_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_revenue_without_nds_control_cumulative",
+      "title": "РТО без НДС Контроль исходное накопительно",
+      "source": "revenue_without_nds_control_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_gross_margin_test_cumulative",
+      "title": "Маржа Тест исходная накопительно",
+      "source": "gross_margin_test_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_gross_margin_control_cumulative",
+      "title": "Маржа Контроль исходная накопительно",
+      "source": "gross_margin_control_cumulative",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_p_value_cuped",
+      "title": "p-value периода исходное",
+      "source": "p_value_cuped",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "direct",
+      "formula": "",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Выбранная_детализация",
+      "title": "Выбранная детализация",
+      "source": "",
+      "cast": "boolean",
+      "data_type": "boolean",
+      "initial_data_type": "boolean",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "formula",
+      "formula": "[Тип периода динамики] = [dynamics_period]",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Акцепт_/_Тест",
+      "title": "Акцепт / Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([conversion_mode] = 'cumulative', SUM([Акцепты накопительно]), SUM([Акцепты за период])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест]))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Утиль_/_Тест",
+      "title": "Утиль / Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([conversion_mode] = 'cumulative', SUM([Утиль накопительно]), SUM([Утиль за период])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест]))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Акцепт_→_Утиль",
+      "title": "Акцепт → Утиль",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([conversion_mode] = 'cumulative', SUM([Утиль накопительно]) / IF(SUM([Акцепты накопительно]) = 0, NULL, SUM([Акцепты накопительно])), SUM([Утиль за период]) / IF(SUM([Акцепты за период]) = 0, NULL, SUM([Акцепты за период])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Клиенты_с_бонусами",
+      "title": "Клиенты с бонусами",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM(IF([conversion_mode] = 'cumulative', [Получатели бонусов за период накопительно], [Получатели бонусов за период]))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Клиенты_со_скидками",
+      "title": "Клиенты со скидками",
+      "source": "",
+      "cast": "integer",
+      "data_type": "integer",
+      "initial_data_type": "integer",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM(IF([conversion_mode] = 'cumulative', [Получатели скидок за период накопительно], [Получатели скидок за период]))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Начислено_бонусов",
+      "title": "Начислено бонусов",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Начисления исходные накопительно], [Начисления исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Начисления исходные накопительно], [Начисления исходные])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Списано_бонусов",
+      "title": "Списано бонусов",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Списания исходные накопительно], [Списания исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Списания исходные накопительно], [Списания исходные])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Скидки",
+      "title": "Скидки",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Скидки исходные накопительно], [Скидки исходные])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Скидки исходные накопительно], [Скидки исходные])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_с_НДС:_Тест",
+      "title": "РТО с НДС: Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО Тест исходное накопительно], [РТО Тест исходное])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [РТО Тест исходное накопительно], [РТО Тест исходное])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_с_НДС:_Контроль",
+      "title": "РТО с НДС: Контроль",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО Контроль исходное накопительно], [РТО Контроль исходное])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [РТО Контроль исходное накопительно], [РТО Контроль исходное]))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_без_НДС:_Тест",
+      "title": "РТО без НДС: Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_без_НДС:_Контроль",
+      "title": "РТО без НДС: Контроль",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное]))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа:_Тест",
+      "title": "Гросс-маржа: Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])) / IF(SUM([Участники Тест]) = 0, NULL, SUM([Участники Тест])), SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа:_Контроль",
+      "title": "Гросс-маржа: Контроль",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF(SUM([Участники Контроль]) = 0, NULL, IF([money_scale] = 'per_user', SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная])) / IF(SUM([Участники Контроль]) = 0, NULL, SUM([Участники Контроль])), SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная]))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа,_%:_Тест",
+      "title": "Гросс-маржа, %: Тест",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM(IF([conversion_mode] = 'cumulative', [Маржа Тест исходная накопительно], [Маржа Тест исходная])) / IF(SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])) = 0, NULL, SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Тест исходное накопительно], [РТО без НДС Тест исходное])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа,_%:_Контроль",
+      "title": "Гросс-маржа, %: Контроль",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "SUM(IF([conversion_mode] = 'cumulative', [Маржа Контроль исходная накопительно], [Маржа Контроль исходная])) / IF(SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])) = 0, NULL, SUM(IF([conversion_mode] = 'cumulative', [РТО без НДС Контроль исходное накопительно], [РТО без НДС Контроль исходное])))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_с_НДС:_Дифф",
+      "title": "РТО с НДС: Дифф",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_РТО_без_НДС:_Дифф",
+      "title": "РТО без НДС: Дифф",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО без НДС Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО без НДС Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([РТО без НДС Тест исходное] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [РТО без НДС Контроль исходное] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа:_Дифф",
+      "title": "Гросс-маржа: Дифф",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_calculation_Гросс-маржа,_%:_Дифф",
+      "title": "Гросс-маржа, %: Дифф",
+      "source": "",
+      "cast": "float",
+      "data_type": "float",
+      "initial_data_type": "float",
+      "aggregation": "none",
+      "type": "MEASURE",
+      "calc_mode": "formula",
+      "formula": "IF([dynamics_period] = 'day', NULL, IF([conversion_mode] = 'cumulative', RSUM(SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0))) TOTAL ORDER BY [Дата] BEFORE FILTER BY [Дата]), SUM(IF(ISNULL([p-value периода исходное]), NULL, IF([p-value периода исходное] <= [alpha], ([Маржа Тест исходная] / IF([Участники Тест] = 0, NULL, [Участники Тест]) - [Маржа Контроль исходная] / IF([Участники Контроль] = 0, NULL, [Участники Контроль])) * [Участники Тест], 0)))))",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_parameter_dynamics_period",
+      "title": "dynamics_period",
+      "cast": "string",
+      "data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": "day",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_parameter_conversion_mode",
+      "title": "conversion_mode",
+      "cast": "string",
+      "data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": "period",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_parameter_money_scale",
+      "title": "money_scale",
+      "cast": "string",
+      "data_type": "string",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": "total",
+      "valid": true
+    },
+    {
+      "guid": "dynamics_parameter_alpha",
+      "title": "alpha",
+      "cast": "float",
+      "data_type": "float",
+      "aggregation": "none",
+      "type": "DIMENSION",
+      "calc_mode": "parameter",
+      "default_value": 0.01,
+      "valid": true
+    }
+  ]
+}

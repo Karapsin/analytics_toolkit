@@ -22,3 +22,7 @@ and input defaults. Each major workflow section lives in its own file so the
 docs stay easy to scan and edit.
 
 [Documentation overview](../README.md)
+
+DataLens advanced workflows: [BI projects and import](datalens_utils/bi-projects.md).
+
+[Documentation overview](../README.md)

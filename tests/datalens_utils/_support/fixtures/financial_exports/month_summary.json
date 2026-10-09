@@ -1,0 +1,316 @@
+{
+  "entry": {
+    "version": 1,
+    "entryId": "offline-entry-2",
+    "key": "Offline/Variants/charts/Сводная статистика экспериментов",
+    "createdAt": "2026-10-07T07:02:36.123Z",
+    "createdBy": "uid:ajee09g75bm7b1fk19bg",
+    "updatedAt": "2026-10-07T07:02:36.123Z",
+    "updatedBy": "uid:ajee09g75bm7b1fk19bg",
+    "revId": "offline-revision-2",
+    "savedId": "offline-revision-2",
+    "publishedId": "offline-revision-2",
+    "tenantId": "org_bpfalekt4q002ajjvipd",
+    "hidden": false,
+    "public": false,
+    "workbookId": null,
+    "scope": "widget",
+    "type": "table_wizard_node",
+    "meta": {},
+    "annotation": {
+      "description": "Суммы по выбранным экспериментам и группе за календарный период. Доли рассчитаны из общих сумм; доп. РТО суммирует значимые эффекты отдельных сравнений."
+    },
+    "data": {
+      "sources": {
+        "datasetsIds": [
+          "offline-month"
+        ],
+        "updates": [
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "month_parameter_report_period",
+              "title": "report_period",
+              "cast": "string",
+              "data_type": "string",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": "month",
+              "datasetId": "offline-month"
+            }
+          },
+          {
+            "action": "update_field",
+            "field": {
+              "guid": "month_parameter_alpha",
+              "title": "alpha",
+              "cast": "float",
+              "data_type": "float",
+              "aggregation": "none",
+              "type": "DIMENSION",
+              "calc_mode": "parameter",
+              "default_value": 0.01,
+              "datasetId": "offline-month"
+            }
+          }
+        ],
+        "filters": [
+          {
+            "guid": "month_calculation_Выбранный_период",
+            "datasetId": "offline-month",
+            "filter": {
+              "operation": {
+                "code": "EQ"
+              },
+              "value": [
+                "True"
+              ]
+            }
+          },
+          {
+            "guid": "month_arpu_test",
+            "datasetId": "offline-month",
+            "filter": {
+              "operation": {
+                "code": "GT"
+              },
+              "value": [
+                "0"
+              ]
+            }
+          }
+        ]
+      },
+      "visualization": {
+        "type": "flatTable",
+        "colors": {
+          "items": [],
+          "settings": {}
+        },
+        "columns": {
+          "items": [
+            {
+              "guid": "month_summary_period_label",
+              "datasetId": "offline-month",
+              "fakeTitle": "Период"
+            },
+            {
+              "guid": "month_calculation_Сводка:_Начало_периода",
+              "datasetId": "offline-month",
+              "fakeTitle": "Начало периода"
+            },
+            {
+              "guid": "month_calculation_Сводка:_Конец_периода",
+              "datasetId": "offline-month",
+              "fakeTitle": "Конец периода"
+            },
+            {
+              "guid": "month_calculation_Сводка:_Клиенты_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Клиенты Тест",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Клиенты_КГ",
+              "datasetId": "offline-month",
+              "fakeTitle": "Клиенты Контроль",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Маржа_/_РТО_без_НДС_ЦА,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Маржа / РТО без НДС Тест, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Маржа_/_РТО_без_НДС_КГ,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Маржа / РТО без НДС Контроль, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Доп._РТО,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Доп. РТО, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Акцепт_/_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Акцепт / Тест",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Начисление_/_ЦА",
+              "datasetId": "offline-month",
+              "fakeTitle": "Утиль / Тест",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Списание_бонусов,_%",
+              "datasetId": "offline-month",
+              "fakeTitle": "Списание бонусов, %",
+              "formatting": {
+                "format": "percent",
+                "precision": 2,
+                "showRankDelimiter": false
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Скидки,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Скидки, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Начислено_бонусов,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Начислено бонусов, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Списано_бонусов,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Списано бонусов, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Затраты,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Затраты, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Валовая_маржа_ЦА,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Валовая маржа Тест, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Валовая_маржа_КГ,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "Валовая маржа Контроль, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_РТО_без_НДС_ЦА,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "РТО без НДС Тест, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_РТО_без_НДС_КГ,_руб.",
+              "datasetId": "offline-month",
+              "fakeTitle": "РТО без НДС Контроль, руб.",
+              "formatting": {
+                "precision": 2,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Получатели_бонусов",
+              "datasetId": "offline-month",
+              "fakeTitle": "Получатели бонусов",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Получатели_скидок",
+              "datasetId": "offline-month",
+              "fakeTitle": "Получатели скидок",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Получатели_бонуса_или_скидки",
+              "datasetId": "offline-month",
+              "fakeTitle": "Получатели бонуса или скидки",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            },
+            {
+              "guid": "month_calculation_Сводка:_Получатели_бонуса_и_скидки",
+              "datasetId": "offline-month",
+              "fakeTitle": "Получатели бонуса и скидки",
+              "formatting": {
+                "precision": 0,
+                "showRankDelimiter": true
+              }
+            }
+          ]
+        },
+        "sort": {
+          "items": [
+            {
+              "guid": "month_calculation_Сводка:_Начало_периода",
+              "datasetId": "offline-month",
+              "direction": "ASC"
+            }
+          ]
+        },
+        "chartSettings": {
+          "title": "Сводная статистика экспериментов",
+          "titleMode": "hide",
+          "totals": "off",
+          "pagination": "on",
+          "limit": 25,
+          "pinnedColumns": 3,
+          "size": "m"
+        }
+      }
+    }
+  }
+}

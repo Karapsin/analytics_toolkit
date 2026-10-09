@@ -26,6 +26,7 @@ if sys.version_info < (3, 10) or importlib.util.find_spec("datalens_sdk") is Non
         "validation",
         "dashboard_generation",
         "engine.py",
+        "bi",
     ]
 
 

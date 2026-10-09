@@ -67,7 +67,12 @@ def deployment_target(deployment: Any) -> Any:
 
 
 def selection(arguments: Any, units: Any) -> Any:
-    if arguments.chart:
+    if getattr(arguments, "resource", None) is not None:
+        keys = {"dashboard" if key == "dashboard:main" else key for key in arguments.resource}
+        if not keys:
+            msg = "resource_keys cannot be empty."
+            raise DataLensUtilsError(msg)
+    elif arguments.chart:
         keys = {"chart:" + key for key in arguments.chart}
     elif arguments.dataset:
         keys = {"dataset:" + key for key in arguments.dataset}
@@ -546,7 +551,7 @@ def apply_changes(  # noqa: C901, PLR0913
     needed.update(dataset_roles)
     for role in needed:
         key = "dataset:" + role
-        if key not in selected and changes.get(key) in ("remote", "both", "missing"):
+        if key not in selected and changes.get(key) in ("local", "remote", "both", "missing"):
             message = (
                 f"Dependency {key} changed in DataLens. Pull it before apply; no writes performed."
             )

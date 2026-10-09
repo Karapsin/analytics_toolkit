@@ -407,3 +407,7 @@ def issues(chart: Any, context: Any, datasets: Any, definition: Any) -> Any:  # 
     if recipe.description is not None and (chart.description or "") != recipe.description:
         problems.append("description")
     return problems
+
+
+# Public adapter helper shared by typed metadata import.
+actual_columns = _actual_columns

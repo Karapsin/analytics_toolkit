@@ -1,0 +1,19 @@
+{
+  "key": "js_revenue",
+  "family": "editor",
+  "type": "gravity_charts",
+  "name": "JS - revenue by date",
+  "title": "Editor revenue by date",
+  "dataset": "retail",
+  "links": {
+    "retail": "retail"
+  },
+  "scripts": {
+    "params": "assets/js/common/params.js",
+    "controls": "assets/js/common/empty_controls.js",
+    "config": "assets/js/common/empty_config.js",
+    "sources": "assets/js/js_revenue/sources.js",
+    "prepare": "assets/js/js_revenue/prepare.js"
+  },
+  "id": null
+}

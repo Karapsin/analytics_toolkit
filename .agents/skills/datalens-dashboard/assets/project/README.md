@@ -27,3 +27,8 @@ Use bulk/paginated inventories and compatible dataset queries without changing
 grain or filters. Cache exact repeats and share pacing across clients in one
 organization for operations without a public batch method. Concurrent requests
 and caching alone do not constitute API batching.
+
+Version-2 scaffolds also support YC/Enterprise and folder/workbook targets.
+Use capability and plan reports before writes. `import-dashboard` previews all
+tabs; `import-tab` previews one. Resolve fidelity blockers before `--write`.
+Reuse the installed toolkit environment; do not create environments or bootstrap.

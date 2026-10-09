@@ -1,0 +1,7 @@
+{
+  "guide": {
+    "name": "Dashboard guide",
+    "description": "Locally authored example page",
+    "content_file": "assets/html/guide.html"
+  }
+}

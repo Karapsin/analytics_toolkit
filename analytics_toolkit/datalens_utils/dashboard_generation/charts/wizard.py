@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from datalens_sdk import GeoLayerFilter, WizardLocalField
+from datalens_sdk import GeoLayerFilter, WizardAggregatedMeasure, WizardHierarchy, WizardLocalField
 
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 
@@ -81,7 +81,31 @@ def getter(client: Any) -> Any:
     return client.get.wizard_chart
 
 
-def local_fields(definition: Any) -> Any:
+def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
+    for section in ("aggregated_measures", "hierarchies"):
+        for title, spec in definition.get(section, {}).items():
+            if not spec.get("guid") or title in result:
+                msg = "Wizard handles require unique titles and stable explicit GUIDs."
+                raise DataLensUtilsError(msg)
+            if dataset is None:
+                continue
+            if section == "aggregated_measures":
+                result[title] = WizardAggregatedMeasure(
+                    field=dataset.fields.by_guid(spec["field"]),
+                    aggregation=spec["aggregation"],
+                    title=title,
+                    guid=spec["guid"],
+                )
+            else:
+                by_guid = {field.guid: field for field in result.values()}
+                members = [
+                    by_guid[value] if value in by_guid else dataset.fields.by_guid(value)
+                    for value in spec["fields"]
+                ]
+                result[title] = WizardHierarchy(title=title, fields=members, guid=spec["guid"])
+
+
+def local_fields(definition: Any, dataset: Any = None) -> Any:
     result = {}
     values = definition.get("local_fields", ())
     if isinstance(values, Mapping):
@@ -102,6 +126,11 @@ def local_fields(definition: Any) -> Any:
                 message = "Wizard local dimensions cannot have a measure aggregation."
                 raise DataLensUtilsError(message)
         result[spec["title"]] = factory(**spec)
+    add_local_handles(definition, dataset, result)
+    guids = [field.guid for field in result.values()]
+    if len(guids) != len(set(guids)):
+        msg = "Wizard handle GUIDs must be unique."
+        raise DataLensUtilsError(msg)
     return result
 
 
@@ -115,12 +144,22 @@ def registered_local_fields(chart: Any) -> Any:
     for operation in chart.data.get("sources", {}).get("updates", ()):
         if operation.get("action") in {"add", "add_field", "update", "update_field"}:
             field = operation.get("field", {})
-            if field.get("calc_mode") == "formula" and field.get("guid"):
+            if (field.get("local") or field.get("calc_mode") == "formula") and field.get("guid"):
                 declarations.setdefault(field["guid"], {}).update(field)
     return declarations
 
 
 def validate_definition(definition: Any) -> Any:
+    if "params" in definition:
+        from analytics_toolkit.datalens_utils.capabilities import (  # noqa: PLC0415 - Lazy capability loading.
+            get_capabilities,
+        )
+        from analytics_toolkit.datalens_utils.errors import (  # noqa: PLC0415 - Lazy capability error loading.
+            DataLensCapabilityError,
+        )
+
+        msg = "wizard.parameters.update"
+        raise DataLensCapabilityError(msg, get_capabilities())
     if definition["type"] not in VISUALIZATIONS:
         message = f"Unsupported Wizard factory {definition['type']!r}."
         raise DataLensUtilsError(message)
@@ -211,15 +250,40 @@ def configure(  # noqa: C901, PLR0912
     creation: Any = False,
 ) -> Any:
     dataset = datasets[definition["dataset"]]
-    owned = local_fields(definition)
+    owned = local_fields(definition, dataset)
     chart = getattr(builder, "chart", None)
     active = {field.guid for field in chart.fields if field.guid} if chart is not None else set()
     registered = registered_local_fields(chart) if chart is not None else {}
+    hierarchies = (
+        {value["guid"]: value for value in chart.data.get("sources", {}).get("hierarchies", ())}
+        if chart is not None
+        else {}
+    )
     for field in owned.values():
-        if field.guid not in registered:
-            builder.add_local_field(field)
-        elif registered[field.guid].get("formula") != field.formula:
+        if isinstance(field, WizardHierarchy):
+            if field.guid not in hierarchies:
+                builder.add_hierarchy(field)
+        elif field.guid not in registered:
+            if isinstance(field, WizardAggregatedMeasure):
+                builder.add_aggregated_measure(field)
+            else:
+                builder.add_local_field(field)
+        elif (
+            isinstance(field, WizardLocalField)
+            and registered[field.guid].get("formula") != field.formula
+        ):
             builder.replace_formula(field.guid, formula=field.formula)
+        elif (
+            chart is not None
+            and isinstance(field, WizardAggregatedMeasure)
+            and (registered[field.guid].get("aggregation") != field.aggregation)
+        ):
+            builder.change_aggregation(
+                chart.fields.by_guid(field.guid),
+                aggregation=field.aggregation,
+                name=field.title,
+                guid=field.guid,
+            )
     for slot, names in definition.get("fields", {}).items():
         getattr(builder, slot)([_resolve(dataset, owned, name) for name in names])
     if creation:
@@ -271,6 +335,56 @@ def create_builder(context: Any, datasets: Any, definition: Any, folder: Any) ->
     )
 
 
+def validate_handle_changes(chart: Any, datasets: Any, definition: Any) -> None:
+    registered = registered_local_fields(chart)
+    for field in local_fields(definition, datasets[definition["dataset"]]).values():
+        if isinstance(field, WizardHierarchy):
+            saved = next(
+                (
+                    value
+                    for value in chart.data.get("sources", {}).get("hierarchies", ())
+                    if value.get("guid") == field.guid
+                ),
+                None,
+            )
+            if saved and (
+                saved.get("title") != field.title
+                or [
+                    value.get("guid") if isinstance(value, Mapping) else value
+                    for value in saved.get("fields", ())
+                ]
+                != [member.guid for member in field.fields]
+            ):
+                msg = (
+                    "Hierarchy declaration or topology changes are unsupported; retain "
+                    "stable members."
+                )
+                raise DataLensUtilsError(msg)
+            continue
+        saved = registered.get(field.guid)
+        if isinstance(field, WizardAggregatedMeasure):
+            if saved and (
+                saved.get("title") != field.title or saved.get("source") != field.field.source
+            ):
+                msg = (
+                    "Aggregated measure declaration changes require a supported "
+                    "explicit replacement operation."
+                )
+                raise DataLensUtilsError(msg)
+            continue
+        if saved and any(
+            saved.get(attribute) != getattr(field, attribute)
+            for attribute in ("title", "cast", "type", "aggregation")
+        ):
+            message = (
+                "Changing the title/type/aggregation of Wizard local field "
+                f"{field.title!r}"
+                " is unsupported; keep its stable declaration and edit its "
+                "formula."
+            )
+            raise DataLensUtilsError(message)
+
+
 def validate_change(chart: Any, context: Any, datasets: Any, definition: Any) -> Any:
     if chart.visualization_id != VISUALIZATIONS[definition["type"]]:
         message = (
@@ -294,20 +408,7 @@ def validate_change(chart: Any, context: Any, datasets: Any, definition: Any) ->
     if chart.dataset_ids != expected_ids:
         message = f"Wizard chart {definition['name']!r} references a different dataset."
         raise DataLensUtilsError(message)
-    registered = registered_local_fields(chart)
-    for field in local_fields(definition).values():
-        saved = registered.get(field.guid)
-        if saved and any(
-            saved.get(attribute) != getattr(field, attribute)
-            for attribute in ("title", "cast", "type", "aggregation")
-        ):
-            message = (
-                "Changing the title/type/aggregation of Wizard local field "
-                f"{field.title!r}"
-                " is unsupported; keep its stable declaration and edit its "
-                "formula."
-            )
-            raise DataLensUtilsError(message)
+    validate_handle_changes(chart, datasets, definition)
     if definition["type"] in {"combined_chart", "geolayer"}:
         from analytics_toolkit.datalens_utils.validation.charts import (  # noqa: PLC0415 - Adapter cycle.
             wizard_issues,

@@ -18,7 +18,26 @@ def field_names(datasets: Any, chart: Any = None) -> Any:
         names.update(
             {guid: value["title"] for guid, value in wizard.registered_local_fields(chart).items()}
         )
+        names.update(
+            {
+                value["guid"]: value["title"]
+                for value in chart.data.get("sources", {}).get("hierarchies", ())
+            }
+        )
     return names
+
+
+def aggregated_source(value: Any, datasets: Any) -> Any:
+    matches = [
+        field
+        for dataset in datasets.values()
+        for field in dataset.fields
+        if field.source == value.get("source") and dataset.id == value.get("datasetId", dataset.id)
+    ]
+    if len(matches) != 1:
+        message = "Aggregated measure source identity cannot be resolved unambiguously."
+        raise DataLensUtilsError(message)
+    return matches[0].guid
 
 
 def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
@@ -167,7 +186,30 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
             "aggregation": value.get("aggregation", "none"),
         }
         for guid, value in registered.items()
+        if value.get("calc_mode") == "formula"
     ]
+    aggregated = {
+        value["title"]: {
+            "guid": guid,
+            "field": aggregated_source(value, datasets),
+            "aggregation": value["aggregation"],
+        }
+        for guid, value in registered.items()
+        if value.get("calc_mode") == "direct"
+    }
+    if aggregated or "aggregated_measures" in result:
+        result["aggregated_measures"] = aggregated
+    hierarchies = {
+        value["title"]: {
+            "guid": value["guid"],
+            "fields": [
+                field.get("guid") if isinstance(field, dict) else field for field in value["fields"]
+            ],
+        }
+        for value in chart.data.get("sources", {}).get("hierarchies", ())
+    }
+    if hierarchies or "hierarchies" in result:
+        result["hierarchies"] = hierarchies
     filters = chart.data.get("sources", {}).get("filters", [])
     if filters or "filters" in result:
         result["filters"] = [

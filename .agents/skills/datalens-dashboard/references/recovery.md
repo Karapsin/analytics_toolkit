@@ -33,3 +33,5 @@ Folder moves retain IDs within the recorded source boundary. Commit a target
 after verification/export. Export freshly fetched revisions externally,
 including every chart/dataset revision and path; dashboard revision alone is
 insufficient. Avoid concurrent UI editing: resources are not one atomic snapshot.
+
+For named BI resources and tab/whole-dashboard imports, see [BI projects](bi-projects.md).

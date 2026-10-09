@@ -9,6 +9,8 @@ Generated from package version bumps and recent commit history.
 - Integrate DataLens dashboard utilities as a separate module, add the preinstalled-environment dashboard skill, and provide an all optional-dependencies extra.
 - Support DataLens business tabs, chart groups, dataset parameters and owned financial dashboard migration.
 - Include DataLens recipe manifests in clean checkouts and downloaded skills.
+- Expand public-SDK DataLens BI recipes, capability reporting, scoped reconciliation, semantic verification, and tab/dashboard import.
+- Accept the measured overall coverage baseline for the expanded DataLens SDK support while preserving module-specific coverage floors.
 
 ## 1.3.12.2 - 2026-10-08
 

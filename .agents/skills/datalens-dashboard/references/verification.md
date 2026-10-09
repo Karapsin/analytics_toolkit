@@ -52,3 +52,5 @@ execution. Never label fixture or metadata success a numerical pass.
 
 Write dated `VERIFICATION.md` with actual counts, identities, tests, blocked
 conditions and precise capability gaps.
+
+For named BI resources and tab/whole-dashboard imports, see [BI projects](bi-projects.md).

@@ -74,3 +74,5 @@ Independent SQL contains actual tables and runs as written. The
 `-- SELECTOR_FILTERS` comment lets the runner insert `AND` predicates. Keep the
 first-line comment naming charts and selectors/controls. Update concrete SQL
 names with dataset sources and reject source mismatches.
+
+For named BI resources and tab/whole-dashboard imports, see [BI projects](bi-projects.md).
