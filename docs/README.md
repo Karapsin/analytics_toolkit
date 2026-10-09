@@ -6,3 +6,7 @@
 - [Disposable SQL integration tests](INTEGRATION_TESTING.md)
 - [Modules documentation](modules/README.md)
 - [Changelog](CHANGELOG.md)
+
+## Agent workflows
+
+- [Private GitHub agent operations](GITHUB_AGENT_OPERATIONS.md)
