@@ -339,9 +339,7 @@ shard relation always replace template positions. Explicit
 arguments, including appending a fourth sharding argument to a three-argument
 template. Sharding expressions are preserved verbatim, so integer-valued
 ClickHouse expressions such as `rand()` are not rewritten into functions with
-different return types. Cluster routing also retains `rand()` and `rand(42)`
-separately from floating-point `randCanonical()`, across supported SQLGlot
-versions. Optional trailing arguments are preserved.
+different return types. Optional trailing arguments are preserved.
 
 When a replicated shard is created both with `ON CLUSTER` and as a local
 visibility fallback, the local statement receives an explicit table UUID. This
