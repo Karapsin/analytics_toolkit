@@ -414,3 +414,22 @@ def test_unmerged_candidate_green_does_not_clear_dev_failure() -> None:
     state["runs"]["2"]["merged"] = True
     controller._resolve_runs(GitHub(), state)
     assert state["runs"]["1"]["needs"] == []
+
+
+def test_post_merge_failure_creates_repair_without_new_dev_matrix() -> None:
+    state = {
+        "runs": {
+            "1": {"sha": "old", "status": "completed", "needs": ["HTTP"], "merged": True},
+        }
+    }
+    result = controller._integration_tasks(object(), state, "current", [])
+    assert result == [
+        {
+            "kind": "repair",
+            "number": 0,
+            "head": "current",
+            "base": "current",
+            "branch": controller.REPAIR_BRANCH + "current",
+            "runs": [1],
+        }
+    ]
