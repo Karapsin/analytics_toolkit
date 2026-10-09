@@ -9,4 +9,5 @@
 
 ## Agent workflows
 
+- [Isolated Codex feature sessions](FEATURE_SESSIONS.md)
 - [Private GitHub agent operations](GITHUB_AGENT_OPERATIONS.md)
