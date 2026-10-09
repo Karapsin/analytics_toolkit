@@ -23,10 +23,20 @@ class Bootstrap:
         self.stage = "loading"
         self.buffer = ""
         self.intro_ready = False
+        self.trust_accepted = False
 
     def feed(self, data: bytes) -> bytes:
         self.buffer = (self.buffer + data.decode("utf-8", errors="replace"))[-32000:]
         text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", self.buffer)
+        if (
+            self.stage == "loading"
+            and not self.trust_accepted
+            and "Folder access" in text
+            and "Trust and continue" in text
+        ):
+            # The launcher created and synchronized this private clone itself.
+            self.trust_accepted, self.buffer = True, ""
+            return b"\r"
         self.intro_ready = self.intro_ready or "Tip:" in text
         if self.stage == "loading" and self.intro_ready and re.search(r"GPT-|context left", text):
             self.stage, self.buffer = "menu", ""

@@ -4,7 +4,7 @@
 
 Generated from package version bumps and recent commit history.
 
-## Unreleased
+## 1.3.12.3 - 2026-10-09
 
 - Integrate DataLens dashboard utilities as a separate module, add the preinstalled-environment dashboard skill, and provide an all optional-dependencies extra.
 - Support DataLens business tabs, chart groups, dataset parameters and owned financial dashboard migration.
@@ -15,6 +15,7 @@ Generated from package version bumps and recent commit history.
 - Stabilize DataLens selector wiring exports across Python versions and hash seeds.
 - Require owner PRs signed by enrolled machines and exact-head owner approval for policy changes.
 - Record explicit per-commit user validation waivers without marking checks successful.
+- Accept the launcher-owned fresh clone trust prompt before entering native Plan mode.
 
 ## 1.3.12.2 - 2026-10-08
 

@@ -101,6 +101,14 @@ def test_native_plan_bootstrap_waits_for_menu_then_verifies_mode() -> None:
     assert bootstrap.stage == "ready"
 
 
+def test_native_plan_bootstrap_accepts_its_own_new_clone_before_plan() -> None:
+    bootstrap = Bootstrap()
+    assert bootstrap.feed(b"Folder access: Trust and continue") == b"\r"
+    assert bootstrap.stage == "loading"
+    assert bootstrap.feed(b"Folder access: Trust and continue") == b""
+    assert bootstrap.feed(b"Tip: Startup completed; GPT-6.1-Sol medium") == b"/plan"
+
+
 def test_installer_preserves_symlink_and_is_idempotent(tmp_path: Path) -> None:
     tracked = tmp_path / "tracked.zshrc"
     tracked.write_text("# original\n")
