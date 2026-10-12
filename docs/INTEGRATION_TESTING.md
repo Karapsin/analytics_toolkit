@@ -94,10 +94,15 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent
-writer results. For startup failures, inspect `startup.log` first. GitHub jobs print its last
-80 lines on failure so captured Compose errors are visible even when the managed
-check response contains only an exit status. An early HTTP failure no longer
-prevents native startup diagnostics from being collected. For test failures,
+writer results. For startup failures, inspect `startup.log` first. GitHub jobs
+print its last 80 lines on failure so captured Compose errors are visible even
+when the managed check response contains only an exit status. An early HTTP failure no longer
+prevents native startup diagnostics from being collected. An exit status and a
+missing native artifact alone do not identify the startup cause; use the captured
+Compose error to distinguish stack configuration defects from image, credential,
+or runner infrastructure failures before making a repair. Fast, service-free
+runner tests cover both transport attempts, the first failure status, teardown,
+and stopping later profiles after the failed profile. For test failures,
 inspect service health first, then Compose logs, the operation-specific
 timeline, active/failed query details, and finally leak/object reports. It
 always runs

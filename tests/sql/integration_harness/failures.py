@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from release_routines import sql_integration
 from tests._support.paths import REPO_ROOT
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize("profile", ["core", "auth", "fault", "stress"])
@@ -43,6 +46,48 @@ def test_both_transports_run_after_failure_and_keep_first_error(
         == expected
     )
     assert calls == [(profile, "http"), (profile, "native")]
+
+
+@pytest.mark.parametrize("failed_profile", ["core", "auth", "fault", "stress"])
+def test_all_stops_after_failed_profile_but_runs_its_native_transport(
+    monkeypatch: pytest.MonkeyPatch,
+    failed_profile: str,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    parity: list[str] = []
+
+    def run_profile(**kwargs) -> int:
+        profile = kwargs["profile"]
+        driver = kwargs["clickhouse_driver"]
+        calls.append((profile, driver))
+        assert kwargs["include_greenplum"] is True
+        assert kwargs["fault_group"] == "authentication"
+        return 17 if profile == failed_profile and driver == "http" else 0
+
+    def check_parity(**kwargs) -> int:
+        parity.append(kwargs["profile"])
+        return 0
+
+    monkeypatch.setattr(sql_integration, "run_profile", run_profile)
+    monkeypatch.setattr(sql_integration, "_assert_transport_scenario_parity", check_parity)
+
+    assert (
+        sql_integration.run(
+            profile="all",
+            include_greenplum=True,
+            fault_group="authentication",
+            clickhouse_driver="both",
+        )
+        == 17
+    )
+    profiles = ["core", "auth", "fault", "stress"]
+    completed = profiles[: profiles.index(failed_profile)]
+    assert calls == [
+        (profile, driver)
+        for profile in [*completed, failed_profile]
+        for driver in ("http", "native")
+    ]
+    assert parity == completed
 
 
 def test_failed_startup_still_creates_both_transport_logs_and_tears_down(

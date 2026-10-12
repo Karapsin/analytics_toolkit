@@ -1,0 +1,1 @@
+- Strengthen service-free integration-runner regression coverage for failed-profile boundaries and fault-group forwarding, and document the startup evidence needed to diagnose infrastructure failures.

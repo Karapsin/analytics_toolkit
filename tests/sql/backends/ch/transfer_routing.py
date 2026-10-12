@@ -167,23 +167,24 @@ def test_transfer_stage_sources_route_through_all_replicas() -> None:
     assert "FROM clusterAllReplicas('core', 'stage'," in source_stage_read
 
 
-def test_cluster_routing_preserves_integer_rand_sharding_expression() -> None:
+@pytest.mark.parametrize("integer_function", ["rand()", "RAND()", "rand(42)"])
+def test_cluster_routing_preserves_integer_rand_sharding_expression(integer_function: str) -> None:
     routed = route_sql(
         "CREATE TABLE analytics.events "
-        "ENGINE = Distributed('core', 'analytics', 'events_shard', rand())",
+        f"ENGINE = Distributed('core', 'analytics', 'events_shard', {integer_function})",
         routing=ChClusterRouting("core", "rand()"),
         database="default",
     )
 
-    assert "rand()" in routed
+    assert integer_function.lower() in routed
     assert "randCanonical()" not in routed
 
     mixed = route_sql(
-        "SELECT rand(), randCanonical() FROM analytics.events",
+        f"SELECT {integer_function}, randCanonical() FROM analytics.events",
         routing=ChClusterRouting("core", "rand()"),
         database="default",
     )
-    assert "SELECT rand(), randCanonical()" in mixed
+    assert f"SELECT {integer_function.lower()}, randCanonical()" in mixed
 
 
 def test_cluster_routed_source_snapshot_creates_waits_and_populates_once(
