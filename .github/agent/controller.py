@@ -384,7 +384,14 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
         if run["status"] != "completed" or run.get("needs") or run.get("pull_number") and not run.get("merged") and not run.get("closed_unmerged"):
-            _record_run(gh, state, gh.api(f"actions/runs/{key}"))
+            try:
+                metadata = gh.api(f"actions/runs/{key}")
+            except RuntimeError as exc:
+                if not (str(exc).startswith("gh api failed:")
+                        and re.search(r"\(HTTP 5[0-9]{2}\)", str(exc))):
+                    raise
+                continue
+            _record_run(gh, state, metadata)
     state["cursor"] = next_cursor
     _resolve_runs(gh, state)
     base = gh.base()

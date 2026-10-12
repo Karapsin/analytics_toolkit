@@ -25,6 +25,13 @@ It records pending and failed integration runs and the corresponding repair PRs.
 A completed green replacement must cover each affected job group before the
 incident is resolved.
 
+If refreshing a tracked run’s metadata fails with an upstream `gh api failed:`
+HTTP 500–599 error, the controller retains its existing pending status and unresolved
+needs, retries that immutable run ID on later reconciliation, and continues normal
+authorized PR processing. This recovery applies only to the metadata fetch; other
+errors, including authentication failures, malformed metadata and monitor state,
+still fail reconciliation.
+
 ## Enrolled machines and policy changes
 
 Automatic PR handling accepts only the repository owner's PRs with an enrolled
