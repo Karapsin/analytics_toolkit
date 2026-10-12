@@ -73,10 +73,22 @@ creates a device key outside clones; its public key must be enrolled in the
 reviewer host's private allowed-signers file. An unknown or revoked key fails
 closed, independently of the model verdict.
 
-Instruction, skill, agent-tool, release-tool, and GitHub workflow changes also
-require an owner comment `/agent approve-policy <current-head-sha>`. Approval
-expires when the head changes. Local agents must never write this owner approval
-comment themselves. PR files cannot enroll signing keys or change this gate.
+`prepare_start(..., user_prompt="exact starting message")` records the original
+task once under private `.git/atk-tasks/`. Append task corrections with
+`task_context(action="append", user_prompt="exact correction")`. Retries and
+resumes preserve the original; sync archives it before another task. CLI calls
+accept `--user-prompt-file` so prompt text does not need shell interpolation.
+The PR workflow attaches redacted context and a signed-commit digest. Private
+originals never appear in tool receipts. MCP-supplied text relies on the enrolled
+machine trust boundary; it is not independent proof of human authorship.
+
+Controller code/prompts, security configuration, dispatch/capture/publishing
+workflows and the required-check manifest require exact-head owner approval.
+Ordinary policies, tools and integration/test workflow repairs are reviewed
+against the attached task automatically. Owner can post
+`/agent approve-policy <current-head-sha>` or click the authenticated Telegram
+approval button. New heads invalidate approval. Local agents cannot approve or
+resume on the owner's behalf. PR files cannot enroll keys or change this gate.
 
 After planning, use `git_workflow(action="start")` to pull dev again before a
 unique feature branch is created. A changed base requires plan reassessment;
@@ -89,6 +101,11 @@ and merged, `refresh` before corrections when the bot has written commits, and
 `sync` after merge to refresh the session and clean canonical dev checkout.
 A writer lease prevents simultaneous bot/local branch edits. Dirty canonical
 work is preserved and reported as pending synchronization.
+Each reviewer is a fresh read-only session separate from the candidate authors.
+Rejection reports `awaiting_user`, posts findings and alerts GitHub/Telegram.
+Stop corrections until owner posts `/agent resume <current-head-sha>`; the
+rejection message has no decision buttons. Fast CI and independent review remain
+required after a manual policy approval or resume.
 
 The private subscription worker is maintained in self_hosting's
 `self_host/services/github_agent`. Airflow calls its Unix socket every minute
@@ -239,3 +256,17 @@ RAG is intentionally agent-only in this repository. The docs assistant is
 stdlib-only and must stay outside public package CLI commands and package
 extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
+
+The private Telegram worker also accepts `/prompt_agent <description>`, authenticates
+the owner (with an owner-only confirmation button for anonymous channel posts),
+validates the request in a separate session, and opens a read-only planning exchange.
+Reply to a current question or use `/reply_agent <request-id> <answer>`; use
+`/cancel_agent <request-id>` to cancel. A separate agent must approve the completed
+plan against the initial prompt and all user responses before another agent codes.
+Questions during coding pause work and return through the same exchange. The Pi
+runs no repository checks, builds or renders; GitHub performs validation and a fresh
+independent agent reviews the final PR.
+
+The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
+the required Python 3.8 matrix remains runnable. Project setup resolves this
+constraint together with tox; it does not change public package dependencies.

@@ -323,6 +323,25 @@ def _feature_startup_failure(
     return None
 
 
+def _record_start_task(root_path: Path, user_prompt: str | None) -> dict[str, Any] | None:
+    if user_prompt is None:
+        return None
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+    try:
+        user_tasks.record(root_path, user_prompt)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "prepare_start",
+            {"root": str(root_path)},
+            ok=False,
+            summary="User task context blocked.",
+            blockers=[{"phase": "task_context", "message": str(exc)}],
+        )
+    return None
+
+
 def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     task: str,
     module: str | None = None,
@@ -330,6 +349,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     index_dir: str = DEFAULT_INDEX_DIR,
     ensure_project_env: bool = True,
     detail: str = "summary",
+    user_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Run the mandatory startup workflow for coding agents."""
     root_path = _resolve_root(root)
@@ -347,7 +367,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     resume_feature = session_phase == "feature"
     startup_failure = _feature_startup_failure(
         root_path, input_summary, command_results, resume_feature=resume_feature
-    )
+    ) or _record_start_task(root_path, user_prompt)
     if startup_failure is not None:
         return startup_failure
 
@@ -1446,6 +1466,41 @@ def _reused_stage_count(stage_reports: list[dict[str, Any]]) -> int:
     return sum(report["status"] == "reused" for report in stage_reports)
 
 
+def task_context(
+    action: str = "status", user_prompt: str | None = None, root: str = "."
+) -> dict[str, Any]:
+    """Record exact user corrections without exposing private originals in receipts."""
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+
+    try:
+        path = _resolve_root(root)
+        result = user_tasks.receipt(path, action, user_prompt)
+        return _tool_output(
+            "task_context",
+            {"action": action, "root": root},
+            summary="User task context recorded.",
+            result=result,
+        )
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "task_context",
+            {"action": action, "root": root},
+            ok=False,
+            summary="User task context blocked.",
+            blockers=[{"phase": "task_context", "message": str(exc)}],
+        )
+
+
+def _feature_commit_context(root: Path) -> tuple[list[str], str]:
+    sessions.writable(root)
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+    return sessions.commit_options(root), user_tasks.commit_trailers(root)
+
+
 def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinator.
     action: str,
     message: str | None = None,
@@ -1557,10 +1612,10 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[{"phase": "validate", "message": "message is required for commit"}],
         )
     commit_options: list[str] = []
+    task_trailers = ""
     if sessions.load(root_path):
         try:
-            sessions.writable(root_path)
-            commit_options = sessions.commit_options(root_path)
+            commit_options, task_trailers = _feature_commit_context(root_path)
         except RuntimeError as exc:
             return _tool_output(
                 "git_workflow",
@@ -1675,6 +1730,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 "commit",
                 "-m",
                 message
+                + task_trailers
                 + ("\n\nValidation-Waiver: " + validation_waiver if validation_waiver else ""),
             ],
             "env": {},
@@ -1886,6 +1942,7 @@ def create_mcp_server() -> Any:
     )
 
     server.tool()(prepare_start)
+    server.tool()(task_context)
     server.tool()(docs)
     server.tool()(workflow_status)
     server.tool()(workflow_metrics)
@@ -2115,6 +2172,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     prepare_parser = subparsers.add_parser("prepare-start")
     prepare_parser.add_argument("--task", required=True)
     prepare_parser.add_argument("--module")
+    prepare_parser.add_argument("--user-prompt-file")
     prepare_parser.add_argument("--root", default=".")
     prepare_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
     prepare_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
@@ -2132,6 +2190,19 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             index_dir=args.index_dir,
             ensure_project_env=args.ensure_project_env,
             detail=args.detail,
+            user_prompt=Path(args.user_prompt_file).read_text() if args.user_prompt_file else None,
+        )
+    )
+
+    task_parser = subparsers.add_parser("task-context")
+    task_parser.add_argument("--action", choices=["status", "append"], default="status")
+    task_parser.add_argument("--user-prompt-file")
+    task_parser.add_argument("--root", default=".")
+    task_parser.set_defaults(
+        handler=lambda args: task_context(
+            action=args.action,
+            root=args.root,
+            user_prompt=Path(args.user_prompt_file).read_text() if args.user_prompt_file else None,
         )
     )
 
@@ -2465,7 +2536,9 @@ def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[st
             (
                 "project_env",
                 {
-                    "display": ".venv/bin/python -m pip install -e . pytest tox",
+                    "display": (
+                        ".venv/bin/python -m pip install -e . pytest tox 'virtualenv>=21.1,<21.5'"
+                    ),
                     "args": [
                         str(venv_python),
                         "-m",
@@ -2477,6 +2550,7 @@ def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[st
                         ".",
                         "pytest",
                         "tox",
+                        "virtualenv>=21.1,<21.5",
                     ],
                     "env": {},
                 },

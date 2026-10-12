@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
+
+task_context = importlib.import_module(
+    f"{__package__}.task_context" if __package__ else "task_context"
+)
 
 STATE = "atk-session.json"
 OPERATIONS = (
@@ -169,6 +174,11 @@ def writable(root: Path) -> dict[str, Any]:
         if any(label["name"] == "agent:writing" for label in pr["labels"]):
             msg = "GitHub agent owns this branch; wait for feedback before editing."
             raise RuntimeError(msg)
+        if any(label["name"] == "agent:needs-user" for label in pr["labels"]):
+            raise RuntimeError(
+                "PR is awaiting user instructions; do not make automatic corrections. "
+                "Owner must post /agent resume " + pr["headRefOid"]
+            )
         remote = pr["headRefOid"]
         run(root, "git", "fetch", "origin", state["branch"])
         if run(root, "git", "merge-base", "--is-ancestor", remote, "HEAD"):
@@ -180,7 +190,11 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
+    attachment = task_context.attachment(root)
     head = run(root, "git", "rev-parse", "HEAD")
+    task_context.protocol().verify_commit(
+        task_context.protocol().parse(attachment), run(root, "git", "log", "-1", "--format=%B")
+    )
     run(root, "git", "push", "--set-upstream", "origin", f"HEAD:{state['branch']}")
     if not state.get("pr"):
         # Discover an existing PR after an interrupted create/push before creating another.
@@ -205,8 +219,8 @@ def push(root: Path) -> dict[str, Any]:
         else:
             body = state_path(root).with_name("atk-pr-body.md")
             body.write_text(
-                "Implemented in an isolated Codex session. Local focused and "
-                "mandatory pre-commit checks passed. Awaiting agent review and fast CI.\n"
+                "Implemented in an isolated Codex session. Awaiting independent "
+                "agent review and fast CI.\n\n" + attachment
             )
             run(
                 root,
@@ -224,6 +238,12 @@ def push(root: Path) -> dict[str, Any]:
             )
             state["pr"] = pr_info(root)["number"]
         save(root, state)
+    body = state_path(root).with_name("atk-pr-body.md")
+    body.write_text(
+        "Implemented in an isolated Codex session. Awaiting independent "
+        "agent review and fast CI.\n\n" + attachment
+    )
+    run(root, "gh", "pr", "edit", str(state["pr"]), "--body-file", str(body))
     return {"sha": head, "push_target": f"origin/{state['branch']}", "pr": state["pr"]}
 
 
@@ -240,6 +260,9 @@ def feedback(root: Path, sha: str | None = None) -> dict[str, Any]:
     ]
     changes = [r for r in pr["reviews"] if (r.get("commit") or {}).get("oid") == pr["headRefOid"]]
     status = "merged" if pr["mergedAt"] else "closed" if pr["state"] == "CLOSED" else "pending"
+    paused = any(x["name"] == "agent:needs-user" for x in pr["labels"])
+    if paused and status == "pending":
+        status = "awaiting_user"
     return {
         "status": status,
         "pr": pr["number"],
@@ -249,9 +272,17 @@ def feedback(root: Path, sha: str | None = None) -> dict[str, Any]:
         "refresh_required": head != pr["headRefOid"],
         "checks": checks,
         "reviews": changes,
-        "writer": "github" if any(x["name"] == "agent:writing" for x in pr["labels"]) else "local",
-        "next": "Wait for merge; address current-head review and fast CI "
-        "feedback. Refresh the feature branch before corrections after bot commits.",
+        "writer": "none"
+        if paused
+        else "github"
+        if any(x["name"] == "agent:writing" for x in pr["labels"])
+        else "local",
+        "next": (
+            "Stop corrections and wait for the owner to post /agent resume " + pr["headRefOid"]
+            if paused
+            else "Wait for merge; address current-head review and fast CI feedback. "
+            "Refresh the feature branch before corrections after bot commits."
+        ),
     }
 
 
@@ -288,6 +319,7 @@ def synchronize(root: Path) -> dict[str, Any]:
             pending = str(exc)
     state.update(phase="planning", branch="dev", base=base)
     save(root, state)
+    task_context.finish(root)
     return {
         "status": "synchronized",
         "base": base,

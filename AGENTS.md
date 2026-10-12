@@ -10,7 +10,7 @@ Coding agents in this repository must use the repository-local MCP tools for
 startup context, RAG retrieval, routing, repo status, version/changelog checks,
 test recommendations, checks, commits, pushes, and release workflow entrypoints.
 If MCP is already available, call
-`prepare_start(task, module=None, root=".", index_dir=".rag_index",
+`prepare_start(task, user_prompt="<exact starting user prompt>", module=None, root=".", index_dir=".rag_index",
 ensure_project_env=True)` before any repository search, file inspection, tests,
 or edits. `prepare_start` switches to `dev`, pulls `origin dev`, prepares the local agent
 and project environment, refreshes `.rag_index/`, returns repo health, and
@@ -75,6 +75,11 @@ revalidated after startup sync.
 Use these MCP tools for the corresponding agent workflow steps:
 
 - Startup orchestration and required instruction routing: `prepare_start`.
+- Original user task recording: `prepare_start(user_prompt=...)`; preserve the
+  exact message, not an agent summary. Append later task corrections with
+  `task_context(action="append", user_prompt=...)`. Private originals live under
+  `.git/atk-tasks/`; the PR workflow attaches redacted context automatically and
+  binds its digest to the signed head. Launcher-only preparation may omit the prompt.
 - RAG retrieval: `docs(query, mode="search"|"ask", top_k=3)`.
 - Consolidated implementation preflight: `change_impact`.
 - Per-startup response and retry accounting: `workflow_metrics`.
@@ -110,6 +115,11 @@ agent review and fast CI using `git_workflow(action="feedback")` or exact-head
 Before corrections, check feedback and use `git_workflow(action="refresh")` if
 bot commits advanced the remote branch. Never edit while feedback reports the
 GitHub writer or the PR has the `agent:writing` label.
+If feedback reports `awaiting_user` or the PR has `agent:needs-user`, stop all
+automatic corrections. Owner must explicitly post `/agent resume <current-sha>`.
+Agents must not post this resume on the owner's behalf. Rejections include
+the changes, reasons and requested corrections in GitHub and plain Telegram
+alerts; rejection alerts contain no approval buttons.
 After merge, call `git_workflow(action="sync")`; it updates the clone's dev and
 updates shared dev under a lock only when clean and already on dev. Report any
 pending shared synchronization without discarding work. Reenter native Plan
@@ -282,10 +292,20 @@ specific documentation update that would make future RAG retrieval unambiguous.
 ## Global Rules
 
 - Automated PR handling is restricted to the repository owner's enrolled-machine
-  signatures and the trusted App's signed repair commits. Policy and automation
-  changes require the owner's exact-head `/agent approve-policy <sha>` comment.
-  Local agents must not post this approval on the owner's behalf. The trusted
-  controller verifies these requirements outside the model and PR checkout.
+  signatures and trusted App repairs. Every review must use a fresh read-only
+  agent session separate from every candidate author; verdicts bind to the head,
+  dev base and user-task digest. Misalignment, ambiguity and quality blockers
+  reject the candidate and pause it pending user instructions.
+- Owner exact-head `/agent approve-policy <sha>` approval is retained for
+  `.github/agent/`, `.codex/`, the controller/dispatch/capture/publishing workflows,
+  `.github/required-workflows.json` and `agent_tools/machine_signing.py`.
+  Ordinary instructions, tools, integration repairs and test workflows use
+  independent prompt-aligned review and fast CI. Both renamed paths are checked.
+  Local agents must not post owner approval. The authenticated Telegram handler
+  may post a transparent App-authored approval following the pinned owner's
+  button click; private controller records verify that action outside the model.
+  Approval alerts explain what changed, the protected boundary, why approval is
+  required, the PR link and exact command. New heads require new decisions.
 
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
@@ -319,3 +339,8 @@ specific documentation update that would make future RAG retrieval unambiguous.
   non-integration regression coverage, run focused and pre-commit checks, and
   let the advisory push workflows execute without waiting for them.
 - Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.
+
+Telegram feature requests require separate validity, read-only planning, independent
+plan review and coding sessions. Questions pause work until authenticated owner
+answers arrive. The exact prompt, responses, plan and dev SHA bind the approval.
+No coding before that approval; every resulting PR gets another separate reviewer.

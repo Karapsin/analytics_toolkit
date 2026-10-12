@@ -99,6 +99,8 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 1. Launch bare `codex` from the canonical repository. The launcher prepares a
    separate clone on refreshed dev before entering native Plan mode.
 2. Call `prepare_start(...)` for role-aware context and read its routed files.
+   Pass the exact starting message as `user_prompt`; append subsequent user
+   task corrections with `task_context(action="append", user_prompt=...)`.
    Planning and feature resume do not switch or pull branches.
 3. Plan the task. After leaving Plan mode, call `git_workflow(action="start")`.
    Revalidate against any incoming dev changes; acknowledge a revalidation
@@ -112,6 +114,8 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 8. Wait for agent review and fast CI with `git_workflow(action="feedback")`.
    Respect the GitHub writer lease. Refresh after bot commits before corrections.
 9. Fix feedback and repeat checks/commits until merged; do not monitor integration.
+   A reviewer rejection pauses work: stop when feedback is `awaiting_user`.
+   Resume requires the owner's explicit `/agent resume <current-sha>` comment.
 10. Call `git_workflow(action="sync")`; report pending shared sync safely.
 11. Reenter native Plan mode before starting another feature.
 

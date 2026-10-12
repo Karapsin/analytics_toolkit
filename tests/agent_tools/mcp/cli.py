@@ -66,6 +66,7 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
     assert "prepare_start" in created[0].instructions
     assert created[0].tools == [
         "prepare_start",
+        "task_context",
         "docs",
         "workflow_status",
         "workflow_metrics",
@@ -108,6 +109,7 @@ def test_mcp_v2_stdio_server_exposes_consolidated_contract() -> None:
 
         assert [tool.name for tool in tools.tools] == [
             "prepare_start",
+            "task_context",
             "docs",
             "workflow_status",
             "workflow_metrics",
@@ -182,4 +184,6 @@ def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
         >= mcp_server.UNRELEASED_CHANGELOG_THRESHOLD
         else "unreleased"
     )
+    if mcp_server.sessions.load(mcp_server.REPO_ROOT).get("phase") == "feature":
+        expected_decision = "fragment"
     assert output["result"]["decision"] == expected_decision

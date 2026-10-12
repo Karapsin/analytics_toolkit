@@ -172,7 +172,9 @@ def test_duplicate_matrix_job_names_require_every_group_to_pass() -> None:
     assert state["runs"]["1"]["needs"] == ["fault"]
 
 
-def test_rejected_bot_repair_is_queued_for_correction(monkeypatch: Any) -> None:
+def test_rejected_bot_repair_is_paused_until_owner_resumes(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     base = "b" * 40
     pr = {
         "number": 8,
@@ -218,7 +220,18 @@ def test_rejected_bot_repair_is_queued_for_correction(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
     monkeypatch.setattr(controller, "authorization_error", lambda *args: None)
-    assert controller.discover(GitHub(), 17)["include"][0]["kind"] == "repair"
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
+    controls = controller.trusted_module("review_control")
+    with controls.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            ("owner/repo", 8, "a" * 40, "Scope mismatch", 1),
+        )
+    gh = GitHub()
+    original_pages = gh.pages
+    gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
+    assert controller.discover(gh, 17)["include"] == []
 
 
 def owned_pr() -> dict[str, Any]:
@@ -253,7 +266,9 @@ def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch
 
         def pages(self, path: str) -> list[dict[str, Any]]:
             if "/files?" in path:
-                return [{"filename": "notes.md", "previous_filename": "AGENTS.md"}]
+                return [
+                    {"filename": "notes.md", "previous_filename": ".github/agent/controller.py"}
+                ]
             return self.comments
 
     gh = GitHub()
