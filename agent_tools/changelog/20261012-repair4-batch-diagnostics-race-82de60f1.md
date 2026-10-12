@@ -1,1 +1,0 @@
-- Make the fast SQL batch source-diagnostics regression deterministic by synchronizing both fake connection failures; cover unstarted-item cancellation separately while preserving fail-fast execution and original error/source metadata.
