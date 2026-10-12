@@ -44,8 +44,13 @@ agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-
 For transport-specific diagnosis, add
 `--integration-clickhouse-driver http` or
 `--integration-clickhouse-driver native`. The managed default is `both`, and
-the runner fails if the two collections differ. This does not change the
-package's public ClickHouse default, which remains HTTP.
+the runner fails if the two collections differ. Both transports run even when
+HTTP fails, so each attempted transport produces its own diagnostics. The first
+transport failure remains the exit status, including teardown or leak-check
+failures normalized from the per-transport runner's exit exceptions. Cleanup
+failures still allow the other transport to run; later profiles are not started after
+a failed profile, and collection parity is checked only when both passes succeed.
+This does not change the package's public ClickHouse default, which remains HTTP.
 
 Core covers deterministic database behavior. Auth adds per-run certificates,
 HAProxy TLS endpoints, separate Trino Basic and OAuth coordinators, a real
@@ -91,7 +96,23 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent
-writer results. For failures,
+writer results. For startup failures, inspect `startup.log` first. GitHub jobs
+print its last 80 lines on failure so captured Compose errors are visible even
+when the managed check response contains only an exit status. An early HTTP failure no longer
+prevents native startup diagnostics from being collected. An exit status and a
+missing native artifact alone do not identify the startup cause; use the captured
+Compose error to distinguish stack configuration defects from image, credential,
+or runner infrastructure failures before making a repair. Fast, service-free
+runner tests cover both transport attempts, the first failure status, teardown,
+and stopping later profiles after the failed profile. Cleanup cases group the
+HTTP status, failing transport, and expected status into one parametrized tuple
+to retain every failure combination within the strict lint argument limit.
+These tests run in the normal non-integration suite without external programs.
+Batch diagnostics tests synchronize fake connection failures before asserting
+that both running queries failed. A separate sequential case verifies that an
+unstarted query remains cancelled with zero attempts and that the original
+driver error and connection-source notes are preserved.
+For test failures,
 inspect service health first, then Compose logs, the operation-specific
 timeline, active/failed query details, and finally leak/object reports. It
 always runs
