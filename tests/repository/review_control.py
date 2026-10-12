@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
+from functools import partial
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -414,3 +415,285 @@ def test_collection_rejects_unresolved_conflicts_before_serialization(
     assert command.call_count == 3
     assert not (output / "fix.patch").exists()
     assert not (output / "task.json").exists()
+
+
+PROTECTED_PATHS = [".github/agent/controller.py", ".github/workflows/github-agent.yml"]
+DEVIATIONS = ["content", "mode", "repair", "discard", "discard-updated"]
+DEVIATIONS += [".env", ".connections", ".git/config"]
+METADATA_FAILURES = ["unavailable", "unresolved", "ambiguous", "missing-blob", "malformed"]
+
+
+def publication_command(real_command: Any, pushed: list[str], *args: str, **kwargs: Any) -> Any:
+    if args[:2] == ("git", "push"):
+        pushed.append(args[-1].split(":", 1)[0])
+        return ""
+    if "commit-tree" in args:
+        args = tuple(arg for arg in args if arg != "-S")
+    return real_command(*args, **kwargs)
+
+
+def publication_history(
+    repository: tuple[Path, Any, Any],
+    path: str = ".github/agent/controller.py",
+    *,
+    initial: bytes | None = b"original\n",
+    proposal: bytes | None = None,
+    dev: bytes | None = b"immutable dev\n",
+) -> tuple[str, str, str]:
+    work, git, commit = repository
+    protected = work / path
+    protected.parent.mkdir(parents=True, exist_ok=True)
+    if initial is not None:
+        protected.write_bytes(initial)
+    ancestor = commit()
+    (work / "feature.txt").write_bytes(b"requested feature\n")
+    if proposal is not None:
+        protected.write_bytes(proposal)
+    head = commit()
+    git("checkout", "--detach", ancestor)
+    if dev is None:
+        protected.unlink()
+    else:
+        protected.write_bytes(dev)
+    base = commit()
+    git("checkout", "--detach", head)
+    protected.parent.mkdir(parents=True, exist_ok=True)
+    if dev is None:
+        protected.unlink()
+    else:
+        protected.write_bytes(dev)
+    git("add", "--all")
+    return head, base, ancestor
+
+
+@pytest.fixture
+def publication(tmp_path: Path, monkeypatch: Any, control: Any) -> Any:
+    work = tmp_path / "publication"
+    work.mkdir()
+    hooks = tmp_path / "empty-hooks"
+    hooks.mkdir()
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+    real_run = subprocess.run
+
+    def isolated_run(*args: Any, **kwargs: Any) -> Any:
+        kwargs["env"] = env
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(controller.subprocess, "run", isolated_run)
+
+    def git(*args: str, data: bytes | None = None) -> bytes:
+        return real_run(
+            ["git", *args],
+            cwd=work,
+            env=env,
+            input=data,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        ).stdout
+
+    git("init")
+    for key, value in (
+        ("user.name", "Publication regression"),
+        ("user.email", "publication@example.invalid"),
+        ("commit.gpgsign", "false"),
+        ("core.hooksPath", hooks.as_posix()),
+        ("core.autocrlf", "false"),
+        ("core.eol", "lf"),
+        ("core.filemode", "false"),
+    ):
+        git("config", "--local", key, value)
+    proto = controller.trusted_module("task_context")
+    context = {
+        "version": 1,
+        "task_id": "publication",
+        "producer_id": "author:test",
+        "source": "user",
+        "starting_prompt": "Preserve the requested feature.",
+        "corrections": [],
+    }
+    gh = GitHub()
+    gh.pr["body"] = proto.render(context)
+    gh.base = Mock()
+    gh.label = Mock()
+    pushed: list[str] = []
+    real_command = controller.command
+
+    monkeypatch.setattr(controller, "command", partial(publication_command, real_command, pushed))
+    monkeypatch.setattr(controller, "signing_options", list)
+    monkeypatch.setattr(controller, "signed_head", lambda *_args: True)
+    monkeypatch.setattr(controller, "dispatch", Mock())
+    monkeypatch.setenv("AGENT_CONTROL_DIR", str(work))
+
+    def commit() -> str:
+        git("add", "--all")
+        git("commit", "--allow-empty", "-m", "Fixture" + proto.trailers(context))
+        return git("rev-parse", "HEAD").decode("ascii").strip()
+
+    def task(head: str, base: str, kind: str = "conflict") -> dict[str, Any]:
+        gh.pr["head"]["sha"] = head
+        gh.base.return_value = base
+        return {
+            "number": gh.pr["number"],
+            "kind": kind,
+            "head": head,
+            "base": base,
+            "branch": gh.pr["head"]["ref"],
+            "user_task": context,
+            "producer_id": context["producer_id"],
+            "task_digest": proto.digest(context),
+        }
+
+    def artifact(value: dict[str, Any], *, empty: bool = False) -> Path:
+        output = tmp_path / "publication-artifact"
+        if empty:
+            output.mkdir(exist_ok=True)
+            (output / "task.json").write_text(json.dumps(value))
+            (output / "fix.patch").write_bytes(b"")
+        else:
+            controller.collect(value, work, output)
+            git("reset", "--hard", value["head"])
+        return output
+
+    history = partial(publication_history, (work, git, commit))
+    return work, git, commit, task, artifact, gh, pushed, history
+
+
+@pytest.mark.parametrize("path", PROTECTED_PATHS)
+@pytest.mark.parametrize("change", ["update", "addition", "deletion"])
+def test_conflict_publishes_only_exact_inherited_dev_entries(
+    publication: Any, path: str, change: str
+) -> None:
+    work, git, _commit, task, artifact, gh, pushed, history = publication
+    head, base, _ancestor = history(
+        path,
+        initial=None if change == "addition" else b"original\n",
+        dev=None if change == "deletion" else b"immutable dev\n",
+    )
+    value = task(head, base)
+    output = artifact(value)
+    controller.publish(gh, value, output, work)
+    assert len(pushed) == 1
+    expected = git("ls-tree", "-z", base, "--", path)
+    assert git("ls-tree", "-z", pushed[0], "--", path) == expected
+    assert git("ls-files", "--stage", "--", path).strip() == (
+        expected.replace(b" blob ", b" ").replace(b"\t", b" 0\t").rstrip(b"\0")
+    )
+    assert git("show", pushed[0] + ":feature.txt") == b"requested feature\n"
+    gh.label.assert_called_once_with(value["number"], acquire=False)
+
+
+@pytest.mark.parametrize("deviation", DEVIATIONS)
+def test_conflict_denies_authored_edits_repairs_and_discarded_feature_proposals(
+    publication: Any, monkeypatch: Any, deviation: str
+) -> None:
+    work, git, _commit, task, artifact, gh, pushed, history = publication
+    path = deviation if deviation in {".env", ".connections"} else ".github/agent/controller.py"
+    head, base, _ancestor = history(
+        path,
+        proposal=b"feature-owned proposal\n" if deviation.startswith("discard") else None,
+        dev=b"original\n" if deviation == "discard" else b"immutable dev\n",
+    )
+    if deviation == "content":
+        (work / path).write_bytes(b"worker edit\n")
+    git("add", "--all")
+    if deviation == "mode":
+        git("update-index", "--chmod=+x", path)
+    value = task(head, base, "repair" if deviation == "repair" else "conflict")
+    output = artifact(value)
+    if deviation == ".git/config":  # Git cannot track its own metadata directory.
+        original = controller.command
+
+        def command(*args: str, **kwargs: Any) -> Any:
+            if args[:4] == ("git", "diff", "--cached", "--name-only"):
+                return deviation
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(controller, "command", command)
+    with pytest.raises(RuntimeError, match="controller or sensitive"):
+        controller.publish(gh, value, output, work)
+    assert not pushed
+    assert "GitHub agent blocker:" in gh.comments[-1]["body"]
+    gh.label.assert_called_once_with(value["number"], acquire=False)
+
+
+@pytest.mark.parametrize("failure", METADATA_FAILURES)
+def test_conflict_history_and_index_fail_closed(
+    publication: Any, monkeypatch: Any, failure: str
+) -> None:
+    work, git, _commit, task, artifact, gh, pushed, history = publication
+    path = ".github/agent/controller.py"
+    head, base, ancestor = history(dev=b"dev\n")
+    if failure == "ambiguous":
+        tree = git("rev-parse", head + "^{tree}").decode("ascii").strip()
+        proto = controller.trusted_module("task_context")
+        message = "Merge fixture" + proto.trailers(task(head, base)["user_task"])
+        left = git("commit-tree", tree, "-p", head, "-p", base, "-m", message).decode().strip()
+        right = git("commit-tree", tree, "-p", base, "-p", head, "-m", message).decode().strip()
+        head, base = left, right
+        git("reset", "--hard", head)
+        (work / path).write_bytes(b"dev\n")
+        git("add", "--all")
+    value = task(head, "f" * 40 if failure == "unavailable" else base)
+    output = artifact(value, empty=True)
+    if failure in {"unresolved", "missing-blob"}:
+        oid = git("rev-parse", ancestor + ":" + path).decode().strip()
+        git("update-index", "--force-remove", path)
+        if failure == "unresolved":
+            records = "".join(
+                "100644 " + oid + " " + str(stage) + "\t" + path + "\n" for stage in (1, 2, 3)
+            )
+            git("update-index", "--index-info", data=records.encode())
+        else:
+            git("update-index", "--add", "--cacheinfo", "100644," + "e" * 40 + "," + path)
+    if failure == "malformed":
+        original = controller.command
+
+        def command(*args: str, **kwargs: Any) -> Any:
+            return b"invalid\0" if args[:2] == ("git", "ls-tree") else original(*args, **kwargs)
+
+        monkeypatch.setattr(controller, "command", command)
+    with pytest.raises(RuntimeError):
+        controller.publish(gh, value, output, work)
+    assert not pushed
+    gh.label.assert_called_once_with(value["number"], acquire=False)
+
+
+def test_opaque_patch_collect_candidate_and_publish_keep_original_bytes(publication: Any) -> None:
+    work, git, commit, task, artifact, gh, pushed, _history = publication
+    fixture = work / "opaque.txt"
+    fixture.write_bytes(b"before\xff\nunchanged\n\n")
+    head = commit()
+    intended = b"after\xff\nunchanged\n\n"
+    fixture.write_bytes(intended)
+    git("add", "--all")
+    expected = git("diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", head)
+    assert b"\xff" in expected
+    value = task(head, head)
+    output = artifact(value)
+    patch = output / "fix.patch"
+    assert patch.read_bytes() == expected
+    candidate = controller.candidate(gh, value, output, work)
+    assert git("show", candidate + ":opaque.txt") == intended
+    assert git("ls-tree", candidate, "--", "opaque.txt").startswith(b"100644 blob ")
+    git("reset", "--hard", head)
+    controller.publish(gh, value, output, work)
+    assert git("show", pushed[-1] + ":opaque.txt") == intended
+    assert git("show", ":opaque.txt") == intended
+    assert patch.read_bytes() == expected
+
+
+@pytest.mark.parametrize("kind", ["conflict", "repair"])
+def test_empty_patch_publication_retains_existing_contract(publication: Any, kind: str) -> None:
+    work, _git, commit, task, artifact, gh, pushed, _history = publication
+    head = commit()
+    value = task(head, head, kind)
+    output = artifact(value, empty=True)
+    if kind == "conflict":
+        controller.publish(gh, value, output, work)
+        assert len(pushed) == 1
+    else:
+        with pytest.raises(RuntimeError, match="No repair produced"):
+            controller.publish(gh, value, output, work)
+        assert not pushed

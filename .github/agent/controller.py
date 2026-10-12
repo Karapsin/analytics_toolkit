@@ -109,10 +109,15 @@ def command(*args: str, cwd: Path | None = None, data: str | None = None,
 
 def command(*args: str, cwd: Path | None = None, data: str | None = None,
             raw_stdout: bool = False) -> str | bytes:
-    result = subprocess.run(args, cwd=cwd,
-                            input=data.encode("utf-8") if raw_stdout and data is not None else data,
-                            text=not raw_stdout, capture_output=True, timeout=180,
-                            env=dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null"))
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        input=data.encode("utf-8") if raw_stdout and data is not None else data,
+        text=not raw_stdout,
+        capture_output=True,
+        timeout=180,
+        env=dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null"),
+    )
     if result.returncode:
         stderr = (result.stderr[:7200].decode("utf-8", errors="replace")[:1800]
                   if raw_stdout else result.stderr[:1800])
@@ -612,7 +617,7 @@ def visual_required(paths: list[str]) -> bool:
 
 def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> str:
     patch = artifact / "fix.patch"
-    if patch.read_text().strip():
+    if patch.read_bytes().strip():
         command("git", "apply", "--index", str(patch.resolve()), cwd=work)
     tree = command("git", "write-tree", cwd=work)
     commit = command("git", *signing_options(), "commit-tree", "-S", tree, "-p", task["head"],
@@ -634,6 +639,64 @@ def verify_visual(artifact: Path, patch: Path, task: dict[str, Any]) -> None:
         raise RuntimeError("Partial visual review")
     if any(scene["verdict"] != "pass" or not scene["notes"] for scene in receipt["scenes"].values()):
         raise RuntimeError("Non-green visual review")
+
+
+def conflict_entry_metadata(raw: bytes, path: str, *, staged: bool) -> tuple[bytes, bytes]:
+    records = raw.split(b"\0")
+    if len(records) != 2 or records[-1] != b"":
+        raise RuntimeError("Malformed conflict path entries.")
+    metadata, separator, name = records[0].partition(b"\t")
+    fields = metadata.split(b" ")
+    if (
+        not separator or name != path.encode("utf-8") or len(fields) != 3
+        or fields[0] not in {b"100644", b"100755", b"120000"}
+    ):
+        raise RuntimeError("Malformed conflict path metadata.")
+    if staged:
+        oid = fields[1]
+        if fields[2] != b"0":
+            raise RuntimeError("Unresolved conflict index entry.")
+    else:
+        oid = fields[2]
+        if fields[1] != b"blob":
+            raise RuntimeError("Conflict path is not a blob.")
+    return fields[0], oid
+
+
+def conflict_path_entry(work: Path, path: str, revision: str | None) -> tuple[bytes, bytes] | None:
+    if revision is None:
+        raw = command("git", "ls-files", "--stage", "-z", "--",
+                      ":(literal)" + path, cwd=work, raw_stdout=True)
+    else:
+        raw = command("git", "ls-tree", "--full-tree", "-z", revision, "--",
+                      path, cwd=work, raw_stdout=True)
+    if not raw:
+        return None  # Successful lookup proves absence; command failures raise.
+    mode, oid = conflict_entry_metadata(raw, path, staged=revision is None)
+    object_id = oid.decode("ascii")
+    if (SHA.fullmatch(object_id) is None
+            or command("git", "cat-file", "-t", object_id, cwd=work) != "blob"):
+        raise RuntimeError("Unavailable conflict blob.")
+    return mode, oid
+
+
+def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bool:
+    """Prove a conflict change came solely from immutable dev, including absence."""
+    for revision in (task["head"], task["base"]):
+        if SHA.fullmatch(revision) is None or command(
+                "git", "cat-file", "-t", revision, cwd=work) != "commit":
+            raise RuntimeError("Unavailable immutable conflict history.")
+    ancestors = command("git", "merge-base", "--all", task["head"], task["base"],
+                        cwd=work).splitlines()
+    if len(ancestors) != 1 or SHA.fullmatch(ancestors[0]) is None:
+        raise RuntimeError("Conflict inheritance requires one actual merge base.")
+    ancestor = ancestors[0]
+    if command("git", "cat-file", "-t", ancestor, cwd=work) != "commit":
+        raise RuntimeError("Unavailable conflict ancestor.")
+    original, head, base, staged = (
+        conflict_path_entry(work, path, revision)
+        for revision in (ancestor, task["head"], task["base"], None))
+    return original == head and base != original and staged == base
 
 
 def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dict[str, Any] | None:
@@ -691,15 +754,19 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
-        if not patch.read_text().strip() and task["kind"] != "conflict":
+        if not patch.read_bytes().strip() and task["kind"] != "conflict":
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
-        if patch.read_text().strip():
+        if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
         paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
-        if any(path.startswith(".git/") or path in {".connections", ".env"}
-               or (task["kind"] not in {"feature", "correction"} and (path.startswith(".github/agent/")
-                   or path == ".github/workflows/github-agent.yml")) for path in paths):
-            raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+        for path in paths:
+            sensitive = path.startswith(".git/") or path in {".connections", ".env"}
+            protected = (path.startswith(".github/agent/")
+                         or path == ".github/workflows/github-agent.yml")
+            if sensitive or (protected and task["kind"] not in {"feature", "correction"}
+                             and (task["kind"] != "conflict"
+                                  or not inherited_controller_path(task, work, path))):
+                raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
         if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
                                                  for path in paths):
             raise RuntimeError("Integration repair must include a fast regression test.")
