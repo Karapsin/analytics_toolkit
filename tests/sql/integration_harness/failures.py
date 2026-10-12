@@ -125,7 +125,7 @@ def test_failed_startup_still_creates_both_transport_logs_and_tears_down(
         == 17
     )
     for driver in ("http", "native"):
-        assert (tmp_path / "auth" / driver / "startup.log").read_text() == (
+        assert (tmp_path / "auth" / driver / "startup.log").read_text(encoding="utf-8") == (
             "service image could not be pulled\n"
         )
     assert len(teardown) == 2
@@ -148,17 +148,16 @@ def test_every_integration_job_reports_captured_startup_errors() -> None:
 
 @pytest.mark.parametrize("cleanup_phase", ["down", "leaks"])
 @pytest.mark.parametrize(
-    ("http_result", "cleanup_driver", "expected"),
+    "cleanup_case",
     [(17, "native", 17), (0, "http", 23), (0, "native", 23)],
 )
 def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     cleanup_phase: str,
-    http_result: int,
-    cleanup_driver: str,
-    expected: int,
+    cleanup_case: tuple[int, str, int],
 ) -> None:
+    http_result, cleanup_driver, expected = cleanup_case
     starts: list[str] = []
     teardown: list[str] = []
     leak_checks: list[str] = []
@@ -182,9 +181,7 @@ def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
     def check_leaks(*, profile: str, clickhouse_driver: str) -> int:
         assert profile == "core"
         leak_checks.append(clickhouse_driver)
-        return (
-            23 if cleanup_phase == "leaks" and clickhouse_driver == cleanup_driver else 0
-        )
+        return 23 if cleanup_phase == "leaks" and clickhouse_driver == cleanup_driver else 0
 
     monkeypatch.setattr(sql_integration, "ARTIFACTS_DIR", tmp_path)
     monkeypatch.setattr(sql_integration.importlib.util, "find_spec", lambda _name: object())
@@ -214,4 +211,6 @@ def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
     )
     assert starts == teardown == leak_checks == ["http", "native"]
     for driver in starts:
-        assert (tmp_path / "core" / driver / "startup.log").read_text() == "stack ready\n"
+        assert (tmp_path / "core" / driver / "startup.log").read_text(encoding="utf-8") == (
+            "stack ready\n"
+        )

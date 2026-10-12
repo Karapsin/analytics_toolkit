@@ -104,7 +104,11 @@ missing native artifact alone do not identify the startup cause; use the capture
 Compose error to distinguish stack configuration defects from image, credential,
 or runner infrastructure failures before making a repair. Fast, service-free
 runner tests cover both transport attempts, the first failure status, teardown,
-and stopping later profiles after the failed profile. For test failures,
+and stopping later profiles after the failed profile. Cleanup cases group the
+HTTP status, failing transport, and expected status into one parametrized tuple
+to retain every failure combination within the strict lint argument limit.
+These tests run in the normal non-integration suite without external programs.
+For test failures,
 inspect service health first, then Compose logs, the operation-specific
 timeline, active/failed query details, and finally leak/object reports. It
 always runs

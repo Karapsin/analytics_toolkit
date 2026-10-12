@@ -1,0 +1,1 @@
+- Fix strict lint and formatting defects in the service-free SQL integration cleanup regression tests by grouping related case parameters, while retaining every failure combination and explicit UTF-8 log reads.
