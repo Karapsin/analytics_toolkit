@@ -52,6 +52,15 @@ jobs:
           --level integration
           --integration-profile core
           --integration-clickhouse-driver http
+      - name: Report captured startup diagnostics
+        if: failure()
+        run: |
+          for log in .integration-artifacts/*/*/startup.log; do
+            if [ -f "$log" ]; then
+              printf '\n%s\n' "$log"
+              tail -n 80 "$log"
+            fi
+          done
       - name: Upload HTTP core diagnostics
         if: always()
         uses: actions/upload-artifact@v6
@@ -84,6 +93,15 @@ jobs:
           --level integration
           --integration-profile core
           --integration-clickhouse-driver native
+      - name: Report captured startup diagnostics
+        if: failure()
+        run: |
+          for log in .integration-artifacts/*/*/startup.log; do
+            if [ -f "$log" ]; then
+              printf '\n%s\n' "$log"
+              tail -n 80 "$log"
+            fi
+          done
       - name: Upload native core diagnostics
         if: always()
         uses: actions/upload-artifact@v6
@@ -117,6 +135,15 @@ jobs:
           playwright install --with-deps chromium
       - name: Run authentication SQL integration profile
         run: agent_tools/mcp_tool.sh run-checks --area sql --level integration --integration-profile auth
+      - name: Report captured startup diagnostics
+        if: failure()
+        run: |
+          for log in .integration-artifacts/*/*/startup.log; do
+            if [ -f "$log" ]; then
+              printf '\n%s\n' "$log"
+              tail -n 80 "$log"
+            fi
+          done
       - name: Upload HTTP authentication diagnostics
         if: always()
         uses: actions/upload-artifact@v6
@@ -165,6 +192,15 @@ jobs:
           --profile fault
           --with-greenplum
           --fault-group ${{ matrix.group }}
+      - name: Report captured startup diagnostics
+        if: failure()
+        run: |
+          for log in .integration-artifacts/*/*/startup.log; do
+            if [ -f "$log" ]; then
+              printf '\n%s\n' "$log"
+              tail -n 80 "$log"
+            fi
+          done
       - name: Upload HTTP fault diagnostics
         if: always()
         uses: actions/upload-artifact@v6
@@ -203,6 +239,15 @@ jobs:
           python -m release_routines.sql_integration
           --profile stress
           --with-greenplum
+      - name: Report captured startup diagnostics
+        if: failure()
+        run: |
+          for log in .integration-artifacts/*/*/startup.log; do
+            if [ -f "$log" ]; then
+              printf '\n%s\n' "$log"
+              tail -n 80 "$log"
+            fi
+          done
       - name: Upload HTTP stress diagnostics
         if: always()
         uses: actions/upload-artifact@v6

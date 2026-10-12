@@ -6,11 +6,18 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+## 1.3.12.4 - 2026-10-12
+
 - Wait for fresh-clone trust input readiness before selecting native Plan mode.
 - Queue advisory integration on final PR candidates and avoid duplicate feature push matrices.
 - Compare conflict fixes against current dev when enforcing protected paths.
 - Verify integration repairs on PR candidates instead of launching extra dev matrices.
 - Preserved ClickHouse integer rand during cluster routing without SQLGlot function-name metadata
+- Run both SQL integration transports after a failure while preserving the first error, and expose captured startup diagnostics in GitHub job logs with fast service-free regression coverage.
+- Make the fast SQL batch source-diagnostics regression deterministic by synchronizing both fake connection failures; cover unstarted-item cancellation separately while preserving fail-fast execution and original error/source metadata.
+- Normalize SQL integration cleanup exit statuses during transport aggregation so teardown or leak-check failures neither suppress the native attempt nor replace an earlier failure; add service-free regression coverage for both cleanup phases.
+- Strengthen service-free integration-runner regression coverage for failed-profile boundaries and fault-group forwarding, and document the startup evidence needed to diagnose infrastructure failures.
+- Fix strict lint and formatting defects in the service-free SQL integration cleanup regression tests by grouping related case parameters, while retaining every failure combination and explicit UTF-8 log reads.
 
 ## 1.3.12.3 - 2026-10-09
 

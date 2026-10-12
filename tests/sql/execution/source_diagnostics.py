@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import threading
+from concurrent.futures import CancelledError
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -132,7 +134,11 @@ def test_batch_failure_and_items_keep_structured_errors_and_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    both_connections_started = threading.Barrier(2)
+
     def connect(**kwargs: Any) -> Any:
+        # A worker can otherwise fail before the second query leaves the queue.
+        both_connections_started.wait(timeout=5)
         message = "fake driver failure"
         raise ConnectionError(message)
 
@@ -145,6 +151,36 @@ def test_batch_failure_and_items_keep_structured_errors_and_source(
     assert caught.value.failed_indexes == (0, 1)
     assert all(isinstance(item.error, ConnectionError) for item in caught.value.items)
     assert all(note in item.error.__notes__ for item in caught.value.items)
+
+
+def test_batch_source_diagnostics_preserve_unstarted_item_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = ConnectionError("fake driver failure")
+    connection_calls = 0
+
+    def connect(**kwargs: Any) -> Any:
+        nonlocal connection_calls
+        connection_calls += 1
+        raise original
+
+    monkeypatch.setitem(sys.modules, "psycopg2", types.SimpleNamespace(connect=connect))
+    with pytest.raises(sql.SqlBatchExecutionError) as caught:
+        sql.execute("gp", ["select 1", "select 2"], retry_cnt=1, timeout_increment=0)
+
+    note = f"SQL connections file: {tmp_path / '.connections'}"
+    error = caught.value
+    assert note in error.__notes__
+    assert error.__cause__ is original
+    assert error.failed_indexes == (0,)
+    assert error.cancelled_indexes == (1,)
+    assert [item.query for item in error.items] == ["select 1", "select 2"]
+    assert error.items[0].error is original
+    assert note in original.__notes__
+    assert isinstance(error.items[1].error, CancelledError)
+    assert [item.attempts for item in error.items] == [1, 0]
+    assert connection_calls == 1
 
 
 def test_fileless_airflow_failure_does_not_report_old_cached_path(
