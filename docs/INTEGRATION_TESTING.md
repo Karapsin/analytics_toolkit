@@ -108,6 +108,10 @@ and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
 These tests run in the normal non-integration suite without external programs.
+Batch diagnostics tests synchronize fake connection failures before asserting
+that both running queries failed. A separate sequential case verifies that an
+unstarted query remains cancelled with zero attempts and that the original
+driver error and connection-source notes are preserved.
 For test failures,
 inspect service health first, then Compose logs, the operation-specific
 timeline, active/failed query details, and finally leak/object reports. It
