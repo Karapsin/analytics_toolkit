@@ -46,7 +46,9 @@ For transport-specific diagnosis, add
 `--integration-clickhouse-driver native`. The managed default is `both`, and
 the runner fails if the two collections differ. Both transports run even when
 HTTP fails, so each attempted transport produces its own diagnostics. The first
-transport failure remains the exit status; later profiles are not started after
+transport failure remains the exit status, including teardown or leak-check
+failures normalized from the per-transport runner's exit exceptions. Cleanup
+failures still allow the other transport to run; later profiles are not started after
 a failed profile, and collection parity is checked only when both passes succeed.
 This does not change the package's public ClickHouse default, which remains HTTP.
 

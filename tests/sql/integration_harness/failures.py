@@ -144,3 +144,74 @@ def test_every_integration_job_reports_captured_startup_errors() -> None:
         assert "for log in .integration-artifacts/*/*/startup.log; do" in report
         assert 'tail -n 80 "$log"' in report
         assert "if-no-files-found: error" in job
+
+
+@pytest.mark.parametrize("cleanup_phase", ["down", "leaks"])
+@pytest.mark.parametrize(
+    ("http_result", "cleanup_driver", "expected"),
+    [(17, "native", 17), (0, "http", 23), (0, "native", 23)],
+)
+def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cleanup_phase: str,
+    http_result: int,
+    cleanup_driver: str,
+    expected: int,
+) -> None:
+    starts: list[str] = []
+    teardown: list[str] = []
+    leak_checks: list[str] = []
+
+    def capture(path: Path, _command) -> int:
+        driver = path.parent.name
+        starts.append(driver)
+        path.write_text("stack ready\n", encoding="utf-8")
+        return 0
+
+    def run_command(command, *, env=None) -> int:
+        if command[-3:] == ["down", "--volumes", "--remove-orphans"]:
+            project = command[command.index("--project-name") + 1]
+            driver = project.rsplit("-", 1)[1]
+            teardown.append(driver)
+            return 23 if cleanup_phase == "down" and driver == cleanup_driver else 0
+        assert env is not None
+        driver = env["SQL_INTEGRATION_CLICKHOUSE_DRIVER"]
+        return http_result if driver == "http" else 0
+
+    def check_leaks(*, profile: str, clickhouse_driver: str) -> int:
+        assert profile == "core"
+        leak_checks.append(clickhouse_driver)
+        return (
+            23 if cleanup_phase == "leaks" and clickhouse_driver == cleanup_driver else 0
+        )
+
+    monkeypatch.setattr(sql_integration, "ARTIFACTS_DIR", tmp_path)
+    monkeypatch.setattr(sql_integration.importlib.util, "find_spec", lambda _name: object())
+    monkeypatch.setattr(sql_integration, "_capture", capture)
+    monkeypatch.setattr(sql_integration, "_run", run_command)
+    monkeypatch.setattr(sql_integration, "_write_diagnostics", lambda **_kwargs: None)
+    monkeypatch.setattr(sql_integration, "_assert_no_manifest_skips", lambda **_kwargs: 0)
+    monkeypatch.setattr(sql_integration, "_assert_teardown_clean", check_leaks)
+    monkeypatch.setattr(
+        sql_integration,
+        "_assert_transport_scenario_parity",
+        lambda **_kwargs: pytest.fail("cleanup failures must not report collection parity"),
+    )
+    monkeypatch.setattr(
+        sql_integration.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("external programs must not run"),
+    )
+
+    assert (
+        sql_integration.run(
+            profile="all",
+            include_greenplum=True,
+            clickhouse_driver="both",
+        )
+        == expected
+    )
+    assert starts == teardown == leak_checks == ["http", "native"]
+    for driver in starts:
+        assert (tmp_path / "core" / driver / "startup.log").read_text() == "stack ready\n"

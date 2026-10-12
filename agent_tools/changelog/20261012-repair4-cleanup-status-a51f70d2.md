@@ -1,0 +1,1 @@
+- Normalize SQL integration cleanup exit statuses during transport aggregation so teardown or leak-check failures neither suppress the native attempt nor replace an earlier failure; add service-free regression coverage for both cleanup phases.
