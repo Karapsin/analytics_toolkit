@@ -12,7 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 from urllib.parse import quote
 
 REVIEW = "agent-review"
@@ -92,12 +92,32 @@ def verify_correction_plan(task: dict[str, Any], artifact: Path) -> None:
         raise RuntimeError("Correction requires an independent approved plan for this exact task and head.")
 
 
-def command(*args: str, cwd: Path | None = None, data: str | None = None) -> str:
-    result = subprocess.run(args, cwd=cwd, input=data, text=True, capture_output=True, timeout=180,
+@overload
+def command(*args: str, cwd: Path | None = None, data: str | None = None,
+            raw_stdout: Literal[False] = False) -> str: ...
+
+
+@overload
+def command(*args: str, cwd: Path | None = None, data: str | None = None,
+            raw_stdout: Literal[True]) -> bytes: ...
+
+
+@overload
+def command(*args: str, cwd: Path | None = None, data: str | None = None,
+            raw_stdout: bool) -> str | bytes: ...
+
+
+def command(*args: str, cwd: Path | None = None, data: str | None = None,
+            raw_stdout: bool = False) -> str | bytes:
+    result = subprocess.run(args, cwd=cwd,
+                            input=data.encode("utf-8") if raw_stdout and data is not None else data,
+                            text=not raw_stdout, capture_output=True, timeout=180,
                             env=dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null"))
     if result.returncode:
-        raise RuntimeError(f"{args[0]} {args[1]} failed: {result.stderr[:1800]}")
-    return result.stdout.strip()
+        stderr = (result.stderr[:7200].decode("utf-8", errors="replace")[:1800]
+                  if raw_stdout else result.stderr[:1800])
+        raise RuntimeError(f"{args[0]} {args[1]} failed: {stderr}")
+    return result.stdout if raw_stdout else result.stdout.strip()
 
 
 class GitHub:
@@ -527,8 +547,8 @@ def collect(task: dict[str, Any], work: Path, output: Path) -> None:
         if command("git", "ls-files", "--unmerged", cwd=work):
             raise RuntimeError("Unresolved conflicts; no patch will be published.")
         patch = command("git", "diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv",
-                        task["head"], cwd=work)
-        (output / "fix.patch").write_text(patch + "\n")
+                        task["head"], cwd=work, raw_stdout=True)
+        (output / "fix.patch").write_bytes(patch)
     (output / "task.json").write_text(json.dumps(task))
 
 

@@ -455,6 +455,74 @@ def test_post_merge_failure_creates_repair_without_new_dev_matrix() -> None:
     assert controller._integration_tasks(object(), state, "current", []) == result
 
 
+class _RefreshDiscoveryGitHub:
+    repository = "owner/repo"
+
+    def __init__(self, base: str) -> None:
+        self._base = base
+        self.errors: dict[str, Exception] = {}
+        self.calls: list[str] = []
+        self.run_metadata: dict[str, Any] = {
+            str(key): {
+                "id": key,
+                "head_sha": base,
+                "status": "in_progress",
+                "conclusion": None,
+                "run_attempt": 1,
+                "html_url": f"run-{key}",
+                "event": "workflow_dispatch",
+                "updated_at": "2026-10-12",
+            }
+            for key in (1, 2, 3)
+        }
+        self.prs = [dict(owned_pr(), number=number) for number in (1, 2)]
+
+    def base(self) -> str:
+        return self._base
+
+    def pulls(self) -> list[dict[str, Any]]:
+        return self.prs
+
+    def pull(self, number: int) -> dict[str, Any]:
+        return self.prs[number - 1]
+
+    def checks(self, head: str) -> list[Any]:
+        return []
+
+    def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
+        self.calls.append(path)
+        if path in self.errors:
+            raise self.errors[path]
+        return self._response(path, method)
+
+    def _response(self, path: str, method: str) -> Any:
+        if path.startswith("actions/runs/"):
+            return self.run_metadata[path.rsplit("/", 1)[1]]
+        if path == "collaborators/owner/permission":
+            return {"permission": "write"}
+        if path.startswith("compare/"):
+            return {"behind_by": 0, "status": "identical"}
+        return self._patch_monitor(path, method)
+
+    def _patch_monitor(self, path: str, method: str) -> None:
+        assert path == "issues/99"
+        assert method == "PATCH"
+
+    def pages(self, path: str, key: str | None = None) -> list[Any]:
+        if path in self.errors:
+            raise self.errors[path]
+        if key == "workflow_runs":
+            return []
+        if key == "jobs":
+            return [{"name": "HTTP", "conclusion": "success"}]
+        assert "/files?" in path
+        return (
+            [{"filename": "agent_tools/changelog/request.md"}]
+            if (path.startswith("pulls/1/"))
+            else [{"filename": "source.py"}]
+        )
+
+
 @pytest.fixture
 def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[Any], Any]:
     """Bound discovery to fake GitHub metadata and in-memory monitor persistence."""
@@ -465,8 +533,12 @@ def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[A
         "runs": {
             "1": {"sha": base, "status": "in_progress", "needs": [], "attempt": 1},
             "2": {
-                "sha": base, "status": "completed", "conclusion": "failure",
-                "needs": ["HTTP"], "attempt": 1, "updated": "2026-10-01",
+                "sha": base,
+                "status": "completed",
+                "conclusion": "failure",
+                "needs": ["HTTP"],
+                "attempt": 1,
+                "updated": "2026-10-01",
             },
             "3": {"sha": base, "status": "queued", "attempt": 1},
         },
@@ -474,67 +546,18 @@ def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[A
     saved: list[Any] = []
     proto = controller.trusted_module("task_context")
     context = {
-        "version": 1, "task_id": "refresh-test", "source": "user",
-        "producer_id": "local:refresh-test", "starting_prompt": "Fix metadata refresh.",
+        "version": 1,
+        "task_id": "refresh-test",
+        "source": "user",
+        "producer_id": "local:refresh-test",
+        "starting_prompt": "Fix metadata refresh.",
         "corrections": [],
     }
     metadata = {
-        "user_task": context, "task_digest": proto.digest(context),
+        "user_task": context,
+        "task_digest": proto.digest(context),
         "producer_id": context["producer_id"],
     }
-
-    class GitHub:
-        repository = "owner/repo"
-
-        def __init__(self) -> None:
-            self.errors: dict[str, Exception] = {}
-            self.calls: list[str] = []
-            self.run_metadata: dict[str, Any] = {
-                str(key): {
-                    "id": key, "head_sha": base, "status": "in_progress",
-                    "conclusion": None, "run_attempt": 1, "html_url": f"run-{key}",
-                    "event": "workflow_dispatch", "updated_at": "2026-10-12",
-                }
-                for key in (1, 2, 3)
-            }
-            self.prs = [dict(owned_pr(), number=number) for number in (1, 2)]
-
-        def base(self) -> str:
-            return base
-
-        def pulls(self) -> list[dict[str, Any]]:
-            return self.prs
-
-        def pull(self, number: int) -> dict[str, Any]:
-            return self.prs[number - 1]
-
-        def checks(self, head: str) -> list[Any]:
-            return []
-
-        def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
-            self.calls.append(path)
-            if path in self.errors:
-                raise self.errors[path]
-            if path.startswith("actions/runs/"):
-                return self.run_metadata[path.rsplit("/", 1)[1]]
-            if path == "collaborators/owner/permission":
-                return {"permission": "write"}
-            if path.startswith("compare/"):
-                return {"behind_by": 0, "status": "identical"}
-            assert path == "issues/99" and method == "PATCH"
-            return None
-
-        def pages(self, path: str, key: str | None = None) -> list[Any]:
-            if path in self.errors:
-                raise self.errors[path]
-            if key == "workflow_runs":
-                return []
-            if key == "jobs":
-                return [{"name": "HTTP", "conclusion": "success"}]
-            assert "/files?" in path
-            return [{"filename": "agent_tools/changelog/request.md"}] if (
-                path.startswith("pulls/1/")
-            ) else [{"filename": "source.py"}]
 
     original_save = controller.save_monitor
 
@@ -550,7 +573,7 @@ def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[A
     controls = controller.trusted_module("review_control")
     monkeypatch.setattr(controls, "paused", lambda *args: False)
     monkeypatch.setattr(controls, "correction", lambda *args: None)
-    return GitHub(), state, saved, metadata
+    return _RefreshDiscoveryGitHub(base), state, saved, metadata
 
 
 @pytest.mark.parametrize("status", [500, 502, 503, 599])
@@ -564,7 +587,8 @@ def test_run_metadata_5xx_preserves_records_and_pr_work_then_retries(
 
     result = controller.discover(gh, 17)
     assert [(task["number"], task["kind"]) for task in result["include"]] == [
-        (1, "metadata"), (2, "review"),
+        (1, "metadata"),
+        (2, "review"),
     ]
     for task in result["include"]:
         assert {key: task[key] for key in metadata} == metadata
@@ -584,20 +608,23 @@ def test_run_metadata_5xx_preserves_records_and_pr_work_then_retries(
         assert saved[-1]["runs"][key]["needs"] == []
 
 
-@pytest.mark.parametrize("message", [
-    "gh api failed: gh: Unauthorized (HTTP 401)",
-    "gh api failed: gh: Forbidden (HTTP 403)",
-    "gh api failed: gh: Not Found (HTTP 404)",
-    "gh api failed: gh: Rate limit (HTTP 429)",
-    "gh api failed: gh: Server Error",
-    "gh api failed: gh: Server Error (HTTP 50)",
-    "gh api failed: gh: Server Error (HTTP 5020)",
-    "gh api failed: gh: Server Error HTTP 502",
-    "other api failed: gh: Server Error (HTTP 502)",
-    "prefix gh api failed: gh: Server Error (HTTP 502)",
-    "Logical state inconsistency",
-    "Task provenance mismatch (HTTP 502)",
-])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "gh api failed: gh: Unauthorized (HTTP 401)",
+        "gh api failed: gh: Forbidden (HTTP 403)",
+        "gh api failed: gh: Not Found (HTTP 404)",
+        "gh api failed: gh: Rate limit (HTTP 429)",
+        "gh api failed: gh: Server Error",
+        "gh api failed: gh: Server Error (HTTP 50)",
+        "gh api failed: gh: Server Error (HTTP 5020)",
+        "gh api failed: gh: Server Error HTTP 502",
+        "other api failed: gh: Server Error (HTTP 502)",
+        "prefix gh api failed: gh: Server Error (HTTP 502)",
+        "Logical state inconsistency",
+        "Task provenance mismatch (HTTP 502)",
+    ],
+)
 def test_run_metadata_unclassified_errors_propagate(
     run_refresh_discovery: Any, message: str
 ) -> None:
@@ -631,6 +658,7 @@ def test_run_refresh_5xx_catch_does_not_cover_other_operations(
     gh, _, saved, _ = run_refresh_discovery
     error = RuntimeError("gh api failed: gh: Server Error (HTTP 502)")
     if operation == "record":
+
         def fail(*args: Any) -> None:
             raise error
 

@@ -3,13 +3,18 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import os
+import subprocess
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 import pytest
 
 from tests.repository.github_agent import controller, owned_pr
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -278,3 +283,134 @@ def test_success_notifications_require_real_merge_promotion_and_production_publi
     assert [event["kind"] for event in events] == ["merged", "main", "release"]
     assert "Added CSV export" in json.loads(events[-1]["payload"])["changes"]
     assert all(event["token"] is None for event in events)
+
+
+def test_command_raw_stdout_is_opt_in(monkeypatch: Any, tmp_path: Path) -> None:
+    payload = b"  patch\r\n \r\n\xff\n"
+    run = Mock(
+        side_effect=[
+            subprocess.CompletedProcess(["git", "diff"], 0, "  patch\n \n", ""),
+            subprocess.CompletedProcess(["git", "diff"], 0, payload, b""),
+        ]
+    )
+    monkeypatch.setattr(controller.subprocess, "run", run)
+    data = "request \u00e9"
+    assert controller.command("git", "diff", cwd=tmp_path, data=data) == "patch"
+    assert controller.command("git", "diff", cwd=tmp_path, data=data, raw_stdout=True) == payload
+    env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    for call, raw in zip(run.call_args_list, (False, True)):
+        assert call.args == (("git", "diff"),)
+        assert call.kwargs == {
+            "cwd": tmp_path,
+            "input": data.encode("utf-8") if raw else data,
+            "text": not raw,
+            "capture_output": True,
+            "timeout": 180,
+            "env": env,
+        }
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_command_errors_remain_bounded_and_readable(monkeypatch: Any, raw: bool) -> None:
+    stderr = b"bad \xff\r\n" + b"x" * 8000 if raw else "bad\n" + "x" * 8000
+    result = subprocess.CompletedProcess(["git", "diff"], 1, b"" if raw else "", stderr)
+    run = Mock(return_value=result)
+    monkeypatch.setattr(controller.subprocess, "run", run)
+    with pytest.raises(RuntimeError) as error:
+        controller.command("git", "diff", raw_stdout=raw)
+    expected = ("bad \ufffd\r\n" if raw else "bad\n") + "x" * 8000
+    assert str(error.value) == "git diff failed: " + expected[:1800]
+    assert run.call_args.kwargs["input"] is None
+    assert run.call_args.kwargs["text"] is not raw
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+def test_collected_patch_preserves_blank_context_and_applies(
+    tmp_path: Path, monkeypatch: Any, newline: bytes
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+
+    def git(*args: str) -> bytes:
+        return subprocess.run(
+            ["git", *args],
+            cwd=work,
+            env=env,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        ).stdout
+
+    real_run = subprocess.run
+
+    def isolated_run(*args: Any, **kwargs: Any) -> Any:
+        kwargs["env"] = dict(
+            kwargs["env"], GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull
+        )
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(controller.subprocess, "run", isolated_run)
+    git("init")
+    for key, value in (
+        ("user.name", "Patch regression"),
+        ("user.email", "patch@example.invalid"),
+        ("commit.gpgsign", "false"),
+        ("core.hooksPath", hooks.as_posix()),
+        ("core.autocrlf", "false"),
+        ("core.eol", "lf"),
+        ("core.whitespace", "cr-at-eol"),
+    ):
+        git("config", "--local", key, value)
+    fixture = work / "example.txt"
+    original = newline.join((b"before", b"unchanged", b"", b""))
+    intended = newline.join((b"after", b"unchanged", b"", b""))
+    fixture.write_bytes(original)
+    git("add", "--all")
+    git("commit", "-m", "Baseline")
+    head = git("rev-parse", "HEAD").decode("ascii").strip()
+    fixture.write_bytes(intended)
+    git("add", "--all")
+    expected = git("diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", head)
+    assert expected.endswith(b" " + newline)
+    task = {"kind": "repair", "head": head}
+    output = tmp_path / "artifacts"
+    controller.collect(task, work, output)
+    patch = output / "fix.patch"
+    assert patch.read_bytes() == expected
+    assert patch.read_bytes().endswith(b" " + newline)
+    assert json.loads((output / "task.json").read_text()) == task
+    git("reset", "--hard", head)
+    assert fixture.read_bytes() == original
+    git("apply", "--check", "--index", str(patch))
+    git("apply", "--index", str(patch))
+    assert fixture.read_bytes() == intended
+    assert git("show", ":example.txt") == intended
+
+
+def test_review_collection_has_metadata_without_patch_or_git(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    command = Mock(side_effect=AssertionError("Review collection must not invoke Git"))
+    monkeypatch.setattr(controller, "command", command)
+    task = {"kind": "review", "head": "a" * 40}
+    output = tmp_path / "artifacts"
+    controller.collect(task, tmp_path, output)
+    assert json.loads((output / "task.json").read_text()) == task
+    assert not (output / "fix.patch").exists()
+    command.assert_not_called()
+
+
+def test_collection_rejects_unresolved_conflicts_before_serialization(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    command = Mock(side_effect=["", "", "unmerged entry"])
+    monkeypatch.setattr(controller, "command", command)
+    output = tmp_path / "artifacts"
+    with pytest.raises(RuntimeError, match="Unresolved conflicts"):
+        controller.collect({"kind": "repair", "head": "a" * 40}, tmp_path, output)
+    assert command.call_count == 3
+    assert not (output / "fix.patch").exists()
+    assert not (output / "task.json").exists()
