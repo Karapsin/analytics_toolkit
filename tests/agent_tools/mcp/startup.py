@@ -155,7 +155,7 @@ def test_prepare_start_sequences_environment_and_index(
         "git pull --ff-only origin dev",
         "python -m venv .venv",
         ".venv/bin/python -m pip install -r agent_tools/requirements-mcp.txt",
-        ".venv/bin/python -m pip install -e . pytest tox",
+        ".venv/bin/python -m pip install -e . pytest tox 'virtualenv>=21.1,<21.5'",
     ]
     assert result["result"]["docs_index"]["chunk_count"] == 5
 

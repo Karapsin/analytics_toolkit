@@ -73,10 +73,22 @@ creates a device key outside clones; its public key must be enrolled in the
 reviewer host's private allowed-signers file. An unknown or revoked key fails
 closed, independently of the model verdict.
 
-Instruction, skill, agent-tool, release-tool, and GitHub workflow changes also
-require an owner comment `/agent approve-policy <current-head-sha>`. Approval
-expires when the head changes. Local agents must never write this owner approval
-comment themselves. PR files cannot enroll signing keys or change this gate.
+`prepare_start(..., user_prompt="exact starting message")` records the original
+task once under private `.git/atk-tasks/`. Append task corrections with
+`task_context(action="append", user_prompt="exact correction")`. Retries and
+resumes preserve the original; verified PR handoff archives it before another task. CLI calls
+accept `--user-prompt-file` so prompt text does not need shell interpolation.
+The PR workflow attaches redacted context and a signed-commit digest. Private
+originals never appear in tool receipts. MCP-supplied text relies on the enrolled
+machine trust boundary; it is not independent proof of human authorship.
+
+Controller code/prompts, security configuration, dispatch/capture/publishing
+workflows and the required-check manifest require exact-head owner approval.
+Ordinary policies, tools and integration/test workflow repairs are reviewed
+against the attached task automatically. Owner can post
+`/agent approve-policy <current-head-sha>` or click the authenticated Telegram
+approval button. New heads invalidate approval. Local agents cannot approve or
+resume on the owner's behalf. PR files cannot enroll keys or change this gate.
 
 After planning, use `git_workflow(action="start")` to pull dev again before a
 unique feature branch is created. A changed base requires plan reassessment;
@@ -84,11 +96,23 @@ acknowledge only after reviewing the changed plan. Independent clones prevent
 concurrent sessions from sharing an index, branch, or working tree.
 
 Feature sessions commit focused and pre-commit checked changes to their own
-branch and open a PR to dev. Use `git_workflow(action="feedback")` until reviewed
-and merged, `refresh` before corrections when the bot has written commits, and
-`sync` after merge to refresh the session and clean canonical dev checkout.
-A writer lease prevents simultaneous bot/local branch edits. Dirty canonical
-work is preserved and reported as pending synchronization.
+branch and open a PR to dev. Verified publication automatically hands ownership
+to the Pi, archives the task, and refreshes clean dev. Finish with the PR link
+without waiting for review, approval, CI or merge. Publication failures retain
+local ownership; `handoff` recovers an interrupted handoff and `sync` retries
+pending dev refresh. Dirty canonical work is preserved. Each next feature has
+its own task ID and changelog fragment even while earlier PRs are pending.
+Handed-off branches prohibit local corrections. Optional
+`git_workflow(action="feedback", pr=<number>)` reads a selected PR's status.
+Local cleanup prunes remote references and deletes only proven merged, unused
+branches reachable from dev. Unknown, active and squash-only unique local work
+is preserved and reported; the Pi safely cleans verified merged remote branches.
+Each reviewer is a fresh read-only session separate from the candidate authors.
+Reviewer rejection posts detailed plain-text alerts and starts a fresh Pi
+correction agent followed by independent review, repeating until approved.
+Only genuine user questions, owner veto/cancel, invalid provenance or subscription
+and authentication limits pause work. Rejection messages have no approval buttons.
+Fast CI, independent review and protected exact-head owner approval still apply.
 
 The private subscription worker is maintained in self_hosting's
 `self_host/services/github_agent`. Airflow calls its Unix socket every minute
@@ -195,7 +219,8 @@ collection output, query/object diagnostics, and leak reports below
 containers, networks, and volumes. Greenplum completeness and the no-skips gate
 require x86_64; ARM runs are useful but not the complete deterministic matrix.
 
-Successful `git-workflow commit` and `push` operations automatically watch the
+Feature-session `commit` and `push` return immediately after verified signed PR
+handoff; the Pi owns GitHub checks. Legacy bootstrap and release operations watch the
 immutable SHA captured immediately before the push. The watcher discovers every
 entry in `.github/required-workflows.json`, waits only for `required_push`
 workflows, and reports `advisory_push` workflow status without blocking. It polls
@@ -239,3 +264,18 @@ RAG is intentionally agent-only in this repository. The docs assistant is
 stdlib-only and must stay outside public package CLI commands and package
 extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
+
+The private Telegram worker also accepts `/prompt_agent <description>`, authenticates
+the owner (with an owner-only confirmation button for anonymous channel posts),
+validates the request in a separate session, and opens a native Codex Plan-mode
+exchange through App Server with read-only source tools.
+Reply to a current question or use `/reply_agent <request-id> <answer>`; use
+`/cancel_agent <request-id>` to cancel. A separate agent must approve the completed
+plan against the initial prompt and all user responses before another agent codes.
+Questions during coding pause work and return through the same exchange. The Pi
+runs no repository checks, builds or renders; GitHub performs validation and a fresh
+independent agent reviews the final PR.
+
+The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
+the required Python 3.8 matrix remains runnable. Project setup resolves this
+constraint together with tox; it does not change public package dependencies.

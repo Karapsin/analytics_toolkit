@@ -323,6 +323,25 @@ def _feature_startup_failure(
     return None
 
 
+def _record_start_task(root_path: Path, user_prompt: str | None) -> dict[str, Any] | None:
+    if user_prompt is None:
+        return None
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+    try:
+        user_tasks.record(root_path, user_prompt)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "prepare_start",
+            {"root": str(root_path)},
+            ok=False,
+            summary="User task context blocked.",
+            blockers=[{"phase": "task_context", "message": str(exc)}],
+        )
+    return None
+
+
 def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally explicit.
     task: str,
     module: str | None = None,
@@ -330,6 +349,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     index_dir: str = DEFAULT_INDEX_DIR,
     ensure_project_env: bool = True,
     detail: str = "summary",
+    user_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Run the mandatory startup workflow for coding agents."""
     root_path = _resolve_root(root)
@@ -344,10 +364,10 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     command_results: list[dict[str, Any]] = []
     session = sessions.load(root_path)
     session_phase = session.get("phase")
-    resume_feature = session_phase == "feature"
+    resume_feature = session_phase in {"feature", "handed_off"}
     startup_failure = _feature_startup_failure(
         root_path, input_summary, command_results, resume_feature=resume_feature
-    )
+    ) or _record_start_task(root_path, user_prompt)
     if startup_failure is not None:
         return startup_failure
 
@@ -355,7 +375,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     # switch branches or discard its unfinished work.
     sync_commands = (
         []
-        if session_phase in {"planning", "revalidate", "feature"}
+        if session_phase in {"planning", "revalidate", "feature", "handed_off"}
         else _prepare_sync_commands(root_path)
     )
     for phase, command in sync_commands:
@@ -1446,6 +1466,58 @@ def _reused_stage_count(stage_reports: list[dict[str, Any]]) -> int:
     return sum(report["status"] == "reused" for report in stage_reports)
 
 
+def task_context(
+    action: str = "status", user_prompt: str | None = None, root: str = "."
+) -> dict[str, Any]:
+    """Record exact user corrections without exposing private originals in receipts."""
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+
+    try:
+        path = _resolve_root(root)
+        result = user_tasks.receipt(path, action, user_prompt)
+        return _tool_output(
+            "task_context",
+            {"action": action, "root": root},
+            summary="User task context recorded.",
+            result=result,
+        )
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "task_context",
+            {"action": action, "root": root},
+            ok=False,
+            summary="User task context blocked.",
+            blockers=[{"phase": "task_context", "message": str(exc)}],
+        )
+
+
+def _feature_commit_context(root: Path) -> tuple[list[str], str]:
+    sessions.writable(root)
+    user_tasks = importlib.import_module(
+        f"{__package__}.task_context" if __package__ else "task_context"
+    )
+    return sessions.commit_options(root), user_tasks.commit_trailers(root)
+
+
+def _session_workflow_result(
+    root: Path,
+    action: str,
+    sha: str | None,
+    pr: int | None,
+) -> dict[str, Any]:
+    if action == "start":
+        return sessions.start(root, sha)
+    if action == "feedback":
+        return sessions.feedback(root, sha, pr) if pr else sessions.feedback(root, sha)
+    if action == "refresh":
+        return sessions.refresh(root)
+    if action == "handoff":
+        return sessions.handoff(root)
+    return sessions.synchronize(root)
+
+
 def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinator.
     action: str,
     message: str | None = None,
@@ -1456,6 +1528,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
     root: str = ".",
     detail: str = "summary",
     validation_waiver: str | None = None,
+    pr: int | None = None,
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
     root_path = _resolve_root(root)
@@ -1469,6 +1542,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         "root": str(root_path),
         "detail": detail,
         "validation_waiver": validation_waiver,
+        "pr": pr,
     }
     if detail not in DETAIL_LEVELS:
         return _tool_output(
@@ -1486,16 +1560,9 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             summary="Invalid GitHub check wait interval.",
             blockers=[{"phase": "validate", "message": "wait_seconds must be positive"}],
         )
-    if action in {"start", "feedback", "refresh", "sync"}:
+    if action in {"start", "feedback", "refresh", "sync", "handoff"}:
         try:
-            if action == "start":
-                result = sessions.start(root_path, sha)
-            elif action == "feedback":
-                result = sessions.feedback(root_path, sha)
-            elif action == "refresh":
-                result = sessions.refresh(root_path)
-            else:
-                result = sessions.synchronize(root_path)
+            result = _session_workflow_result(root_path, action, sha, pr)
             return _tool_output(
                 "git_workflow", input_summary, summary="Session workflow completed.", result=result
             )
@@ -1516,7 +1583,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[
                 {
                     "phase": "validate",
-                    "message": "action must be checks, commit, push, start, feedback, refresh, or sync",
+                    "message": "action must be checks, commit, push, start, feedback, refresh, sync, or handoff",
                 }
             ],
         )
@@ -1557,10 +1624,10 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[{"phase": "validate", "message": "message is required for commit"}],
         )
     commit_options: list[str] = []
+    task_trailers = ""
     if sessions.load(root_path):
         try:
-            sessions.writable(root_path)
-            commit_options = sessions.commit_options(root_path)
+            commit_options, task_trailers = _feature_commit_context(root_path)
         except RuntimeError as exc:
             return _tool_output(
                 "git_workflow",
@@ -1675,6 +1742,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 "commit",
                 "-m",
                 message
+                + task_trailers
                 + ("\n\nValidation-Waiver: " + validation_waiver if validation_waiver else ""),
             ],
             "env": {},
@@ -1734,7 +1802,9 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         "git_workflow",
         input_summary,
         summary=(
-            "Commit and push completed; exact-SHA GitHub verification is pending."
+            "Commit and signed PR publication completed; ownership handed to the Pi."
+            if checks["result"].get("status") == "delegated"
+            else "Commit and push completed; exact-SHA GitHub verification is pending."
             if pending
             else "Commit, push, and exact-SHA GitHub verification completed."
         ),
@@ -1886,6 +1956,7 @@ def create_mcp_server() -> Any:
     )
 
     server.tool()(prepare_start)
+    server.tool()(task_context)
     server.tool()(docs)
     server.tool()(workflow_status)
     server.tool()(workflow_metrics)
@@ -2115,6 +2186,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     prepare_parser = subparsers.add_parser("prepare-start")
     prepare_parser.add_argument("--task", required=True)
     prepare_parser.add_argument("--module")
+    prepare_parser.add_argument("--user-prompt-file")
     prepare_parser.add_argument("--root", default=".")
     prepare_parser.add_argument("--index-dir", default=DEFAULT_INDEX_DIR)
     prepare_parser.add_argument("--detail", choices=DETAIL_LEVELS, default="summary")
@@ -2132,6 +2204,19 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             index_dir=args.index_dir,
             ensure_project_env=args.ensure_project_env,
             detail=args.detail,
+            user_prompt=Path(args.user_prompt_file).read_text() if args.user_prompt_file else None,
+        )
+    )
+
+    task_parser = subparsers.add_parser("task-context")
+    task_parser.add_argument("--action", choices=["status", "append"], default="status")
+    task_parser.add_argument("--user-prompt-file")
+    task_parser.add_argument("--root", default=".")
+    task_parser.set_defaults(
+        handler=lambda args: task_context(
+            action=args.action,
+            root=args.root,
+            user_prompt=Path(args.user_prompt_file).read_text() if args.user_prompt_file else None,
         )
     )
 
@@ -2283,11 +2368,15 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
 
     git_parser = subparsers.add_parser("git-workflow")
     git_parser.add_argument(
-        "action", choices=["checks", "commit", "push", "start", "feedback", "refresh", "sync"]
+        "action",
+        choices=["checks", "commit", "push", "start", "feedback", "refresh", "sync", "handoff"],
     )
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
     git_parser.add_argument("--sha")
+    git_parser.add_argument(
+        "--pr", type=int, help="Explicit PR target for optional read-only feedback"
+    )
     git_parser.add_argument(
         "--validation-waiver",
         help="Explicit user-authorized reason; never records checks as passed",
@@ -2310,6 +2399,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             message=args.message,
             paths=args.paths,
             sha=args.sha,
+            pr=args.pr,
             validation_waiver=args.validation_waiver,
             check_timeout_seconds=args.check_timeout_seconds,
             wait_seconds=args.wait_seconds,
@@ -2465,7 +2555,9 @@ def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[st
             (
                 "project_env",
                 {
-                    "display": ".venv/bin/python -m pip install -e . pytest tox",
+                    "display": (
+                        ".venv/bin/python -m pip install -e . pytest tox 'virtualenv>=21.1,<21.5'"
+                    ),
                     "args": [
                         str(venv_python),
                         "-m",
@@ -2477,6 +2569,7 @@ def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[st
                         ".",
                         "pytest",
                         "tox",
+                        "virtualenv>=21.1,<21.5",
                     ],
                     "env": {},
                 },
@@ -3677,7 +3770,7 @@ def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dic
     required_paths: set[str] = {CHANGELOG_PATH}
     session = sessions.load(root)
     if session.get("phase") == "feature":
-        required_paths = {f"agent_tools/changelog/{session['id']}.md"}
+        required_paths = {sessions.fragment_path(session)}
     changelog_path = root / CHANGELOG_PATH
     if changelog_path.exists():
         unreleased_count = _count_unreleased_changelog_bullets(_read_text(changelog_path))
@@ -4065,7 +4158,9 @@ def _push_dev_workflow(
         input_summary,
         ok=not checks["blockers"],
         summary=(
-            "Push completed; exact-SHA GitHub verification is pending."
+            "Signed PR publication completed; ownership handed to the Pi."
+            if checks["result"].get("status") == "delegated"
+            else "Push completed; exact-SHA GitHub verification is pending."
             if pending
             else "Push and exact-SHA GitHub verification completed."
             if not checks["blockers"]
@@ -4133,7 +4228,19 @@ def _watch_pushed_commit(
     detail: str = "summary",
 ) -> dict[str, Any]:
     """Watch the immutable SHA captured immediately before the push."""
-    if sessions.load(root).get("phase") == "feature":
+    state = sessions.load(root)
+    handoff = next((item for item in state.get("handoffs", []) if item["sha"] == sha), None)
+    if handoff:
+        return {
+            "result": {
+                "status": "delegated",
+                **handoff,
+                "next": "The Pi owns review, checks and merging.",
+            },
+            "command_results": [],
+            "blockers": [],
+        }
+    if state.get("phase") == "feature":
         try:
             result = sessions.feedback(root, sha)
             result["status"] = "success" if result["status"] == "merged" else "pending"

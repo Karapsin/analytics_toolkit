@@ -25,6 +25,13 @@ It records pending and failed integration runs and the corresponding repair PRs.
 A completed green replacement must cover each affected job group before the
 incident is resolved.
 
+If refreshing a tracked run’s metadata fails with an upstream `gh api failed:`
+HTTP 500–599 error, the controller retains its existing pending status and unresolved
+needs, retries that immutable run ID on later reconciliation, and continues normal
+authorized PR processing. This recovery applies only to the metadata fetch; other
+errors, including authentication failures, malformed metadata and monitor state,
+still fail reconciliation.
+
 ## Enrolled machines and policy changes
 
 Automatic PR handling accepts only the repository owner's PRs with an enrolled
@@ -33,10 +40,34 @@ machine signature, plus this App's signed repair commits. The private host owns
 GitHub account keys nor files in a PR modify that registry. Private signing keys
 remain on their originating machines.
 
-Policy and automation changes need an owner comment:
-`/agent approve-policy <current-head-sha>`. A new head invalidates that approval.
-Local agents must not post the approval on the owner's behalf. The reviewer reads
-existing policy from the immutable dev base and evaluates edits as proposals.
+Every feature PR attaches the starting user prompt and subsequent corrections,
+with credentials redacted. The digest is bound to its signed head. Every review
+uses a fresh read-only Codex session separate from its authors. The reviewer
+evaluates the complete diff against the task and existing quality requirements.
+
+Owner approval is retained for controller code/prompts, its security configuration,
+dispatch/capture/publishing workflows and required-check classification. Ordinary
+instructions, agent tools and integration/test workflow repairs can be approved
+automatically. Post `/agent approve-policy <current-head-sha>` or use the owner-only
+Telegram approval buttons. A new head invalidates approval. The host verifies the
+Telegram owner, channel, message, callback authentication and current PR head;
+the App posts a transparent audit comment. Local agents cannot approve for you.
+
+Rejection posts what changed, why it was rejected and the required corrections,
+mentions the owner and sends a plain Telegram alert. A fresh Pi correction agent
+plans the correction, a separate agent reviews that plan, and another agent edits.
+Fresh independent PR review follows every changed head. This cycle continues until
+approved, without an arbitrary retry cap. Rejection alerts have no buttons and
+require no resume command. Genuine questions wait for authenticated owner answers;
+owner vetoes/cancellation and invalid provenance stop work. Invalid task context
+also fails closed. Older trusted
+App repairs can inherit the standing integration-repair task, bound to their
+immutable signed head; owner-authored PRs must attach their task.
+
+Telegram sends brief change descriptions and links for PR merges into dev, dev
+promotions into main and successful production PyPI release workflows. TestPyPI
+and automation-only main mirrors are excluded. Notifications use a private,
+durable outbox, retry delivery failures and deduplicate successful events.
 
 ## Merge and repair behavior
 
@@ -44,9 +75,18 @@ Merges require current `fast-checks` and the App's `agent-review`, against the
 current `dev` base. Integration success is not a merge gate. The worker monitors
 integration after merges and creates repair PRs with fast regression coverage.
 
-Up to five Codex jobs can run concurrently. A PR has one writer; merges and
-changelog folding are serialized. Local agents wait for feedback and refresh
-bot changes before making corrections.
+Up to five Codex jobs can run concurrently. A PR has one writer and merges are
+serialized. Rebase and changelog folding precede final review and protected owner
+approval. Local agents finish after checked, signed PR publication and task-context
+attachment; the Pi owns all later corrections, CI, approvals and merges. A durable
+handoff permits the local clone to refresh clean dev and begin another planned task
+while the previous PR remains pending. Offline machines refresh at their next start.
+
+Cleanup removes unchanged branches belonging to merged PRs after merge and daily
+through existing reconciliation. Expected-head leases reject deletion races. Dev,
+main, protected/open-PR/active branches and unknown or unmerged work are preserved.
+Local startup prunes remote references and removes only unused, safely merged local
+branches; dirty worktrees, backups and private task/audit records are retained.
 
 ## Updating trusted automation
 
@@ -65,5 +105,42 @@ The weekly updater preserves the existing `/usr/local/bin/codex` VPN wrapper.
 It verifies the official ARM64 download and changes the user-owned `current`
 symlink only after the version smoke check. A failed update restores the previous
 pointer.
+
+
+### Telegram feature requests and planning
+
+In GitHub Alerts, send `/prompt_agent <feature request>`. Anonymous channel
+commands and answers require the pinned owner's **Confirm request/answer** button;
+that authenticates the exact message and does not approve a feature or bypass review.
+Identified owner messages are authenticated directly. No other user can allocate a worker.
+
+A fresh read-only agent validates the request. A separate native Codex Plan-mode
+session, driven through the private App Server, inspects context and asks questions
+in Telegram. No prompt-only planning fallback is accepted. Answer by
+replying to the latest question message or with `/reply_agent <request-id> <answers>`.
+Multiple requests have independent IDs. `/cancel_agent <request-id>` invalidates
+queued and running results. Replies to stale question messages are rejected.
+
+After questions are answered, a fresh read-only agent reviews the plan against
+the original prompt and chronological responses. Only an exact approval tied to
+the task, plan and dev SHA allows a separate coding session to start. Changed dev
+or user scope requires planning and review again. Coding questions pause work,
+preserve its private patch, and return through Telegram and plan review before
+implementation resumes. An invalid request asks for user correction; a rejected
+implementation plan returns to a fresh planning round with the findings.
+
+The Pi only performs source inspection/edits and lightweight trusted Git/controller
+operations. It never executes repository programs, tests, builds, installs or scenes.
+All heavy checks run on GitHub; the final PR receives another fresh independent
+reviewer. Original prompts and answers are attached automatically with credential
+redaction, bound to signed commit trailers. Request state and notifications survive
+worker restarts. The subscription worker retains its VPN wrapper, model configuration,
+Airflow schedules and five-worker limit.
+
+Reviewers can inspect a host-owned immutable evidence snapshot for companion worker
+and bot changes. Its manifest binds source/test files to hashes, repository commit
+IDs and exact-commit GitHub checks. Missing or invalid evidence cannot be replaced
+by an author's claim. Protected approval notices use an independent concrete change
+assessment for the current head and task digest, never the starting prompt alone.
 
 [Documentation overview](README.md)

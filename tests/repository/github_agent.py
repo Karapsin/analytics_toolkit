@@ -172,7 +172,9 @@ def test_duplicate_matrix_job_names_require_every_group_to_pass() -> None:
     assert state["runs"]["1"]["needs"] == ["fault"]
 
 
-def test_rejected_bot_repair_is_queued_for_correction(monkeypatch: Any) -> None:
+def test_rejected_bot_repair_is_paused_until_owner_resumes(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     base = "b" * 40
     pr = {
         "number": 8,
@@ -218,7 +220,18 @@ def test_rejected_bot_repair_is_queued_for_correction(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
     monkeypatch.setattr(controller, "authorization_error", lambda *args: None)
-    assert controller.discover(GitHub(), 17)["include"][0]["kind"] == "repair"
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
+    controls = controller.trusted_module("review_control")
+    with controls.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            ("owner/repo", 8, "a" * 40, "Scope mismatch", 1),
+        )
+    gh = GitHub()
+    original_pages = gh.pages
+    gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
+    assert controller.discover(gh, 17)["include"] == []
 
 
 def owned_pr() -> dict[str, Any]:
@@ -253,7 +266,9 @@ def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch
 
         def pages(self, path: str) -> list[dict[str, Any]]:
             if "/files?" in path:
-                return [{"filename": "notes.md", "previous_filename": "AGENTS.md"}]
+                return [
+                    {"filename": "notes.md", "previous_filename": ".github/agent/controller.py"}
+                ]
             return self.comments
 
     gh = GitHub()
@@ -423,13 +438,237 @@ def test_post_merge_failure_creates_repair_without_new_dev_matrix() -> None:
         }
     }
     result = controller._integration_tasks(object(), state, "current", [])
-    assert result == [
-        {
-            "kind": "repair",
-            "number": 0,
-            "head": "current",
-            "base": "current",
-            "branch": controller.REPAIR_BRANCH + "current",
-            "runs": [1],
+    assert len(result) == 1
+    assert {
+        key: result[0][key] for key in ("kind", "number", "head", "base", "branch", "runs")
+    } == {
+        "kind": "repair",
+        "number": 0,
+        "head": "current",
+        "base": "current",
+        "branch": controller.REPAIR_BRANCH + "current",
+        "runs": [1],
+    }
+    assert result[0]["producer_id"] == "standing-repair:current"
+    proto = controller.trusted_module("task_context")
+    assert result[0]["task_digest"] == proto.digest(result[0]["user_task"])
+    assert controller._integration_tasks(object(), state, "current", []) == result
+
+
+class _RefreshDiscoveryGitHub:
+    repository = "owner/repo"
+
+    def __init__(self, base: str) -> None:
+        self._base = base
+        self.errors: dict[str, Exception] = {}
+        self.calls: list[str] = []
+        self.run_metadata: dict[str, Any] = {
+            str(key): {
+                "id": key,
+                "head_sha": base,
+                "status": "in_progress",
+                "conclusion": None,
+                "run_attempt": 1,
+                "html_url": f"run-{key}",
+                "event": "workflow_dispatch",
+                "updated_at": "2026-10-12",
+            }
+            for key in (1, 2, 3)
         }
+        self.prs = [dict(owned_pr(), number=number) for number in (1, 2)]
+
+    def base(self) -> str:
+        return self._base
+
+    def pulls(self) -> list[dict[str, Any]]:
+        return self.prs
+
+    def pull(self, number: int) -> dict[str, Any]:
+        return self.prs[number - 1]
+
+    def checks(self, head: str) -> list[Any]:
+        return []
+
+    def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
+        self.calls.append(path)
+        if path in self.errors:
+            raise self.errors[path]
+        return self._response(path, method)
+
+    def _response(self, path: str, method: str) -> Any:
+        if path.startswith("actions/runs/"):
+            return self.run_metadata[path.rsplit("/", 1)[1]]
+        if path == "collaborators/owner/permission":
+            return {"permission": "write"}
+        if path.startswith("compare/"):
+            return {"behind_by": 0, "status": "identical"}
+        return self._patch_monitor(path, method)
+
+    def _patch_monitor(self, path: str, method: str) -> None:
+        assert path == "issues/99"
+        assert method == "PATCH"
+
+    def pages(self, path: str, key: str | None = None) -> list[Any]:
+        if path in self.errors:
+            raise self.errors[path]
+        if key == "workflow_runs":
+            return []
+        if key == "jobs":
+            return [{"name": "HTTP", "conclusion": "success"}]
+        assert "/files?" in path
+        return (
+            [{"filename": "agent_tools/changelog/request.md"}]
+            if (path.startswith("pulls/1/"))
+            else [{"filename": "source.py"}]
+        )
+
+
+@pytest.fixture
+def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[Any], Any]:
+    """Bound discovery to fake GitHub metadata and in-memory monitor persistence."""
+    base = "b" * 40
+    state: dict[str, Any] = {
+        "issue": 99,
+        "started": "2026-10-01T00:00:00+00:00",
+        "runs": {
+            "1": {"sha": base, "status": "in_progress", "needs": [], "attempt": 1},
+            "2": {
+                "sha": base,
+                "status": "completed",
+                "conclusion": "failure",
+                "needs": ["HTTP"],
+                "attempt": 1,
+                "updated": "2026-10-01",
+            },
+            "3": {"sha": base, "status": "queued", "attempt": 1},
+        },
+    }
+    saved: list[Any] = []
+    proto = controller.trusted_module("task_context")
+    context = {
+        "version": 1,
+        "task_id": "refresh-test",
+        "source": "user",
+        "producer_id": "local:refresh-test",
+        "starting_prompt": "Fix metadata refresh.",
+        "corrections": [],
+    }
+    metadata = {
+        "user_task": context,
+        "task_digest": proto.digest(context),
+        "producer_id": context["producer_id"],
+    }
+
+    original_save = controller.save_monitor
+
+    def save(gh: Any, value: dict[str, Any]) -> None:
+        original_save(gh, value)
+        saved.append(json.loads(json.dumps(value)))
+
+    monkeypatch.delenv("AGENT_STATE_DIR", raising=False)
+    monkeypatch.setattr(controller, "monitor", lambda gh: (99, state))
+    monkeypatch.setattr(controller, "save_monitor", save)
+    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
+    monkeypatch.setattr(controller, "task_metadata", lambda *args: metadata)
+    controls = controller.trusted_module("review_control")
+    monkeypatch.setattr(controls, "paused", lambda *args: False)
+    monkeypatch.setattr(controls, "correction", lambda *args: None)
+    return _RefreshDiscoveryGitHub(base), state, saved, metadata
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 599])
+def test_run_metadata_5xx_preserves_records_and_pr_work_then_retries(
+    run_refresh_discovery: Any, status: int
+) -> None:
+    gh, state, saved, metadata = run_refresh_discovery
+    before = json.loads(json.dumps(state["runs"]))
+    error = RuntimeError(f"gh api failed: gh: Server Error (HTTP {status})")
+    gh.errors = {"actions/runs/1": error, "actions/runs/2": error}
+
+    result = controller.discover(gh, 17)
+    assert [(task["number"], task["kind"]) for task in result["include"]] == [
+        (1, "metadata"),
+        (2, "review"),
     ]
+    for task in result["include"]:
+        assert {key: task[key] for key in metadata} == metadata
+    for key in ("1", "2"):
+        assert saved[-1]["runs"][key] == before[key]
+    assert saved[-1]["runs"]["3"]["status"] == "in_progress"
+    assert gh.calls.count("actions/runs/3") == 1
+
+    gh.errors.clear()
+    for key in ("1", "2"):
+        gh.run_metadata[key].update(status="completed", conclusion="success", run_attempt=2)
+    controller.discover(gh, 17)
+    for key in ("1", "2"):
+        assert gh.calls.count(f"actions/runs/{key}") == 2
+        assert saved[-1]["runs"][key]["status"] == "completed"
+        assert saved[-1]["runs"][key]["attempt"] == 2
+        assert saved[-1]["runs"][key]["needs"] == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "gh api failed: gh: Unauthorized (HTTP 401)",
+        "gh api failed: gh: Forbidden (HTTP 403)",
+        "gh api failed: gh: Not Found (HTTP 404)",
+        "gh api failed: gh: Rate limit (HTTP 429)",
+        "gh api failed: gh: Server Error",
+        "gh api failed: gh: Server Error (HTTP 50)",
+        "gh api failed: gh: Server Error (HTTP 5020)",
+        "gh api failed: gh: Server Error HTTP 502",
+        "other api failed: gh: Server Error (HTTP 502)",
+        "prefix gh api failed: gh: Server Error (HTTP 502)",
+        "Logical state inconsistency",
+        "Task provenance mismatch (HTTP 502)",
+    ],
+)
+def test_run_metadata_unclassified_errors_propagate(
+    run_refresh_discovery: Any, message: str
+) -> None:
+    gh, _, saved, _ = run_refresh_discovery
+    error = RuntimeError(message)
+    gh.errors["actions/runs/1"] = error
+    with pytest.raises(RuntimeError) as caught:
+        controller.discover(gh, 17)
+    assert caught.value is error
+    assert saved == []
+
+
+@pytest.mark.parametrize("malformed", ["metadata", "state"])
+def test_run_refresh_malformed_metadata_and_state_fail(
+    run_refresh_discovery: Any, malformed: str
+) -> None:
+    gh, state, saved, _ = run_refresh_discovery
+    if malformed == "metadata":
+        gh.run_metadata["1"] = {"id": 1}
+    else:
+        del state["runs"]["1"]["status"]
+    with pytest.raises(KeyError, match="status"):
+        controller.discover(gh, 17)
+    assert saved == []
+
+
+@pytest.mark.parametrize("operation", ["record", "jobs", "permission"])
+def test_run_refresh_5xx_catch_does_not_cover_other_operations(
+    run_refresh_discovery: Any, monkeypatch: Any, operation: str
+) -> None:
+    gh, _, saved, _ = run_refresh_discovery
+    error = RuntimeError("gh api failed: gh: Server Error (HTTP 502)")
+    if operation == "record":
+
+        def fail(*args: Any) -> None:
+            raise error
+
+        monkeypatch.setattr(controller, "_record_run", fail)
+    elif operation == "jobs":
+        gh.run_metadata["1"].update(status="completed", conclusion="success")
+        gh.errors["actions/runs/1/jobs?filter=latest&per_page=100"] = error
+    else:
+        gh.errors["collaborators/owner/permission"] = error
+    with pytest.raises(RuntimeError) as caught:
+        controller.discover(gh, 17)
+    assert caught.value is error
+    assert saved == []

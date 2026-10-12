@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
+
 ## 1.3.12.4 - 2026-10-12
 
 - Wait for fresh-clone trust input readiness before selecting native Plan mode.

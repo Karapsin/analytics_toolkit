@@ -2,9 +2,11 @@
   "type": "object",
   "properties": {
     "approved": {"type": "boolean"},
+    "alignment": {"type": "string", "enum": ["aligned", "not_aligned", "uncertain"]},
+    "change_summary": {"type": "string"},
     "summary": {"type": "string"},
     "findings": {"type": "array", "items": {"type": "string"}}
   },
-  "required": ["approved", "summary", "findings"],
+  "required": ["approved", "alignment", "change_summary", "summary", "findings"],
   "additionalProperties": false
 }
