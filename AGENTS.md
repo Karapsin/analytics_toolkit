@@ -109,21 +109,24 @@ changing the tree.
 Normal feature work uses the session-owned branch and a PR to `dev`.
 Run local focused and mandatory pre-commit checks, then
 `git_workflow(action="commit", message="...", paths=[...])`. It stages explicit
-paths, commits, pushes the feature branch, and opens its PR. Wait for GitHub
-agent review and fast CI using `git_workflow(action="feedback")` or exact-head
-`git_workflow(action="checks", sha="<sha>")`; fix requested changes until merged.
-Before corrections, check feedback and use `git_workflow(action="refresh")` if
-bot commits advanced the remote branch. Never edit while feedback reports the
-GitHub writer or the PR has the `agent:writing` label.
-If feedback reports `awaiting_user` or the PR has `agent:needs-user`, stop all
-automatic corrections. Owner must explicitly post `/agent resume <current-sha>`.
-Agents must not post this resume on the owner's behalf. Rejections include
-the changes, reasons and requested corrections in GitHub and plain Telegram
-alerts; rejection alerts contain no approval buttons.
-After merge, call `git_workflow(action="sync")`; it updates the clone's dev and
-updates shared dev under a lock only when clean and already on dev. Report any
-pending shared synchronization without discarding work. Reenter native Plan
-mode before another task. Explicit resume preserves the existing clone/branch.
+paths, commits, pushes the signed feature branch, verifies its task attachment,
+and hands the published PR to the Pi. Local agents finish with the PR link;
+they do not wait for review, approval, GitHub checks or merge and do not correct
+handed-off branches. `git_workflow(action="handoff")` recovers an interrupted
+handoff. Publication failures retain local ownership.
+The Pi owns conflicts, fast CI, automatic fresh correction agents and independent
+review until approved. Rejections describe changes and reasons in plain Telegram
+alerts without approval buttons. Genuine unanswered questions, owner veto/cancel,
+provenance failures and subscription/authentication limits pause the appropriate
+work; routine reviewer rejection does not require an owner resume command.
+Handoff archives private task context and refreshes clean local dev immediately;
+`git_workflow(action="sync")` retries pending synchronization without waiting for
+merge. Shared dev updates under a lock only when clean and already on dev. Report
+pending synchronization without discarding work. Reenter native Plan mode before
+another task, using a fresh feature/task ID and changelog fragment.
+`git_workflow(action="feedback", pr=<number>)` is optional read-only status.
+Merged branch cleanup preserves active worktrees, unpublished work, dev and main;
+unknown and squash-only unique local branches are reported and preserved.
 
 Local agents do not investigate or wait for advisory integration. The GitHub
 agent queues integration on each final reviewed PR head before merge, reruns
@@ -295,7 +298,8 @@ specific documentation update that would make future RAG retrieval unambiguous.
   signatures and trusted App repairs. Every review must use a fresh read-only
   agent session separate from every candidate author; verdicts bind to the head,
   dev base and user-task digest. Misalignment, ambiguity and quality blockers
-  reject the candidate and pause it pending user instructions.
+  reject the candidate and start fresh Pi correction and independent review.
+  Ambiguity requiring actual user input pauses for authenticated Telegram answers.
 - Owner exact-head `/agent approve-policy <sha>` approval is retained for
   `.github/agent/`, `.codex/`, the controller/dispatch/capture/publishing workflows,
   `.github/required-workflows.json` and `agent_tools/machine_signing.py`.

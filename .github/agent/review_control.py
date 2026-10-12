@@ -36,6 +36,12 @@ def connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS feature_contexts (repository TEXT, branch TEXT, digest TEXT, PRIMARY KEY(repository,branch,digest));
         CREATE TABLE IF NOT EXISTS features (repository TEXT, branch TEXT, digest TEXT, PRIMARY KEY(repository,branch));
         CREATE TABLE IF NOT EXISTS cursors (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE IF NOT EXISTS corrections (
+          repository TEXT, number INTEGER, head TEXT, digest TEXT, reason TEXT,
+          changes TEXT, created REAL, PRIMARY KEY(repository,number));
+        CREATE TABLE IF NOT EXISTS assessments (
+          repository TEXT, number INTEGER, head TEXT, digest TEXT, changes TEXT,
+          PRIMARY KEY(repository,number,head));
     """)
     path.chmod(0o600)
     return db
@@ -72,7 +78,7 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     comments = gh.pages(f"issues/{number}/comments?per_page=100")
     owner = gh.repository.split("/")[0]
     if not any(marker in item["body"] for item in comments):
-        gh.comment(number, marker + f"\n@{owner} Reviewer rejected this PR.\n\n"
+        gh.comment(number, marker + f"\n@{owner} This PR requires user input.\n\n"
                    + "What changed: " + changes + "\n\nWhy rejected:\n" + reason
                    + "\n\nAutomatic corrections are paused. To resume, post exactly:\n"
                    + f"`/agent resume {head}`")
@@ -144,13 +150,79 @@ def clear_owner_decline(gh: Any, number: int, head: str) -> None:
             gh.api(f"issues/{number}/labels/{PAUSED}", "DELETE")
 
 
+def assess(repository: str, number: int, head: str, digest: str, changes: str) -> None:
+    if not changes.strip():
+        raise ValueError("A concrete change assessment is required.")
+    with connect() as db:
+        db.execute("INSERT OR REPLACE INTO assessments VALUES (?,?,?,?,?)",
+                   (repository, number, head, digest, changes))
+
+
+def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, changes: str) -> None:
+    """Routine reviewer/CI rejection queues a new author, never an owner resume."""
+    number, head = pr["number"], pr["head"]["sha"]
+    with connect() as db:
+        db.execute("INSERT OR REPLACE INTO corrections VALUES (?,?,?,?,?,?,?)",
+                   (gh.repository, number, head, task["task_digest"], reason, changes, time.time()))
+    marker = f"<!-- agent-correction-{head}-{task['task_digest']} -->"
+    if not any(marker in item["body"] for item in gh.pages(f"issues/{number}/comments?per_page=100")):
+        gh.comment(number, marker + "\nReviewer requested changes.\n\nWhat changed: " + changes
+                   + "\n\nWhy rejected:\n" + reason
+                   + "\n\nA separate correction agent on RPi5 is queued. "
+                   "It will plan the correction and submit it for independent review.")
+    enqueue(f"reject:{gh.repository}:{number}:{head}:{task['task_digest']}", "rejection",
+            {"repository": gh.repository, "number": number, "head": head,
+             "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
+             "title": pr.get("title", "PR " + str(number)), "changes": changes,
+             "reason": reason, "command": "A separate RPi5 correction agent is queued; no resume command is needed."})
+
+
+def correction(repository: str, number: int, head: str, digest: str) -> dict[str, Any] | None:
+    with connect() as db:
+        row = db.execute("SELECT reason,changes FROM corrections WHERE repository=? AND number=? AND head=? AND digest=?",
+                         (repository, number, head, digest)).fetchone()
+    return dict(row) if row else None
+
+
+def hold_correction(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
+    """Private authenticated intake can wait for an answer without weakening vetoes."""
+    with connect() as db:
+        row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+        if row and row["reason"] != "Correction agent requires user input.":
+            raise ValueError("A separate owner/security hold is active.")
+        db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
+                   (gh.repository, pr["number"], pr["head"]["sha"],
+                    "Owner cancelled the correction." if cancel else "Correction agent requires user input.", time.time()))
+    gh.api(f"issues/{pr['number']}/labels", "POST", {"labels": [PAUSED]})
+
+
+def resume_correction(gh: Any, pr: dict[str, Any]) -> None:
+    with connect() as db:
+        row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+        if not row or row["reason"] != "Correction agent requires user input.":
+            return
+        db.execute("DELETE FROM pauses WHERE repository=? AND number=?", (gh.repository, pr["number"]))
+    labels = gh.api(f"issues/{pr['number']}/labels")
+    if any(item["name"] == PAUSED for item in labels):
+        gh.api(f"issues/{pr['number']}/labels/{PAUSED}", "DELETE")
+
+
 def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[str, Any]) -> None:
     number, head = pr["number"], pr["head"]["sha"]
+    from hashlib import sha256
+    digest = sha256(json.dumps(task, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    with connect() as db:
+        row = db.execute("SELECT changes FROM assessments WHERE repository=? AND number=? AND head=? AND digest=?",
+                         (gh.repository, number, head, digest)).fetchone()
+    if row is None:
+        return  # Never ask the owner to approve an unassessed or stale candidate.
     enqueue(f"approval:{gh.repository}:{number}:{head}", "approval",
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)),
-             "changes": task["starting_prompt"][:1200], "paths": paths,
+             "changes": row["changes"][:2500], "paths": paths,
              "reason": "These files govern the reviewer/controller, its trusted prompts or "
              "security and merge permissions. Your retained policy requires owner approval "
              "for this exact head, in addition to separate review and fast CI.",

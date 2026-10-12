@@ -62,8 +62,8 @@ scenario is a failure.
 Do not invoke local SQL integration as a normal implementation-completion step,
 including when an integration scenario was added or changed. Run it only when
 the user explicitly requests local integration validation or during release
-readiness. Normal work ends with focused and pre-commit validation, followed by
-the exact-SHA required-check watch.
+readiness. Normal local work ends with focused and pre-commit validation, followed
+by verified signed PR publication and durable handoff to the Pi.
 
 ## Test Layout
 
@@ -111,13 +111,17 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 6. Run mandatory `run_checks(level="precommit")`, then workflow status.
 7. Commit explicit paths with `git_workflow(action="commit", ...)`, which pushes
    the feature branch and opens its PR to dev.
-8. Wait for agent review and fast CI with `git_workflow(action="feedback")`.
-   Respect the GitHub writer lease. Refresh after bot commits before corrections.
-9. Fix feedback and repeat checks/commits until merged; do not monitor integration.
-   A reviewer rejection pauses work: stop when feedback is `awaiting_user`.
-   Resume requires the owner's explicit `/agent resume <current-sha>` comment.
-10. Call `git_workflow(action="sync")`; report pending shared sync safely.
-11. Reenter native Plan mode before starting another feature.
+8. Publication verifies the signed head and task attachment, archives the task,
+   and hands ownership to the Pi. Finish with the PR link without waiting for
+   review, approval, CI or merge. Never edit a handed-off branch.
+9. The Pi handles conflicts, corrections, GitHub checks, review and merging.
+   Reviewer rejection starts fresh correction and independent review agents.
+10. Handoff refreshes clean dev. Recover interrupted publication with `push`,
+    interrupted handoff with `handoff`, and pending dev refresh with `sync`.
+    Dirty shared work is preserved and reported. Optional `feedback --pr <number>`
+    is read-only and never transfers ownership back to a local agent.
+11. Reenter native Plan mode before another feature; its fragment and task ID are
+    distinct even while previous PRs are open.
 
 The GitHub integration-repair role is explicitly authorized to monitor and fix
 advisory integration after merge. Each repair requires fast regression coverage,
@@ -131,7 +135,7 @@ An unchanged failure receipt means the tree should change before retry. Use
 `workflow_metrics(...)` for response-cost analysis; its token count is a
 serialized-byte estimate, not model billing telemetry.
 
-If a watch is interrupted, resume it with
+For legacy bootstrap/release workflows only, if a watch is interrupted, resume it with
 `git_workflow(action="checks", sha="<exact-pushed-sha>")` or
 `agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>`.
 Never use the newest run on `dev` as a proxy for that SHA. Missing authentication,

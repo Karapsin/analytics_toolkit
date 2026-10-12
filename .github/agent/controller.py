@@ -10,7 +10,6 @@ import re
 import sqlite3
 import subprocess
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -78,6 +77,19 @@ def verify_review_execution(task: dict[str, Any], receipt: dict[str, Any]) -> No
             or not isinstance(identity, str) or not identity.startswith("reviewer:")
             or identity == task["producer_id"]):
         raise RuntimeError("A separate read-only reviewer session is mandatory.")
+
+
+def verify_correction_plan(task: dict[str, Any], artifact: Path) -> None:
+    receipt = json.loads((artifact / "plan-review.json").read_text())
+    plan = (artifact / "approved-plan.md").read_text()
+    expected_hash = hashlib.sha256((task["task_digest"] + task["base"] + plan + task["head"]).encode()).hexdigest()
+    if (any(receipt.get(key) != task.get(key) for key in
+            ("head", "base", "task_digest", "producer_id", "plan_hash"))
+            or task.get("plan_hash") != expected_hash or receipt.get("approved") is not True
+            or receipt.get("mode") != "read-only"
+            or not str(receipt.get("reviewer_id", "")).startswith("plan-reviewer:")
+            or receipt["reviewer_id"] == task["producer_id"]):
+        raise RuntimeError("Correction requires an independent approved plan for this exact task and head.")
 
 
 def command(*args: str, cwd: Path | None = None, data: str | None = None) -> str:
@@ -172,10 +184,12 @@ def policy_path(path: str) -> bool:
         ".github/required-workflows.json", "agent_tools/machine_signing.py"})
 
 
-def authorization_error(gh: GitHub, pr: dict[str, Any]) -> str | None:
+def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True) -> str | None:
     head = pr["head"]["sha"]
     if not trusted(pr, gh.repository) or not signed_head(gh.repository, head):
         return "Only the repository owner's PRs signed by an enrolled machine are automated."
+    if not require_policy:
+        return None  # Proposals can be inspected/repaired; protected activation still needs approval.
     files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
     if not any(policy_path(path) for item in files
                for path in (item["filename"], item.get("previous_filename", ""))):
@@ -352,8 +366,12 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     # Historical failures are evidence for a repair PR, not a reason to run
     # another matrix on every new dev SHA. The final repair candidate is tested
     # before its merge by the same path as ordinary PRs.
+    proto = trusted_module("task_context")
+    producer = "standing-repair:" + base
+    context = proto.repair_context(base, producer)
     return [{"kind": "repair", "number": 0, "head": base, "base": base,
-             "branch": REPAIR_BRANCH + base[:12], "runs": failures}]
+             "branch": REPAIR_BRANCH + base[:12], "runs": failures,
+             "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}]
 
 
 def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
@@ -405,43 +423,40 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             if signed_head(gh.repository, head):
                 rejection_check(gh, pr, base, str(exc), pr.get("title", "Missing user task context"))
             continue
-        denial = authorization_error(gh, pr)
+        denial = authorization_error(gh, pr, False)
         if denial:
             if existing is None or existing.get("output", {}).get("summary") != denial:
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary": denial}})
-            if denial.startswith("Policy changes"):
-                files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
-                paths = sorted({path for item in files for path in
-                                (item["filename"], item.get("previous_filename", ""))
-                                if policy_path(path)})
-                controls.approval_notice(gh, pr, paths, metadata["user_task"])
             continue
         fast = fast_check(checks)
         comparison = gh.api(f"compare/{base}...{head}")
         kind = "conflict" if pr.get("mergeable") is False or comparison["behind_by"] > 0 else "review"
-        if pr["head"]["ref"].startswith(REPAIR_BRANCH) and (
-            fast and fast["conclusion"] in {"failure", "cancelled", "timed_out"}
-            or existing and existing.get("conclusion") == "failure"
-        ):
-            kind = "repair"
-        if (pr["head"]["ref"].startswith("codex/telegram-feature-")
-                and fast and fast["conclusion"] in {"failure", "cancelled", "timed_out"}):
-            rejection_check(gh, pr, base, "Fast CI failed. User correction is required before resuming: "
-                            + fast.get("html_url", ""), pr.get("title", "Telegram feature"))
-            continue
+        correction = controls.correction(gh.repository, pr["number"], head, metadata["task_digest"])
+        if existing and existing.get("conclusion") == "failure":
+            correction = correction or {"reason": existing.get("output", {}).get("summary", "Reviewer requested changes."),
+                                        "changes": pr.get("title", "PR changes")}
         if fast and fast["conclusion"] in {"failure", "cancelled", "timed_out"}:
-            marker = f"<!-- agent-fast-{head}-{fast['id']} -->"
-            comments = gh.pages(f"issues/{pr['number']}/comments?per_page=100")
-            if not any(marker in comment["body"] for comment in comments):
-                gh.comment(pr["number"], marker + "\nFast CI failed; correct it before merge: "
-                           + fast.get("html_url", ""))
+            reason = "Fast CI failed; correct the failing checks: " + fast.get("html_url", "")
+            correction = correction or {"reason": reason, "changes": pr.get("title", "PR changes")}
+        if correction:
+            kind = "correction"
+        elif kind == "review":
+            files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
+            if any(item["filename"].startswith("agent_tools/changelog/")
+                   and item.get("status") != "removed" for item in files):
+                kind = "metadata"
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
+            if existing.get("conclusion") == "success" and authorization_error(gh, pr):
+                paths = sorted({path for item in files for path in (item["filename"], item.get("previous_filename", ""))
+                                if policy_path(path)})
+                controls.approval_notice(gh, pr, paths, metadata["user_task"])
             continue
         tasks.append({"kind": kind, "number": pr["number"], "head": head,
-                      "base": base, "branch": pr["head"]["ref"], **metadata})
+                      "base": base, "branch": pr["head"]["ref"], **metadata,
+                      **({"rejection": correction} if correction else {})})
     tasks = _integration_tasks(gh, state, base, pulls) + tasks
     save_monitor(gh, state)
     return {"include": tasks}
@@ -453,7 +468,7 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
         pr = gh.pull(task["number"])
         if pr["head"]["sha"] != task["head"] or not trusted(pr, gh.repository):
             raise RuntimeError("PR changed after discovery; reconcile again.")
-        denial = authorization_error(gh, pr)
+        denial = authorization_error(gh, pr, False)
         if denial:
             raise RuntimeError(denial)
         if trusted_module("review_control").paused(gh, pr):
@@ -463,9 +478,10 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             raise RuntimeError("User task context changed after discovery.")
     else:
         proto = trusted_module("task_context")
+        task.setdefault("producer_id", "standing-repair:" + task["head"])
         task.setdefault("user_task", proto.repair_context(task["head"], task["producer_id"]))
         task["task_digest"] = proto.digest(task["user_task"])
-    if kind in {"conflict", "repair"} and task["head"] != task["base"]:
+    if kind in {"conflict", "repair", "correction"} and task["head"] != task["base"]:
         subprocess.run(["git", "merge", "--no-commit", "--no-ff", task["base"]], cwd=work,
                        capture_output=True, check=False)
     logs = []
@@ -478,15 +494,17 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             logs.append(command("gh", "run", "view", str(run_id), "--repo", gh.repository,
                                 "--log-failed")[-18000:])
     if task["number"]:
-        failed_checks = [c for c in gh.checks(task["head"])
-                         if c["conclusion"] in {"failure", "cancelled", "timed_out"}]
-        logs.append(json.dumps(failed_checks))
+        logs.append(json.dumps([{key: check.get(key) for key in
+                                ("id", "name", "head_sha", "status", "conclusion", "html_url")}
+                               for check in gh.checks(task["head"])]))
         fast_runs = gh.pages(f"actions/workflows/tests.yml/runs?head_sha={task['head']}&per_page=100",
                             "workflow_runs")
         for run in fast_runs[:2]:
             if run["status"] == "completed" and run["conclusion"] != "success":
                 logs.append(command("gh", "run", "view", str(run["id"]), "--repo", gh.repository,
                                     "--log-failed")[-18000:])
+    if kind == "metadata" and not fold(work):
+        raise RuntimeError("Changelog candidate changed; reconcile again.")
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
@@ -604,7 +622,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             pr = gh.pull(number)
             if not trusted(pr, gh.repository) or pr["head"]["sha"] != task["head"]:
                 raise RuntimeError("Stale model output; PR changed during execution.")
-            denial = authorization_error(gh, pr)
+            denial = authorization_error(gh, pr, False)
             if denial:
                 raise RuntimeError(denial)
             if trusted_module("review_control").paused(gh, pr):
@@ -625,6 +643,8 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                 raise RuntimeError("Malformed review verdict.")
             summary = "What changed: " + verdict.get("change_summary", pr.get("title", "PR changes"))
             summary += "\n\n" + verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
+            controls = trusted_module("review_control")
+            controls.assess(gh.repository, number, task["head"], task["task_digest"], verdict["change_summary"])
             if (artifact / "visual-receipt.json").exists():
                 visual = json.loads((artifact / "visual-receipt.json").read_text())
                 if visual["task"] != task or visual["capture"]["candidate"] != task["head"]:
@@ -638,17 +658,19 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             gh.api(f"pulls/{number}/reviews", "POST", {"commit_id": task["head"],
                 "event": "COMMENT", "body": summary[:60000]})
             if not approved:
-                trusted_module("review_control").pause(
-                    gh, pr, summary, verdict.get("change_summary", pr.get("title", "PR changes")))
+                reason = verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
+                controls.reject(gh, pr, task, reason, verdict["change_summary"])
             return
+        if task["kind"] == "correction":
+            verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
         if not patch.read_text().strip() and task["kind"] != "conflict":
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_text().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
-        paths = command("git", "diff", "--cached", "--name-only", task["base"], cwd=work).splitlines()
+        paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
         if any(path.startswith(".git/") or path in {".connections", ".env"}
-               or (task["kind"] != "feature" and (path.startswith(".github/agent/")
+               or (task["kind"] not in {"feature", "correction"} and (path.startswith(".github/agent/")
                    or path == ".github/workflows/github-agent.yml")) for path in paths):
             raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
         if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
@@ -658,7 +680,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             verify_visual(artifact, patch, task)
         tree = command("git", "write-tree", cwd=work)
         parents = ["-p", task["head"]]
-        if task["kind"] in {"conflict", "repair", "feature"} and task["base"] != task["head"]:
+        if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
         proto = trusted_module("task_context")
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
@@ -673,7 +695,10 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
                 proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
                 commit = existing_head
-        command("git", "push", "origin", f"{commit}:refs/heads/{task['branch']}", cwd=work)
+        push = ["git", "push"]
+        if number:
+            push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")
+        command(*push, "origin", f"{commit}:refs/heads/{task['branch']}", cwd=work)
         if number:
             prefix = (pr.get("body") or "").split("## User task", 1)[0]
             gh.api(f"pulls/{number}", "PATCH", {"body": prefix + "\n\n" + proto.render(task["user_task"])})
@@ -685,7 +710,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                 + proto.render(task["user_task"])})
             if task["kind"] != "feature":
                 gh.comment(pr["number"], "Integration runs: " + ", ".join(str(x) for x in task["runs"]))
-        if task["kind"] == "feature":
+        if task["kind"] in {"feature", "correction"}:
             return {"number": pr["number"], "url": pr["html_url"], "head": commit}
         return None
     except (RuntimeError, ValueError, OSError) as exc:
@@ -710,24 +735,13 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
             continue
         if trusted_module("review_control").paused(gh, pr):
             continue
-        metadata = task_metadata(gh, pr)
+        task_metadata(gh, pr)
         if not ready(pr, gh.checks(head), base, app_id):
             continue
-        # Metadata folding is serialized and changes the PR head. It must pass
-        # fresh CI and independent review before any merge attempt.
-        command("git", "fetch", "origin", pr["head"]["ref"], cwd=work)
-        command("git", "switch", "--detach", head, cwd=work)
-        gh.label(pr["number"], acquire=True)
-        try:
-            if fold(work):
-                command("git", "add", "--all", cwd=work)
-                message = "Consolidate feature changelog" + trusted_module("task_context").trailers(
-                    metadata["user_task"], "changelog-fold:" + uuid.uuid4().hex)
-                command("git", *signing_options(), "commit", "-m", message, cwd=work)
-                command("git", "push", "origin", f"HEAD:{pr['head']['ref']}", cwd=work)
-                continue
-        finally:
-            gh.label(pr["number"], acquire=False)
+        # Folding/rebasing must already have happened before final review.
+        files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
+        if any(item["filename"].startswith("agent_tools/changelog/") and item.get("status") != "removed" for item in files):
+            continue
         if gh.base() != base:
             continue
         # Queue once for the final head, including heads produced by conflict fixes.
@@ -739,7 +753,16 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
             state["candidates"][candidate_key] = {"head": head, "base": base}
             save_monitor(gh, state)
         # GitHub protection also enforces fast checks; expected head rejects races.
-        gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
+        result = gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
+        if result.get("merged"):
+            trusted_module("branch_cleanup").cleanup(gh, work, force=True)
+
+
+def cleanup_branches(gh: GitHub, *, active_branches: set[str] | None = None) -> dict[str, Any]:
+    directory = os.environ.get("AGENT_CONTROL_DIR")
+    if not directory:
+        raise RuntimeError("Trusted cleanup checkout is unavailable.")
+    return trusted_module("branch_cleanup").cleanup(gh, Path(directory), active_branches=active_branches)
 
 
 def main() -> None:

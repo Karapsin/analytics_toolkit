@@ -438,13 +438,18 @@ def test_post_merge_failure_creates_repair_without_new_dev_matrix() -> None:
         }
     }
     result = controller._integration_tasks(object(), state, "current", [])
-    assert result == [
-        {
-            "kind": "repair",
-            "number": 0,
-            "head": "current",
-            "base": "current",
-            "branch": controller.REPAIR_BRANCH + "current",
-            "runs": [1],
-        }
-    ]
+    assert len(result) == 1
+    assert {
+        key: result[0][key] for key in ("kind", "number", "head", "base", "branch", "runs")
+    } == {
+        "kind": "repair",
+        "number": 0,
+        "head": "current",
+        "base": "current",
+        "branch": controller.REPAIR_BRANCH + "current",
+        "runs": [1],
+    }
+    assert result[0]["producer_id"] == "standing-repair:current"
+    proto = controller.trusted_module("task_context")
+    assert result[0]["task_digest"] == proto.digest(result[0]["user_task"])
+    assert controller._integration_tasks(object(), state, "current", []) == result

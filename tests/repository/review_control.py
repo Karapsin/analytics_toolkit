@@ -68,6 +68,13 @@ def test_callback_requires_owner_channel_message_and_current_head(control: Any) 
     gh = GitHub()
     proto = controller.trusted_module("task_context")
     task = proto.repair_context("task", "author:test")
+    control.assess(
+        gh.repository,
+        1,
+        gh.pr["head"]["sha"],
+        proto.digest(task),
+        "Protect signed PR review and owner approval.",
+    )
     control.approval_notice(gh, gh.pr, [".github/agent/controller.py"], task)
     event = control.pending()[0]
     control.delivery(event["key"], message_id=7)

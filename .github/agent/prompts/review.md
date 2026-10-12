@@ -24,9 +24,15 @@ Return JSON with approved, alignment, change_summary, summary, and findings.
 alignment is aligned, not_aligned, or uncertain. change_summary describes the
 concrete behavior changed. For each rejection, explain the user's requirement,
 what the patch does, why that is a blocker and the correction needed. Rejection
-pauses automatic corrections and alerts the owner. Approve
+queues a fresh correction agent and alerts the owner. Approve
 only when there are no concrete blockers. Findings must identify file locations,
 failure conditions, and requested corrections. Do not modify any files.
 
 Use only source_files MCP tools. Never execute repository programs, tests, builds,
 installs or services on the private host. GitHub runs every validation check.
+
+For cross-repository worker/bot changes, inspect the immutable companion evidence
+manifest and source/test files using read-only evidence tools. Verify commit and
+exact-head CI identities. Do not infer missing implementations from links or
+author claims. CI evidence includes successful, pending and failed checks; pending
+fast CI does not prove validation success and is enforced separately before merge.
