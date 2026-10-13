@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +19,7 @@ from .bi_datasets import (
 )
 from .bi_html import html_content
 from .dashboard_generation.datasets.create import dataset_issues
+from .dataset_identity import check_components, resolved_definition
 from .deployment import BIProjectDeployment
 from .editing.state import fingerprint
 from .errors import DataLensUtilsError
@@ -61,7 +61,11 @@ def dataset_field_issues(  # noqa: PLR0913 - Exact source and field identities w
             ),
         }
         expected.update(
-            {name: spec[name] for name in ("cast", "hidden", "description") if name in spec}
+            {
+                name: spec[name]
+                for name in ("cast", "hidden", "description", "ui_settings")
+                if name in spec
+            }
         )
         issues.extend(
             "fields." + key + "." + name
@@ -126,10 +130,8 @@ def dataset_issues_v2(
     old: dict[str, Any],
     connections: dict[str, Any],
 ) -> list[str]:
-    definition = copy.deepcopy(definition)
-    for key, field in definition.get("fields", {}).items():
-        if not field.get("guid") and old.get("field_guids", {}).get(key):
-            field["guid"] = old["field_guids"][key]
+    check_components(entity, "dataset:" + str(entity.id), "verification")
+    definition = resolved_definition(definition, old)
     sources = source_identities(entity, definition, old)
     handles = field_handles(entity, definition, sources)
     issues = dataset_field_issues(client, entity, definition, connections, sources, handles)

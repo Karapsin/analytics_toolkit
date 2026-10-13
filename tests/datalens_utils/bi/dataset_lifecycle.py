@@ -73,8 +73,7 @@ def test_creation_publishes_only_complete_draft_and_repeats_without_writes(bi_pr
         assert published == ["draft"]
         assert strict_flags == [True]
         assert result.saved_id == result.published_id
-        assert built[0].actions[0]["field"]["guid"] == "category"
-        assert built[0].actions[1]["field"]["guid"] == "amount"
+        assert not built[0].actions  # Sources infer the fields before any field configuration.
         assert not dataset_issues_v2(
             client,
             result,
@@ -186,7 +185,9 @@ def test_mismatched_saved_fields_are_not_published(bi_project, monkeypatch):
 
     monkeypatch.setattr(DatasetUpdate, "execute", wrong_update)
     getter = Mock(
-        side_effect=[value, replace(value, saved_id="next"), replace(value, saved_id="next")]
+        side_effect=lambda **kwargs: (
+            value if kwargs.get("branch") == "published" else replace(value, saved_id="next")
+        )
     )
     with DataLensClientYC(auth=NoAuthProvider()) as public:
         client = SimpleNamespace(

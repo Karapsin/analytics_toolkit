@@ -19,6 +19,7 @@ from datalens_sdk import (
 from .bi_connections import source_spec
 from .capabilities import get_capabilities
 from .dashboard_generation.datasets.create import _configure_fields, dataset_issues
+from .dataset_identity import check_components, resolved_definition
 from .errors import DataLensCapabilityError, DataLensUtilsError
 from .settings import asset_path
 
@@ -63,24 +64,35 @@ def avatar_for(dataset: Any, source: Any, retained: str | None = None) -> str:
     return cast("str", matches[0]["id"])
 
 
+def direct_field_candidates(dataset: Any, definition: Any, sources: Any, field: Any) -> list[Any]:
+    avatar = avatar_for(
+        dataset, sources[field["source"]], definition["sources"][field["source"]].get("avatar_id")
+    )
+    return [
+        value
+        for value in dataset.fields
+        if value.calc_mode == "direct"
+        and value.source == field["column"]
+        and value.avatar_id == avatar
+    ]
+
+
 def field_handles(
     dataset: Any, definition: dict[str, Any], sources: dict[str, Any], *, missing_ok: bool = False
 ) -> dict[str, Any]:
     handles = {}
     for key, field in definition.get("fields", {}).items():
-        avatar = avatar_for(
-            dataset,
-            sources[field["source"]],
-            definition["sources"][field["source"]].get("avatar_id"),
-        )
-        matches = [
-            value
-            for value in dataset.fields
-            if value.calc_mode == "direct"
-            and value.source == field["column"]
-            and value.avatar_id == avatar
-        ]
+        matches = direct_field_candidates(dataset, definition, sources, field)
         if field.get("guid"):
+            if (
+                matches
+                and not any(value.guid == field["guid"] for value in matches)
+                and any(value.title == field.get("title", key) for value in matches)
+            ):
+                message = (
+                    f"Field {key} cannot resolve to exactly one retained GUID; identity differs."
+                )
+                raise DataLensUtilsError(message)
             matches = [value for value in matches if value.guid == field["guid"]]
         if not matches and missing_ok:
             continue
@@ -163,12 +175,15 @@ def configure_relations(
             ]
         )
         if len(matches) > 1:
-            raise DataLensUtilsError("Ambiguous join adoption: " + key)
+            message = "Ambiguous join adoption: " + key
+            raise DataLensUtilsError(message)
         saved = matches[0] if matches else None
         if saved and (saved.get("left_avatar_id") != left or saved.get("right_avatar_id") != right):
-            raise DataLensUtilsError("Join topology changed: " + key)
+            message = "Join topology changed: " + key
+            raise DataLensUtilsError(message)
         if identifier and saved is None:
-            raise DataLensUtilsError("Retained join identity disappeared: " + key)
+            message = "Retained join identity disappeared: " + key
+            raise DataLensUtilsError(message)
         expected = {
             "type": relation["type"],
             "drop_duplicates": relation.get("drop_duplicates", False),
@@ -223,7 +238,8 @@ def desired_rls(
     for rule in definition.get("rls", {}).values():
         field = handles.get(rule["field"])
         if field is None:
-            raise DataLensUtilsError("RLS references an unknown exact field: " + rule["field"])
+            message = "RLS references an unknown exact field: " + rule["field"]
+            raise DataLensUtilsError(message)
         result[field.guid].append(
             {
                 "field_guid": field.guid,
@@ -330,7 +346,13 @@ def cache_matches(dataset: Any, desired: CacheInvalidationSource) -> bool:
         .to_spec()
         .actions[-1]["cache_invalidation_source"]
     )
-    return bool(dataset.raw.get("dataset", {}).get("cache_invalidation_source") == exported)
+    actual = dataset.raw.get("dataset", {}).get("cache_invalidation_source")
+    # An absent cache source is the backend's disabled-cache representation.
+    if actual is None:
+        actual = {"mode": "off", "filters": []}
+    elif isinstance(actual, dict):
+        actual = {"filters": [], **actual}
+    return bool(actual == exported)
 
 
 def configure_sources(
@@ -348,7 +370,8 @@ def configure_sources(
             source.connection_id != connection.id
             or source.source_type not in client.capabilities["dataset_sources"]
         ):
-            raise DataLensUtilsError("Source connection/type identity changed: " + key)
+            message = "Source connection/type identity changed: " + key
+            raise DataLensUtilsError(message)
         # Validate the factory-selected source type without a server schema read.
         factory(alias=key, **parameters)
         expected_type = next(
@@ -357,7 +380,8 @@ def configure_sources(
             if value["method"] == spec["factory"]
         )
         if source.source_type != expected_type:
-            raise DataLensUtilsError("Source factory identity changed: " + key)
+            message = "Source factory identity changed: " + key
+            raise DataLensUtilsError(message)
         if any(source.parameters.get(name) != value for name, value in parameters.items()):
             update.update_source(
                 source_id=source.id, parameters={**source.parameters, **parameters}
@@ -375,7 +399,7 @@ def configure_direct_fields(
         field = handles.get(key)
         arguments = {
             name: expected[name]
-            for name in ("cast", "aggregation", "description", "hidden")
+            for name in ("cast", "aggregation", "description", "hidden", "ui_settings")
             if name in expected
         }
         arguments["title"] = expected.get("title", key)
@@ -388,7 +412,7 @@ def configure_direct_fields(
                     "DIMENSION" if expected.get("aggregation", "none") == "none" else "MEASURE",
                 ),
                 guid=expected.get("guid") or str(uuid5(NAMESPACE_URL, dataset.id + "/" + key)),
-                **arguments,
+                **{name: value for name, value in arguments.items() if name != "ui_settings"},
             )
         else:
             aggregation = expected.get("aggregation", "none")
@@ -512,49 +536,13 @@ def create_dataset(
             right_source=sources[relation["right"]],
             drop_duplicates=relation.get("drop_duplicates", False),
         )
-    field_guids = {}
-    for name, field in definition.get("fields", {}).items():
-        guid = field.get("guid") or str(uuid5(NAMESPACE_URL, resource.key + "/" + name))
-        field["guid"] = field_guids[name] = guid
-        builder.add_field(
-            title=field.get("title", name),
-            source=field["column"],
-            avatar_id=sources[field["source"]].id,
-            guid=guid,
-            kind=field.get(
-                "kind", "DIMENSION" if field.get("aggregation", "none") == "none" else "MEASURE"
-            ),
-            **{
-                attribute: field[attribute]
-                for attribute in ("cast", "aggregation", "description", "hidden")
-                if attribute in field
-            },
-        )
-    for name, field in definition.get("calculations", {}).items():
-        field.setdefault("guid", str(uuid5(NAMESPACE_URL, resource.key + "/calculation/" + name)))
-        field_guids[name] = field["guid"]
-        builder.add_calculation(name=name, **field)
-    for name, parameter in definition.get("parameters", {}).items():
-        parameter.setdefault("guid", str(uuid5(NAMESPACE_URL, resource.key + "/parameter/" + name)))
-        field_guids[name] = parameter["guid"]
-        builder.add_parameter(name=name, **parameter)
-    for rule in definition.get("rls", {}).values():
-        builder.add_rls(
-            field=field_guids.get(rule["field"], rule["field"]),
-            **{attribute: value for attribute, value in rule.items() if attribute != "field"},
-        )
-    for expected in definition.get("default_filters", []):
-        builder.add_default_filter(
-            field=field_guids.get(expected["field"], expected["field"]),
-            operator=expected["operator"],
-            values=expected["values"],
-        )
-    for name, value in definition.get("settings", {}).items():
-        builder.update_setting(name=name, value=value)
-    if "cache_invalidation" in definition:
-        handles = {name: type("Field", (), {"guid": guid})() for name, guid in field_guids.items()}
-        builder.update_cache_invalidation_source(source=cache_source(definition, handles))
-    store.pending_metadata[key] = {"field_guids": field_guids}
+    # Schema inference happens before field actions. Create only the source draft,
+    # then adopt its source-qualified fields rather than adding duplicates.
+    store.pending_metadata[key] = {
+        "recipe_field_guids": {
+            name: field.get("guid") for name, field in definition.get("fields", {}).items()
+        }
+    }
     # The create getter defaults to saved; the successful ID is already durable.
     return store.create(key, definition["name"], builder, client.get.dataset, scope="dataset")
 
@@ -562,6 +550,7 @@ def create_dataset(
 def verify_dataset_draft(
     dataset: Any, definition: dict[str, Any], sources: dict[str, Any], key: str
 ) -> None:
+    check_components(dataset, key, "draft verification")
     handles = field_handles(dataset, definition, sources)
     # Verify the full draft before publishing; no cleared-RLS intermediate publication.
     issues = []
@@ -569,7 +558,7 @@ def verify_dataset_draft(
         field = handles[field_key]
         if field.title != expected.get("title", field_key) or any(
             getattr(field, attribute) != expected[attribute]
-            for attribute in ("cast", "aggregation", "hidden", "description")
+            for attribute in ("cast", "aggregation", "hidden", "description", "ui_settings")
             if attribute in expected
         ):
             issues.append(field_key)
@@ -599,20 +588,68 @@ def verify_dataset_draft(
         )
 
 
+def remember_inferred_fields(dataset: Any, definition: Any, sources: Any, checkpoint: Any) -> None:
+    """Claim each inferred field once; distinct-title clones keep separate GUIDs."""
+    fields = definition.get("fields", {})
+    owned = checkpoint.setdefault("field_guids", {})
+    for key, spec in fields.items():
+        matches = direct_field_candidates(dataset, definition, sources, spec)
+        for field in matches:
+            if field.guid == spec.get("guid"):
+                owned.setdefault(key, field.guid)
+    for key, spec in fields.items():
+        if key in owned:
+            continue
+        matches = [
+            field
+            for field in direct_field_candidates(dataset, definition, sources, spec)
+            if field.guid not in owned.values()
+        ]
+        if len(matches) > 1:
+            message = (
+                "Field "
+                + key
+                + " cannot resolve to exactly one inferred source-qualified identity."
+            )
+            raise DataLensUtilsError(message)
+        if matches:
+            field = matches[0]
+            peers = [
+                name
+                for name, value in fields.items()
+                if name not in owned
+                and value["source"] == spec["source"]
+                and value["column"] == spec["column"]
+            ]
+            owner = next(
+                (name for name in peers if fields[name].get("title", name) == field.title), peers[0]
+            )
+            owned[owner] = field.guid
+    # Persist deterministic creation GUIDs for declarations not supplied by inference.
+    for key, spec in fields.items():
+        owned.setdefault(key, spec.get("guid") or str(uuid5(NAMESPACE_URL, dataset.id + "/" + key)))
+
+
 def reconcile_dataset(client: Any, store: Any, resource: Any, connections: dict[str, Any]) -> Any:
     definition, key = copy.deepcopy(resource.definition), resource.key
     dataset = store.existing(key, definition["name"], client.get.dataset, scope="dataset")
     checkpoint = store.state["resources"].get(key, {})
-    for name, field in definition.get("fields", {}).items():
-        if not field.get("guid") and checkpoint.get("field_guids", {}).get(name):
-            field["guid"] = checkpoint["field_guids"][name]
+    definition = resolved_definition(definition, checkpoint)
     if dataset is None:
         dataset = create_dataset(client, store, resource, connections, definition)
     else:
         store.check_write(key, dataset)
     checkpoint = store.state["resources"].get(key, checkpoint)
+    check_components(dataset, key, "reconciliation fetch")
+    if "recipe_field_guids" in checkpoint:
+        sources = source_identities(dataset, definition, checkpoint)
+        remember_inferred_fields(dataset, definition, sources, checkpoint)
+        store.save_checkpoint()
+        definition = resolved_definition(definition, checkpoint)
     sources = source_identities(dataset, definition, checkpoint)
-    for _ in range(2):
+    # Field creation, dependent filters, and RLS/cache need separate fetched
+    # drafts. Stop when the builder is empty; cap retries of a nonconverging API.
+    for _ in range(4):
         sources = source_identities(dataset, definition, checkpoint)
         update, ownership = configure_dataset(
             dataset, definition, sources, connections, client, checkpoint
@@ -624,6 +661,8 @@ def reconcile_dataset(client: Any, store: Any, resource: Any, connections: dict[
                 key, update.mode("save").execute(), client.get.dataset, branch="saved"
             )
         checkpoint.update(ownership)
+        if not spec.actions and not spec.rls2_changes:
+            break
     verify_dataset_draft(dataset, definition, sources, key)
     store.save_checkpoint()
     if dataset.saved_id != dataset.published_id:

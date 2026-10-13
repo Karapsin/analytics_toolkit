@@ -8,6 +8,7 @@ from typing import Any
 from .bi_datasets import configure_dataset, source_identities
 from .capabilities import get_capabilities
 from .dashboard_generation.charts.create import chart_adapter
+from .dataset_identity import resolved_definition
 from .errors import DataLensUtilsError
 from .session import current_session
 
@@ -49,15 +50,14 @@ def operation_blockers(
                     adapter.validate_change(entity, resource.definition)
             elif resource.kind == "dataset" and entity is not None:
                 old = store.state["resources"].get(store.internal_key(key), {})
-                sources = source_identities(entity, resource.definition, old)
+                definition = resolved_definition(resource.definition, old)
+                sources = source_identities(entity, definition, old)
                 validate_source_topology(entity, sources)
                 if all(
                     source["connection"] in connections
                     for source in resource.definition["sources"].values()
                 ):
-                    configure_dataset(
-                        entity, resource.definition, sources, connections, client, old
-                    )
+                    configure_dataset(entity, definition, sources, connections, client, old)
             elif (
                 resource.kind in {"collection", "workbook"}
                 and entity is None

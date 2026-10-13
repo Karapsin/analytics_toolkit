@@ -40,7 +40,9 @@ def aggregated_source(value: Any, datasets: Any) -> Any:
     return matches[0].guid
 
 
-def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
+def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
+    chart: Any, definition: Any, datasets: Any, context: Any, *, strict_fidelity: bool = False
+) -> Any:
     result, assets = copy.deepcopy(definition), {}
     result["name"] = chart.name
     if "description" in result or chart.description:
@@ -89,6 +91,8 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
     settings = visualization.get("chartSettings", {})
     if definition["type"] != "indicator" and "title" in settings:
         result["title"] = settings["title"]
+        if "chart_title" in result:
+            result["chart_title"] = settings["title"]
         if "show_title" in result or settings.get("titleMode", "show") == "hide":
             result["show_title"] = settings.get("titleMode", "show") != "hide"
     if definition["type"] in {"combined_chart", "geolayer"}:
@@ -119,7 +123,7 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
         [name(value), value.get("direction", "ASC").lower()]
         for value in items(visualization, "sort")
     ]
-    formats = {}
+    formats: dict[str, Any] = {}
     aliases = []
     for slot in wizard.SLOTS | {"colors", "shapes", "tooltip"}:
         for value in items(visualization, slot):
@@ -143,16 +147,39 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
                 )
                 raise DataLensUtilsError(message)
             if formatting:
+                if strict_fidelity and "labelMode" in formatting:
+                    mode = {"mode": formatting["labelMode"]}
+                    previous = result.setdefault("settings", {}).get("label_mode")
+                    if slot != "labels" or (previous is not None and previous != mode):
+                        message = "Per-field label modes cannot be faithfully imported."
+                        raise DataLensUtilsError(message)
+                    result["settings"]["label_mode"] = mode
                 measure_format = {
                     "show_rank_delimiter" if key == "showRankDelimiter" else key: item
                     for key, item in formatting.items()
                     if key != "labelMode"
                 }
                 if measure_format:
+                    if (
+                        strict_fidelity
+                        and name(value) in formats
+                        and formats[name(value)] != measure_format
+                    ):
+                        message = (
+                            "Conflicting per-slot field formats cannot be faithfully imported."
+                        )
+                        raise DataLensUtilsError(message)
                     formats[name(value)] = measure_format
             if "fakeTitle" in value:
                 aliases.append({"field": name(value), "title": value["fakeTitle"]})
     result["formats"] = formats
+    from analytics_toolkit.datalens_utils.import_fidelity import wizard_encodings  # noqa: PLC0415
+
+    types = {field.guid: field.type for dataset in datasets.values() for field in dataset.fields}
+    types.update(
+        {guid: value.get("type") for guid, value in wizard.registered_local_fields(chart).items()}
+    )
+    result.setdefault("settings", {}).update(wizard_encodings(visualization, names, types))
     result.setdefault("settings", {}).pop("column_title", None)
     if aliases:
         result["settings"]["column_title"] = aliases

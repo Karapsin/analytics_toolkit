@@ -54,6 +54,9 @@ def local_datasets(registry: Any) -> dict[str, Any]:
                     "cast": value.get("cast", "string"),
                     "data_type": value.get("cast", "string"),
                     "aggregation": aggregation,
+                    "hidden": value.get("hidden", False),
+                    "description": value.get("description", ""),
+                    "ui_settings": value.get("ui_settings"),
                 }
             )
         for name, value in resource.definition.get("calculations", {}).items():

@@ -35,3 +35,12 @@ including every chart/dataset revision and path; dashboard revision alone is
 insufficient. Avoid concurrent UI editing: resources are not one atomic snapshot.
 
 For named BI resources and tab/whole-dashboard imports, see [BI projects](bi-projects.md).
+
+Local validation cannot validate backend source inference. Dataset component
+errors stop reconciliation immediately after retaining any created ID; preserve
+`DataLensComponentError.diagnostics` and the checkpoint. Resume the owned draft
+with the same runtime after correcting the cause; never reset it to recreate.
+Copy mode refuses exact-name adoption. Diagnose cache metadata mismatches separately.
+`verify()` establishes recipe/deployment parity, not source/import parity; review
+per-feature import fidelity first. See the public
+[copy and recovery guide](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/copy-tab.md).

@@ -82,6 +82,8 @@ def getter(client: Any) -> Any:
 
 
 def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
+    from analytics_toolkit.datalens_utils.dataset_identity import resolved_guid  # noqa: PLC0415
+
     for section in ("aggregated_measures", "hierarchies"):
         for title, spec in definition.get(section, {}).items():
             if not spec.get("guid") or title in result:
@@ -91,7 +93,7 @@ def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
                 continue
             if section == "aggregated_measures":
                 result[title] = WizardAggregatedMeasure(
-                    field=dataset.fields.by_guid(spec["field"]),
+                    field=dataset.fields.by_guid(resolved_guid(dataset, spec["field"])),
                     aggregation=spec["aggregation"],
                     title=title,
                     guid=spec["guid"],
@@ -99,7 +101,9 @@ def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
             else:
                 by_guid = {field.guid: field for field in result.values()}
                 members = [
-                    by_guid[value] if value in by_guid else dataset.fields.by_guid(value)
+                    by_guid[value]
+                    if value in by_guid
+                    else dataset.fields.by_guid(resolved_guid(dataset, value))
                     for value in spec["fields"]
                 ]
                 result[title] = WizardHierarchy(title=title, fields=members, guid=spec["guid"])
@@ -302,9 +306,10 @@ def configure(  # noqa: C901, PLR0912
             operation=rule["operation"],
             values=rule.get("values", ()),
         )
-    if definition["type"] != "indicator":
+    title = definition.get("chart_title", definition.get("title"))
+    if definition["type"] != "indicator" and title is not None:
         builder.chart_title(
-            text=definition["title"], mode="show" if definition.get("show_title", True) else "hide"
+            text=title, mode="show" if definition.get("show_title", True) else "hide"
         )
     if "description" in definition:
         builder.description(definition["description"])

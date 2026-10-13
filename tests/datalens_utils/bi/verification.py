@@ -50,6 +50,10 @@ def test_dataset_verification_detects_each_managed_difference(bi_project, change
         ]
     elif change == "cache":
         definition["cache_invalidation"] = {"mode": "off"}
+        value = replace(
+            value,
+            raw={"dataset": {"cache_invalidation_source": {"mode": "sql", "sql": "SELECT 1"}}},
+        )
     elif change == "rls":
         definition["rls"] = {
             "rule": {"field": "category", "subject_id": "reader", "allowed_value": "West"}

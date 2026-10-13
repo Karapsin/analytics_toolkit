@@ -181,10 +181,21 @@ preview = project.import_tab(dashboard_id="source-dashboard", tab_id="business-t
 result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False)
 ```
 
-Imports merge into the current project and change no cloud resources. Preview is
+Imports merge into the current project and change no cloud resources.
+`mode="adopt"` (default) retains IDs and location checks. Explicit `mode="copy"`
+accepts dependencies across folders, omits copied persistent IDs, reuses existing
+connections and uses a separate unused runtime. `copy_from` records provenance
+and prevents accidental exact-name adoption in the destination. CLI imports accept
+`--mode copy`. See the [copy walkthrough](../../docs/modules/datalens_utils/copy-tab.md)
+and [version-2 recipe contract](../../docs/modules/datalens_utils/recipe-contract.md). Preview is
 the default. Import discovers dependencies, extracts available SQL/JS assets,
 retains IDs and placement parameters, and reports collisions and unsupported
-features. Local writing requires a blocker-free staged recipe; failed
+features. Fidelity entries identify individual features, statuses and reasons.
+Wizard colors/shapes, including Measure Names, are reconstructed; unrepresented
+source settings block writing. Chart defaults become defaults on every placement;
+explicit placement values win. `chart_title: null` retains an absent internal title.
+Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
+aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
 replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
 Unresolved dynamic Editor dependencies, incompatible locations, unknown item
 forms and unavailable authored source retrieval block writes.
@@ -205,3 +216,11 @@ HTTP fallbacks or private SDK imports.
 
 See the [advanced BI workflow](../../docs/modules/datalens_utils/bi-projects.md)
 and its portable example for full recipe details.
+
+Dataset creation adopts source-qualified inferred fields before adding missing
+fields. Actual GUIDs are checkpointed. Backend component errors raise
+`DataLensComponentError` after checkpointing any created ID and stop dependent
+writes and publication. Its diagnostics are exposed in JSON CLI failure reports.
+Local validation does not validate backend inference. `verify()` compares a
+published deployment with its recipe; import fidelity separately assesses source
+parity. Both leave numerical results and rendering unchecked.

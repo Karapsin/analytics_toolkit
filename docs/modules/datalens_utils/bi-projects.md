@@ -40,11 +40,14 @@ for a local merge after resolving blockers. CLI commands `import-dashboard` and
 conversion requires explicit `upgrade_recipe=True` or `--upgrade-recipe`.
 
 Import follows public resource metadata and retrieves available SQL/JS assets.
-It preserves IDs, fields, defaults, ordering and placement parameters. Duplicate
+Adopt mode preserves IDs and requires compatible locations. Explicit
+`mode="copy"` discovers dependencies across folders and creates new owned resources,
+reusing connections. It preserves fields, defaults, ordering and placement parameters.
+See the [copy walkthrough](copy-tab.md) and [recipe contract](recipe-contract.md). Duplicate
 persistent resources share one definition; direct placements and chart-group
 members keep separate identities. `group/member` wiring addresses one variant.
 Existing dataset source and field keys are retained during a merge.
-Unsupported item forms, unknown dependency bindings, incompatible resource
+Unsupported item forms, unknown dependency bindings, incompatible adopted resource
 locations and conflicting local definitions prevent writes. No dynamic Editor
 JavaScript is evaluated to discover dependencies.
 

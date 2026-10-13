@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from hashlib import sha256
 from typing import Any, cast
 
+from datalens_sdk import Connection
+
 from .bi_datasets import relation_snapshot, source_identities
 from .dashboard_generation.charts import editor, ql, wizard
+from .dataset_identity import resolved_definition
 from .editing.pull import items, pull_chart
 from .errors import DataLensUtilsError
 
@@ -27,6 +31,14 @@ def connection_definition(entity: Any) -> dict[str, Any]:
     }
 
 
+def check_unmodeled_field_metadata(field: Any) -> None:
+    if field.description or field.hidden or field.ui_settings not in (None, "", "{}"):
+        message = (
+            "Formula/parameter description, visibility or formatting cannot be imported faithfully."
+        )
+        raise DataLensUtilsError(message)
+
+
 def dataset_fields(
     entity: Any, definition: dict[str, Any], avatars: dict[str, str]
 ) -> dict[str, str]:
@@ -43,12 +55,17 @@ def dataset_fields(
                 "kind": field.type,
                 "aggregation": field.aggregation,
                 "hidden": field.hidden,
-                "description": field.description or "",
             }
+            if field.ui_settings:
+                definition["fields"][name]["ui_settings"] = field.ui_settings
+            if field.description:
+                definition["fields"][name]["description"] = field.description
         elif field.calc_mode == "formula":
+            check_unmodeled_field_metadata(field)
             name = field.title
             if name in definition["calculations"]:
-                raise DataLensUtilsError("Duplicate calculated field title: " + name)
+                message = "Duplicate calculated field title: " + name
+                raise DataLensUtilsError(message)
             definition["calculations"][name] = {
                 "guid": field.guid,
                 "formula": field.formula,
@@ -57,6 +74,7 @@ def dataset_fields(
                 "aggregation": field.aggregation,
             }
         elif field.calc_mode == "parameter":
+            check_unmodeled_field_metadata(field)
             name = field.title
             definition["parameters"][name] = {
                 "guid": field.guid,
@@ -64,7 +82,8 @@ def dataset_fields(
                 "default": field.default_value,
             }
         else:
-            raise DataLensUtilsError("Unknown dataset field calculation mode: " + field.calc_mode)
+            message = "Unknown dataset field calculation mode: " + field.calc_mode
+            raise DataLensUtilsError(message)
         fields[field.guid] = name
     return fields
 
@@ -113,13 +132,16 @@ def editor_definition(
         (name for name, wire in editor.WIRE_TYPES.items() if wire == entity.wire_type), None
     )
     if not definition["type"]:
-        raise DataLensUtilsError("Unsupported Editor renderer: " + str(entity.wire_type))
+        message = "Unsupported Editor renderer: " + str(entity.wire_type)
+        raise DataLensUtilsError(message)
     definition["scripts"] = {}
     for name, source in entity.data.items():
         if name not in editor.TABS[definition["type"]]:
-            raise DataLensUtilsError("Unsupported authored Editor tab: " + name)
+            message = "Unsupported authored Editor tab: " + name
+            raise DataLensUtilsError(message)
         if not isinstance(source, str):
-            raise DataLensUtilsError("Editor source is not authored text: " + name)
+            message = "Editor source is not authored text: " + name
+            raise DataLensUtilsError(message)
         relative = "assets/js/imported/" + key + "/" + name + (".json" if name == "meta" else ".js")
         definition["scripts"][name] = relative
         assets[relative] = source
@@ -127,7 +149,8 @@ def editor_definition(
     definition["links"] = {}
     for alias, identifier in meta.get("links", {}).items():
         if identifier not in {value.id for value in datasets.values()}:
-            raise DataLensUtilsError("Unresolved Editor dataset dependency: " + identifier)
+            message = "Unresolved Editor dataset dependency: " + identifier
+            raise DataLensUtilsError(message)
         definition["links"][alias] = next(
             name for name, value in datasets.items() if value.id == identifier
         )
@@ -158,7 +181,8 @@ def ql_definition(
     for slot in ql.PLACEMENTS[definition["type"]] + ql.DECORATIONS[definition["type"]]:
         columns = ql.actual_columns(entity, definition["type"], slot)
         if columns is None:
-            raise DataLensUtilsError("Unsupported QL placement: " + slot)
+            message = "Unsupported QL placement: " + slot
+            raise DataLensUtilsError(message)
         definition["fields"][slot] = [name for name, _ in columns]
         definition["columns"].update(columns)
     if entity.description:
@@ -184,6 +208,25 @@ def dataset_default_filters(
         )
 
 
+def normalize_source_parameters(
+    client: Any, source: Any, inventory: Any, name: str, value: Any
+) -> None:
+    # Read metadata includes API-only flags, not factory arguments.
+    value["parameters"].pop("manual", None)
+    connection = Connection(
+        id=source.connection_id,
+        type=inventory["connection_type"],
+        installation=client.INSTALLATION,
+    )
+    factory = getattr(client.create.source(using=connection), inventory["method"])
+    try:
+        inspect.signature(factory).bind(alias=name, **value["parameters"])
+    except TypeError as error:
+        raise DataLensUtilsError(
+            "Imported source parameters are not constructible: " + str(error)
+        ) from None
+
+
 def dataset_definition(
     client: Any, entity: Any, connections: dict[str, str]
 ) -> tuple[dict[str, Any], dict[str, str]]:
@@ -191,7 +234,6 @@ def dataset_definition(
     definition: dict[str, Any] = {
         "id": entity.id,
         "name": entity.name,
-        "description": entity.description or "",
         "sources": {},
         "fields": {},
         "calculations": {},
@@ -199,18 +241,22 @@ def dataset_definition(
         "relations": {},
         "rls": {},
     }
+    if entity.description:
+        definition["description"] = entity.description
     assets = {}
     avatars = {}
     for source in entity.sources:
         name = semantic_key("source", source.id)
         inventory = client.capabilities["dataset_sources"].get(source.source_type)
         if inventory is None:
-            raise DataLensUtilsError("Source factory unavailable: " + source.source_type)
+            message = "Source factory unavailable: " + source.source_type
+            raise DataLensUtilsError(message)
         matches = [
             avatar for avatar in entity.source_avatars if avatar.get("source_id") == source.id
         ]
         if len(matches) != 1:
-            raise DataLensUtilsError("Import needs one known source avatar: " + source.id)
+            message = "Import needs one known source avatar: " + source.id
+            raise DataLensUtilsError(message)
         avatars[matches[0]["id"]] = name
         value = {
             "id": source.id,
@@ -219,6 +265,7 @@ def dataset_definition(
             "factory": inventory["method"],
             "parameters": dict(source.parameters),
         }
+        normalize_source_parameters(client, source, inventory, name, value)
         if "subsql" in value["parameters"]:
             value["sql_file"] = "assets/sql/imported/" + key + "_" + name + ".sql"
             assets[value["sql_file"]] = value["parameters"].pop("subsql")
@@ -254,6 +301,7 @@ def retain_dataset_keys(
     entity: Any, incoming: dict[str, Any], local: dict[str, Any], checkpoint: dict[str, Any]
 ) -> None:
     """Reuse authored keys when importing resources already present in the recipe."""
+    local = resolved_definition(local, checkpoint)
     sources = source_identities(entity, local, checkpoint)
     source_keys = {semantic_key("source", source.id): key for key, source in sources.items()}
     incoming["sources"] = {
@@ -303,6 +351,8 @@ def chart_definition(
     definition["dataset"] = next(
         name for name, value in datasets.items() if value.id == entity.dataset_ids[0]
     )
+    if "title" not in entity.data.get("visualization", {}).get("chartSettings", {}):
+        definition["chart_title"] = None
     visualization = entity.data.get("visualization", {})
     aliases = (
         {"x": "dimensions", "y": "measures"}
@@ -315,5 +365,6 @@ def chart_definition(
         slot: [] for slot in wizard.SLOTS if items(visualization, aliases.get(slot, slot))
     }
     return cast(
-        "tuple[dict[str, Any], dict[str, str]]", pull_chart(entity, definition, datasets, None)
+        "tuple[dict[str, Any], dict[str, str]]",
+        pull_chart(entity, definition, datasets, None, strict_fidelity=True),
     )
