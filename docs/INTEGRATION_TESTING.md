@@ -108,6 +108,13 @@ and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
 These tests run in the normal non-integration suite without external programs.
+The workflow's policy job selects compatible Python and Airflow matrices without
+starting services. Fast diagnostics checks identify the five service jobs
+(`core-http`, `core-native`, `auth`, `fault`, and `stress`) by their job IDs,
+independently of policy preparation and job order. Missing service jobs fail
+explicitly; additional metadata jobs do not require service diagnostics.
+Every service job must print captured startup logs on failure and always upload
+each diagnostic artifact with missing files treated as an error.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original
