@@ -9,7 +9,7 @@ from tests.sql._support.async_sql import (
     pytest,
     time_print,
 )
-from tests.sql._support.tasks import patch_task_operations
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 def test_async_sql_fail_fast_false_prints_failed_task_query(
@@ -82,7 +82,7 @@ def test_async_sql_fail_fast_true_prints_failed_transfer_sql(
 def test_async_sql_lower_soft_cap_avoids_hard_cap_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(5)
+    probe = ConcurrencyProbe(5, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -99,11 +99,14 @@ def test_async_sql_lower_soft_cap_avoids_hard_cap_error(
         for index in range(11)
     ]
 
-    result = sql_module.async_sql(
-        tasks,
-        concurrency=11,
-        soft_concurrency_cap=5,
-        hard_concurrency_cap=10,
+    observation = observe_task_cap(monkeypatch, probe, mode="async", calls=11)
+    result = observation.run(
+        lambda: sql_module.async_sql(
+            tasks,
+            concurrency=11,
+            soft_concurrency_cap=5,
+            hard_concurrency_cap=10,
+        )
     )
 
     assert list(result) == [f"task_{index}" for index in range(11)]

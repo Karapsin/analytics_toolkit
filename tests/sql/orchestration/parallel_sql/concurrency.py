@@ -9,7 +9,7 @@ from tests.sql._support.parallel_sql import (
     pytest,
     sql_module,
 )
-from tests.sql._support.tasks import patch_task_operations
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 def test_parallel_nested_concurrency_state_can_raise_caps_and_add_semaphore() -> None:
@@ -36,7 +36,7 @@ def test_parallel_nested_concurrency_state_can_raise_caps_and_add_semaphore() ->
 def test_parallel_sql_concurrency_limits_active_top_level_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -44,18 +44,21 @@ def test_parallel_sql_concurrency_limits_active_top_level_work(
 
     patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = sql_module.parallel_sql(
-        named_tasks(
-            {
-                f"read_{index}": {
-                    "type": "read",
-                    "db_key": "gp",
-                    "query": f"select {index}",
+    observation = observe_task_cap(monkeypatch, probe, mode="parallel", calls=6)
+    result = observation.run(
+        lambda: sql_module.parallel_sql(
+            named_tasks(
+                {
+                    f"read_{index}": {
+                        "type": "read",
+                        "db_key": "gp",
+                        "query": f"select {index}",
+                    }
+                    for index in range(6)
                 }
-                for index in range(6)
-            }
-        ),
-        concurrency=2,
+            ),
+            concurrency=2,
+        )
     )
 
     assert list(result) == [f"read_{index}" for index in range(6)]

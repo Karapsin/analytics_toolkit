@@ -5,6 +5,7 @@ from tests.ab_utils._support.parallel import (
     Any,
     ab_utils_module,
     inspect,
+    observe_metric_cap,
     parallel_module,
     patch_metric_runner,
     pd,
@@ -217,7 +218,7 @@ def test_parallel_compute_metrics_inserts_labels_as_leading_columns(
 def test_parallel_compute_metrics_limits_concurrency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         with probe.worker():
@@ -230,10 +231,13 @@ def test_parallel_compute_metrics_limits_concurrency(
         for index in range(6)
     }
 
-    result = ab_utils_module.compute_test_metrics(
-        tasks,
-        concurrency=2,
-        progress=False,
+    observation = observe_metric_cap(monkeypatch, probe, calls=6)
+    result = observation.run(
+        lambda: ab_utils_module.compute_test_metrics(
+            tasks,
+            concurrency=2,
+            progress=False,
+        )
     )
 
     assert list(result) == [f"task_{index}" for index in range(6)]
@@ -243,7 +247,7 @@ def test_parallel_compute_metrics_limits_concurrency(
 def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(5)
+    probe = ConcurrencyProbe(5, held=True)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         with probe.worker():
@@ -256,12 +260,15 @@ def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
         for index in range(11)
     }
 
-    result = ab_utils_module.compute_test_metrics(
-        tasks,
-        concurrency=11,
-        soft_concurrency_cap=5,
-        hard_concurrency_cap=10,
-        progress=False,
+    observation = observe_metric_cap(monkeypatch, probe, calls=11)
+    result = observation.run(
+        lambda: ab_utils_module.compute_test_metrics(
+            tasks,
+            concurrency=11,
+            soft_concurrency_cap=5,
+            hard_concurrency_cap=10,
+            progress=False,
+        )
     )
 
     assert list(result) == [f"task_{index}" for index in range(11)]
@@ -358,7 +365,7 @@ def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
 def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         with probe.worker():
@@ -371,11 +378,14 @@ def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
         for index in range(6)
     }
 
-    result = ab_utils_module.compute_test_metrics(
-        tasks,
-        concurrency=6,
-        soft_concurrency_cap=2,
-        progress=False,
+    observation = observe_metric_cap(monkeypatch, probe, calls=6)
+    result = observation.run(
+        lambda: ab_utils_module.compute_test_metrics(
+            tasks,
+            concurrency=6,
+            soft_concurrency_cap=2,
+            progress=False,
+        )
     )
 
     assert list(result) == [f"task_{index}" for index in range(6)]

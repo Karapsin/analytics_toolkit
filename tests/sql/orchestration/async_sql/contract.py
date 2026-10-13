@@ -10,7 +10,7 @@ from tests.sql._support.async_sql import (
     pytest,
     sql_module,
 )
-from tests.sql._support.tasks import patch_task_operations
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 @pytest.mark.parametrize("start_comment", [None, "   "])
@@ -484,7 +484,7 @@ def test_async_sql_runs_from_inside_existing_event_loop(
 def test_async_sql_soft_cap_limits_top_level_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -503,7 +503,10 @@ def test_async_sql_soft_cap_limits_top_level_worker_execution(
         }
     )
 
-    result = sql_module.async_sql(tasks, concurrency=6, soft_concurrency_cap=2)
+    observation = observe_task_cap(monkeypatch, probe, mode="async", calls=6)
+    result = observation.run(
+        lambda: sql_module.async_sql(tasks, concurrency=6, soft_concurrency_cap=2)
+    )
 
     assert list(result) == [f"read_{index}" for index in range(6)]
     probe.assert_complete(calls=6)

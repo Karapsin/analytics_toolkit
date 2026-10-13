@@ -10,7 +10,7 @@ from tests.sql._support.parallel_sql import (
     sql_module,
     time_print,
 )
-from tests.sql._support.tasks import patch_task_operations
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 def test_parallel_shutdown_falls_back_for_legacy_executor() -> None:
@@ -328,7 +328,7 @@ def test_parallel_sql_is_exported() -> None:
 def test_parallel_sql_nested_pipeline_respects_soft_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -352,17 +352,20 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
 
     patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = sql_module.parallel_sql(
-        [
-            {
-                "name": "pipeline",
-                "type": "custom_sql_pipeline",
-                "steps": [nested_batch],
-            }
-        ],
-        concurrency=1,
-        soft_concurrency_cap=2,
-        progress=False,
+    observation = observe_task_cap(monkeypatch, probe, mode="parallel", calls=6, nested=True)
+    result = observation.run(
+        lambda: sql_module.parallel_sql(
+            [
+                {
+                    "name": "pipeline",
+                    "type": "custom_sql_pipeline",
+                    "steps": [nested_batch],
+                }
+            ],
+            concurrency=1,
+            soft_concurrency_cap=2,
+            progress=False,
+        )
     )
 
     assert list(result["pipeline"]) == [f"read_{index}" for index in range(6)]
@@ -415,7 +418,7 @@ def test_parallel_sql_pipeline_runs_steps_sequentially_and_returns_last_result()
 def test_parallel_sql_soft_cap_limits_actual_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -423,45 +426,53 @@ def test_parallel_sql_soft_cap_limits_actual_worker_execution(
 
     patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = sql_module.parallel_sql(
-        named_tasks(
-            {
-                f"read_{index}": {
-                    "type": "read",
-                    "db_key": "gp",
-                    "query": f"select {index}",
+    observation = observe_task_cap(monkeypatch, probe, mode="parallel", calls=6)
+    result = observation.run(
+        lambda: sql_module.parallel_sql(
+            named_tasks(
+                {
+                    f"read_{index}": {
+                        "type": "read",
+                        "db_key": "gp",
+                        "query": f"select {index}",
+                    }
+                    for index in range(6)
                 }
-                for index in range(6)
-            }
-        ),
-        concurrency=6,
-        soft_concurrency_cap=2,
+            ),
+            concurrency=6,
+            soft_concurrency_cap=2,
+        )
     )
 
     assert list(result) == [f"read_{index}" for index in range(6)]
     probe.assert_complete(calls=6)
 
 
-def test_parallel_sql_soft_cap_limits_pipeline_step_execution() -> None:
-    probe = ConcurrencyProbe(2)
+def test_parallel_sql_soft_cap_limits_pipeline_step_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = ConcurrencyProbe(2, held=True)
 
     def pipeline_step(context: Any) -> str:
         with probe.worker():
             return context.task_name
 
-    result = sql_module.parallel_sql(
-        named_tasks(
-            {
-                f"pipeline_{index}": {
-                    "type": "custom_sql_pipeline",
-                    "steps": [pipeline_step],
+    observation = observe_task_cap(monkeypatch, probe, mode="parallel", calls=6)
+    result = observation.run(
+        lambda: sql_module.parallel_sql(
+            named_tasks(
+                {
+                    f"pipeline_{index}": {
+                        "type": "custom_sql_pipeline",
+                        "steps": [pipeline_step],
+                    }
+                    for index in range(6)
                 }
-                for index in range(6)
-            }
-        ),
-        concurrency=6,
-        soft_concurrency_cap=2,
-        progress=False,
+            ),
+            concurrency=6,
+            soft_concurrency_cap=2,
+            progress=False,
+        )
     )
 
     assert list(result) == [f"pipeline_{index}" for index in range(6)]

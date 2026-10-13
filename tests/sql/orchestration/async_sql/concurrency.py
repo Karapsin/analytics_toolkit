@@ -10,7 +10,7 @@ from tests.sql._support.async_sql import (
     pytest,
     sql_module,
 )
-from tests.sql._support.tasks import patch_task_operations
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 def test_async_nested_concurrency_state_can_raise_caps_and_add_semaphore() -> None:
@@ -40,7 +40,7 @@ def test_async_nested_concurrency_state_can_raise_caps_and_add_semaphore() -> No
 def test_async_sql_concurrency_limits_active_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe = ConcurrencyProbe(2)
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
         with probe.worker():
@@ -59,7 +59,8 @@ def test_async_sql_concurrency_limits_active_tasks(
         }
     )
 
-    result = sql_module.async_sql(tasks, concurrency=2)
+    observation = observe_task_cap(monkeypatch, probe, mode="async", calls=6)
+    result = observation.run(lambda: sql_module.async_sql(tasks, concurrency=2))
 
     assert list(result) == [f"read_{index}" for index in range(6)]
     probe.assert_complete(calls=6)

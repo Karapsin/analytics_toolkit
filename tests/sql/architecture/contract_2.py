@@ -254,6 +254,25 @@ def test_trino_parquet_stage_sql_is_adapter_owned() -> None:
     ]
     assert offenders == []
 
+    tree = ast.parse(generic_path.read_text(), filename=str(generic_path))
+    wrapper_methods = {
+        "build_create_parquet_stage_table_sql": "build_parquet_stage_table_sql",
+        "build_stage_external_location": "parquet_stage_target_table_base",
+        "infer_trino_column_types_from_rows": "infer_parquet_stage_column_types_from_rows",
+    }
+    for wrapper_name, adapter_method in wrapper_methods.items():
+        wrapper = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == wrapper_name
+        )
+        attribute_calls = {
+            node.func.attr
+            for node in ast.walk(wrapper)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert adapter_method in attribute_calls
+
 
 def test_upsert_backend_policy_is_capability_owned() -> None:
     assert not (SQL_ROOT / "dml" / "table" / "upsert_policy.py").exists()

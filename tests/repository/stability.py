@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier, BrokenBarrierError
+from threading import BrokenBarrierError
 
 import pytest
 
 import tests._support.source as source_helpers
-from tests._support.concurrency import ConcurrencyProbe, observe_call, wait_event
+from analytics_toolkit import sql
+from tests._support.concurrency import (
+    ConcurrencyProbe,
+    SchedulingObservation,
+    observe_call,
+    wait_event,
+)
 from tests._support.paths import REPO_ROOT
 from tests._support.source import (
     CodeRules,
@@ -22,6 +29,20 @@ from tests._support.source import (
     referenced_names,
 )
 from tests._support.stability import sensitive_calls
+from tests.ab_utils._support.parallel import (
+    ab_utils_module,
+    bypass_metric_semaphores,
+    observe_metric_cap,
+    parallel_module,
+    patch_metric_runner,
+    pd,
+)
+from tests.sql._support.execute_read import observe_execute_cap
+from tests.sql._support.tasks import (
+    bypass_task_soft_cap,
+    observe_task_cap,
+    patch_task_operations,
+)
 
 
 def test_concurrency_probe_handles_partial_last_wave_and_worker_errors() -> None:
@@ -50,19 +71,86 @@ def test_concurrency_probe_rejects_insufficient_and_excess_parallelism() -> None
         insufficient.assert_complete(calls=1)
     assert insufficient.active == 0
 
-    excess = ConcurrencyProbe(2)
-    all_active = Barrier(3)
+    excess = ConcurrencyProbe(2, held=True)
+    observation = SchedulingObservation(excess, calls=3)
+    executor_type = observation.executor_factory(ThreadPoolExecutor)
 
     def worker() -> None:
         with excess.worker():
-            all_active.wait(timeout=10)
+            pass
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(worker) for _ in range(3)]
-        for future in futures:
-            future.result(timeout=10)
+    def consumer() -> None:
+        with executor_type(max_workers=3) as executor:
+            futures = [executor.submit(worker) for _ in range(3)]
+            for future in futures:
+                future.result(timeout=10)
+
     with pytest.raises(AssertionError, match="observed 3"):
-        excess.assert_complete(calls=3)
+        observation.run(consumer)
+    assert excess.release.is_set()
+    assert excess.active == 0
+    assert excess.calls == 3
+
+
+def test_held_probe_handles_partial_wave_and_propagates_worker_errors() -> None:
+    probe = ConcurrencyProbe(2, held=True)
+    observation = SchedulingObservation(probe, calls=5)
+    executor_type = observation.executor_factory(ThreadPoolExecutor)
+    error = ValueError("worker failed")
+
+    def worker(index: int) -> int:
+        with probe.worker():
+            if index == 4:
+                raise error
+            return index
+
+    def consumer() -> list[int]:
+        with executor_type(max_workers=2) as executor:
+            futures = [executor.submit(worker, index) for index in range(5)]
+            return [future.result(timeout=10) for future in futures]
+
+    with pytest.raises(ValueError, match="worker failed") as caught:
+        observation.run(consumer)
+    assert caught.value is error
+    assert probe.release.is_set()
+    probe.assert_complete(calls=5)
+
+
+def test_held_probe_fails_insufficient_parallelism_and_releases_workers() -> None:
+    probe = ConcurrencyProbe(2, held=True, timeout=0.1)
+    observation = SchedulingObservation(probe, calls=3)
+    executor_type = observation.executor_factory(ThreadPoolExecutor)
+
+    def worker() -> None:
+        with probe.worker():
+            pass
+
+    def consumer() -> None:
+        with executor_type(max_workers=1) as executor:
+            futures = [executor.submit(worker) for _ in range(3)]
+            for future in futures:
+                future.result(timeout=10)
+
+    with pytest.raises(AssertionError, match="Initial scheduling wave"):
+        observation.run(consumer)
+    assert probe.release.is_set()
+    assert probe.active == 0
+    assert probe.calls == 3
+
+
+def test_held_probe_propagates_consumer_failure_before_workers_enter() -> None:
+    probe = ConcurrencyProbe(2, held=True)
+    observation = SchedulingObservation(probe, calls=3)
+    error = LookupError("consumer failed")
+
+    def consumer() -> None:
+        raise error
+
+    with pytest.raises(LookupError, match="consumer failed") as caught:
+        observation.run(consumer)
+    assert caught.value is error
+    assert probe.release.is_set()
+    assert probe.active == 0
 
 
 def test_observed_call_preserves_arguments_results_and_errors(monkeypatch) -> None:
@@ -200,3 +288,111 @@ def test_offline_tests_use_signals_instead_of_scheduling_delays() -> None:
     assert offenders == [], "Use concurrency/source support helpers: " + "; ".join(offenders)
     # Removed timer cases need no exception entry.
     assert seen_timers == set(timer_cases)
+
+
+@pytest.mark.parametrize(
+    ("mode", "nested"),
+    [("parallel", False), ("parallel", True), ("async", False)],
+    ids=["thread-semaphore", "nested-leaves", "async-semaphore-and-executor"],
+)
+def test_public_sql_cap_harness_rejects_ignored_soft_limiter(monkeypatch, mode, nested) -> None:
+    probe = ConcurrencyProbe(2, held=True)
+
+    def read(**kwargs):
+        with probe.worker():
+            return kwargs["query"]
+
+    tasks = [
+        {"name": f"read_{index}", "type": "read", "db_key": "gp", "query": f"select {index}"}
+        for index in range(6)
+    ]
+
+    def nested_batch(_context):
+        return sql.parallel_sql(tasks, concurrency=6, progress=False)
+
+    outer_tasks = (
+        [{"name": "pipeline", "type": "custom_sql_pipeline", "steps": [nested_batch]}]
+        if nested
+        else tasks
+    )
+    operation = sql.async_sql if mode == "async" else sql.parallel_sql
+    with monkeypatch.context() as patch:
+        patch_task_operations(patch, mode=mode, read=read)
+        bypass_task_soft_cap(patch, mode=mode)
+        observation = observe_task_cap(patch, probe, mode=mode, calls=6, nested=nested)
+        with pytest.raises(AssertionError, match="observed 6"):
+            observation.run(
+                lambda: operation(
+                    outer_tasks,
+                    concurrency=1 if nested else 6,
+                    soft_concurrency_cap=2,
+                    hard_concurrency_cap=6,
+                    progress=False,
+                )
+            )
+    assert probe.release.is_set()
+    assert probe.active == 0
+    assert probe.calls == 6
+
+
+@pytest.mark.parametrize(
+    ("domain", "bypass"),
+    [("metric", True), ("metric", False), ("execute", True)],
+    ids=["metric-ignored-cap", "metric-real-semaphore", "execute-ignored-cap"],
+)
+def test_public_executor_cap_harness_observes_excess_capacity(monkeypatch, domain, bypass) -> None:
+    probe = ConcurrencyProbe(2, held=True)
+
+    class OversizedExecutor(ThreadPoolExecutor):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **{**kwargs, "max_workers": 3})
+
+    if domain == "metric":
+
+        def metric(**kwargs):
+            with probe.worker():
+                return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
+
+        patch_metric_runner(monkeypatch, metric)
+        if bypass:
+            bypass_metric_semaphores(monkeypatch)
+        monkeypatch.setattr(parallel_module, "ThreadPoolExecutor", OversizedExecutor)
+        observation = observe_metric_cap(monkeypatch, probe, calls=3)
+        tasks = {
+            f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
+            for index in range(3)
+        }
+
+        def operation():
+            return ab_utils_module.compute_test_metrics(
+                tasks, concurrency=3, soft_concurrency_cap=2, progress=False
+            )
+    else:
+        module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
+
+        def execute(options):
+            with probe.worker():
+                return options.source_sql
+
+        monkeypatch.setattr(module, "_execute_sql_options", execute)
+        monkeypatch.setattr(module, "ThreadPoolExecutor", OversizedExecutor)
+        observation = observe_execute_cap(monkeypatch, probe, calls=3)
+
+        def operation():
+            return module.execute_sql(
+                "gp",
+                ["select 1", "select 2", "select 3"],
+                concurrency=3,
+                soft_concurrency_cap=2,
+            )
+
+    if bypass:
+        with pytest.raises(AssertionError, match="observed 3"):
+            observation.run(operation)
+    else:
+        result = observation.run(operation)
+        assert list(result) == ["task_0", "task_1", "task_2"]
+        probe.assert_complete(calls=3)
+    assert probe.release.is_set()
+    assert probe.active == 0
+    assert probe.calls == 3

@@ -14,9 +14,19 @@ or UI modules.
 - `clock.FakeClock(value=0)` supports calling, `monotonic()`, `set(value)` and
   `sleep(seconds)`. Advance it explicitly instead of sleeping in timeout tests.
 - `concurrency.ConcurrencyProbe(expected)` rendezvous the first real worker
-  wave and records every call; use `with probe.worker()` and then
-  `probe.assert_complete(calls=...)`. It detects insufficient parallelism,
-  excess concurrency and unfinished workers, including partial final waves.
+  wave and records every call; use it for overlap checks only. A rendezvous
+  does not prove an upper bound on concurrency.
+- Cap checks use `ConcurrencyProbe(expected, held=True)` and the domain helper
+  `tasks.observe_task_cap`, `parallel.observe_metric_cap`, or
+  `execute_read.observe_execute_cap`. Call `observation.run(lambda: public_call(...))`.
+  Workers remain active until every candidate in the real executor's initial
+  capacity enters the operation or demonstrably blocks on a real semaphore.
+  Queued submissions count only after that whole initial wave is observed.
+  Async candidates are deduplicated by their owning-loop Task; nested thread
+  tests exclude outer pipeline work and count only leaf operations.
+  The controller requires the expected worker count, releases in `finally`,
+  joins with a bound, propagates exceptions, and checks task count and maximum.
+  A timeout is always failure. Partial final waves need no further rendezvous.
 - `concurrency.wait_event` and `wait_event_async` bound worker-state waits;
   the async form leaves the UI/event loop responsive. `observe_call` observes
   a real primitive, optionally after an error or a matching result (such as a
@@ -91,8 +101,8 @@ or safety. Tests of exported internals and focused algorithms remain valid.
 For a refactor-only change, identify the contract behind any changed behavior
 expectation. Move patch-location maintenance into domain support.
 
-Use Events/Barriers for worker ordering and a fake clock for elapsed-time
-logic. The repository guard rejects new scheduling sleeps and direct
+Use Events/Barriers for worker ordering, held probes for cap checks, and a fake
+clock for elapsed-time logic. The repository guard rejects new scheduling sleeps and direct
 source-spelling inspection, while retaining documented real UI timer checks.
 Keep independent numerical references and SQL/format/security contracts strict.
 Dependency upgrades should exercise the same contract tests in the existing

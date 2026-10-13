@@ -10,7 +10,7 @@ indicators, not measured failure rates; aliased sleeps were examined separately.
 
 | Area | Classification and disposition |
 | --- | --- |
-| SQL orchestration and AB parallel/planning | Scheduling assumptions migrated to real-worker rendezvous; public facade calls and domain operation-fake seams reduce internal coupling. |
+| SQL orchestration and AB parallel/planning | Scheduling assumptions migrated to real-worker overlap checks and held cap checks; public facade calls and domain operation-fake seams reduce internal coupling. |
 | SQL transfer runtime and partition maintenance | Focused private algorithm contracts retained; observe actual queue retries, condition waits and completed failures instead of delaying the test thread. |
 | SQL architecture | Ownership, removed-import and dispatch rules retained as AST checks. Backend comparison counting now also detects reversed operands and tuple membership; five existing configuration-default comparisons are explicitly allowed. |
 | Explorer | Shared metadata provider/coordinator setup moved to `_support`; unnecessary fake delays removed; journal start polling replaced by an Event wait that leaves the UI responsive. An area fixture returns empty offline metadata for unattended discovery and rejects unfaked user queries. |
@@ -172,3 +172,32 @@ patch locations. Keep architecture checks in syntax/dependency terms and retain
 strict public output, SQL safety, statistical and security expectations. A
 changed fake must have a positive supported-interface case and a negative
 regression case; keep minimum/latest and SDK conformance environments enabled.
+
+## Cap-check release protocol and correction regressions
+
+Overlap tests keep the original rendezvous mode. SQL async/threaded orchestration,
+nested threaded pipelines, SQL execute batches and AB metric cap tests use held
+workers with domain scheduling observation. Submission alone cannot release the
+workers: each candidate in actual initial executor capacity must enter the leaf
+operation or fail a real nonblocking thread-semaphore acquisition. The observer
+then performs the normal blocking acquire. Async contention is observed with
+`locked()` on the owning event loop before the normal acquire, preserving waiter
+fairness, release and cancellation. Async patches are scoped to the tested call.
+Candidates are deduplicated, and outer nested-pipeline work is excluded.
+
+The controller waits for scheduling evidence and the expected worker count,
+then checks the maximum while workers are still held. Every exit releases workers
+before a bounded join; exceptions propagate and timeouts fail. Partial final
+waves continue after release and retain original result/count/order assertions.
+
+| Correction case | Regression intent |
+| --- | --- |
+| Repository held-probe cases | Detect excess workers with the consumer harness alone; fail insufficient parallelism; clean up after worker or controller errors; handle partial final waves. |
+| Repository public SQL limiter bypass (threaded, nested, async) | Ignore the soft limiter intentionally and require the same consumer harness to reject excess concurrency, without a second worker barrier or scheduling delay. |
+| Repository public executor capacity bypass (AB metrics, SQL execute) | Oversize the real pool and bypass the AB semaphore; require rejection of the extra operation worker. Retain a positive oversized-AB-pool case proving real semaphore contention enforces the cap. |
+| Parquet stage wrapper defaults/explicit options | Select Trino once, forward positional and optional arguments to one adapter call, and return its unchanged SQL. |
+| Parquet architecture ownership | Retain structural forbidden-code rules and restore delegation checks for all three generic wrappers. |
+
+GitHub must run these focused offline cases and migrated consumers before the
+existing full Python/dependency/SDK and quality matrix. Earlier CI success for
+the original migration does not validate this correction.
