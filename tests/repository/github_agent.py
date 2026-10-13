@@ -431,7 +431,13 @@ def test_unmerged_candidate_green_does_not_clear_dev_failure() -> None:
     assert state["runs"]["1"]["needs"] == []
 
 
-def test_post_merge_failure_creates_repair_without_new_dev_matrix() -> None:
+def test_post_merge_failure_creates_repair_without_new_dev_matrix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        controller.trusted_module("repair_evidence"), "inventory", lambda gh, runs: []
+    )
     state = {
         "runs": {
             "1": {"sha": "old", "status": "completed", "needs": ["HTTP"], "merged": True},
