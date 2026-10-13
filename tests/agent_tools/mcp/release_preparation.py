@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_tools import release_preparation as preparation
+from agent_tools import release_replacement as replacement
 from release_routines.lib import release_candidate as candidate
 from tests.agent_tools._support.mcp import (
     Path,
@@ -327,9 +328,14 @@ def test_invalid_corrected_candidate_is_not_adopted(
     elif problem == "notes":
         files["docs/CHANGELOG.md"] = "# Changelog\n\n## Unreleased\n"
     elif problem == "unreleased":
-        files["docs/CHANGELOG.md"] = files["docs/CHANGELOG.md"].replace("## Unreleased", "## Unreleased\n\n- Pending change")
+        files["docs/CHANGELOG.md"] = "## Unreleased\n\n- Pending change\n\n" + files["docs/CHANGELOG.md"]
     elif problem == "dev":
         monkeypatch.setattr(preparation, "_tree", lambda root, sha: "unrelated" if sha == "origin/dev" else "corrected-tree")
+
+        def request_replacement(*args):
+            raise RuntimeError("additional content replacement requested")
+
+        monkeypatch.setattr(replacement, "replace", request_replacement)
     elif problem == "task":
         def invalid(*args):
             raise RuntimeError("invalid task binding")

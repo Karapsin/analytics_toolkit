@@ -19,7 +19,7 @@ from analytics_toolkit.sql_explorer.tabs import (
 from analytics_toolkit.sql_explorer.widgets import FileNavigationScreen
 from textual.document._document import Selection
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path

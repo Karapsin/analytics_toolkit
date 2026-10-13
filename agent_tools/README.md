@@ -319,5 +319,22 @@ and agent-review keeps the same version, PR and final reviewed notes. Recovery
 archives the old state and clears validation receipts and publication bindings.
 Current dev must match the final reviewed tree, and package/README versions and
 consumed release notes must remain consistent. Old active or uncertain publication,
-published artifacts and incompatible refs block adoption. Additional dev content
-requires a reviewed preparation before promotion.
+published artifacts and incompatible refs block adoption into that same PR.
+Newer dev content automatically starts a replacement preparation PR under the
+same release task after publication reconciliation. An unpublished, untagged
+version is reused with combined notes; published or tag-reserved versions advance
+to the next unreserved four-part version. Published artifacts and their refs stay
+intact. Journaled generations recover interruptions without duplicate preparation
+PRs or manual state deletion, and require fresh review/checks and release validation.
+If recovery is interrupted after journaling a replacement workspace, the next
+resume clears the predecessor's validation receipts before publishing that workspace.
+
+The toolkit task's companion Telegram formatting plan was delivered separately.
+The supplied private operator attestation records task `100fd816ae2f`, Telegram
+messages 55–57 (canonical message 57), and plan SHA-256
+`dffec0da15ac21935897d533ca0d37e5e18bdea3cb905a8401c36507cac0c03a`.
+Its source bases are self_host `f26ec8f4d6def43f04acaa00d303976a7d6b7b04`
+and CIAN `ed8efdea19388a7590ff60d4bbe620b098b57bb2`. This is delivery
+evidence, not toolkit approval. Companion code and later companion command
+extensions are outside this PR; the toolkit formatting handoff covers GitHub-agent
+alerts, plans, questions and bridge responses in readable English HTML.

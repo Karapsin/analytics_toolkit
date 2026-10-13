@@ -126,7 +126,14 @@ def _test_branch(root: Path, state: dict[str, Any]) -> str:
         work = Path(directory) / "checkout"
         remote_url = sessions.run(root, "git", "remote", "get-url", "origin")
         sessions.run(root, "git", "clone", remote_url, str(work))
-        sessions.run(work, "git", "switch", "-c", branch, state["candidate_sha"])
+        # Squash merges and branch deletion leave the PR head outside a fresh clone.
+        sessions.run(work, "git", "fetch", "origin", f"refs/pull/{state['pr']}/head")
+        fetched = sessions.run(work, "git", "rev-parse", "FETCH_HEAD")
+        tree = sessions.run(work, "git", "rev-parse", "FETCH_HEAD^{tree}")
+        if fetched != state["candidate_sha"] or tree != state["candidate_tree"]:
+            message = "Fetched preparation head differs from the verified candidate."
+            raise RuntimeError(message)
+        sessions.run(work, "git", "switch", "-c", branch, fetched)
         sessions.run(
             work, "python", "-m", "release_routines.lib.testpypi_metadata",
             "replace-project-name", PROJECTS["testpypi"],
@@ -171,15 +178,40 @@ def _production_ref(root: Path, state: dict[str, Any]) -> str:
 
 
 def _runs(root: Path, ref: str, sha: str, stage: str) -> list[dict[str, Any]]:
-    runs: list[dict[str, Any]] = json.loads(
+    pages = json.loads(
         sessions.run(
-            root, "gh", "run", "list", "--workflow", "publish.yml", "--branch", ref,
-            "--event", "release" if stage == "pypi" else "workflow_dispatch",
-            "--commit", sha, "--limit", "100", "--json",
-            "databaseId,headSha,status,conclusion",
+            root,
+            "gh",
+            "api",
+            "--method",
+            "GET",
+            "repos/{owner}/{repo}/actions/workflows/publish.yml/runs",
+            "-f",
+            f"branch={ref}",
+            "-f",
+            f"head_sha={sha}",
+            "-f",
+            "event=release" if stage == "pypi" else "event=workflow_dispatch",
+            "-F",
+            "per_page=100",
+            "--paginate",
+            "--slurp",
         )
     )
-    return runs
+    rows = [run for page in pages for run in page["workflow_runs"]]
+    if pages and max(page["total_count"] for page in pages) > len(rows):
+        message = "Candidate workflow lookup is incomplete; publication is blocked."
+        raise RuntimeError(message)
+    return [
+        {
+            "databaseId": run["id"],
+            "headSha": run["head_sha"],
+            "status": run["status"],
+            "conclusion": run["conclusion"],
+        }
+        for run in rows
+        if run["head_sha"] == sha
+    ]
 
 
 def _jobs(root: Path, run_id: int) -> dict[str, str]:
@@ -258,22 +290,30 @@ def _dispatch_testpypi(
     return []
 
 
-def reconcile_replacement(root: Path, state: dict[str, Any]) -> None:
+def reconcile_replacement(  # noqa: C901, PLR0912, PLR0915 - publication reconciliation.
+    root: Path,
+    state: dict[str, Any],
+    *,
+    allow_reserved: bool = False,
+) -> bool:
     """Block candidate replacement until old publications and refs are reconciled."""
-    for stage in PROJECTS:
-        if index_files(stage, state["version"]):
-            message = "Published artifacts bind the old candidate; prepare a new reviewed version."
-            raise RuntimeError(message)
-    if any(state.get("stages", {}).get(stage + "_verified") for stage in PROJECTS):
-        message = "Previously verified publication requires reconciliation; replacement is blocked."
-        raise RuntimeError(message)
+    published = {stage: index_files(stage, state["version"]) for stage in PROJECTS}
     tag = "v" + state["version"]
-    if sessions.run(root, "git", "ls-remote", "--tags", "origin", tag, tag + "^{}"):
-        message = "Existing production tag binds the old candidate; prepare a new reviewed version."
+    remote_tag = sessions.run(root, "git", "ls-remote", "--tags", "origin", tag, tag + "^{}")
+    local_tag = sessions.run(root, "git", "tag", "--list", tag)
+    reserved = bool(any(published.values()) or remote_tag or local_tag)
+    if reserved and not allow_reserved:
+        message = "Published artifacts or production tags require a new reviewed version."
         raise RuntimeError(message)
-    if sessions.run(root, "git", "tag", "--list", tag):
-        message = "Existing local production tag binds the old candidate; replacement is blocked."
-        raise RuntimeError(message)
+    production_sha = state["candidate_sha"]
+    if remote_tag:
+        lines = remote_tag.splitlines()
+        production_sha = next(
+            (line.split()[0] for line in lines if line.endswith("^{}")),
+            lines[0].split()[0],
+        )
+    elif local_tag:
+        production_sha = sessions.run(root, "git", "rev-list", "-n", "1", tag)
     ref = "testpypi-" + state["version"]
     remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", ref)
     sha = state.get("testpypi_sha")
@@ -281,7 +321,8 @@ def reconcile_replacement(root: Path, state: dict[str, Any]) -> None:
         message = "Temporary ref cannot be safely reconciled with the old candidate."
         raise RuntimeError(message)
     for stage, branch, head in (
-        ("testpypi", ref, sha), ("pypi", tag, state["candidate_sha"]),
+        ("testpypi", ref, sha),
+        ("pypi", tag, production_sha),
     ):
         runs = _runs(root, branch, head, stage) if head else []
         saved = state.get(stage + "_run")
@@ -291,21 +332,70 @@ def reconcile_replacement(root: Path, state: dict[str, Any]) -> None:
         if any(run["status"] != "completed" for run in runs):
             message = "Old candidate publication is active; reconcile it before replacement."
             raise RuntimeError(message)
+        if stage == "pypi" and remote_tag and not runs:
+            releases = json.loads(
+                sessions.run(
+                    root,
+                    "gh",
+                    "api",
+                    "repos/{owner}/{repo}/releases",
+                    "--paginate",
+                    "--slurp",
+                )
+            )
+            if any(release["tag_name"] == tag for page in releases for release in page):
+                message = "Existing release publication is uncertain; replacement is blocked."
+                raise RuntimeError(message)
+        retained = False
         for run in runs:
             jobs = _jobs(root, int(run["databaseId"]))
             target = "publish to PyPI" if stage == "pypi" else "publish to TestPyPI"
-            if jobs.get(target) == "success":
-                message = "Old candidate upload succeeded; reconcile published artifacts before replacement."
+            if published[stage] and jobs.get("build distribution") == "success":
+                # Inspect retained artifacts even for a partial or conflicting
+                # upload. Conflicting hashes require a fresh version, never reuse.
+                artifacts = artifact_hashes(root, int(run["databaseId"]))
+                try:
+                    compare_artifacts(published[stage], artifacts)
+                except RuntimeError:
+                    if not allow_reserved:
+                        raise
+                retained = True
+            if jobs.get(target) == "success" and not published[stage]:
+                message = (
+                    "Old candidate upload succeeded; reconcile published artifacts "
+                    "before replacement."
+                )
                 raise RuntimeError(message)
+        if published[stage] and not retained:
+            message = (
+                "Published artifacts lack matching retained workflow evidence; "
+                "replacement is blocked."
+            )
+            raise RuntimeError(message)
+        if state.get("stages", {}).get(stage + "_verified") and not published[stage]:
+            message = "Previously verified publication is unavailable; replacement is blocked."
+            raise RuntimeError(message)
         if stage == "testpypi" and head:
             record = _dispatch_record(root, state, ref, head)
-            if record and not runs and record["outcome"] != "failed":
+            if (
+                record
+                and not runs
+                and record["outcome"] != "failed"
+                and time.time() < record["deadline"]
+            ):
                 message = "Old candidate dispatch is uncertain; reconcile it before replacement."
                 raise RuntimeError(message)
-    # A failed old attempt may have left a name-only branch. Remove only that exact
-    # reconciled ref, with a lease so an intervening writer cannot be overwritten.
-    if remote:
-        sessions.run(root, "git", "push", f"--force-with-lease=refs/heads/{ref}:{sha}", "origin", ":" + ref)
+    # Remove only an unpublished, reconciled name-only ref, under a lease.
+    if remote and not reserved:
+        sessions.run(
+            root,
+            "git",
+            "push",
+            f"--force-with-lease=refs/heads/{ref}:{sha}",
+            "origin",
+            ":" + ref,
+        )
+    return reserved
 
 
 def prepare_stage(root: Path, stage: str) -> int:

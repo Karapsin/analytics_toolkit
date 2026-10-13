@@ -30,7 +30,19 @@ prepares one new four-part version, with carry at 19, and preserves historical n
    head. Package and README versions must agree and Unreleased/fragments must be
    consumed. Active or uncertain old publication, published files and incompatible
    tags or refs block adoption; published conflicts require a new reviewed version.
-   Additional dev content blocks promotion until a reviewed preparation covers it.
+   When newer content reaches dev, re-entering merge-dev or publish automatically
+   prepares a replacement PR under the same release task. Recovery reconciles both
+   indexes, saved workflows, dispatch attempts, retained artifacts and refs first.
+   Active runs, uncertain dispatch within its five-minute window, unavailable
+   workflows and failed evidence lookups block replacement without losing state.
+   An unpublished, untagged candidate retains its version and combines prepared
+   notes with new Unreleased entries and fragments. Published artifacts or local/
+   remote production tags are preserved and require the next available version,
+   skipping reservations on both indexes and in production tags. Every generation
+   journals its source, branch, workspace and predecessor; retries recover one
+   preparation PR without deleting private state. Replacement archives the old
+   candidate, clears validation/publication bindings, and requires fresh review,
+   exact-head checks and release validation before promotion.
    Main is fast-forwarded to the validated dev commit; it remains the release branch.
 5. Run required pre-commit validation for production main, then
    `release_workflow(action="status")`. Status never creates preparation PRs or
@@ -53,7 +65,10 @@ not replace the reviewed PR sequence or authorize publication.
   project name `analytics-toolkit`.
 - TestPyPI uses an isolated `testpypi-<version>` branch from the prepared SHA.
   Only the project name changes to `karapsin-analytics-toolkit`; never merge that
-  branch into main. Reuse an existing branch only if its parent and content match.
+  branch into main. A fresh clone fetches the preparation PR head explicitly and
+  verifies its SHA/tree before branch creation, including after squash merge and
+  deletion of the original feature branch. Reuse an existing temporary branch
+  only if its parent and content match.
 - GitHub trusted publishing uploads the wheel and sdist already emitted by the
   shared artifact smoke checker. Failed upload recovery reruns only failed jobs,
   preserving a successful build and its retained verified artifacts.

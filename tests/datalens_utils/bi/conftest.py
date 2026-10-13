@@ -1,15 +1,9 @@
 """Local version-2 recipe fixture; no external services."""
 
-import json
-
 import pytest
 from analytics_toolkit.datalens_utils import BIProjectDeployment, DataLensProject, TargetLocation
 
-
-def write(root, name, value):
-    path = root / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value), encoding="utf-8")
+from tests._support.files import write_json
 
 
 @pytest.fixture
@@ -75,6 +69,6 @@ def bi_project(tmp_path):
         "configs/UI/selectors/selector_groups.json": {},
     }
     for name, value in files.items():
-        write(root, name, value)
+        write_json(root / name, value)
     with project.session():
         yield project

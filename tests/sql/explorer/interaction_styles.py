@@ -11,7 +11,7 @@ from textual.color import Color
 from textual.document._document import Selection
 from textual.widgets import Button, OptionList, Tree
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -1,14 +1,8 @@
 """Small synthetic BI metadata and project-file helpers."""
 
-import json
-
 from datalens_sdk import Dataset, EntryLocation, Source
 
-
-def write(root, name, value):
-    path = root / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value), encoding="utf-8")
+from tests._support.files import write_json
 
 
 def dataset():
@@ -54,3 +48,7 @@ def dataset():
             },
         ),
     )
+
+
+def write(root, name, value):
+    return write_json(root / name, value)

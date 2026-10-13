@@ -10,17 +10,7 @@ from typing import Any
 import pytest
 
 from agent_tools import mcp_server
-
-
-class _FakeClock:
-    def __init__(self) -> None:
-        self.now = 0.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.now += seconds
+from tests._support.clock import FakeClock as _FakeClock
 
 
 class _FakeGithubRunner:

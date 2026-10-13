@@ -7,7 +7,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.create_table_screen import ColumnRow, CreateTableScreen
 from textual.widgets import Button, Checkbox, Collapsible, Input, OptionList, Select, TextArea
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 async def seek(pilot: Any, app: Any, predicate: Any) -> None:

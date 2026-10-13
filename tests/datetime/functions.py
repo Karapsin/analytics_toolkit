@@ -9,12 +9,22 @@ from analytics_toolkit import datetime as dttm
 from analytics_toolkit.datetime.datetime import format_datetime, sanitize_datetime
 
 
-def test_format_datetime_accepts_supported_inputs_and_drops_microseconds() -> None:
-    assert format_datetime("2026-01-01 12:13:15") == "2026-01-01 12:13:15"
-    assert format_datetime("2026-01-01T12:13:15") == "2026-01-01 12:13:15"
-    assert format_datetime("2026-01-01") == "2026-01-01 00:00:00"
-    assert format_datetime(date(2026, 1, 1)) == "2026-01-01 00:00:00"
-    assert format_datetime(datetime(2026, 1, 1, 12, 13, 15, 123456)) == "2026-01-01 12:13:15"
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        pytest.param("2026-01-01 12:13:15", "2026-01-01 12:13:15", id="space"),
+        pytest.param("2026-01-01T12:13:15", "2026-01-01 12:13:15", id="iso"),
+        pytest.param("2026-01-01", "2026-01-01 00:00:00", id="date-string"),
+        pytest.param(date(2026, 1, 1), "2026-01-01 00:00:00", id="date"),
+        pytest.param(
+            datetime(2026, 1, 1, 12, 13, 15, 123456), "2026-01-01 12:13:15", id="microseconds"
+        ),
+    ],
+)
+def test_format_datetime_accepts_supported_inputs_and_drops_microseconds(
+    value: object, expected: str
+) -> None:
+    assert format_datetime(value) == expected
 
 
 def test_sanitize_datetime_returns_compact_timestamp() -> None:

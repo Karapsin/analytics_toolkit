@@ -7,7 +7,7 @@ from analytics_toolkit.sql_explorer.app import ConfirmMutationScreen, SqlExplore
 from analytics_toolkit.sql_explorer.panes import CommandInput
 from textual.widgets import Button, Input, Static
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 @pytest.mark.parametrize("trigger", ["button", "shortcut"])

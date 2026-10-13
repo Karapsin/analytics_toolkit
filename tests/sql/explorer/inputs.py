@@ -12,7 +12,7 @@ from textual.document._document import Selection
 from textual.events import Paste
 from textual.widgets import Input, TextArea
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     import pytest

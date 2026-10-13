@@ -108,9 +108,12 @@ def _reviewed(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     return pr
 
 
-def _metadata_files(work: Path, summary: str | None) -> tuple[str, dict[str, str], list[str]]:
+def _metadata_files(
+    work: Path, summary: str | None, *, version: str | None = None, changelog: str | None = None,
+) -> tuple[str, dict[str, str], list[str]]:
     mcp = mcp_runtime()
-    changelog = (work / mcp.CHANGELOG_PATH).read_text()
+    if changelog is None:
+        changelog = (work / mcp.CHANGELOG_PATH).read_text()
     fragments = sorted((work / "agent_tools/changelog").glob("*.md"))
     for fragment in fragments:
         bullet = fragment.read_text().strip()
@@ -121,10 +124,11 @@ def _metadata_files(work: Path, summary: str | None) -> tuple[str, dict[str, str
     notes = mcp._unreleased_changelog_bullets(changelog)
     if summary and summary.strip():
         notes.append(mcp._format_changelog_bullet(summary))
+    notes = list(dict.fromkeys(notes))
     if not notes:
         message = "No unreleased entries; supply --summary for this release."
         raise ValueError(message)
-    version = mcp._increment_version(mcp._package_version(work))
+    version = version or mcp._increment_version(mcp._package_version(work))
     files = {
         "pyproject.toml": mcp._replace_required(
             mcp.VERSION_RE, (work / "pyproject.toml").read_text(),
@@ -141,7 +145,9 @@ def _metadata_files(work: Path, summary: str | None) -> tuple[str, dict[str, str
     return version, files, [str(path.relative_to(work)) for path in fragments]
 
 
-def _new(root: Path, summary: str | None) -> dict[str, Any]:
+def _new(
+    root: Path, summary: str | None, *, predecessor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     context = task_context.read(root)  # Require the actual explicit release request.
     proto = task_context.protocol()
     key = sessions.load(root).get("signing_key")
@@ -152,8 +158,24 @@ def _new(root: Path, summary: str | None) -> dict[str, Any]:
         raise RuntimeError(message)
     work = sessions.create(root, state_path(root).parent / "atk-release-workspaces")
     source = sessions.run(work, "git", "rev-parse", "HEAD")
-    version, files, fragments = _metadata_files(work, summary)
+    generation = 0
+    if predecessor:
+        from agent_tools import release_replacement  # noqa: PLC0415
+
+        intent = predecessor["replacement_intent"]
+        sessions.run(work, "git", "fetch", "origin", intent["source_sha"])
+        sessions.run(work, "git", "switch", "--detach", intent["source_sha"])
+        source = intent["source_sha"]
+        generation = intent["generation"]
+        changelog = release_replacement.notes(work, predecessor, intent["version"])
+        version, files, fragments = _metadata_files(
+            work, summary, version=intent["version"], changelog=changelog,
+        )
+    else:
+        version, files, fragments = _metadata_files(work, summary)
     branch = f"codex/release-{context['task_id']}-{source[:12]}"
+    if generation:
+        branch += f"-g{generation}"
     receipt = sessions.load(work)
     receipt.update(
         phase="feature", branch=branch, base=source, signing_key=key,
@@ -167,8 +189,14 @@ def _new(root: Path, summary: str | None) -> dict[str, Any]:
         "task_id": context["task_id"], "task_digest": proto.digest(proto.public_context(context)),
         "source_sha": source, "version": version, "branch": branch,
         "workspace": str(work), "files": files, "fragments": fragments,
-        "candidate_sha": None, "pr": None, "stages": {},
+        "candidate_sha": None, "pr": None, "stages": {}, "generation": generation,
     }
+    if predecessor:
+        state.update(
+            predecessor_sha=predecessor["candidate_sha"],
+            replacement_intent=predecessor["replacement_intent"],
+            reset_receipts=True,
+        )
     save(root, state)  # Journal the intended replacements before writing any metadata.
     return state
 
@@ -243,6 +271,14 @@ def _reviewed_metadata(root: Path, state: dict[str, Any], sha: str) -> dict[str,
     return files
 
 
+def _clear_receipts(root: Path) -> None:
+    mcp = mcp_runtime()
+    for receipt in (mcp.CHECK_STATE_FILE, mcp.PRECOMMIT_STAGE_STATE_FILE, mcp.RELEASE_CHECK_STATE_FILE):
+        path = root / receipt
+        if path.exists():
+            path.unlink()
+
+
 def _adopt_reviewed_head(root: Path, state: dict[str, Any], sha: str, tree: str) -> None:
     files = _reviewed_metadata(root, state, sha)
     candidate = importlib.import_module("release_routines.lib.release_candidate")
@@ -252,11 +288,7 @@ def _adopt_reviewed_head(root: Path, state: dict[str, Any], sha: str, tree: str)
         archived.write_text(json.dumps(state, indent=2) + "\n")
         archived.chmod(0o600)
     # Exact-tree checks cannot be reused for corrected content.
-    mcp = mcp_runtime()
-    for receipt in (mcp.CHECK_STATE_FILE, mcp.PRECOMMIT_STAGE_STATE_FILE, mcp.RELEASE_CHECK_STATE_FILE):
-        path = root / receipt
-        if path.exists():
-            path.unlink()
+    _clear_receipts(root)
     for key in list(state):
         if key.startswith(("testpypi_", "pypi_")) or key == "requires_new_version":
             state.pop(key)
@@ -269,7 +301,9 @@ def prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
         return _prepare(root, summary=summary)
 
 
-def _prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
+def _prepare(  # noqa: C901, PLR0912, PLR0915 - journaled release generations.
+    root: Path, *, summary: str | None = None,
+) -> dict[str, Any]:
     sessions.clean(root)
     sessions.run(root, "git", "fetch", "origin", "dev", "main")
     state = load(root)
@@ -281,8 +315,20 @@ def _prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
                 message = "Resume the existing release task before preparing a different release."
                 raise RuntimeError(message)
             state = _new(root, summary)
-    if not state or state.get("requires_new_version"):
+    if state and state.get("replacement_pending"):
+        from agent_tools import release_replacement  # noqa: PLC0415
+
+        state = release_replacement.replace(root, state, summary)
+    elif state and state.get("requires_new_version"):
+        from agent_tools import release_replacement  # noqa: PLC0415
+
+        state = release_replacement.replace(root, state, summary, force_version=True)
+    elif not state:
         state = _new(root, summary)
+    if state.get("reset_receipts"):
+        _clear_receipts(root)
+        state.pop("reset_receipts")
+        save(root, state)
     if not state.get("pr"):
         _publish_preparation(root, state)
     pr = _pr(root, state)
@@ -301,8 +347,11 @@ def _prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
     sessions.run(root, "git", "fetch", "origin", final_sha)
     final_tree = _tree(root, final_sha)
     if _tree(root, "origin/dev") != final_tree:
-        message = "Current dev has additional content; a reviewed release preparation is required."
-        raise RuntimeError(message)
+        state["replacement_notes"] = _reviewed_metadata(root, final_state, final_sha)
+        from agent_tools import release_replacement  # noqa: PLC0415
+
+        release_replacement.replace(root, state, summary)
+        return _prepare(root, summary=None)
     if final_sha != state["candidate_sha"]:
         _adopt_reviewed_head(root, state, final_sha, final_tree)
     elif final_tree != state["candidate_tree"]:

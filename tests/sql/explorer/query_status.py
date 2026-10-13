@@ -21,7 +21,7 @@ from analytics_toolkit.sql_explorer.status import CircularSpinner, format_compac
 from textual.css.query import NoMatches
 from textual.widgets import Button, Static
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path

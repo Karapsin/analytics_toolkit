@@ -3,11 +3,11 @@ from __future__ import annotations
 from tests.excel._support.long_format import (
     Path,
     break_table,
-    load_workbook,
     pd,
     pivot_and_break_table,
     pytest,
 )
+from tests.excel._support.workbooks import report_workbook
 
 
 def test_enforced_order_rejects_extra_and_misaligned_break_groups(tmp_path: Path) -> None:
@@ -46,8 +46,7 @@ def test_sheet_names_cover_missing_empty_and_multiple_deduplications(tmp_path: P
     output = tmp_path / "edge-sheet-names.xlsx"
     break_table(df, output, sheet_by="sheet")
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         expected_names = [
             "sheet_NA",
             "sheet_value",
@@ -57,5 +56,3 @@ def test_sheet_names_cover_missing_empty_and_multiple_deduplications(tmp_path: P
         ]
         assert set(workbook.sheetnames) == set(expected_names)
         assert [name for name in workbook.sheetnames if name.startswith("X")] == expected_names[2:]
-    finally:
-        workbook.close()
