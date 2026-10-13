@@ -18,7 +18,7 @@ DATASET_FILE = "configs/DL objects/datasets.json"
 CHART_FILE = "configs/DL objects/charts/wizard/line/trend.json"
 
 
-def recovered_pull(project, monkeypatch):
+def recovered_pull(project, monkeypatch, *, chart_overrides=None):
     root = project.paths.project_root
     registry = load_registry()
     definition = copy.deepcopy(registry.resources["dataset:sales"].definition)
@@ -43,6 +43,7 @@ def recovered_pull(project, monkeypatch):
         hierarchies={"Group": {"guid": "group", "fields": ["category", "local"]}},
         fields={"x": ["Group"], "y": ["Count"]},
     )
+    chart_definition.update(copy.deepcopy(chart_overrides or {}))
     write(root, CHART_FILE, chart_definition)
     registry = load_registry()
     store = BIResourceStore(registry)
@@ -64,7 +65,8 @@ def recovered_pull(project, monkeypatch):
     remember_inferred_fields(cloud, definition, source_identities(cloud, definition, owned), owned)
     store.remember("dataset:sales", cloud)
     api = MemoryDataLens()
-    builder = api.client.create.wizard_chart.line(name="Trend", location=api.folder).dataset(cloud)
+    factory = getattr(api.client.create.wizard_chart, chart_definition["type"])
+    builder = factory(name="Trend", location=api.folder).dataset(cloud)
     chart = wizard.configure(
         builder,
         SimpleNamespace(client=api.client),

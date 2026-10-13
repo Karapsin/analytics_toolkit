@@ -105,7 +105,11 @@ Its `fields` maps SDK slots (`x`, `y`, `y2`, `columns`, `rows`, `measures`,
 `points`, `size`, `labels`, `segments`) to ordered field-title lists.
 
 Wizard `title` is the default widget title. Optional `chart_title` overrides the
-internal title; explicit null leaves an absent source chart title absent.
+internal title; explicit null leaves an absent source chart title absent. Pulling
+an internal-title edit updates explicitly managed `chart_title` and preserves
+`title`. Definitions without `chart_title` retain the legacy pull behavior of
+updating `title`. Wizard pulls replace the complete color/shape encoding settings,
+including removed bindings, maps and palettes, while retaining unrelated settings.
 Optional Wizard properties are `title`, `show_title` (defaults to true when a
 title is declared), `description`, `settings`, `local_fields`,
 `aggregated_measures`, `hierarchies`, `layers`, `map_center`, `sort`, `filters`,
