@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
+- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
 
 ## 1.3.12.4 - 2026-10-12
 
