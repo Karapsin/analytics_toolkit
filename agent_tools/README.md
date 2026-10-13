@@ -329,6 +329,9 @@ archives the old state and clears validation receipts and publication bindings.
 Current dev must match the final reviewed tree, and package/README versions and
 consumed release notes must remain consistent. Old active or uncertain publication,
 published artifacts and incompatible refs block adoption into that same PR.
+Reviewed metadata is read with surrounding whitespace stripped and one trailing
+newline restored per file. An empty `Unreleased` section is accepted when the
+versioned release notes remain present and all changelog fragments are consumed.
 Newer dev content automatically starts a replacement preparation PR under the
 same release task after publication reconciliation. An unpublished, untagged
 version is reused with combined notes; published or tag-reserved versions advance

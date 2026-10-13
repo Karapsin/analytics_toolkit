@@ -432,7 +432,8 @@ def test_empty_unreleased_section_is_accepted(replacing) -> None:
     state["files"]["docs/CHANGELOG.md"] = (
         "## Unreleased\n\n" + state["files"]["docs/CHANGELOG.md"]
     )
-    assert preparation._reviewed_metadata(root, state, "old") == state["files"]
+    expected = {path: content.strip() + "\n" for path, content in state["files"].items()}
+    assert preparation._reviewed_metadata(root, state, "old") == expected
 
 
 def test_missing_release_workflow_blocks_reserved_tag_replacement(
