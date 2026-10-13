@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+## 1.3.12.5 - 2026-10-13
+
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
@@ -20,6 +22,7 @@ Generated from package version bumps and recent commit history.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
 - Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
 - Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
+- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
 
 ## 1.3.12.4 - 2026-10-12
 
