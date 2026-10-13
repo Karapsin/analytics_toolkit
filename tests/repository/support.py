@@ -39,7 +39,10 @@ import sys
 sys.modules['textual'] = None
 sys.modules['datalens_sdk'] = None
 import tests._support.clock
+import tests._support.concurrency
 import tests._support.files
+import tests._support.source
+import tests._support.stability
 assert 'analytics_toolkit.sql_explorer' not in sys.modules
 """
     result = subprocess.run(

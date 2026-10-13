@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
+from typing import TYPE_CHECKING
+
 import pandas as pd
+
+from tests._support.concurrency import ConcurrencyProbe, SchedulingObservation, observe_executor_cap
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class FakeClickHouseClient:
@@ -74,3 +82,11 @@ class FakeDbapiConnection:
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+def observe_execute_cap(
+    monkeypatch: pytest.MonkeyPatch, probe: ConcurrencyProbe, *, calls: int
+) -> SchedulingObservation:
+    """Observe the real executor used by SQL execute batches."""
+    module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
+    return observe_executor_cap(monkeypatch, module, probe, calls=calls)

@@ -14,7 +14,7 @@ from analytics_toolkit.sql.execution.metadata_cancellation import cancellable_me
 from analytics_toolkit.sql_explorer import completion
 from analytics_toolkit.sql_explorer.completion import CompletionCoordinator, CompletionRequest
 
-from tests.sql.explorer.completion import FakeProvider, _wait_for
+from tests.sql._support.completion import FakeProvider, _wait_for
 
 
 def test_direct_metadata_calls_are_tagged_and_stopped() -> None:

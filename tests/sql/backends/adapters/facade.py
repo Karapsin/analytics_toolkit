@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from tests._support.source import called_names, function_tree
 from tests.sql._support.adapters import (
     FakeDbapiConnection,
     RecordingClickHouseClient,
@@ -147,27 +150,152 @@ def test_backend_adapters_read_dataframes_for_dbapi_and_clickhouse() -> None:
     assert ch_client.queries == ["select value"]
 
 
-def test_sql_backend_dispatch_uses_adapter_boundary() -> None:
-    dispatch_functions = [
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_sql_backend_dispatch_uses_adapter_boundary(monkeypatch, backend: str) -> None:
+    connection = object()
+    result = pd.DataFrame({"value": [1]})
+    calls = []
+
+    def record(method):
+        def operation(*args, **kwargs):
+            calls.append((method, args, kwargs))
+            return result
+
+        return operation
+
+    adapter = SimpleNamespace(
+        **{
+            method: record(method)
+            for method in (
+                "read_dataframe",
+                "read_columns",
+                "execute_sql",
+                "execute_read_sql",
+                "insert_dataframe_batch",
+                "insert_rows_batch",
+            )
+        }
+    )
+    selected = []
+
+    def select_adapter(key):
+        selected.append(key)
+        return adapter
+
+    modules = (read_sql_module, execute_sql_module, execute_read_module, load_sql_table_module)
+    for module in modules:
+        monkeypatch.setattr(module, "get_backend_adapter", select_adapter)
+
+    execution = {
+        "print_queries": True,
+        "gp_break_query": False,
+        "gp_commit_each_statement": True,
+        "progress": False,
+    }
+    insertion = {
+        "target_column_types": {"value": "int"},
+        "trino_insert_chunk_size": 7,
+        "gp_insert_chunk_size": 3,
+        "connection_type": "alias",
+        "query_label": "test",
+        "on_progress": None,
+    }
+    assert (
+        read_sql_module._read_backend(
+            backend,
+            connection,
+            "SELECT value",
+            print_queries=True,
+            output_type="df",
+        )
+        is result
+    )
+    assert (
+        read_sql_module._read_backend(
+            backend,
+            connection,
+            "SELECT value",
+            print_queries=True,
+            output_type="dict",
+        )
+        is result
+    )
+    assert (
+        execute_sql_module._execute_backend(
+            backend,
+            connection,
+            "DELETE FROM target",
+            **execution,
+        )
+        is result
+    )
+    assert (
+        execute_read_module._execute_read_backend(
+            backend,
+            connection,
+            ["SELECT value"],
+            **execution,
+        )
+        is result
+    )
+    load_sql_table_module._insert_batch_backend(backend, connection, "target", result, **insertion)
+    load_sql_table_module._insert_rows_backend(
+        backend,
+        connection,
+        "target",
+        ["value"],
+        [(1,)],
+        **insertion,
+    )
+    assert selected == [backend] * 6
+    assert [call[0] for call in calls] == [
+        "read_dataframe",
+        "read_columns",
+        "execute_sql",
+        "execute_read_sql",
+        "insert_dataframe_batch",
+        "insert_rows_batch",
+    ]
+    assert all(args[0] is connection for _method, args, _kwargs in calls)
+    assert [args[1] for _method, args, _kwargs in calls] == [
+        "SELECT value",
+        "SELECT value",
+        "DELETE FROM target",
+        ["SELECT value"],
+        "target",
+        "target",
+    ]
+    assert calls[4][1][2] is result
+    assert calls[5][1][2:] == (["value"], [(1,)])
+    assert calls[2][2] == calls[3][2] == execution
+    assert calls[4][2] == insertion
+    assert calls[5][2] == {
+        **insertion,
+        "gp_insert_page_size_getter": None,
+        "on_gp_insert_page_success": None,
+    }
+    for method, _args, kwargs in calls[:2]:
+        assert kwargs["print_queries"] is True
+        assert callable(kwargs["print_query"])
+        reader = "read_dbapi_query" if method == "read_dataframe" else "read_dbapi_columns"
+        assert callable(kwargs[reader])
+
+    for function in (
         read_sql_module._read_backend,
         execute_sql_module._execute_backend,
         execute_read_module._execute_read_backend,
         load_sql_table_module._insert_batch_backend,
         load_sql_table_module._insert_rows_backend,
-    ]
-    for function in dispatch_functions:
-        assert "globals()[" not in inspect.getsource(function)
-
-    assert "get_backend_adapter" in inspect.getsource(read_sql_module._read_backend)
-    assert "get_backend_adapter" in inspect.getsource(execute_sql_module._execute_backend)
-    assert "get_backend_adapter" in inspect.getsource(execute_read_module._execute_read_backend)
-    assert not hasattr(read_sql_module, "_READ_BACKENDS")
-    assert not hasattr(execute_sql_module, "_EXECUTE_BACKENDS")
-    assert not hasattr(execute_read_module, "_EXECUTE_READ_BACKENDS")
-    assert not hasattr(load_sql_table_module, "_BATCH_INSERT_BACKENDS")
-    assert not hasattr(load_sql_table_module, "_ROW_INSERT_BACKENDS")
-    assert "get_backend_adapter" in inspect.getsource(load_sql_table_module._insert_batch_backend)
-    assert "get_backend_adapter" in inspect.getsource(load_sql_table_module._insert_rows_backend)
+    ):
+        assert "globals" not in called_names(function_tree(function))
+    for module, name in (
+        (read_sql_module, "_READ_BACKENDS"),
+        (execute_sql_module, "_EXECUTE_BACKENDS"),
+        (execute_read_module, "_EXECUTE_READ_BACKENDS"),
+        (load_sql_table_module, "_BATCH_INSERT_BACKENDS"),
+        (load_sql_table_module, "_ROW_INSERT_BACKENDS"),
+    ):
+        assert not hasattr(module, name)
 
 
 def test_sql_public_api_exports_are_stable() -> None:

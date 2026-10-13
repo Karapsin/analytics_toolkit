@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as sql_module
+
 from tests.sql._support.parallel_sql import (
     Any,
-    parallel_module,
     pd,
     pytest,
     time_print,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 def test_parallel_sql_fail_fast_false_prints_failed_task_query(
@@ -18,9 +20,9 @@ def test_parallel_sql_fail_fast_false_prints_failed_task_query(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         [
             {
                 "name": "broken",
@@ -48,10 +50,10 @@ def test_parallel_sql_fail_fast_true_prints_failed_transfer_sql(
     def fake_transfer_table(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="parallel", transfer=fake_transfer_table)
 
     with pytest.raises(RuntimeError) as exc_info:
-        parallel_module.parallel_sql(
+        sql_module.parallel_sql(
             [
                 {
                     "name": "copy_table",
@@ -89,10 +91,10 @@ def test_parallel_sql_task_context_task_id_is_included_for_failed_tasks(
         time_print("task output before failure")
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
     with pytest.raises(RuntimeError, match="boom"):
-        parallel_module.parallel_sql(
+        sql_module.parallel_sql(
             [
                 {
                     "name": "copy_table",

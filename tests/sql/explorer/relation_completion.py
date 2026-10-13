@@ -6,8 +6,8 @@ import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionResult, parse_completion_context
 
+from tests.sql._support.completion import _install_stub
 from tests.sql._support.explorer import FakeSession
-from tests.sql.explorer.completion import _install_stub
 
 
 @pytest.mark.parametrize("backend", ["gp", "ch", "trino"])

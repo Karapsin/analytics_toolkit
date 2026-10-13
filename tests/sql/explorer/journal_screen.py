@@ -14,6 +14,7 @@ from analytics_toolkit.sql_explorer.journal_reader import JournalPage
 from analytics_toolkit.sql_explorer.journal_screen import JournalScreen
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
+from tests._support.concurrency import wait_event_async
 from tests.sql._support.explorer import FakeSession
 from tests.sql._support.ui_workers import wait_for_ui_workers
 from tests.sql.explorer.journal import Driver
@@ -275,11 +276,7 @@ def test_cancelled_journal_workers_do_not_publish_late_results(
             await pilot.pause()
             screen = application.screen
             assert isinstance(screen, JournalScreen)
-            for _ in range(100):
-                if entered.is_set():
-                    break
-                await asyncio.sleep(0.01)
-            assert entered.is_set()
+            await wait_event_async(entered)
             screen.workers.cancel_all()
             release.set()
             await pilot.pause()
