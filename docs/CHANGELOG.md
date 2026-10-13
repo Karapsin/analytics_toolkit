@@ -8,7 +8,6 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
-- Add release-activated GitHub wiki synchronization from main user documentation.
 
 ## 1.3.12.4 - 2026-10-12
 
