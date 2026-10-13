@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
+- Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
 
 ## 1.3.12.4 - 2026-10-12
 
