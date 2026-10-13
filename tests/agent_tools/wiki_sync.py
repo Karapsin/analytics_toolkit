@@ -121,8 +121,8 @@ def test_sync_is_idempotent_removes_owned_pages_preserves_manual_pages(tmp_path:
     assert before == {p.name: p.stat().st_mtime_ns for p in output.iterdir()}
     assert sync_pages(output, {"Home.md": "generated", "New.md": "new"})
     assert not (output / "Old.md").exists()
-    assert (output / "Manual.md").read_text() == "manual page"
-    assert json.loads((output / MANIFEST).read_text()) == ["Home.md", "New.md"]
+    assert (output / "Manual.md").read_text(encoding="utf-8") == "manual page"
+    assert json.loads((output / MANIFEST).read_text(encoding="utf-8")) == ["Home.md", "New.md"]
 
 
 def test_unowned_collision_is_checked_before_deleting_anything(tmp_path: Path) -> None:
@@ -131,7 +131,7 @@ def test_unowned_collision_is_checked_before_deleting_anything(tmp_path: Path) -
     with pytest.raises(ValueError, match="unowned"):
         sync_pages(tmp_path, {"Manual.md": "replacement"})
     assert (tmp_path / "Old.md").exists()
-    assert (tmp_path / "Manual.md").read_text() == "manual"
+    assert (tmp_path / "Manual.md").read_text(encoding="utf-8") == "manual"
 
 
 @pytest.mark.parametrize("value", [{}, ["../escape.md"], ["a/b.md"], [42]])
@@ -193,7 +193,7 @@ def test_manifest_symlink_cannot_mutate_external_file(tmp_path: Path) -> None:
     (output / MANIFEST).symlink_to(external)
     with pytest.raises(ValueError, match="manifest symlinks"):
         sync_pages(output, {"Home.md": "generated"})
-    assert external.read_text() == "[]"
+    assert external.read_text(encoding="utf-8") == "[]"
     assert not (output / "Home.md").exists()
 
 
