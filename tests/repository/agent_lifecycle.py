@@ -29,9 +29,7 @@ def test_rejection_queues_fresh_correction_without_user_resume(
     assert not control.correction(gh.repository, 1, gh.pr["head"]["sha"], "e" * 64)
     control.reject(gh, gh.pr, task, "Missing requested receipt validation.", "Adds PR receipts")
     events = control.pending()
-    assert len(events) == 1
-    assert events[0]["token"] is None
-    assert "no resume command" in json.loads(events[0]["payload"])["command"]
+    assert events == []  # Routine rejection is retained on GitHub, without Telegram noise.
     assert gh.comments[0]["body"].count("What changed:") == 1
 
 

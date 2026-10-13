@@ -218,6 +218,7 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
+    task_context.preflight(root)
     attachment = task_context.attachment(root)
     head = run(root, "git", "rev-parse", "HEAD")
     task_context.protocol().verify_commit(

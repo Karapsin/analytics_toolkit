@@ -80,6 +80,14 @@ Use these MCP tools for the corresponding agent workflow steps:
   `task_context(action="append", user_prompt=...)`. Private originals live under
   `.git/atk-tasks/`; the PR workflow attaches redacted context automatically and
   binds its digest to the signed head. Launcher-only preparation may omit the prompt.
+- Record assistant clarification questions, including every offered option, with
+  `task_context(action="question", evidence={"text": "<exact question>"})` before
+  asking. Bind the actual response with `answer-question`, its returned
+  `question_id`, and the exact `user_prompt`; use `correction_index` when that
+  response is already recorded. Never record assistant text as a user message.
+  Record the exact proposed plan with `plan`, then bind actual implementation
+  approval with `approve-plan`. Use the wrapper's `--evidence-file` option when
+  the active MCP server has not yet reloaded the extended interface.
 - RAG retrieval: `docs(query, mode="search"|"ask", top_k=3)`.
 - Consolidated implementation preflight: `change_impact`.
 - Per-startup response and retry accounting: `workflow_metrics`.

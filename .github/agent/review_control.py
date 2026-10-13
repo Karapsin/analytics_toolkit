@@ -49,12 +49,22 @@ def connect() -> sqlite3.Connection:
 
 def enqueue(key: str, kind: str, payload: dict[str, Any], *, buttons: bool = False) -> None:
     with connect() as db:
-        db.execute("INSERT OR IGNORE INTO notifications(key,kind,payload,token) VALUES (?,?,?,?)",
-                   (key, kind, json.dumps(payload), secrets.token_urlsafe(18) if buttons else None))
+        db.execute("INSERT OR IGNORE INTO notifications(key,kind,payload,token,sent) VALUES (?,?,?,?,?)",
+                   (key, kind, json.dumps(payload), secrets.token_urlsafe(18) if buttons else None,
+                    0 if notify(kind, payload) else -1))
+
+
+def notify(kind: str, payload: dict[str, Any]) -> bool:
+    return (kind in {"approval", "request-auth", "merged", "main", "release"}
+            or kind == "request" and (payload.get("telegram_feature") is True or payload.get("informational") is True))
 
 
 def pending() -> list[dict[str, Any]]:
     with connect() as db:
+        # Retire obsolete backlog too, including undelivered multipart alerts.
+        for row in db.execute("SELECT key,kind,payload FROM notifications WHERE sent=0").fetchall():
+            if not notify(row["kind"], json.loads(row["payload"])):
+                db.execute("UPDATE notifications SET sent=-1 WHERE key=?", (row["key"],))
         return [dict(row) for row in db.execute(
             "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 20",
             (time.time(),))]

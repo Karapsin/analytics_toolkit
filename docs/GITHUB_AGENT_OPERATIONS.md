@@ -53,12 +53,14 @@ Telegram approval buttons. A new head invalidates approval. The host verifies th
 Telegram owner, channel, message, callback authentication and current PR head;
 the App posts a transparent audit comment. Local agents cannot approve for you.
 
-Rejection posts what changed, why it was rejected and the required corrections,
-mentions the owner and sends a plain Telegram alert. A fresh Pi correction agent
+Rejection records what changed, why it was rejected and the required corrections
+on GitHub. Routine rejection and CI/repair alerts do not notify Telegram. A fresh Pi correction agent
 plans the correction, a separate agent reviews that plan, and another agent edits.
 Fresh independent PR review follows every changed head. This cycle continues until
 approved, without an arbitrary retry cap. Rejection alerts have no buttons and
-require no resume command. Genuine questions wait for authenticated owner answers;
+require no resume command. Routine plan, feature and correction choices use the agent’s recommended options,
+recorded as automated choices under the owner’s standing preference. Missing
+evidence/access and protected exact-head approvals remain blockers;
 owner vetoes/cancellation and invalid provenance stop work. Invalid task context
 also fails closed. Older trusted
 App repairs can inherit the standing integration-repair task, bound to their
@@ -75,7 +77,7 @@ Merges require current `fast-checks` and the App's `agent-review`, against the
 current `dev` base. Integration success is not a merge gate. The worker monitors
 integration after merges and creates repair PRs with fast regression coverage.
 
-Up to five Codex jobs can run concurrently. A PR has one writer and merges are
+Up to ten Codex jobs can run concurrently. A PR has one writer and merges are
 serialized. Rebase and changelog folding precede final review and protected owner
 approval. Local agents finish after checked, signed PR publication and task-context
 attachment; the Pi owns all later corrections, CI, approvals and merges. A durable
@@ -135,12 +137,40 @@ All heavy checks run on GitHub; the final PR receives another fresh independent
 reviewer. Original prompts and answers are attached automatically with credential
 redaction, bound to signed commit trailers. Request state and notifications survive
 worker restarts. The subscription worker retains its VPN wrapper, model configuration,
-Airflow schedules and five-worker limit.
+Airflow schedules and ten-worker limit.
 
 Reviewers can inspect a host-owned immutable evidence snapshot for companion worker
 and bot changes. Its manifest binds source/test files to hashes, repository commit
 IDs and exact-commit GitHub checks. Missing or invalid evidence cannot be replaced
 by an author's claim. Protected approval notices use an independent concrete change
 assessment for the current head and task digest, never the starting prompt alone.
+
+[Documentation overview](README.md)
+
+## Task evidence and Telegram preferences
+
+Version-2 task attachments retain exact assistant questions and offered options
+paired with actual chronological answers, the exact assistant plan, approval
+messages, image descriptions and content-addressed PNG hashes. Reviewer tools
+inspect the images from the immutable candidate checkout. An explicit owner
+replacement can settle a missing requirement; it never claims the original
+image was inspected. Version-1 signatures remain compatible. GitHub owner replies to Telegram
+questions use the exact request ID, revision and current PR head printed in the
+question notice; stale replies and other authors are rejected. Local handoff
+checks reject unresolved image references and “Implement the plan” without its
+plan or a written replacement. See [agent task evidence](../agent_tools/README.md).
+
+Telegram sends owner approval/authentication requests, implementation status for
+features requested through Telegram, PR merges into dev, dev promotions into main
+and successful production releases. Routine local-PR correction, rejection and
+fast-CI chatter remains in GitHub and private worker records. Explicit `/help` and
+`/status` responses remain available. Suppressed notifications are retained with
+a private suppressed state; older unsent alerts are retired without replay.
+
+Recommended options resolve routine planning, implementation and correction
+choices automatically, including existing question holds. Choices are recorded
+as automated decisions, never fabricated owner answers. Credential/access
+requirements, cancellations, vetoes, independent review and protected exact-head
+approvals retain their existing enforcement.
 
 [Documentation overview](README.md)

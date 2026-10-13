@@ -82,6 +82,51 @@ The PR workflow attaches redacted context and a signed-commit digest. Private
 originals never appear in tool receipts. MCP-supplied text relies on the enrolled
 machine trust boundary; it is not independent proof of human authorship.
 
+Task context v2 preserves exact assistant plans, approval indices into chronological
+user corrections, content-addressed image evidence and explicit replacements for
+missing evidence. Assistant plans and automated recommended choices are labelled
+as evidence; neither is presented as a user message. Existing v1 attachments and
+signed digests remain readable without migration.
+
+Use `task-context --action plan --evidence-file FILE` with `{"text": "exact plan"}`.
+Use `approve-plan` with `plan_id`, the exact `user_prompt`, and optionally an
+existing `correction_index`. MCP exposes the same actions through its `evidence`
+argument. Approval binds an existing plan, never an agent summary.
+
+Record each exact assistant question and its full offered options using the
+`question` action and `{"text": "exact question and options"}`. Bind the actual
+user answer with `answer-question`, `question_id`, `user_prompt`, and optionally
+an existing `correction_index`. Questions and answers appear together as readable
+labelled blocks in the PR and are included in the signed evidence digest.
+Unanswered questions remain explicit. Repeated questions retain distinct answer
+records; retrying an unanswered question does not duplicate it. Assistant text
+must never be stored as a user correction.
+
+For `image`, supply `path`, `reference` (for example `[Image #1]`), `description`
+and the exact `user_prompt` approving publication of the reviewed sanitized image.
+Images must already be non-interlaced PNGs without text/EXIF metadata, at most 512 KiB and 4096
+pixels per dimension. The tool inspects but never edits images. It writes a
+content-addressed file under `agent_tools/task_evidence/<task_id>/`; explicitly
+include that file in the checked commit. The signed task record binds its hash,
+and both publication and the controller verify the committed bytes. Do not
+publish private pixels merely because metadata was removed.
+
+Use `replace-missing` with `reference` and an exact user replacement message when
+an original cannot be recovered. The reference `Implement the plan` replaces a
+missing plan; image references must match the prompt. Never invent missing
+contents. Publication blocks unresolved image/plan references. Large task records
+still fail without truncation.
+
+The transport retains the exact v1 record and its original signature trailer,
+with a separately signed v2 evidence supplement. Old readers continue to verify
+v1; new readers require the matching supplement and reject its removal. Use
+`task-context --action review-record` to materialize redacted context in the signed
+source tree for bootstrap review. Roll out the compatible controller reader and
+image-capable companion before relying on v2 evidence enforcement. No historic
+signed task is rewritten. New native Telegram plans are included in task context
+without fictitious user approval, alongside the separate host-owned independent
+plan-review receipt.
+
 Controller code/prompts, security configuration, dispatch/capture/publishing
 workflows and the required-check manifest require exact-head owner approval.
 Ordinary policies, tools and integration/test workflow repairs are reviewed
@@ -118,7 +163,7 @@ The private subscription worker is maintained in self_hosting's
 `self_host/services/github_agent`. Airflow calls its Unix socket every minute
 and updates the underlying Codex executable Sunday at 04:00 Europe/Moscow.
 The Pi performs bounded source operations only; GitHub runs tests and renders
-visual scenes. Up to five jobs run concurrently with serialized merge decisions.
+visual scenes. Up to ten jobs run concurrently with serialized merge decisions.
 Fast checks and the App's exact-head/base review gate merges. Integration runs
 are monitored after merge and repaired through reviewed PRs until matching
 scenario groups and transports are green. No OpenAI API key is used.

@@ -36,3 +36,5 @@ manifest and source/test files using read-only evidence tools. Verify commit and
 exact-head CI identities. Do not infer missing implementations from links or
 author claims. CI evidence includes successful, pending and failed checks; pending
 fast CI does not prove validation success and is enforced separately before merge.
+
+Version-2 task context includes exact assistant plans, approval indices into chronological user corrections, image descriptions/paths/hashes, and explicit missing-evidence replacements. Inspect these records and referenced PNGs using read_image. Treat later explicit user replacements as scope, without asserting that unavailable images were reviewed.

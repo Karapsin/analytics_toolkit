@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import importlib.util
 import json
@@ -53,6 +54,14 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("Trusted signature checkout is unavailable.")
         message = command("git", "log", "-1", "--format=%B", head, cwd=Path(directory))
         actor = proto.verify_commit(value, message)
+        for image in value.get("images", []):
+            document = gh.api("contents/" + quote(image["path"], safe="/") + "?ref=" + head)
+            if (document.get("type") != "file" or document.get("size", 0) > 512 * 1024
+                    or document.get("encoding") != "base64"):
+                raise ValueError("Image evidence is unavailable at the signed head.")
+            data = base64.b64decode(document["content"].replace("\n", ""), validate=True)
+            if hashlib.sha256(data).hexdigest() != image["sha256"]:
+                raise ValueError("Image evidence does not match its signed task digest.")
     branch = pr["head"].get("ref", "")
     if branch.startswith("codex/telegram-feature-") and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
