@@ -108,7 +108,13 @@ and request IDs. The JSON CLI exposes these diagnostics.
 
 Do not reset IDs or retry creation blindly. Correct the recipe or underlying
 source issue, inspect status, then resume with the same runtime. Owned drafts
-are recovered rather than recreated. No dependent chart/dashboard writes or
+are recovered rather than recreated. Reconciliation preflight reads their saved
+branch, including drafts with no published revision; verification and pull keep
+published defaults. Source parameters, field identities/kinds, formulas,
+parameters, joins, filters, settings, description, RLS and cache must match the
+final fetched draft before publication. Pending owned removals survive restarts
+until metadata confirms completion, preserving unmanaged entries. Nonconvergence
+stops publication and all dependent writes. No dependent chart/dashboard writes or
 publication follow a dataset component failure. Copy destinations with an
 existing exact-name resource reject adoption; resolve the name conflict instead
 of overwriting that resource. A separate runtime cannot reuse an old deployment

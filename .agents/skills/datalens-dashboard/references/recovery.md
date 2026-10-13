@@ -44,3 +44,15 @@ Copy mode refuses exact-name adoption. Diagnose cache metadata mismatches separa
 `verify()` establishes recipe/deployment parity, not source/import parity; review
 per-feature import fidelity first. See the public
 [copy and recovery guide](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/copy-tab.md).
+
+For owned version-2 dataset writes with a pending checkpoint, reconciliation
+preflight reads the saved branch, even when no published revision exists.
+Verification, pull and dependencies outside the write scope retain their published
+defaults. Remote-change, identity and fingerprint guards continue to apply.
+
+Publication requires a final fetched draft matching every managed source, field,
+formula, parameter, join, filter, setting, description, RLS and cache value.
+Requested removals keep their checkpoint ownership across interrupted saves until
+fetched metadata proves completion. Unmanaged entries remain preserved. Four
+nonconverging reconciliation passes stop publication and dependent writes; keep
+the runtime checkpoint and correct the underlying cause before resuming.

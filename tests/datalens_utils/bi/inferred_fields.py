@@ -277,8 +277,9 @@ def test_distinct_title_clones_share_a_column_without_sharing_identity(
         assert len(added) == 1
 
 
+@pytest.mark.parametrize("published_state", ["missing", "stale"])
 def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR0915 - One interrupted lifecycle with durable recovery assertions.
-    bi_project, monkeypatch
+    bi_project, monkeypatch, published_state
 ):
     registry, store, connection = setup(bi_project, creating=True)
     resource = registry.resources["dataset:sales"]
@@ -296,7 +297,7 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
     current = replace(
         dataset(),
         saved_id="draft",
-        published_id=None,
+        published_id="revision" if published_state == "stale" else None,
         result_schema=(
             {**dataset().result_schema[0], "guid": "inferred-category"},
             dataset().result_schema[1],
@@ -347,7 +348,17 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
         assert "field_guids" not in owned
 
         resumed = BIResourceStore(registry)
-        getter.side_effect = lambda **kwargs: current
+
+        def fetch(*, by_id, branch="saved"):
+            assert by_id == current.id
+            if branch == "published" and current.saved_id != current.published_id:
+                if published_state == "missing":
+                    message = "no published revision"
+                    raise RuntimeError(message)
+                return dataset()
+            return current
+
+        getter.side_effect = fetch
         checkpoint_before = resumed.path.read_bytes()
         state_before = copy.deepcopy(resumed.state)
         definition_before = copy.deepcopy(resource.definition)
@@ -382,8 +393,8 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
         )
         monkeypatch.setattr(bi_engine, "resolve_location", lambda *args: folder)
 
-        def verified(*args):
-            verify_dataset_draft(*args)
+        def verified(*args, **kwargs):
+            verify_dataset_draft(*args, **kwargs)
             events.append("verified")
 
         monkeypatch.setattr(

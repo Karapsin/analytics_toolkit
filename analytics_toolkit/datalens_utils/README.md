@@ -228,3 +228,16 @@ writes and publication. Its diagnostics are exposed in JSON CLI failure reports.
 Local validation does not validate backend inference. `verify()` compares a
 published deployment with its recipe; import fidelity separately assesses source
 parity. Both leave numerical results and rendering unchecked.
+
+Reconciliation preflight reads the saved branch for owned dataset writes with a
+pending checkpoint, including source-only drafts with no published revision.
+Read-only dependencies, verification and pull keep published defaults. Identity,
+recipe fingerprint and remote revision checks still apply; recovery never
+recreates a retained dataset.
+
+Before publication, the final fetched draft must match managed source parameters,
+field identities and kinds, formulas, parameter defaults, joins, default filters,
+settings, description, RLS and cache configuration. The engine retains ownership
+of requested join, filter and RLS removals until metadata confirms completion,
+including across restarts, while preserving unmanaged entries. Nonconvergence
+stops publication and dependent writes with the dataset ID and checkpoint intact.
