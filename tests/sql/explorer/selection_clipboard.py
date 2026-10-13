@@ -161,7 +161,7 @@ def test_carets_are_thin_bars_without_changing_text() -> None:
                     bars = [segment for segment in strip if segment.text == "│"]
                     assert len(bars) == 1
                     assert bars[0].style.bold is False
-                    assert bars[0].style.bgcolor is None
+                    assert bars[0].style.reverse is False
             assert editor.text == "select 1\n\nlast"
 
     asyncio.run(exercise())

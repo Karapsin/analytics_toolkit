@@ -176,17 +176,29 @@ column across short or empty lines. Repeated presses extend across many lines;
 reversing direction shrinks the selection without creating cursors. Shift+Up
 and Shift+Down add a cursor above or below the active cursor. Repeating the key
 chains cursors across as many logical lines as needed;
-pressing toward an occupied adjacent line removes that cursor, while at least one
-cursor always remains. Each cursor has an independent selection, and editing or
+pressing toward an occupied projected position removes only that cursor, preserving
+other cursors on that row. At least one cursor always remains. Cursors can share
+a row at distinct columns. Each has an independent selection and preferred column;
+Left/Right crosses logical line boundaries independently. Editing or
 pasting applies at every cursor. Copying with multiple cursors retains one
 fragment per selection in document order, including empty selections. If all
-are empty, copying clears the clipboard. Paste distributes those fragments when
+are empty, Ctrl+C, `cp`, and Ctrl+X clear the clipboard; cut deletes nothing.
+One unselected cursor still copies the whole buffer with Ctrl+C/`cp`, while cut
+remains a no-op. Mixed empty/nonempty cut deletes only selected ranges.
+Paste distributes those fragments when
 their count matches the destination cursor count. Otherwise, matching clipboard
 lines are distributed, including text copied outside Explorer; one trailing line
 ending is ignored for this comparison. If neither count matches, each cursor
 receives the whole clipboard. A single cursor receives the joined text. Copying
 elsewhere in Explorer or receiving different clipboard text clears the stored
-fragments. Ctrl+C/Ctrl+V, `cp`/`pst`, cut, and terminal paste share these rules.
+fragments. A successfully read empty system clipboard pastes nothing; unavailable
+clipboard access uses Explorer’s fallback. An external copy with exactly the same
+text cannot be distinguished from the recorded copy by this clipboard interface.
+Ctrl+C/Ctrl+V, `cp`/`pst`, cut, and terminal paste share these rules.
+Edits across cursors form one undoable transaction. Undo/redo restores all anchors,
+the active cursor, and independent preferred columns. Empty edits preserve cursor
+state and redo; a new text change clears redo. Overlapping selections merge;
+indentation processes each selected logical line once and preserves direction.
 Escape collapses multiple cursors to the active
 one before toggling focus between the editor and command panel. F6 and Shift+F6
 cycle panes explicitly; arrows never switch panes. Tab and Shift+Tab indent or

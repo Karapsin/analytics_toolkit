@@ -104,7 +104,7 @@ def test_navigation_restores_column_and_never_changes_document() -> None:
             editor.action_cursor_left()
             assert [selection.end for selection in editor.cursor_selections] == [
                 (0, 5),
-                (1, 1),
+                (1, 0),
                 (2, 5),
             ]
             editor.action_cursor_right()

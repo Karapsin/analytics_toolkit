@@ -114,7 +114,7 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
             assert all(
                 segment.text == "│"
                 and segment.style.color.triplet.hex == app.get_css_variables()["accent"].lower()
-                and segment.style.bgcolor is None
+                and segment.style.reverse is False
                 and segment.style.bold is False
                 for segment in caret
             )

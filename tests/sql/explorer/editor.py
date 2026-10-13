@@ -180,7 +180,7 @@ def test_secondary_cursor_is_visible_on_an_empty_line() -> None:
     asyncio.run(exercise())
 
 
-def test_selected_indent_and_unindent_include_inserted_spaces() -> None:
+def test_selected_indent_and_unindent_preserve_selection_columns() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test():
@@ -190,12 +190,12 @@ def test_selected_indent_and_unindent_include_inserted_spaces() -> None:
 
             editor.action_indent()
             assert editor.text == "    one\n    two\nthree"
-            assert editor.selection == Selection((0, 0), (1, 7))
-            assert editor.selected_text == "    one\n    two"
+            assert editor.selection == Selection((0, 5), (1, 7))
+            assert editor.selected_text == "ne\n    two"
 
             editor.action_unindent()
             assert editor.text == "one\ntwo\nthree"
-            assert editor.selection == Selection((0, 0), (1, 3))
+            assert editor.selection == Selection((0, 1), (1, 3))
 
             editor.move_cursor((0, 3))
             editor.action_indent()

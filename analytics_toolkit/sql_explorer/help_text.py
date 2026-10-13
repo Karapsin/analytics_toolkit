@@ -48,6 +48,8 @@ SHORTCUTS_HELP = """Non-movement shortcuts
   Mouse separator drag      resize when keyboard mode is off
   run / cancel              execute / cancel query
   cp / pst                  copy selections or buffer / distribute clipboard at cursors
+  Copy/cut                  empty multicursor selections clear the clipboard
+  Paste                     matching fragments, then matching lines, else whole text
   del                       Delete at every cursor, or remove selected text
   clear query|results|all   clear content
   to_csv / to_excel         export results
@@ -87,11 +89,12 @@ MOVEMENT_HELP = """Movement and selection (case-sensitive; coordinates are 1-bas
   cursor 5 d        add five cursors below
 
 Relative moves affect all cursors; absolute moves and selections use the main
-cursor and collapse extras. Short lines clamp carets; longer lines restore the
-intended column. Left/Right aligns all cursors without multicursor line wrapping.
+cursor and collapse extras. Short lines clamp carets; longer lines restore
+each cursor’s intended column. Left/Right moves independently across line boundaries.
 d/u/pd/pu clamp at document boundaries and never insert lines or edit text.
 Only absolute mv adds text; its 100-new-line and 10-new-column caps clamp targets.
 Arrows/Home/End and Ctrl+Left/Right move; Shift variants select.
-Shift+Up/Down adds/removes cursors; Ctrl+Home/End moves to document bounds.
+Shift+Up/Down toggles only the projected position; same-row cursors remain distinct.
+Ctrl+Home/End moves to document bounds.
 Ctrl+Shift+Up/Down extends selections by one logical line without adding cursors.
 """

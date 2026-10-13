@@ -888,7 +888,8 @@ class SqlExplorerApp(
             value = pyperclip.paste()
         except pyperclip.PyperclipException:
             return self._clipboard
-        return value or self._clipboard
+        self.clipboard_fragments(value)
+        return value
 
     def _update_all_statuses(self) -> None:
         for workspace in tuple(self._workspaces.values()):
