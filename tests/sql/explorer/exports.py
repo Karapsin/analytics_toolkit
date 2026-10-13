@@ -17,7 +17,7 @@ from analytics_toolkit.sql_explorer.statements import build_execution_plan
 from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen, FileNavigationScreen
 from textual.widgets import Input
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path

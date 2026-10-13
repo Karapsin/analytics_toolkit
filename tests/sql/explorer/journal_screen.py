@@ -14,8 +14,8 @@ from analytics_toolkit.sql_explorer.journal_reader import JournalPage
 from analytics_toolkit.sql_explorer.journal_screen import JournalScreen
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
+from tests.sql._support.explorer import FakeSession
 from tests.sql._support.ui_workers import wait_for_ui_workers
-from tests.sql.explorer.app import FakeSession
 from tests.sql.explorer.journal import Driver
 
 if TYPE_CHECKING:

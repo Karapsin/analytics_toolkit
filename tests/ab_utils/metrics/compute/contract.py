@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.ab_utils._support.factories import metric_frame
 from tests.ab_utils._support.metrics import (
     _build_sample_metrics_df,
     _single_metric_row,
@@ -12,23 +13,17 @@ from tests.ab_utils._support.metrics import (
 
 
 def test_compute_test_metrics_prints_progress_logs(capsys: pytest.CaptureFixture[str]) -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [10, 11, 9, 12, 14, 15, 13, 16],
-            "clicks": [5, 6, 4, 5, 8, 9, 7, 8],
-            "impressions": [10, 12, 8, 10, 12, 14, 10, 12],
-        }
+    df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        orders=[10, 11, 9, 12, 14, 15, 13, 16],
+        clicks=[5, 6, 4, 5, 8, 9, 7, 8],
+        impressions=[10, 12, 8, 10, 12, 14, 10, 12],
     )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [8, 10, 6, 11, 12, 12, 10, 15],
-            "clicks": [4, 5, 3, 4, 6, 7, 5, 6],
-            "impressions": [9, 11, 8, 10, 11, 15, 9, 13],
-        }
+    pre_df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        orders=[8, 10, 6, 11, 12, 12, 10, 15],
+        clicks=[4, 5, 3, 4, 6, 7, 5, 6],
+        impressions=[9, 11, 8, 10, 11, 15, 9, 13],
     )
 
     result = compute_test_metrics(
@@ -171,13 +166,7 @@ def test_coerce_sql_int_handles_nulls_and_delegates_to_int(value: object, expect
 
 
 def test_compute_test_metrics_default_non_zero_truncate_ignores_zeros_for_cutoff() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 11)),
-            "group_name": ["control"] * 5 + ["test"] * 5,
-            "orders": [0.0] * 9 + [100.0],
-        }
-    )
+    df = metric_frame(["control"] * 5 + ["test"] * 5, orders=[0.0] * 9 + [100.0])
 
     default_result = compute_test_metrics(
         df,

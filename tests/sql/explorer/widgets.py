@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from analytics_toolkit.sql_explorer.app import FindReplaceBar, SqlEditor, SqlExplorerApp
 from textual.widgets import Input, Static
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_find_replace_ui_highlights_navigates_and_replaces() -> None:

@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+- Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 
 ## 1.3.12.4 - 2026-10-12
 

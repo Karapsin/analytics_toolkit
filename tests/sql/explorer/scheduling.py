@@ -15,7 +15,7 @@ from analytics_toolkit.sql_explorer.scheduling import ExplorerQueryScheduler
 from analytics_toolkit.sql_explorer.statements import build_execution_plan
 from analytics_toolkit.sql_explorer.workspace import SqlExplorerWorkspace, workspace_for
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_user_query_scheduler_is_fifo_and_limits_each_tab_to_one_job() -> None:

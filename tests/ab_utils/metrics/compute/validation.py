@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.ab_utils._support.factories import metric_frame
 from tests.ab_utils._support.metrics import (
     compute_test_metrics,
     math,
@@ -35,19 +36,9 @@ def test_compute_test_metrics_rejects_infinite_observed_standard_error() -> None
 
 
 def test_compute_test_metrics_warns_and_sets_nan_when_pre_metric_is_missing() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [10, 11, 9, 12, 14, 15, 13, 16],
-        }
-    )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "gmv": [100, 110, 90, 120, 140, 150, 130, 160],
-        }
+    df = metric_frame(["control"] * 4 + ["test"] * 4, orders=[10, 11, 9, 12, 14, 15, 13, 16])
+    pre_df = metric_frame(
+        ["control"] * 4 + ["test"] * 4, gmv=[100, 110, 90, 120, 140, 150, 130, 160]
     )
 
     with pytest.warns(UserWarning, match="Could not compute CUPED p-value for metric 'orders'"):
@@ -64,20 +55,8 @@ def test_compute_test_metrics_warns_and_sets_nan_when_pre_metric_is_missing() ->
 
 
 def test_compute_test_metrics_validates_pre_experiment_group_assignments() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 5)),
-            "group_name": ["control", "control", "test", "test"],
-            "orders": [10, 11, 14, 15],
-        }
-    )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 5)),
-            "group_name": ["control", "test", "test", "test"],
-            "orders": [8, 9, 12, 13],
-        }
-    )
+    df = metric_frame(["control", "control", "test", "test"], orders=[10, 11, 14, 15])
+    pre_df = metric_frame(["control", "test", "test", "test"], orders=[8, 9, 12, 13])
 
     with pytest.raises(ValueError, match="must match between df and pre_exp_metrics_df"):
         compute_test_metrics(

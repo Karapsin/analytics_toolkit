@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,16 +16,7 @@ from analytics_toolkit.sql.dml.transfer.flow.staged_unkeyed_progress import (
 from analytics_toolkit.sql.dml.transfer.runtime import retry as retry_module
 from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch, TransferOptions
 
-
-@dataclass
-class FakeClock:
-    value: float = 0.0
-
-    def __call__(self) -> float:
-        return self.value
-
-    def set(self, value: float) -> None:
-        self.value = value
+from tests._support.clock import FakeClock
 
 
 class RecordingProgressBar:

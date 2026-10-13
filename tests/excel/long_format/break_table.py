@@ -4,31 +4,15 @@ from tests.excel._support.long_format import (
     Decimal,
     Path,
     break_table,
-    load_workbook,
     pd,
     pytest,
 )
+from tests.excel._support.workbooks import report_frame, report_workbook
 
 
 def test_break_table_accepts_multiple_dataframes_side_by_side(tmp_path: Path) -> None:
-    first_df = pd.DataFrame(
-        {
-            "metric": ["users", "users"],
-            "ab_group": ["control", "test_1"],
-            "qr_group": ["ALL", "ALL"],
-            "start_dt": ["2026-03-30", "2026-03-30"],
-            "value": [100, 110],
-        }
-    )
-    second_df = pd.DataFrame(
-        {
-            "metric": ["arpu", "arpu"],
-            "ab_group": ["control", "test_1"],
-            "qr_group": ["ALL", "ALL"],
-            "start_dt": ["2026-03-30", "2026-03-30"],
-            "value": [2.5, 2.7],
-        }
-    )
+    first_df = report_frame("users", [100, 110])
+    second_df = report_frame("arpu", [2.5, 2.7])
 
     output = tmp_path / "multi_df_raw.xlsx"
     tables = break_table(
@@ -47,8 +31,7 @@ def test_break_table_accepts_multiple_dataframes_side_by_side(tmp_path: Path) ->
         {"metric": "arpu", "ab_group": "test_1", "value": 2.7},
     ]
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[:4] == [
             ("ALL", None, None, None, "ALL", None, None),
@@ -56,8 +39,6 @@ def test_break_table_accepts_multiple_dataframes_side_by_side(tmp_path: Path) ->
             ("users", "control", 100, None, "arpu", "control", 2.5),
             ("users", "test_1", 110, None, "arpu", "test_1", 2.7),
         ]
-    finally:
-        workbook.close()
 
 
 def test_break_table_aligns_headers_by_table_index_across_multiple_dataframes(
@@ -90,15 +71,12 @@ def test_break_table_aligns_headers_by_table_index_across_multiple_dataframes(
         sheet_by="start_dt",
     )
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[0] == ("ALL", None, None, None, "ALL", None, None)
         assert rows[1] == ("metric", "ab_group", "value", None, "metric", "ab_group", "value")
         assert rows[6] == ("B", None, None, None, "B", None, None)
         assert rows[7] == ("metric", "ab_group", "value", None, "metric", "ab_group", "value")
-    finally:
-        workbook.close()
 
 
 def test_break_table_does_not_apply_custom_formats_by_default(tmp_path: Path) -> None:
@@ -116,15 +94,12 @@ def test_break_table_does_not_apply_custom_formats_by_default(tmp_path: Path) ->
         output=output,
     )
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         sheet = workbook["Sheet1"]
         assert sheet["B2"].number_format == "General"
         assert sheet["C2"].number_format == "General"
         assert sheet["B3"].number_format == "General"
         assert sheet["C3"].number_format == "General"
-    finally:
-        workbook.close()
 
 
 def test_break_table_handles_disjoint_sheets_and_special_numeric_values(tmp_path: Path) -> None:
@@ -138,14 +113,11 @@ def test_break_table_handles_disjoint_sheets_and_special_numeric_values(tmp_path
     output = tmp_path / "disjoint-sheets.xlsx"
     break_table([first, second], output, sheet_by="sheet", prettify=True)
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         assert workbook.sheetnames == ["first", "second"]
         assert workbook["first"]["B2"].number_format == "General"
         assert workbook["first"]["C2"].number_format == "General"
         assert workbook["second"]["B2"].number_format == "0.00%"
-    finally:
-        workbook.close()
 
 
 def test_break_table_places_sparse_dataframe_groups_at_stable_coordinates(tmp_path: Path) -> None:
@@ -155,15 +127,12 @@ def test_break_table_places_sparse_dataframe_groups_at_stable_coordinates(tmp_pa
     output = tmp_path / "sparse-groups.xlsx"
     break_table([first, second], output, break_by="break")
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         sheet = workbook["Sheet1"]
         assert sheet["A1"].value == "A"
         assert sheet["D1"].value == "A"
         assert sheet["A6"].value == "B"
         assert sheet["D6"].value is None
-    finally:
-        workbook.close()
 
 
 def test_break_table_prettify_formats_numeric_cells_by_body_row(tmp_path: Path) -> None:
@@ -185,8 +154,7 @@ def test_break_table_prettify_formats_numeric_cells_by_body_row(tmp_path: Path) 
 
     assert tables[None][0].equals(df)
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         sheet = workbook["Sheet1"]
         assert sheet["A2"].number_format == "General"
         assert sheet["B2"].number_format == "General"
@@ -204,8 +172,6 @@ def test_break_table_prettify_formats_numeric_cells_by_body_row(tmp_path: Path) 
 
         assert sheet["C6"].number_format == "General"
         assert sheet["D6"].number_format == "General"
-    finally:
-        workbook.close()
 
 
 def test_break_table_rejects_missing_and_colliding_group_columns(tmp_path: Path) -> None:
@@ -236,13 +202,10 @@ def test_break_table_writes_decimal_values_as_numeric_excel_cells(tmp_path: Path
         sheet_by="start_dt",
     )
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         cell = workbook["2026-03-30"]["C3"]
         assert cell.data_type == "n"
         assert cell.value == pytest.approx(72.4867078207333238)
-    finally:
-        workbook.close()
 
 
 def test_break_table_writes_grouped_raw_tables_without_uniqueness_checks(tmp_path: Path) -> None:
@@ -272,8 +235,7 @@ def test_break_table_writes_grouped_raw_tables_without_uniqueness_checks(tmp_pat
         {"metric": "users", "ab_group": "test_1", "value": 130},
     ]
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         assert workbook.sheetnames == ["2026-03-30"]
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[:6] == [
@@ -284,5 +246,3 @@ def test_break_table_writes_grouped_raw_tables_without_uniqueness_checks(tmp_pat
             ("users", "test_1", 110),
             ("users", "test_1", 130),
         ]
-    finally:
-        workbook.close()

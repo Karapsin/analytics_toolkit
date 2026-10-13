@@ -3,32 +3,16 @@ from __future__ import annotations
 from tests.excel._support.long_format import (
     Decimal,
     Path,
-    load_workbook,
     pd,
     pivot_and_break_table,
     pytest,
 )
+from tests.excel._support.workbooks import report_frame, report_workbook
 
 
 def test_pivot_and_break_table_accepts_multiple_dataframes_side_by_side(tmp_path: Path) -> None:
-    first_df = pd.DataFrame(
-        {
-            "metric": ["users", "users"],
-            "ab_group": ["control", "test_1"],
-            "qr_group": ["ALL", "ALL"],
-            "start_dt": ["2026-03-30", "2026-03-30"],
-            "value": [100, 110],
-        }
-    )
-    second_df = pd.DataFrame(
-        {
-            "metric": ["arpu", "arpu"],
-            "ab_group": ["control", "test_1"],
-            "qr_group": ["ALL", "ALL"],
-            "start_dt": ["2026-03-30", "2026-03-30"],
-            "value": [2.5, 2.7],
-        }
-    )
+    first_df = report_frame("users", [100, 110])
+    second_df = report_frame("arpu", [2.5, 2.7])
 
     output = tmp_path / "multi_df_pivot.xlsx"
     tables = pivot_and_break_table(
@@ -48,16 +32,13 @@ def test_pivot_and_break_table_accepts_multiple_dataframes_side_by_side(tmp_path
         {"metric": "arpu", "control": 2.5, "test_1": 2.7},
     ]
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[:3] == [
             ("ALL", None, None, None, "ALL", None, None),
             ("metric", "control", "test_1", None, "metric", "control", "test_1"),
             ("users", 100, 110, None, "arpu", 2.5, 2.7),
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_accepts_multiple_value_columns(tmp_path: Path) -> None:
@@ -87,8 +68,7 @@ def test_pivot_and_break_table_accepts_multiple_value_columns(tmp_path: Path) ->
         {"metric": "arpu", "control": 2.5, "test_1": 2.7},
     ]
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[:4] == [
             ("ALL", None, None),
@@ -96,8 +76,6 @@ def test_pivot_and_break_table_accepts_multiple_value_columns(tmp_path: Path) ->
             ("users", 100, 110),
             ("arpu", 2.5, 2.7),
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_appends_new_sheets_when_requested(tmp_path: Path) -> None:
@@ -138,11 +116,8 @@ def test_pivot_and_break_table_appends_new_sheets_when_requested(tmp_path: Path)
         append=True,
     )
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         assert workbook.sheetnames == ["2026-03-30", "2026-04-01"]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_detects_value_columns_when_omitted(tmp_path: Path) -> None:
@@ -247,16 +222,13 @@ def test_pivot_and_break_table_enforces_same_row_order_with_padding(tmp_path: Pa
     assert second_table.iloc[1]["control"] == 3.1
     assert second_table.iloc[1]["test_1"] == 3.3
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         rows = list(workbook["2026-03-30"].iter_rows(values_only=True))
         assert rows[:3] == [
             ("metric", "control", "test_1", None, "metric", "control", "test_1"),
             ("users", 100, 110, None, "users", None, None),
             ("arpu", 2.5, 2.7, None, "arpu", 3.1, 3.3),
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_prettify_formats_pivoted_body_rows(tmp_path: Path) -> None:
@@ -284,8 +256,7 @@ def test_pivot_and_break_table_prettify_formats_pivoted_body_rows(tmp_path: Path
         {"metric": "users", "control": 1000.0, "test_1": 50.0},
     ]
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         sheet = workbook["Sheet1"]
         assert sheet["A2"].number_format == "General"
         assert sheet["B2"].number_format == "0.00%"
@@ -294,8 +265,6 @@ def test_pivot_and_break_table_prettify_formats_pivoted_body_rows(tmp_path: Path
         assert sheet["C3"].number_format == "0.00"
         assert sheet["B4"].number_format == "#,##0"
         assert sheet["C4"].number_format == "#,##0"
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_rejects_duplicates_within_group_slices(tmp_path: Path) -> None:
@@ -434,16 +403,13 @@ def test_pivot_and_break_table_replaces_existing_workbook_by_default(tmp_path: P
         sheet_by="start_dt",
     )
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         assert workbook.sheetnames == ["2026-04-01"]
         rows = list(workbook["2026-04-01"].iter_rows(values_only=True))
         assert rows[:2] == [
             ("metric", "control", "test_1"),
             ("arpu", 2.5, 2.7),
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_sanitizes_and_deduplicates_sheet_names(tmp_path: Path) -> None:
@@ -471,15 +437,12 @@ def test_pivot_and_break_table_sanitizes_and_deduplicates_sheet_names(tmp_path: 
         sheet_by="sheet_bucket",
     )
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         assert workbook.sheetnames == [
             "Report_Name_One__",
             "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
             "XXXXXXXXXXXXXXXXXXXXXXXXXXX (2)",
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_writes_decimal_values_as_numeric_excel_cells(
@@ -504,16 +467,13 @@ def test_pivot_and_break_table_writes_decimal_values_as_numeric_excel_cells(
         sheet_by="start_dt",
     )
 
-    workbook = load_workbook(output, read_only=False, data_only=True)
-    try:
+    with report_workbook(output, read_only=False, data_only=True) as workbook:
         control_cell = workbook["2026-03-30"]["B2"]
         test_cell = workbook["2026-03-30"]["C2"]
         assert control_cell.data_type == "n"
         assert test_cell.data_type == "n"
         assert control_cell.value == pytest.approx(72.4867078207333238)
         assert test_cell.value == pytest.approx(70.6603563524410553)
-    finally:
-        workbook.close()
 
 
 def test_pivot_and_break_table_writes_multiple_sheets_and_tables(tmp_path: Path) -> None:
@@ -560,8 +520,7 @@ def test_pivot_and_break_table_writes_multiple_sheets_and_tables(tmp_path: Path)
     assert len(tables["2026-03-30"]) == 1
     assert tables["2026-03-30"][0].columns.tolist() == ["metric", "control", "test_1"]
 
-    workbook = load_workbook(output, read_only=True, data_only=True)
-    try:
+    with report_workbook(output, read_only=True, data_only=True) as workbook:
         assert workbook.sheetnames == ["2026-03-30", "2026-04-01"]
         first_sheet = workbook["2026-03-30"]
         rows = list(first_sheet.iter_rows(values_only=True))
@@ -571,8 +530,6 @@ def test_pivot_and_break_table_writes_multiple_sheets_and_tables(tmp_path: Path)
             ("users", 100, 110),
             ("arpu", 2.5, 2.7),
         ]
-    finally:
-        workbook.close()
 
 
 def test_pivot_without_columns_preserves_row_order(tmp_path: Path) -> None:

@@ -12,7 +12,7 @@ from analytics_toolkit.sql_explorer.editor_actions import (
 )
 from textual.document._document import Selection
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 @pytest.mark.parametrize(("opener", "closer"), list(PAIRS.items()))

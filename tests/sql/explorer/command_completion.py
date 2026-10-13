@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.command_completion import command_suggestion
 from analytics_toolkit.sql_explorer.panes import CommandInput
 from analytics_toolkit.sql_explorer.runtime import ExplorerSession
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 @pytest.mark.parametrize(
