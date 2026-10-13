@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+## 1.3.12.5 - 2026-10-13
+
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
@@ -16,6 +18,7 @@ Generated from package version bumps and recent commit history.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
 - Split scoped-merge gate regressions to satisfy strict lint, retain recovered task and dev repair history, and align staged companion rollout evidence.
 - Bind starting-prompt plan approvals without changing historical digests, retain suppressed blocked-repair diagnostics and retry fingerprints, and gate the corrected companion rollout on exact-candidate rehearsal and live acceptance.
+- Block worker publication and recovery for unresolved plan/image references, preserve historical task verification, and document the final companion dependency and rollout gates.
 
 ## 1.3.12.4 - 2026-10-12
 
