@@ -151,7 +151,8 @@ def _assert_integration_startup_reports(workflow: str) -> None:
         report = job.split("- name: Report captured startup diagnostics\n", 1)[1]
         report = report.split("      - name:", 1)[0]
         assert "if: failure()" in report
-        assert "for log in .integration-artifacts/*/*/startup.log; do" in report
+        assert "for log in .integration-artifacts/*/*/build.log " in report
+        assert ".integration-artifacts/*/*/startup.log; do" in report
         assert 'tail -n 80 "$log"' in report
         assert "if-no-files-found: error" in job
 
