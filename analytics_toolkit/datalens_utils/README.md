@@ -138,7 +138,8 @@ existing workbook, while `workbook(key=...)` references its recipe declaration.
 Changing between these storage models is a migration blocker. Enterprise uses
 `installation="enterprise"` and `base_url`; `token_env` optionally names an
 OAuth token. YC retains existing CLI/profile authentication or uses `token_env`.
-Injected client factories remain supported.
+Injected client factories remain supported. Injected clients must provide the public
+SDK client contract, including `INSTALLATION` for source installation validation.
 
 Named connections, collections, workbooks and HTML pages live in their respective
 JSON mappings beneath `configs/DL objects/`. Existing connections are read-only

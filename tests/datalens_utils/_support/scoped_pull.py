@@ -66,7 +66,11 @@ def recovered_pull(project, monkeypatch):
     api = MemoryDataLens()
     builder = api.client.create.wizard_chart.line(name="Trend", location=api.folder).dataset(cloud)
     chart = wizard.configure(
-        builder, SimpleNamespace(client=api.client), {"sales": cloud}, chart_definition, creation=True
+        builder,
+        SimpleNamespace(client=api.client),
+        {"sales": cloud},
+        chart_definition,
+        creation=True,
     ).build()
     store.checkpoint("chart:trend", chart, scope="widget")
     store.remember("chart:trend", chart)

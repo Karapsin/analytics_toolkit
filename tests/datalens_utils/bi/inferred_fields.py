@@ -413,6 +413,11 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
         assert len(current.fields) == len(remote_before.fields)
         assert [spec.mode for spec in writes] == ["save", "publish"]
         bi_project.reconcile()
+        retained = BIResourceStore(registry).state["resources"][resource.key]
+        assert retained["id"] == remote_before.id
+        assert retained["field_guids"] == durable["field_guids"]
+        assert retained["recipe_field_guids"] == {"category": "category"}
+        assert "pending_write" not in retained
         assert len(builds) == 1
         assert [spec.mode for spec in writes] == ["save", "publish"]
         assert {path: path.read_bytes() for path in recipe_before} == recipe_before
@@ -421,7 +426,9 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
 @pytest.mark.parametrize(
     "case", ["owned", "partial", "ambiguous", "ordinary", "wrong_id", "retained"]
 )
-def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(bi_project, monkeypatch, case):
+def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(
+    bi_project, monkeypatch, case
+):
     registry, store, connection = setup(bi_project)
     resource = registry.resources["dataset:sales"]
     resource.definition["fields"]["category"]["guid"] = "requested"

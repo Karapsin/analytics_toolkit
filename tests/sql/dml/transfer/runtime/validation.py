@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import observe_call, wait_event
 from tests.sql._support.transfer_runtime import (
     Any,
     BoundedConnectionCloseError,
@@ -11,7 +12,6 @@ from tests.sql._support.transfer_runtime import (
     _StateRejectingError,
     pytest,
     threading,
-    time,
 )
 
 
@@ -27,7 +27,7 @@ def test_close_preserving_handles_missing_error_and_nonmutable_error_state() -> 
     assert exc_info.value.__cause__ is nonmutable_original
 
 
-def test_close_waits_for_inflight_open_and_rejects_late_connection() -> None:
+def test_close_waits_for_inflight_open_and_rejects_late_connection(monkeypatch) -> None:
     open_started = threading.Event()
     release_open = threading.Event()
     connection = _Connection()
@@ -43,13 +43,16 @@ def test_close_waits_for_inflight_open_and_rejects_late_connection() -> None:
         role="inflight close pool",
         open_connection=open_connection,
     )
+    closing = observe_call(monkeypatch, manager._open_condition, "wait")
     with ThreadPoolExecutor(max_workers=2) as executor:
         lease_future = executor.submit(manager.run, "read", lambda _ref: None)
         assert open_started.wait(2)
         close_future = executor.submit(manager.close)
-        time.sleep(0.05)
-        assert not close_future.done()
-        release_open.set()
+        try:
+            wait_event(closing)
+            assert not close_future.done()
+        finally:
+            release_open.set()
         with pytest.raises(RuntimeError, match="opening was cancelled") as exc_info:
             lease_future.result(timeout=2)
         assert exc_info.value.analytics_toolkit_sql_retry_safe is False

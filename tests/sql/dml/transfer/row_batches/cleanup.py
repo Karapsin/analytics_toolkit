@@ -29,15 +29,30 @@ def test_cleanup_and_infer_parquet_helpers_delegate(
         "s3://bucket/stage",
         fsspec_module=fsspec_module,
     )
-    monkeypatch.setattr(
-        parquet_stage_module,
-        "get_backend_adapter",
-        lambda _backend: SimpleNamespace(
-            infer_parquet_stage_column_types_from_rows=lambda batch: {batch.columns[0]: "BIGINT"}
-        ),
-    )
+    selected: list[str] = []
+    batches: list[models_module.RowBatch] = []
+    column_types = {"adapter_column": "BIGINT"}
+
+    class RecordingAdapter:
+        def infer_parquet_stage_column_types_from_rows(
+            self, batch: models_module.RowBatch
+        ) -> dict[str, str]:
+            batches.append(batch)
+            return column_types
+
+    adapter = RecordingAdapter()
+
+    def select(backend: str) -> RecordingAdapter:
+        selected.append(backend)
+        return adapter
+
+    monkeypatch.setattr(parquet_stage_module, "get_backend_adapter", select)
     batch = models_module.RowBatch(columns=["id"], rows=[(1,)])
-    assert parquet_stage_module.infer_trino_column_types_from_rows(batch) == {"id": "BIGINT"}
+    result = parquet_stage_module.infer_trino_column_types_from_rows(batch)
+    assert selected == ["trino"]
+    assert len(batches) == 1
+    assert batches[0] is batch
+    assert result is column_types
     assert removed == [("bucket/stage", True)]
 
 

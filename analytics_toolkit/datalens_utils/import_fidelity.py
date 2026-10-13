@@ -104,7 +104,9 @@ def encoding_arguments(
     return kind, arguments
 
 
-def wizard_encodings(visualization: Any, names: dict[str, str], types: Any = None) -> dict[str, Any]:
+def wizard_encodings(
+    visualization: Any, names: dict[str, str], types: Any = None
+) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for slot, prefix in (("colors", "color"), ("shapes", "shape")):
         section = visualization.get(slot, {})

@@ -145,7 +145,7 @@ def _assert_integration_startup_reports(workflow: str) -> None:
         if "--level integration" in job or "python -m release_routines.sql_integration" in job
     }
 
-    assert required <= execution_jobs.keys()
+    assert required <= execution_jobs.keys(), "Missing required integration suites"
     for name, job in execution_jobs.items():
         assert "- name: Report captured startup diagnostics\n" in job, name
         report = job.split("- name: Report captured startup diagnostics\n", 1)[1]
@@ -200,6 +200,15 @@ def test_startup_report_guard_checks_additional_execution_jobs() -> None:
     )
 
     with pytest.raises(AssertionError, match="extra-suite"):
+        _assert_integration_startup_reports(workflow)
+
+
+@pytest.mark.parametrize("job_name", ["core-http", "core-native", "auth", "fault", "stress"])
+def test_startup_report_guard_rejects_missing_required_suite(job_name: str) -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(f"  {job_name}:\n", f"  renamed-{job_name}:\n", 1)
+
+    with pytest.raises(AssertionError, match="Missing required integration suites"):
         _assert_integration_startup_reports(workflow)
 
 
