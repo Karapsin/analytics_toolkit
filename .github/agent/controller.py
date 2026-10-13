@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import importlib.util
 import json
@@ -54,14 +53,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("Trusted signature checkout is unavailable.")
         message = command("git", "log", "-1", "--format=%B", head, cwd=Path(directory))
         actor = proto.verify_commit(value, message)
-        for image in value.get("images", []):
-            document = gh.api("contents/" + quote(image["path"], safe="/") + "?ref=" + head)
-            if (document.get("type") != "file" or document.get("size", 0) > 512 * 1024
-                    or document.get("encoding") != "base64"):
-                raise ValueError("Image evidence is unavailable at the signed head.")
-            data = base64.b64decode(document["content"].replace("\n", ""), validate=True)
-            if hashlib.sha256(data).hexdigest() != image["sha256"]:
-                raise ValueError("Image evidence does not match its signed task digest.")
+        verify_task_images(value, Path(directory), head)
     branch = pr["head"].get("ref", "")
     if branch.startswith("codex/telegram-feature-") and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
@@ -712,6 +704,31 @@ def conflict_path_entry(work: Path, path: str, revision: str | None) -> tuple[by
     return mode, oid
 
 
+def verify_task_images(value: dict[str, Any], work: Path, revision: str) -> None:
+    """Verify owner-approved PNG bytes from an immutable Git tree, never symlinks."""
+    trusted_module("task_context").validate(value)
+    for image in value.get("images", []):
+        raw = command("git", "ls-tree", "--full-tree", "-z", revision, "--",
+                      image["path"], cwd=work, raw_stdout=True)
+        if not raw:
+            raise ValueError("Image evidence is missing from the candidate tree.")
+        mode, oid = conflict_entry_metadata(raw, image["path"], staged=False)
+        if mode not in {b"100644", b"100755"}:
+            raise ValueError("Image evidence must be a regular Git blob.")
+        object_id = oid.decode("ascii")
+        if (SHA.fullmatch(object_id) is None
+                or command("git", "cat-file", "-t", object_id, cwd=work) != "blob"):
+            raise ValueError("Image evidence object is unavailable.")
+        size = int(command("git", "cat-file", "-s", object_id, cwd=work))
+        if not 1 <= size <= 524288:
+            raise ValueError("Image evidence size is outside the publication limit.")
+        data = command("git", "cat-file", "blob", object_id, cwd=work, raw_stdout=True)
+        if len(data) != size or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Image evidence must contain the declared PNG bytes.")
+        if hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise ValueError("Image evidence does not match its signed task digest.")
+
+
 def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bool:
     """Prove a conflict change came solely from immutable dev, including absence."""
     for revision in (task["head"], task["base"]):
@@ -833,13 +850,13 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         if visual_required(paths):
             verify_visual(artifact, patch, task)
         tree = command("git", "write-tree", cwd=work)
+        verify_task_images(task["user_task"], work, tree)
         parents = ["-p", task["head"]]
         if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
         proto = trusted_module("task_context")
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
-        commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
-                         "-m", message, cwd=work)
+        commit = None
         if task["kind"] == "feature" and not number:
             remote = command("git", "ls-remote", "origin", "refs/heads/" + task["branch"], cwd=work)
             if remote:
@@ -848,7 +865,11 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                 if command("git", "rev-parse", existing_head + "^{tree}", cwd=work) != tree:
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
                 proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
+                verify_task_images(task["user_task"], work, existing_head)
                 commit = existing_head
+        if commit is None:
+            commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
+                             "-m", message, cwd=work)
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")

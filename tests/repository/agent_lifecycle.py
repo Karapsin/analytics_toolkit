@@ -365,7 +365,7 @@ def publication_context(reference: str, location: str, resolution: str) -> dict[
             }
         )
     elif resolution == "image":
-        image_hash = hashlib.sha256(b"sanitized image").hexdigest()
+        image_hash = hashlib.sha256(b"\x89PNG\r\n\x1a\nsanitized image").hexdigest()
         context["images"].append(
             {
                 "reference": reference,
@@ -377,7 +377,10 @@ def publication_context(reference: str, location: str, resolution: str) -> dict[
         )
     elif resolution == "replacement":
         context["replacements"].append(
-            {"reference": "Implement the plan" if "plan" in reference else reference, "user_index": 0}
+            {
+                "reference": "Implement the plan" if "plan" in reference else reference,
+                "user_index": 0,
+            }
         )
     return context
 
@@ -432,7 +435,17 @@ def reference_publication(tmp_path: Path, monkeypatch: Any) -> Any:
             controller, "task_metadata", Mock(return_value={"task_digest": task["task_digest"]})
         )
 
-        def command(*args: str, **kwargs: Any) -> str:
+        def command(*args: str, **kwargs: Any) -> str | bytes:
+            if args[1] == "ls-tree":
+                path = context["images"][0]["path"]
+                return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
+            if args[1] == "cat-file":
+                png = b"\x89PNG\r\n\x1a\nsanitized image"
+                if args[2] == "-t":
+                    return "blob"
+                if args[2] == "-s":
+                    return str(len(png))
+                return png
             if args[1] == "diff":
                 return "tests/regression.py"
             if args[1] == "write-tree" or args[1] == "rev-parse":
@@ -452,7 +465,9 @@ def reference_publication(tmp_path: Path, monkeypatch: Any) -> Any:
     return prepare
 
 
-@pytest.mark.parametrize("mode", ["feature", "recovered-feature", "correction", "conflict", "repair"])
+@pytest.mark.parametrize(
+    "mode", ["feature", "recovered-feature", "correction", "conflict", "repair"]
+)
 @pytest.mark.parametrize("location", ["starting", "correction"])
 @pytest.mark.parametrize("failure", ["absent", "unapproved", "unrelated", "image"])
 def test_unresolved_references_block_all_publication_writes(
@@ -481,9 +496,13 @@ def test_unresolved_references_block_all_publication_writes(
         gh.label.assert_not_called()
 
 
-@pytest.mark.parametrize("mode", ["feature", "recovered-feature", "correction", "conflict", "repair"])
+@pytest.mark.parametrize(
+    "mode", ["feature", "recovered-feature", "correction", "conflict", "repair"]
+)
 @pytest.mark.parametrize("location", ["starting", "correction"])
-@pytest.mark.parametrize("resolution", ["approved", "image", "replacement-plan", "replacement-image"])
+@pytest.mark.parametrize(
+    "resolution", ["approved", "image", "replacement-plan", "replacement-image"]
+)
 def test_resolved_references_publish_with_real_resolver(
     tmp_path: Path, reference_publication: Any, mode: str, location: str, resolution: str
 ) -> None:

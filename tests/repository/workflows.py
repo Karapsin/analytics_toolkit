@@ -22,7 +22,11 @@ def test_every_github_workflow_is_classified_for_dev() -> None:
     for entry in branch["classified_non_push_workflows"]:
         assert entry["reason"].strip()
         workflow = (ROOT / entry["path"]).read_text(encoding="utf-8")
-        assert not re.search(r"(?m)^\s{2}push:", workflow)
+        if entry["classification"] == "main_only_publish":
+            assert "    branches: [main]" in workflow
+            assert "github.ref == 'refs/heads/main'" in workflow
+        else:
+            assert not re.search(r"(?m)^\s{2}push:", workflow)
 
     for entry in branch["conditional_checks"]:
         assert entry["reason"].strip()
@@ -57,3 +61,18 @@ def test_required_job_names_still_exist_in_workflow_yaml() -> None:
         for job in workflow_entry.get("conditional_jobs", []):
             assert f"name: {job['name']}" in workflow
             assert job["reason"].strip()
+
+
+def test_wiki_workflow_only_publishes_main_and_uses_separate_credentials() -> None:
+    workflow = (ROOT / ".github/workflows/wiki-sync.yml").read_text(encoding="utf-8")
+    assert "    branches: [main]" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "          ref: main" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "secrets.WIKI_SYNC_TOKEN" in workflow
+    assert "AGENT_APP_PRIVATE_KEY" not in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert workflow.index("--check-only") < workflow.index("git -c credential.helper= clone")
+    assert "git diff --cached --quiet" in workflow
+    assert "git -c credential.helper= push origin HEAD" in workflow
+    assert "--force" not in workflow

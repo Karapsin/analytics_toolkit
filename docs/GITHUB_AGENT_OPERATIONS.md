@@ -311,8 +311,8 @@ signed payload and parser retain the complete text.
 
 The coordinator owns companion implementation, rehearsal and deployment in its
 separate self_host checkout. The pinned dependency candidate is
-`6930a0f553545315f80273267cab10026534fc56`; inspect its mapped immutable source/tests
-and `operator/companion-6930a0f55354-ci.json` receipt. It is staged, not active.
+`b39a3c8cc0859ecb4a00528b45e38f54199cbfee`; inspect its mapped immutable source/tests
+and `operator/companion-b39a3c8cc085-ci.json` receipt and its complete 29-file mapping. It is staged, not active.
 Exact-commit green CI does not establish independent review, owner approval or
 successful deployment rehearsal. This descendant applies the genuine-input
 guard before native recommended answers and before coding recommendations or
@@ -322,7 +322,11 @@ options, request identity, revision and checkpoint. The snapshot's
 routine recovery, legacy unlabeled-question replanning, authenticated GitHub
 answers and visual rejection. `test_checkpoint_bytes.py` covers exact saved bytes
 through replanning and independent review. Final independent review must inspect
-this pin; ancestor reviews do not approve its changed code.
+this pin; ancestor reviews do not approve its changed code. The 6930a0, 7b498
+and earlier receipts remain historical evidence. The corrected descendant retains
+repeated authenticated approvals in `approval_indices` and rejects invalid recovery
+images before PR creation, attachment updates or context enrollment. Its focused
+regressions exercise the real toolkit resolver and successful create/update recovery.
 
 The trusted controller calls `task_context.require_resolved` after the review-only
 return and before any code-publication mutation. This gate also covers existing
@@ -330,7 +334,12 @@ feature-branch recovery: unresolved starting prompts or corrections cannot
 apply patches, sign commits, push branches or publish PR attachments. Historical
 v1 attachments remain readable and signature-verifiable; publication of an
 unresolved reference requires its exact approval binding, image evidence or
-explicit owner replacement. Blocker reporting and writer release remain intact.
+explicit owner replacement. Before signing or pushing, the controller validates
+all image descriptors and the resulting immutable Git tree: exactly one regular
+blob, 1–524288 bytes, matching byte count, PNG signature and SHA256. Recovered
+heads receive the same checks before reuse or attachment publication; signed-head
+metadata uses Git blobs rather than the symlink-resolving Contents API. Invalid
+images prevent publication writes. Blocker reporting and writer release remain intact.
 
 The collector retains its staged `git diff --cached --check` gate before patch
 serialization. A checkpoint rejected for changelog conflict markers must be
@@ -349,8 +358,8 @@ these companion boundaries and correlated approval records; toolkit
 `tests/repository/agent_lifecycle.py` exercises the real resolver with mocked
 Git/GitHub publication operations.
 
-The receipt links successful Repository Checks run `38464258543`, job
-`115526996500`, to the exact candidate and declares hashes for its workflow,
+The receipt links successful Repository Checks run `38478140218`, job
+`115573851226`, to the exact candidate and declares hashes for its workflow,
 `agent_tools/workflow.py`, service sources and rehearsal test. The workflow's
 `run-checks --level prepush` invokes `unittest discover -s agent_tools/tests -v`,
 which discovers `test_worker_rollout_rehearsal.py`. Its synthetic rehearsal
@@ -365,7 +374,7 @@ still require verified evidence for the exact final candidate.
 
 The earlier `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
 rehearsal script remain historical evidence. They cannot establish a successful
-rehearsal for changed `6930a0…` source. Repeat affected steps and record a
+rehearsal for changed `b39a3c…` source. Repeat affected steps and record a
 hash-bound exact-candidate receipt before activation; do not infer rehearsal
 success from green CI or this plan review.
 
