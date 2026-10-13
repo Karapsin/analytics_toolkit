@@ -339,13 +339,21 @@ def test_parquet_dependency_import_error_is_actionable(
 def test_parquet_location_row_group_and_target_name_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        parquet_stage_module,
-        "get_backend_adapter",
-        lambda _backend: SimpleNamespace(
-            parquet_stage_target_table_base=lambda table: table.replace(".", "_")
-        ),
-    )
+    selected: list[str] = []
+    targets: list[str] = []
+
+    class RecordingAdapter:
+        def parquet_stage_target_table_base(self, table: str) -> str:
+            targets.append(table)
+            return "adapter_table_base"
+
+    adapter = RecordingAdapter()
+
+    def select(backend: str) -> RecordingAdapter:
+        selected.append(backend)
+        return adapter
+
+    monkeypatch.setattr(parquet_stage_module, "get_backend_adapter", select)
     options = SimpleNamespace(
         s3_transfer_staging_location="s3://bucket/base/",
         transfer_staging_username=None,
@@ -356,8 +364,11 @@ def test_parquet_location_row_group_and_target_name_helpers(
             options,
             stage_suffix="fixed",
         )
-        == "s3://bucket/base/schema_target/__analytics_toolkit_unknown__stage__fixed/"
+        == "s3://bucket/base/adapter_table_base/__analytics_toolkit_unknown__stage__fixed/"
     )
+    assert selected == ["trino"]
+    assert targets == [options.destination_table]
+    assert targets[0] is options.destination_table
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=0)) == 1
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=60_000)) == 50_000
     with pytest.raises(ValueError, match="staging_location"):
@@ -538,3 +549,46 @@ def test_write_empty_parquet_batch_and_dataframe_are_noops() -> None:
         )
         == 0
     )
+
+
+@pytest.mark.parametrize("explicit_options", [False, True], ids=["defaults", "explicit"])
+def test_build_create_parquet_stage_table_sql_delegates_to_selected_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    explicit_options: bool,
+) -> None:
+    selected: list[str] = []
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    returned_sql = "/* adapter result */ CREATE TABLE stage (id BIGINT)"
+    column_types = {"id": "BIGINT"}
+    ddl_properties = {"compression_codec": "'ZSTD'"} if explicit_options else None
+    query_label = "stage-label" if explicit_options else None
+
+    class RecordingAdapter:
+        def build_parquet_stage_table_sql(self, *args: Any, **kwargs: Any) -> str:
+            calls.append((args, kwargs))
+            return returned_sql
+
+    adapter = RecordingAdapter()
+
+    def select(backend: str) -> RecordingAdapter:
+        selected.append(backend)
+        return adapter
+
+    monkeypatch.setattr(parquet_stage_module, "get_backend_adapter", select)
+    optional = (
+        {"query_label": query_label, "ddl_properties": ddl_properties} if explicit_options else {}
+    )
+    result = parquet_stage_module.build_create_parquet_stage_table_sql(
+        "hive.scratch.stage", column_types, "s3://bucket/stage/", **optional
+    )
+
+    assert selected == ["trino"]
+    assert calls == [
+        (
+            ("hive.scratch.stage", column_types, "s3://bucket/stage/"),
+            {"query_label": query_label, "ddl_properties": ddl_properties},
+        )
+    ]
+    assert calls[0][0][1] is column_types
+    assert calls[0][1]["ddl_properties"] is ddl_properties
+    assert result is returned_sql

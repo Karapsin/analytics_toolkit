@@ -20,7 +20,7 @@ from analytics_toolkit.sql_explorer.completion import (
 )
 from analytics_toolkit.sql_explorer.metadata_store import MetadataStore
 
-from tests.sql.explorer.completion import FakeProvider, _wait_for
+from tests.sql._support.completion import FakeProvider, _wait_for
 
 if TYPE_CHECKING:
     from pathlib import Path

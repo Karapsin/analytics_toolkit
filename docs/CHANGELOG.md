@@ -12,6 +12,7 @@ Generated from package version bumps and recent commit history.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
 - Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
+- Stabilize suite-wide test boundaries and held-worker cap detection with paired real/bypassed limiter regressions, restore Parquet adapter forwarding contracts, fix evidenced lint/format findings with original-exception and interrupt cleanup regressions, and preserve startup-diagnostics guards and changelog entries.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.

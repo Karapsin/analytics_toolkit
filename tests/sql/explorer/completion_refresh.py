@@ -6,8 +6,8 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionRequest, CompletionResult
 from textual.widgets import Input
 
+from tests.sql._support.completion import _install_stub
 from tests.sql._support.explorer import FakeSession
-from tests.sql.explorer.completion import _install_stub
 
 
 def test_namespace_menu_filters_its_own_candidates_and_shrinks() -> None:

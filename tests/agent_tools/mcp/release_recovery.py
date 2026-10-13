@@ -196,9 +196,7 @@ def test_pending_workflow_never_starts_another_upload(
     monkeypatch.setattr(
         candidate,
         "_runs",
-        lambda *args: [
-            {"databaseId": 42, "status": "in_progress", "conclusion": None},
-        ],
+        lambda *args: [{"databaseId": 42, "status": "in_progress", "conclusion": None}],
     )
     with pytest.raises(RuntimeError, match="pending"):
         candidate.prepare_stage(tmp_path, "pypi")
@@ -443,9 +441,7 @@ def test_legacy_marker_starts_one_window_and_adopts_appearing_run(
     monkeypatch.setattr(
         candidate,
         "_runs",
-        lambda *args: [
-            {"databaseId": 99, "status": "in_progress", "conclusion": None},
-        ],
+        lambda *args: [{"databaseId": 99, "status": "in_progress", "conclusion": None}],
     )
     with pytest.raises(RuntimeError, match="pending"):
         candidate.prepare_stage(tmp_path, "testpypi")
@@ -503,7 +499,10 @@ def test_concurrent_retry_is_excluded_and_lock_is_released(
     assert state["testpypi_dispatch"]["outcome"] == "acknowledged"
 
 
-@pytest.mark.parametrize("conflict", ["published", "tag", "ref", "active", "uncertain", "missing"])
+@pytest.mark.parametrize(
+    "conflict",
+    ["published", "tag", "ref", "active", "uncertain", "missing"],
+)
 def test_old_publication_must_be_reconciled_before_head_replacement(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -522,13 +521,19 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
         if args[:3] == ("git", "ls-remote", "--tags") and conflict == "tag":
             return "old refs/tags/v1.2.3.4"
         if args[:3] == ("git", "ls-remote", "--heads"):
-            return ("other" if conflict == "ref" else "test-head") + " refs/heads/testpypi-1.2.3.4"
+            return (
+                ("other" if conflict == "ref" else "test-head")
+                + " refs/heads/testpypi-1.2.3.4"
+            )
         if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
             return "test-head old"
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                candidate.replace_project_name_text(
+                    metadata,
+                    candidate.PROJECTS["testpypi"],
+                ).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )
@@ -541,9 +546,7 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
         candidate,
         "_runs",
         lambda *args: (
-            [
-                {"databaseId": 42, "status": "in_progress"},
-            ]
+            [{"databaseId": 42, "status": "in_progress"}]
             if conflict == "active"
             else []
         ),
@@ -615,9 +618,7 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
         candidate,
         "_runs",
         lambda root, ref, sha, stage: (
-            [
-                {"databaseId": 42, "status": "completed"},
-            ]
+            [{"databaseId": 42, "status": "completed"}]
             if stage == "testpypi"
             else []
         ),
@@ -632,7 +633,10 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                candidate.replace_project_name_text(
+                    metadata,
+                    candidate.PROJECTS["testpypi"],
+                ).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )
@@ -672,7 +676,10 @@ def test_successful_old_upload_waits_for_index_reconciliation(
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                candidate.replace_project_name_text(
+                    metadata,
+                    candidate.PROJECTS["testpypi"],
+                ).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )

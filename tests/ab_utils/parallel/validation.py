@@ -4,6 +4,7 @@ from tests.ab_utils._support.parallel import (
     Any,
     ab_utils_module,
     parallel_module,
+    patch_metric_runner,
     pd,
     pytest,
 )
@@ -29,11 +30,7 @@ def test_parallel_compute_metrics_rejects_label_result_column_conflict(
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         return pd.DataFrame({"metric_name": ["orders"]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     with pytest.raises(ValueError, match="conflict"):
         ab_utils_module.compute_test_metrics(

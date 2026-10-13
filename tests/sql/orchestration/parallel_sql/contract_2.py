@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as sql_module
+
 from tests.sql._support.parallel_sql import (
     Any,
-    parallel_module,
     pytest,
     tasks_module,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 def test_parallel_sql_uses_generated_names_for_unnamed_task_sequence(
@@ -14,9 +16,9 @@ def test_parallel_sql_uses_generated_names_for_unnamed_task_sequence(
     def fake_execute_sql(**kwargs: Any) -> str:
         return kwargs["query"]
 
-    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute=fake_execute_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         [
             {
                 "type": "execute",

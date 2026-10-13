@@ -2,20 +2,25 @@ from __future__ import annotations
 
 import importlib
 import threading
-import time
 from typing import Any
 
 import pytest
+
+from tests._support.concurrency import ConcurrencyProbe, release_on_completion, wait_event
+from tests.sql._support.execute_read import observe_execute_cap
 
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
 
 
 def test_execute_sql_list_returns_results_in_input_order(monkeypatch) -> None:
+    release = threading.Event()
+
     def fake_execute(options: Any) -> str:
         if options.source_sql == "select 1":
-            time.sleep(0.03)
+            wait_event(release)
         return options.source_sql
 
+    release_on_completion(monkeypatch, execute_sql_module, release)
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
     result = execute_sql_module.execute_sql(
@@ -46,36 +51,27 @@ def test_execute_sql_list_defaults_to_sequential_execution(monkeypatch) -> None:
 
 
 def test_execute_sql_soft_cap_limits_active_workers(monkeypatch) -> None:
-    lock = threading.Lock()
-    two_workers_started = threading.Event()
-    active_workers = 0
-    max_active_workers = 0
+    probe = ConcurrencyProbe(2, held=True)
 
     def fake_execute(options: Any) -> str:
-        nonlocal active_workers, max_active_workers
-        with lock:
-            active_workers += 1
-            max_active_workers = max(max_active_workers, active_workers)
-            if active_workers == 2:
-                two_workers_started.set()
-        assert two_workers_started.wait(timeout=1)
-        time.sleep(0.02)
-        with lock:
-            active_workers -= 1
-        return options.source_sql
+        with probe.worker():
+            return options.source_sql
 
     monkeypatch.setattr(execute_sql_module, "_execute_sql_options", fake_execute)
 
-    result = execute_sql_module.execute_sql(
-        "gp",
-        ["select 1", "select 2", "select 3"],
-        concurrency=3,
-        soft_concurrency_cap=2,
-        hard_concurrency_cap=2,
+    observation = observe_execute_cap(monkeypatch, probe, calls=3)
+    result = observation.run(
+        lambda: execute_sql_module.execute_sql(
+            "gp",
+            ["select 1", "select 2", "select 3"],
+            concurrency=3,
+            soft_concurrency_cap=2,
+            hard_concurrency_cap=2,
+        )
     )
 
     assert result == ["select 1", "select 2", "select 3"]
-    assert max_active_workers == 2
+    probe.assert_complete(calls=3)
 
 
 def test_execute_sql_hard_cap_rejects_effective_batch_concurrency() -> None:

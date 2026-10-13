@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import observe_call, wait_event
 from tests.sql._support.transfer_runtime import (
     BoundedConnectionManager,
     LazyKeyedRuntime,
@@ -13,11 +14,10 @@ from tests.sql._support.transfer_runtime import (
     lazy_keyed_runtime,
     pytest,
     threading,
-    time,
 )
 
 
-def test_assignment_slot_and_release_helpers_honor_state() -> None:
+def test_assignment_slot_and_release_helpers_honor_state(monkeypatch) -> None:
     runtime = LazyKeyedRuntime([], read_workers=1, write_workers=1)
     assigned = _task(0)
     assigned.assignment.set()
@@ -31,14 +31,18 @@ def test_assignment_slot_and_release_helpers_honor_state() -> None:
     active = LazyKeyedRuntime([], read_workers=1, write_workers=1)
     slot = threading.BoundedSemaphore(1)
     lazy_keyed_runtime.acquire_batch_slot_with_cancellation(slot, active)
+    waiting = observe_call(monkeypatch, slot, "acquire", after_result=False)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
             lazy_keyed_runtime.acquire_batch_slot_with_cancellation,
             slot,
             active,
         )
-        time.sleep(0.15)
-        slot.release()
+        try:
+            wait_event(waiting)
+            assert not future.done()
+        finally:
+            slot.release()
         assert future.result(timeout=2) is None
 
     active.cancellation.set()
