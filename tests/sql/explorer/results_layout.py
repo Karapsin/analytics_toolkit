@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.settings import load_settings
 from textual import events
 from textual.widgets import Input
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_results_orientation_sizes_bounds_and_keyboard_mode() -> None:

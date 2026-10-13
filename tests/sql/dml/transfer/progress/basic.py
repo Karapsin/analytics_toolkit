@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import threading
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
@@ -19,16 +18,7 @@ from analytics_toolkit.sql.dml.transfer.flow.transfer_progress import (
     format_slice_tag,
 )
 
-
-@dataclass
-class FakeClock:
-    value: float = 0.0
-
-    def __call__(self) -> float:
-        return self.value
-
-    def set(self, value: float) -> None:
-        self.value = value
+from tests._support.clock import FakeClock
 
 
 class RecordingProgressBar:

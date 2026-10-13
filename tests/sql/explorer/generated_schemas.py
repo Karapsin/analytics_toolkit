@@ -14,7 +14,7 @@ from analytics_toolkit.sql_explorer.completion import (
 )
 from analytics_toolkit.sql_explorer.metadata_store import MetadataStore
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 from tests.sql.explorer.completion import FakeProvider, _install_stub, _wait_for
 
 if TYPE_CHECKING:

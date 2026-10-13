@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.create_table import creation_options, creati
 from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from textual.widgets import Input, Select, TextArea
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 from tests.sql.explorer.runtime import _session
 
 

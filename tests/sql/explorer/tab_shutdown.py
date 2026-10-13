@@ -7,7 +7,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.runtime import DatabaseSelection, ExplorerCancelResult
 from textual.widgets import TextArea
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     import pytest

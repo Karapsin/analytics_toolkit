@@ -43,44 +43,7 @@ from analytics_toolkit.ab_utils.metrics import (
 )
 from scipy.stats import ttest_ind
 
-
-def _build_sample_metrics_df() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "user_id": list(range(1, 13)),
-            "group_name": [
-                "control",
-                "control",
-                "control",
-                "control",
-                "test_a",
-                "test_a",
-                "test_a",
-                "test_a",
-                "test_b",
-                "test_b",
-                "test_b",
-                "test_b",
-            ],
-            "orders": [10, 12, 9, np.nan, 13, 15, 11, 14, 8, 10, 9, 11],
-            "gmv": [
-                100.0,
-                120.0,
-                95.0,
-                110.0,
-                130.0,
-                145.0,
-                118.0,
-                140.0,
-                92.0,
-                105.0,
-                99.0,
-                108.0,
-            ],
-            "clicks": [5, 3, 4, 2, 7, 5, 6, 8, 4, 5, 3, 4],
-            "impressions": [10, 8, 0, 4, 14, 10, 12, 16, 8, 10, 6, 8],
-        }
-    )
+from tests.ab_utils._support.factories import sample_metrics_df as _build_sample_metrics_df
 
 
 def _manual_cuped_statistics_from_frame(

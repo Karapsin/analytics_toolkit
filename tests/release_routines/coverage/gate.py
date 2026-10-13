@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from release_routines.lib import check_coverage
 
+from tests._support.files import write_json as _write
+
 
 def _file(
     statements: int,
@@ -21,11 +23,6 @@ def _file(
             "missing_branches": missing_branches,
         }
     }
-
-
-def _write(path: Path, payload: object) -> Path:
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
 
 
 def test_gate_accepts_exact_boundaries_and_zero_branch_modules(tmp_path: Path) -> None:

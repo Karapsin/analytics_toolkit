@@ -14,9 +14,15 @@ def test_sanitize_date_converts_iso_string() -> None:
     assert sanitize_date("2026-05-18") == "20260518"
 
 
-def test_sanitize_date_accepts_date_and_datetime() -> None:
-    assert sanitize_date(date(2026, 5, 18)) == "20260518"
-    assert sanitize_date(datetime(2026, 5, 18, 14, 30, 15)) == "20260518"
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(date(2026, 5, 18), id="date"),
+        pytest.param(datetime(2026, 5, 18, 14, 30, 15), id="datetime"),
+    ],
+)
+def test_sanitize_date_accepts_date_and_datetime(value: date) -> None:
+    assert sanitize_date(value) == "20260518"
 
 
 def test_sanitize_date_reuses_existing_validation() -> None:

@@ -6,7 +6,7 @@ import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionCoordinator
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 from tests.sql.explorer.completion import FakeProvider, _wait_for
 
 

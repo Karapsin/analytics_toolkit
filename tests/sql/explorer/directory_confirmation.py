@@ -6,7 +6,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.inputs import EditableInput
 from analytics_toolkit.sql_explorer.widgets import FileNavigationScreen
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_directory_picker_escape_arms_enter_and_second_escape_cancels(tmp_path) -> None:
