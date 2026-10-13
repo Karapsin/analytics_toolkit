@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.source import CodeRules, called_names, forbidden_code, imported_modules
 from tests.sql._support.architecture import (
     PROJECT_ROOT,
     SQL_ROOT,
@@ -128,26 +129,20 @@ def test_sql_public_operations_do_not_expose_backend_or_connection_inputs() -> N
 
 
 def test_sql_source_does_not_restore_removed_aggregation_imports() -> None:
-    forbidden_imports = [
+    forbidden_modules = {
         "analytics_toolkit.sql.ddl.create_sql_table",
         "analytics_toolkit.sql.dml.table.table_ops",
-        "from ...ddl.create_sql_table",
-        "from ..ddl.create_sql_table",
-        "from .ddl.create_sql_table",
-        "from ...dml.table.table_ops",
-        "from ..dml.table.table_ops",
-        "from .dml.table.table_ops",
-        "from .table_ops",
-        "orchestration.async_api",
-        "from .async_api",
+        "analytics_toolkit.sql.orchestration.async_api",
+    }
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {module}"
+        for path in SQL_ROOT.rglob("*.py")
+        for module in imported_modules(path)
+        if any(
+            module == forbidden or module.startswith(forbidden + ".")
+            for forbidden in forbidden_modules
+        )
     ]
-    offenders: list[str] = []
-    for path in SQL_ROOT.rglob("*.py"):
-        text = path.read_text()
-        for forbidden in forbidden_imports:
-            if forbidden in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {forbidden}")
-
     assert offenders == []
 
 
@@ -168,33 +163,35 @@ def test_sql_submodules_import_cleanly() -> None:
 
 
 def test_stage_table_identifier_backend_policy_is_adapter_owned() -> None:
-    text = (SQL_ROOT / "dml" / "load" / "stage.py").read_text()
-    forbidden_snippets = {
-        'connection_type != "gp"',
-        "GP_IDENTIFIER_MAX_BYTES",
-        "hashlib.sha1",
-    }
-
-    offenders = [snippet for snippet in forbidden_snippets if snippet in text]
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in [SQL_ROOT / "dml" / "load" / "stage.py"]
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=("GP_IDENTIFIER_MAX_BYTES",),
+                expressions=("connection_type != 'gp'", "hashlib.sha1"),
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_table_info_name_resolution_is_adapter_owned() -> None:
     table_info_path = SQL_ROOT / "metadata" / "table_info.py"
-    text = table_info_path.read_text()
-    forbidden_snippets = {
-        "split_trino_table_name",
-        'backend != "trino"',
-        'backend == "trino"',
-    }
     offenders = [
-        f"{table_info_path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in [table_info_path]
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=("split_trino_table_name",),
+                expressions=("backend != 'trino'", "backend == 'trino'"),
+            ),
+        )
     ]
     assert offenders == []
-    assert "resolve_table_info_table_name" in text
+    assert "resolve_table_info_table_name" in called_names(ast.parse(table_info_path.read_text()))
 
 
 def test_transfer_api_reload_tolerates_stale_transfer_options(
@@ -219,46 +216,49 @@ def test_transfer_insert_page_sizing_policy_is_adapter_owned() -> None:
         SQL_ROOT / "dml" / "transfer" / "flow" / "api.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "attempt.py",
     ]
-    forbidden_snippets = {
-        "DEFAULT_GP_INSERT_CHUNK_SIZE",
-        "make_gp_insert_chunk_sizer",
-        "supports_adaptive_transfer_insert_page_size",
-    }
-    offenders: list[str] = []
-
-    for path in checked_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in checked_paths
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=(
+                    "DEFAULT_GP_INSERT_CHUNK_SIZE",
+                    "make_gp_insert_chunk_sizer",
+                    "supports_adaptive_transfer_insert_page_size",
+                )
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_trino_parquet_stage_sql_is_adapter_owned() -> None:
     generic_path = SQL_ROOT / "dml" / "transfer" / "flow" / "parquet_stage.py"
-    text = generic_path.read_text()
-    forbidden_snippets = {
-        "format = 'PARQUET'",
-        "external_location = '",
-        "parse_one",
-        "sqlglot",
-        "Decimal",
-        "datetime",
-        "_infer_trino_type_from_values",
-    }
     offenders = [
-        f"{generic_path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in [generic_path]
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=(
+                    "parse_one",
+                    "sqlglot",
+                    "Decimal",
+                    "datetime",
+                    "_infer_trino_type_from_values",
+                ),
+                strings=("format = 'PARQUET'", "external_location = '"),
+            ),
+        )
     ]
     assert offenders == []
 
-    tree = ast.parse(text, filename=str(generic_path))
+    tree = ast.parse(generic_path.read_text(), filename=str(generic_path))
     wrapper_methods = {
         "build_create_parquet_stage_table_sql": "build_parquet_stage_table_sql",
         "build_stage_external_location": "parquet_stage_target_table_base",
-        "infer_trino_column_types_from_rows": ("infer_parquet_stage_column_types_from_rows"),
+        "infer_trino_column_types_from_rows": "infer_parquet_stage_column_types_from_rows",
     }
     for wrapper_name, adapter_method in wrapper_methods.items():
         wrapper = next(
@@ -277,18 +277,19 @@ def test_trino_parquet_stage_sql_is_adapter_owned() -> None:
 def test_upsert_backend_policy_is_capability_owned() -> None:
     assert not (SQL_ROOT / "dml" / "table" / "upsert_policy.py").exists()
 
-    forbidden_snippets = {
-        "is_trino_backend",
-        "is_clickhouse_backend",
-        "PARTITION_REPLACEMENT_UPSERT_BACKENDS",
-    }
-    offenders: list[str] = []
-    for path in SQL_ROOT.rglob("*.py"):
-        if "backends" in path.parts:
-            continue
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in SQL_ROOT.rglob("*.py")
+        if "backends" not in path.parts
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=(
+                    "is_clickhouse_backend",
+                    "is_trino_backend",
+                    "PARTITION_REPLACEMENT_UPSERT_BACKENDS",
+                )
+            ),
+        )
+    ]
     assert offenders == []

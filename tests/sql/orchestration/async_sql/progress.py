@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as sql_module
+
 from tests.sql._support.async_sql import (
     Any,
     async_module,
@@ -7,6 +9,7 @@ from tests.sql._support.async_sql import (
     pd,
     pytest,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 def test_async_impl_resets_context_when_progress_creation_fails(
@@ -52,10 +55,10 @@ def test_async_sql_suppresses_builtin_inner_progress(
         calls["transfer"] = kwargs
         return 2
 
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
-    monkeypatch.setattr(async_module, "execute_read", fake_execute_read)
-    monkeypatch.setattr(async_module, "load_df", fake_load_df)
-    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", execute_read=fake_execute_read)
+    patch_task_operations(monkeypatch, mode="async", load_df=fake_load_df)
+    patch_task_operations(monkeypatch, mode="async", transfer=fake_transfer_table)
 
     execute_spec = {
         "name": "refresh",
@@ -89,7 +92,7 @@ def test_async_sql_suppresses_builtin_inner_progress(
         "progress": True,
     }
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [execute_spec, execute_read_spec, load_spec, transfer_spec],
         concurrency=1,
         progress=False,
@@ -129,9 +132,9 @@ def test_async_sql_updates_progress_bar(monkeypatch: pytest.MonkeyPatch) -> None
         return None
 
     monkeypatch.setattr(async_module, "tqdm", FakeTqdm)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "type": "execute",

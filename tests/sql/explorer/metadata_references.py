@@ -18,7 +18,7 @@ from analytics_toolkit.sql_explorer.journal_namespace_commands import (
 )
 from analytics_toolkit.sql_explorer.metadata_usage import column_in_scopes, event_usage
 
-from tests.sql.explorer.completion import FakeProvider, _wait_for
+from tests.sql._support.completion import FakeProvider, _wait_for
 
 
 @pytest.mark.parametrize(
