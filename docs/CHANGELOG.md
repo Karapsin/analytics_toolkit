@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Validate approved PNG evidence in staged and recovered Git trees before publication, repair focused CI fixtures, and pin the corrected staged RPI companion.
+
 ## 1.3.12.5 - 2026-10-13
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
