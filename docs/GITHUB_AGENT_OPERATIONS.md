@@ -168,6 +168,12 @@ checkpoint retention. Reuse the pinned runtime, checkpoint, native-planning and
 alert regressions. The Pi executes no tests, builds, programs or scenes; trusted
 operations and live metadata verification remain permitted.
 
+When a quality job fails, the coordinator captures its complete redacted log and
+an index bound to the PR head, run and job IDs. Correct the reported task-related
+findings without increasing lint or format debt baselines, then require successful
+`fast-checks` on the final published head. Preserve regression assertions and retry
+behavior when simplifying test fixtures.
+
 After reviewed activation, correlate every inventoried item with its current PR
 head and request revision. Observe each eligible review/correction advance or
 complete, or record an explicit authenticated owner, provenance or allowance hold.

@@ -9,9 +9,38 @@ import pytest
 from tests.repository.github_agent import controller, owned_pr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 evidence = controller.trusted_module("repair_evidence")
+
+
+def _inventory_api(
+    metadata: dict[str, Any],
+    failure: dict[str, bool],
+    endpoint: str,
+    status: int,
+) -> Callable[..., Any]:
+    metadata_calls = 0
+
+    def api(path: str, method: str = "GET", data: Any = None) -> Any:
+        nonlocal metadata_calls
+        if path == "actions/runs/7":
+            metadata_calls += 1
+            # discover first refreshes the tracked run; the second call is inventory.
+            if failure["active"] and endpoint == "metadata" and metadata_calls == 2:
+                message = f"gh api failed: unavailable (HTTP {status})"
+                raise RuntimeError(message)
+            return metadata
+        if path.startswith("collaborators/"):
+            return {"permission": "admin"}
+        if path.startswith("compare/"):
+            return {"behind_by": 0}
+        assert path == "issues/99"
+        assert method == "PATCH"
+        return None
+
+    return api
 
 
 def _discovery_with_inventory_failure(
@@ -62,23 +91,6 @@ def _discovery_with_inventory_failure(
     gh.pull.side_effect = lambda number: pulls[number - 1]
     gh.checks.return_value = []
     failure = {"active": True}
-    metadata_calls = 0
-
-    def api(path: str, method: str = "GET", data: Any = None) -> Any:
-        nonlocal metadata_calls
-        if path == "actions/runs/7":
-            metadata_calls += 1
-            # discover first refreshes the tracked run; the second call is inventory.
-            if failure["active"] and endpoint == "metadata" and metadata_calls == 2:
-                message = f"gh api failed: unavailable (HTTP {status})"
-                raise RuntimeError(message)
-            return metadata
-        if path.startswith("collaborators/"):
-            return {"permission": "admin"}
-        if path.startswith("compare/"):
-            return {"behind_by": 0}
-        assert path == "issues/99" and method == "PATCH"
-        return None
 
     def pages(path: str, key: str | None = None) -> list[Any]:
         if "/artifacts?" in path:
@@ -91,7 +103,7 @@ def _discovery_with_inventory_failure(
             return [{"filename": "agent_tools/changelog/four.md"}]
         return []
 
-    gh.api.side_effect = api
+    gh.api.side_effect = _inventory_api(metadata, failure, endpoint, status)
     gh.pages.side_effect = pages
     controls = Mock()
     controls.paused.return_value = False

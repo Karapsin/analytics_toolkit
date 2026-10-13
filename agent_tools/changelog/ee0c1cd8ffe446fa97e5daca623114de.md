@@ -1,0 +1,1 @@
+- Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
