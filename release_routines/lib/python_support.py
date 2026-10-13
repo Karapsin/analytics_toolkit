@@ -281,7 +281,7 @@ description = offline DataLens conformance against SDK {sdk_version} on Python {
 deps =
     pytest
     datalens-sdk=={sdk_version}
-commands_pre = python -m pip install -e .[tui]
+commands_pre = python -m pip install -e .
 commands = pytest -q tests/datalens_utils
 """
     return text

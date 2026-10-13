@@ -219,3 +219,35 @@ def test_disjoint_coverage_selections_cover_all_suites_and_reject_missing_extras
     current["minimum"] = "3.10"
     with pytest.raises(ValueError, match="No supported coverage environment for extra tui"):
         support.coverage_versions(current)
+
+
+def test_disjoint_datalens_and_tui_sdk_environments_sync_and_reject_drift(tmp_path: Path) -> None:
+    current = policy()
+    current["extras"]["tui"]["maximum"] = "3.9"
+    assert support.extra_range(current, "all") == (10, 9)
+    assert support.sdk_python(current) == "3.10"
+    assert not support.supports_extra(current, "tui", support.sdk_python(current))
+    assert support.supports_extra(current, "datalens", support.sdk_python(current))
+    (tmp_path / "docs").mkdir()
+    for path in ("pyproject.toml", "README.md", "tox.ini", "docs/PYTHON_SUPPORT.md"):
+        (tmp_path / path).write_text((REPO_ROOT / path).read_text())
+    support.sync(tmp_path, current)
+    support.sync(tmp_path, current, check=True)
+    tox = (tmp_path / "tox.ini").read_text()
+    assert tox == support.render_tox(current)
+    for suffix, sdk_version in (("sdk31", "3.1.0"), ("sdk32", "3.2.0")):
+        section = tox.split(f"[testenv:py310-{suffix}]\n", 1)[1].split("\n[testenv:", 1)[0]
+        assert f"datalens-sdk=={sdk_version}\n" in section
+        assert "commands_pre = python -m pip install -e .\n" in section
+        assert ".[tui]" not in section
+        assert "commands = pytest -q tests/datalens_utils\n" in section
+    (tmp_path / "tox.ini").write_text(
+        tox.replace(
+            "commands_pre = python -m pip install -e .\n",
+            "commands_pre = python -m pip install -e .[tui]\n",
+        )
+    )
+    with pytest.raises(ValueError, match=r"metadata drift in tox\.ini"):
+        support.sync(tmp_path, current, check=True)
+    support.sync(tmp_path, current)
+    support.sync(tmp_path, current, check=True)

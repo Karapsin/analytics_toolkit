@@ -27,7 +27,9 @@ def require_sdk() -> None:
     )
     if sys.version_info < (3, 10):
         message = (
-            "DataLens operations require Python 3.10 or newer; base imports support Python 3.8+."
+            "DataLens operations require at least Python 3.10 within the supported datalens range; "
+            "base imports support the configured core Python window. "
+            "See docs/PYTHON_SUPPORT.md for the published datalens and [all] ranges."
         )
         raise DataLensDependencyError(message)
     try:
