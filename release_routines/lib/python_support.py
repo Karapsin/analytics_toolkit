@@ -41,8 +41,9 @@ def validate_policy(policy: dict) -> None:
     if policy["normal_window"] != NORMAL_WINDOW:
         message = "The normal Python support window must contain seven minors"
         raise ValueError(message)
-    if minor(policy["minimum"]) < MINIMUM_MINOR or minor(policy["maximum"]) < minor(
-        policy["minimum"]
+    if (
+        minor(policy["minimum"]) < MINIMUM_MINOR
+        or minor(policy["maximum"]) < minor(policy["minimum"])
     ):
         message = "Invalid core range; Python 3.8 must not be reintroduced"
         raise ValueError(message)
@@ -50,8 +51,9 @@ def validate_policy(policy: dict) -> None:
         message = "Every optional extra must have an explicit support range"
         raise ValueError(message)
     for support in policy["extras"].values():
-        if set(support) != {"minimum", "maximum"} or minor(support["minimum"]) > minor(
-            support["maximum"]
+        if (
+            set(support) != {"minimum", "maximum"}
+            or minor(support["minimum"]) > minor(support["maximum"])
         ):
             message = "Invalid extra support range"
             raise ValueError(message)

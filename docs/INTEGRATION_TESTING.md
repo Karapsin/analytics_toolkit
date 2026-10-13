@@ -117,6 +117,10 @@ independently of policy preparation and job order. Missing service jobs fail
 explicitly; additional metadata jobs do not require service diagnostics.
 Every service job must print captured startup logs on failure and always upload
 each diagnostic artifact with missing files treated as an error.
+The startup-diagnostics workflow guard checks all integration execution jobs and
+requires the core HTTP/native, auth, fault, and stress suites. Separate policy
+jobs may be added without changing the suite count; missing startup reports in
+execution jobs still fail fast CI.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original

@@ -136,7 +136,7 @@ _SERVICE_JOB_IDS = ("core-http", "core-native", "auth", "fault", "stress")
 
 
 def _workflow_jobs(workflow: str) -> dict[str, str]:
-    blocks = re.split(r"(?m)^  ([a-z][a-z-]*):\n", workflow.split("\njobs:\n", 1)[1])
+    blocks = re.split(r"(?m)^  ([a-z][a-z0-9_-]*):\n", workflow.split("\njobs:\n", 1)[1])
     return {blocks[index]: blocks[index + 1] for index in range(1, len(blocks), 2)}
 
 
@@ -163,11 +163,6 @@ def _assert_service_diagnostics(workflow: str) -> None:
             assert "if: always()" in upload, name
             assert "path: .integration-artifacts/" in upload, name
             assert "if-no-files-found: error" in upload, name
-
-
-def test_every_integration_job_reports_captured_startup_errors() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
-    _assert_service_diagnostics(workflow)
 
 
 def test_policy_only_jobs_do_not_require_service_diagnostics() -> None:
@@ -240,6 +235,77 @@ def test_missing_transport_artifacts_are_rejected(job_id: str, driver: str) -> N
     assert broken != job
     with pytest.raises(AssertionError, match=job_id):
         _assert_service_diagnostics(workflow.replace(job, broken, 1))
+
+
+def _assert_integration_startup_reports(workflow: str) -> None:
+    _assert_service_diagnostics(workflow)
+    sections = re.split(
+        r"(?m)^  ([a-z][a-z0-9_-]*):\n",
+        workflow.split("\njobs:\n", 1)[1],
+    )
+    jobs = {sections[index]: sections[index + 1] for index in range(1, len(sections), 2)}
+    required = {"core-http", "core-native", "auth", "fault", "stress"}
+    execution_jobs = {
+        name: job
+        for name, job in jobs.items()
+        if "--level integration" in job or "python -m release_routines.sql_integration" in job
+    }
+
+    assert required <= execution_jobs.keys()
+    for name, job in execution_jobs.items():
+        assert "- name: Report captured startup diagnostics\n" in job, name
+        report = job.split("- name: Report captured startup diagnostics\n", 1)[1]
+        report = report.split("      - name:", 1)[0]
+        assert "if: failure()" in report
+        assert "for log in .integration-artifacts/*/*/startup.log; do" in report
+        assert 'tail -n 80 "$log"' in report
+        assert "if-no-files-found: error" in job
+
+
+def test_every_integration_job_reports_captured_startup_errors() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    _assert_integration_startup_reports(workflow)
+
+
+def test_startup_report_guard_accepts_separate_policy_job() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    policy = (
+        "  candidate-policy:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    outputs:\n"
+        "      core: ${{ steps.policy.outputs.core }}\n"
+        "    steps:\n"
+        "      - run: echo policy\n"
+    )
+    workflow = workflow.replace("\njobs:\n", "\njobs:\n" + policy, 1)
+
+    _assert_integration_startup_reports(workflow)
+
+
+@pytest.mark.parametrize("job_name", ["core-http", "core-native", "auth", "fault", "stress"])
+def test_startup_report_guard_still_rejects_missing_execution_diagnostics(job_name: str) -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    prefix, job = workflow.split(f"  {job_name}:\n", 1)
+    job = job.replace(
+        "- name: Report captured startup diagnostics\n",
+        "- name: Missing startup diagnostics\n",
+        1,
+    )
+
+    with pytest.raises(AssertionError, match=job_name):
+        _assert_integration_startup_reports(prefix + f"  {job_name}:\n" + job)
+
+
+def test_startup_report_guard_checks_additional_execution_jobs() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    workflow += (
+        "\n  extra-suite:\n"
+        "    steps:\n"
+        "      - run: python -m release_routines.sql_integration --profile core\n"
+    )
+
+    with pytest.raises(AssertionError, match="extra-suite"):
+        _assert_integration_startup_reports(workflow)
 
 
 @pytest.mark.parametrize("cleanup_phase", ["down", "leaks"])
