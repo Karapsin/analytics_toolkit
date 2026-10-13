@@ -97,6 +97,9 @@ def test_failed_startup_still_creates_both_transport_logs_and_tears_down(
     teardown: list[list[str]] = []
 
     def capture(path: Path, _command) -> int:
+        if path.name == "build.log":
+            path.write_text("images built\n", encoding="utf-8")
+            return 0
         path.write_text("service image could not be pulled\n", encoding="utf-8")
         return 17
 
@@ -141,7 +144,8 @@ def test_every_integration_job_reports_captured_startup_errors() -> None:
         report = job.split("- name: Report captured startup diagnostics\n", 1)[1]
         report = report.split("      - name:", 1)[0]
         assert "if: failure()" in report
-        assert "for log in .integration-artifacts/*/*/startup.log; do" in report
+        assert "for log in .integration-artifacts/*/*/build.log " in report
+        assert ".integration-artifacts/*/*/startup.log; do" in report
         assert 'tail -n 80 "$log"' in report
         assert "if-no-files-found: error" in job
 
@@ -163,6 +167,9 @@ def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
     leak_checks: list[str] = []
 
     def capture(path: Path, _command) -> int:
+        if path.name == "build.log":
+            path.write_text("images built\n", encoding="utf-8")
+            return 0
         driver = path.parent.name
         starts.append(driver)
         path.write_text("stack ready\n", encoding="utf-8")

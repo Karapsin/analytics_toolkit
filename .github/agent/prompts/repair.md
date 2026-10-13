@@ -20,3 +20,12 @@ progress, explain that blocker; do not invent a code fix.
 
 Use only source_files MCP tools. Never execute repository programs, tests, builds,
 installs or services on the private host. GitHub runs every validation check.
+
+Read integration/manifest.json through read_evidence_file, then the captured
+startup.log, build.log and Compose diagnostics for the exact failing runs.
+The manifest lists missing/expired artifacts explicitly. Companion CI evidence
+is separate and does not replace integration diagnostics.
+Return the repair schema: outcome=patch only when a justified patch was made;
+otherwise outcome=blocked or no_change, with a concrete reason and the required
+evidence. A no-patch outcome leaves the incident unresolved and suppresses
+unchanged retries until the base, failure set, or available evidence changes.

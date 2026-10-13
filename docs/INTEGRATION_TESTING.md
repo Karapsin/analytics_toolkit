@@ -19,6 +19,14 @@ All service versions are pinned in `integration/docker-compose.yml`. Data uses
 temporary filesystems or anonymous Compose state and is removed after every
 run.
 
+MinIO server and client images are built from the existing releases' immutable
+upstream source commits using `integration/minio/Dockerfile`; the retired upstream
+registry images are not pulled. Both client services reuse one built image. The
+runner captures compilation output in `build.log` before starting the stack,
+then records `startup.log` and Compose diagnostics. GitHub uploads these files
+on failure so repair agents receive the underlying error. Source licenses and
+release metadata remain in the built images.
+
 ## Running Locally
 
 Docker Engine with the Compose plugin must be available. Run the stack only

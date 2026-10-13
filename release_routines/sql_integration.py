@@ -374,6 +374,17 @@ def run_profile(
     result = 1
     started = False
     try:
+        build_command = _compose_command(
+            "build",
+            "minio",
+            "minio-init",
+            include_greenplum=include_greenplum,
+            profile=profile,
+            clickhouse_driver=clickhouse_driver,
+        )
+        result = _capture(profile_dir / "build.log", build_command)
+        if result:
+            return result
         result = _capture(profile_dir / "startup.log", up_command)
         started = result == 0
         _write_diagnostics(

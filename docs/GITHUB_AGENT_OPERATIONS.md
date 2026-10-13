@@ -25,6 +25,21 @@ It records pending and failed integration runs and the corresponding repair PRs.
 A completed green replacement must cover each affected job group before the
 incident is resolved.
 
+Status includes each active job's phase, start time, last event time and model
+deadline. Fifteen minutes without an event is reported as inactive, not proof of
+a hang. Model execution keeps its thirty-minute timeout; timeout cleanup ends
+only that job's process group, preserves diagnostics and coding checkpoints,
+releases writer ownership and queues a fresh attempt.
+
+Integration repairs receive hash-bound diagnostic artifacts for the exact run
+and attempt through `read_evidence_file`, starting at `integration/manifest.json`.
+Missing or expired diagnostics are listed explicitly. A repair can return a patch,
+a blocked diagnosis or no change. No-patch outcomes retain unresolved incidents
+and produce a deduplicated notification rather than repeating the same model job
+every five minutes. A changed dev base, affected failure groups, run attempt or
+artifact inventory permits another attempt. Transient artifact retrieval failures
+retain normal timed retries.
+
 If refreshing a tracked run’s metadata fails with an upstream `gh api failed:`
 HTTP 500–599 error, the controller retains its existing pending status and unresolved
 needs, retries that immutable run ID on later reconciliation, and continues normal
@@ -89,6 +104,13 @@ Local startup prunes remote references and removes only unused, safely merged lo
 branches; dirty worktrees, backups and private task/audit records are retained.
 
 ## Updating trusted automation
+
+The companion worker recovery implementation is staged at
+[self_host commit 51acbc647dbc](https://github.com/Karapsin/self_host/commit/51acbc647dbcef6612b4c3ee806d6bd1abfcce0d),
+with successful [exact-commit checks](https://github.com/Karapsin/self_host/actions/runs/38383323326).
+Its immutable source/test snapshot must accompany controller review. Activate the
+worker and controller together after exact-head owner approval and draining active
+jobs; preserve the existing VPN wrapper, credentials and Airflow schedules.
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
 and workflow classification manifest are copied to `main` for automation.
