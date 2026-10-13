@@ -9,7 +9,7 @@ from analytics_toolkit.sql_explorer.movement import move_command
 from textual import events
 from textual.document._document import Selection
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_coordinate_commands_and_inclusive_selection() -> None:

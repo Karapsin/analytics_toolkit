@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.assertions import assert_sql_calls
 from tests.sql._support.cross_area import (
     FakeClickHouseClient,
     FakeDbapiConnection,
@@ -153,7 +154,7 @@ def test_execute_sql_trino_executes_split_statements_in_order(monkeypatch) -> No
         timeout_increment=0,
     )
 
-    assert connection.executed == ["select 1", "select 2", "select 3"]
+    assert_sql_calls(connection.executed, ["select 1", "select 2", "select 3"], dialect="trino")
     assert connection.close_calls == 1
 
 
@@ -324,11 +325,15 @@ def test_execute_sql_clickhouse_executes_split_statements_in_order(monkeypatch) 
         timeout_increment=0,
     )
 
-    assert client.commands == [
-        "CREATE TABLE tmp (id UInt64)",
-        "INSERT INTO tmp VALUES (1)",
-        "DROP TABLE tmp",
-    ]
+    assert_sql_calls(
+        client.commands,
+        [
+            "CREATE TABLE tmp (id UInt64)",
+            "INSERT INTO tmp VALUES (1)",
+            "DROP TABLE tmp",
+        ],
+        dialect="clickhouse",
+    )
     assert client.close_calls == 1
 
 

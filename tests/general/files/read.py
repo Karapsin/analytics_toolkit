@@ -11,6 +11,7 @@ from tests.general._support.files import (
     read_file,
     read_file_here,
 )
+from tests.general._support.projects import script_query_project
 
 
 def test_general_path_helper_exports_are_compatible() -> None:
@@ -26,14 +27,7 @@ def test_read_file_can_resolve_relative_to_here(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    cwd = tmp_path / "runtime"
-    script_dir = tmp_path / "dag_task"
-    query_dir = script_dir / "sql"
-    cwd.mkdir()
-    query_dir.mkdir(parents=True)
-    (query_dir / "query.sql").write_text("select {value}", encoding="utf-8")
-    monkeypatch.chdir(cwd)
-    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+    script_query_project(tmp_path, monkeypatch, "select {value}")
 
     assert read_file("sql/query.sql", {"value": 1}, here=True) == "select 1"
 
@@ -42,14 +36,7 @@ def test_read_file_here_matches_read_file_with_here(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    cwd = tmp_path / "runtime"
-    script_dir = tmp_path / "dag_task"
-    query_dir = script_dir / "sql"
-    cwd.mkdir()
-    query_dir.mkdir(parents=True)
-    (query_dir / "query.sql").write_text("select 1", encoding="utf-8")
-    monkeypatch.chdir(cwd)
-    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+    script_query_project(tmp_path, monkeypatch, "select 1")
 
     assert read_file_here("sql/query.sql") == read_file("sql/query.sql", here=True)
 
@@ -58,14 +45,7 @@ def test_read_file_here_preserves_params(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    cwd = tmp_path / "runtime"
-    script_dir = tmp_path / "dag_task"
-    query_dir = script_dir / "sql"
-    cwd.mkdir()
-    query_dir.mkdir(parents=True)
-    (query_dir / "query.sql").write_text("select {value}", encoding="utf-8")
-    monkeypatch.chdir(cwd)
-    monkeypatch.setitem(read_file.__globals__, "_resolve_base_dir", lambda: script_dir)
+    script_query_project(tmp_path, monkeypatch, "select {value}")
 
     assert read_file_here("sql/query.sql", {"value": 42}) == "select 42"
 

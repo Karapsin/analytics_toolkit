@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.ab_utils._support.factories import metric_frame
 from tests.ab_utils._support.metrics import (
     _assert_cuped_row_matches_frame,
     _manual_agg_ratio_linearized_values,
@@ -13,21 +14,15 @@ from tests.ab_utils._support.metrics import (
 
 
 def test_compute_test_metrics_adds_cuped_p_value_for_ratio_metrics() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [5, 6, 4, 5, 8, 9, 7, 8],
-            "impressions": [10, 12, 8, 10, 12, 14, 10, 12],
-        }
+    df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[5, 6, 4, 5, 8, 9, 7, 8],
+        impressions=[10, 12, 8, 10, 12, 14, 10, 12],
     )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [4, 5, 3, 4, 6, 7, 5, 6],
-            "impressions": [9, 11, 8, 10, 11, 15, 9, 13],
-        }
+    pre_df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[4, 5, 3, 4, 6, 7, 5, 6],
+        impressions=[9, 11, 8, 10, 11, 15, 9, 13],
     )
 
     result = compute_test_metrics(
@@ -54,20 +49,8 @@ def test_compute_test_metrics_adds_cuped_p_value_for_ratio_metrics() -> None:
 
 
 def test_compute_test_metrics_cuped_warns_when_pre_variance_is_not_positive() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [10, 12, 11, 13, 15, 17, 16, 18],
-        }
-    )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [5] * 8,
-        }
-    )
+    df = metric_frame(["control"] * 4 + ["test"] * 4, orders=[10, 12, 11, 13, 15, 17, 16, 18])
+    pre_df = metric_frame(["control"] * 4 + ["test"] * 4, orders=[5] * 8)
 
     with pytest.warns(UserWarning, match="pre-experiment covariate variance is not positive"):
         result = compute_test_metrics(
@@ -85,13 +68,7 @@ def test_compute_test_metrics_cuped_warns_when_pre_variance_is_not_positive() ->
 
 
 def test_compute_test_metrics_cuped_warns_when_no_overlapping_observations() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "orders": [10, 12, 11, 13, 15, 17, 16, 18],
-        }
-    )
+    df = metric_frame(["control"] * 4 + ["test"] * 4, orders=[10, 12, 11, 13, 15, 17, 16, 18])
     pre_df = pd.DataFrame(
         {
             "user_id": list(range(101, 109)),
@@ -194,21 +171,15 @@ def test_compute_test_metrics_cuped_uses_only_overlapping_nonmissing_users() -> 
 
 
 def test_compute_test_metrics_cuped_user_ratio_matches_manual_frame() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [4, 5, 6, 9, 8, 14, 10, 18],
-            "impressions": [10, 0, 12, 10, 16, 20, -1, 20],
-        }
+    df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[4, 5, 6, 9, 8, 14, 10, 18],
+        impressions=[10, 0, 12, 10, 16, 20, -1, 20],
     )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [3, 3, 4, 7, 4, 10, 14, 9],
-            "impressions": [10, 6, 0, 10, 10, 20, 20, 0],
-        }
+    pre_df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[3, 3, 4, 7, 4, 10, 14, 9],
+        impressions=[10, 6, 0, 10, 10, 20, 20, 0],
     )
 
     result = compute_test_metrics(
@@ -242,21 +213,15 @@ def test_compute_test_metrics_cuped_user_ratio_matches_manual_frame() -> None:
 
 
 def test_compute_test_metrics_cuped_agg_ratio_matches_manual_linearization() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [10, 11, 12, 13, 16, 16, 16, 16],
-            "impressions": [100, 110, 120, 130, 100, 100, 100, 100],
-        }
+    df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[10, 11, 12, 13, 16, 16, 16, 16],
+        impressions=[100, 110, 120, 130, 100, 100, 100, 100],
     )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 9)),
-            "group_name": ["control"] * 4 + ["test"] * 4,
-            "clicks": [9, 10, 11, 12, 13, 13, 13, 13],
-            "impressions": [90, 100, 110, 120, 100, 100, 100, 100],
-        }
+    pre_df = metric_frame(
+        ["control"] * 4 + ["test"] * 4,
+        clicks=[9, 10, 11, 12, 13, 13, 13, 13],
+        impressions=[90, 100, 110, 120, 100, 100, 100, 100],
     )
 
     result = compute_test_metrics(
@@ -296,19 +261,13 @@ def test_compute_test_metrics_cuped_agg_ratio_matches_manual_linearization() -> 
 
 
 def test_compute_test_metrics_cuped_matches_each_multi_group_comparison() -> None:
-    df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 10)),
-            "group_name": ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
-            "orders": [10.0, 11.0, 16.0, 13.0, 15.0, 16.0, 9.0, 12.0, 16.0],
-        }
+    df = metric_frame(
+        ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
+        orders=[10.0, 11.0, 16.0, 13.0, 15.0, 16.0, 9.0, 12.0, 16.0],
     )
-    pre_df = pd.DataFrame(
-        {
-            "user_id": list(range(1, 10)),
-            "group_name": ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
-            "orders": [5.0, 7.0, 16.0, 8.0, 9.0, 16.0, 4.0, 6.0, 16.0],
-        }
+    pre_df = metric_frame(
+        ["control"] * 3 + ["test_a"] * 3 + ["test_b"] * 3,
+        orders=[5.0, 7.0, 16.0, 8.0, 9.0, 16.0, 4.0, 6.0, 16.0],
     )
 
     result = compute_test_metrics(

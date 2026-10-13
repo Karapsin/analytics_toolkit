@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from tests.sql._support.assertions import strip_query_label as _strip_query_label
+
 
 class FakeDbapiCursor:
     def __init__(
@@ -188,10 +190,3 @@ class FakeClickHouseClient:
             for table_name in self.created_tables
             if table_name.rsplit(".", 1)[-1] == relation_name
         )
-
-
-def _strip_query_label(sql: str) -> str:
-    stripped = sql.lstrip()
-    if stripped.startswith("/* analytics_toolkit query_label=") and "*/" in stripped:
-        return stripped.split("*/", 1)[1].lstrip()
-    return stripped

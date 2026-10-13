@@ -16,7 +16,7 @@ from analytics_toolkit.sql_explorer.widgets import (
 )
 from textual.widgets import Input
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_dynamic_binding_removal_supports_both_textual_storage_shapes() -> None:

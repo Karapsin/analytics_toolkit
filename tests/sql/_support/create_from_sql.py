@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from tests.sql._support.assertions import strip_query_label as _strip_query_label
+
 create_module = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
 
 ch_fast_path_module = importlib.import_module(
@@ -144,13 +146,6 @@ class FakeClickHouseClient:
             for table_name in self.created_tables
             if table_name.rsplit(".", 1)[-1] == relation_name
         )
-
-
-def _strip_query_label(sql: str) -> str:
-    stripped = sql.lstrip()
-    if stripped.startswith("/* analytics_toolkit query_label=") and "*/" in stripped:
-        return stripped.split("*/", 1)[1].lstrip()
-    return stripped
 
 
 SOURCE_DESCRIPTION = [

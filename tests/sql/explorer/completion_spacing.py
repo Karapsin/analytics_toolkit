@@ -7,7 +7,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionRequest, CompletionResult
 from analytics_toolkit.sql_explorer.editor_actions import completion_text
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 from tests.sql.explorer.completion import _install_stub
 
 

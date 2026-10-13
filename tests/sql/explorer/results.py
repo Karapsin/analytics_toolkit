@@ -13,7 +13,7 @@ from rich.style import Style
 from textual import events
 from textual.coordinate import Coordinate
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_cell_formatting_handles_nulls_newlines_and_long_values() -> None:

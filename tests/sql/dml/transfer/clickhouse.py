@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from tests.sql._support.assertions import strip_query_label as _strip_query_label
+
 # ruff: noqa: C901, I001
 
 import importlib
 from datetime import date
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
@@ -228,13 +232,6 @@ class FakeClickHouseClient:
             for table_name in self.created_tables
             if table_name.rsplit(".", 1)[-1] == distributed_relation
         )
-
-
-def _strip_query_label(sql: str) -> str:
-    stripped = sql.lstrip()
-    if stripped.startswith("/* analytics_toolkit query_label=") and "*/" in stripped:
-        return stripped.split("*/", 1)[1].lstrip()
-    return stripped
 
 
 def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(

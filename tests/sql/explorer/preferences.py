@@ -19,7 +19,7 @@ from analytics_toolkit.sql_explorer.settings import (
 )
 from analytics_toolkit.sql_explorer.statements import build_execution_plan
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path
