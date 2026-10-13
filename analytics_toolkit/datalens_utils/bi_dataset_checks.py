@@ -177,7 +177,7 @@ def dataset_issues_v2(
         guid = handles[spec["field"]].guid
         matches = [value for value in entity.default_filters if value.get("field_guid") == guid]
         expected_filters = [
-            {"column": guid, "operation": spec["operator"], "values": spec["values"]}
+            {"column": guid, "operation": spec["operator"], "values": spec["values"]},
         ]
         if len(matches) != 1 or matches[0].get("default_filters") != expected_filters:
             issues.append("default_filters." + str(index))

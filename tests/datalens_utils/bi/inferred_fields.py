@@ -29,7 +29,7 @@ from datalens_sdk import (
     NoAuthProvider,
 )
 
-from tests.datalens_utils._support.bi import dataset, write
+from tests.datalens_utils._support.bi import apply_field_actions, dataset, write
 from tests.datalens_utils.bi.dataset_lifecycle import setup
 
 
@@ -131,7 +131,9 @@ def test_component_errors_preserve_ids_and_stop_before_publication(bi_project, m
     created = bad if stage == "create" else clean
     monkeypatch.setattr(DatasetCreate, "build", lambda selected: created)
     execute = Mock(return_value=bad)
-    monkeypatch.setattr(DatasetUpdate, "execute", lambda builder: execute(builder))  # noqa: PLW0108 - Bind the mocked method.
+    monkeypatch.setattr(
+        DatasetUpdate, "execute", lambda builder: execute(builder)
+    )  # noqa: PLW0108 - Bind the mocked method.
     if stage == "update":
         resource.definition["fields"]["category"]["title"] = "Renamed"
     with DataLensClientYC(auth=NoAuthProvider()) as public:
@@ -245,11 +247,9 @@ def test_distinct_title_clones_share_a_column_without_sharing_identity(
 
     def execute(builder):
         nonlocal current
-        rows = list(current.result_schema)
-        for action in builder.to_spec().actions:
-            if action["action"] == "add_field":
-                added.append(action["field"])
-                rows.append({**action["field"], "calc_mode": "direct"})
+        actions = builder.to_spec().actions
+        added.extend(action["field"] for action in actions if action["action"] == "add_field")
+        rows = apply_field_actions(current.result_schema, actions)
         current = replace(
             current,
             result_schema=tuple(rows),
@@ -278,7 +278,7 @@ def test_distinct_title_clones_share_a_column_without_sharing_identity(
 
 
 @pytest.mark.parametrize("published_state", ["missing", "stale"])
-def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR0915 - One interrupted lifecycle with durable recovery assertions.
+def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR0915
     bi_project, monkeypatch, published_state
 ):
     registry, store, connection = setup(bi_project, creating=True)
@@ -318,13 +318,8 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
             assert current.fields.by_guid("inferred-category").description == "Recovered"
             current = replace(current, published_id=current.saved_id)
         else:
-            rows = [dict(row) for row in current.result_schema]
-            for action in spec.actions:
-                if action["action"] == "update_field":
-                    for row in rows:
-                        if row["guid"] == action["field"]["guid"]:
-                            row.update(action["field"])
-            current = replace(current, result_schema=tuple(rows), saved_id="configured")
+            rows = apply_field_actions(current.result_schema, spec.actions)
+            current = replace(current, result_schema=rows, saved_id="configured")
         return current
 
     monkeypatch.setattr(DatasetUpdate, "execute", execute)
@@ -418,7 +413,9 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
 @pytest.mark.parametrize(
     "case", ["owned", "partial", "ambiguous", "ordinary", "wrong_id", "retained"]
 )
-def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(bi_project, monkeypatch, case):
+def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(
+    bi_project, monkeypatch, case
+):
     registry, store, connection = setup(bi_project)
     resource = registry.resources["dataset:sales"]
     resource.definition["fields"]["category"]["guid"] = "requested"
@@ -433,7 +430,10 @@ def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(bi_projec
     if case == "ambiguous":
         current = replace(
             current,
-            result_schema=(*current.result_schema, {**current.result_schema[0], "guid": "duplicate"}),
+            result_schema=(
+                *current.result_schema,
+                {**current.result_schema[0], "guid": "duplicate"},
+            ),
         )
     if case == "partial":
         resource.definition["fields"]["region"] = {

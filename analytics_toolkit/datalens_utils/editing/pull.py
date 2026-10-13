@@ -123,7 +123,13 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
         [name(value), value.get("direction", "ASC").lower()]
         for value in items(visualization, "sort")
     ]
+    from analytics_toolkit.datalens_utils.import_fidelity import (  # noqa: PLC0415
+        normalized_measure_format,
+        wizard_encodings,
+    )
+
     formats: dict[str, Any] = {}
+    observed_formats: dict[str, Any] = {}
     aliases = []
     for slot in wizard.SLOTS | {"colors", "shapes", "tooltip"}:
         for value in items(visualization, slot):
@@ -146,6 +152,13 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
                     f"Formatting cannot be expressed through the recipe: {sorted(unsupported)}"
                 )
                 raise DataLensUtilsError(message)
+            measure_format = normalized_measure_format(formatting)
+            field_name = name(value) if strict_fidelity or measure_format else ""
+            if strict_fidelity:
+                if field_name in observed_formats and observed_formats[field_name] != measure_format:
+                    message = "Conflicting per-slot field formats cannot be faithfully imported."
+                    raise DataLensUtilsError(message)
+                observed_formats[field_name] = measure_format
             if formatting:
                 if strict_fidelity and "labelMode" in formatting:
                     mode = {"mode": formatting["labelMode"]}
@@ -154,27 +167,11 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
                         message = "Per-field label modes cannot be faithfully imported."
                         raise DataLensUtilsError(message)
                     result["settings"]["label_mode"] = mode
-                measure_format = {
-                    "show_rank_delimiter" if key == "showRankDelimiter" else key: item
-                    for key, item in formatting.items()
-                    if key != "labelMode"
-                }
                 if measure_format:
-                    if (
-                        strict_fidelity
-                        and name(value) in formats
-                        and formats[name(value)] != measure_format
-                    ):
-                        message = (
-                            "Conflicting per-slot field formats cannot be faithfully imported."
-                        )
-                        raise DataLensUtilsError(message)
-                    formats[name(value)] = measure_format
+                    formats[field_name] = measure_format
             if "fakeTitle" in value:
                 aliases.append({"field": name(value), "title": value["fakeTitle"]})
     result["formats"] = formats
-    from analytics_toolkit.datalens_utils.import_fidelity import wizard_encodings  # noqa: PLC0415
-
     types = {field.guid: field.type for dataset in datasets.values() for field in dataset.fields}
     types.update(
         {guid: value.get("type") for guid, value in wizard.registered_local_fields(chart).items()}

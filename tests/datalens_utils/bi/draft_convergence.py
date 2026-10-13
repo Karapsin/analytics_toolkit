@@ -11,7 +11,11 @@ from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.resources.bi_store import BIResourceStore
 from datalens_sdk import DataLensClientYC, DatasetUpdate, NoAuthProvider
 
-from tests.datalens_utils._support.bi import dataset
+from tests.datalens_utils._support.bi import (
+    assert_unmanaged_remnants,
+    dataset,
+    normalized_sources,
+)
 from tests.datalens_utils.bi.dataset_lifecycle import setup
 
 
@@ -34,15 +38,15 @@ def removal_case(resource, checkpoint, case):
         checkpoint["default_filters_owned"] = {"category": "owned-filter"}
         value = replace(
             value,
-            default_filters=(
-                {"id": "owned-filter", "field_guid": "category"},
-                {"id": "unmanaged-filter", "field_guid": "amount"},
+            obligatory_filters=(
+                {"id": "owned-filter", "field_guid": "category", "default_filters": []},
+                {"id": "unmanaged-filter", "field_guid": "amount", "default_filters": []},
             ),
         )
     else:
         resource.definition["relations"] = {}
         checkpoint["relations"] = {"owned": "owned-join"}
-        value = replace(value, relations=({"id": "owned-join"}, {"id": "unmanaged-join"}))
+        value = replace(value, avatar_relations=({"id": "owned-join"}, {"id": "unmanaged-join"}))
     return value
 
 
@@ -80,7 +84,7 @@ def mismatched_case(resource, checkpoint, case):
             value,
             sources=(*value.sources, replace(value.sources[0], id="right-id", title="right")),
             source_avatars=(*value.source_avatars, {"id": "right-avatar", "source_id": "right-id"}),
-            relations=(
+            avatar_relations=(
                 {
                     "id": "joined",
                     "left_avatar_id": "avatar",
@@ -97,7 +101,7 @@ def mismatched_case(resource, checkpoint, case):
                 },
             ),
         )
-    return value
+    return normalized_sources(value)
 
 
 @pytest.mark.parametrize(
@@ -179,10 +183,14 @@ def test_interrupted_removals_keep_ownership_until_verified(bi_project, monkeypa
                 current,
                 saved_id="removed",
                 rls2={"category": [rule("unmanaged")]} if case == "rls" else current.rls2,
-                relations=({"id": "unmanaged-join"},) if case == "join" else current.relations,
-                default_filters=({"id": "unmanaged-filter", "field_guid": "amount"},)
+                avatar_relations=({"id": "unmanaged-join"},)
+                if case == "join"
+                else current.avatar_relations,
+                obligatory_filters=(
+                    {"id": "unmanaged-filter", "field_guid": "amount", "default_filters": []},
+                )
                 if case == "filter"
-                else current.default_filters,
+                else current.obligatory_filters,
             )
         else:
             current = replace(current, published_id=current.saved_id)
@@ -216,6 +224,7 @@ def test_interrupted_removals_keep_ownership_until_verified(bi_project, monkeypa
         result = reconcile_dataset(client, resumed, resource, {"ch": connection})
         assert resumed.state["resources"][resource.key][owned_key] == {}
         assert result.saved_id == result.published_id == "removed"
+        assert_unmanaged_remnants(result, case, rule)
         assert modes == ["save", "save", "publish"]
         resumed.remember(resource.key, result)
         assert reconcile_dataset(client, resumed, resource, {"ch": connection}).id == result.id

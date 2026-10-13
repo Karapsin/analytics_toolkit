@@ -9,7 +9,6 @@ Generated from package version bumps and recent commit history.
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
-- Preserve DataLens copy imports, encoding and defaults, managed Editor relocation and component diagnostics; resume owned inferred drafts and verify managed semantics and removals before publication.
 
 ## 1.3.12.4 - 2026-10-12
 

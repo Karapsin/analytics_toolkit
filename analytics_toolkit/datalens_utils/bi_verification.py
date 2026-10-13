@@ -5,12 +5,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from . import bi_dataset_checks as _dataset_checks
 from .bi_dashboard import dashboard_issues
-from .bi_dataset_checks import (
-    dataset_field_issues as dataset_field_issues,
-    dataset_issues_v2,
-    dataset_rls_issues as dataset_rls_issues,
-)
+from .bi_dataset_checks import dataset_issues_v2
 from .bi_html import html_content
 from .deployment import BIProjectDeployment
 from .editing.state import fingerprint
@@ -18,6 +15,11 @@ from .errors import DataLensUtilsError
 from .resources.bi_store import entry_description, safe_metadata
 from .session import current_session
 from .validation.charts import check_chart
+
+
+# Compatibility exports used by existing callers.
+dataset_field_issues = _dataset_checks.dataset_field_issues
+dataset_rls_issues = _dataset_checks.dataset_rls_issues
 
 
 def common_resource_issues(

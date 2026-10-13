@@ -6,23 +6,25 @@ import copy
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from . import bi_dataset_semantics as _semantics
 from .bi_connections import source_spec
 from .bi_dataset_checks import dataset_issues_v2
-from .bi_dataset_semantics import (
-    avatar_for as avatar_for,
-    cache_matches as cache_matches,
-    cache_source as cache_source,
-    desired_rls as desired_rls,
-    direct_field_candidates as direct_field_candidates,
-    field_handles as field_handles,
-    relation_conditions as relation_conditions,
-    relation_snapshot as relation_snapshot,
-    source_identities as source_identities,
-)
 from .capabilities import get_capabilities
 from .dashboard_generation.datasets.create import _configure_fields
 from .dataset_identity import check_components, resolved_definition
 from .errors import DataLensCapabilityError, DataLensUtilsError
+
+
+# Preserve the existing helper exports while sharing their implementation.
+avatar_for = _semantics.avatar_for
+cache_matches = _semantics.cache_matches
+cache_source = _semantics.cache_source
+desired_rls = _semantics.desired_rls
+direct_field_candidates = _semantics.direct_field_candidates
+field_handles = _semantics.field_handles
+relation_conditions = _semantics.relation_conditions
+relation_snapshot = _semantics.relation_snapshot
+source_identities = _semantics.source_identities
 
 
 def validate_relation_columns(

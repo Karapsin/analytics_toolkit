@@ -94,6 +94,11 @@ that blocks writing; `unchecked` identifies work the import did not perform.
 The report keeps `features` for compatibility and adds a singular `feature` and
 `reason`. Do not infer numerical or rendered equivalence from metadata checks.
 
+Measure formatting is field-wide in the recipe. Every occurrence must have the same
+format, including absent or empty formats. For example, precision on `y` and no
+format on the same field in `y2` block writing; matching formats are preserved.
+This check runs for tab and whole-dashboard imports before any local replacement.
+
 Chart defaults become placement defaults; an explicit placement value wins over
 the imported chart default. Dashboard globals, selectors and URL state retain
 their precedence. Unknown default representations are blockers.
@@ -108,10 +113,12 @@ and request IDs. The JSON CLI exposes these diagnostics.
 
 Do not reset IDs or retry creation blindly. Correct the recipe or underlying
 source issue, inspect status, then resume with the same runtime. Owned drafts
-are recovered rather than recreated. Reconciliation preflight reads their saved
-branch, including drafts with no published revision; verification and pull keep
-published defaults. Source parameters, field identities/kinds, formulas,
-parameters, joins, filters, settings, description, RLS and cache must match the
+are recovered rather than recreated. Reconciliation preflight, `project.plan()`
+and `project.status()` read pending owned datasets from their saved branch within
+the planned write scope, including missing or stale published revisions. Plan and
+status report recovery without writes. Dependencies outside that write scope,
+verification and pull keep published defaults. Source parameters, field identities/kinds,
+formulas, parameters, joins, filters, settings, description, RLS and cache must match the
 final fetched draft before publication. Pending owned removals survive restarts
 until metadata confirms completion, preserving unmanaged entries. Nonconvergence
 stops publication and all dependent writes. No dependent chart/dashboard writes or

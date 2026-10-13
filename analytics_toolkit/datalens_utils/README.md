@@ -192,7 +192,10 @@ the default. Import discovers dependencies, extracts available SQL/JS assets,
 retains IDs and placement parameters, and reports collisions and unsupported
 features. Fidelity entries identify individual features, statuses and reasons.
 Wizard colors/shapes, including Measure Names, are reconstructed; unrepresented
-source settings block writing. Chart defaults become defaults on every placement;
+source settings block writing. A field's format must agree across every occurrence,
+including placements with absent or empty formatting; differing formats block local
+writing because the recipe format applies to the whole field.
+Chart defaults become defaults on every placement;
 explicit placement values win. `chart_title: null` retains an absent internal title.
 Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
 aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
@@ -229,10 +232,12 @@ Local validation does not validate backend inference. `verify()` compares a
 published deployment with its recipe; import fidelity separately assesses source
 parity. Both leave numerical results and rendering unchecked.
 
-Reconciliation preflight reads the saved branch for owned dataset writes with a
-pending checkpoint, including source-only drafts with no published revision.
-Read-only dependencies, verification and pull keep published defaults. Identity,
-recipe fingerprint and remote revision checks still apply; recovery never
+Reconciliation preflight and read-only `plan()`/`status()` read the saved branch for
+owned datasets with a pending checkpoint inside the planned write scope, including
+source-only drafts with missing or stale published revisions. Plan and status report
+recovery without changing recipes, checkpoints or remote resources.
+Dependencies outside the planned write scope, verification and pull keep published
+defaults. Identity, recipe fingerprint and remote revision checks still apply; recovery never
 recreates a retained dataset.
 
 Before publication, the final fetched draft must match managed source parameters,

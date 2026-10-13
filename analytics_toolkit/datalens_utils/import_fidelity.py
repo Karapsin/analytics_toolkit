@@ -126,6 +126,31 @@ def wizard_encodings(
     return result
 
 
+def normalized_measure_format(formatting: Any) -> dict[str, Any]:
+    """Normalize public formatting keys without conflating label mode with measure format."""
+    return {
+        "show_rank_delimiter" if key == "showRankDelimiter" else key: value
+        for key, value in (formatting or {}).items()
+        if key != "labelMode"
+    }
+
+
+def occurrence_format_issues(visualization: Any, formats: Any) -> list[str]:
+    """Compare field-wide builder formats against every observed placement, including empty ones."""
+    issues = []
+    for slot, section in visualization.items():
+        if slot == "sort" or not isinstance(section, dict):
+            continue
+        for value in section.get("items", ()):
+            guid = value.get("guid")
+            if (
+                guid is not None
+                and normalized_measure_format(value.get("formatting")) != formats.get(guid, {})
+            ):
+                issues.append("unrepresented occurrence formatting " + str(guid))
+    return issues
+
+
 def wizard_source_issues(client: Any, chart: Any, datasets: Any, definition: Any) -> list[str]:
     """Check both modeled output and observed source settings before claiming parity."""
     from .dashboard_generation.charts import wizard  # noqa: PLC0415
@@ -134,6 +159,11 @@ def wizard_source_issues(client: Any, chart: Any, datasets: Any, definition: Any
     spec = wizard.create_builder(context, datasets, definition, chart.location).to_spec()
     issues: list[str] = wizard_issues(chart, context, datasets, definition)
     visualization = chart.data.get("visualization", {})
+    formats = {
+        field.guid: normalized_measure_format(formatting)
+        for field, formatting in spec.pending_measure_formats
+    }
+    issues.extend(occurrence_format_issues(visualization, formats))
     for key, value in visualization.get("chartSettings", {}).items():
         if key != "settingsId" and spec.chart_settings.get(key) != value:
             issues.append("unrepresented chart setting " + key)
