@@ -166,11 +166,31 @@ completion. The receipt records the host and capture method and is bound to
 the complete reviewed content; only a current all-pass receipt allows commit
 or push. Failed or interrupted captures require a new review session.
 
-Normal `version-bump` calls add the supplied summary under `## Unreleased` and
-roll the section into a new version when it reaches ten bullets. For an explicit
-release below that threshold, use `--change-type release --force-release`
-without a summary. Forced release is rejected for non-release change types and
-when there are no unreleased entries.
+Normal `version-bump` calls record a feature fragment or add the supplied
+summary under `## Unreleased`; they never bump versions, regardless of entry count.
+Documentation-only calls retain their no-bump behavior.
+
+An explicit `release-workflow --action merge-dev` request prepares one new
+version through a signed PR to dev, before validation/TestPyPI. Supply
+`--summary "Release summary"` when no unreleased entries exist. The optional
+`summary` Python/MCP argument is keyword-only; existing action/root arguments
+and action names remain unchanged. Re-enter the same action after review and merge.
+The structured pending response includes the PR link and continuation instruction.
+
+Private `.git/atk-release.json` state binds the release task, source SHA, version,
+branch, PR, candidate SHA/tree, workflow runs, and completed stages. Retries reuse
+the candidate and retained verified artifacts; they do not blindly recreate
+TestPyPI branches or GitHub releases. Changed dev content requires another
+preparation PR and fresh validation. Status never prepares or increments.
+Direct release scripts require the same reviewed candidate and validation receipts.
+See [release instructions](../agent_docs/release.md) for the complete sequence.
+
+Low-level release-oriented `version-bump` options remain available for metadata
+preparation, including `--change-type release --force-release`. A summary can
+supply notes for an otherwise empty release. Metadata-only preparation PRs use
+the rolled release notes without adding a feature fragment that reopens Unreleased.
+Private implementation workers add regressions but execute no programs or tests;
+GitHub validates the published patch.
 
 `prepare-start` persists a private startup-context receipt below `.rag_index/`.
 `workflow-status` reuses it to return compact branch, dirty-state, diff, check

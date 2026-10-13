@@ -55,7 +55,8 @@ def test_foreign_fork_is_not_a_trusted_model_job() -> None:
     assert not controller.trusted(pr, "owner/repo")
 
 
-def test_serialized_changelog_fold_threshold_and_version_carry(tmp_path: Path) -> None:
+@pytest.mark.parametrize("count", [8, 9, 10, 20])
+def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(tmp_path: Path, count: int) -> None:
     (tmp_path / "agent_tools/changelog").mkdir(parents=True)
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n')
@@ -63,14 +64,16 @@ def test_serialized_changelog_fold_threshold_and_version_carry(tmp_path: Path) -
     changelog = tmp_path / "docs/CHANGELOG.md"
     changelog.write_text(
         "# Changelog\n\n## Unreleased\n\n"
-        + "\n".join("- Existing " + str(i) for i in range(9))
-        + "\n\n## 1.3.19.19 - 2026-01-01\n"
+        + "\n".join("- Existing " + str(i) for i in range(count))
+        + "\n  wrapped continuation\n\n## 1.3.19.19 - 2026-01-01\n"
     )
     (tmp_path / "agent_tools/changelog/one.md").write_text("- New feature\n")
     assert controller.fold(tmp_path)
-    assert 'version = "1.4.0.0"' in (tmp_path / "pyproject.toml").read_text()
-    assert "**Version:** `1.4.0.0`" in (tmp_path / "README.md").read_text()
-    assert "## 1.4.0.0" in changelog.read_text()
+    assert 'version = "1.3.19.19"' in (tmp_path / "pyproject.toml").read_text()
+    assert "**Version:** `1.3.19.19`" in (tmp_path / "README.md").read_text()
+    assert "## 1.4.0.0" not in changelog.read_text()
+    assert "  wrapped continuation" in changelog.read_text()
+    assert "## 1.3.19.19 - 2026-01-01" in changelog.read_text()
     assert not list((tmp_path / "agent_tools/changelog").glob("*.md"))
     assert not controller.fold(tmp_path)
 

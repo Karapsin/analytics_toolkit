@@ -806,11 +806,7 @@ def change_impact(
             "documentation_paths": documentation,
             "changelog": {
                 "unreleased_count": unreleased_count,
-                "next_action": (
-                    "roll_unreleased_into_new_version"
-                    if unreleased_count + 1 >= UNRELEASED_CHANGELOG_THRESHOLD
-                    else "add_unreleased_entry"
-                ),
+                "next_action": "add_unreleased_entry",
             },
             "recommended_checks": recommend_tests(
                 area=module or task,
@@ -1012,12 +1008,7 @@ def _version_bump_validation_error(
             "Forced version bump is restricted to release workflows.",
             "force_release requires a release-oriented change_type",
         )
-    if force_release and summary is not None:
-        return (
-            "Forced version bump does not accept a changelog summary.",
-            "omit summary when force_release is enabled",
-        )
-    if not force_release and summary is None:
+    if not _is_release_artifact(change_type) and not (summary or "").strip():
         return "Version bump requires a changelog summary.", "summary is required"
     return None
 
@@ -1057,7 +1048,7 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             next_actions=["Do not edit package metadata for ordinary documentation-only changes."],
         )
 
-    if sessions.load(root_path).get("phase") == "feature" and not force_release:
+    if sessions.load(root_path).get("phase") == "feature" and not _is_release_artifact(change_type):
         try:
             planned = sessions.fragment(root_path, summary or "", dry_run=dry_run)
             return _tool_output(
@@ -1079,25 +1070,34 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
     changelog = root_path / CHANGELOG_PATH
     changelog_text = _read_text(changelog)
     unreleased_bullets = _unreleased_changelog_bullets(changelog_text)
-    if force_release and not unreleased_bullets:
+    preparing_release = _is_release_artifact(change_type)
+    if preparing_release and not unreleased_bullets and not (summary or "").strip():
         return _tool_output(
             "version_bump",
             input_summary,
             ok=False,
-            summary="Forced version bump requires unreleased changelog entries.",
+            summary="Release preparation requires notes or a release summary.",
             blockers=[
                 {
                     "phase": "validate",
-                    "message": "no unreleased changelog entries are available to release",
+                    "message": "no unreleased entries; supply a release summary",
                 }
             ],
         )
-    bullet = "" if force_release else _format_changelog_bullet(summary or "")
-    planned_unreleased_count = len(unreleased_bullets) + (0 if force_release else 1)
-    next_version_value = _increment_version(current_version)
-    should_bump = force_release or planned_unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD
+    bullet = _format_changelog_bullet(summary) if summary and summary.strip() else ""
+    planned_unreleased_count = len(unreleased_bullets) + bool(bullet)
+    should_bump = preparing_release
+    next_version_value = current_version
     if should_bump:
-        release_bullets = unreleased_bullets if force_release else [*unreleased_bullets, bullet]
+        try:
+            next_version_value = _increment_version(current_version)
+        except ValueError as exc:
+            return _tool_output(
+                "version_bump", input_summary, ok=False,
+                summary="Release version is invalid.",
+                blockers=[{"phase": "metadata", "message": str(exc)}],
+            )
+        release_bullets = [*unreleased_bullets, *([bullet] if bullet else [])]
         entry = _format_changelog_entry(
             next_version_value,
             release_bullets,
@@ -1116,22 +1116,7 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             "planned_version": None,
             "changelog_entry": bullet,
             "unreleased_count": planned_unreleased_count,
-            "threshold": UNRELEASED_CHANGELOG_THRESHOLD,
         }
-    if dry_run:
-        summary_text = (
-            "Version bump planned."
-            if should_bump
-            else "Unreleased changelog update planned; version bump threshold not reached."
-        )
-        return _tool_output(
-            "version_bump",
-            input_summary,
-            summary=summary_text,
-            result=planned,
-            next_actions=["Run version_bump(..., dry_run=False) when ready to edit metadata."],
-        )
-
     if not should_bump:
         try:
             updated_changelog = _upsert_unreleased_changelog_bullet(changelog_text, bullet)
@@ -1144,6 +1129,12 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
                 result=planned,
                 blockers=[{"phase": "metadata", "message": str(exc)}],
                 next_actions=["Fix the changelog, then rerun version_bump(...)."],
+            )
+        if dry_run:
+            return _tool_output(
+                "version_bump", input_summary,
+                summary="Unreleased changelog update planned; versions change only for releases.",
+                result=planned,
             )
         _write_text(changelog, updated_changelog)
         metadata = metadata_status(root=str(root_path))
@@ -1162,7 +1153,7 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             input_summary,
             summary=(
                 "Added unreleased changelog bullet "
-                f"({planned_unreleased_count}/{UNRELEASED_CHANGELOG_THRESHOLD}); "
+                f"({planned_unreleased_count} entries); "
                 "version not bumped."
             ),
             result={**planned, "metadata_status": metadata},
@@ -1196,6 +1187,11 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             next_actions=["Fix the metadata marker, then rerun version_bump(...)."],
         )
 
+    if dry_run:
+        return _tool_output(
+            "version_bump", input_summary, summary="Release metadata preparation planned.",
+            result=planned,
+        )
     _write_text(pyproject, pyproject_text)
     _write_text(readme, readme_text)
     _write_text(changelog, updated_changelog)
@@ -1700,7 +1696,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 }
             ],
             next_actions=[
-                "Run version_bump(...), include all version metadata paths, then retry the commit."
+                "Run version_bump(...), include the required changelog paths, then retry the commit."
             ],
         )
     verification = _verify_precommit_success(root_path)
@@ -1823,10 +1819,28 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
     )
 
 
-def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
+def _release_preparation_module() -> Any:
+    return importlib.import_module(
+        f"{__package__}.release_preparation" if __package__ else "release_preparation"
+    )
+
+
+def _prepare_release(root: Path, summary: str | None) -> dict[str, Any]:
+    try:
+        return _release_preparation_module().prepare(root, summary=summary)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return {"status": "blocked", "message": str(exc)}
+
+
+def release_workflow(  # noqa: C901, PLR0912, PLR0915 - reviewed release orchestration.
+    action: str = "status",
+    root: str = ".",
+    *,
+    summary: str | None = None,
+) -> dict[str, Any]:
     """Report release readiness or delegate to the release script."""
     root_path = _resolve_root(root)
-    input_summary = {"action": action, "root": str(root_path)}
+    input_summary = {"action": action, "root": str(root_path), "summary": summary}
     if action not in {"status", "merge-dev", "publish"}:
         return _tool_output(
             "release_workflow",
@@ -1841,8 +1855,27 @@ def release_workflow(action: str = "status", root: str = ".") -> dict[str, Any]:
             ],
         )
 
-    if action == "merge-dev":
-        return _merge_dev_for_release(root_path, input_summary)
+    if action in {"merge-dev", "publish"}:
+        preparation = _prepare_release(root_path, summary)
+        if preparation["status"] != "prepared":
+            pending = preparation["status"] == "pending"
+            return _tool_output(
+                "release_workflow",
+                input_summary,
+                ok=pending,
+                summary=(
+                    "Release preparation PR is pending."
+                    if pending else "Release preparation blocked."
+                ),
+                result=preparation,
+                blockers=(
+                    [] if pending else [{"phase": "preparation", "message": preparation["message"]}]
+                ),
+                next_actions=[f"Re-enter release_workflow(action='{action}') to resume this candidate."],
+            )
+        promoted = _merge_dev_for_release(root_path, input_summary)
+        if not promoted["ok"] or action == "merge-dev":
+            return promoted
 
     if action == "status":
         status = _release_readiness(root_path)
@@ -2413,8 +2446,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
         "--action", choices=["status", "merge-dev", "publish"], default="status"
     )
     release_parser.add_argument("--root", default=".")
+    release_parser.add_argument("--summary")
     release_parser.set_defaults(
-        handler=lambda args: release_workflow(action=args.action, root=args.root)
+        handler=lambda args: release_workflow(action=args.action, root=args.root, summary=args.summary)
     )
 
     return parser
@@ -3413,11 +3447,11 @@ def _parse_required(pattern: re.Pattern[str], text: str, label: str) -> str:
 
 
 def _replace_required(pattern: re.Pattern[str], text: str, replacement: str, label: str) -> str:
-    updated, count = pattern.subn(replacement, text, count=1)
+    count = len(list(pattern.finditer(text)))
     if count != 1:
         msg = f"Could not update {label}"
         raise ValueError(msg)
-    return updated
+    return pattern.sub(replacement, text, count=1)
 
 
 def _package_version(root: Path) -> str:
@@ -3642,7 +3676,7 @@ def _missing_mandatory_actions(
             missing.append(_version_bump_message(version_requirement["missing"]))
         if not metadata["ok"]:
             missing.append(
-                "Run version_bump(...) so pyproject.toml, README.md, and docs/CHANGELOG.md align."
+                "Run version_bump(...) to record the required changelog entry."
             )
         if not _verify_precommit_success(root)["ok"]:
             missing.append(
@@ -3770,12 +3804,14 @@ def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dic
     required_paths: set[str] = {CHANGELOG_PATH}
     session = sessions.load(root)
     if session.get("phase") == "feature":
-        required_paths = {sessions.fragment_path(session)}
+        required_paths = (
+            set(REQUIRED_VERSION_PATHS)
+            if session.get("release_preparation")
+            else {sessions.fragment_path(session)}
+        )
     changelog_path = root / CHANGELOG_PATH
     if changelog_path.exists():
         unreleased_count = _count_unreleased_changelog_bullets(_read_text(changelog_path))
-    if not session and unreleased_count >= UNRELEASED_CHANGELOG_THRESHOLD:
-        required_paths = set(REQUIRED_VERSION_PATHS)
     missing = sorted(
         path for path in required_paths if path not in changed_paths or path not in selected_paths
     )
@@ -3788,7 +3824,6 @@ def _version_bump_requirement(root: Path, paths: list[str] | None = None) -> dic
         "required_paths": sorted(required_paths),
         "missing": missing,
         "unreleased_count": unreleased_count,
-        "threshold": UNRELEASED_CHANGELOG_THRESHOLD,
     }
 
 
@@ -5098,6 +5133,13 @@ def _remote_branch_status(root: Path, *, branch: str, require_equal: bool) -> di
 
 
 def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[str, Any]:
+    try:
+        release_candidate = _release_preparation_module().verify(root, promotion=True)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "release_workflow", input_summary, ok=False, summary="Release promotion blocked.",
+            blockers=[{"phase": "preparation", "message": str(exc)}],
+        )
     health = repo_health(root=str(root))
     if health["dirty"]:
         return _tool_output(
@@ -5137,8 +5179,8 @@ def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[st
             "env": {},
         },
         {
-            "display": f"git merge --ff-only origin/{WORK_BRANCH}",
-            "args": ["git", "merge", "--ff-only", f"origin/{WORK_BRANCH}"],
+            "display": f"git merge --ff-only {release_candidate['promotion_sha']}",
+            "args": ["git", "merge", "--ff-only", release_candidate["promotion_sha"]],
             "env": {},
         },
         {
@@ -5267,6 +5309,10 @@ def _release_readiness(root: Path, *, require_release_check: bool = False) -> di
     blockers.extend(remote["blockers"])
     remote_dev = _remote_dev_status(root, require_equal=False)
     blockers.extend(remote_dev["blockers"])
+    try:
+        _release_preparation_module().verify(root)
+    except (RuntimeError, ValueError, OSError) as exc:
+        blockers.append({"phase": "preparation", "message": str(exc)})
     precommit = _verify_precommit_success(root)
     if not precommit["ok"]:
         blockers.append({"phase": "precommit", "message": precommit["message"]})

@@ -1,36 +1,68 @@
 # Release Agent Instructions
 
-Read this file when the user asks to update, publish, or release the package on
-PyPI, or when changing release workflow behavior.
+Read this file for PyPI release requests and release workflow changes.
 
-## PyPI Release Rules
+## Version policy and reviewed preparation
 
-When the user asks to update, publish, or release the package on PyPI, run the
-complete publishing workflow unless they explicitly ask for a narrower action:
+Ordinary changes accumulate feature fragments or `## Unreleased` entries without
+changing the package or README version. There is no entry-count threshold.
+Documentation-only changes retain their no-bump behavior. Each explicit release
+prepares one new four-part version, with carry at 19, and preserves historical notes.
 
-- Use `release_workflow(action="status")` to confirm release readiness before publishing.
-- Release readiness must pass the exhaustive disposable SQL integration `all`
-  profile with both ClickHouse transports. The successful exact-tree release
-  receipt is required by `release_workflow(action="publish")`; advisory results
-  from earlier `dev` pushes are not a substitute.
-- When an explicit release must roll a non-empty `## Unreleased` section before
-  the normal ten-entry threshold, use
-  `version_bump(change_type="release", force_release=True)` without a summary.
-  Do not use forced release for ordinary repository changes.
-- Use `release_workflow(action="merge-dev")` to fast-forward `main` from `origin/dev`
-  before release readiness checks. Normal work stays on `dev`; PyPI publishing
-  runs only from `main` after that handoff.
-- Use `release_workflow(action="publish")` for the full publishing workflow. It delegates to `release_routines/pypi_release.sh`, which runs TestPyPI publishing and artifact verification first, then real PyPI publishing and artifact verification. Do not call the internal scripts under `release_routines/scripts/` unless the user explicitly asks for a narrower release action or the top-level workflow itself is blocked.
-- If the release only changes documentation or PyPI README content, bump the package version for the release artifact and update `docs/CHANGELOG.md` even though ordinary docs-only changes must not bump versions. PyPI artifacts are immutable, so publishing changed package metadata requires a new version.
-- Publish the candidate version to TestPyPI first through GitHub Actions trusted publishing.
-- The publish workflow must upload only the wheel and sdist emitted after the
-  shared artifact smoke checker passes; do not rebuild between verification and
-  publishing.
-- Verify the TestPyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
-- Publish the same production package/version to real PyPI through the GitHub release workflow.
-- Verify the real PyPI artifact in a fresh temporary virtual environment from outside the repository checkout, and confirm imports resolve from that environment's `site-packages`.
-- Check the GitHub Actions jobs after each publish. TestPyPI publishes must leave the real PyPI job skipped; real PyPI publishes must leave the TestPyPI job skipped.
-- TestPyPI trusted publishing is currently configured for the temporary project name `karapsin-analytics-toolkit`, while the production PyPI project name is `analytics-toolkit`. For TestPyPI, create a temporary `testpypi-<version>` branch from the exact release candidate commit and change only `[project].name` in `pyproject.toml` to `karapsin-analytics-toolkit`.
-- Keep TestPyPI package-name changes on temporary branches only. Do not merge temporary TestPyPI branches into `main`, and publish production PyPI only from the unchanged production project metadata.
-- When verifying TestPyPI artifacts, install `karapsin-analytics-toolkit==<version>` but still confirm the import package is `analytics_toolkit` from `site-packages`.
-- After every successful deployment to real PyPI and artifact verification, delete all temporary TestPyPI branches locally and remotely, including old `testpypi-*` branches.
+1. Record the exact release request through the existing task-context workflow.
+   An existing enrolled machine signing key is required.
+2. Call `release_workflow(action="merge-dev", summary=None)` (CLI:
+   `release-workflow --action merge-dev [--summary "Release summary"]`).
+   The tool synchronizes origin/dev in an isolated workspace, folds fragments,
+   prepares version/README/release notes, and publishes a signed preparation PR
+   to dev through the existing task attachment and independent-review workflow.
+   A release without unreleased entries requires a summary, including README-only
+   releases. Never push a release metadata commit directly to dev.
+3. Pending results include the preparation PR URL. Re-enter the same action after
+   review, exact-head GitHub checks, and merge. Retries recover the same branch,
+   PR and version from private `.git/atk-release.json` state.
+4. Promotion requires current dev content to match the reviewed candidate.
+   Intervening changes require a new preparation PR and invalidate validation.
+   Main is fast-forwarded to the validated dev commit; it remains the release branch.
+5. Run required pre-commit validation for production main, then
+   `release_workflow(action="status")`. Status never creates preparation PRs or
+   increments versions. It requires a reviewed candidate and performs exhaustive
+   disposable SQL integration with both ClickHouse transports. Earlier advisory
+   integration results are not release receipts.
+6. Call `release_workflow(action="publish")`. Without preparation it enters the
+   same reviewed PR flow. Once prepared, it requires the exact production candidate's
+   validation receipts, then delegates to `release_routines/pypi_release.sh`.
+   Direct script invocations enforce the same candidate and receipt guard.
+
+Low-level release-oriented `version_bump` options remain compatible metadata
+preparation entrypoints, including `force_release=True` with release change types.
+They validate replacements before writing and dry runs write nothing. They do
+not replace the reviewed PR sequence or authorize publication.
+
+## Publishing and safe recovery
+
+- Preserve clean-tree checks, synchronized production main, and the production
+  project name `analytics-toolkit`.
+- TestPyPI uses an isolated `testpypi-<version>` branch from the prepared SHA.
+  Only the project name changes to `karapsin-analytics-toolkit`; never merge that
+  branch into main. Reuse an existing branch only if its parent and content match.
+- GitHub trusted publishing uploads the wheel and sdist already emitted by the
+  shared artifact smoke checker. Failed upload recovery reruns only failed jobs,
+  preserving a successful build and its retained verified artifacts.
+- Re-enter publish after pending workflows, failed jobs, or interrupted verification.
+  Recovery checks the exact candidate workflow and compares published index file
+  hashes with retained artifacts. Index lookup failures block uploads.
+- Never move an existing production tag or overwrite published artifacts. A tag
+  mismatch or changed published file requires a new candidate/version. An existing
+  GitHub release is resumed through its workflow rather than recreated.
+- Verify each index artifact in a fresh temporary environment outside the checkout;
+  imports must resolve from site-packages. The opposite index's publish job must
+  remain skipped. Production publishing requires verified TestPyPI artifacts for
+  the same candidate.
+- Delete temporary TestPyPI branches only after successful production verification.
+  Completed stages are bound to the candidate SHA and version in the private state.
+
+Private controller implementation workers do not execute validation. GitHub runs
+fast checks, independent review, compatibility, quality, coverage and artifact
+checks after publication. Controller edits retain owner exact-head policy approval.
+An actual release additionally requires exhaustive validation before TestPyPI.

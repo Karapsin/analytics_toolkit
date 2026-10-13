@@ -575,36 +575,11 @@ def fold(work: Path) -> bool:
     start = text.index(marker) + len(marker)
     end = text.find("\n## ", start)
     end = len(text) if end < 0 else end
-    bullets = [line for line in text[start:end].splitlines() if line.startswith("- ")]
-    bullets.extend(summaries)
-    if len(bullets) >= 10:
-        project = work / "pyproject.toml"
-        project_text = project.read_text()
-        match = re.search(r'^version = "([^"]+)"', project_text, re.MULTILINE)
-        if match is None:
-            raise RuntimeError("Missing package version.")
-        parts = [int(part) for part in match[1].split(".")]
-        if len(parts) != 4 or any(part < 0 or part > 19 for part in parts):
-            raise RuntimeError("Version components must be four integers from 0 to 19.")
-        for index in range(3, -1, -1):
-            if parts[index] < 19:
-                parts[index] += 1
-                break
-            parts[index] = 0
-        else:
-            raise RuntimeError("Version space exhausted.")
-        version = ".".join(str(part) for part in parts)
-        project.write_text(project_text[:match.start(1)] + version + project_text[match.end(1):])
-        readme = work / "README.md"
-        readme_text, count = re.subn(r"\*\*Version:\*\* `[^`]+`", f"**Version:** `{version}`",
-                                    readme.read_text())
-        if count != 1:
-            raise RuntimeError("Missing README version marker.")
-        readme.write_text(readme_text)
-        section = f"\n\n## {version} - {datetime.now(timezone.utc).date()}\n\n"
-    else:
-        section = "\n\n"
-    changelog.write_text(text[:start] + section + "\n".join(bullets) + "\n" + text[end:])
+    # Preserve the complete section, including wrapped bullets and paragraphs.
+    body = text[start:end].strip()
+    additions = "\n".join(summaries)
+    body = body + "\n" + additions if body else additions
+    changelog.write_text(text[:start] + "\n\n" + body + "\n\n" + text[end:].lstrip("\n"))
     for path in fragments:
         path.unlink()
     return True
