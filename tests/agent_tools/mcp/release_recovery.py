@@ -521,10 +521,7 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
         if args[:3] == ("git", "ls-remote", "--tags") and conflict == "tag":
             return "old refs/tags/v1.2.3.4"
         if args[:3] == ("git", "ls-remote", "--heads"):
-            return (
-                ("other" if conflict == "ref" else "test-head")
-                + " refs/heads/testpypi-1.2.3.4"
-            )
+            return ("other" if conflict == "ref" else "test-head") + " refs/heads/testpypi-1.2.3.4"
         if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
             return "test-head old"
         if args[:2] == ("git", "show"):
@@ -545,11 +542,7 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
     monkeypatch.setattr(
         candidate,
         "_runs",
-        lambda *args: (
-            [{"databaseId": 42, "status": "in_progress"}]
-            if conflict == "active"
-            else []
-        ),
+        lambda *args: [{"databaseId": 42, "status": "in_progress"}] if conflict == "active" else [],
     )
     monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     if conflict == "uncertain":
@@ -618,9 +611,7 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
         candidate,
         "_runs",
         lambda root, ref, sha, stage: (
-            [{"databaseId": 42, "status": "completed"}]
-            if stage == "testpypi"
-            else []
+            [{"databaseId": 42, "status": "completed"}] if stage == "testpypi" else []
         ),
     )
 

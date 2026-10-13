@@ -366,3 +366,10 @@ and CIAN `ed8efdea19388a7590ff60d4bbe620b098b57bb2`. This is delivery
 evidence, not toolkit approval. Companion code and later companion command
 extensions are outside this PR; the toolkit formatting handoff covers GitHub-agent
 alerts, plans, questions and bridge responses in readable English HTML.
+
+## User documentation wiki exporter
+
+`wiki_sync.py` exports validated user documentation to the separate GitHub wiki.
+It uses only the Python standard library; source Markdown remains authoritative.
+See [wiki synchronization setup and retries](../docs/WIKI_SYNC.md) for release
+activation, credentials, validation, and ownership of generated pages.

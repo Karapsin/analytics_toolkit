@@ -1919,9 +1919,7 @@ def release_workflow(  # noqa: C901 - reviewed release orchestration.
                 ),
                 result=preparation,
                 blockers=(
-                    []
-                    if pending
-                    else [{"phase": "preparation", "message": preparation["message"]}]
+                    [] if pending else [{"phase": "preparation", "message": preparation["message"]}]
                 ),
                 next_actions=[
                     f"Re-enter release_workflow(action='{action}') to resume this candidate.",

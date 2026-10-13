@@ -1,0 +1,77 @@
+name: wiki-sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'agent_tools/wiki_sync.py'
+      - '.github/workflows/wiki-sync.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: synchronize user documentation
+    if: github.repository == 'Karapsin/analytics_toolkit' && (github.event_name == 'release' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main documentation
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Validate all pages and links
+        run: python agent_tools/wiki_sync.py --check-only
+
+      - name: Export and publish wiki
+        env:
+          WIKI_SYNC_TOKEN: ${{ secrets.WIKI_SYNC_TOKEN }}
+          WIKI_DIRECTORY: ${{ runner.temp }}/documentation-wiki
+          ASKPASS_PATH: ${{ runner.temp }}/wiki-askpass.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$WIKI_SYNC_TOKEN" ]]; then
+            echo '::error::Configure WIKI_SYNC_TOKEN before publishing. See docs/WIKI_SYNC.md.'
+            exit 1
+          fi
+          cat > "$ASKPASS_PATH" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$WIKI_SYNC_TOKEN" ;;
+          esac
+          ASKPASS
+          chmod 700 "$ASKPASS_PATH"
+          export GIT_ASKPASS="$ASKPASS_PATH" GIT_TERMINAL_PROMPT=0
+          trap 'rm -f "$ASKPASS_PATH"' EXIT
+          if ! git -c credential.helper= clone https://github.com/Karapsin/analytics_toolkit.wiki.git "$WIKI_DIRECTORY"; then
+            echo '::error::Wiki clone failed. Initialize Home in GitHub and verify WIKI_SYNC_TOKEN. See docs/WIKI_SYNC.md.'
+            exit 1
+          fi
+          python agent_tools/wiki_sync.py --output-directory "$WIKI_DIRECTORY"
+          SOURCE_SHA=$(git rev-parse HEAD)
+          cd "$WIKI_DIRECTORY"
+          git add -A -- '*.md' .wiki-sync-manifest.json
+          if git diff --cached --quiet; then
+            echo 'Wiki already current; no commit needed.'
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Sync user documentation from main $SOURCE_SHA"
+          git -c credential.helper= push origin HEAD
