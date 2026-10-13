@@ -126,14 +126,6 @@ execution jobs still fail fast CI. Removing either log pattern independently
 fails the service-free regression checks for every named service job and for
 additional integration execution jobs.
 
-Trusted repairs bind downloaded diagnostics to the exact run attempt and artifact
-inventory, redact secrets, and verify the evidence fingerprint before preparing
-files. Missing or expired artifacts remain explicit in the manifest. A validated
-`blocked` or `no_change` outcome creates no repair PR and preserves the unresolved
-incident; unchanged retries are suppressed until the dev base, failure set, or
-artifact inventory changes. Transient inventory errors defer repair discovery
-without dropping pending feature PR work. Repair outcomes must agree with whether
-a patch was produced.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original

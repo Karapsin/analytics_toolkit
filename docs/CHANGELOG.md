@@ -12,7 +12,7 @@ Generated from package version bumps and recent commit history.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
-- Support seven rolling Python minors with temporary extension, validated extra ranges and Airflow 3 compatibility; reconcile dev repair evidence and outcome contracts, retain dual build/startup reports with named-service regressions, and preserve the confirmed Ruff formatting repair.
+- Support seven rolling Python minors with continued extension, validated extra and combined [all] ranges, automated update PRs, and Airflow 3 compatibility; retain the named-service-job diagnostics regression repair and the evidenced Python-support formatting correction.
 
 ## 1.3.12.4 - 2026-10-12
 
