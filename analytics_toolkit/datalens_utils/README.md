@@ -42,8 +42,9 @@ externally, and records persistent IDs. `status()` returns resource statuses.
 three-way merge; `branch="saved"` explicitly imports a draft. Wizard pulls replace
 color/shape bindings, maps and palettes with the observed remote settings, including
 removals, while preserving unrelated settings. When `chart_title` is explicitly
-managed, pulls update it independently of the default widget `title`; definitions
-without `chart_title` retain the legacy title update.
+managed, pulls update it independently of the default widget `title`. Removing the
+remote internal title pulls as `chart_title: null`, including absent `chartSettings`.
+Definitions without `chart_title` retain the legacy title update.
 `apply(chart_keys=[...])` applies affected local changes. Both also accept
 `dataset_keys=[...]` or `ui=True`; these scopes are mutually exclusive.
 `verify(full=True)` checks full published metadata and references.

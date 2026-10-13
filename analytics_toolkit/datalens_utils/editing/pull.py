@@ -89,12 +89,14 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
     names = field_names(datasets, chart)
     visualization = chart.data.get("visualization", {})
     settings = visualization.get("chartSettings", {})
-    if definition["type"] != "indicator" and "title" in settings:
+    if definition["type"] != "indicator":
         if "chart_title" in result:
-            result["chart_title"] = settings["title"]
-        else:
+            result["chart_title"] = settings.get("title")
+        elif "title" in settings:
             result["title"] = settings["title"]
-        if "show_title" in result or settings.get("titleMode", "show") == "hide":
+        if "title" in settings and (
+            "show_title" in result or settings.get("titleMode", "show") == "hide"
+        ):
             result["show_title"] = settings.get("titleMode", "show") != "hide"
     if definition["type"] in {"combined_chart", "geolayer"}:
         # Layer topology has no typed update in SDK 3.1. Never invent a recipe
