@@ -383,7 +383,8 @@ def test_headless_capture_exports_real_application_frame(
     )
     assert json.loads(evidence.read_text())["ok"] is True
     assert len(rendered) == 1
-    assert "SELECT" in "".join(ET.fromstring(rendered[0][0]).itertext())
+    # The thin editor caret covers the first character of SELECT in this scene.
+    assert "FROM" in "".join(ET.fromstring(rendered[0][0]).itertext())
     assert rendered[0][1] == png
 
 

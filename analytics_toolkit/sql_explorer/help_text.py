@@ -47,7 +47,7 @@ SHORTCUTS_HELP = """Non-movement shortcuts
   results expand/shrink N   resize in rows (horizontal) or columns (vertical)
   Mouse separator drag      resize when keyboard mode is off
   run / cancel              execute / cancel query
-  cp / pst                  copy selections or buffer / paste at every cursor
+  cp / pst                  copy selections or buffer / distribute clipboard at cursors
   del                       Delete at every cursor, or remove selected text
   clear query|results|all   clear content
   to_csv / to_excel         export results
@@ -93,4 +93,5 @@ d/u/pd/pu clamp at document boundaries and never insert lines or edit text.
 Only absolute mv adds text; its 100-new-line and 10-new-column caps clamp targets.
 Arrows/Home/End and Ctrl+Left/Right move; Shift variants select.
 Shift+Up/Down adds/removes cursors; Ctrl+Home/End moves to document bounds.
+Ctrl+Shift+Up/Down extends selections by one logical line without adding cursors.
 """

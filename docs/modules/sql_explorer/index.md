@@ -151,7 +151,9 @@ cursor or selection. Buttons, search fields, and completion choices still
 perform their actions. After executing a command,
 focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
-The editor and text inputs use steady non-blinking carets. The compact active
+The editor uses steady thin vertical-bar carets, including secondary cursors;
+each bar temporarily covers its terminal cell without changing the SQL text.
+Text inputs retain steady non-blinking carets. The compact active
 tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
@@ -167,12 +169,25 @@ Ctrl+Left, Ctrl+Right, Tab, Shift+Tab, Enter, Escape, Ctrl+C, Ctrl+Enter, and F5
 Home always moves every cursor to column zero of its current logical line and
 collapses its selection; Ctrl+Home goes to the start of the document. Ctrl+A
 selects the full buffer. Ctrl+Left and Ctrl+Right move every cursor by one word,
-and their Shift variants extend every cursor's independent selection. Shift+Up
+and their Shift variants extend every cursor's independent selection.
+Ctrl+Shift+Up and Ctrl+Shift+Down extend
+each existing selection by one logical line, preserving its anchor and intended
+column across short or empty lines. Repeated presses extend across many lines;
+reversing direction shrinks the selection without creating cursors. Shift+Up
 and Shift+Down add a cursor above or below the active cursor. Repeating the key
 chains cursors across as many logical lines as needed;
 pressing toward an occupied adjacent line removes that cursor, while at least one
 cursor always remains. Each cursor has an independent selection, and editing or
-pasting applies at every cursor. Escape collapses multiple cursors to the active
+pasting applies at every cursor. Copying with multiple cursors retains one
+fragment per selection in document order, including empty selections. If all
+are empty, copying clears the clipboard. Paste distributes those fragments when
+their count matches the destination cursor count. Otherwise, matching clipboard
+lines are distributed, including text copied outside Explorer; one trailing line
+ending is ignored for this comparison. If neither count matches, each cursor
+receives the whole clipboard. A single cursor receives the joined text. Copying
+elsewhere in Explorer or receiving different clipboard text clears the stored
+fragments. Ctrl+C/Ctrl+V, `cp`/`pst`, cut, and terminal paste share these rules.
+Escape collapses multiple cursors to the active
 one before toggling focus between the editor and command panel. F6 and Shift+F6
 cycle panes explicitly; arrows never switch panes. Tab and Shift+Tab indent or
 unindent selected logical lines. Double-clicking selects a complete SQL word such
@@ -509,8 +524,8 @@ Enter commands in the lower panel, with or without a leading colon:
 - `keyboard [on|off|toggle]` - report/change editable keyboard mode (F8 toggles)
 - `results switch` - toggle horizontal/vertical results
 - `results expand N`, `results shrink N` - resize in terminal rows/columns
-- `cp` - copy selections in document order, or the whole editor when unselected
-- `pst` - paste the Explorer clipboard once at every cursor or selection
+- `cp` - copy one fragment per cursor in document order, including empty selections; with one unselected cursor, copy the whole editor
+- `pst` - paste clipboard fragments or matching lines in document order, otherwise the full clipboard at every cursor or selection
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation

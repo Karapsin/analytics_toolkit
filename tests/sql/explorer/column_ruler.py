@@ -112,7 +112,10 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
                 active_x - editor.gutter.left, active_x - editor.gutter.left + 1
             )
             assert all(
-                segment.style.bgcolor.triplet.hex == app.get_css_variables()["accent"].lower()
+                segment.text == "│"
+                and segment.style.color.triplet.hex == app.get_css_variables()["accent"].lower()
+                and segment.style.bgcolor is None
+                and segment.style.bold is False
                 for segment in caret
             )
             column = editor.cursor_location[1]

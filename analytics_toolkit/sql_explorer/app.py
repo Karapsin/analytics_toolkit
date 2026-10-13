@@ -151,6 +151,7 @@ class SqlExplorerApp(
         self._exit_save_all = False
         self._primary_binding: str | None = None
         self._clipboard = ""
+        self._clipboard_fragments: tuple[str, ...] | None = None
         self._terminal_clipboard = TerminalClipboard()
         self._find_navigation_bound = False
 
@@ -374,9 +375,15 @@ class SqlExplorerApp(
             if focused.copy_selection():
                 self._set_notice("Copied selection.")
         elif isinstance(focused, SqlEditor):
-            self.copy_to_explorer_clipboard(focused.command_copy_text())
+            focused.copy_to_clipboard()
             has_selection = any(not item.is_empty for item in focused.cursor_selections)
-            self._set_notice("Copied editor selection." if has_selection else "Copied editor.")
+            self._set_notice(
+                "Copied editor selection."
+                if has_selection
+                else "Clipboard cleared."
+                if focused.cursor_count > 1
+                else "Copied editor."
+            )
         elif isinstance(focused, ResultTable):
             value = focused.copy_text()
             if value:
@@ -862,11 +869,19 @@ class SqlExplorerApp(
         self._primary_binding = binding
         self.refresh_bindings()
 
-    def copy_to_explorer_clipboard(self, value: str) -> None:
+    def copy_to_explorer_clipboard(
+        self, value: str, *, fragments: tuple[str, ...] | None = None
+    ) -> None:
         self._terminal_clipboard.copy(value)
         with suppress(pyperclip.PyperclipException):
             pyperclip.copy(value)
         self._clipboard = value
+        self._clipboard_fragments = fragments
+
+    def clipboard_fragments(self, value: str) -> tuple[str, ...] | None:
+        if value != self._clipboard:
+            self._clipboard_fragments = None
+        return self._clipboard_fragments
 
     def paste_from_explorer_clipboard(self) -> str:
         try:
