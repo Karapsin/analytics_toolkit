@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
+- Allow trusted scoped dev merges during unrelated agent work while preserving merge gates and unpublished branches; reconcile changelog history and pin isolated companion rollout evidence.
 
 ## 1.3.12.4 - 2026-10-12
 
